@@ -2,9 +2,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 require('dotenv').config()
 
-const taskController = require('./controller/task.controller')
-
-
+const taskController = require('./controller/task.controller') 
+const observationController = require('./controller/observation.controller') 
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -15,21 +14,38 @@ app.get('/api/tasks', (req, res) => {
     taskController.getTasks().then(data => res.json(data));
 });
 
+app.get('/api/observations', (req, res) => {
+    observationController.getObservations().then(data => res.json(data));
+});
+
 app.post('/api/task', (req, res) => {
     console.log(req.body);
     taskController.createTask(req.body.task).then(data => res.json(data));
+});
+
+app.post('/api/observation', (req, res) => {
+    console.log(req.body);
+    observationController.createObservation(req.body.observation).then(data => res.json(data));
 });
 
 app.put('/api/task', (req, res) => {
     taskController.updateTask(req.body.task).then(data => res.json(data));
 });
 
+app.put('/api/observation', (req, res) => {
+    observationController.updateTask(req.body.observation).then(data => res.json(data));
+});
+
 app.delete('/api/task/:id', (req, res) => {
     taskController.deleteTask(req.params.id).then(data => res.json(data));
 });
 
+app.delete('/api/observation/:id', (req, res) => {
+    observationController.deleteTask(req.params.id).then(data => res.json(data));
+});
+
 app.get('/', (req, res) => {
-    res.send(`<h1>API Works !!!</h1>`)
+    res.send(`<h1>Welcome To the MARE API </h1>`)
 });
 
 
