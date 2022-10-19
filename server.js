@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const fs = require('fs')
 require('dotenv').config()
 
 const taskController = require('./controller/task.controller') 
@@ -8,7 +9,15 @@ const observationController = require('./controller/observation.controller')
 const app = express();
 const port = process.env.PORT || 3000;
 
+// API Documentation Library
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./swagger.json');
+const customCss = fs.readFileSync((process.cwd()+"/swagger.css"), 'utf8');
+
 app.use(bodyParser.json());
+
+// let express to use this
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {customCss}));
 
 app.get('/api/tasks', (req, res) => {
     taskController.getTasks().then(data => res.json(data));
@@ -33,7 +42,7 @@ app.put('/api/task', (req, res) => {
 });
 
 app.put('/api/observation', (req, res) => {
-    observationController.updateTask(req.body.observation).then(data => res.json(data));
+    observationController.updateObservation(req.body.observation).then(data => res.json(data));
 });
 
 app.delete('/api/task/:id', (req, res) => {
@@ -41,7 +50,7 @@ app.delete('/api/task/:id', (req, res) => {
 });
 
 app.delete('/api/observation/:id', (req, res) => {
-    observationController.deleteTask(req.params.id).then(data => res.json(data));
+    observationController.deleteObservation(req.params.id).then(data => res.json(data));
 });
 
 app.get('/', (req, res) => {

@@ -1,0 +1,303 @@
+{
+  "swagger": "2.0",
+  "info": {
+      "description": "Access and Modify MARE Organizational Data Via the API ",
+      "version": "1.0.0",
+      "title": "MARE API",
+      "contact": {
+          "email": "isaac@chicosystems.com"
+      },
+      "license": {
+          "name": "Private License",
+          "url": "https://maregroup.org"
+      }
+  },
+  "schemes": ["http"],
+  "host": "localhost:3081",
+  "basePath": "/api",
+  "paths" : {
+      "/observations" : {
+          "get" : {
+              "summary" : "Get All The Observations In The DB",
+              "description": "This returns a JSON Object Representing All The Observations in the Database. Warning! If the Observation Database is too large, this can take a lot of time to run.",
+              "produces": ["application/json"],
+              "parameters": [],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/observation"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid Status Value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      },
+      "/observation" : {
+          "post" : {
+              "summary" : "Record A New Observation",
+              "description": "Record A New Observation into the MARE Observation Database.",
+              "produces": ["application/json"],
+              "consumes": ["application/json"],
+              "parameters": [
+                  {
+                      "in": "body",
+                      "name": "body",
+                      "description": "Observation Array",
+                      "required": true,
+                      "schema": {
+                          "type": "array",
+                          "properties": {
+                              "observation" : {
+                                  "type": "array",
+                                  "$ref": "#/definitions/observation"
+                              } 
+                          }
+                      }
+                  }
+              ],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/observation"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid status value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      },
+      "/observation/" : {
+          "put" : {
+              "summary" : "Update A Given Observation By ID",
+              "description": "Updates An Observation Identified by its ID. Takes the body, and updates any values passed in. ",
+              "produces": ["application/json"],
+              "parameters": [
+                  {
+                      "name": "id",
+                      "in": "path",
+                      "description": "ID of the Object to be Updated",
+                      "required": true,
+                      "type": "string"
+                  },
+                  {
+                      "in": "body",
+                      "name": "body",
+                      "description": "Observation Array",
+                      "required": true,
+                      "schema": {
+                          "type": "array",
+                          "properties": {
+                              "observation" : {
+                                  "type": "array",
+                                  "$ref": "#/definitions/observation"
+                              } 
+                          }
+                      }
+                  }
+              ],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/observation"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid Status Value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      },
+      "/observation/{id}" : {
+          "delete" : {
+              "summary" : "Delete a Given Observation by ID",
+              "description": "Delete an observation when given its id.",
+              "produces": ["application/json"],
+              "parameters": [
+                  {
+                      "name": "id",
+                      "in": "path",
+                      "description": "Observation id that needs to be deleted",
+                      "required": true,
+                      "type": "string"
+                  }
+              ],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/todosResponse"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid status value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      }
+  }, 
+  "definitions": {
+      "todosResponse": {
+          "type": "object",
+          "properties": {
+              "_id": {
+                   "type": "integer"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "description": {
+                  "type": "string"
+              },
+              "createdBy": {
+                  "type": "string"
+              },
+              "createdAt": {
+                  "type": "string"
+              },
+              "updatedAt": {
+                  "type": "string"
+              },
+              "updatedBy": {
+                  "type": "string"
+              }
+          }
+      },
+      "observation": {
+        "type": "object",
+        "properties": {
+            "id": {
+                 "type": "integer"
+            },
+            "obsID": {
+                "type": "string"
+            },
+            "project_name": {
+                "type": "string"
+            },
+            "tc": {
+                "type": "string"
+            },
+            "frame": {
+                "type": "string"
+            },
+            "taxserial": {
+                "type": "integer"
+            },
+            "comname": {
+                "type": "string"
+            },
+            "count": {
+                "type": "integer"
+            },
+            "quadrant": {
+                "type": "integer"
+            },
+            "etc": {
+                "type": "string"
+            },
+            "taxReview": {
+                "type": "integer"
+            },
+            "note": {
+                "type": "string"
+            },
+            "downcamera": {
+                "type": "integer"
+            },
+            "line": {
+                "type": "string"
+            },
+            "dive": {
+                "type": "string"
+            },
+            "lineID": {
+                "type": "string"
+            },
+            "processorName": {
+                "type": "string"
+            },
+            "timelog": {
+                "type": "string"
+            },
+            "video_source": {
+                "type": "string"
+            },
+            "videoLocation": {
+                "type": "string"
+            },
+            "mediaPosition": {
+                "type": "string"
+            },
+            "actualPosition": {
+                "type": "string"
+            },
+            "createdAt": {
+                "type": "2022-10-19 18:17:40.196 UTC"
+            },
+            "updatedAt": {
+                "type": "2022-10-19 18:17:40.196 UTC"
+            }
+        }
+    },
+      "Task": {
+          "type": "object",
+          "properties": {
+              "task": {
+                  "type": {
+                      "name": {
+                          "type": "string"
+                      },
+                      "description": {
+                          "type": "string"
+                      },
+                      "createdBy": {
+                          "type": "string"
+                      }
+                  }
+              }
+          }
+      },
+      "InvalidResponse": {
+          "type": "object",
+          "properties": {
+              "statusCode": {
+                  "type": "string"
+              },
+              "message": {
+                  "type": "string"
+              }
+          }
+
+      }
+  }
+}
