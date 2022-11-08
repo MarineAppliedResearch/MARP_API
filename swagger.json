@@ -16,6 +16,300 @@
   "host": "localhost:3081",
   "basePath": "/api",
   "paths" : {
+        "/session" : {
+            "post" : {
+                "summary" : "Record A New Session",
+                "description": "Record A New Session into the MARE Session Database.",
+                "produces": ["application/json"],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Session Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "session" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/session"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions" : {
+            "get" : {
+                "summary" : "Get All The Sessions In The DB",
+                "description": "This returns a JSON Object Representing All The Sessions in the Database. Warning! If the Database is too large, this can take a lot of time to run.",
+                "produces": ["application/json"],
+                "parameters": [],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },"/session/" : {
+            "put" : {
+                "summary" : "Update A Given Session By ID",
+                "description": "Updates An Session Identified by its ID. Takes the body, and updates any values passed in. ",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of the Object to be Updated",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Session Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "session" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/session"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/session/{id}" : {
+            "delete" : {
+                "summary" : "Delete a Given Session by ID",
+                "description": "Delete an Session when given its id.",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Session id that needs to be deleted",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/todosResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/project" : {
+            "post" : {
+                "summary" : "Record A New Project",
+                "description": "Record A New Project into the MARE Database.",
+                "produces": ["application/json"],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Project Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "project" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/project"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/projects" : {
+            "get" : {
+                "summary" : "Get All The Projects In The DB",
+                "description": "This returns a JSON Object Representing All The Projects in the Database. Warning! If the Database is too large, this can take a lot of time to run.",
+                "produces": ["application/json"],
+                "parameters": [],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },"/project/" : {
+            "put" : {
+                "summary" : "Update A Given Project By ID",
+                "description": "Updates An Project Identified by its ID. Takes the body, and updates any values passed in. ",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of the Object to be Updated",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Project Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "project" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/project"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/{id}" : {
+            "delete" : {
+                "summary" : "Delete a Given Project by ID",
+                "description": "Delete an project when given its id.",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Project id that needs to be deleted",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/todosResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },    
       "/observations" : {
           "get" : {
               "summary" : "Get All The Observations In The DB",
@@ -312,7 +606,7 @@
             }
         }
     }
-  }, 
+  },
   "definitions": {
       "todosResponse": {
           "type": "object",
@@ -349,8 +643,14 @@
             "obsID": {
                 "type": "string"
             },
-            "project_name": {
-                "type": "string"
+            "project_id": {
+                "type": "integer"
+            },
+            "user_id": {
+                "type": "integer"
+            },
+            "session_id": {
+                "type": "integer"
             },
             "tc": {
                 "type": "string"
@@ -382,18 +682,6 @@
             "downcamera": {
                 "type": "integer"
             },
-            "line": {
-                "type": "string"
-            },
-            "dive": {
-                "type": "string"
-            },
-            "lineID": {
-                "type": "string"
-            },
-            "processorName": {
-                "type": "string"
-            },
             "timelog": {
                 "type": "string"
             },
@@ -417,6 +705,43 @@
             }
         }
     },
+    "session": {
+        "type": "object",
+        "properties": {
+            "id": {
+                 "type": "integer"
+            },
+            "user_id": {
+                "type": "integer"
+            },
+            "project_id": {
+                "type": "integer"
+            },
+            "dive": {
+                "type": "string"
+            },
+            "line": {
+                "type": "string"
+            },
+            "lineId": {
+                "type": "string"
+            },
+            "type": {
+                "type": "string"
+            }
+        }
+      },
+    "project": {
+        "type": "object",
+        "properties": {
+            "id": {
+                 "type": "integer"
+            },
+            "name": {
+                "type": "string"
+            }
+        }
+      },
     "user": {
       "type": "object",
       "properties": {

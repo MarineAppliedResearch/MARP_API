@@ -20,7 +20,7 @@ class ObservationController {
 
     async deleteObservation(observationId) {
         logger.info('Controller: deleteObservation', observationId);
-        return await observationService.deleteObservation(taobservationIdskId);
+        return await observationService.deleteObservation(observationId);
     }
 }
 module.exports = new ObservationController();

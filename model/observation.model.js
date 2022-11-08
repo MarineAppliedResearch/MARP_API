@@ -10,13 +10,21 @@ module.exports = (sequelize, DataTypes, Model) => {
           type: DataTypes.STRING,
           allowNull: false
         },
-
-        project_name: {
-          // The Name of the Project the observation is associated with.
-          type: DataTypes.STRING,
-          allowNull: true
+        project_id: {
+          // The TimeCode the Observation was observed at.
+          type: DataTypes.INTEGER
+          // allowNull defaults to true
         },
-
+        session_id: {
+          // The TimeCode the Observation was observed at.
+          type: DataTypes.INTEGER
+          // allowNull defaults to true
+        },
+        user_id: {
+          // The TimeCode the Observation was observed at.
+          type: DataTypes.INTEGER
+          // allowNull defaults to true
+        },
         tc: {
           // The TimeCode the Observation was observed at.
           type: DataTypes.STRING
@@ -68,26 +76,6 @@ module.exports = (sequelize, DataTypes, Model) => {
         downcamera: {
           // Is this observation looking at a down camera?
             type: DataTypes.INTEGER
-        },
-
-        line: {
-          // The Line Number, or Name of this observation.
-            type: DataTypes.STRING
-        },
-
-        dive: {
-          // The Dive Number, or Name of this observation.
-            type: DataTypes.STRING
-        },
-
-        lineID: {
-          // The The Line ID of this observation.
-            type: DataTypes.STRING
-        },
-
-        processorName: {
-          // The Name of the processor who made this observation.
-            type: DataTypes.STRING
         },
 
         timelog: {
