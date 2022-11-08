@@ -8,6 +8,10 @@ class SessionService {
         return await sessionRepository.getSessions();
     }
 
+    async getSessionsByUserIdAndProjectId(userID, projectID) {
+        return await sessionRepository.getSessionsByUserIdAndProjectId(userID, projectID);
+    }
+
     async createSession(session) {
         return await sessionRepository.createSession(session);
     }

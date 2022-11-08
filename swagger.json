@@ -163,6 +163,47 @@
                 }
             }
         },
+        "/sessions/user/{userID}/project/{projectID}" : {
+            "get" : {
+                "summary" : "Gets All The Sessions That are Associated with a Specific User, and a Specific Project.",
+                "description": "This returns a JSON Object Representing All The Sessions associated with the given user, on the given project.",
+                "produces": ["application/json"],
+                
+                "parameters": [
+                    {
+                        "name": "userID",
+                        "in": "path",
+                        "description": "The ID of the User",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "projectID",
+                        "in": "path",
+                        "description": "The ID of the Project",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/project" : {
             "post" : {
                 "summary" : "Record A New Project",

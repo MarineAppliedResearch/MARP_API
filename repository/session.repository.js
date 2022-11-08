@@ -26,6 +26,30 @@ class SessionRepository {
         }
     }
 
+    async getSessionsByUserIdAndProjectId(userID, projectID) {
+        
+        try {
+
+            // First we need to get a list of 
+
+            // Join Project to session, and session to user
+            const sessions = await this.db.sessions.findAll({
+                include: [{
+                    model: this.db.users, as: "user",
+                    required: true
+                 },{
+                    model: this.db.projects, as: "project",
+                    required: true
+                 }]
+              });
+            console.log('projects:::', sessions);
+            return sessions;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
     async createSession(session) {
         let data = {};
         try {

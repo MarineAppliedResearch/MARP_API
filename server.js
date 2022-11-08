@@ -48,6 +48,10 @@ app.get('/api/sessions', (req, res) => {
     sessionController.getSessions().then(data => res.json(data));
 });
 
+app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
+    sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID).then(data => res.json(data));
+});
+
 // POST HERE
 
 app.post('/api/task', (req, res) => {

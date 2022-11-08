@@ -8,6 +8,11 @@ class SessionController {
         return await sessionService.getSessions();
     }
 
+    async getSessionsByUserIdAndProjectId(userID, projectID) {
+        logger.info('Controller: getSessionsByUserIdAndProjectId')
+        return await sessionService.getSessionsByUserIdAndProjectId(userID, projectID);
+    }
+
     async createSession(session) {
         logger.info('Controller: createSession', session);
         return await sessionService.createSession(session);
