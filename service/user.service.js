@@ -8,8 +8,16 @@ class UserService {
         return await userRepository.getUsers();
     }
 
+    async getUserByName(userName) {
+        return await userRepository.getUserByName(userName);
+    }
+
     async createUser(user) {
         return await userRepository.createUser(user);
+    }
+
+    async createUserByName(userName){
+        return await userRepository.createUserByName(userName);
     }
 
     async updateUser(user) {

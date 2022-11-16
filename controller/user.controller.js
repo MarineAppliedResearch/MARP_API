@@ -8,9 +8,19 @@ class UserController {
         return await userService.getUsers();
     }
 
+    async getUserByName(userName){
+        logger.info('Controller: getUserIDByName');
+        return await userService.getUserByName(userName); 
+    }
+
     async createUser(user) {
         logger.info('Controller: createUser', user);
         return await userService.createUser(user);
+    }
+
+    async createUserByName(userName){
+        logger.info('Controller: createUserByName', userName);
+        return await userService.createUserByName(userName);
     }
 
     async updateUser(user) {
@@ -18,9 +28,9 @@ class UserController {
         return await userService.updateUser(user);
     }
 
-    async deleteUser(userId) {
-        logger.info('Controller: deleteUser', userId);
-        return await userService.deleteUser(userId);
+    async deleteUser(user_id) {
+        logger.info('Controller: deleteUser', user_id);
+        return await userService.deleteUser(user_id);
     }
 }
 module.exports = new UserController();

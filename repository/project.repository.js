@@ -52,6 +52,28 @@ class ProjectRepository {
         }
     }
 
+    /**
+     * Returns a project based on its name.
+     * @param {*} projectName 
+     * @returns 
+     */
+    async getProjectByName(projectName){
+        try {
+
+            // First we need to get a list of 
+
+            // Join Project to session, and session to user
+            const projects = await this.db.projects.findAll({
+                where: {name: projectName}
+              });
+            console.log('projects:::', projects);
+            return projects;
+        } catch (err) {
+            console.log(err);
+            return err;
+        }    
+    }
+
     /*
 
     {
@@ -79,6 +101,24 @@ class ProjectRepository {
 
     async createProject(project) {
         let data = {};
+        try {
+            project.createdate = new Date().toISOString();
+            data = await this.db.projects.create(project);
+        } catch(err) {
+            logger.error('Error::' + err);
+        }
+        return data;
+    }
+
+    /**
+     * Creates a new project given a name, will not create the project if it already exists.
+     * @param {*} projectName 
+     * @returns 
+     */
+    async createProjectByName(projectName){
+        let data = {};
+        let project = {"name": projectName};
+
         try {
             project.createdate = new Date().toISOString();
             data = await this.db.projects.create(project);

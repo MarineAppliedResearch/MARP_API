@@ -12,8 +12,16 @@ class ProjectService {
         return await projectRepository.getProjectsByUserID(userID);
     }
 
+    async getProjectByName(projectName){
+        return await projectRepository.getProjectByName(projectName);
+    }
+
     async createProject(project) {
         return await projectRepository.createProject(project);
+    }
+
+    async createProjectByName(projectName){
+        return await projectRepository.createProjectByName(projectName);
     }
 
     async updateProject(project) {

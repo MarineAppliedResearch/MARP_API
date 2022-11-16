@@ -29,6 +29,22 @@ class UserRepository {
         }
     }
 
+    async getUserByName(userName) {
+        
+        try {
+            const users = await this.db.users.findAll({
+                where: {
+                  name: userName
+                }
+              });
+            console.log('users:::', users);
+            return users;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
     async createUser(user) {
         let data = {};
         try {
@@ -37,6 +53,27 @@ class UserRepository {
         } catch(err) {
             logger.error('Error::' + err);
         }
+        return data;
+    }
+
+    /**
+     * Creates a new user given a username.
+     * If the username is identical to an old one, it will return error.
+     * @param {} userName 
+     */
+    async createUserByName(userName){
+        let data = {};
+        let user =  {
+                "name": userName
+             }
+        
+        try{
+            user.createdate = new Date().toISOString();
+            data = await this.db.users.create(user);
+        }catch(err){
+            logger.error('Error::' + err);
+        }
+
         return data;
     }
 

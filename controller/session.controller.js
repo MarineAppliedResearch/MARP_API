@@ -18,6 +18,11 @@ class SessionController {
         return await sessionService.createSession(session);
     }
 
+    async createSessionAndProjectandProcessor( processorName, projectName, line, dive, lineID, type){
+        logger.info('Controller: createSessionAndProjectandProcessor', processorName+":"+projectName+":"+line+":"+dive+":"+lineID+":"+type);
+        return await sessionService.createSessionAndProjectandProcessor(processorName, projectName, line, dive, lineID, type);
+    }
+
     async updateSession(session) {
         logger.info('Controller: updateSession', session);
         return await sessionService.updateSession(session);

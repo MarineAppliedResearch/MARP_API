@@ -9,7 +9,8 @@ module.exports = (sequelize, DataTypes, Model) => {
           // The id of this session
           type: DataTypes.INTEGER,
           allowNull: false,
-          primaryKey: true
+          primaryKey: true,
+          autoIncrement: true
         },
         
         project_id: {

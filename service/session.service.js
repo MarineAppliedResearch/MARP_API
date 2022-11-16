@@ -16,6 +16,10 @@ class SessionService {
         return await sessionRepository.createSession(session);
     }
 
+    async createSessionAndProjectandProcessor(processorName, projectName, line, dive, lineID, type){
+        return await sessionRepository.createSessionAndProjectandProcessor(processorName, projectName, line, dive, lineID, type);
+    }
+
     async updateSession(session) {
         return await sessionRepository.updateSession(session);
     }

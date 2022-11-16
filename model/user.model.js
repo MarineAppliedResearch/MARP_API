@@ -9,7 +9,8 @@ module.exports = (sequelize, DataTypes, Model) => {
           // The Observation id of this observation. This is meant to be the primary key..
           type: DataTypes.INTEGER,
           allowNull: false,
-          primaryKey: true
+          primaryKey: true,
+          autoIncrement: true
         },
 
         name: {

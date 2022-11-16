@@ -13,11 +13,19 @@ class ProjectController {
         return await projectService.getProjectsByUserID(userID);
     }
 
+    async getProjectByName(projectName){
+        logger.info('Controller: getProjectsByName')
+        return await projectService.getProjectByName(projectName);
+    }
     
-
     async createProject(project) {
         logger.info('Controller: createProject', project);
         return await projectService.createProject(project);
+    }
+
+    async createProjectByName(projectName){
+        logger.info('Controller: createProjectByName', projectName);
+        return await projectService.createProjectByName(projectName);
     }
 
     async updateProject(project) {

@@ -36,6 +36,10 @@ app.get('/api/users', (req, res) => {
     userController.getUsers().then(data => res.json(data));
 });
 
+app.get('/api/user/:name', (req, res) => {
+    userController.getUserByName(req.params.name).then(data => res.json(data));
+});
+
 app.get('/api/projects', (req, res) => {
     projectController.getProjects().then(data => res.json(data));
 });
@@ -43,6 +47,12 @@ app.get('/api/projects', (req, res) => {
 app.get('/api/projects/user/:userID', (req, res) => {
     projectController.getProjectsByUserID(req.params.userID).then(data => res.json(data));
 });
+
+app.get('/api/project/getProjectByName/:projectName', (req, res) => {
+    projectController.getProjectByName(req.params.projectName).then(data => res.json(data));
+});
+
+
 
 app.get('/api/sessions', (req, res) => {
     sessionController.getSessions().then(data => res.json(data));
@@ -69,14 +79,29 @@ app.post('/api/user', (req, res) => {
     userController.createUser(req.body.user).then(data => res.json(data));
 });
 
+app.post('/api/user/createUserByName/:userName', (req, res) => {
+    console.log(req.body);
+    userController.createUserByName(req.params.userName).then(data => res.json(data));
+});
+
 app.post('/api/project', (req, res) => {
     console.log(req.body);
     projectController.createProject(req.body.project).then(data => res.json(data));
 });
 
+app.post('/api/project/createProjectByName/:projectName', (req, res) => {
+    console.log(req.body);
+    projectController.createProjectByName(req.params.projectName).then(data => res.json(data));
+});
+
 app.post('/api/session', (req, res) => {
     console.log(req.body);
     sessionController.createSession(req.body.session).then(data => res.json(data));
+});
+
+app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/:lineID/:type', (req, res) => {
+    console.log(req.body);
+    sessionController.createSessionAndProjectandProcessor(req.params.processorName, req.params.projectName, req.params.line, req.params.dive, req.params.lineID, req.params.type).then(data => res.json(data));
 });
 
 //PUT HERE
