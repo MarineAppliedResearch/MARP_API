@@ -5,7 +5,7 @@ module.exports = (sequelize, DataTypes, Model) => {
     Users.init({
         // Model attributes are defined here
 
-        id: {
+        user_id: {
           // The Observation id of this observation. This is meant to be the primary key..
           type: DataTypes.INTEGER,
           allowNull: false,

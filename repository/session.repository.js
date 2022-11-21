@@ -31,6 +31,7 @@ class SessionRepository {
         }
     }
 
+    // THIS LOOKS LIKE WE ARE NOT LOOKING FOR USERID AND PROJECTID LIKE WE ARE SUPPOSED TO
     async getSessionsByUserIdAndProjectId(userID, projectID) {
         
         try {
@@ -84,12 +85,12 @@ class SessionRepository {
             user = await userController.getUserByName(processorName);
 
             // check if the user exists, if it does not exist, create it
-            if(user.length <= 0){
+            if(user == undefined || user.length <= 0){
                 // Create user here
                 user = await userController.createUserByName(processorName);
             } 
 
-            if(user.length >= 2) user = user[0];
+            if(user.length >= 1) user = user[0];
 
             // Get this project by name, if it exists
             project = await projectController.getProjectByName(projectName);
@@ -99,14 +100,29 @@ class SessionRepository {
                 project = await projectController.createProjectByName(projectName);
             }
 
-            if(project.length >= 2) project = project[0];
+            if(project.length >= 1) project = project[0];
 
+            let userID = -1;
+
+            if(user[0] == undefined || user[0].user_id == undefined){
+                userID = user.user_id;
+            }else{
+                userID = user[0].user_id;
+            }
+
+            let projectID = -1;
+
+            if(project[0] == undefined || project[0].project_id == undefined){
+                projectID = project.project_id;
+            }else{
+                projectID = project[0].project_id;
+            }
             
 
             // Now we have all the info to build a session object. lets build one
             let session = {
-                "user_id": user[0].id,
-                "project_id": project[0].id,
+                "user_id": userID,
+                "project_id": projectID,
                 "dive": dive,
                 "line": line,
                 "lineId": lineID,
@@ -130,7 +146,7 @@ class SessionRepository {
             session.updateddate = new Date().toISOString();
             data = await this.db.sessions.update({...session}, {
                 where: {
-                    id: session.id
+                    session_id: session.session_id
                 }
             });
         } catch(err) {
@@ -144,7 +160,7 @@ class SessionRepository {
         try {
             data = await this.db.sessions.destroy({
                 where: {
-                    id: sessionId
+                    session_id: sessionId
                 }
             });
         } catch(err) {

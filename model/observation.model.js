@@ -5,6 +5,13 @@ module.exports = (sequelize, DataTypes, Model) => {
     Observations.init({
         // Model attributes are defined here
 
+        observation_id: {
+          // The Observation id of this observation. This is meant to be the primary key..
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          primaryKey: true,
+          autoIncrement: true
+        },
       
         obsID: {
           // The Observation id of this observation. This is meant to be the primary key..

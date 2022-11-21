@@ -5,7 +5,7 @@ module.exports = (sequelize, DataTypes, Model) => {
     Projects.init({
         // Model attributes are defined here
 
-        id: {
+        project_id: {
           // The Observation id of this observation. This is meant to be the primary key..
           type: DataTypes.INTEGER,
           allowNull: false,

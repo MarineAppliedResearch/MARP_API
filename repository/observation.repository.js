@@ -43,7 +43,7 @@ class ObservationRepository {
             observation.updateddate = new Date().toISOString();
             data = await this.db.observations.update({...observation}, {
                 where: {
-                    id: observation.id
+                    observation_id: observation.observation_id
                 }
             });
         } catch(err) {
@@ -57,7 +57,7 @@ class ObservationRepository {
         try {
             data = await this.db.observations.destroy({
                 where: {
-                    id: observationId
+                    observation_id: observationId
                 }
             });
         } catch(err) {

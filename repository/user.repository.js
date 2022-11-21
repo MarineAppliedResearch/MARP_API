@@ -9,11 +9,11 @@ class UserRepository {
     constructor() {
         this.db = connect();
         // For Development
-        /*
-        this.db.sequelize.sync({ force: true }).then(() => {
+        
+        /*this.db.sequelize.sync({ force: true }).then(() => {
             console.log("Drop and re-sync db.");
-        });
-        */
+        });*/
+        
     }
 
     
@@ -83,7 +83,7 @@ class UserRepository {
             user.updateddate = new Date().toISOString();
             data = await this.db.users.update({...user}, {
                 where: {
-                    id: user.id
+                    user_id: user.user_id
                 }
             });
         } catch(err) {
@@ -97,7 +97,7 @@ class UserRepository {
         try {
             data = await this.db.users.destroy({
                 where: {
-                    id: userId
+                    user_id: userId
                 }
             });
         } catch(err) {

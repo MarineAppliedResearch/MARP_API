@@ -40,7 +40,7 @@ class ProjectRepository {
                     include: [{
                         model: this.db.users, as: "user",
                         required: true,
-                        where: {id: userID}
+                        where: {user_id: userID}
                        }] 
                  }]
               });
@@ -134,7 +134,7 @@ class ProjectRepository {
             project.updateddate = new Date().toISOString();
             data = await this.db.projects.update({...project}, {
                 where: {
-                    id: project.id
+                    project_id: project.project_id
                 }
             });
         } catch(err) {
@@ -148,7 +148,7 @@ class ProjectRepository {
         try {
             data = await this.db.projects.destroy({
                 where: {
-                    id: projectId
+                    project_id: projectId
                 }
             });
         } catch(err) {

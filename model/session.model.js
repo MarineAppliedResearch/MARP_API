@@ -5,7 +5,7 @@ module.exports = (sequelize, DataTypes, Model) => {
     Sessions.init({
         // Model attributes are defined here
 
-        id: {
+        session_id: {
           // The id of this session
           type: DataTypes.INTEGER,
           allowNull: false,

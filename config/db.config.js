@@ -41,68 +41,68 @@ const connect = () => {
 
     // Associate users and sessions. A user can have 0 to many sessions. A session can have 1 and only 1 user
     db.users.hasMany(db.sessions, {
-        sourceKey: "id",
+        sourceKey: "user_id",
         foreignKey: "user_id",
         as: "session"
     });
 
     db.sessions.belongsTo(db.users, {
         sourceKey: "user_id",
-        foreignKey: "id",
+        foreignKey: "user_id",
         as: "user"
     });
 
     // Now Associate project and sessions. A project can have 0 or many sessions, a session can have 1 only project
     db.projects.hasMany(db.sessions, {
-        sourceKey: "id",
+        sourceKey: "project_id",
         foreignKey: "project_id",
         as: "session"
     });
 
     db.sessions.belongsTo(db.projects, {
         sourceKey: "project_id",
-        foreignKey: "id",
+        foreignKey: "project_id",
         as: "project"
     });
 
     // Now Associate Project and observation
     // A project can have 0 or many observations, but an observation can have 1 and only 1 project
     db.projects.hasMany(db.observations, {
-        sourceKey: "id",
+        sourceKey: "project_id",
         foreignKey: "project_id",
         as: "observation"
     });
 
     db.observations.belongsTo(db.projects, {
         sourceKey: "project_id",
-        foreignKey: "id",
+        foreignKey: "project_id",
         as: "project"
     });
 
     // Now Associate User and Observation
     // A User can have 00 or many observations, an observation can have 1 and only 1 user
     db.users.hasMany(db.observations, {
-        sourceKey: "id",
+        sourceKey: "user_id",
         foreignKey: "user_id",
         as: "observation"
     });
 
     db.observations.belongsTo(db.users, {
         sourceKey: "user_id",
-        foreignKey: "id",
+        foreignKey: "user_id",
         as: "user"
     });
 
     // Now asscoaite SEssion and Observation, a session can have 0 or many obs, and obs 1 and 1 session
     db.sessions.hasMany(db.observations, {
-        sourceKey: "id",
+        sourceKey: "session_id",
         foreignKey: "session_id",
         as: "observation"
     });
 
     db.observations.belongsTo(db.sessions, {
         sourceKey: "session_id",
-        foreignKey: "id",
+        foreignKey: "session_id",
         as: "session"
     });
 
