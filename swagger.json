@@ -543,7 +543,40 @@
                   }
               }
           }
-      },
+      },"/observations/bySessionID/{session_id}" : {
+        "get" : {
+            "summary" : "Gets a List of Observations by the session id that is related.",
+            "description": "Returns a List of Observations associated with a session_id.",
+            "produces": ["application/json"],
+            "consumes": ["application/json"],
+            "parameters": [
+                {
+                    "name": "session_id",
+                    "in": "path",
+                    "description": "The ID of the session for which you want all observations returned.",
+                    "required": true,
+                    "type": "string"
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/observation"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid Status Value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    },
       "/observation" : {
           "post" : {
               "summary" : "Record A New Observation",
@@ -913,7 +946,7 @@
       "observation": {
         "type": "object",
         "properties": {
-            "id": {
+            "observation_id": {
                  "type": "integer"
             },
             "obsID": {
@@ -984,7 +1017,7 @@
     "session": {
         "type": "object",
         "properties": {
-            "id": {
+            "session_id": {
                  "type": "integer"
             },
             "user_id": {
@@ -1010,7 +1043,7 @@
     "project": {
         "type": "object",
         "properties": {
-            "id": {
+            "project_id": {
                  "type": "integer"
             },
             "name": {
@@ -1021,7 +1054,7 @@
     "user": {
       "type": "object",
       "properties": {
-          "id": {
+          "user_id": {
                "type": "integer"
           },
           "name": {

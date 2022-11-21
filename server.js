@@ -32,6 +32,11 @@ app.get('/api/observations', (req, res) => {
     observationController.getObservations().then(data => res.json(data));
 });
 
+app.get('/api/observations/bySessionID/:session_id', (req, res) => {
+    observationController.getObservationsBySessionID(req.params.session_id).then(data => res.json(data));
+});
+
+
 app.get('/api/users', (req, res) => {
     userController.getUsers().then(data => res.json(data));
 });

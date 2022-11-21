@@ -26,6 +26,21 @@ class ObservationRepository {
         }
     }
 
+    async getObservationsBySessionID(session_id) {
+        try {
+            const observations = await this.db.observations.findAll({
+                where: {
+                    session_id: session_id
+                }
+            });
+            console.log('observations:::', observations);
+            return observations;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
     async createObservation(observation) {
         let data = {};
         try {

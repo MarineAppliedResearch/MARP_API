@@ -8,6 +8,12 @@ class ObservationController {
         return await observationService.getObservations();
     }
 
+    async getObservationsBySessionID(session_id) {
+        logger.info('Controller: getObservations')
+        return await observationService.getObservationsBySessionID(session_id);
+    }
+
+
     async createObservation(observation) {
         logger.info('Controller: createObservation', observation);
         return await observationService.createObservation(observation);

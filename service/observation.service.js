@@ -8,6 +8,10 @@ class ObservationService {
         return await observationRepository.getObservations();
     }
 
+    async getObservationsBySessionID(session_id) {
+        return await observationRepository.getObservationsBySessionID(session_id);
+    }
+
     async createObservation(observation) {
         return await observationRepository.createObservation(observation);
     }
