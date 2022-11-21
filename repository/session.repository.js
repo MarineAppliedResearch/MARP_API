@@ -129,8 +129,28 @@ class SessionRepository {
                 "type": type
               };
 
-            session.createdate = new Date().toISOString();
-            data = await this.db.sessions.create(session);
+            // We'll try to find this session, if it exists in the db, we'll return that
+            var currentSession = await this.db.sessions.findAll( {
+                where: {
+                    user_id: session.user_id,
+                    project_id: session.project_id,
+                    dive: session.dive,
+                    line: session.line,
+                    type: session.type
+                }
+            });
+
+            // Check if our query has found an existing session.
+            if(currentSession.length >= 1){
+                // We have found a current session. unwrap it
+                data = currentSession[0];
+            }else{
+                // We have not found a current session. create a new one.
+                session.createdate = new Date().toISOString();
+                data = await this.db.sessions.create(session);
+            }
+
+            
            
         } catch(err) {
             // If an error occurs, then user didn't exist.
