@@ -979,6 +979,12 @@
             "sex": {
                 "type": "char"
             },
+            "coarsesize": {
+                "type": "integer"
+            },
+            "sizereview": {
+                "type": "string"
+            },
             "quadrant": {
                 "type": "integer"
             },
@@ -986,13 +992,13 @@
                 "type": "string"
             },
             "taxReview": {
-                "type": "integer"
+                "type": "string"
             },
             "note": {
                 "type": "string"
             },
             "downcamera": {
-                "type": "integer"
+                "type": "string"
             },
             "timelog": {
                 "type": "string"

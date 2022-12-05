@@ -66,6 +66,16 @@ module.exports = (sequelize, DataTypes, Model) => {
             type: DataTypes.CHAR
         },
 
+        coarsesize: {
+          // The number of this species observed in this observeration.
+            type: DataTypes.INTEGER
+        },
+
+        sizereview: {
+          // The number of this species observed in this observeration.
+            type: DataTypes.STRING
+        },
+
         quadrant: {
           // The Quadrant of the screen this Observation was found at..
             type: DataTypes.INTEGER
@@ -78,7 +88,7 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         taxReview: {
           // Does this observation need to be reviewed by another processor?.
-            type: DataTypes.INTEGER
+            type: DataTypes.STRING
         },
 
         note: {
@@ -88,7 +98,7 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         downcamera: {
           // Is this observation looking at a down camera?
-            type: DataTypes.INTEGER
+            type: DataTypes.STRING
         },
 
         timelog: {
