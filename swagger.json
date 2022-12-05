@@ -626,7 +626,7 @@
               "produces": ["application/json"],
               "parameters": [
                   {
-                      "name": "id",
+                      "name": "observation_id",
                       "in": "path",
                       "description": "ID of the Object to be Updated",
                       "required": true,
@@ -975,6 +975,9 @@
             },
             "count": {
                 "type": "integer"
+            },
+            "sex": {
+                "type": "char"
             },
             "quadrant": {
                 "type": "integer"

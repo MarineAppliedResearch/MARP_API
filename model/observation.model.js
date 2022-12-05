@@ -61,6 +61,11 @@ module.exports = (sequelize, DataTypes, Model) => {
             type: DataTypes.INTEGER
         },
 
+        sex: {
+          // The number of this species observed in this observeration.
+            type: DataTypes.CHAR
+        },
+
         quadrant: {
           // The Quadrant of the screen this Observation was found at..
             type: DataTypes.INTEGER

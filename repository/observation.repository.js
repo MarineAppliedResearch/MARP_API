@@ -25,6 +25,7 @@ class ObservationRepository {
             return [];
         }
     }
+    
 
     async getObservationsBySessionID(session_id) {
         try {
