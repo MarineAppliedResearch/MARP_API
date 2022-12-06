@@ -147,11 +147,12 @@ class ObservationRepository {
 
 
         try {
+            
              //first we need to get the max observation in the db.
 
             observation.createdate = new Date().toISOString();
-            observation.observation_id = max_observation_id + 1;
-            observation.obsID = maxOBSID + 1;
+            observation.observation_id = (parseInt(max_observation_id) + 1).toString();
+            observation.obsID = (parseInt(maxOBSID) + 1).toString();
             data = await this.db.observations.create(observation);
         } catch(err) {
             logger.error('Error::' + err);
