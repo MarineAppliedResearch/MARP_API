@@ -2,6 +2,7 @@ const { connect } = require('../config/db.config');
 const logger = require('../logger/api.logger');
 const userController = require('../controller/user.controller'); 
 const projectController = require('../controller/project.controller');
+const observationController = require('../controller/observation.controller');
 
 
 
@@ -30,6 +31,9 @@ class SessionRepository {
             return [];
         }
     }
+
+
+
 
     // THIS LOOKS LIKE WE ARE NOT LOOKING FOR USERID AND PROJECTID LIKE WE ARE SUPPOSED TO
     async getSessionsByUserIdAndProjectId(userID, projectID) {

@@ -8,6 +8,12 @@ class ObservationController {
         return await observationService.getObservations();
     }
 
+
+    async getLastVideoInfo(session_id){
+        logger.info('Controller: getLastVideoInfo')
+        return await observationService.getLastVideoInfo(session_id);
+    }
+
     async getObservationsBySessionID(session_id) {
         logger.info('Controller: getObservations')
         return await observationService.getObservationsBySessionID(session_id);

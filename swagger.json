@@ -82,6 +82,37 @@
                     }
                 }
             }
+        },
+        "/observation/getLastVideoInfo/{session_id}" : {
+            "get" : {
+                "summary" : "Gets the Video Info for the max observation in the given session.",
+                "description": "This returns a JSON Object Representing All The Sessions in the Database. Warning! If the Database is too large, this can take a lot of time to run.",
+                "produces": ["application/json"],
+                "parameters": [ {
+                    "name": "session_id",
+                    "in": "path",
+                    "description": "The ID of the session for which we are getting the LAST video",
+                    "required": true,
+                    "type": "string"
+                }],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
         },"/session/" : {
             "put" : {
                 "summary" : "Update A Given Session By ID",

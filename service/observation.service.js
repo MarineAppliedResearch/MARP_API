@@ -8,6 +8,10 @@ class ObservationService {
         return await observationRepository.getObservations();
     }
 
+    async getLastVideoInfo(session_id){
+        return await observationRepository.getLastVideoInfo(session_id);    
+    }
+
     async getObservationsBySessionID(session_id) {
         return await observationRepository.getObservationsBySessionID(session_id);
     }

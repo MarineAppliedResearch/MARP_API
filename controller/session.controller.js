@@ -8,6 +8,8 @@ class SessionController {
         return await sessionService.getSessions();
     }
 
+   
+
     async getSessionsByUserIdAndProjectId(userID, projectID) {
         logger.info('Controller: getSessionsByUserIdAndProjectId')
         return await sessionService.getSessionsByUserIdAndProjectId(userID, projectID);

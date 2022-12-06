@@ -32,6 +32,10 @@ app.get('/api/observations', (req, res) => {
     observationController.getObservations().then(data => res.json(data));
 });
 
+app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
+    observationController.getLastVideoInfo(req.params.session_id).then(data => res.json(data));
+});
+
 app.get('/api/observations/bySessionID/:session_id', (req, res) => {
     observationController.getObservationsBySessionID(req.params.session_id).then(data => res.json(data));
 });
@@ -62,6 +66,9 @@ app.get('/api/project/getProjectByName/:projectName', (req, res) => {
 app.get('/api/sessions', (req, res) => {
     sessionController.getSessions().then(data => res.json(data));
 });
+
+
+
 
 app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
     sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID).then(data => res.json(data));
