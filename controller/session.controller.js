@@ -4,14 +4,14 @@ const logger = require('../logger/api.logger');
 class SessionController {
 
     async getSessions() {
-        logger.info('Controller: getSessions')
+        logger.info('Controller: getSessions');
         return await sessionService.getSessions();
     }
 
    
 
     async getSessionsByUserIdAndProjectId(userID, projectID) {
-        logger.info('Controller: getSessionsByUserIdAndProjectId')
+        logger.info('Controller: getSessionsByUserIdAndProjectId');
         return await sessionService.getSessionsByUserIdAndProjectId(userID, projectID);
     }
 

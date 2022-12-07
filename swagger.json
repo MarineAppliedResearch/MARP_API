@@ -113,6 +113,51 @@
                     }
                 }
             }
+        },
+        "/observation/updateObservationWithCount/{session_id}/{obsID}/{count}" : {
+            "get" : {
+                "summary" : "Updates the given observation_id with a new count.",
+                "description": "Returns 1 if a count was updated, 0 if no count was updated..",
+                "produces": ["application/json"],
+                "parameters": [ 
+                {
+                    "name": "session_id",
+                    "in": "path",
+                    "description": "The session_id that contains the obsID that we are updating..",
+                    "required": true,
+                    "type": "string"
+                },{
+                    "name": "obsID",
+                    "in": "path",
+                    "description": "The ID of the observation for which we are updating the count.",
+                    "required": true,
+                    "type": "string"
+                },
+                {
+                    "name": "count",
+                    "in": "path",
+                    "description": "The new count that we are updating.",
+                    "required": true,
+                    "type": "string"
+                }],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
         },"/session/" : {
             "put" : {
                 "summary" : "Update A Given Session By ID",

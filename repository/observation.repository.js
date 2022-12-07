@@ -15,6 +15,7 @@ class ObservationRepository {
         });*/
     }
 
+    
     async getObservations() {
         
         try {
@@ -23,6 +24,7 @@ class ObservationRepository {
             return observations;
         } catch (err) {
             console.log(err);
+            
             return [];
         }
     }
@@ -63,13 +65,24 @@ class ObservationRepository {
             console.log(err);
             return [];
         }
-
-       
-
-
-        
-       
     }
+
+
+    // Updates a given observation with the given count
+    async updateObservationWithCount(session_id, obsID, count){
+        try {
+            const result = await this.db.observations.update(
+              { count: count },
+              { where: { obsID: obsID, session_id: session_id} }
+            )
+            //handleResult(result)
+            return 1;
+          } catch (err) {
+            console.log(err);
+            return 0;
+          }
+    }
+
 
 
     async getObservationsBySessionID(session_id) {
@@ -109,16 +122,18 @@ class ObservationRepository {
         let max_observation_id = -1;
         let maxOBSID = -1;
 
-        // First we get the max observation_id for this session.
+        // First we get the max observation_id for all sessions
         try {
             max_obs = await this.db.observations.findAll({
-                where: {
-                    session_id: observation.session_id
-                },
+                
                 attributes: [Sequelize.fn('max', Sequelize.col('observation_id'))],
                 raw: true,
             }).then(function(observation_id){
-                max_observation_id = observation_id[0].max;
+                //check if observation_id[0].max is null, if it is skip setting
+                if(observation_id[0].max != null){
+                    max_observation_id = observation_id[0].max;
+                }
+                
              });
             console.log('observations:::', max_obs);
             
@@ -135,7 +150,10 @@ class ObservationRepository {
                 attributes: [Sequelize.fn('max', Sequelize.col('obsID'))],
                 raw: true,
             }).then(function(obsID){
-                maxOBSID = obsID[0].max;
+                if(obsID[0].max != null){
+                    maxOBSID = obsID[0].max;
+                }
+                
              });
             console.log('observations:::', max_obs);
             

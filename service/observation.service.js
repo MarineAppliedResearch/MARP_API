@@ -12,6 +12,10 @@ class ObservationService {
         return await observationRepository.getLastVideoInfo(session_id);    
     }
 
+    async updateObservationWithCount(session_id, obsID, count){
+        return await observationRepository.updateObservationWithCount(session_id, obsID, count); 
+    }
+
     async getObservationsBySessionID(session_id) {
         return await observationRepository.getObservationsBySessionID(session_id);
     }
