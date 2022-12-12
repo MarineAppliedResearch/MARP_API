@@ -129,7 +129,7 @@ app.put('/api/task', (req, res) => {
 });
 
 app.put('/api/observation', (req, res) => {
-    observationController.updateObservation(req.body.observation).then(data => res.json(data));
+    observationController.updateObservation(req.body).then(data => res.json(data));
 });
 
 app.put('/api/user', (req, res) => {

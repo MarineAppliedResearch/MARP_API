@@ -120,7 +120,7 @@ class ObservationRepository {
         let data = {};
         let max_obs = {};
         let max_observation_id = -1;
-        let maxOBSID = -1;
+        let maxOBSID = observation.obsID;
 
         // First we get the max observation_id for all sessions
         try {
@@ -141,25 +141,31 @@ class ObservationRepository {
             console.log(err);
         }
 
-        // Now lets do the same thing, and get the max obsID for the session
-        try {
-            max_obs = await this.db.observations.findAll({
-                where: {
-                    session_id: observation.session_id
-                },
-                attributes: [Sequelize.fn('max', Sequelize.col('obsID'))],
-                raw: true,
-            }).then(function(obsID){
-                if(obsID[0].max != null){
-                    maxOBSID = obsID[0].max;
-                }
+
+        // if maxOBSID is -1 it means an obs id wasn't passed in via the gui, so find the max and create.
+        if(maxOBSID == -1){
+              // Now lets do the same thing, and get the max obsID for the session
+            try {
+                max_obs = await this.db.observations.findAll({
+                    where: {
+                        session_id: observation.session_id
+                    },
+                    attributes: [Sequelize.fn('max', Sequelize.col('obsID'))],
+                    raw: true,
+                }).then(function(obsID){
+                    if(obsID[0].max != null){
+                        maxOBSID = obsID[0].max;
+                        maxOBSID = (Int32.parse(maxOBSID) + 1).toString();
+                    }
+                    
+                });
+                console.log('observations:::', max_obs);
                 
-             });
-            console.log('observations:::', max_obs);
-            
-        } catch (err) {
-            console.log(err);
+            } catch (err) {
+                console.log(err);
+            }   
         }
+       
 
 
 
@@ -170,7 +176,7 @@ class ObservationRepository {
 
             observation.createdate = new Date().toISOString();
             observation.observation_id = (parseInt(max_observation_id) + 1).toString();
-            observation.obsID = (parseInt(maxOBSID) + 1).toString();
+            observation.obsID = (parseInt(maxOBSID)).toString();
             data = await this.db.observations.create(observation);
         } catch(err) {
             logger.error('Error::' + err);
@@ -179,6 +185,7 @@ class ObservationRepository {
     }
 
     async updateObservation(observation) {
+        observation.observation_id = parseInt(observation.observation_id);
         let data = {};
         try {
             observation.updateddate = new Date().toISOString();
