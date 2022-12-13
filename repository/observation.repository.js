@@ -192,7 +192,8 @@ class ObservationRepository {
             data = await this.db.observations.update({...observation}, {
                 where: {
                     observation_id: observation.observation_id
-                }
+                },
+                raw: true
             });
         } catch(err) {
             logger.error('Error::' + err);
