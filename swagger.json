@@ -1059,7 +1059,7 @@
                 "type": "integer"
             },
             "sizereview": {
-                "type": "string"
+                "type": "integer"
             },
             "quadrant": {
                 "type": "integer"

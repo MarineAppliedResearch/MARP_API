@@ -73,7 +73,7 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         sizereview: {
           // The number of this species observed in this observeration.
-            type: DataTypes.STRING
+            type: DataTypes.INTEGER
         },
 
         quadrant: {
