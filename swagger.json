@@ -1026,7 +1026,7 @@
                  "type": "integer"
             },
             "obsID": {
-                "type": "string"
+                "type": "integer"
             },
             "project_id": {
                 "type": "integer"

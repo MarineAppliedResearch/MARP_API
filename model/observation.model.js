@@ -15,7 +15,7 @@ module.exports = (sequelize, DataTypes, Model) => {
       
         obsID: {
           // The Observation id of this observation. This is meant to be the primary key..
-          type: DataTypes.STRING,
+          type: DataTypes.INTEGER,
           allowNull: false
         },
         project_id: {

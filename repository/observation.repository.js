@@ -19,7 +19,11 @@ class ObservationRepository {
     async getObservations() {
         
         try {
-            const observations = await this.db.observations.findAll();
+            const observations = await this.db.observations.findAll({
+                order: [
+                    ['obsID', 'ASC'],
+                ]
+        });
             console.log('observations:::', observations);
             return observations;
         } catch (err) {
