@@ -40,7 +40,9 @@ app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id
     observationController.updateObservationWithCount(req.params.session_id, req.params.observation_id, req.params.count).then(data => res.json(data));
 });
 
-
+app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/:size', (req, res) => {
+    observationController.updateObservationWithSize(req.params.session_id, req.params.observation_id, req.params.size).then(data => res.json(data));
+});
 
 app.get('/api/observations/bySessionID/:session_id', (req, res) => {
     observationController.getObservationsBySessionID(req.params.session_id).then(data => res.json(data));

@@ -19,6 +19,11 @@ class ObservationController {
         return await observationService.updateObservationWithCount(session_id, obsID, count);
     }
 
+    async updateObservationWithSize(session_id, obsID, size){
+        logger.info('Controller: updateObservationWithSize');
+        return await observationService.updateObservationWithSize(session_id, obsID, size);
+    }
+
     async getObservationsBySessionID(session_id) {
         logger.info('Controller: getObservations');
         return await observationService.getObservationsBySessionID(session_id);

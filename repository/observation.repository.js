@@ -87,7 +87,20 @@ class ObservationRepository {
           }
     }
 
-
+    // Updates a given observation with the given count
+    async updateObservationWithSize(session_id, obsID, size){
+        try {
+            const result = await this.db.observations.update(
+              { coarsesize: size },
+              { where: { obsID: obsID, session_id: session_id} }
+            )
+            //handleResult(result)
+            return 1;
+          } catch (err) {
+            console.log(err);
+            return 0;
+          }
+    }
 
     async getObservationsBySessionID(session_id) {
         try {

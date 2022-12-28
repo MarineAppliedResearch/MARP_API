@@ -16,6 +16,10 @@ class ObservationService {
         return await observationRepository.updateObservationWithCount(session_id, obsID, count); 
     }
 
+    async updateObservationWithSize(session_id, obsID, size){
+        return await observationRepository.updateObservationWithSize(session_id, obsID, size); 
+    }
+
     async getObservationsBySessionID(session_id) {
         return await observationRepository.getObservationsBySessionID(session_id);
     }
