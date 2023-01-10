@@ -50,7 +50,11 @@ class SessionRepository {
                  },{
                     model: this.db.projects, as: "project",
                     required: true
-                 }]
+                 }],
+                 where: {
+                    user_id: userID,
+                    project_id: projectID
+                }
               });
             console.log('projects:::', sessions);
             return sessions;
