@@ -13,7 +13,7 @@
       }
   },
   "schemes": ["http"],
-  "host": "localhost:3081",
+  "host": "192.168.1.203:3081",
   "basePath": "/api",
   "paths" : {
         "/session" : {
