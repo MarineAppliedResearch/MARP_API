@@ -5,18 +5,34 @@ module.exports = (sequelize, DataTypes, Model) => {
     Observations.init({
         // Model attributes are defined here
 
+        observation_id: {
+          // The Observation id of this observation. This is meant to be the primary key..
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          primaryKey: true,
+          autoIncrement: true
+        },
+      
         obsID: {
           // The Observation id of this observation. This is meant to be the primary key..
-          type: DataTypes.STRING,
+          type: DataTypes.INTEGER,
           allowNull: false
         },
-
-        project_name: {
-          // The Name of the Project the observation is associated with.
-          type: DataTypes.STRING,
-          allowNull: true
+        project_id: {
+          // The TimeCode the Observation was observed at.
+          type: DataTypes.INTEGER
+          // allowNull defaults to true
         },
-
+        session_id: {
+          // The TimeCode the Observation was observed at.
+          type: DataTypes.INTEGER
+          // allowNull defaults to true
+        },
+        user_id: {
+          // The TimeCode the Observation was observed at.
+          type: DataTypes.INTEGER
+          // allowNull defaults to true
+        },
         tc: {
           // The TimeCode the Observation was observed at.
           type: DataTypes.STRING
@@ -45,6 +61,21 @@ module.exports = (sequelize, DataTypes, Model) => {
             type: DataTypes.INTEGER
         },
 
+        sex: {
+          // The number of this species observed in this observeration.
+            type: DataTypes.CHAR
+        },
+
+        coarsesize: {
+          // The number of this species observed in this observeration.
+            type: DataTypes.INTEGER
+        },
+
+        sizereview: {
+          // The number of this species observed in this observeration.
+            type: DataTypes.INTEGER
+        },
+
         quadrant: {
           // The Quadrant of the screen this Observation was found at..
             type: DataTypes.INTEGER
@@ -57,7 +88,7 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         taxReview: {
           // Does this observation need to be reviewed by another processor?.
-            type: DataTypes.INTEGER
+            type: DataTypes.STRING
         },
 
         note: {
@@ -67,26 +98,6 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         downcamera: {
           // Is this observation looking at a down camera?
-            type: DataTypes.INTEGER
-        },
-
-        line: {
-          // The Line Number, or Name of this observation.
-            type: DataTypes.STRING
-        },
-
-        dive: {
-          // The Dive Number, or Name of this observation.
-            type: DataTypes.STRING
-        },
-
-        lineID: {
-          // The The Line ID of this observation.
-            type: DataTypes.STRING
-        },
-
-        processorName: {
-          // The Name of the processor who made this observation.
             type: DataTypes.STRING
         },
 
