@@ -1,0 +1,1181 @@
+{
+  "swagger": "2.0",
+  "info": {
+      "description": "Access and Modify MARE Organizational Data Via the API ",
+      "version": "1.0.0",
+      "title": "MARE API",
+      "contact": {
+          "email": "isaac@chicosystems.com"
+      },
+      "license": {
+          "name": "Private License",
+          "url": "https://maregroup.org"
+      }
+  }, 
+  "schemes": ["http"],
+  "host": "192.168.1.203:3081",
+  "basePath": "/api",
+  "paths" : {
+        "/session" : {
+            "post" : {
+                "summary" : "Record A New Session",
+                "description": "Record A New Session into the MARE Session Database.",
+                "produces": ["application/json"],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Session Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "session" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/session"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions" : {
+            "get" : {
+                "summary" : "Get All The Sessions In The DB",
+                "description": "This returns a JSON Object Representing All The Sessions in the Database. Warning! If the Database is too large, this can take a lot of time to run.",
+                "produces": ["application/json"],
+                "parameters": [],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/observation/getLastVideoInfo/{session_id}" : {
+            "get" : {
+                "summary" : "Gets the Video Info for the max observation in the given session.",
+                "description": "This returns a JSON Object Representing All The Sessions in the Database. Warning! If the Database is too large, this can take a lot of time to run.",
+                "produces": ["application/json"],
+                "parameters": [ {
+                    "name": "session_id",
+                    "in": "path",
+                    "description": "The ID of the session for which we are getting the LAST video",
+                    "required": true,
+                    "type": "string"
+                }],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/observation/updateObservationWithCount/{session_id}/{obsID}/{count}" : {
+            "get" : {
+                "summary" : "Updates the given observation_id with a new count.",
+                "description": "Returns 1 if a count was updated, 0 if no count was updated..",
+                "produces": ["application/json"],
+                "parameters": [ 
+                {
+                    "name": "session_id",
+                    "in": "path",
+                    "description": "The session_id that contains the obsID that we are updating..",
+                    "required": true,
+                    "type": "string"
+                },{
+                    "name": "obsID",
+                    "in": "path",
+                    "description": "The ID of the observation for which we are updating the count.",
+                    "required": true,
+                    "type": "string"
+                },
+                {
+                    "name": "count",
+                    "in": "path",
+                    "description": "The new count that we are updating.",
+                    "required": true,
+                    "type": "string"
+                }],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },"/session/" : {
+            "put" : {
+                "summary" : "Update A Given Session By ID",
+                "description": "Updates An Session Identified by its ID. Takes the body, and updates any values passed in. ",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of the Object to be Updated",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Session Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "session" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/session"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/session/{id}" : {
+            "delete" : {
+                "summary" : "Delete a Given Session by ID",
+                "description": "Delete an Session when given its id.",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Session id that needs to be deleted",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/todosResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/session/createNewSession/{processorName}/{projectName}/{line}/{dive}/{lineID}/{type}" : {
+            "post" : {
+                "summary" : "Creates a new session if it doesn't exist. Also create new processor name, and/or project Name, if they do not exist.",
+                "description": "Create New session, and possiblly new processor name and project name.",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "processorName",
+                        "in": "path",
+                        "description": "The Name of the processor we are creating a new session for. If name doesn't exist it will be created.",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "projectName",
+                        "in": "path",
+                        "description": "The Name of the Project we are creating a new session for. If the name doesn't exist we will create it.",
+                        "required": true,
+                        "type": "string"
+                    }
+                    ,
+                    {
+                        "name": "line",
+                        "in": "path",
+                        "description": "The Line Number we are creating a session for..",
+                        "required": true,
+                        "type": "string"
+                    },{
+                        "name": "dive",
+                        "in": "path",
+                        "description": "The Dive we are creating a session for..",
+                        "required": true,
+                        "type": "string"
+                    },{
+                        "name": "lineID",
+                        "in": "path",
+                        "description": "The lineID we are creating a session for..",
+                        "required": true,
+                        "type": "string"
+                    },{
+                        "name": "type",
+                        "in": "path",
+                        "description": "The type we are creating a session for..",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/sessions/user/{userID}/project/{projectID}" : {
+            "get" : {
+                "summary" : "Gets All The Sessions That are Associated with a Specific User, and a Specific Project.",
+                "description": "This returns a JSON Object Representing All The Sessions associated with the given user, on the given project.",
+                "produces": ["application/json"],
+                
+                "parameters": [
+                    {
+                        "name": "userID",
+                        "in": "path",
+                        "description": "The ID of the User",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "name": "projectID",
+                        "in": "path",
+                        "description": "The ID of the Project",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/session"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/project" : {
+            "post" : {
+                "summary" : "Record A New Project",
+                "description": "Record A New Project into the MARE Database.",
+                "produces": ["application/json"],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Project Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "project" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/project"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/createProjectByName/{projectName}" : {
+            "post" : {
+                "summary" : "Record A New Project",
+                "description": "Record A New Project into the MARE Database. Will only create if name doesn't exist.",
+                "produces": ["application/json"],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "projectName",
+                        "in": "path",
+                        "description": "The name of the project we want to create.",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/projects" : {
+            "get" : {
+                "summary" : "Get All The Projects In The DB",
+                "description": "This returns a JSON Object Representing All The Projects in the Database. Warning! If the Database is too large, this can take a lot of time to run.",
+                "produces": ["application/json"],
+                "parameters": [],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/user/{userID}" : {
+            "get" : {
+                "summary" : "Gets a list of projects associated with a specific userID",
+                "description": "Returns a project by its name.",
+                "produces": ["application/json"],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "userID",
+                        "in": "path",
+                        "description": "The ID of the user for which we are looking for associated projects",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/getProjectByName/{projectName}" : {
+            "get" : {
+                "summary" : "Gets a Project by the project Name",
+                "description": "Returns a project by its name.",
+                "produces": ["application/json"],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "projectName",
+                        "in": "path",
+                        "description": "The name of the project to be returned",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },"/project/" : {
+            "put" : {
+                "summary" : "Update A Given Project By ID",
+                "description": "Updates An Project Identified by its ID. Takes the body, and updates any values passed in. ",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "ID of the Object to be Updated",
+                        "required": true,
+                        "type": "string"
+                    },
+                    {
+                        "in": "body",
+                        "name": "body",
+                        "description": "Project Array",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "properties": {
+                                "project" : {
+                                    "type": "array",
+                                    "$ref": "#/definitions/project"
+                                } 
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/project"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid Status Value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/project/{id}" : {
+            "delete" : {
+                "summary" : "Delete a Given Project by ID",
+                "description": "Delete an project when given its id.",
+                "produces": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "Project id that needs to be deleted",
+                        "required": true,
+                        "type": "string"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Operation",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/todosResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid status value",
+                        "schema": {
+                            "$ref": "#/definitions/InvalidResponse"
+                        }
+                    }
+                }
+            }
+        },    
+      "/observations" : {
+          "get" : {
+              "summary" : "Get All The Observations In The DB",
+              "description": "This returns a JSON Object Representing All The Observations in the Database. Warning! If the Observation Database is too large, this can take a lot of time to run.",
+              "produces": ["application/json"],
+              "parameters": [],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/observation"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid Status Value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      },"/observations/bySessionID/{session_id}" : {
+        "get" : {
+            "summary" : "Gets a List of Observations by the session id that is related.",
+            "description": "Returns a List of Observations associated with a session_id.",
+            "produces": ["application/json"],
+            "consumes": ["application/json"],
+            "parameters": [
+                {
+                    "name": "session_id",
+                    "in": "path",
+                    "description": "The ID of the session for which you want all observations returned.",
+                    "required": true,
+                    "type": "string"
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/observation"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid Status Value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    },
+      "/observation" : {
+          "post" : {
+              "summary" : "Record A New Observation",
+              "description": "Record A New Observation into the MARE Observation Database.",
+              "produces": ["application/json"],
+              "consumes": ["application/json"],
+              "parameters": [
+                  {
+                      "in": "body",
+                      "name": "body",
+                      "description": "Observation Array",
+                      "required": true,
+                      "schema": {
+                          "type": "array",
+                          "properties": {
+                              "observation" : {
+                                  "type": "array",
+                                  "$ref": "#/definitions/observation"
+                              } 
+                          }
+                      }
+                  }
+              ],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/observation"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid status value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      },
+      "/observation/" : {
+          "put" : {
+              "summary" : "Update A Given Observation By ID",
+              "description": "Updates An Observation Identified by its ID. Takes the body, and updates any values passed in. ",
+              "produces": ["application/json"],
+              "parameters": [
+                  {
+                      "name": "observation_id",
+                      "in": "path",
+                      "description": "ID of the Object to be Updated",
+                      "required": true,
+                      "type": "string"
+                  },
+                  {
+                      "in": "body",
+                      "name": "body",
+                      "description": "Observation Array",
+                      "required": true,
+                      "schema": {
+                          "type": "array",
+                          "properties": {
+                              "observation" : {
+                                  "type": "array",
+                                  "$ref": "#/definitions/observation"
+                              } 
+                          }
+                      }
+                  }
+              ],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/observation"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid Status Value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      },
+      "/observation/{id}" : {
+          "delete" : {
+              "summary" : "Delete a Given Observation by ID",
+              "description": "Delete an observation when given its id.",
+              "produces": ["application/json"],
+              "parameters": [
+                  {
+                      "name": "id",
+                      "in": "path",
+                      "description": "Observation id that needs to be deleted",
+                      "required": true,
+                      "type": "string"
+                  }
+              ],
+              "responses": {
+                  "200": {
+                      "description": "Successful Operation",
+                      "schema": {
+                          "type": "array",
+                          "items": {
+                              "$ref": "#/definitions/todosResponse"
+                          }
+                      }
+                  },
+                  "400": {
+                      "description": "Invalid status value",
+                      "schema": {
+                          "$ref": "#/definitions/InvalidResponse"
+                      }
+                  }
+              }
+          }
+      },
+      "/users" : {
+        "get" : {
+            "summary" : "Get All The Users In The DB",
+            "description": "This returns a JSON Object Representing All The Users in the Database. Warning! If the Observation Database is too large, this can take a lot of time to run.",
+            "produces": ["application/json"],
+            "parameters": [],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/user"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid Status Value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    },
+    "/user/{name}" : {
+        "get" : {
+            "summary" : "Get users ID by username",
+            "description": "This returns a JSON Object Representing All The Users in the Database. Warning! If the Observation Database is too large, this can take a lot of time to run.",
+            "produces": ["application/json"],
+            "parameters": [
+                {
+                    "name": "name",
+                    "in": "path",
+                    "description": "UserName we are getting info for",
+                    "required": true,
+                    "type": "string"
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/user"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid Status Value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    },
+    "/user" : {
+        "post" : {
+            "summary" : "Record A New User",
+            "description": "Record A New User into the MARE Observation Database.",
+            "produces": ["application/json"],
+            "consumes": ["application/json"],
+            "parameters": [
+                {
+                    "in": "body",
+                    "name": "body",
+                    "description": "User Array",
+                    "required": true,
+                    "schema": {
+                        "type": "array",
+                        "properties": {
+                            "user" : {
+                                "type": "array",
+                                "$ref": "#/definitions/user"
+                            } 
+                        }
+                    }
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/user"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid status value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    },
+    "/user/createUserByName/{userName}" : {
+        "post" : {
+            "summary" : "Record A New User",
+            "description": "Record A New User into the MARE Observation Database.",
+            "produces": ["application/json"],
+            "consumes": ["application/json"],
+            "parameters": [
+                {
+                    "name": "userName",
+                    "in": "path",
+                    "description": "The Username we are attempting to create",
+                    "required": true,
+                    "type": "string"
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/user"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid status value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    },
+    "/user/" : {
+        "put" : {
+            "summary" : "Update A Given User By ID",
+            "description": "Updates A User Identified by Their ID. Takes the body, and updates any values passed in. ",
+            "produces": ["application/json"],
+            "parameters": [
+                {
+                    "name": "id",
+                    "in": "path",
+                    "description": "ID of the User to be Updated",
+                    "required": true,
+                    "type": "string"
+                },
+                {
+                    "in": "body",
+                    "name": "body",
+                    "description": "User Array",
+                    "required": true,
+                    "schema": {
+                        "type": "array",
+                        "properties": {
+                            "observation" : {
+                                "type": "array",
+                                "$ref": "#/definitions/user"
+                            } 
+                        }
+                    }
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/user"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid Status Value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    },
+    "/user/{id}" : {
+        "delete" : {
+            "summary" : "Delete a Given User by ID",
+            "description": "Delete an user when given their id.",
+            "produces": ["application/json"],
+            "parameters": [
+                {
+                    "name": "id",
+                    "in": "path",
+                    "description": "User id that needs to be deleted",
+                    "required": true,
+                    "type": "string"
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/todosResponse"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid Status Value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
+    }
+  },
+  "definitions": {
+      "todosResponse": {
+          "type": "object",
+          "properties": {
+              "_id": {
+                   "type": "integer"
+              },
+              "name": {
+                  "type": "string"
+              },
+              "description": {
+                  "type": "string"
+              },
+              "createdBy": {
+                  "type": "string"
+              },
+              "createdAt": {
+                  "type": "string"
+              },
+              "updatedAt": {
+                  "type": "string"
+              },
+              "updatedBy": {
+                  "type": "string"
+              }
+          }
+      },
+      "observation": {
+        "type": "object",
+        "properties": {
+            "observation_id": {
+                 "type": "integer"
+            },
+            "obsID": {
+                "type": "integer"
+            },
+            "project_id": {
+                "type": "integer"
+            },
+            "user_id": {
+                "type": "integer"
+            },
+            "session_id": {
+                "type": "integer"
+            },
+            "tc": {
+                "type": "string"
+            },
+            "frame": {
+                "type": "string"
+            },
+            "taxserial": {
+                "type": "integer"
+            },
+            "comname": {
+                "type": "string"
+            },
+            "count": {
+                "type": "integer"
+            },
+            "sex": {
+                "type": "char"
+            },
+            "coarsesize": {
+                "type": "integer"
+            },
+            "sizereview": {
+                "type": "integer"
+            },
+            "quadrant": {
+                "type": "integer"
+            },
+            "etc": {
+                "type": "string"
+            },
+            "taxReview": {
+                "type": "string"
+            },
+            "note": {
+                "type": "string"
+            },
+            "downcamera": {
+                "type": "string"
+            },
+            "timelog": {
+                "type": "string"
+            },
+            "video_source": {
+                "type": "string"
+            },
+            "videoLocation": {
+                "type": "string"
+            },
+            "mediaPosition": {
+                "type": "string"
+            },
+            "actualPosition": {
+                "type": "string"
+            },
+            "createdAt": {
+                "type": "2022-10-19 18:17:40.196 UTC"
+            },
+            "updatedAt": {
+                "type": "2022-10-19 18:17:40.196 UTC"
+            }
+        }
+    },
+    "session": {
+        "type": "object",
+        "properties": {
+            "session_id": {
+                 "type": "integer"
+            },
+            "user_id": {
+                "type": "integer"
+            },
+            "project_id": {
+                "type": "integer"
+            },
+            "dive": {
+                "type": "string"
+            },
+            "line": {
+                "type": "string"
+            },
+            "lineId": {
+                "type": "string"
+            },
+            "type": {
+                "type": "string"
+            }
+        }
+      },
+    "project": {
+        "type": "object",
+        "properties": {
+            "project_id": {
+                 "type": "integer"
+            },
+            "name": {
+                "type": "string"
+            }
+        }
+      },
+    "user": {
+      "type": "object",
+      "properties": {
+          "user_id": {
+               "type": "integer"
+          },
+          "name": {
+              "type": "string"
+          }
+      }
+    },
+      "Task": {
+          "type": "object",
+          "properties": {
+              "task": {
+                  "type": {
+                      "name": {
+                          "type": "string"
+                      },
+                      "description": {
+                          "type": "string"
+                      },
+                      "createdBy": {
+                          "type": "string"
+                      }
+                  }
+              }
+          }
+      },
+      "InvalidResponse": {
+          "type": "object",
+          "properties": {
+              "statusCode": {
+                  "type": "string"
+              },
+              "message": {
+                  "type": "string"
+              }
+          }
+
+      }
+  }
+}
