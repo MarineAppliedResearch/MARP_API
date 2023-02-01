@@ -32,6 +32,7 @@ const connect = () => {
     db.users = require("../model/user.model")(sequelize, DataTypes, Model);
     db.projects = require("../model/project.model")(sequelize, DataTypes, Model);
     db.sessions = require("../model/session.model")(sequelize, DataTypes, Model);
+    db.metaInfo =  require("../model/metaInfo.model")(sequelize, DataTypes, Model);
 
 
     // reset everything.

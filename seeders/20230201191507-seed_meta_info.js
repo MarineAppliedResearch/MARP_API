@@ -18,7 +18,7 @@ module.exports = {
     try {
       var creationTime =   new Date() 
 
-      await queryInterface.bulkInsert('metaInfo', [
+      await queryInterface.bulkInsert('metaInfos', [
         {name: 'Development Database', createdAt:  creationTime, updatedAt:  creationTime }
       ], {});
         
@@ -44,7 +44,7 @@ module.exports = {
 
     try {
       // Remove all people in the users
-      await queryInterface.bulkDelete('metaInfo', null, {});
+      await queryInterface.bulkDelete('metaInfos', null, {});
 
       //Commit the transaction
       await transaction.commit();
