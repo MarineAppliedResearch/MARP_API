@@ -1,7 +1,7 @@
 'use strict';
 
 // Define the table model we are making changes on.
-let tableModel = { schema: 'public', tableName: 'metaInfo' };
+let tableModel = { schema: 'public', tableName: 'metaInfos' };
 
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
@@ -18,7 +18,7 @@ module.exports = {
 
     try {
       // 1. Remove column Capital from table metaInfo
-      queryInterface.removeColumn('metaInfo', 'Capital');
+      queryInterface.removeColumn('metaInfos', 'Capital');
 
       // 3. Commit the transaction
       await transaction.commit();
@@ -43,7 +43,7 @@ module.exports = {
     try {
       // 1. Add column Capital from table metaInfo
       queryInterface.addColumn(
-        'metaInfo',
+        'metaInfos',
         'Capital',
         {
           type: Sequelize.STRING

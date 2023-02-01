@@ -1,6 +1,6 @@
 'use strict';
 
-let tableModel = { schema: 'public', tableName: 'metaInfo' };
+let tableModel = { schema: 'public', tableName: 'metaInfos' };
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {

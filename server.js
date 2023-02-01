@@ -8,6 +8,7 @@ const observationController = require('./controller/observation.controller')
 const userController = require('./controller/user.controller') 
 const projectController = require('./controller/project.controller')
 const sessionController = require('./controller/session.controller')
+const metaInfoController = require('./controller/metaInfo.controller')
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -69,17 +70,16 @@ app.get('/api/project/getProjectByName/:projectName', (req, res) => {
     projectController.getProjectByName(req.params.projectName).then(data => res.json(data));
 });
 
-
-
 app.get('/api/sessions', (req, res) => {
     sessionController.getSessions().then(data => res.json(data));
 });
 
-
-
-
 app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
     sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID).then(data => res.json(data));
+});
+
+app.get('/api/metaInfo/dbName', (req, res) => {
+    metaInfoController.getDBName().then(data => res.json(data));
 });
 
 // POST HERE
