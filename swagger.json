@@ -2,7 +2,7 @@
   "swagger": "2.0",
   "info": {
       "description": "Access and Modify MARE Organizational Data Via the API ",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "title": "MARE API",
       "contact": {
           "email": "isaac@chicosystems.com"
@@ -13,7 +13,7 @@
       }
   }, 
   "schemes": ["http"],
-  "host": "192.168.1.203:3081",
+  "host": "127.0.0.1:3081",
   "basePath": "/api",
   "paths" : {
         "/session" : {
