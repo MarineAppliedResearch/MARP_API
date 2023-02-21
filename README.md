@@ -36,4 +36,6 @@ Or up untill a specific seed like
 npx sequelize-cli db:seed:undo — seed XXXXXX-seed_country_table.js
 
 
+Here is a view that queries the postgres db for an entire observations_report. it sets up a reusable view
 
+CREATE VIEW observations_report AS SELECT observations."observation_id", observations."obsID", sessions."session_id" as "Session Number", observations."taxserial", observations."comname", observations."count", observations."tc", observations."etc", projects."name" as "Project Name", sessions."dive", sessions."line", sessions."type" as "Session Type", users."name" as "User Name", observations."updatedAt" from observations, projects, sessions, users WHERE sessions."user_id" = users."user_id" AND sessions."session_id" = observations."session_id" AND sessions."project_id" = projects."project_id" ORDER BY sessions."session_id", observations."obsID";
