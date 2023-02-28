@@ -2,7 +2,7 @@
   "swagger": "2.0",
   "info": {
       "description": "Access and Modify MARE Organizational Data Via the API ",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "title": "MARE API",
       "contact": {
           "email": "isaac@chicosystems.com"
@@ -13,7 +13,7 @@
       }
   }, 
   "schemes": ["http"],
-  "host": "192.168.1.203:3081",
+  "host": "127.0.0.1:3081",
   "basePath": "/api",
   "paths" : {
         "/session" : {
@@ -990,6 +990,31 @@
                 }
             }
         }
+    },
+    "/metaInfo/dbName" : {
+        "get" : {
+            "summary" : "Returns the name of the DB we are connecting to.",
+            "description": "This returns the name of the db that is being connected to, so the user knows production vs development.",
+            "produces": ["application/json"],
+            "parameters": [],
+            "responses": {
+                "200": {
+                    "description": "Successful Operation",
+                    "schema": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/metaInfo"
+                        }
+                    }
+                },
+                "400": {
+                    "description": "Invalid Status Value",
+                    "schema": {
+                        "$ref": "#/definitions/InvalidResponse"
+                    }
+                }
+            }
+        }
     }
   },
   "definitions": {
@@ -1147,6 +1172,14 @@
           }
       }
     },
+    "metaInfo": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string"
+            }
+        }
+      },
       "Task": {
           "type": "object",
           "properties": {
