@@ -18,6 +18,10 @@ module.exports = (sequelize, DataTypes, Model) => {
           type: DataTypes.INTEGER,
           allowNull: false
         },
+        PobsID:{
+          type: DataTypes.INTEGER,
+          allowNull: true
+        },
         project_id: {
           // The TimeCode the Observation was observed at.
           type: DataTypes.INTEGER

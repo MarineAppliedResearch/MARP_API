@@ -1,6 +1,7 @@
 const { connect } = require('../config/db.config');
 const logger = require('../logger/api.logger');
 const { Sequelize, Model, DataTypes } = require("sequelize");
+const sessionController = require('../controller/session.controller');
 
 
 class ObservationRepository {
@@ -117,6 +118,44 @@ class ObservationRepository {
         }
     }
 
+
+
+    /**
+     * Returns the max PobsID by project
+     * @param {*} project_id 
+     */
+    async getMaxPobsIDInProject(project_id){
+
+        // Get all the sessions involved with this project
+        const sessions = await sessionController.getSessionsByProjectID(project_id);
+
+        // Create an array of session_ids
+        let session_ids = [];
+
+        // Loop through sessions, adding all session_id to session_ids array
+        for(let i in sessions){
+            session_ids.push(sessions[i].session_id)
+        }
+
+
+
+        // Now we have a list of session, we can get our observations in all these sessions
+        try {
+            const observations = await this.db.observations.findAll({
+                where: {
+                    session_id: session_ids
+                },
+                attributes: [Sequelize.fn('max', Sequelize.col('PobsID'))],
+            });
+            console.log('observations:::', observations);
+            return observations;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+
+    }
+
     async getMaxObservationIDInSession(session_id) {
         try {
             const observations = await this.db.observations.findAll({
@@ -138,6 +177,7 @@ class ObservationRepository {
         let max_obs = {};
         let max_observation_id = -1;
         let maxOBSID = observation.obsID;
+        let max_PobsID = -1;
 
         // First we get the max observation_id for all sessions
         try {
@@ -182,6 +222,12 @@ class ObservationRepository {
                 console.log(err);
             }   
         }
+
+        let project_id = await sessionController.getProjectIDFromSessionID(observation.session_id);
+        //let session = await sessionController.g
+
+        // Now get the max PobsID
+        //max_PobsID = await this.getMaxPobsIDInProject(project_id);
        
 
 
@@ -194,6 +240,7 @@ class ObservationRepository {
             observation.createdate = new Date().toISOString();
             observation.observation_id = (parseInt(max_observation_id) + 1).toString();
             observation.obsID = (parseInt(maxOBSID)).toString();
+            observation.PobsID = parseInt(project_id +""+ observation.session_id + "" + observation.obsID);
             data = await this.db.observations.create(observation);
         } catch(err) {
             logger.error('Error::' + err);

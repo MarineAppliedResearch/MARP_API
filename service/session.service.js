@@ -8,7 +8,13 @@ class SessionService {
         return await sessionRepository.getSessions();
     }
 
-   
+    async  getProjectIDFromSessionID(session_id){
+        return await sessionRepository.getProjectIDFromSessionID(session_id); 
+    }
+
+    async getSessionsByProjectID(project_id){
+        return await sessionRepository.getSessionsByProjectID(project_id);
+    }
 
     async getSessionsByUserIdAndProjectId(userID, projectID) {
         return await sessionRepository.getSessionsByUserIdAndProjectId(userID, projectID);
