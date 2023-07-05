@@ -32,8 +32,42 @@ class SessionRepository {
         }
     }
 
+    async  getProjectIDFromSessionID(session_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findOne({
+                 where: {
+                    session_id: session_id
+                }
+              });
+            console.log('sessionsWithProject:::', sessions);
+            return sessions.project_id;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
 
 
+    async getSessionsByProjectID(project_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findAll({
+                include: [{
+                    model: this.db.projects, as: "project",
+                    required: true
+                 }],
+                 where: {
+                    project_id: project_id
+                }
+              });
+            console.log('sessionsWithProject:::', sessions);
+            return sessions;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
 
     // THIS LOOKS LIKE WE ARE NOT LOOKING FOR USERID AND PROJECTID LIKE WE ARE SUPPOSED TO
     async getSessionsByUserIdAndProjectId(userID, projectID) {

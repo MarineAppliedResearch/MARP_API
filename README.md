@@ -14,16 +14,18 @@ DB Migrations:
 To Migrate and unmigrate:
 npx sequelize-cli db:migrate
 
+npx sequelize-cli db:migrate --name 20230705191207-add_PobsID_record_to_Observations
+
 and we can undo ALL migrations with:
 
 npx sequelize-cli db:migrate:undo:all
 
 if we want to undo a specific migration we can use:
 
-npx sequelize-cli db:migrate:undo --name 20180704124934-create-branch.js
+npx sequelize-cli db:migrate:undo --name 20230705191207-add_PobsID_record_to_Observations
 
 Create a new Migration:
- npx sequelize-cli migration:create --name remove_Capital_tableFrom_metainfo
+ npx sequelize-cli migration:create --name add_PobsID_record_to_Observations
 
  Step 1: generate a seed file
 npx sequelize-cli seed:generate --name seed_country_table
@@ -41,4 +43,7 @@ Here is a view that queries the postgres db for an entire observations_report. i
 CREATE VIEW observations_report AS SELECT observations."observation_id", observations."obsID", sessions."session_id" as "Session Number", observations."taxserial", observations."comname", observations."count", observations."tc", observations."etc", projects."name" as "Project Name", sessions."dive", sessions."line", sessions."type" as "Session Type", users."name" as "User Name", observations."updatedAt" from observations, projects, sessions, users WHERE sessions."user_id" = users."user_id" AND sessions."session_id" = observations."session_id" AND sessions."project_id" = projects."project_id" ORDER BY sessions."session_id", observations."obsID";
 
 
-CREATE VIEW observations_report AS SELECT projects."name" as "Project Name", users."name" as "Processor Name", sessions."type" as "Session Type", observations."observation_id", observations."obsID", sessions."session_id" as "Session Number", observations."taxserial", observations."comname", observations."count", observations."coarsesize", observations."sex", observations."tc", observations."etc",  sessions."dive", sessions."line", sessions."lineId",  observations."updatedAt" from observations, projects, sessions, users WHERE sessions."user_id" = users."user_id" AND sessions."session_id" = observations."session_id" AND sessions."project_id" = projects."project_id" ORDER BY sessions."session_id", observations."obsID";
+CREATE VIEW observations_report AS SELECT projects."name" as "Project Name", users."name" as "Processor Name", sessions."type" as "Session Type", observations."observation_id", observations."obsID", sessions."session_id" as "Session Number", observations."taxReview" ,observations."taxserial", observations."comname", observations."count", observations."coarsesize", observations."sex", observations."tc", observations."etc",  sessions."dive", sessions."line", sessions."lineId", observations."note" ,observations."updatedAt", observations."video_source", observations."videoLocation", observations."mediaPosition", observations."actualPosition" from observations, projects, sessions, users WHERE sessions."user_id" = users."user_id" AND sessions."session_id" = observations."session_id" AND sessions."project_id" = projects."project_id" ORDER BY sessions."session_id", observations."obsID";
+
+
+ psql -d mare_development -U mare_user

@@ -8,7 +8,15 @@ class SessionController {
         return await sessionService.getSessions();
     }
 
-   
+    async getProjectIDFromSessionID(session_id){
+        logger.info('Controller: getProjectIDFromSessionID');
+        return await sessionService.getProjectIDFromSessionID(session_id); 
+    }
+
+    async getSessionsByProjectID(project_id){
+        logger.info('Controller: getSessionsByProjectID');
+        return await sessionService.getSessionsByProjectID(project_id); 
+    }
 
     async getSessionsByUserIdAndProjectId(userID, projectID) {
         logger.info('Controller: getSessionsByUserIdAndProjectId');
