@@ -48,6 +48,22 @@ class SessionRepository {
         }
     }
 
+    async getTypeFromSessionID(session_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findOne({
+                 where: {
+                    session_id: session_id
+                }
+              });
+            console.log('sessionsWithProject:::', sessions);
+            return sessions.type;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
 
     async getSessionsByProjectID(project_id){
         try {
@@ -230,6 +246,22 @@ class SessionRepository {
         }
         return data;
         return {status: `${data.deletedCount > 0 ? true : false}`};
+    }
+
+    async getSessionIDsWithProjectAndType(project_id, type){
+        try {
+            const session_ids = await this.db.sessions.findAll({
+                 attributes: ['session_id'],
+                 where: {
+                    type: type,
+                    project_id: project_id
+                }
+              });
+            return session_ids;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
     }
 
 }

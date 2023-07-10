@@ -12,6 +12,10 @@ class SessionService {
         return await sessionRepository.getProjectIDFromSessionID(session_id); 
     }
 
+    async getTypeFromSessionID(session_id){
+        return await sessionRepository.getTypeFromSessionID(session_id);  
+    }
+
     async getSessionsByProjectID(project_id){
         return await sessionRepository.getSessionsByProjectID(project_id);
     }
@@ -34,6 +38,10 @@ class SessionService {
 
     async deleteSession(sessionId) {
         return await sessionRepository.deleteSession(sessionId);
+    }
+
+    async getSessionIDsWithProjectAndType(project_id, type){
+        return await sessionRepository.getSessionIDsWithProjectAndType(project_id, type);
     }
 
 }

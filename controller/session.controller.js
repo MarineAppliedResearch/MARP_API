@@ -13,6 +13,16 @@ class SessionController {
         return await sessionService.getProjectIDFromSessionID(session_id); 
     }
 
+    async getTypeFromSessionID(session_id){
+        logger.info('Controller: getTypeFromSessionID');
+        return await sessionService.getTypeFromSessionID(session_id); 
+    }
+
+    async getTypeFromSessionID(session_id){
+        logger.info('Controller: getTypeFromSessionID');
+        return await sessionService.getTypeFromSessionID(session_id); 
+    }
+
     async getSessionsByProjectID(project_id){
         logger.info('Controller: getSessionsByProjectID');
         return await sessionService.getSessionsByProjectID(project_id); 
@@ -41,6 +51,11 @@ class SessionController {
     async deleteSession(sessionId) {
         logger.info('Controller: deleteSession', sessionId);
         return await sessionService.deleteSession(sessionId);
+    }
+
+    async getSessionIDsWithProjectAndType(project_id, type){
+        logger.info('Controller: getSessionIDsWithProjectAndType', project_id + ' ' + type);
+        return await sessionService.getSessionIDsWithProjectAndType(project_id, type);
     }
 }
 module.exports = new SessionController();
