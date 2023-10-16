@@ -18,7 +18,7 @@ class ProjectRepository {
         
         try {
             const projects = await this.db.projects.findAll();
-            console.log('projects:::', projects);
+            //console.log('projects:::', projects);
             return projects;
         } catch (err) {
             console.log(err);
@@ -44,7 +44,7 @@ class ProjectRepository {
                        }] 
                  }]
               });
-            console.log('projects:::', projects);
+            //console.log('projects:::', projects);
             return projects;
         } catch (err) {
             console.log(err);
@@ -66,7 +66,7 @@ class ProjectRepository {
             const projects = await this.db.projects.findAll({
                 where: {name: projectName}
               });
-            console.log('projects:::', projects);
+            //console.log('projects:::', projects);
             return projects;
         } catch (err) {
             console.log(err);

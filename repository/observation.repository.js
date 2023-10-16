@@ -27,7 +27,7 @@ class ObservationRepository {
                     ['obsID', 'ASC'],
                 ]
         });
-            console.log('observations:::', observations);
+            //console.log('observations:::', observations);
             return observations;
         } catch (err) {
             console.log(err);
@@ -51,7 +51,7 @@ class ObservationRepository {
                 attributes: [Sequelize.fn('max', Sequelize.col('observation_id'))],
                 raw: true
             });
-            console.log('observations:::', maxObservation_id);
+            //console.log('observations:::', maxObservation_id);
             maxObservation_id = maxObservation_id[0].max;
 
             try {
@@ -61,7 +61,7 @@ class ObservationRepository {
                         observation_id: maxObservation_id
                     }
                 });
-                console.log('observations:::', maxObservation);
+                //console.log('observations:::', maxObservation);
                 return maxObservation;
             } catch (err) {
                 console.log(err);
@@ -112,7 +112,7 @@ class ObservationRepository {
                     session_id: session_id
                 }
             });
-            console.log('observations:::', observations);
+            //console.log('observations:::', observations);
             return observations;
         } catch (err) {
             console.log(err);
@@ -149,7 +149,7 @@ class ObservationRepository {
                 },
                 attributes: [Sequelize.fn('max', Sequelize.col('PobsID'))],
             });
-            console.log('observations:::', observations);
+            //console.log('observations:::', observations);
             return observations;
         } catch (err) {
             console.log(err);
@@ -166,7 +166,7 @@ class ObservationRepository {
                 },
                 attributes: [Sequelize.fn('max', Sequelize.col('observation_id'))],
             });
-            console.log('observations:::', observations);
+            //console.log('observations:::', observations);
             return observations;
         } catch (err) {
             console.log(err);
@@ -194,7 +194,7 @@ class ObservationRepository {
                 }
                 
              });
-            console.log('observations:::', max_obs);
+            //console.log('observations:::', max_obs);
             
         } catch (err) {
             console.log(err);
@@ -218,7 +218,7 @@ class ObservationRepository {
                     }
                     
                 });
-                console.log('observations:::', max_obs);
+                //console.log('observations:::', max_obs);
                 
             } catch (err) {
                 console.log(err);

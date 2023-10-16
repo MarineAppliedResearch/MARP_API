@@ -24,7 +24,7 @@ class SessionRepository {
         
         try {
             const sessions = await this.db.sessions.findAll({ include: ["user"] });
-            console.log('sessions:::', sessions);
+            //console.log('sessions:::', sessions);
             return sessions;
         } catch (err) {
             console.log(err);
@@ -40,7 +40,7 @@ class SessionRepository {
                     session_id: session_id
                 }
               });
-            console.log('sessionsWithProject:::', sessions);
+            //console.log('sessionsWithProject:::', sessions);
             return sessions.project_id;
         } catch (err) {
             console.log(err);
@@ -56,7 +56,7 @@ class SessionRepository {
                     session_id: session_id
                 }
               });
-            console.log('sessionsWithProject:::', sessions);
+            //console.log('sessionsWithProject:::', sessions);
             return sessions.type;
         } catch (err) {
             console.log(err);
@@ -77,7 +77,7 @@ class SessionRepository {
                     project_id: project_id
                 }
               });
-            console.log('sessionsWithProject:::', sessions);
+            //console.log('sessionsWithProject:::', sessions);
             return sessions;
         } catch (err) {
             console.log(err);
@@ -106,7 +106,7 @@ class SessionRepository {
                     project_id: projectID
                 }
               });
-            console.log('projects:::', sessions);
+            //console.log('projects:::', sessions);
             return sessions;
         } catch (err) {
             console.log(err);
