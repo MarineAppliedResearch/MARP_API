@@ -36,6 +36,10 @@ class ObservationService {
         return await observationRepository.deleteObservation(observationId);
     }
 
+    async getMaxPobsID(project_id, type) {
+        return await observationRepository.getMaxPobsID(project_id, type);
+    }
+
 }
 
 module.exports = new ObservationService();

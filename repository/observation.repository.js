@@ -1,6 +1,9 @@
 const { connect } = require('../config/db.config');
 const logger = require('../logger/api.logger');
 const { Sequelize, Model, DataTypes } = require("sequelize");
+const { Op } = require("sequelize");
+const sessionController = require('../controller/session.controller');
+const observationController = require('../controller/observation.controller');
 
 
 class ObservationRepository {
@@ -24,7 +27,7 @@ class ObservationRepository {
                     ['obsID', 'ASC'],
                 ]
         });
-            console.log('observations:::', observations);
+            //console.log('observations:::', observations);
             return observations;
         } catch (err) {
             console.log(err);
@@ -48,7 +51,7 @@ class ObservationRepository {
                 attributes: [Sequelize.fn('max', Sequelize.col('observation_id'))],
                 raw: true
             });
-            console.log('observations:::', maxObservation_id);
+            //console.log('observations:::', maxObservation_id);
             maxObservation_id = maxObservation_id[0].max;
 
             try {
@@ -58,7 +61,7 @@ class ObservationRepository {
                         observation_id: maxObservation_id
                     }
                 });
-                console.log('observations:::', maxObservation);
+                //console.log('observations:::', maxObservation);
                 return maxObservation;
             } catch (err) {
                 console.log(err);
@@ -109,12 +112,50 @@ class ObservationRepository {
                     session_id: session_id
                 }
             });
-            console.log('observations:::', observations);
+            //console.log('observations:::', observations);
             return observations;
         } catch (err) {
             console.log(err);
             return [];
         }
+    }
+
+
+
+    /**
+     * Returns the max PobsID by project
+     * @param {*} project_id 
+     */
+    async getMaxPobsIDInProject(project_id){
+
+        // Get all the sessions involved with this project
+        const sessions = await sessionController.getSessionsByProjectID(project_id);
+
+        // Create an array of session_ids
+        let session_ids = [];
+
+        // Loop through sessions, adding all session_id to session_ids array
+        for(let i in sessions){
+            session_ids.push(sessions[i].session_id)
+        }
+
+
+
+        // Now we have a list of session, we can get our observations in all these sessions
+        try {
+            const observations = await this.db.observations.findAll({
+                where: {
+                    session_id: session_ids
+                },
+                attributes: [Sequelize.fn('max', Sequelize.col('PobsID'))],
+            });
+            //console.log('observations:::', observations);
+            return observations;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+
     }
 
     async getMaxObservationIDInSession(session_id) {
@@ -125,7 +166,7 @@ class ObservationRepository {
                 },
                 attributes: [Sequelize.fn('max', Sequelize.col('observation_id'))],
             });
-            console.log('observations:::', observations);
+            //console.log('observations:::', observations);
             return observations;
         } catch (err) {
             console.log(err);
@@ -138,6 +179,7 @@ class ObservationRepository {
         let max_obs = {};
         let max_observation_id = -1;
         let maxOBSID = observation.obsID;
+        let max_PobsID = -1;
 
         // First we get the max observation_id for all sessions
         try {
@@ -152,7 +194,7 @@ class ObservationRepository {
                 }
                 
              });
-            console.log('observations:::', max_obs);
+            //console.log('observations:::', max_obs);
             
         } catch (err) {
             console.log(err);
@@ -176,12 +218,23 @@ class ObservationRepository {
                     }
                     
                 });
-                console.log('observations:::', max_obs);
+                //console.log('observations:::', max_obs);
                 
             } catch (err) {
                 console.log(err);
             }   
         }
+
+        // Get the project ID of this observation via the session id
+        let project_id = await sessionController.getProjectIDFromSessionID(observation.session_id);
+
+        // Get the type of this observation via the session id
+        let type = await sessionController.getTypeFromSessionID(observation.session_id);
+
+        
+
+        let maxPobsID = await this.getMaxPobsID(project_id, type);
+
        
 
 
@@ -194,6 +247,7 @@ class ObservationRepository {
             observation.createdate = new Date().toISOString();
             observation.observation_id = (parseInt(max_observation_id) + 1).toString();
             observation.obsID = (parseInt(maxOBSID)).toString();
+            observation.PobsID = parseInt(maxPobsID + 1);
             data = await this.db.observations.create(observation);
         } catch(err) {
             logger.error('Error::' + err);
@@ -231,6 +285,55 @@ class ObservationRepository {
         }
         return data;
         return {status: `${data.deletedCount > 0 ? true : false}`};
+    }
+
+    async getMaxPobsID(project_id, type){
+         // Get a list of session_id's that share this project_id and type
+        let sessionID_list = await sessionController.getSessionIDsWithProjectAndType(project_id, type);
+        let observation_list = await this.getObservationsAssociatedWithSessionList(sessionID_list);
+
+        // loop through the observation list finding the max PobsID
+        let maxID = -1;
+
+        for(let i = 0; i < observation_list.length; i++){
+            var currentObs = observation_list[i];
+            var PobsID = currentObs.PobsID;
+
+            if(PobsID != null && PobsID > maxID){
+                maxID = PobsID;
+            }
+        }
+
+        return maxID;
+    }
+
+    async getObservationsAssociatedWithSessionList(session_list){
+        // We have a list of session
+        // we need to query all observations associated with these sessions.
+
+        var session_id_list = [];
+
+        for(let i = 0; i < session_list.length; i++){
+            session_id_list.push(session_list[i].session_id);
+        }
+
+        
+
+        try {
+            const associatedObs = await this.db.observations.findAll({
+                where: {
+                    session_id: {
+                        [Op.in] : session_id_list 
+                    }
+                }
+            });
+            //console.log('associatedObs:::', associatedObs);
+
+            return associatedObs;
+            
+        } catch (err) {
+            console.log(err);
+        } 
     }
 
 }

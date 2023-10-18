@@ -24,7 +24,7 @@ class SessionRepository {
         
         try {
             const sessions = await this.db.sessions.findAll({ include: ["user"] });
-            console.log('sessions:::', sessions);
+            //console.log('sessions:::', sessions);
             return sessions;
         } catch (err) {
             console.log(err);
@@ -32,8 +32,58 @@ class SessionRepository {
         }
     }
 
+    async  getProjectIDFromSessionID(session_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findOne({
+                 where: {
+                    session_id: session_id
+                }
+              });
+            //console.log('sessionsWithProject:::', sessions);
+            return sessions.project_id;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+    async getTypeFromSessionID(session_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findOne({
+                 where: {
+                    session_id: session_id
+                }
+              });
+            //console.log('sessionsWithProject:::', sessions);
+            return sessions.type;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
 
 
+    async getSessionsByProjectID(project_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findAll({
+                include: [{
+                    model: this.db.projects, as: "project",
+                    required: true
+                 }],
+                 where: {
+                    project_id: project_id
+                }
+              });
+            //console.log('sessionsWithProject:::', sessions);
+            return sessions;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
 
     // THIS LOOKS LIKE WE ARE NOT LOOKING FOR USERID AND PROJECTID LIKE WE ARE SUPPOSED TO
     async getSessionsByUserIdAndProjectId(userID, projectID) {
@@ -56,7 +106,7 @@ class SessionRepository {
                     project_id: projectID
                 }
               });
-            console.log('projects:::', sessions);
+            //console.log('projects:::', sessions);
             return sessions;
         } catch (err) {
             console.log(err);
@@ -196,6 +246,22 @@ class SessionRepository {
         }
         return data;
         return {status: `${data.deletedCount > 0 ? true : false}`};
+    }
+
+    async getSessionIDsWithProjectAndType(project_id, type){
+        try {
+            const session_ids = await this.db.sessions.findAll({
+                 attributes: ['session_id'],
+                 where: {
+                    type: type,
+                    project_id: project_id
+                }
+              });
+            return session_ids;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
     }
 
 }
