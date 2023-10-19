@@ -150,7 +150,7 @@ module.exports = (sequelize, DataTypes, Model) => {
           defaultValue: false
         },
 
-        substrate_peddle:{
+        substrate_pebble:{
           type: DataTypes.BOOLEAN,
           defaultValue: false
         },
