@@ -14,7 +14,9 @@ DB Migrations:
 To Migrate and unmigrate:
 npx sequelize-cli db:migrate
 
-npx sequelize-cli db:migrate --name 20230705191207-add_PobsID_record_to_Observations
+npx sequelize-cli db:migrate --name 20231016171935-add_60SecondSubstrateData.js
+
+npx sequelize-cli db:migrate --name 20230705191207-add_PobsID_record_to_Observations.js --env production
 
 and we can undo ALL migrations with:
 
@@ -75,6 +77,8 @@ View definition:
   Here is the view defined for habitat_report:
 
   View definition:
+
+CREATE VIEW habitat_report AS
  SELECT projects.name AS "Project Name",
     users.name AS "Processor Name",
     sessions.type AS "Session Type",
@@ -105,6 +109,7 @@ View definition:
   Substrate60Second_report
 
  View definition:
+ CREATE VIEW Substrate60Second_report AS
  SELECT projects.name AS "Project Name",
     users.name AS "Processor Name",
     sessions.type AS "Session Type",
@@ -116,7 +121,7 @@ View definition:
     observations.substrate_bedrock AS "Bedrock",
     observations.substrate_megaclast AS "Megaclast",
     observations.substrate_cobble AS "Cobble",
-    observations.substrate_peddle AS "Peddle",
+    observations.substrate_pebble AS "Pebble",
     observations.substrate_granule AS "Granule",
     observations.substrate_sand AS "Sand",
     observations.substrate_mud AS "Mud",
