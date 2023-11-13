@@ -129,6 +129,71 @@ module.exports = (sequelize, DataTypes, Model) => {
           // A time stamp for the actual real world time this information was taken.
             type: DataTypes.STRING
         },
+
+        substrate_bedrock:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_megaclast:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_boulder:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_cobble:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_pebble:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_granule:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_sand:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_mud:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_coral_reef:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_coral_rubble:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_shell_hash:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_shell_rubble:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        },
+
+        substrate_algal:{
+          type: DataTypes.BOOLEAN,
+          defaultValue: false
+        }
       }, {
         // Other model options go here
         sequelize, // We need to pass the connection instance

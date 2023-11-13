@@ -106,6 +106,9 @@ module.exports = function(sequelize, DataTypes) {
     obsID: {
       type: DataTypes.INTEGER,
       allowNull: false
+    },
+    substrate_bedrock:{
+      type: DataTypes.BOOLEAN
     }
   }, {
     sequelize,

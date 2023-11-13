@@ -44,5 +44,10 @@ class ObservationController {
         logger.info('Controller: deleteObservation', observationId);
         return await observationService.deleteObservation(observationId);
     }
+
+    async getMaxPobsID(project_id, type){
+        logger.info('Controller: getMaxPobsID', project_id+' '+type);
+        return await observationService.getMaxPobsID(project_id, type);
+    }
 }
 module.exports = new ObservationController();
