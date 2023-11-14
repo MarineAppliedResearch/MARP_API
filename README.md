@@ -14,9 +14,9 @@ DB Migrations:
 To Migrate and unmigrate:
 npx sequelize-cli db:migrate
 
-npx sequelize-cli db:migrate --name 20231016171935-add_60SecondSubstrateData.js
+npx sequelize-cli db:migrate --name 20231106184551-populate_PobsID_record_in_Observations.js
 
-npx sequelize-cli db:migrate --name 20230705191207-add_PobsID_record_to_Observations.js --env production
+npx sequelize-cli db:migrate --name 20231019182032-rename_peddle_to_pebble.js --env production
 
 and we can undo ALL migrations with:
 
@@ -27,12 +27,13 @@ if we want to undo a specific migration we can use:
 npx sequelize-cli db:migrate:undo --name 20230705191207-add_PobsID_record_to_Observations
 
 Create a new Migration:
- npx sequelize-cli migration:create --name add_PobsID_record_to_Observations
+ npx sequelize-cli migration:create --name seed_observation_pobsid
 
  Step 1: generate a seed file
-npx sequelize-cli seed:generate --name seed_country_table
+npx sequelize-cli seed:generate --name seed_observation_pobsid
 
 Execute it with: npx sequelize-cli db:seed:all
+npx sequelize-cli db:seed --seed 20231106192725-seed_observation_pobsid
 
 Like with a migration undo seeds with
 npx sequelize-cli db:seed:undo `
@@ -78,12 +79,14 @@ View definition:
 
   View definition:
 
+DROP VIEW habitat_report;
 CREATE VIEW habitat_report AS
  SELECT projects.name AS "Project Name",
     users.name AS "Processor Name",
     sessions.type AS "Session Type",
     observations.observation_id,
     observations."obsID",
+    observations."PobsID",
     sessions.session_id AS "Session Number",
     observations.comname AS "Substrate",
     observations.coarsesize AS "PCTcover",
@@ -106,15 +109,48 @@ CREATE VIEW habitat_report AS
   ORDER BY sessions.session_id, observations."obsID";
 
 
+
+MarineDebris_report
+DROP VIEW MarineDebris_report
+CREATE VIEW MarineDebris_report AS
+SELECT projects.name AS "Project Name",
+  users.name AS "Processor Name",
+  sessions.type AS "Session Type",
+  observations.observation_id,
+  observations."obsID",
+  observations."PobsID",
+  sessions.session_id AS "Session Number",
+  observations.tc,
+  observations.etc,
+  observations.frame,
+  observations.comname, 
+  observations.taxserial,
+  observations.count,
+  observations."taxReview",
+  observations.note
+FROM observations,
+    projects,
+    sessions,
+    users
+  WHERE sessions.user_id = users.user_id AND sessions.session_id = observations.session_id AND sessions.project_id = projects.project_id AND sessions.type::text = 'MarineDebris'::text
+  ORDER BY sessions.session_id, observations."obsID";
+
+
+
+
+
   Substrate60Second_report
 
  View definition:
+
+ DROP VIEW Substrate60Second_report;
  CREATE VIEW Substrate60Second_report AS
  SELECT projects.name AS "Project Name",
     users.name AS "Processor Name",
     sessions.type AS "Session Type",
     observations.observation_id,
     observations."obsID",
+    observations."PobsID",
     sessions.session_id AS "Session Number",
     observations.tc,
     observations.comname AS "Substrate",
@@ -147,4 +183,72 @@ CREATE VIEW habitat_report AS
   ORDER BY sessions.session_id, observations."obsID";
 
 
+DROP VIEW public.observations_report;
+CREATE OR REPLACE VIEW public.observations_report
+ AS
+ SELECT projects.name AS "Project Name",
+    users.name AS "Processor Name",
+    sessions.type AS "Session Type",
+    observations.observation_id,
+    observations."obsID",
+    observations."PobsID",
+    sessions.session_id AS "Session Number",
+    observations."taxReview",
+    observations.taxserial,
+    observations.comname,
+    observations.count,
+    observations.coarsesize,
+    observations.sex,
+    observations.tc,
+    observations.etc,
+    sessions.dive,
+    sessions.line,
+    sessions."lineId",
+    observations.note,
+    observations."updatedAt",
+    observations.video_source,
+    observations."videoLocation",
+    observations."mediaPosition",
+    observations."actualPosition"
+   FROM observations,
+    projects,
+    sessions,
+    users
+  WHERE sessions.user_id = users.user_id AND sessions.session_id = observations.session_id AND sessions.project_id = projects.project_id
+  ORDER BY sessions.session_id, observations."obsID";
+
+
+
+
+
+
+
+
  psql -d mare_development -U mare_user
+
+
+
+
+
+
+ generate per project observations id's from scratch:
+
+ alter table observations drop column "PobsID"; 
+ alter table observations ADD column "PobsID" integer;
+
+ WITH ranked_observations AS (
+  SELECT
+    "PobsID",
+    projects.project_id,
+    observation_id,
+    sessions.session_id,
+    ROW_NUMBER() OVER (PARTITION BY sessions.project_id ORDER BY sessions.project_id, sessions.session_id, observations.observation_id) AS row_num
+  FROM
+    observations
+    JOIN sessions ON observations.session_id = sessions.session_id
+    JOIN projects ON sessions.project_id = projects.project_id
+)
+UPDATE observations
+SET "PobsID" = row_num
+FROM ranked_observations
+WHERE observations.observation_id = ranked_observations.observation_id;
