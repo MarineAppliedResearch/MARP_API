@@ -109,10 +109,42 @@ CREATE VIEW habitat_report AS
   ORDER BY sessions.session_id, observations."obsID";
 
 
+
+MarineDebris_report
+DROP VIEW MarineDebris_report
+CREATE VIEW MarineDebris_report AS
+SELECT projects.name AS "Project Name",
+  users.name AS "Processor Name",
+  sessions.type AS "Session Type",
+  observations.observation_id,
+  observations."obsID",
+  observations."PobsID",
+  sessions.session_id AS "Session Number",
+  observations.tc,
+  observations.etc,
+  observations.frame,
+  observations.comname, 
+  observations.taxserial,
+  observations.count,
+  observations."taxReview",
+  observations.note
+FROM observations,
+    projects,
+    sessions,
+    users
+  WHERE sessions.user_id = users.user_id AND sessions.session_id = observations.session_id AND sessions.project_id = projects.project_id AND sessions.type::text = 'MarineDebris'::text
+  ORDER BY sessions.session_id, observations."obsID";
+
+
+
+
+
   Substrate60Second_report
 
  View definition:
- CREATE OR REPLACE VIEW Substrate60Second_report AS
+
+ DROP VIEW Substrate60Second_report;
+ CREATE VIEW Substrate60Second_report AS
  SELECT projects.name AS "Project Name",
     users.name AS "Processor Name",
     sessions.type AS "Session Type",
