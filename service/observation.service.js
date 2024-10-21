@@ -40,6 +40,14 @@ class ObservationService {
         return await observationRepository.getMaxPobsID(project_id, type);
     }
 
+    async getUserDashboardData(){
+        return await observationRepository.getUserDashboardData();
+    }
+
+    async getObservationsGroupedByUserAndDate(){
+        return await observationRepository.getObservationsGroupedByUserAndDate();
+    }
+
 }
 
 module.exports = new ObservationService();

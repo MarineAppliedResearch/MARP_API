@@ -107,6 +107,22 @@ class UserRepository {
         return {status: `${data.deletedCount > 0 ? true : false}`};
     }
 
+    async getUserNameByID(userID){
+        let userName = "";
+
+        try{
+            userName = await this.db.users.findOne({
+                where: {
+                  user_id: userID
+                }
+              });
+        }catch(error){
+            logger.error('Error::' + error);
+        }
+
+        return userName.dataValues.name;
+    }
+
 }
 
 module.exports = new UserRepository();

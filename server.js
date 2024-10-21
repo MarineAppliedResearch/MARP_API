@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs')
+const cors = require('cors');
 require('dotenv').config()
 
 const taskController = require('./controller/task.controller') 
@@ -13,6 +14,9 @@ const metaInfoController = require('./controller/metaInfo.controller')
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Enable CORS for all routes
+app.use(cors());
+
 // API Documentation Library
 const swaggerUi = require('swagger-ui-express');
 const swaggerDocument = require('./swagger.json');
@@ -24,6 +28,10 @@ app.use(bodyParser.json());
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {customCss}));
 
 // GET HERE
+
+app.get('/api/dashboardData', (req, res) => {
+    observationController.getUserDashboardData().then(data => res.json(data));
+});
 
 app.get('/api/tasks', (req, res) => {
     taskController.getTasks().then(data => res.json(data));
@@ -80,6 +88,10 @@ app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
 
 app.get('/api/metaInfo/dbName', (req, res) => {
     metaInfoController.getDBName().then(data => res.json(data));
+});
+
+app.get('/api/user/getUserNameByID/:userID', (req, res) => {
+    userController.getUserNameByID(req.params.userID).then(data => res.json(data));
 });
 
 // POST HERE
