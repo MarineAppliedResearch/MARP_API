@@ -178,7 +178,8 @@ class ObservationRepository {
         let data = {};
         let max_obs = {};
         let max_observation_id = -1;
-        let maxOBSID = observation.obsID;
+        // let maxOBSID = observation.obsID; // don't rely on the frontend for observation id
+        let maxOBSID = -1;                   // instead make sure to generate in database
         let max_PobsID = -1;
 
         // First we get the max observation_id for all sessions
@@ -214,7 +215,8 @@ class ObservationRepository {
                 }).then(function(obsID){
                     if(obsID[0].max != null){
                         maxOBSID = obsID[0].max;
-                        maxOBSID = (Int32.parse(maxOBSID) + 1).toString();
+                        maxOBSID = (parseInt(maxOBSID) + 1).toString();
+                        //console.log("maxObsID: " + maxOBSID)
                     }
                     
                 });
@@ -231,19 +233,10 @@ class ObservationRepository {
         // Get the type of this observation via the session id
         let type = await sessionController.getTypeFromSessionID(observation.session_id);
 
-        
-
         let maxPobsID = await this.getMaxPobsID(project_id, type);
 
-       
-
-
-
-
         try {
-            
              //first we need to get the max observation in the db.
-
             observation.createdate = new Date().toISOString();
             observation.observation_id = (parseInt(max_observation_id) + 1).toString();
             observation.obsID = (parseInt(maxOBSID)).toString();
