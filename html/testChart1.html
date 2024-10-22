@@ -47,7 +47,7 @@
         async function getDashboardData(startDate, endDate) {
             try {
                 // Make the API call with date range as query parameters
-                const response = await fetch(`http://localhost:3081/api/dashboardData?start=${startDate}&end=${endDate}`);
+                const response = await fetch(`http://192.168.1.203:3081/api/dashboardData?start=${startDate}&end=${endDate}`);
                 const dashboardData = await response.json();
 
                 const ctx = document.getElementById('userActivityChart').getContext('2d');
