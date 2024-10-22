@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Dashboard Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div style="width: 80%; margin: 0 auto;">
+        <canvas id="userActivityChart"></canvas>
+    </div>
+    
+    <script>
+        // Function to fetch data from the API and generate the chart
+        async function getDashboardData() {
+            try {
+                const response = await fetch('http://localhost:3081/api/dashboardData');
+                const dashboardData = await response.json();
+
+                const ctx = document.getElementById('userActivityChart').getContext('2d');
+
+                // Prepare arrays for labels (dates) and datasets
+                let labels = [];
+                let userNames = new Set();  // Change from userIds to userNames
+                let userObservationsData = {};
+
+                // Define a color palette for users
+                const colorPalette = [
+                    'rgba(153, 102, 255, 0.2)', // User 1
+                    'rgba(75, 192, 192, 0.2)',  // User 2
+                    'rgba(255, 99, 132, 0.2)',   // User 3
+                    'rgba(255, 159, 64, 0.2)',   // User 4
+                    'rgba(54, 162, 235, 0.2)',   // User 5
+                ];
+                const borderColorPalette = [
+                    'rgba(153, 102, 255, 1)', 
+                    'rgba(75, 192, 192, 1)',  
+                    'rgba(255, 99, 132, 1)',   
+                    'rgba(255, 159, 64, 1)',   
+                    'rgba(54, 162, 235, 1)',    
+                ];
+
+                // Process the dashboard data
+                Object.keys(dashboardData).forEach(userName => { // Use userName instead of user_id
+                    Object.keys(dashboardData[userName]).forEach(date => {
+                        // Ensure date is formatted as YYYY-MM-DD
+                        let formattedDate = new Date(date).toISOString().split('T')[0];
+
+                        // Add formatted date to labels if not already there
+                        if (!labels.includes(formattedDate)) {
+                            labels.push(formattedDate);
+                        }
+
+                        // Track user names for later
+                        userNames.add(userName); // Change to userName
+
+                        // Extract observations data for the date
+                        const data = dashboardData[userName][date]; // Use userName instead of user_id
+                        
+                        // Initialize user data if it doesn't exist
+                        if (!userObservationsData[userName]) userObservationsData[userName] = {}; // Change to userName
+
+                        // Populate observation counts
+                        userObservationsData[userName][formattedDate] = data.observations; // Use userName instead of user_id
+                    });
+                });
+
+                // Prepare datasets for Chart.js
+                let datasets = [];
+
+                userNames.forEach((userName, index) => { // Change to userName
+                    datasets.push({
+                        label: `${userName} Observations`, // Change label to use userName
+                        data: labels.map(date => userObservationsData[userName][date] || 0), // Add zero for missing dates
+                        backgroundColor: colorPalette[index % colorPalette.length],
+                        borderColor: borderColorPalette[index % borderColorPalette.length],
+                        borderWidth: 1,
+                        fill: false,
+                    });
+                });
+
+                // Sort labels to ensure they're in order
+                labels.sort();
+
+                // Create chart
+                const chart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels, // Dates as labels
+                        datasets: datasets
+                    },
+                    options: {
+                        scales: {
+                            x: {
+                                type: 'category', // Use category instead of time
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Observation Count' // Y-axis title
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error fetching dashboard data:', error);
+            }
+        }
+
+        // Call the function to fetch data and create the chart
+        getDashboardData();
+    </script>
+</body>
+</html>
