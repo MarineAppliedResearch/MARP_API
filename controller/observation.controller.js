@@ -49,5 +49,15 @@ class ObservationController {
         logger.info('Controller: getMaxPobsID', project_id+' '+type);
         return await observationService.getMaxPobsID(project_id, type);
     }
+
+    async getUserDashboardData(){
+        logger.info('Controller: getUserDashboardData');
+        return await observationService.getUserDashboardData();
+    }
+
+    async getObservationsGroupedByUserAndDate(){
+        logger.info('Controller: getObservationsGroupedByUserAndDate');
+        return await observationService.getObservationsGroupedByUserAndDate();
+    }
 }
 module.exports = new ObservationController();

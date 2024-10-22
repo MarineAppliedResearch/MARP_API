@@ -3,6 +3,7 @@ const logger = require('../logger/api.logger');
 const userController = require('../controller/user.controller'); 
 const projectController = require('../controller/project.controller');
 const observationController = require('../controller/observation.controller');
+const { Sequelize, Model, DataTypes } = require("sequelize");
 
 
 
@@ -264,6 +265,28 @@ class SessionRepository {
         }
     }
 
+    async getSessionsGroupedByUserAndDate(){
+        try{
+            // Fetch the number of sessions each user worked on, grouped by user and date
+            const sessionData = await this.db.sessions.findAll({
+                attributes: [
+                    'user_id',
+                    [Sequelize.fn('DATE', Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('COUNT', Sequelize.col('session_id')), 'sessionCount']
+                ],
+                group: ['user_id', 'date'],
+                raw: true
+            });
+
+            return sessionData;
+        }catch(err){
+            console.log(err);
+            return [];
+        }
+    }
+
 }
+
+
 
 module.exports = new SessionRepository();
