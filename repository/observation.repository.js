@@ -376,6 +376,7 @@ class ObservationRepository {
     
             // Process session data
             
+            /*
             sessionData.forEach(item => {
                 let userName = await userController.getUserNameByID(item.user_id);
                 if (!dashboardData[item.user_id]) {
@@ -387,6 +388,22 @@ class ObservationRepository {
                     projects: 0
                 };
             });
+            */
+
+            // Process session data
+            for(const item of sessionData){
+                let userName = await userController.getUserNameByID(item.user_id);
+
+                if (!dashboardData[userName]) {
+                    dashboardData[userName] = {};
+                }
+                dashboardData[userName][item.date] = {
+                    sessions: parseInt(item.sessionCount),
+                    observations: 0,
+                    projects: 0
+                };
+
+            }
     
             // Process observation data using for...of loop
             for (const item of observationData) {
