@@ -21,6 +21,9 @@
 
         <!-- Date Range Inputs -->
         <div class="row justify-content-center mb-4">
+            <div class="col-md-2 text-center">
+                <button id="backwardButton" class="btn btn-secondary mt-4">← Previous Week</button>
+            </div>
             <div class="col-md-4 col-sm-6 mb-3">
                 <label for="startDate" class="form-label">Start Date:</label>
                 <input type="date" id="startDate" class="form-control">
@@ -28,6 +31,9 @@
             <div class="col-md-4 col-sm-6 mb-3">
                 <label for="endDate" class="form-label">End Date:</label>
                 <input type="date" id="endDate" class="form-control">
+            </div>
+            <div class="col-md-2 text-center">
+                <button id="forwardButton" class="btn btn-secondary mt-4">Next Week →</button>
             </div>
             <div class="col-md-2 text-center">
                 <button id="fetchDataButton" class="btn btn-primary mt-4">Fetch Data</button>
@@ -43,6 +49,18 @@
     </div>
 
     <script>
+        // Helper function to generate a list of all dates between two dates
+        function getAllDates(start, end) {
+            const dates = [];
+            let currentDate = new Date(start);
+
+            while (currentDate <= new Date(end)) {
+                dates.push(currentDate.toISOString().split('T')[0]); // Format YYYY-MM-DD
+                currentDate.setDate(currentDate.getDate() + 1); // Increment by one day
+            }
+            return dates;
+        }
+
         // Function to fetch data from the API and generate the chart
         async function getDashboardData(startDate, endDate) {
             try {
@@ -53,8 +71,8 @@
                 const ctx = document.getElementById('userActivityChart').getContext('2d');
 
                 // Prepare arrays for labels (dates) and datasets
-                let labels = [];
-                let userNames = new Set();  // Change from userIds to userNames
+                let labels = getAllDates(startDate, endDate); // Generate all dates in range
+                let userNames = new Set();  // Use Set to track unique user names
                 let userObservationsData = {};
 
                 // Define a color palette for users
@@ -74,37 +92,29 @@
                 ];
 
                 // Process the dashboard data
-                Object.keys(dashboardData).forEach(userName => { // Use userName instead of user_id
+                Object.keys(dashboardData).forEach(userName => {
                     Object.keys(dashboardData[userName]).forEach(date => {
-                        // Ensure date is formatted as YYYY-MM-DD
-                        let formattedDate = new Date(date).toISOString().split('T')[0];
-
-                        // Add formatted date to labels if not already there
-                        if (!labels.includes(formattedDate)) {
-                            labels.push(formattedDate);
-                        }
-
                         // Track user names for later
-                        userNames.add(userName); // Change to userName
+                        userNames.add(userName);
 
                         // Extract observations data for the date
-                        const data = dashboardData[userName][date]; // Use userName instead of user_id
+                        const data = dashboardData[userName][date];
 
                         // Initialize user data if it doesn't exist
-                        if (!userObservationsData[userName]) userObservationsData[userName] = {}; // Change to userName
+                        if (!userObservationsData[userName]) userObservationsData[userName] = {};
 
                         // Populate observation counts
-                        userObservationsData[userName][formattedDate] = data.observations; // Use userName instead of user_id
+                        userObservationsData[userName][date] = data.observations || 0;
                     });
                 });
 
                 // Prepare datasets for Chart.js
                 let datasets = [];
 
-                userNames.forEach((userName, index) => { // Change to userName
+                userNames.forEach((userName, index) => {
                     datasets.push({
-                        label: `${userName} Observations`, // Change label to use userName
-                        data: labels.map(date => userObservationsData[userName][date] || 0), // Add zero for missing dates
+                        label: `${userName} Observations`,
+                        data: labels.map(date => userObservationsData[userName]?.[date] || 0), // Zero for missing dates
                         backgroundColor: colorPalette[index % colorPalette.length],
                         borderColor: borderColorPalette[index % borderColorPalette.length],
                         borderWidth: 1,
@@ -147,7 +157,28 @@
             }
         }
 
-        // Event listener for the button to fetch data with the selected date range
+        // Function to update the date range and fetch data
+        function updateDateRange(weekChange) {
+            const startDateInput = document.getElementById('startDate');
+            const endDateInput = document.getElementById('endDate');
+
+            // Get current dates from inputs
+            let startDate = new Date(startDateInput.value);
+            let endDate = new Date(endDateInput.value);
+
+            // Update dates based on weekChange
+            startDate.setDate(startDate.getDate() + weekChange * 7);
+            endDate.setDate(endDate.getDate() + weekChange * 7);
+
+            // Update input values
+            startDateInput.value = startDate.toISOString().split('T')[0];
+            endDateInput.value = endDate.toISOString().split('T')[0];
+
+            // Fetch data with the updated date range
+            getDashboardData(startDateInput.value, endDateInput.value);
+        }
+
+        // Event listeners for the buttons
         document.getElementById('fetchDataButton').addEventListener('click', () => {
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
@@ -159,6 +190,24 @@
                 alert('Please select both a start and end date.');
             }
         });
+
+        // Event listeners for the navigation buttons
+        document.getElementById('backwardButton').addEventListener('click', () => updateDateRange(-1));
+        document.getElementById('forwardButton').addEventListener('click', () => updateDateRange(1));
+
+        // On page load, set default dates
+        window.onload = function () {
+            const startDate = new Date();
+            const today = new Date();
+            const endDate = new Date();
+            endDate.setDate(today.getDate() + 1);
+            startDate.setDate(startDate.getDate() - 30); // One month ago
+            document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+            document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+
+            // Fetch initial data
+            getDashboardData(startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]);
+        };
     </script>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>

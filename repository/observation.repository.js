@@ -369,7 +369,7 @@ class ObservationRepository {
     
         try {
             // Get Sessions for each user, grouped by user and date
-            const sessionData = await sessionController.getSessionsGroupedByUserAndDate(startDate, endDate);
+            //const sessionData = await sessionController.getSessionsGroupedByUserAndDate(startDate, endDate);
     
             // Fetch the number of observations each user made, grouped by user and date
             const observationData = await this.getObservationsGroupedByUserAndDate(startDate, endDate);
@@ -377,7 +377,7 @@ class ObservationRepository {
             
 
             // Process session data
-            for(const item of sessionData){
+            /*for(const item of sessionData){
                 let userName = await userController.getUserNameByID(item.user_id);
 
                 if (!dashboardData[userName]) {
@@ -389,7 +389,7 @@ class ObservationRepository {
                     projects: 0
                 };
 
-            }
+            }*/
     
             // Process observation data using for...of loop
             for (const item of observationData) {
@@ -412,6 +412,7 @@ class ObservationRepository {
         }
     }
 
+    
     async getObservationsGroupedByUserAndDate(startDate, endDate){
         try{
             // Fetch the number of observations each user made, grouped by user and date
@@ -442,6 +443,10 @@ class ObservationRepository {
         }
     
     }
+        
+
+     
+    
 
 }
 
