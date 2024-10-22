@@ -4,6 +4,8 @@ const { Sequelize, Model, DataTypes } = require("sequelize");
 const { Op } = require("sequelize");
 const sessionController = require('../controller/session.controller');
 const observationController = require('../controller/observation.controller');
+const userController = require('../controller/user.controller');
+const {Sessions} = require("../model/sessions.js");
 
 
 class ObservationRepository {
@@ -280,6 +282,7 @@ class ObservationRepository {
         return {status: `${data.deletedCount > 0 ? true : false}`};
     }
 
+    /*
     async getMaxPobsID(project_id, type){
          // Get a list of session_id's that share this project_id and type
         let sessionID_list = await sessionController.getSessionIDsWithProjectAndType(project_id, type);
@@ -298,7 +301,34 @@ class ObservationRepository {
         }
 
         return maxID;
-    }
+    }*/
+
+    async getMaxPobsID(project_id, type) {
+        // Get a list of session_id's that share this project_id and type
+        let sessionID_list = await sessionController.getSessionIDsWithProjectAndType(project_id, type);
+    
+        // Extract session_id values from sessionID_list
+        let session_id_list = sessionID_list.map(session => session.session_id);
+    
+        // Query the max PobsID directly from the database for the session_id list
+        try {
+            const result = await this.db.observations.findOne({
+                where: {
+                    session_id: {
+                        [Op.in]: session_id_list
+                    }
+                },
+                attributes: [[Sequelize.fn('max', Sequelize.col('PobsID')), 'maxPobsID']],
+                raw: true
+            });
+    
+            // If no PobsID is found, return -1
+            return result.maxPobsID ? parseInt(result.maxPobsID) : -1;
+        } catch (err) {
+            console.log(err);
+            return -1;
+        }
+    }  
 
     async getObservationsAssociatedWithSessionList(session_list){
         // We have a list of session
@@ -327,6 +357,82 @@ class ObservationRepository {
         } catch (err) {
             console.log(err);
         } 
+    }
+
+
+    /* Returns data for a user dashboard that gives us counts
+     * on how much activity a user has participated in
+     */
+    async getUserDashboardData() {
+        // Combine all the data by user and date into a single object
+        let dashboardData = {};
+    
+        try {
+            // Get Sessions for each user, grouped by user and date
+            const sessionData = await sessionController.getSessionsGroupedByUserAndDate();
+    
+            // Fetch the number of observations each user made, grouped by user and date
+            const observationData = await this.getObservationsGroupedByUserAndDate();
+    
+            // Process session data
+            
+            sessionData.forEach(item => {
+                let userName = await userController.getUserNameByID(item.user_id);
+                if (!dashboardData[item.user_id]) {
+                    dashboardData[item.user_id] = {};
+                }
+                dashboardData[item.user_id][item.date] = {
+                    sessions: parseInt(item.sessionCount),
+                    observations: 0,
+                    projects: 0
+                };
+            });
+    
+            // Process observation data using for...of loop
+            for (const item of observationData) {
+                // Await the user name retrieval
+                let userName = await userController.getUserNameByID(item.user_id);
+    
+                if (!dashboardData[userName]) {
+                    dashboardData[userName] = {};
+                }
+                if (!dashboardData[userName][item.date]) {
+                    dashboardData[userName][item.date] = { sessions: 0, observations: 0, projects: 0 };
+                }
+    
+                dashboardData[userName][item.date].observations = parseInt(item.observationCount);
+            }
+    
+            return dashboardData;
+        } catch (error) {
+            console.log('Error fetching dashboard data:', error);
+        }
+    }
+
+    async getObservationsGroupedByUserAndDate(){
+        try{
+            // Fetch the number of observations each user made, grouped by user and date
+            const observationData = await this.db.observations.findAll({
+                include: [{
+                    model: this.db.sessions,
+                    as: 'session',
+                    attributes: ['user_id'],
+                    required: true
+                }],
+                attributes: [
+                    [Sequelize.col('session.user_id'), 'user_id'],
+                    [Sequelize.fn('DATE', Sequelize.col('observations.createdAt')), 'date'],
+                    [Sequelize.fn('COUNT', Sequelize.col('observation_id')), 'observationCount']
+                ],
+                group: ['session.user_id', 'date'],
+                raw: true
+            });
+
+            return observationData;
+        }catch(err){
+            console.log('Error getting observations grouped by user and date: ' + err);
+        }
+    
     }
 
 }

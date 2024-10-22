@@ -57,5 +57,11 @@ class SessionController {
         logger.info('Controller: getSessionIDsWithProjectAndType', project_id + ' ' + type);
         return await sessionService.getSessionIDsWithProjectAndType(project_id, type);
     }
+
+
+    async getSessionsGroupedByUserAndDate(){
+        logger.info('Controller: getSessionsGroupedByUserAndDate');
+        return await sessionService.getSessionsGroupedByUserAndDate();
+    }
 }
 module.exports = new SessionController();

@@ -32,5 +32,10 @@ class UserController {
         logger.info('Controller: deleteUser', user_id);
         return await userService.deleteUser(user_id);
     }
+
+    async getUserNameByID(user_id){
+        logger.info('Controller: getUserNameByID', user_id);
+        return await userService.getUserNameByID(user_id);
+    }
 }
 module.exports = new UserController();

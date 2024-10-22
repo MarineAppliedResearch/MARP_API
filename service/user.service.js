@@ -28,6 +28,10 @@ class UserService {
         return await userRepository.deleteUsers(userId);
     }
 
+    async getUserNameByID(userId){
+        return await userRepository.getUserNameByID(userId);
+    }
+
 }
 
 module.exports = new UserService();
