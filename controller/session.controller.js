@@ -59,9 +59,9 @@ class SessionController {
     }
 
 
-    async getSessionsGroupedByUserAndDate(){
+    async getSessionsGroupedByUserAndDate(startDate, endDate){
         logger.info('Controller: getSessionsGroupedByUserAndDate');
-        return await sessionService.getSessionsGroupedByUserAndDate();
+        return await sessionService.getSessionsGroupedByUserAndDate(startDate, endDate);
     }
 }
 module.exports = new SessionController();

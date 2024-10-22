@@ -363,32 +363,18 @@ class ObservationRepository {
     /* Returns data for a user dashboard that gives us counts
      * on how much activity a user has participated in
      */
-    async getUserDashboardData() {
+    async getUserDashboardData(startDate, endDate) {
         // Combine all the data by user and date into a single object
         let dashboardData = {};
     
         try {
             // Get Sessions for each user, grouped by user and date
-            const sessionData = await sessionController.getSessionsGroupedByUserAndDate();
+            const sessionData = await sessionController.getSessionsGroupedByUserAndDate(startDate, endDate);
     
             // Fetch the number of observations each user made, grouped by user and date
-            const observationData = await this.getObservationsGroupedByUserAndDate();
+            const observationData = await this.getObservationsGroupedByUserAndDate(startDate, endDate);
     
-            // Process session data
             
-            /*
-            sessionData.forEach(item => {
-                let userName = await userController.getUserNameByID(item.user_id);
-                if (!dashboardData[item.user_id]) {
-                    dashboardData[item.user_id] = {};
-                }
-                dashboardData[item.user_id][item.date] = {
-                    sessions: parseInt(item.sessionCount),
-                    observations: 0,
-                    projects: 0
-                };
-            });
-            */
 
             // Process session data
             for(const item of sessionData){
@@ -426,7 +412,7 @@ class ObservationRepository {
         }
     }
 
-    async getObservationsGroupedByUserAndDate(){
+    async getObservationsGroupedByUserAndDate(startDate, endDate){
         try{
             // Fetch the number of observations each user made, grouped by user and date
             const observationData = await this.db.observations.findAll({
@@ -441,6 +427,11 @@ class ObservationRepository {
                     [Sequelize.fn('DATE', Sequelize.col('observations.createdAt')), 'date'],
                     [Sequelize.fn('COUNT', Sequelize.col('observation_id')), 'observationCount']
                 ],
+                where: {
+                    createdAt: {
+                        [Sequelize.Op.between]: [startDate, endDate]
+                    }
+                },
                 group: ['session.user_id', 'date'],
                 raw: true
             });

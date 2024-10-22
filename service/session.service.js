@@ -44,8 +44,8 @@ class SessionService {
         return await sessionRepository.getSessionIDsWithProjectAndType(project_id, type);
     }
 
-    async getSessionsGroupedByUserAndDate(){
-        return await sessionRepository.getSessionsGroupedByUserAndDate();
+    async getSessionsGroupedByUserAndDate(startDate, endDate){
+        return await sessionRepository.getSessionsGroupedByUserAndDate(startDate, endDate);
     }
 
 }
