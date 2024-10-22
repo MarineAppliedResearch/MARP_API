@@ -30,7 +30,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {customCs
 // GET HERE
 
 app.get('/api/dashboardData', (req, res) => {
-    observationController.getUserDashboardData().then(data => res.json(data));
+    observationController.getUserDashboardData(req.query.start, req.query.end).then(data => res.json(data));
 });
 
 app.get('/api/tasks', (req, res) => {

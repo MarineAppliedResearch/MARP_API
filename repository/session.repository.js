@@ -265,7 +265,7 @@ class SessionRepository {
         }
     }
 
-    async getSessionsGroupedByUserAndDate(){
+    async getSessionsGroupedByUserAndDate(startDate, endDate){
         try{
             // Fetch the number of sessions each user worked on, grouped by user and date
             const sessionData = await this.db.sessions.findAll({
@@ -274,6 +274,11 @@ class SessionRepository {
                     [Sequelize.fn('DATE', Sequelize.col('createdAt')), 'date'],
                     [Sequelize.fn('COUNT', Sequelize.col('session_id')), 'sessionCount']
                 ],
+                where: {
+                    createdAt: {
+                        [Sequelize.Op.between]: [startDate, endDate]
+                    }
+                },
                 group: ['user_id', 'date'],
                 raw: true
             });

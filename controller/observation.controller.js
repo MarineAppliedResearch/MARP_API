@@ -50,9 +50,9 @@ class ObservationController {
         return await observationService.getMaxPobsID(project_id, type);
     }
 
-    async getUserDashboardData(){
+    async getUserDashboardData(startDate, endDate){
         logger.info('Controller: getUserDashboardData');
-        return await observationService.getUserDashboardData();
+        return await observationService.getUserDashboardData(startDate, endDate);
     }
 
     async getObservationsGroupedByUserAndDate(){
