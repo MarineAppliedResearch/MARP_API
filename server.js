@@ -1,6 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const fs = require('fs')
+const fs = require('fs');
 const cors = require('cors');
 require('dotenv').config()
 
@@ -31,6 +31,10 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {customCs
 
 app.get('/api/dashboardData', (req, res) => {
     observationController.getUserDashboardData(req.query.start, req.query.end).then(data => res.json(data));
+});
+
+app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
+    observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end).then(data => res.json(data));
 });
 
 app.get('/api/tasks', (req, res) => {
@@ -180,8 +184,12 @@ app.delete('/api/session/:id', (req, res) => {
     sessionController.deleteSession(req.params.id).then(data => res.json(data));
 });
 
-app.get('/', (req, res) => {
-    res.send(`<h1>Welcome To the MARE API </h1>`)
+// Serve static files from the "html" folder
+app.use(express.static('html'));
+
+// Catch-all route to serve index.html if no specific file is requested or if the file is not found
+app.get('*', (req, res) => {
+    res.sendFile(__dirname + '/html/index.html');  // Serves index.html for all non-API routes
 });
 
 app.listen(port, () => {

@@ -6,6 +6,7 @@ const sessionController = require('../controller/session.controller');
 const observationController = require('../controller/observation.controller');
 const userController = require('../controller/user.controller');
 const {Sessions} = require("../model/sessions.js");
+const moment = require('moment'); // For date manipulation
 
 
 class ObservationRepository {
@@ -369,27 +370,10 @@ class ObservationRepository {
     
         try {
             // Get Sessions for each user, grouped by user and date
-            const sessionData = await sessionController.getSessionsGroupedByUserAndDate(startDate, endDate);
+            //const sessionData = await sessionController.getSessionsGroupedByUserAndDate(startDate, endDate);
     
             // Fetch the number of observations each user made, grouped by user and date
             const observationData = await this.getObservationsGroupedByUserAndDate(startDate, endDate);
-    
-            
-
-            // Process session data
-            for(const item of sessionData){
-                let userName = await userController.getUserNameByID(item.user_id);
-
-                if (!dashboardData[userName]) {
-                    dashboardData[userName] = {};
-                }
-                dashboardData[userName][item.date] = {
-                    sessions: parseInt(item.sessionCount),
-                    observations: 0,
-                    projects: 0
-                };
-
-            }
     
             // Process observation data using for...of loop
             for (const item of observationData) {
@@ -412,6 +396,7 @@ class ObservationRepository {
         }
     }
 
+    
     async getObservationsGroupedByUserAndDate(startDate, endDate){
         try{
             // Fetch the number of observations each user made, grouped by user and date
@@ -441,6 +426,378 @@ class ObservationRepository {
             console.log('Error getting observations grouped by user and date: ' + err);
         }
     
+    }
+
+    async isFirstObservationForSessionOnDay(observations, observation){
+        
+        let returnVal = false;
+        const session_id = observation.session_id;
+        const date = observation.dataValues.date;
+        const day = moment(date).format('YYYY-MM-DD');
+
+        // now loop through observations, getting the first observation where it's session_id and day are correct
+        for (const obsToCompare of observations) {
+            const comp_session_id = obsToCompare.session_id;
+            const comp_date = obsToCompare.dataValues.date;
+            const comp_day = moment(comp_date).format('YYYY-MM-DD');
+
+            if(session_id == comp_session_id && day == comp_day){
+                // we have found the first observation of the day, now check if it is the same as our observation
+                if(observation == obsToCompare){
+                    returnVal = true;
+                }else{
+                    returnVal = false;
+                }
+                
+                break;
+            }
+        }
+
+        return returnVal;
+    }
+
+
+    async isLastObservationForSessionOnDay(observations, observation){
+        let returnVal = false;
+        const session_id = observation.session_id;
+        const date = observation.dataValues.date;
+        const day = moment(date).format('YYYY-MM-DD');
+
+        // now loop through observations, getting the last observation where it's session_id and day are correct
+        for (let i = observations.length - 1; i >= 0; i--) {
+            const obsToCompare = observations[i];
+            const comp_session_id = obsToCompare.session_id;
+            const comp_date = obsToCompare.dataValues.date;
+            const comp_day = moment(comp_date).format('YYYY-MM-DD');
+
+            if(session_id == comp_session_id && day == comp_day){
+                // we have found the first observation of the day, now check if it is the same as our observation
+                if(observation == obsToCompare){
+                    returnVal = true;
+                }else{
+                    returnVal = false;
+                }
+                
+                break;
+            }
+        }
+
+        return returnVal;
+    }
+
+
+    //
+    async getNextObservation(observations, observation){
+
+        let nextIndex;
+        for (let i = 0; i < observations.length - 1; i++) {
+            const obsToCompare = observations[i];
+
+            // check if we have found this observation
+            if(obsToCompare == observation){
+
+                // we have, get the next observation id
+                nextIndex = i + 1;
+            }
+        }
+        return observations[nextIndex];
+    }
+
+
+    /**
+     * Returns a list of projects, with a sublist of dates, and a subsublist of users, which each
+     * users time on that date for that project recorded.
+     */
+    async getProjectTimeByDateAndUser(startDate, endDate){
+
+        // First get a list of observations grouped by session_id, that were created between startDate and endDate
+        const observations = await this.db.observations.findAll({
+            // join session, user and project, so we'll have observations[0].session.user, or observations[0].session.project.name, etc
+            include: [
+                {
+                    model: this.db.sessions,
+                    as: 'session',
+                    include: [
+                        {
+                            model: this.db.users,
+                            as: 'user',
+                            attributes: ['user_id', 'name'] // Include user data
+                        },
+                        {
+                            model: this.db.projects,
+                            as: 'project',
+                            attributes: ['project_id', 'name'] // Include project data
+                        }
+                    ],
+                    group: ['session.project_id', 'date']
+                }
+            ],
+            attributes: [
+                [Sequelize.col('session.user_id'), 'user_id'],
+                [Sequelize.col('session.user.name'), 'user_name'],
+                [Sequelize.col('observations.obsID'), 'obsID'],
+                [Sequelize.col('observations.createdAt'), 'createdAt'],
+                [Sequelize.col('session.session_id'), 'session_id'],
+                [Sequelize.col('session.project.name'), 'project_name'],
+                [Sequelize.fn('DATE', Sequelize.col('observations.createdAt')), 'date']
+            ],
+            where: {
+                createdAt: {
+                    [Sequelize.Op.between]: [startDate, endDate]
+                }
+            },
+            order: [['createdAt', 'ASC']]
+        });
+
+        // store minutes_recorded[project_name][date][user_name]
+        const minutes_recorded = {};
+
+        // loop through all observations
+        for (const observation of observations) {
+            const user_id = observation.user_id;
+            const user_name = observation.session.user.name;
+            const obsID = observation.obsID;
+            const session_id = observation.session_id;
+            const project_name = observation.session.project.name;
+            const date = observation.dataValues.date;
+            const createdAt = observation.createdAt;
+            const day = moment(date).format('YYYY-MM-DD');
+
+            // Track the time spent per project and user
+            if (!minutes_recorded[project_name]) minutes_recorded[project_name] = {};
+            if (!minutes_recorded[project_name][day]) minutes_recorded[project_name][day] = {};
+            if (!minutes_recorded[project_name][day][user_name]) minutes_recorded[project_name][day][user_name] = 0;
+
+            // now we decide how much time to allocate for this observation, this follows 3 rules.
+            // 1. If this is the first observation, for this session, on this day, we start the clock 5 minutes before this observation.
+            //    other wise we start the clock at this observation time exactly.
+            // 2. If this is the last observation, for this session, on this day, we end the clock 5 minutes after this observation.
+            //    other wise we continue to #3
+            // 3. This is not the last observation, for this session, on this day, so we get the next observation after this one.
+            //    If the next observation is more than 5 minutes after the current observation time, we end the clock 5 minutes
+            //       after this observation.
+            //    Else, the next observation is less than 5 minutes after the current observation time, we end the clock AT
+            //       the next observation time.
+
+            let startTime;
+            let endTime;
+
+            // we then sum all these times up for each project/day/user
+            let isFirstObservation = await this.isFirstObservationForSessionOnDay(observations, observation);
+
+            if(isFirstObservation){
+
+                // this is the first observation of the day, set the start time to 5 minutes before this observation
+                startTime = moment(createdAt).subtract(5, 'minutes');
+            }else{
+
+                // this is not the first observation of the day, set the start time to the observation time.
+                startTime = moment(createdAt);
+            }
+
+
+            // we then sum all these times up for each project/day/user
+            let isLastObservation = await this.isLastObservationForSessionOnDay(observations, observation);
+
+            // Now check if we are the last observation for this session on this day
+            if(isLastObservation){
+
+                // this is the last observation of the day, set the end time to 5 minutes after this observation
+                endTime = moment(createdAt).add(5, 'minutes');
+            }else{
+                // this is not the last observation of the day, we'll get the next observation for this session/day, and set the end time to
+                // it's start time.
+                
+                // Get the next observation
+                let nextObservation = await this.getNextObservation(observations, observation);
+                let nextCreatedAt = nextObservation.createdAt;
+
+                // if nextCreatedAt is larger than 5 minutes after createdAt, then we'll use endtime of 5 minutes after createdAt
+                const currTime = moment(createdAt);
+                const nextTime = moment(nextCreatedAt);
+                
+                const gap_minutes = nextTime.diff(currTime, 'minutes');
+
+                if(gap_minutes >= 5){
+                    endTime = moment(createdAt).add(5, 'minutes');
+                }else{
+                    // else if nextCreatedAt is less than 5 minutes, we'll set end time to that.
+                    endTime = moment(nextCreatedAt);
+                }
+
+                const timeSpent = endTime.diff(startTime, 'minutes');
+
+                minutes_recorded[project_name][day][user_name] = minutes_recorded[project_name][day][user_name] + timeSpent;
+
+                
+
+                // get the time of this observation
+
+                // set end time to the time of this observation
+            }
+        }
+
+        // Return the queried values
+        return minutes_recorded;
+
+    }
+
+
+    
+
+    // Utility function to get the previous observation in the same session
+    async getPreviousObservation(sessionId, obsID) {
+        // Fetch observations for the specified session, ordered by createdAt
+        const observations = await this.db.observations.findAll({
+            where: { session_id: sessionId },
+            order: [['createdAt', 'ASC']] // Sort by createdAt to get them in order
+        });
+
+        // Find the index of the current observation by obsID
+        const currentIndex = observations.findIndex(obs => obs.obsID === obsID);
+
+        // If the current observation is found and it's not the first observation
+        if (currentIndex > 0) {
+            return observations[currentIndex - 1]; // Return the previous observation
+        }
+
+        return null; // Return null if there's no previous observation
+    }
+
+    // Group time data by month
+    async groupByMonth(data) {
+        const groupedData = {};
+        Object.keys(data).forEach(userId => {
+            Object.keys(data[userId]).forEach(projectId => {
+                const totalMinutes = data[userId][projectId];
+                const month = moment().format('YYYY-MM'); // For example, group by current month
+
+                if (!groupedData[month]) groupedData[month] = {};
+                if (!groupedData[month][userId]) groupedData[month][userId] = {};
+                if (!groupedData[month][userId][projectId]) groupedData[month][userId][projectId] = 0;
+
+                groupedData[month][userId][projectId] += totalMinutes;
+            });
+        });
+        return groupedData;
+    }
+
+    // Function to get the first observation for a specific session ID
+    async getFirstObservationBySessionId(sessionId) {
+        const firstObservation = await this.db.observations.findOne({
+            where: {
+                session_id: sessionId
+            },
+            order: [['createdAt', 'ASC']] // Order by createdAt ascending to get the first observation
+        });
+
+        return firstObservation;
+    }
+
+    // Function to get the first observation for a specific session ID
+    async getLastObservationBySessionId(sessionId) {
+        const firstObservation = await this.db.observations.findOne({
+            where: {
+                session_id: sessionId
+            },
+            order: [['createdAt', 'DESC']] // Order by createdAt ascending to get the first observation
+        });
+
+        return firstObservation;
+    }
+
+    // Main function to calculate time spent per user per project
+    async getTimeSpentPerUserPerProject() {
+
+        // Fetch observations along with session and user data
+        const observations = await this.db.observations.findAll({
+            include: [
+                {
+                    model: this.db.sessions,
+                    as: 'session',
+                    include: [
+                        {
+                            model: this.db.users,
+                            as: 'user',
+                            attributes: ['user_id', 'name'] // Include user data
+                        },
+                        {
+                            model: this.db.projects,
+                            as: 'project',
+                            attributes: ['project_id', 'name'] // Include project data
+                        }
+                    ]
+                }
+            ],
+            order: [['createdAt', 'ASC']] // Sort by timestamp
+        });
+
+        const userProjectTime = {}; // Store user time per project
+
+        // Iterate over observations and calculate time
+        for (const observation of observations) { // Change to for...of
+            const { createdAt, session } = observation;
+            const userName = session.user.name;
+            const projectName = session.project.name;
+            const userId = session.user_id;
+            const projectId = session.project_id;
+            const sessionID = session.session_id;
+            const obsID = observation.obsID;
+
+            // If this is the first observation of the session, add 5 minutes before
+            const firstObservation = await this.getFirstObservationBySessionId(sessionID);
+            let startTime;
+
+            if (firstObservation && obsID == firstObservation.obsID) {
+                // This is the first observation; subtract 5 minutes for the start time
+                startTime = moment(createdAt).subtract(5, 'minutes');
+            } else {
+                // For subsequent observations, set startTime to the createdAt time
+                startTime = moment(createdAt);
+            }
+
+           // If this is the first observation of the session, add 5 minutes before
+           const lastObservation = await this.getLastObservationBySessionId(sessionID);
+           let endTime;
+
+           if (lastObservation && obsID == lastObservation.obsID) {
+               // This is the first observation; subtract 5 minutes for the start time
+               endTime = moment(createdAt).add(5, 'minutes');
+           } else {
+               // For subsequent observations, set startTime to the createdAt time
+               endTime = moment(createdAt);
+           }
+
+            // Track the time spent per project and user
+            if (!userProjectTime[userName]) userProjectTime[userName] = {};
+            if (!userProjectTime[userName][projectName]) userProjectTime[userName][projectName] = 0;
+
+            // Check if there's a gap more than 5 minutes between observations
+            const previousObservation = await this.getPreviousObservation(sessionID, obsID); // Make this async if it needs to be
+        
+            if (previousObservation) {
+                const prevEndTime = moment(previousObservation.createdAt).add(5, 'minutes');
+                const gap = startTime.diff(prevEndTime, 'minutes');
+
+                console.log("gap: " + gap.toString());
+                
+                if (gap > 5) {
+                    // Only add 5 minutes for the gap
+                    userProjectTime[userName][projectName] += 5;
+                } else if (gap > 0) {
+                    // Include the entire gap
+                    userProjectTime[userName][projectName] += gap;
+                }
+            }
+
+            // Add the time spent for this observation (5 minutes before, 5 minutes after)
+            userProjectTime[userName][projectName] += endTime.diff(startTime, 'minutes');
+        }
+
+        // Group the results by month
+        const results = await this.groupByMonth(userProjectTime); // Make sure this is also awaited
+
+        return results;
     }
 
 }
