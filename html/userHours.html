@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Dashboard Report</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <header class="text-center py-4">
+            <img src="https://maregroup.org//wp-content/uploads/2020/04/mare-logo-nobackground-2.gif" alt="Dashboard Logo" class="img-fluid mb-3">
+            <h1 class="display-5">User Hours Report</h1>
+            <p class="lead">Hours spent per project, per user, per date</p>
+            <p class="text-muted">Use the date selectors below to view user observations within a specified time range.</p>
+        </header>
+
+        <!-- Date Range Inputs -->
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-2 text-center">
+                <button id="backwardButton" class="btn btn-secondary mt-4">← Previous Week</button>
+            </div>
+            <div class="col-md-4 col-sm-6 mb-3">
+                <label for="startDate" class="form-label">Start Date:</label>
+                <input type="date" id="startDate" class="form-control">
+            </div>
+            <div class="col-md-4 col-sm-6 mb-3">
+                <label for="endDate" class="form-label">End Date:</label>
+                <input type="date" id="endDate" class="form-control">
+            </div>
+            <div class="col-md-2 text-center">
+                <button id="forwardButton" class="btn btn-secondary mt-4">Next Week →</button>
+            </div>
+            <div class="col-md-2 text-center">
+                <button id="fetchDataButton" class="btn btn-primary mt-4">Fetch Data</button>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <!-- Table for detailed report -->
+            <h3>Hours Per Project, Per User, Per Date</h3>
+            <table id="detailedReportTable" class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Project</th>
+                        <th>User</th>
+                        <th>Date</th>
+                        <th>Hours</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="mb-4">
+            <!-- Monthly Summary Table -->
+            <h3>Monthly Summary Per Project, Per User</h3>
+            <table id="monthlySummaryTable" class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Month</th>
+                        <th>Project</th>
+                        <th>User</th>
+                        <th>Total Hours</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="mb-4">
+            <!-- User Time Per Month -->
+            <h3>User Time Per Month</h3>
+            <table id="userTimePerMonthTable" class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Month</th>
+                        <th>User</th>
+                        <th>Total Hours</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="mb-4">
+            <!-- Monthly project summary -->
+            <h3>Total Project Time Per Month</h3>
+            <table id="monthlyTotalProjectTimeTable" class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Month</th>
+                        <th>Project</th>
+                        <th>Total Hours</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Function to fetch data from the API and generate the chart
+        async function getData(startDate, endDate) {
+            try {
+                // Make the API call with date range as query parameters
+                const response = await fetch(`http://localhost:3081/api/getProjectTimeByDateAndUser?start=${startDate}&end=${endDate}`);
+                const responseData = await response.json();
+                generateTables(responseData);
+               
+            } catch (error) {
+                console.error('Error fetching dashboard data:', error);
+            }
+        }
+
+        
+
+        // Event listeners for the buttons
+        document.getElementById('fetchDataButton').addEventListener('click', () => {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            // Validate that both dates are provided
+            if (startDate && endDate) {
+                getData(startDate, endDate);
+            } else {
+                alert('Please select both a start and end date.');
+            }
+        });
+
+        // Event listeners for the navigation buttons
+        document.getElementById('backwardButton').addEventListener('click', () => updateDateRange(-1));
+        document.getElementById('forwardButton').addEventListener('click', () => updateDateRange(1));
+
+        const responseData = {
+            "Development Testing": {
+                "2023-02-01": { "Isaac Travers": 302 },
+                "2023-02-15": { "Isaac Travers": 0 },
+                "2023-03-06": { "Isaac Travers": 320 },
+                "2023-03-07": { "Isaac Travers": 0 },
+                "2023-03-08": { "Isaac Travers": 305 },
+                "2023-04-03": { "Isaac Travers": 1245 },
+                "2023-05-31": { "Isaac Travers": 1387 },
+            },
+            "Fast Forward Bug": {
+                "2023-06-22": { "Isaac Travers": 1200 }
+            },
+            "createSessionTest": {
+                "2023-07-05": { "Isaac Travers": 300 },
+                "2023-07-10": { "Isaac Travers": 0 },
+                "2024-10-21": { "Johnathan Centoni": 300 }
+            }
+        };
+
+        function generateTables(responseData) {
+            const detailedReportTable = document.getElementById('detailedReportTable').querySelector('tbody');
+            const monthlySummaryTable = document.getElementById('monthlySummaryTable').querySelector('tbody');
+            const monthlyTotalProjectTimeTable = document.getElementById('monthlyTotalProjectTimeTable').querySelector('tbody');
+            const userTimePerMonthTable = document.getElementById('userTimePerMonthTable').querySelector('tbody'); // User Time Per Month
+
+            // Store monthly totals
+            const monthlyTotals = {};
+            const monthlyProjectTotals = {}; // This will store total project time per month
+            const userMonthlyTotals = {}; // This will store total time per user per month
+
+            Object.keys(responseData).forEach(projectName => {
+                Object.keys(responseData[projectName]).forEach(date => {
+                    Object.keys(responseData[projectName][date]).forEach(userName => {
+                        const minutes = responseData[projectName][date][userName];
+                        const hours = minutes / 60; // Convert minutes to hours
+                        const month = date.substring(0, 7); // Extract the "YYYY-MM" portion of the date
+
+                        // Fill detailed report
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${projectName}</td>
+                            <td>${userName}</td>
+                            <td>${date}</td>
+                            <td>${hours.toFixed(2)}</td>
+                        `;
+                        detailedReportTable.appendChild(row);
+
+                        // Fill monthly summary data
+                        if (!monthlyTotals[month]) monthlyTotals[month] = {};
+                        if (!monthlyTotals[month][projectName]) monthlyTotals[month][projectName] = {};
+                        if (!monthlyTotals[month][projectName][userName]) monthlyTotals[month][projectName][userName] = 0;
+                        monthlyTotals[month][projectName][userName] += hours;
+
+                        // Add to total project time per month
+                        if (!monthlyProjectTotals[month]) monthlyProjectTotals[month] = {};
+                        if (!monthlyProjectTotals[month][projectName]) monthlyProjectTotals[month][projectName] = 0;
+                        monthlyProjectTotals[month][projectName] += hours;
+
+                        // Add to total user time per month
+                        if (!userMonthlyTotals[month]) userMonthlyTotals[month] = {};
+                        if (!userMonthlyTotals[month][userName]) userMonthlyTotals[month][userName] = 0;
+                        userMonthlyTotals[month][userName] += hours;
+                    });
+                });
+            });
+
+            // Generate Monthly Summary Table
+            Object.keys(monthlyTotals).forEach(month => {
+                Object.keys(monthlyTotals[month]).forEach(projectName => {
+                    Object.keys(monthlyTotals[month][projectName]).forEach(userName => {
+                        const totalHours = monthlyTotals[month][projectName][userName];
+
+                        // Monthly Summary Per Project, Per User
+                        const monthlyRow = document.createElement('tr');
+                        monthlyRow.innerHTML = `
+                            <td>${month}</td>
+                            <td>${projectName}</td>
+                            <td>${userName}</td>
+                            <td>${totalHours.toFixed(2)}</td>
+                        `;
+                        monthlySummaryTable.appendChild(monthlyRow);
+                    });
+                });
+            });
+
+            // Generate Total Project Time Per Month Table
+            Object.keys(monthlyProjectTotals).forEach(month => {
+                Object.keys(monthlyProjectTotals[month]).forEach(projectName => {
+                    const totalHours = monthlyProjectTotals[month][projectName];
+
+                    const projectRow = document.createElement('tr');
+                    projectRow.innerHTML = `
+                        <td>${month}</td>
+                        <td>${projectName}</td>
+                        <td>${totalHours.toFixed(2)}</td>
+                    `;
+                    monthlyTotalProjectTimeTable.appendChild(projectRow);
+                });
+            });
+
+            // Generate User Time Per Month Table
+            Object.keys(userMonthlyTotals).forEach(month => {
+                Object.keys(userMonthlyTotals[month]).forEach(userName => {
+                    const totalHours = userMonthlyTotals[month][userName];
+
+                    const userRow = document.createElement('tr');
+                    userRow.innerHTML = `
+                        <td>${month}</td>
+                        <td>${userName}</td>
+                        <td>${totalHours.toFixed(2)}</td>
+                    `;
+                    userTimePerMonthTable.appendChild(userRow);
+                });
+            });
+        }
+
+
+        // Generate tables after the page is loaded
+        window.onload = function () {
+            const startDate = new Date();
+            const today = new Date();
+            const endDate = new Date();
+            endDate.setDate(today.getDate() + 1);
+            startDate.setDate(startDate.getDate() - 30); // One month ago
+            document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
+            document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+
+            // Fetch initial data
+            getData(startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0]);
+
+            
+        };
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

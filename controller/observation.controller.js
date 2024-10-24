@@ -59,5 +59,10 @@ class ObservationController {
         logger.info('Controller: getObservationsGroupedByUserAndDate');
         return await observationService.getObservationsGroupedByUserAndDate();
     }
+
+    async getProjectTimeByDateAndUser(startDate, endDate){
+        logger.info('Controller: getProjectTimeByDateAndUser');
+        return await observationService.getProjectTimeByDateAndUser(startDate, endDate);
+    }
 }
 module.exports = new ObservationController();

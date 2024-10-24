@@ -48,6 +48,10 @@ class ObservationService {
         return await observationRepository.getObservationsGroupedByUserAndDate();
     }
 
+    async getProjectTimeByDateAndUser(startDate, endDate){
+        return await observationRepository.getProjectTimeByDateAndUser(startDate, endDate);
+    }
+
 }
 
 module.exports = new ObservationService();
