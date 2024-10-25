@@ -428,60 +428,91 @@ class ObservationRepository {
     
     }
 
-    async isFirstObservationForSessionOnDay(observations, observation){
-        
+    async isFirstObservationForSessionOnDay(observations, observation, obsIndex) {
+    
         let returnVal = false;
         const session_id = observation.session_id;
         const date = observation.dataValues.date;
         const day = moment(date).format('YYYY-MM-DD');
-
-        // now loop through observations, getting the first observation where it's session_id and day are correct
-        for (const obsToCompare of observations) {
-            const comp_session_id = obsToCompare.session_id;
-            const comp_date = obsToCompare.dataValues.date;
-            const comp_day = moment(comp_date).format('YYYY-MM-DD');
-
-            if(session_id == comp_session_id && day == comp_day){
-                // we have found the first observation of the day, now check if it is the same as our observation
-                if(observation == obsToCompare){
-                    returnVal = true;
-                }else{
-                    returnVal = false;
-                }
-                
-                break;
-            }
+    
+        // If this is the first value in the list, it's automatically the first observation
+        if (obsIndex === 0) {
+            return true;
         }
-
+    
+        // Define the start and end of the day for the query
+        const startDate = moment(day).startOf('day').toDate();   // Start of the day (00:00:00)
+        const endDate = moment(day).endOf('day').toDate();       // End of the day (23:59:59)
+    
+        // Fetch the first observation for the given session and date
+        const firstObservationForSessionAndDay = await this.db.observations.findOne({
+            attributes: [
+                'obsID',
+                'observation_id',
+                'createdAt',
+                [Sequelize.fn('DATE', Sequelize.col('createdAt')), 'date']
+            ],
+            where: {
+                session_id: session_id,  // Filter by session ID
+                createdAt: {
+                    [Sequelize.Op.between]: [startDate, endDate]  // Filter by the date range for that day
+                }
+            },
+            order: [
+                ['createdAt', 'ASC']  // Ensure the earliest observation is fetched
+            ],
+            raw: true
+        });
+    
+        // Check if the current observation matches the first one
+        if (firstObservationForSessionAndDay && firstObservationForSessionAndDay.observation_id === observation.observation_id) {
+            returnVal = true;  // Current observation is the first one
+        }
+    
         return returnVal;
     }
 
 
-    async isLastObservationForSessionOnDay(observations, observation){
+    async isLastObservationForSessionOnDay(observations, observation, obsIndex){
         let returnVal = false;
         const session_id = observation.session_id;
         const date = observation.dataValues.date;
         const day = moment(date).format('YYYY-MM-DD');
-
-        // now loop through observations, getting the last observation where it's session_id and day are correct
-        for (let i = observations.length - 1; i >= 0; i--) {
-            const obsToCompare = observations[i];
-            const comp_session_id = obsToCompare.session_id;
-            const comp_date = obsToCompare.dataValues.date;
-            const comp_day = moment(comp_date).format('YYYY-MM-DD');
-
-            if(session_id == comp_session_id && day == comp_day){
-                // we have found the first observation of the day, now check if it is the same as our observation
-                if(observation == obsToCompare){
-                    returnVal = true;
-                }else{
-                    returnVal = false;
-                }
-                
-                break;
-            }
+    
+        // If this is the first value in the list, it's automatically the first observation
+        if (obsIndex == observations.length - 1) {
+            return true;
         }
-
+    
+        // Define the start and end of the day for the query
+        const startDate = moment(day).startOf('day').toDate();   // Start of the day (00:00:00)
+        const endDate = moment(day).endOf('day').toDate();       // End of the day (23:59:59)
+    
+        // Fetch the first observation for the given session and date
+        const lastObservationForSessionAndDay = await this.db.observations.findOne({
+            attributes: [
+                'obsID',
+                'observation_id',
+                'createdAt',
+                [Sequelize.fn('DATE', Sequelize.col('createdAt')), 'date']
+            ],
+            where: {
+                session_id: session_id,  // Filter by session ID
+                createdAt: {
+                    [Sequelize.Op.between]: [startDate, endDate]  // Filter by the date range for that day
+                }
+            },
+            order: [
+                ['createdAt', 'DESC']  // Ensure the earliest observation is fetched
+            ],
+            raw: true
+        });
+    
+        // Check if the current observation matches the first one
+        if (lastObservationForSessionAndDay && lastObservationForSessionAndDay.observation_id === observation.observation_id) {
+            returnVal = true;  // Current observation is the first one
+        }
+    
         return returnVal;
     }
 
@@ -536,6 +567,7 @@ class ObservationRepository {
                 [Sequelize.col('session.user_id'), 'user_id'],
                 [Sequelize.col('session.user.name'), 'user_name'],
                 [Sequelize.col('observations.obsID'), 'obsID'],
+                [Sequelize.col('observations.observation_id'), 'observation_id'],
                 [Sequelize.col('observations.createdAt'), 'createdAt'],
                 [Sequelize.col('session.session_id'), 'session_id'],
                 [Sequelize.col('session.project.name'), 'project_name'],
@@ -551,6 +583,8 @@ class ObservationRepository {
 
         // store minutes_recorded[project_name][date][user_name]
         const minutes_recorded = {};
+
+        let obsIndex = 0;
 
         // loop through all observations
         for (const observation of observations) {
@@ -583,7 +617,7 @@ class ObservationRepository {
             let endTime;
 
             // we then sum all these times up for each project/day/user
-            let isFirstObservation = await this.isFirstObservationForSessionOnDay(observations, observation);
+            let isFirstObservation = await this.isFirstObservationForSessionOnDay(observations, observation, obsIndex);
 
             if(isFirstObservation){
 
@@ -597,7 +631,7 @@ class ObservationRepository {
 
 
             // we then sum all these times up for each project/day/user
-            let isLastObservation = await this.isLastObservationForSessionOnDay(observations, observation);
+            let isLastObservation = await this.isLastObservationForSessionOnDay(observations, observation, obsIndex);
 
             // Now check if we are the last observation for this session on this day
             if(isLastObservation){
@@ -635,6 +669,9 @@ class ObservationRepository {
 
                 // set end time to the time of this observation
             }
+
+            // increase obsIndex
+            obsIndex = obsIndex + 1;
         }
 
         // Return the queried values
