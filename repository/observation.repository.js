@@ -14,8 +14,10 @@ class ObservationRepository {
     db = {};
 
     // Track the first and last observation of a specific session for a day
-    firstSessionObsPerDay = {};
-    lastSessionObsPerDay = {};
+    firstLastSessionObsPerDay = {};
+
+    // don't track per day, but we'll use this to record the first and/or last observation of a session_id
+    firstLastSessionObs = {};
     
     
 
@@ -438,22 +440,30 @@ class ObservationRepository {
     
         let returnVal = false;
         const session_id = observation.session_id;
-        const date = observation.dataValues.date;
+        const date = observation.createdAt;
         const day = moment(date).format('YYYY-MM-DD');
+
+        
+
+        // Track the time spent per project and user
+        if (!this.firstLastSessionObsPerDay[session_id]){
+            this.firstLastSessionObsPerDay[session_id] = {};
+        } 
+
+        if (!this.firstLastSessionObsPerDay[session_id][day]){
+            this.firstLastSessionObsPerDay[session_id][day] = {};
+        } 
 
         // If this is the first value in the list, it's automatically the first observation
         if (obsIndex === 0) {
+            this.firstLastSessionObsPerDay[session_id][day]["first"] = observation;
             return true;
         }
-
-        // Track the time spent per project and user
-        if (!this.firstSessionObsPerDay[session_id]) this.firstSessionObsPerDay[session_id] = {};
-        if (!this.firstSessionObsPerDay[session_id][day]) this.firstSessionObsPerDay[session_id][day] = {};
 
         let firstObservationForSessionAndDay = {};
 
         // Check if we've already found a first observation for this session/day
-        if (!this.firstSessionObsPerDay[session_id][day]["first"]){
+        if (!this.firstLastSessionObsPerDay[session_id][day]["first"]){
 
             // we have not previously found a first observation for this session/day, go ahead and query it
              // Define the start and end of the day for the query
@@ -480,12 +490,12 @@ class ObservationRepository {
                 raw: true
             });
 
-            this.firstSessionObsPerDay[session_id][day]["first"] = firstObservationForSessionAndDay;
+            this.firstLastSessionObsPerDay[session_id][day]["first"] = firstObservationForSessionAndDay;
 
         }else{
 
             // we HAVE previously found a first observation for this session day.
-            firstObservationForSessionAndDay = this.firstSessionObsPerDay[session_id][day]["first"];
+            firstObservationForSessionAndDay = this.firstLastSessionObsPerDay[session_id][day]["first"];
         }
     
         
@@ -502,22 +512,25 @@ class ObservationRepository {
     
         let returnVal = false;
         const session_id = observation.session_id;
-        const date = observation.dataValues.date;
+        const date = observation.createdAt;
         const day = moment(date).format('YYYY-MM-DD');
+
+        
+
+        // Track the time spent per project and user
+        if (!this.firstLastSessionObsPerDay[session_id]) this.firstLastSessionObsPerDay[session_id] = {};
+        if (!this.firstLastSessionObsPerDay[session_id][day]) this.firstLastSessionObsPerDay[session_id][day] = {};
 
         // If this is the first value in the list, it's automatically the first observation
         if (obsIndex == observations.length - 1) {
+            this.firstLastSessionObsPerDay[session_id][day]["last"] = observation;
             return true;
         }
-
-        // Track the time spent per project and user
-        if (!this.lastSessionObsPerDay[session_id]) this.lastSessionObsPerDay[session_id] = {};
-        if (!this.lastSessionObsPerDay[session_id][day]) this.lastSessionObsPerDay[session_id][day] = {};
 
         let lastObservationForSessionAndDay = {};
 
         // Check if we've already found a first observation for this session/day
-        if (!this.lastSessionObsPerDay[session_id][day]["last"]){
+        if (!this.firstLastSessionObsPerDay[session_id][day]["last"]){
 
             // we have not previously found a first observation for this session/day, go ahead and query it
              // Define the start and end of the day for the query
@@ -544,12 +557,12 @@ class ObservationRepository {
                 raw: true
             });
 
-            this.lastSessionObsPerDay[session_id][day]["last"] = lastObservationForSessionAndDay;
+            this.firstLastSessionObsPerDay[session_id][day]["last"] = lastObservationForSessionAndDay;
 
         }else{
 
             // we HAVE previously found a last observation for this session day.
-            lastObservationForSessionAndDay = this.lastSessionObsPerDay[session_id][day]["last"];
+            lastObservationForSessionAndDay = this.firstLastSessionObsPerDay[session_id][day]["last"];
         }
     
         
@@ -563,20 +576,41 @@ class ObservationRepository {
 
 
     //
-    async getNextObservation(observations, observation, obsIndex){
+    /**
+     * Finds the next observation in the observations list that has the same session_id and occurs on the same day as the given observation.
+     * The observations list is sorted by timestamp, but multiple session_ids may be dispersed throughout the list.
+     * Once a different day is encountered, the search stops.
+     *
+     * @param {Array} observations - List of observations, sorted by date.
+     * @param {Object} observation - The observation to compare against.
+     * @param {Number} obsIndex - The index of the current observation in the list.
+     * @returns {Object|null} - The next observation on the same day with the same session_id, or null if none is found.
+     */
+    async getNextObservation(observations, observation, obsIndex) {
+        // Extract session_id and day of the current observation
+        const session_id = observation.session_id;
+        const observationDay = moment(observation.dataValues.date).format('YYYY-MM-DD'); // Format the observation date to 'YYYY-MM-DD'
 
-        let nextIndex;
-        for (let i = obsIndex; i < observations.length - 1; i++) {
-            const obsToCompare = observations[i];
+        // Start the loop from the next observation
+        for (let i = obsIndex + 1; i < observations.length; i++) {
+            const nextObservation = observations[i]; // Get the next observation to compare
+            const nextDay = moment(nextObservation.dataValues.date).format('YYYY-MM-DD'); // Format the next observation date to 'YYYY-MM-DD'
 
-            // check if we have found this observation
-            if(obsToCompare == observation){
-
-                // we have, get the next observation id
-                nextIndex = i + 1;
+            // If the day changes, stop searching as the list is sorted and future observations cannot match
+            if (nextDay !== observationDay) {
+                return null; // No further observations on the same day, so we return null
             }
+
+            // If the session_id matches, return the current nextObservation
+            if (nextObservation.session_id === session_id) {
+                return nextObservation; // Found the next observation with matching session_id and day
+            }
+
+            // If the day is the same but session_id doesn't match, continue searching
         }
-        return observations[nextIndex];
+
+        // If no matching observation is found by the end of the loop, return null
+        return null;
     }
 
 
@@ -689,7 +723,15 @@ class ObservationRepository {
                 
                 // Get the next observation
                 let nextObservation = await this.getNextObservation(observations, observation, obsIndex);
-                let nextCreatedAt = nextObservation.createdAt;
+                
+                // check if nextObservation is null, and set end to 5 minutes after this observation
+                let nextCreatedAt;
+                if(nextObservation == null){
+                    nextCreatedAt = moment(createdAt).add(5, 'minutes');
+                }else{
+                    nextCreatedAt = nextObservation.createdAt;
+                }
+                
 
                 // if nextCreatedAt is larger than 5 minutes after createdAt, then we'll use endtime of 5 minutes after createdAt
                 const currTime = moment(createdAt);
@@ -704,9 +746,9 @@ class ObservationRepository {
                     endTime = moment(nextCreatedAt);
                 }
 
-                const timeSpent = endTime.diff(startTime, 'minutes');
+                const timeSpent = endTime.diff(startTime, 'seconds');
 
-                minutes_recorded[project_name][day][user_name] = minutes_recorded[project_name][day][user_name] + timeSpent;
+                minutes_recorded[project_name][day][user_name] = minutes_recorded[project_name][day][user_name] + (timeSpent/60);
 
                 
 
@@ -766,26 +808,58 @@ class ObservationRepository {
 
     // Function to get the first observation for a specific session ID
     async getFirstObservationBySessionId(sessionId) {
-        const firstObservation = await this.db.observations.findOne({
-            where: {
-                session_id: sessionId
-            },
-            order: [['createdAt', 'ASC']] // Order by createdAt ascending to get the first observation
-        });
+
+        let firstObservation = null;
+
+        // Track the time spent per project and user
+        if (!firstLastSessionObs[sessionId]) firstLastSessionObs[sessionId] = {};
+
+        if (!firstLastSessionObs[sessionId]["first"]){
+
+            firstLastSessionObs[sessionId]["first"] = {};
+
+            firstObservation = await this.db.observations.findOne({
+                where: {
+                    session_id: sessionId
+                },
+                order: [['createdAt', 'ASC']] // Order by createdAt ascending to get the first observation
+            });
+
+            firstLastSessionObs[sessionId]["first"] = firstObservation;
+
+        }else{
+            firstObservation = firstLastSessionObs[sessionId]["first"];
+        }
 
         return firstObservation;
     }
 
     // Function to get the first observation for a specific session ID
     async getLastObservationBySessionId(sessionId) {
-        const firstObservation = await this.db.observations.findOne({
-            where: {
-                session_id: sessionId
-            },
-            order: [['createdAt', 'DESC']] // Order by createdAt ascending to get the first observation
-        });
 
-        return firstObservation;
+        let lastObservation = null;
+
+        // Track the time spent per project and user
+        if (!firstLastSessionObs[sessionId]) firstLastSessionObs[sessionId] = {};
+
+        if (!firstLastSessionObs[sessionId]["last"]){
+
+            firstLastSessionObs[sessionId]["last"] = {};
+
+            lastObservation = await this.db.observations.findOne({
+                where: {
+                    session_id: sessionId
+                },
+                order: [['createdAt', 'DESC']] // Order by createdAt ascending to get the first observation
+            });
+
+            firstLastSessionObs[sessionId]["last"] = lastObservation;
+
+        }else{
+            lastObservation = firstLastSessionObs[sessionId]["last"];
+        }
+
+        return lastObservation;
     }
 
     // Main function to calculate time spent per user per project
