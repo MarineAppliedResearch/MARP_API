@@ -50,6 +50,11 @@ class ObservationController {
         return await observationService.getMaxPobsID(project_id, type);
     }
 
+    async getObservationsByVideo(videoName){
+        logger.info('Controller: getObservationsByVideo', videoName);
+        return await observationService.getObservationsByVideo(videoName);
+    }
+
     async getUserDashboardData(startDate, endDate){
         logger.info('Controller: getUserDashboardData');
         return await observationService.getUserDashboardData(startDate, endDate);

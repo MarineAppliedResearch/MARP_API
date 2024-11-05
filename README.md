@@ -14,7 +14,7 @@ DB Migrations:
 To Migrate and unmigrate:
 npx sequelize-cli db:migrate
 
-npx sequelize-cli db:migrate --name 20231106184551-populate_PobsID_record_in_Observations.js
+npx sequelize-cli db:migrate --name 20241105201226-observation_add_frameWidth_frameHeight.js
 
 npx sequelize-cli db:migrate --name 20231019182032-rename_peddle_to_pebble.js --env production
 
@@ -27,7 +27,7 @@ if we want to undo a specific migration we can use:
 npx sequelize-cli db:migrate:undo --name 20230705191207-add_PobsID_record_to_Observations
 
 Create a new Migration:
- npx sequelize-cli migration:create --name seed_observation_pobsid
+ npx sequelize-cli migration:create --name observation_add_frameWidth_frameHeight
 
  Step 1: generate a seed file
 npx sequelize-cli seed:generate --name seed_observation_pobsid

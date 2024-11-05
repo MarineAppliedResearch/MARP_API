@@ -193,6 +193,16 @@ module.exports = (sequelize, DataTypes, Model) => {
         substrate_algal:{
           type: DataTypes.BOOLEAN,
           defaultValue: false
+        },
+
+        annotation:{
+          type: DataTypes.STRING
+        },
+        frameWidth:{
+          type: DataTypes.INTEGER
+        },
+        frameHeight:{
+          type: DataTypes.INTEGER
         }
       }, {
         // Other model options go here

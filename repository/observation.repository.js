@@ -369,6 +369,43 @@ class ObservationRepository {
     }
 
 
+    /**
+     * Returns all observations associated with video videoName
+     * @param {*} videoName 
+     */
+    async getObservationsByVideo(videoName){
+
+        try{
+            const observations = await this.db.observations.findAll({
+                attributes: [
+                    'observation_id',
+                    'taxserial',
+                    'comname',
+                    'video_source',
+                    'videoLocation',
+                    'mediaPosition',
+                    'actualPosition',
+                    'annotation',
+                    'createdAt',
+                  ],
+                where: {
+                    video_source: videoName,
+                    [Op.and]: [
+                      { annotation: { [Op.ne]: null } }, // annotation IS NOT NULL
+                      { annotation: { [Op.ne]: '' } },   // annotation != ''
+                    ],
+                },
+                order: [['createdAt', 'ASC']] // Sort by createdAt to get them in order
+            });
+
+            return observations;
+        }catch (error) {
+            console.log('Error fetching observations by videoName:', error);
+        }
+        
+    }
+
+
     /* Returns data for a user dashboard that gives us counts
      * on how much activity a user has participated in
      */

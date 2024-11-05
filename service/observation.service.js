@@ -40,6 +40,10 @@ class ObservationService {
         return await observationRepository.getMaxPobsID(project_id, type);
     }
 
+    async getObservationsByVideo(videoName){
+        return await observationRepository.getObservationsByVideo(videoName);
+    }
+
     async getUserDashboardData(startDate, endDate){
         return await observationRepository.getUserDashboardData(startDate, endDate);
     }
