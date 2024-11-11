@@ -1,6 +1,13 @@
 module.exports = (sequelize, DataTypes, Model) => {
+    const Keyframes = require('./keyframe.model'); // Import the Keyframes model
 
-    class Observations extends Model {}
+    class Observations extends Model {
+      // Static method to define associations between models
+      static associate(models) {
+        // Associate Observations with Keyframes
+        this.hasMany(models.Keyframes, { foreignKey: 'observation_id', onDelete: 'CASCADE' });
+      }
+    }
 
     Observations.init({
         // Model attributes are defined here
@@ -209,6 +216,7 @@ module.exports = (sequelize, DataTypes, Model) => {
         sequelize, // We need to pass the connection instance
         modelName: 'observations' // We need to choose the model name
       });
+
       
       return Observations;
 }
