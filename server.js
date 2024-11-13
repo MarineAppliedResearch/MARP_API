@@ -6,6 +6,7 @@ require('dotenv').config()
 
 const taskController = require('./controller/task.controller') 
 const observationController = require('./controller/observation.controller') 
+const keyframeController = require('./controller/keyframe.controller') 
 const userController = require('./controller/user.controller') 
 const projectController = require('./controller/project.controller')
 const sessionController = require('./controller/session.controller')
@@ -66,6 +67,11 @@ app.get('/api/observations/bySessionID/:session_id', (req, res) => {
 });
 
 
+
+
+
+
+
 app.get('/api/users', (req, res) => {
     userController.getUsers().then(data => res.json(data));
 });
@@ -112,6 +118,10 @@ app.post('/api/task', (req, res) => {
 app.post('/api/observation', (req, res) => {
     console.log(req.body);
     observationController.createObservation(req.body.observation).then(data => res.json(data));
+});
+
+app.post('/api/keyframe', (req, res) => {
+    keyframeController.createKeyframes(req.body).then(data => res.json(data));
 });
 
 app.post('/api/user', (req, res) => {

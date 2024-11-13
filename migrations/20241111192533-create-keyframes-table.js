@@ -6,7 +6,7 @@ module.exports = {
     const transaction = await queryInterface.sequelize.transaction();
 
     try {
-      await queryInterface.createTable('Keyframes', {
+      await queryInterface.createTable('keyframes', {
         keyframe_id: {
           type: Sequelize.INTEGER,
           primaryKey: true,
@@ -28,6 +28,10 @@ module.exports = {
         },
         type: {
           type: Sequelize.ENUM('start', 'middle', 'end'),
+          allowNull: false,
+        },
+        framenum:{
+          type: Sequelize.INTEGER,
           allowNull: false,
         },
         x: {
@@ -71,7 +75,7 @@ module.exports = {
     const transaction = await queryInterface.sequelize.transaction();
 
     try {
-      await queryInterface.dropTable('Keyframes');
+      await queryInterface.dropTable('keyframes');
 
       // 3. Commit the transaction
       await transaction.commit();

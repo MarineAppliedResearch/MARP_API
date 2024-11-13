@@ -30,6 +30,10 @@ module.exports = (sequelize, DataTypes, Model) => {
         type: DataTypes.ENUM('start', 'middle', 'end'),
         allowNull: false
       },
+      framenum: {
+        type: DataTypes.INTEGER,
+        allowNull: false
+      },
       // X-coordinate of the annotation rectangle
       x: {
         type: DataTypes.DOUBLE,
@@ -55,8 +59,7 @@ module.exports = (sequelize, DataTypes, Model) => {
       modelName: 'keyframes' // Define the model name
     });
 
-    // Define the association here
-    Keyframes.belongsTo(Observations, { foreignKey: 'observation_id' });
+    
   
     return Keyframes;
   };
