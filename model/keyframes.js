@@ -21,6 +21,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING,
       allowNull: false
     },
+    comname: {
+      type: DataTypes.STRING,
+      allowNull: false
+    },
     // Type of the keyframe (start, middle, end)
     type: {
       type: DataTypes.ENUM('start', 'middle', 'end'),

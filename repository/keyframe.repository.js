@@ -60,6 +60,7 @@ class KeyframeRepository {
                 height: keyframe.height,
                 subset: keyframe.subset,
                 type: keyframe.type,
+                comname: keyframe.comname,
                 framenum: keyframe.framenum
             }));
 

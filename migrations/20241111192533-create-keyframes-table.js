@@ -26,6 +26,10 @@ module.exports = {
           type: Sequelize.STRING,
           allowNull: false,
         },
+        comname: {
+          type: Sequelize.STRING,
+          allowNull: false
+        },
         type: {
           type: Sequelize.ENUM('start', 'middle', 'end'),
           allowNull: false,
