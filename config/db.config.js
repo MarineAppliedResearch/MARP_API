@@ -112,7 +112,22 @@ const connect = () => {
     db.keyframes.belongsTo(db.observations, { 
         sourceKey: "observation_id",
         foreignKey: "observation_id",
-        as: "observation"
+        as: "observation",
+        onDelete: "CASCADE"
+    });
+
+    db.observations.hasMany(db.keyframes, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id", 
+        as: "keyframes",
+        onDelete: "CASCADE"
+    });
+
+    db.keyframes.belongsTo(db.observations, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id", 
+        as: "parentObservation",
+        onDelete: "CASCADE"
     });
 
     return db;

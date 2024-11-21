@@ -116,6 +116,33 @@ class ObservationRepository {
           }
     }
 
+    
+
+    async getObservationsBySessionID(session_id) {
+        try {
+            // Fetch observations along with their associated keyframes
+            const observations = await this.db.observations.findAll({
+                where: {
+                    session_id: session_id
+                },
+                include: [
+                    {
+                        model: this.db.keyframes,  // Include keyframes related to each observation
+                        as: 'keyframes',           // Alias used during association
+                        required: false            // Include observations even if there are no keyframes
+                    }
+                ]
+            });
+    
+            // console.log('observations:::', observations);
+            return observations;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+    
+    /*
     async getObservationsBySessionID(session_id) {
         try {
             const observations = await this.db.observations.findAll({
@@ -130,6 +157,7 @@ class ObservationRepository {
             return [];
         }
     }
+    */
 
 
 
@@ -375,32 +403,27 @@ class ObservationRepository {
      */
     async getObservationsByVideo(videoName){
 
-        try{
+        try {
+            // Fetch observations along with their associated keyframes
             const observations = await this.db.observations.findAll({
-                attributes: [
-                    'observation_id',
-                    'taxserial',
-                    'comname',
-                    'video_source',
-                    'videoLocation',
-                    'mediaPosition',
-                    'actualPosition',
-                    'annotation',
-                    'createdAt',
-                  ],
                 where: {
-                    video_source: videoName,
-                    [Op.and]: [
-                      { annotation: { [Op.ne]: null } }, // annotation IS NOT NULL
-                      { annotation: { [Op.ne]: '' } },   // annotation != ''
-                    ],
+                    video_source: videoName
                 },
-                order: [['createdAt', 'ASC']] // Sort by createdAt to get them in order
+                order: [['mediaPosition', 'ASC']], // Sort by createdAt to get them in order
+                include: [
+                    {
+                        model: this.db.keyframes,  // Include keyframes related to each observation
+                        as: 'keyframes',           // Alias used during association
+                        required: true            // Include observations even if there are no keyframes
+                    }
+                ]
             });
-
+    
+            // console.log('observations:::', observations);
             return observations;
-        }catch (error) {
-            console.log('Error fetching observations by videoName:', error);
+        } catch (err) {
+            console.log(err);
+            return [];
         }
         
     }

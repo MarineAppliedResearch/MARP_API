@@ -27,6 +27,12 @@ function initModels(sequelize) {
   sessions.belongsTo(users, { as: "user", foreignKey: "user_id"});
   users.hasMany(sessions, { as: "sessions", foreignKey: "user_id"});
 
+  // Associate observations to keyframes. an observation can have 0 to many keyframes, a keyframe must be associated with only one observation
+  ////observations.hasMany(keyframes, { foreignKey: 'observation_id', as: 'keyframes' });
+  ////keyframes.belongsTo(observations, { foreignKey: 'observation_id', as: 'observation' });
+
+
+
   return {
     SequelizeMeta,
     observations,
