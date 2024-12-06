@@ -34,6 +34,45 @@ app.use('/api/getObservationsByVideo', (req, res) => {
     observationController.getObservationsByVideo(req.query.videoName).then(data => res.json(data));
 });
 
+/**
+ * Returns all observations associated with video videoName that have a comname in comnameList
+ * @param {string} req.query.videoName - The name of the video
+ * @param {string[]} req.query.comnameList - An array of comname strings to filter observations
+ */
+app.use('/api/getObservationsByVideoAndComnames', (req, res) => {
+    observationController.getObservationsByVideoAndComnames(req.query.videoName, req.query.comnameList).then(data => res.json(data));
+});
+
+
+
+/**
+ * Returns all observations that have associated keyframes and a comname in comnameList
+ * @param {string[]} comnameList - An array of comname strings to filter observations
+ */
+app.use('/api/getObservationsWithKeyframesByComnames', (req, res) => {
+    // Decode and split the comma-separated list into an array
+    const comnameList = req.query.comnameList
+        ? req.query.comnameList.split(',').map(decodeURIComponent) // Decode each comname
+        : [];
+
+    observationController
+        .getObservationsWithKeyframesByComnames(comnameList)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in API call:', err);
+            res.status(500).json({ error: 'An error occurred while fetching observations.' });
+        });
+});
+
+/**
+ * Retrieves all distinct comnames from observations that have associated keyframes.
+ * @returns {Promise<string[]>} - A promise that resolves to an array of distinct comnames.
+ */
+app.use('/api/getDistinctComnamesWithKeyframes', (req, res) => {
+    observationController.getDistinctComnamesWithKeyframes().then(data => res.json(data));
+});
+
+
 app.get('/api/dashboardData', (req, res) => {
     observationController.getUserDashboardData(req.query.start, req.query.end).then(data => res.json(data));
 });
@@ -184,6 +223,10 @@ app.delete('/api/task/:id', (req, res) => {
 
 app.delete('/api/observation/:id', (req, res) => {
     observationController.deleteObservation(req.params.id).then(data => res.json(data));
+});
+
+app.delete('/api/keyframe/:keyframe_id', (req, res) => {
+    keyframeController.deleteKeyframe(req.params.keyframe_id).then(data => res.json(data));
 });
 
 app.delete('/api/user/:id', (req, res) => {
