@@ -50,6 +50,36 @@ class ObservationController {
         return await observationService.getMaxPobsID(project_id, type);
     }
 
+    async getObservationsByVideo(videoName){
+        logger.info('Controller: getObservationsByVideo', videoName);
+        return await observationService.getObservationsByVideo(videoName);
+    }
+
+    /**
+     * Returns all observations associated with video videoName that have a comname in comnameList
+     * @param {string} req.query.videoName - The name of the video
+     * @param {string[]} req.query.comnameList - An array of comname strings to filter observations
+     */
+    async getObservationsByVideoAndComnames(videoName, comnameList){
+        return await observationService.getObservationsByVideoAndComnames(videoName, comnameList);
+    }
+
+    /**
+     * Returns all observations that have associated keyframes and a comname in comnameList
+     * @param {string[]} comnameList - An array of comname strings to filter observations
+     */
+    async getObservationsWithKeyframesByComnames(comnameList){
+        return await observationService.getObservationsWithKeyframesByComnames(comnameList);
+    }
+
+    /**
+     * Retrieves all distinct comnames from observations that have associated keyframes.
+     * @returns {Promise<string[]>} - A promise that resolves to an array of distinct comnames.
+     */
+    async getDistinctComnamesWithKeyframes(){
+        return await observationService.getDistinctComnamesWithKeyframes();
+    }
+
     async getUserDashboardData(startDate, endDate){
         logger.info('Controller: getUserDashboardData');
         return await observationService.getUserDashboardData(startDate, endDate);

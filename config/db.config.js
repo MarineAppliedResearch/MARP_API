@@ -33,6 +33,7 @@ const connect = () => {
     db.projects = require("../model/project.model")(sequelize, DataTypes, Model);
     db.sessions = require("../model/session.model")(sequelize, DataTypes, Model);
     db.metaInfo =  require("../model/metaInfo.model")(sequelize, DataTypes, Model);
+    db.keyframes =  require("../model/keyframe.model")(sequelize, DataTypes, Model);
 
 
     // reset everything.
@@ -105,6 +106,28 @@ const connect = () => {
         sourceKey: "session_id",
         foreignKey: "session_id",
         as: "session"
+    });
+
+    // Define the association here
+    db.keyframes.belongsTo(db.observations, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id",
+        as: "observation",
+        onDelete: "CASCADE"
+    });
+
+    db.observations.hasMany(db.keyframes, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id", 
+        as: "keyframes",
+        onDelete: "CASCADE"
+    });
+
+    db.keyframes.belongsTo(db.observations, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id", 
+        as: "parentObservation",
+        onDelete: "CASCADE"
     });
 
     return db;

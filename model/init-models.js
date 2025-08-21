@@ -5,6 +5,7 @@ var _projects = require("./projects");
 var _sessions = require("./sessions");
 var _tasks = require("./tasks");
 var _users = require("./users");
+var _keyframes = require("./keyframes");
 
 function initModels(sequelize) {
   var SequelizeMeta = _SequelizeMeta(sequelize, DataTypes);
@@ -13,6 +14,7 @@ function initModels(sequelize) {
   var sessions = _sessions(sequelize, DataTypes);
   var tasks = _tasks(sequelize, DataTypes);
   var users = _users(sequelize, DataTypes);
+  var keyframes = _keyframes(sequelize, DataTypes);
 
   observations.belongsTo(projects, { as: "project", foreignKey: "project_id"});
   projects.hasMany(observations, { as: "observations", foreignKey: "project_id"});
@@ -25,6 +27,12 @@ function initModels(sequelize) {
   sessions.belongsTo(users, { as: "user", foreignKey: "user_id"});
   users.hasMany(sessions, { as: "sessions", foreignKey: "user_id"});
 
+  // Associate observations to keyframes. an observation can have 0 to many keyframes, a keyframe must be associated with only one observation
+  ////observations.hasMany(keyframes, { foreignKey: 'observation_id', as: 'keyframes' });
+  ////keyframes.belongsTo(observations, { foreignKey: 'observation_id', as: 'observation' });
+
+
+
   return {
     SequelizeMeta,
     observations,
@@ -32,6 +40,7 @@ function initModels(sequelize) {
     sessions,
     tasks,
     users,
+    keyframes
   };
 }
 module.exports = initModels;
