@@ -30,6 +30,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {customCs
 
 // GET HERE
 
+app.use("/api", require("./reporting/routes"));
+
 app.use('/api/getObservationsByVideo', (req, res) => {
     observationController.getObservationsByVideo(req.query.videoName).then(data => res.json(data));
 });

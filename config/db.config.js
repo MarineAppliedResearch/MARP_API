@@ -7,7 +7,7 @@ const connect = () => {
     const userName = process.env.USER;
     const password = process.env.PASSWORD;
     const database = process.env.DB;
-    const dialect = process.env.DIALECT;
+    const dialect = process.env.DIALECT || 'postgres';
 
     console.log("dialect: " + dialect);
 
