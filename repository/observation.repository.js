@@ -280,13 +280,93 @@ class ObservationRepository {
             observation.observation_id = (parseInt(max_observation_id) + 1).toString();
             observation.obsID = (parseInt(maxOBSID)).toString();
             observation.PobsID = parseInt(maxPobsID + 1);
-            data = await this.db.observations.create(observation);
+
+            console.log("Models in DB:", Object.keys(this.db));
+            console.log("Associations on observations:", Object.keys(this.db.observations.associations));
+
+            console.log("Observation payload:", Object.keys(observation));
+            console.log("Keyframes length:", observation.keyframes?.length);
+
+            try {
+                data = await this.db.observations.create(observation, {
+                    include: [{ model: this.db.keyframes, as: 'keyframes' }]
+                });
+                } catch (err) {
+                console.error("Observation create failed:", err);
+                throw err;
+                }
         } catch(err) {
             logger.error('Error::' + err);
         }
         return data;
     }
 
+
+    /*
+     * Updates an observation with new data, also updates
+     * keyframes if comname has changed.
+     */
+    async updateObservation(observation) {
+        observation.observation_id = parseInt(observation.observation_id);
+
+        let data = {};
+        const t = await this.db.sequelize.transaction(); // transaction for safety
+
+        try {
+            // Get the existing observation
+            const existingObservation = await this.db.observations.findOne({
+                where: { observation_id: observation.observation_id },
+                raw: true
+            });
+
+            if (!existingObservation) {
+                throw new Error(`Observation with ID ${observation.observation_id} not found`);
+            }
+
+            // Check if comname changed
+            const comnameChanged =
+                observation.comname &&
+                observation.comname !== existingObservation.comname;
+
+            // Update the observation
+            observation.updateddate = new Date().toISOString();
+            data = await this.db.observations.update(
+                { ...observation },
+                {
+                    where: { observation_id: observation.observation_id },
+                    transaction: t
+                }
+            );
+
+            // If comname changed, propagate to all associated keyframes
+            if (comnameChanged) {
+                await this.db.keyframes.update(
+                    { comname: observation.comname },
+                    {
+                        where: { observation_id: observation.observation_id },
+                        transaction: t
+                    }
+                );
+            }
+
+            await t.commit();
+
+            // Optional: log for debugging
+            if (comnameChanged) {
+                logger.info(
+                    `Observation ${observation.observation_id}: comname updated to "${observation.comname}" and propagated to keyframes.`
+                );
+            }
+
+        } catch (err) {
+            await t.rollback();
+            logger.error('Error::' + err);
+            throw err;
+        }
+
+        return data;
+    }
+    /* // old, doesn't update keyframes as well
     async updateObservation(observation) {
         observation.observation_id = parseInt(observation.observation_id);
         let data = {};
@@ -302,7 +382,7 @@ class ObservationRepository {
             logger.error('Error::' + err);
         }
         return data;
-    }
+    }*/
 
     async deleteObservation(observationId) {
         let data = {};
@@ -473,7 +553,8 @@ class ObservationRepository {
                 where: {
                     comname: {
                         [Op.in]: comnameList  // Filter observations where comname is in comnameList
-                    }
+                    },
+                    note: 'R' // Only include observations with note = "R"
                 },
                 order: [['mediaPosition', 'ASC']], // Sort by mediaPosition
                 include: [
@@ -505,7 +586,8 @@ class ObservationRepository {
                 attributes: [
                     [Sequelize.fn('DISTINCT', Sequelize.col('observations.comname')), 'comname']
                 ],
-                where: Sequelize.literal(`
+                where: 
+                Sequelize.literal(`
                     EXISTS (
                         SELECT 1 
                         FROM keyframes 
