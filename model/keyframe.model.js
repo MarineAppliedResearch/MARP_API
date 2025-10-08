@@ -1,4 +1,5 @@
-module.exports = (sequelize, DataTypes, Model) => {
+const { Model } = require('sequelize');
+module.exports = (sequelize, DataTypes) => {
     const Observations = require('./observation.model'); // Import the Observations model
 
     class Keyframes extends Model {}

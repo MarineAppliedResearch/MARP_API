@@ -1,11 +1,12 @@
-module.exports = (sequelize, DataTypes, Model) => {
+const { Model } = require('sequelize');
+module.exports = (sequelize, DataTypes) => {
     const Keyframes = require('./keyframe.model'); // Import the Keyframes model
 
     class Observations extends Model {
       // Static method to define associations between models
       static associate(models) {
         // Associate Observations with Keyframes
-        this.hasMany(models.Keyframes, { foreignKey: 'observation_id', onDelete: 'CASCADE' });
+        this.hasMany(models.keyframes, { foreignKey: 'observation_id', onDelete: 'CASCADE' });
       }
     }
 
@@ -30,29 +31,38 @@ module.exports = (sequelize, DataTypes, Model) => {
           allowNull: true
         },
         project_id: {
-          // The TimeCode the Observation was observed at.
-          type: DataTypes.INTEGER
-          // allowNull defaults to true
+          type: DataTypes.INTEGER,
+          allowNull: true,
+          references: {
+            model: 'projects',
+            key: 'project_id'
+          },
         },
         session_id: {
-          // The TimeCode the Observation was observed at.
-          type: DataTypes.INTEGER
-          // allowNull defaults to true
+          type: DataTypes.INTEGER,
+          allowNull: true,
+          references: {
+            model: 'sessions',
+            key: 'session_id'
+          },
         },
         user_id: {
-          // The TimeCode the Observation was observed at.
-          type: DataTypes.INTEGER
-          // allowNull defaults to true
+          type: DataTypes.INTEGER,
+          allowNull: true,
+          references: {
+            model: 'users',
+            key: 'user_id'
+          },
         },
         tc: {
           // The TimeCode the Observation was observed at.
-          type: DataTypes.STRING
+          type: DataTypes.STRING(255)
           // allowNull defaults to true
         },
 
         frame: {
           // The Frame of The Observed Video when Observed.
-          type: DataTypes.STRING
+          type: DataTypes.STRING(255)
           // allowNull defaults to true
         },
 
@@ -64,7 +74,7 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         comname: {
           // The common name of the observed species.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         count: {
@@ -74,7 +84,7 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         sex: {
           // The number of this species observed in this observeration.
-            type: DataTypes.CHAR
+            type: DataTypes.STRING(255)
         },
 
         coarsesize: {
@@ -94,47 +104,47 @@ module.exports = (sequelize, DataTypes, Model) => {
 
         etc: {
           // the ending time code of this observation, for a range.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         taxReview: {
           // Does this observation need to be reviewed by another processor?.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         note: {
           // Special Notes about this observation.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         downcamera: {
           // Is this observation looking at a down camera?
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         timelog: {
           // A timestamp of the time when this observation was recorded.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         video_source: {
           // The file location of the video this observation was made on..
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         videoLocation: {
           // An offset to equate the time of the video, with the actual world time of the observation.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         mediaPosition: {
           // A timestamp of the position of the video where the observation was made.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         actualPosition: {
           // A time stamp for the actual real world time this information was taken.
-            type: DataTypes.STRING
+            type: DataTypes.STRING(255)
         },
 
         substrate_bedrock:{
@@ -203,8 +213,18 @@ module.exports = (sequelize, DataTypes, Model) => {
         }
       }, {
         // Other model options go here
-        sequelize, // We need to pass the connection instance
-        modelName: 'observations' // We need to choose the model name
+          sequelize,
+          modelName: 'observations',
+          tableName: 'observations',
+          timestamps: true, // Enables createdAt and updatedAt fields
+          schema: 'public',
+          indexes: [
+            {
+              name: 'observations_pkey',
+              unique: true,
+              fields: ['observation_id']
+            }
+          ]
       });
 
       

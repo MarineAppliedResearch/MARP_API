@@ -12,6 +12,30 @@ const projectController = require('./controller/project.controller')
 const sessionController = require('./controller/session.controller')
 const metaInfoController = require('./controller/metaInfo.controller')
 
+
+//---------------------------------------------------------
+//  Database initialization (via models/index.js)
+//---------------------------------------------------------
+const db = require('./model');
+
+(async () => {
+  try {
+    await db.sequelize.authenticate();
+    console.log('Connected to PostgreSQL.');
+
+    if (process.env.NODE_ENV === 'development') {
+      await db.sequelize.sync({ alter: false });
+      console.log('Development schema synced safely (non-destructive).');
+    }
+
+    console.log('Models initialized successfully.');
+
+  } catch (err) {
+    console.error('Database initialization failed:', err);
+  }
+})();
+
+
 const app = express();
 const port = process.env.PORT || 3000;
 
