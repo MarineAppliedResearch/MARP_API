@@ -11,7 +11,7 @@ const userController = require('./controller/user.controller')
 const projectController = require('./controller/project.controller')
 const sessionController = require('./controller/session.controller')
 const metaInfoController = require('./controller/metaInfo.controller')
-
+const speciesController = require('./controller/species.controller')
 
 //---------------------------------------------------------
 //  Database initialization (via models/index.js)
@@ -134,7 +134,9 @@ app.get('/api/observations/bySessionID/:session_id', (req, res) => {
 
 
 
-
+app.get('/api/species', (req, res) => {
+    speciesController.getSpecies().then(data => res.json(data));
+});
 
 
 app.get('/api/users', (req, res) => {
@@ -174,6 +176,16 @@ app.get('/api/user/getUserNameByID/:userID', (req, res) => {
 });
 
 // POST HERE
+app.post('/api/dataset', (req, res) => {
+    console.log(req.body);
+    datasetController.createDataset(req.body.dataset)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error("Error creating dataset:", err);
+            res.status(500).json({ error: "Failed to create dataset" });
+        });
+});
+
 
 app.post('/api/task', (req, res) => {
     console.log(req.body);

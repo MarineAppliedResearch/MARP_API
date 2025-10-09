@@ -34,6 +34,7 @@ const connect = () => {
     db.sessions = require("../model/session.model")(sequelize, DataTypes, Model);
     db.metaInfo =  require("../model/metaInfo.model")(sequelize, DataTypes, Model);
     db.keyframes =  require("../model/keyframe.model")(sequelize, DataTypes, Model);
+    db.species =  require("../model/species.model")(sequelize, DataTypes, Model);
 
 
     // reset everything.
