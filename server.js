@@ -12,6 +12,7 @@ const projectController = require('./controller/project.controller')
 const sessionController = require('./controller/session.controller')
 const metaInfoController = require('./controller/metaInfo.controller')
 const speciesController = require('./controller/species.controller')
+const datasetController = require('./controller/dataset.controller')
 
 //---------------------------------------------------------
 //  Database initialization (via models/index.js)
@@ -173,6 +174,11 @@ app.get('/api/metaInfo/dbName', (req, res) => {
 
 app.get('/api/user/getUserNameByID/:userID', (req, res) => {
     userController.getUserNameByID(req.params.userID).then(data => res.json(data));
+});
+
+
+app.get('/api/dataset', (req, res) => {
+    datasetController.getDatasets().then(data => res.json(data));
 });
 
 // POST HERE

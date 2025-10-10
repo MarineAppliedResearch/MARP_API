@@ -35,7 +35,7 @@ const connect = () => {
     db.metaInfo =  require("../model/metaInfo.model")(sequelize, DataTypes, Model);
     db.keyframes =  require("../model/keyframe.model")(sequelize, DataTypes, Model);
     db.species =  require("../model/species.model")(sequelize, DataTypes, Model);
-
+    db.datasets =  require("../model/datasets.model")(sequelize, DataTypes, Model);
 
     // reset everything.
    // db.sequelize.sync({ force: true }).then(() => {
