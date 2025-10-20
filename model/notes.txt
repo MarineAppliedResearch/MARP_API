@@ -1,0 +1,219 @@
+/**
+ * ===================================================================
+ * MARP MACHINE LEARNING DATABASE SCHEMA OVERVIEW
+ * -------------------------------------------------------------------
+ * Author: Isaac Assegai
+ * Date: 2025-10-07
+ * ===================================================================
+ *
+ * This schema defines the relational database structure supporting
+ * the MARP Machine Learning pipeline. It tracks datasets, training
+ * runs, models, metrics, and artifacts to ensure full traceability
+ * and reproducibility of machine learning workflows.
+ *
+ * -------------------------------------------------------------------
+ * CORE ENTITIES
+ * -------------------------------------------------------------------
+ *
+ * TABLE: ml_models
+ * -------------------------------------------------------------
+ * Stores metadata for each machine learning model.
+ * Each record represents a model (trained or in-progress).
+ *
+ * FIELDS:
+ * - id: Primary key.
+ * - name: Model name.
+ * - description: Summary of the model or training purpose.
+ * - version: Model version or tag (v1.0, v2.1, etc).
+ * - framework: Framework used (YOLOv8, TensorFlow, etc.).
+ * - architecture: Model architecture or type.
+ * - storage_path: Path to stored weights or checkpoints.
+ * - created_at / updated_at: Record timestamps.
+ *
+ * RELATIONSHIPS:
+ * - (1-M) ml_models → training_runs
+ * - (M-N) ml_models ↔ species (via model_species)
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: species
+ * -------------------------------------------------------------
+ * Defines biological taxonomy and GUI display configuration
+ * for all taxa tracked in MARP.
+ *
+ * FIELDS:
+ * - id / taxserial: Unique identifiers.
+ * - comname: Common name.
+ * - species: Scientific name.
+ * - observation_type / taxonomic_level / report_group.
+ * - habitat_preference / depth_min / depth_max.
+ * - GUI fields: gui_home_order, gui_maintab, gui_subtab, etc.
+ * - created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-N) species ↔ ml_models (via model_species)
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: model_species
+ * -------------------------------------------------------------
+ * Join table linking ml_models ↔ species.
+ * Stores class-specific training data information.
+ *
+ * FIELDS:
+ * - id: Primary key.
+ * - model_id / species_id: Foreign keys.
+ * - dataset_size: Number of training samples.
+ * - balance_weight: Weight applied to class during training.
+ * - precision_mean / recall_mean / f1_mean.
+ * - notes / created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) model_species → ml_models
+ * - (M-1) model_species → species
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: datasets
+ * -------------------------------------------------------------
+ * Represents a curated dataset of observations used in
+ * training, validation, or testing.
+ *
+ * FIELDS:
+ * - id / name / description.
+ * - location / source.
+ * - num_samples / num_classes.
+ * - notes / created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-N) datasets ↔ observations (via dataset_observations)
+ * - (1-M) datasets → training_runs
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: dataset_observations
+ * -------------------------------------------------------------
+ * Join table linking datasets ↔ observations.
+ * Tracks which observations were used and how.
+ *
+ * FIELDS:
+ * - id: Primary key.
+ * - dataset_id / observation_id.
+ * - inclusion_type: "train", "val", or "test".
+ * - selection_method: "manual", "auto", "random_sample", etc.
+ * - weight / notes / created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) dataset_observations → datasets
+ * - (M-1) dataset_observations → observations
+ *
+ * BEHAVIOR:
+ * - Deleting a dataset removes only join records, not observations.
+ * - Deleting an observation removes only join records, not datasets.
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: training_runs
+ * -------------------------------------------------------------
+ * Represents a specific execution of model training.
+ *
+ * FIELDS:
+ * - id: Primary key.
+ * - model_id / dataset_id: Foreign keys.
+ * - run_name / description.
+ * - status: "running", "completed", "failed".
+ * - start_time / end_time.
+ * - total_epochs / completed_epochs.
+ * - final_precision / final_recall / final_map50 / final_map5095.
+ * - created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) training_runs → ml_models
+ * - (M-1) training_runs → datasets
+ * - (1-1) training_runs ↔ hyperparameters
+ * - (1-M) training_runs → epochs
+ * - (1-M) training_runs → metrics_summary
+ * - (1-M) training_runs → artifacts
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: epochs
+ * -------------------------------------------------------------
+ * Per-epoch performance and timing data for each training run.
+ *
+ * FIELDS:
+ * - id / training_run_id.
+ * - epoch_number.
+ * - start_time / end_time / duration_seconds.
+ * - precision / recall / map50 / map5095 / box_loss / cls_loss / dfl_loss.
+ * - created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) epochs → training_runs
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: hyperparameters
+ * -------------------------------------------------------------
+ * JSONB store of full hyperparameter configuration for a run.
+ *
+ * FIELDS:
+ * - id / training_run_id.
+ * - params (JSONB): All hyperparameters (lr0, momentum, batch, etc.).
+ * - created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) hyperparameters → training_runs
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: metrics_summary
+ * -------------------------------------------------------------
+ * Aggregated evaluation metrics per dataset split (train/val/test).
+ *
+ * FIELDS:
+ * - id / training_run_id.
+ * - dataset_split: "train", "val", "test".
+ * - precision / recall / map50 / map5095 / f1_score.
+ * - confusion_matrix_path / result_plot_path.
+ * - details (JSONB): Optional arrays for class-wise metrics.
+ * - timestamp / created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) metrics_summary → training_runs
+ * - (1-M) metrics_summary → metrics_curves
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: metrics_curves
+ * -------------------------------------------------------------
+ * Fine-grained metrics per confidence threshold for plotting.
+ *
+ * FIELDS:
+ * - id / metrics_summary_id.
+ * - confidence_threshold (0–1).
+ * - precision / recall / f1_score / support.
+ * - created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) metrics_curves → metrics_summary
+ *
+ * -------------------------------------------------------------------
+ *
+ * TABLE: artifacts
+ * -------------------------------------------------------------
+ * Tracks all files, logs, and outputs generated by a training run.
+ *
+ * FIELDS:
+ * - id / training_run_id.
+ * - artifact_type: "weights", "log", "results_plot", etc.
+ * - path / size_mb / hash / metadata (JSONB).
+ * - created_at / updated_at.
+ *
+ * RELATIONSHIPS:
+ * - (M-1) artifacts → training_runs
+ *
+ * -------------------------------------------------------------------
+ * END OF SCHEMA
+ * ===================================================================
+ */

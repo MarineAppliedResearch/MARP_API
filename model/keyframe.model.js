@@ -1,4 +1,5 @@
-module.exports = (sequelize, DataTypes, Model) => {
+const { Model } = require('sequelize');
+module.exports = (sequelize, DataTypes) => {
     const Observations = require('./observation.model'); // Import the Observations model
 
     class Keyframes extends Model {}
@@ -31,7 +32,8 @@ module.exports = (sequelize, DataTypes, Model) => {
       },
       // Type of the keyframe (start, middle, end)
       type: {
-        type: DataTypes.ENUM('start', 'middle', 'end'),
+        //type: DataTypes.ENUM('start', 'middle', 'end'),
+        type: DataTypes.STRING,
         allowNull: false
       },
       framenum: {

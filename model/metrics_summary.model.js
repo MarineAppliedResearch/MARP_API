@@ -1,0 +1,234 @@
+/**
+ * ===================================================================
+ * File: metrics_summary.model.js
+ * Author: Isaac Assegai Travers
+ * Date: 2025-10-07
+ * -------------------------------------------------------------------
+ * Part of the MARP Machine Learning Database Schema.
+ *
+ * Purpose:
+ * Defines the `metrics_summary` table, which stores aggregated
+ * performance metrics for each dataset split ("train", "val", "test")
+ * from a given training run.
+ *
+ * Each record represents the summary statistics of a specific split,
+ * including precision, recall, F1 score, and mean average precision
+ * (mAP). Optional visualization artifacts and curve data can also be
+ * linked here.
+ *
+ * This table enables comparison between training and validation
+ * performance across models and runs.
+ * ===================================================================
+ */
+
+const { Model } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+  /**
+   * Model: metrics_summary
+   * ----------------------------------------------------------------
+   * Aggregated evaluation results for each dataset split within a
+   * training run. Linked to `metrics_curves` for detailed curves.
+   */
+  class metrics_summary extends Model {
+    static associate(models) {
+      // Each summary belongs to one training run
+      this.belongsTo(models.training_runs, {
+        as: 'training_run',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+
+      // One summary can have many fine-grained metric curves
+      this.hasMany(models.metrics_curves, {
+        as: 'curves',
+        foreignKey: 'metrics_summary_id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+    }
+  }
+
+  metrics_summary.init(
+    {
+      id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        autoIncrement: true,
+        primaryKey: true,
+        comment: 'Unique identifier for this metrics summary record.',
+      },
+
+      training_run_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        comment:
+          'Foreign key referencing the training run this metrics summary belongs to (training_runs.id).',
+      },
+
+      species_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'species', key: 'id' },
+        comment:
+          'Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.'
+      },
+
+      dataset_split: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        comment:
+          'Specifies which dataset split these metrics apply to: "train", "val", or "test".',
+      },
+
+      precision: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Aggregate precision achieved for this dataset split.',
+      },
+
+      recall: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Aggregate recall achieved for this dataset split.',
+      },
+
+      map50: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean Average Precision (mAP) at 0.5 IoU threshold for this split.',
+      },
+
+      map5095: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean Average Precision (mAP) averaged over IoU thresholds 0.5–0.95.',
+      },
+
+      fitness: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment: 'Weighted performance score used by YOLO to rank model checkpoints.'
+      },
+
+      f1_score: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Aggregate F1 score for this dataset split, typically computed from precision and recall.',
+      },
+
+      confusion_matrix_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'Filesystem path or URI to the confusion matrix image generated for this dataset split.',
+      },
+
+      result_plot_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'Filesystem path or URI to the overall results plot (e.g., PR or F1 curves) for this dataset split.',
+      },
+
+      confusion_matrix_norm_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the normalized confusion matrix plot image generated during evaluation.'
+      },
+
+      box_f1_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the F1 vs confidence curve plot image.'
+      },
+
+      box_p_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the precision vs confidence curve plot image.'
+      },
+
+      box_pr_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the precision–recall (PR) curve plot image.'
+      },
+
+      box_r_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the recall vs confidence curve plot image.'
+      },
+
+      labels_plot_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the label distribution plot image showing class balance in the dataset.'
+      },
+
+      details: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+        comment:
+          'Optional JSON object storing additional data arrays (e.g., per-class metrics or PR/F1-confidence points).',
+      },
+
+      timestamp: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this metrics summary was created or finalized.',
+      },
+
+      created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Record creation timestamp.',
+      },
+
+      updated_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Record last update timestamp.',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'metrics_summary',
+      tableName: 'metrics_summary',
+      schema: 'public',
+      timestamps: false,
+      comment:
+        'Aggregated per-split (train/val/test) evaluation metrics for each training run, linked to detailed metric curves.',
+      indexes: [
+        {
+          name: 'metrics_summary_pkey',
+          unique: true,
+          fields: ['id'],
+        },
+        {
+          name: 'metrics_summary_training_run_id_idx',
+          fields: ['training_run_id'],
+        },
+        {
+          name: 'metrics_summary_split_idx',
+          fields: ['dataset_split'],
+        },
+      ],
+    }
+  );
+
+  return metrics_summary;
+};
