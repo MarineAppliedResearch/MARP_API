@@ -31,7 +31,7 @@ module.exports = {
           allowNull: false
         },
         type: {
-          type: Sequelize.ENUM('start', 'middle', 'end'),
+          type: Sequelize.STRING,
           allowNull: false,
         },
         framenum:{

@@ -4,7 +4,7 @@ module.exports = {
   "development": {
     "username": "mare_user",
     "password": "mare_user_pass",
-    "database": "mare_development2",
+    "database": "mare_development3",
     "host": "192.168.1.201",
     "dialect": "postgres"
   },

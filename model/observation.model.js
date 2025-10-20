@@ -240,6 +240,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         defaultValue: false,
       },
+      confidence: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment: 'Confidence score (0.0–1.0)',
+      },
     },
     {
       sequelize,

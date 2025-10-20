@@ -59,6 +59,11 @@ module.exports = (sequelize, DataTypes) => {
       width: {
         type: DataTypes.DOUBLE,
         allowNull: false
+      },
+      confidence: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment: 'Confidence score (0.0–1.0)',
       }
     }, {
       sequelize,
