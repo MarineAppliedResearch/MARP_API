@@ -56,6 +56,14 @@ module.exports = (sequelize, DataTypes) => {
           'Foreign key referencing the metrics summary record (metrics_summary.id) this curve point belongs to.',
       },
 
+      species_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'species', key: 'id' },
+        comment:
+          'Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.'
+      },
+
       confidence_threshold: {
         // Confidence threshold value for this metric point (0.0–1.0)
         type: DataTypes.FLOAT,

@@ -32,7 +32,8 @@ module.exports = (sequelize, DataTypes) => {
       },
       // Type of the keyframe (start, middle, end)
       type: {
-        type: DataTypes.ENUM('start', 'middle', 'end'),
+        //type: DataTypes.ENUM('start', 'middle', 'end'),
+        type: DataTypes.STRING,
         allowNull: false
       },
       framenum: {

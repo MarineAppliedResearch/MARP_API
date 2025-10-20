@@ -1,30 +1,42 @@
 const { Model } = require('sequelize');
+
 module.exports = (sequelize, DataTypes) => {
+  class Projects extends Model {}
 
-    class Projects extends Model {}
-
-    Projects.init({
-        // Model attributes are defined here
-
-        project_id: {
-          // The Observation id of this observation. This is meant to be the primary key..
-          type: DataTypes.INTEGER,
-          allowNull: false,
-          primaryKey: true,
-          autoIncrement: true
+  Projects.init(
+    {
+      project_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        primaryKey: true,
+        autoIncrement: true,
+      },
+      name: {
+        type: DataTypes.STRING(255),            // match DB exactly
+        allowNull: false,
+        unique: 'projects_name_key',            // use same constraint name
+      },
+    },
+    {
+      sequelize,
+      modelName: 'projects',
+      tableName: 'projects',                    // explicit table name
+      schema: 'public',
+      timestamps: true,                         // match old model
+      indexes: [
+        {
+          name: 'projects_name_key',
+          unique: true,
+          fields: ['name'],
         },
+        {
+          name: 'projects_pkey',
+          unique: true,
+          fields: ['project_id'],
+        },
+      ],
+    }
+  );
 
-        name: {
-          // The Name of the Project the observation is associated with.
-          type: DataTypes.STRING,
-          allowNull: false,
-          unique: true
-        }
-      }, {
-        // Other model options go here
-        sequelize, // We need to pass the connection instance
-        modelName: 'projects' // We need to choose the model name
-      });
-      
-      return Projects;
-}
+  return Projects;
+};

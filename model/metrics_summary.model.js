@@ -67,6 +67,14 @@ module.exports = (sequelize, DataTypes) => {
           'Foreign key referencing the training run this metrics summary belongs to (training_runs.id).',
       },
 
+      species_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'species', key: 'id' },
+        comment:
+          'Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.'
+      },
+
       dataset_split: {
         type: DataTypes.STRING,
         allowNull: false,
@@ -102,6 +110,12 @@ module.exports = (sequelize, DataTypes) => {
           'Mean Average Precision (mAP) averaged over IoU thresholds 0.5–0.95.',
       },
 
+      fitness: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment: 'Weighted performance score used by YOLO to rank model checkpoints.'
+      },
+
       f1_score: {
         type: DataTypes.FLOAT,
         allowNull: true,
@@ -121,6 +135,42 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Filesystem path or URI to the overall results plot (e.g., PR or F1 curves) for this dataset split.',
+      },
+
+      confusion_matrix_norm_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the normalized confusion matrix plot image generated during evaluation.'
+      },
+
+      box_f1_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the F1 vs confidence curve plot image.'
+      },
+
+      box_p_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the precision vs confidence curve plot image.'
+      },
+
+      box_pr_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the precision–recall (PR) curve plot image.'
+      },
+
+      box_r_curve_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the recall vs confidence curve plot image.'
+      },
+
+      labels_plot_path: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Path to the label distribution plot image showing class balance in the dataset.'
       },
 
       details: {
