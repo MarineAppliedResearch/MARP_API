@@ -7,7 +7,7 @@ const connect = () => {
     const userName = process.env.USER;
     const password = process.env.PASSWORD;
     const database = process.env.DB;
-    const dialect = process.env.DIALECT;
+    const dialect = process.env.DIALECT || 'postgres';
 
     console.log("dialect: " + dialect);
 
@@ -33,6 +33,17 @@ const connect = () => {
     db.projects = require("../model/project.model")(sequelize, DataTypes, Model);
     db.sessions = require("../model/session.model")(sequelize, DataTypes, Model);
     db.metaInfo =  require("../model/metaInfo.model")(sequelize, DataTypes, Model);
+    
+    db.species =  require("../model/species.model")(sequelize, DataTypes, Model);
+    db.datasets =  require("../model/datasets.model")(sequelize, DataTypes, Model);
+    db.dataset_observations =  require("../model/dataset_observations.model")(sequelize, DataTypes, Model);
+    db.ml_models =  require("../model/ml_models.model")(sequelize, DataTypes, Model);
+    db.training_runs =  require("../model/training_runs.model")(sequelize, DataTypes, Model);
+    db.epochs =  require("../model/epochs.model")(sequelize, DataTypes, Model);
+    db.metrics_summary =  require("../model/metrics_summary.model")(sequelize, DataTypes, Model);
+    db.metrics_curves =  require("../model/metrics_curves.model")(sequelize, DataTypes, Model);
+    db.model_species =  require("../model/model_species.model")(sequelize, DataTypes, Model);
+    db.keyframes =  require("../model/keyframe.model")(sequelize, DataTypes, Model);
 
 
     // reset everything.
@@ -105,6 +116,28 @@ const connect = () => {
         sourceKey: "session_id",
         foreignKey: "session_id",
         as: "session"
+    });
+
+    // Define the association here
+    db.keyframes.belongsTo(db.observations, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id",
+        as: "observation",
+        onDelete: "CASCADE"
+    });
+
+    db.observations.hasMany(db.keyframes, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id", 
+        as: "keyframes",
+        onDelete: "CASCADE"
+    });
+
+    db.keyframes.belongsTo(db.observations, { 
+        sourceKey: "observation_id",
+        foreignKey: "observation_id", 
+        as: "parentObservation",
+        onDelete: "CASCADE"
     });
 
     return db;

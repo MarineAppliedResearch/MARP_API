@@ -5,7 +5,7 @@ const { Op } = require("sequelize");
 const sessionController = require('../controller/session.controller');
 const observationController = require('../controller/observation.controller');
 const userController = require('../controller/user.controller');
-const {Sessions} = require("../model/sessions.js");
+const {Sessions} = require("../model/old/sessions.js");
 const moment = require('moment'); // For date manipulation
 
 
@@ -116,6 +116,33 @@ class ObservationRepository {
           }
     }
 
+    
+
+    async getObservationsBySessionID(session_id) {
+        try {
+            // Fetch observations along with their associated keyframes
+            const observations = await this.db.observations.findAll({
+                where: {
+                    session_id: session_id
+                },
+                include: [
+                    {
+                        model: this.db.keyframes,  // Include keyframes related to each observation
+                        as: 'keyframes',           // Alias used during association
+                        required: false            // Include observations even if there are no keyframes
+                    }
+                ]
+            });
+    
+            // console.log('observations:::', observations);
+            return observations;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+    
+    /*
     async getObservationsBySessionID(session_id) {
         try {
             const observations = await this.db.observations.findAll({
@@ -130,6 +157,7 @@ class ObservationRepository {
             return [];
         }
     }
+    */
 
 
 
@@ -252,13 +280,93 @@ class ObservationRepository {
             observation.observation_id = (parseInt(max_observation_id) + 1).toString();
             observation.obsID = (parseInt(maxOBSID)).toString();
             observation.PobsID = parseInt(maxPobsID + 1);
-            data = await this.db.observations.create(observation);
+
+            console.log("Models in DB:", Object.keys(this.db));
+            console.log("Associations on observations:", Object.keys(this.db.observations.associations));
+
+            console.log("Observation payload:", Object.keys(observation));
+            console.log("Keyframes length:", observation.keyframes?.length);
+
+            try {
+                data = await this.db.observations.create(observation, {
+                    include: [{ model: this.db.keyframes, as: 'keyframes' }]
+                });
+                } catch (err) {
+                console.error("Observation create failed:", err);
+                throw err;
+                }
         } catch(err) {
             logger.error('Error::' + err);
         }
         return data;
     }
 
+
+    /*
+     * Updates an observation with new data, also updates
+     * keyframes if comname has changed.
+     */
+    async updateObservation(observation) {
+        observation.observation_id = parseInt(observation.observation_id);
+
+        let data = {};
+        const t = await this.db.sequelize.transaction(); // transaction for safety
+
+        try {
+            // Get the existing observation
+            const existingObservation = await this.db.observations.findOne({
+                where: { observation_id: observation.observation_id },
+                raw: true
+            });
+
+            if (!existingObservation) {
+                throw new Error(`Observation with ID ${observation.observation_id} not found`);
+            }
+
+            // Check if comname changed
+            const comnameChanged =
+                observation.comname &&
+                observation.comname !== existingObservation.comname;
+
+            // Update the observation
+            observation.updateddate = new Date().toISOString();
+            data = await this.db.observations.update(
+                { ...observation },
+                {
+                    where: { observation_id: observation.observation_id },
+                    transaction: t
+                }
+            );
+
+            // If comname changed, propagate to all associated keyframes
+            if (comnameChanged) {
+                await this.db.keyframes.update(
+                    { comname: observation.comname },
+                    {
+                        where: { observation_id: observation.observation_id },
+                        transaction: t
+                    }
+                );
+            }
+
+            await t.commit();
+
+            // Optional: log for debugging
+            if (comnameChanged) {
+                logger.info(
+                    `Observation ${observation.observation_id}: comname updated to "${observation.comname}" and propagated to keyframes.`
+                );
+            }
+
+        } catch (err) {
+            await t.rollback();
+            logger.error('Error::' + err);
+            throw err;
+        }
+
+        return data;
+    }
+    /* // old, doesn't update keyframes as well
     async updateObservation(observation) {
         observation.observation_id = parseInt(observation.observation_id);
         let data = {};
@@ -274,7 +382,7 @@ class ObservationRepository {
             logger.error('Error::' + err);
         }
         return data;
-    }
+    }*/
 
     async deleteObservation(observationId) {
         let data = {};
@@ -367,6 +475,140 @@ class ObservationRepository {
             console.log(err);
         } 
     }
+
+
+    /**
+     * Returns all observations associated with video videoName
+     * @param {*} videoName 
+     */
+    async getObservationsByVideo(videoName){
+
+        try {
+            // Fetch observations along with their associated keyframes
+            const observations = await this.db.observations.findAll({
+                where: {
+                    video_source: videoName
+                },
+                order: [['mediaPosition', 'ASC']], // Sort by createdAt to get them in order
+                include: [
+                    {
+                        model: this.db.keyframes,  // Include keyframes related to each observation
+                        as: 'keyframes',           // Alias used during association
+                        required: true            // Include observations even if there are no keyframes
+                    }
+                ]
+            });
+    
+            // console.log('observations:::', observations);
+            return observations;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+        
+    }
+
+
+    /**
+     * Returns all observations associated with video videoName that have a comname in comnameList
+     * @param {string} videoName - The name of the video
+     * @param {string[]} comnameList - An array of comname strings to filter observations
+     */
+    async getObservationsByVideoAndComnames(videoName, comnameList) {
+        try {
+            // Fetch observations along with their associated keyframes
+            const observations = await this.db.observations.findAll({
+                where: {
+                    video_source: videoName,
+                    comname: {
+                        [Op.in]: comnameList  // Filter observations where comname is in comnameList
+                    }
+                },
+                order: [['mediaPosition', 'ASC']], // Sort by mediaPosition
+                include: [
+                    {
+                        model: this.db.keyframes,  // Include keyframes related to each observation
+                        as: 'keyframes',           // Alias used during association
+                        required: true             // Only include observations that have keyframes
+                    }
+                ]
+            });
+    
+            return observations;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+    /**
+     * Returns all observations that have associated keyframes and a comname in comnameList
+     * @param {string[]} comnameList - An array of comname strings to filter observations
+     */
+    async getObservationsWithKeyframesByComnames(comnameList) {
+        try {
+
+            // Fetch observations along with their associated keyframes
+            const observations = await this.db.observations.findAll({
+                where: {
+                    comname: {
+                        [Op.in]: comnameList  // Filter observations where comname is in comnameList
+                    },
+                    note: 'R' // Only include observations with note = "R"
+                },
+                order: [['mediaPosition', 'ASC']], // Sort by mediaPosition
+                include: [
+                    {
+                        model: this.db.keyframes,  // Include associated keyframes
+                        as: 'keyframes',           // Alias used in your associations
+                        required: true             // Only include observations that have keyframes
+                    }
+                ]
+            });
+
+            return observations;
+        } catch (err) {
+            console.error('Error in getObservationsWithKeyframesByComnames:', err);
+            return [];
+        }
+    }
+
+
+
+    
+     /**
+     * Retrieves all distinct comnames from observations that have associated keyframes.
+     * @returns {Promise<string[]>} - A promise that resolves to an array of distinct comnames.
+     */
+    async getDistinctComnamesWithKeyframes() {
+        try {
+            const comnamesData = await this.db.observations.findAll({
+                attributes: [
+                    [Sequelize.fn('DISTINCT', Sequelize.col('observations.comname')), 'comname']
+                ],
+                where: 
+                Sequelize.literal(`
+                    EXISTS (
+                        SELECT 1 
+                        FROM keyframes 
+                        WHERE keyframes.observation_id = observations.observation_id
+                    )
+                `),
+                raw: true // Return raw data without metadata
+            });
+
+            // Extract comname values from the result
+            const comnames = comnamesData.map(item => item.comname);
+
+            return comnames;
+        } catch (err) {
+            console.error('Error fetching distinct comnames:', err);
+            throw err;
+        }
+    }
+
+
+    
 
 
     /* Returns data for a user dashboard that gives us counts

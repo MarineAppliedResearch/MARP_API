@@ -1,204 +1,269 @@
-module.exports = (sequelize, DataTypes, Model) => {
+const { Model } = require('sequelize');
 
-    class Observations extends Model {}
+module.exports = (sequelize, DataTypes) => {
+  const Keyframes = require('./keyframe.model');
 
-    Observations.init({
-        // Model attributes are defined here
-
-        observation_id: {
-          // The Observation id of this observation. This is meant to be the primary key..
-          type: DataTypes.INTEGER,
-          allowNull: false,
-          primaryKey: true,
-          autoIncrement: true
-        },
-      
-        obsID: {
-          // The Observation id of this observation. This is meant to be the primary key..
-          type: DataTypes.INTEGER,
-          allowNull: false
-        },
-        PobsID:{
-          type: DataTypes.INTEGER,
-          allowNull: true
-        },
-        project_id: {
-          // The TimeCode the Observation was observed at.
-          type: DataTypes.INTEGER
-          // allowNull defaults to true
-        },
-        session_id: {
-          // The TimeCode the Observation was observed at.
-          type: DataTypes.INTEGER
-          // allowNull defaults to true
-        },
-        user_id: {
-          // The TimeCode the Observation was observed at.
-          type: DataTypes.INTEGER
-          // allowNull defaults to true
-        },
-        tc: {
-          // The TimeCode the Observation was observed at.
-          type: DataTypes.STRING
-          // allowNull defaults to true
-        },
-
-        frame: {
-          // The Frame of The Observed Video when Observed.
-          type: DataTypes.STRING
-          // allowNull defaults to true
-        },
-
-        taxserial: {
-          // The Tax Serial of the Observed Species
-            type: DataTypes.INTEGER
-            // allowNull defaults to true
-        },
-
-        comname: {
-          // The common name of the observed species.
-            type: DataTypes.STRING
-        },
-
-        count: {
-          // The number of this species observed in this observeration.
-            type: DataTypes.INTEGER
-        },
-
-        sex: {
-          // The number of this species observed in this observeration.
-            type: DataTypes.CHAR
-        },
-
-        coarsesize: {
-          // The number of this species observed in this observeration.
-            type: DataTypes.INTEGER
-        },
-
-        sizereview: {
-          // The number of this species observed in this observeration.
-            type: DataTypes.INTEGER
-        },
-
-        quadrant: {
-          // The Quadrant of the screen this Observation was found at..
-            type: DataTypes.INTEGER
-        },
-
-        etc: {
-          // the ending time code of this observation, for a range.
-            type: DataTypes.STRING
-        },
-
-        taxReview: {
-          // Does this observation need to be reviewed by another processor?.
-            type: DataTypes.STRING
-        },
-
-        note: {
-          // Special Notes about this observation.
-            type: DataTypes.STRING
-        },
-
-        downcamera: {
-          // Is this observation looking at a down camera?
-            type: DataTypes.STRING
-        },
-
-        timelog: {
-          // A timestamp of the time when this observation was recorded.
-            type: DataTypes.STRING
-        },
-
-        video_source: {
-          // The file location of the video this observation was made on..
-            type: DataTypes.STRING
-        },
-
-        videoLocation: {
-          // An offset to equate the time of the video, with the actual world time of the observation.
-            type: DataTypes.STRING
-        },
-
-        mediaPosition: {
-          // A timestamp of the position of the video where the observation was made.
-            type: DataTypes.STRING
-        },
-
-        actualPosition: {
-          // A time stamp for the actual real world time this information was taken.
-            type: DataTypes.STRING
-        },
-
-        substrate_bedrock:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_megaclast:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_boulder:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_cobble:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_pebble:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_granule:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_sand:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_mud:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_coral_reef:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_coral_rubble:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_shell_hash:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_shell_rubble:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        },
-
-        substrate_algal:{
-          type: DataTypes.BOOLEAN,
-          defaultValue: false
-        }
-      }, {
-        // Other model options go here
-        sequelize, // We need to pass the connection instance
-        modelName: 'observations' // We need to choose the model name
+  class Observations extends Model {
+    static associate(models) {
+      this.hasMany(models.keyframes, {
+        foreignKey: 'observation_id',
+        onDelete: 'CASCADE',
       });
-      
-      return Observations;
-}
+    }
+  }
+
+  Observations.init(
+    {
+      observation_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        primaryKey: true,
+        autoIncrement: true,
+      },
+
+      obsID: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+      },
+
+      PobsID: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      project_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'projects',
+          key: 'project_id',
+        },
+      },
+
+      session_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'sessions',
+          key: 'session_id',
+        },
+      },
+
+      user_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: {
+          model: 'users',
+          key: 'user_id',
+        },
+      },
+
+      tc: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+
+      frame: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      taxserial: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+
+      comname: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      count: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+
+      sex: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      coarsesize: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+
+      sizereview: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+
+      quadrant: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+
+      etc: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      taxReview: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      note: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      downcamera: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      timelog: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      video_source: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      videoLocation: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      mediaPosition: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      actualPosition: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        defaultValue: null,
+      },
+
+      substrate_bedrock: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_megaclast: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_boulder: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_cobble: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_pebble: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_granule: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_sand: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_mud: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_coral_reef: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_coral_rubble: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_shell_hash: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_shell_rubble: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+
+      substrate_algal: {
+        type: DataTypes.BOOLEAN,
+        allowNull: true,
+        defaultValue: false,
+      },
+      confidence: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+        comment: 'Confidence score (0.0–1.0)',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'observations',
+      tableName: 'observations',
+      schema: 'public',
+      timestamps: true,
+      freezeTableName: true,
+      underscored: false,
+      sync: { alter: false },  // <— prevents any future alters
+      indexes: [
+        {
+          name: 'observations_pkey',
+          unique: true,
+          fields: ['observation_id'],
+        },
+      ],
+    }
+  );
+
+  return Observations;
+};
