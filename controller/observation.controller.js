@@ -55,14 +55,36 @@ class ObservationController {
         return await observationService.getObservationsByVideo(videoName);
     }
 
+    async getVideoSummariesByProject(project_id){
+        logger.info('Controller: getVideoSummariesByProject', project_id);
+        return await observationService.getVideoSummariesByProject(project_id);
+    }
+
+
+
     /**
      * Returns all observations associated with video videoName that have a comname in comnameList
      * @param {string} req.query.videoName - The name of the video
      * @param {string[]} req.query.comnameList - An array of comname strings to filter observations
      */
     async getObservationsByVideoAndComnames(videoName, comnameList){
+        logger.info('Controller: getObservationsByVideoAndComnames', videoName);
         return await observationService.getObservationsByVideoAndComnames(videoName, comnameList);
     }
+
+
+    /**
+     * Returns all observations associated with video videoName that have a comname in comnameList
+     * @param {string} videoName - The name of the video
+     * @param {string[]} projectName - An array of comname strings to filter observations
+     */
+    async getObservationsByVideoAndProject(videoName, projectName){
+        return await observationService.getObservationsByVideoAndProject(videoName, projectName);
+    }
+
+
+
+    
 
     /**
      * Returns all observations that have associated keyframes and a comname in comnameList

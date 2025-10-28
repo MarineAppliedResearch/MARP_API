@@ -253,3 +253,45 @@ UPDATE observations
 SET "PobsID" = row_num
 FROM ranked_observations
 WHERE observations.observation_id = ranked_observations.observation_id;
+
+
+
+// The following will generate the keyframes, and observations in training data per species report:
+
+SELECT 
+    o."comname",
+    COUNT(DISTINCT o."observation_id") AS observation_count,
+    COUNT(DISTINCT o."video_source") AS video_count,
+    SUM(k_end."framenum" - k_start."framenum") AS total_frames,
+    AVG(k_end."framenum" - k_start."framenum") AS avg_frames_per_observation
+FROM public."observations" AS o
+JOIN public."keyframes" AS k_start 
+    ON k_start."observation_id" = o."observation_id"
+    AND k_start."type" = 'start'
+JOIN public."keyframes" AS k_end 
+    ON k_end."observation_id" = o."observation_id"
+    AND k_end."type" = 'end'
+WHERE o."note" = 'R'
+GROUP BY o."comname"
+ORDER BY total_frames DESC;
+
+
+         comname         | observation_count | video_count | total_frames | avg_frames_per_observation
+-------------------------+-------------------+-------------+--------------+----------------------------
+ White-plumed anemone    |               343 |           3 |       191831 |        73.7527873894655902
+ California sea cucumber |               449 |           6 |        30283 |        56.3929236499068901
+ Fish-eating anemone     |               285 |           5 |        29953 |        88.8813056379821958
+ Red sea urchin          |               137 |           3 |        15493 |        60.7568627450980392
+ Red sea star            |               105 |           4 |         6985 |        63.5000000000000000
+ Bat star                |                84 |           2 |         5484 |        60.9333333333333333
+ Short red gorgonian     |                55 |           2 |         3478 |        59.9655172413793103
+ Leather star            |                31 |           3 |         3211 |        78.3170731707317073
+ Cookie star             |                51 |           5 |         2852 |        55.9215686274509804
+ UI Henricia             |                32 |           5 |         2481 |        72.9705882352941176
+ Sand-rose anemone       |                11 |           2 |         1147 |        81.9285714285714286
+ Fish eating star        |                14 |           2 |         1067 |        76.2142857142857143
+ Red gorgonian           |                 4 |           1 |          501 |       125.2500000000000000
+ Bat Star                |                 4 |           1 |          244 |        61.0000000000000000
+ Short spined sea star   |                 1 |           1 |          154 |       154.0000000000000000
+ UI sea star             |                 2 |           1 |          104 |        52.0000000000000000
+ Thorny sea star         |                 1 |           1 |           35 |        35.0000000000000000

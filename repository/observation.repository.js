@@ -1,12 +1,13 @@
 const { connect } = require('../config/db.config');
 const logger = require('../logger/api.logger');
 const { Sequelize, Model, DataTypes } = require("sequelize");
-const { Op } = require("sequelize");
 const sessionController = require('../controller/session.controller');
 const observationController = require('../controller/observation.controller');
 const userController = require('../controller/user.controller');
 const {Sessions} = require("../model/old/sessions.js");
 const moment = require('moment'); // For date manipulation
+const { Op, fn, col } = require('sequelize');
+
 
 
 class ObservationRepository {
@@ -509,6 +510,90 @@ class ObservationRepository {
     }
 
 
+
+    /**
+     * Returns a summary of videos for a given project:
+     *  - video_source
+     *  - distinct species count (unique comname)
+     *  - session count
+     *  - representative dive and line
+     */
+    async getVideoSummariesByProject(project_id) {
+        try {
+            const results = await this.db.observations.findAll({
+                attributes: [
+                    'video_source',
+                    [fn('COUNT', fn('DISTINCT', col('observations.comname'))), 'distinct_species_count'],
+                    [fn('COUNT', fn('DISTINCT', col('observations.session_id'))), 'session_count'],
+                    [fn('MIN', col('session.dive')), 'dive'],
+                    [fn('MIN', col('session.line')), 'line'],
+                    [fn('MIN', col('session.type')), 'session_type'] // 👈 add session type
+                ],
+                include: [
+                    {
+                        model: this.db.sessions,
+                        as: 'session',
+                        attributes: [], // don’t duplicate session data in results
+                        where: { project_id: project_id },
+                        required: true // ensures it acts like an INNER JOIN
+                    }
+                ],
+                group: ['observations.video_source'],
+                order: [
+                    [fn('MIN', col('session.dive')), 'ASC'],
+                    [fn('MIN', col('session.line')), 'ASC']
+                ],
+                raw: true
+            });
+
+            return results;
+        } catch (err) {
+            logger.error('Error in getVideoSummariesByProject::' + err);
+            return [];
+        }
+    }
+
+
+
+
+    /**
+     * Returns all observations associated with a given video name, and project name
+     * @param {*} videoSource 
+     * @param {*} projectName 
+     * @returns 
+     */
+    async getObservationsByVideoAndProject(videoSource, projectName){
+
+        try {
+            const project = await this.db.projects.findOne({ where: { name: projectName } });
+            //if (!project) return res.status(404).send({ error: 'Project not found' });
+
+            const observations = await this.db.observations.findAll({
+                include: [
+                    {
+                        model: this.db.sessions,
+                        as: 'session',
+                        required: true,
+                        where: { project_id: project.project_id }
+                    },
+                    {
+                        model: this.db.keyframes,  // Include keyframes related to each observation
+                        as: 'keyframes',           // Alias used during association
+                        required: true            // Include observations even if there are no keyframes
+                    }
+                ],
+                where: { video_source: videoSource },
+                order: [['mediaPosition', 'ASC']]
+            });
+
+            return observations;
+        } catch (err) {
+            logger.error('Error in getVideoSummariesByProject::' + err);
+            return [];
+        }
+    };
+
+
     /**
      * Returns all observations associated with video videoName that have a comname in comnameList
      * @param {string} videoName - The name of the video
@@ -553,8 +638,8 @@ class ObservationRepository {
                 where: {
                     comname: {
                         [Op.in]: comnameList  // Filter observations where comname is in comnameList
-                    },
-                    note: 'R' // Only include observations with note = "R"
+                    }//,
+                    //note: 'R' // Only include observations with note = "R"
                 },
                 order: [['mediaPosition', 'ASC']], // Sort by mediaPosition
                 include: [

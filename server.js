@@ -77,6 +77,13 @@ app.use('/api/getObservationsByVideo', (req, res) => {
     observationController.getObservationsByVideo(req.query.videoName).then(data => res.json(data));
 });
 
+
+app.get('/api/getVideoSummaries/:project_id', (req, res) => {
+    observationController.getVideoSummariesByProject(req.params.project_id).then(data => res.json(data));
+});
+
+
+
 /**
  * Returns all observations associated with video videoName that have a comname in comnameList
  * @param {string} req.query.videoName - The name of the video
@@ -84,6 +91,16 @@ app.use('/api/getObservationsByVideo', (req, res) => {
  */
 app.use('/api/getObservationsByVideoAndComnames', (req, res) => {
     observationController.getObservationsByVideoAndComnames(req.query.videoName, req.query.comnameList).then(data => res.json(data));
+});
+
+
+/**
+ * Returns all observations associated with video videoName a specific project name associated
+ * @param {string} req.query.videoName - The name of the video
+ * @param {string[]} req.query.projectName - An array of comname strings to filter observations
+ */
+app.use('/api/getObservationsByVideoAndProject/:videoName/:projectName', (req, res) => {
+    observationController.getObservationsByVideoAndProject(req.params.videoName, req.params.projectName).then(data => res.json(data));
 });
 
 

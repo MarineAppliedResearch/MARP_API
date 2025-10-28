@@ -44,6 +44,11 @@ class ObservationService {
         return await observationRepository.getObservationsByVideo(videoName);
     }
 
+
+    async getVideoSummariesByProject(project_id){
+        return await observationRepository.getVideoSummariesByProject(project_id);
+    }
+
     /**
      * Returns all observations associated with video videoName that have a comname in comnameList
      * @param {string} req.query.videoName - The name of the video
@@ -51,6 +56,15 @@ class ObservationService {
      */
     async getObservationsByVideoAndComnames(videoName, comnameList){
         return await observationRepository.getObservationsByVideoAndComnames(videoName, comnameList);
+    }
+
+    /**
+     * Returns all observations associated with video videoName that have a comname in comnameList
+     * @param {string} videoName - The name of the video
+     * @param {string[]} projectName - An array of comname strings to filter observations
+     */
+    async getObservationsByVideoAndProject(videoName, projectName){
+        return await observationRepository.getObservationsByVideoAndProject(videoName, projectName);
     }
 
     /**
