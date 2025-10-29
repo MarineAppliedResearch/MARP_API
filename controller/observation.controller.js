@@ -14,6 +14,13 @@ class ObservationController {
         return await observationService.getLastVideoInfo(session_id);
     }
 
+
+    async getMaxObservationFromVideo(video_source){
+        logger.info('Controller: getMaxObservationFromVideo');
+        return await observationService.getMaxObservationFromVideo(video_source);
+    }
+
+
     async updateObservationWithCount(session_id, obsID, count){
         logger.info('Controller: updateObservationWithCount');
         return await observationService.updateObservationWithCount(session_id, obsID, count);

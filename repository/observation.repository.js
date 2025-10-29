@@ -87,6 +87,46 @@ class ObservationRepository {
     }
 
 
+
+    // Returns the observation with the largerst observation_id
+    // that is associated with a specific video name
+    async getMaxObservationFromVideo(video_source){
+
+        let maxObservation_id = {};
+        let maxObservation = {};
+
+        try {
+            maxObservation_id = await this.db.observations.findAll({
+                where: {
+                    video_source: video_source
+                },
+                attributes: [Sequelize.fn('max', Sequelize.col('observation_id'))],
+                raw: true
+            });
+            //console.log('observations:::', maxObservation_id);
+            maxObservation_id = maxObservation_id[0].max;
+
+            try {
+                const maxObservation = await this.db.observations.findAll({
+                    where: {
+                        video_source: video_source,
+                        observation_id: maxObservation_id
+                    }
+                });
+                //console.log('observations:::', maxObservation);
+                return maxObservation;
+            } catch (err) {
+                console.log(err);
+                return [];
+            }
+
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+
     // Updates a given observation with the given count
     async updateObservationWithCount(session_id, obsID, count){
         try {
@@ -579,7 +619,7 @@ class ObservationRepository {
                     {
                         model: this.db.keyframes,  // Include keyframes related to each observation
                         as: 'keyframes',           // Alias used during association
-                        required: true            // Include observations even if there are no keyframes
+                        required: false            // Include observations even if there are no keyframes
                     }
                 ],
                 where: { video_source: videoSource },
