@@ -1,0 +1,21 @@
+{
+  "source": {
+    "include": [
+      "server.js",
+      "controller",
+      "service",
+      "repository"
+    ],
+    "exclude": [
+      "repository/observation.repository.js",
+      "repository/project.repository.js"
+    ],
+    "includePattern": ".+\\.js(doc|x)?$",
+    "excludePattern": "(^|/|\\\\)_"
+  },
+  "opts": {
+    "destination": "docs/developer",
+    "recurse": true,
+    "readme": "README.md"
+  }
+}

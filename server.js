@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const fs = require('fs');
+const path = require('path');
 const cors = require('cors');
 require('dotenv').config()
 
@@ -13,6 +14,7 @@ const sessionController = require('./controller/session.controller')
 const metaInfoController = require('./controller/metaInfo.controller')
 const speciesController = require('./controller/species.controller')
 const datasetController = require('./controller/dataset.controller')
+const { buildOpenApiSpec } = require('./docs/openapi');
 
 //---------------------------------------------------------
 //  Database initialization (via models/index.js)
@@ -96,13 +98,24 @@ app.use(cors());
 
 // API Documentation Library
 const swaggerUi = require('swagger-ui-express');
-const swaggerDocument = require('./swagger.json');
+// Generated spec reflects in-code @openapi annotations and is the single source for docs.
+const generatedSwaggerDocument = buildOpenApiSpec();
 const customCss = fs.readFileSync((process.cwd()+"/swagger.css"), 'utf8');
 
 app.use(bodyParser.json());
 
-// let express to use this
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {customCss}));
+// Serve generated OpenAPI docs on the primary docs route.
+app.use('/api-docs', swaggerUi.serveFiles(generatedSwaggerDocument), swaggerUi.setup(generatedSwaggerDocument, {customCss}));
+
+// Raw generated JSON helps CI and tooling verify the current generated API contract.
+app.get('/api/openapi.json', (req, res) => {
+    res.json(generatedSwaggerDocument);
+});
+
+// Root-level alias keeps spec access stable even if /api middleware evolves.
+app.get('/openapi.json', (req, res) => {
+    res.json(generatedSwaggerDocument);
+});
 
 // GET HERE
 
@@ -176,14 +189,61 @@ app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
     observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /tasks:
+ *   get:
+ *     summary: Fetch all tasks
+ *     description: Returns every task row currently available in storage.
+ *     tags: [Tasks]
+ *     responses:
+ *       200:
+ *         description: Task list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 additionalProperties: true
+ */
 app.get('/api/tasks', (req, res) => {
     taskController.getTasks().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /observations:
+ *   get:
+ *     summary: Fetch all observations
+ *     description: Returns all observation records available through the V1 API.
+ *     tags: [Observations]
+ *     responses:
+ *       200:
+ *         description: Observation list returned successfully.
+ */
 app.get('/api/observations', (req, res) => {
     observationController.getObservations().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /observation/getLastVideoInfo/{session_id}:
+ *   get:
+ *     summary: Fetch latest video info for a session
+ *     description: Returns the most recent video metadata associated with a session.
+ *     tags: [Observations]
+ *     parameters:
+ *       - in: path
+ *         name: session_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Session identifier.
+ *     responses:
+ *       200:
+ *         description: Last video information returned successfully.
+ */
 app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
     observationController.getLastVideoInfo(req.params.session_id).then(data => res.json(data));
 });
@@ -250,6 +310,22 @@ app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
     sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /metaInfo/dbName:
+ *   get:
+ *     summary: Retrieve active database name
+ *     description: Returns metadata identifying the current configured database.
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Database name returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties: true
+ */
 app.get('/api/metaInfo/dbName', (req, res) => {
     metaInfoController.getDBName().then(data => res.json(data));
 });
@@ -495,11 +571,9 @@ app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/
 app.put('/api/task', (req, res) => {
     taskController.updateTask(req.body.task).then(data => res.json(data));
 });
-
 app.put('/api/observation', (req, res) => {
     observationController.updateObservation(req.body.observation).then(data => res.json(data));
 });
-
 app.put('/api/user', (req, res) => {
     userController.updateUser(req.body.user).then(data => res.json(data));
 });
@@ -538,12 +612,23 @@ app.delete('/api/session/:id', (req, res) => {
     sessionController.deleteSession(req.params.id).then(data => res.json(data));
 });
 
-// Serve static files from the "html" folder
-app.use(express.static('html'));
+// Serve static files from the html folder.
+const htmlDirectory = path.join(__dirname, 'html');
+app.use(express.static(htmlDirectory, { index: false }));
 
-// Catch-all route to serve index.html if no specific file is requested or if the file is not found
-app.get('*', (req, res) => {
-    res.sendFile(__dirname + '/html/index.html');  // Serves index.html for all non-API routes
+// Root route points to an existing dashboard page.
+app.get('/', (req, res) => {
+    res.sendFile(path.join(htmlDirectory, 'dashboard1.html'));
+});
+
+// Return JSON for unknown API routes instead of falling through to a missing HTML file.
+app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'API route not found' });
+});
+
+// Return plain 404 for unknown non-API routes.
+app.use((req, res) => {
+    res.status(404).send('Not found');
 });
 
 app.listen(port, () => {

@@ -1,0 +1,128 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MARE API",
+    "version": "1.0.0",
+    "description": "Generated OpenAPI specification for MARE API V1 routes."
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Relative API base path"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Service status and diagnostics"
+    },
+    {
+      "name": "Tasks",
+      "description": "Task read operations"
+    },
+    {
+      "name": "Observations",
+      "description": "Observation read and update operations"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/tasks": {
+      "get": {
+        "summary": "Fetch all tasks",
+        "description": "Returns every task row currently available in storage.",
+        "tags": [
+          "Tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "Task list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observations": {
+      "get": {
+        "summary": "Fetch all observations",
+        "description": "Returns all observation records available through the V1 API.",
+        "tags": [
+          "Observations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Observation list returned successfully."
+          }
+        }
+      }
+    },
+    "/observation/getLastVideoInfo/{session_id}": {
+      "get": {
+        "summary": "Fetch latest video info for a session",
+        "description": "Returns the most recent video metadata associated with a session.",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Last video information returned successfully."
+          }
+        }
+      }
+    },
+    "/metaInfo/dbName": {
+      "get": {
+        "summary": "Retrieve active database name",
+        "description": "Returns metadata identifying the current configured database.",
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Database name returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
