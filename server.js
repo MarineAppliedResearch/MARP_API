@@ -153,6 +153,11 @@ app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
     observationController.getLastVideoInfo(req.params.session_id).then(data => res.json(data));
 });
 
+
+app.get('/api/observation/getMaxObservationFromVideo/:video_source', (req, res) => {
+    observationController.getMaxObservationFromVideo(req.params.video_source).then(data => res.json(data));
+});
+
 app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id/:count', (req, res) => {
     observationController.updateObservationWithCount(req.params.session_id, req.params.observation_id, req.params.count).then(data => res.json(data));
 });
