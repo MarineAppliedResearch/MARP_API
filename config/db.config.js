@@ -3,16 +3,29 @@ const logger = require('../logger/api.logger');
 
 const connect = () => {
 
-    const hostName = process.env.HOST;
-    const userName = process.env.USER;
-    const password = process.env.PASSWORD;
-    const database = process.env.DB;
-    const dialect = process.env.DIALECT || 'postgres';
+    // PostgreSQL server hostname or IP address.
+    const hostName = process.env.DB_HOST;
+
+    // PostgreSQL role used by this API connection.
+    const userName = process.env.DB_USER;
+
+    // Password for the PostgreSQL role.
+    const password = process.env.DB_PASSWORD;
+
+    // PostgreSQL database used by the API.
+    const database = process.env.DB_NAME;
+
+    // PostgreSQL TCP port. PostgreSQL uses 5432 by default.
+    const port = Number(process.env.DB_PORT || 5432);
+
+    // Sequelize database dialect. MARP currently uses PostgreSQL.
+    const dialect = process.env.DB_DIALECT || 'postgres';
 
     console.log("dialect: " + dialect);
 
     const sequelize = new Sequelize(database, userName, password, {
         host: hostName,
+        port: port,
         dialect: dialect,
         operatorsAliases: false,
         logging: true,
