@@ -1,4 +1,4 @@
-const { connect } = require('../config/db.config');
+const db = require('../model');
 const logger = require('../logger/api.logger');
 const { Sequelize, Model, DataTypes } = require("sequelize");
 const { Op } = require("sequelize");
@@ -16,7 +16,7 @@ class KeyframeRepository {
     
 
     constructor() {
-        this.db = connect();
+        this.db = db;
         // For Development
         /*this.db.sequelize.sync({ force: true }).then(() => {
             console.log("Drop and re-sync db.");

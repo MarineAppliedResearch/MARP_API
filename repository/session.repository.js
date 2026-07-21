@@ -1,4 +1,4 @@
-const { connect } = require('../config/db.config');
+const db = require('../model');
 const logger = require('../logger/api.logger');
 const userController = require('../controller/user.controller'); 
 const projectController = require('../controller/project.controller');
@@ -12,7 +12,7 @@ class SessionRepository {
     db = {};
 
     constructor() {
-        this.db = connect();
+        this.db = db;
         // For Development
         /*this.db.sequelize.sync({ force: true }).then(() => {
             console.log("Drop and re-sync db.");

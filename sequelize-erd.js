@@ -2,36 +2,10 @@
 const path = require('path');
 const fs = require('fs');
 const sequelizeErd = require('sequelize-erd');
-
-// 1) Reuse your existing DB bootstrap
-const { connect } = require('./config/db.config'); // 👈 now './config/...'
+const db = require('./model');
 
 (async () => {
-  const db = connect();
-  const sequelize = db.sequelize ?? db;
-
-  // 2) Load models and associations
-  let models;
-  try {
-    const initModels = require('./model/init-models'); // 👈 now './model/...'
-    models = initModels(sequelize);
-  } catch (e) {
-    console.warn('[generate-erd] Could not load init-models.js, falling back to manual requires:', e.message);
-
-    const { DataTypes } = require('sequelize');
-    const users = require('./model/users')(sequelize, DataTypes);
-    const projects = require('./model/projects')(sequelize, DataTypes);
-    const sessions = require('./model/sessions')(sequelize, DataTypes);
-    const observations = require('./model/observations')(sequelize, DataTypes);
-    const keyframes = require('./model/keyframes')(sequelize, DataTypes);
-
-    models = { users, projects, sessions, observations, keyframes };
-    Object.values(models).forEach(m => {
-      if (typeof m.associate === 'function') {
-        m.associate(models);
-      }
-    });
-  }
+  const sequelize = db.sequelize;
 
 // 3) Generate the ERD
 const svg = await sequelizeErd({
