@@ -14,7 +14,7 @@ class ObservationService {
 
     async getMaxObservationFromVideo(video_source){
             return await observationRepository.getMaxObservationFromVideo(video_source);
-        }
+    }
 
     async updateObservationWithCount(session_id, obsID, count){
         return await observationRepository.updateObservationWithCount(session_id, obsID, count); 

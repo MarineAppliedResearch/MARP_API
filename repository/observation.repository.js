@@ -563,6 +563,7 @@ class ObservationRepository {
             const results = await this.db.observations.findAll({
                 attributes: [
                     'video_source',
+                    'videoLocation',
                     [fn('COUNT', fn('DISTINCT', col('observations.comname'))), 'distinct_species_count'],
                     [fn('COUNT', fn('DISTINCT', col('observations.session_id'))), 'session_count'],
                     [fn('MIN', col('session.dive')), 'dive'],
@@ -578,7 +579,7 @@ class ObservationRepository {
                         required: true // ensures it acts like an INNER JOIN
                     }
                 ],
-                group: ['observations.video_source'],
+                group: ['observations.video_source', 'observations.videoLocation'],
                 order: [
                     [fn('MIN', col('session.dive')), 'ASC'],
                     [fn('MIN', col('session.line')), 'ASC']
