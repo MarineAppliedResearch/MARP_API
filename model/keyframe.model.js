@@ -1,8 +1,22 @@
 const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
-    const Observations = require('./observation.model'); // Import the Observations model
+    class Keyframes extends Model {
+      static associate(models) {
+        this.belongsTo(models.observations, {
+          sourceKey: 'observation_id',
+          foreignKey: 'observation_id',
+          as: 'observation',
+          onDelete: 'CASCADE',
+        });
 
-    class Keyframes extends Model {}
+        this.belongsTo(models.observations, {
+          sourceKey: 'observation_id',
+          foreignKey: 'observation_id',
+          as: 'parentObservation',
+          onDelete: 'CASCADE',
+        });
+      }
+    }
   
     Keyframes.init({
       // Unique identifier for each keyframe

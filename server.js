@@ -19,6 +19,40 @@ const datasetController = require('./controller/dataset.controller')
 //---------------------------------------------------------
 const db = require('./model');
 
+// Repository modules should all reference this shared db object.
+const repositoryPaths = [
+    './repository/metaInfo.repository',
+    './repository/task.repository',
+    './repository/user.repository',
+    './repository/species.repository',
+    './repository/project.repository',
+    './repository/session.repository',
+    './repository/observation.repository',
+    './repository/keyframe.repository',
+    './repository/dataset.repository',
+];
+
+function validateSharedSequelizeConnection(sharedDb) {
+    const mismatchedRepositories = [];
+
+    for (const repositoryPath of repositoryPaths) {
+        const repository = require(repositoryPath);
+        const repositorySequelize = repository?.db?.sequelize;
+
+        if (repositorySequelize !== sharedDb.sequelize) {
+            mismatchedRepositories.push(repositoryPath);
+        }
+    }
+
+    if (mismatchedRepositories.length > 0) {
+        throw new Error(
+            'Repository Sequelize mismatch detected for: ' + mismatchedRepositories.join(', ')
+        );
+    }
+
+    console.log(`[DB Guard] Shared Sequelize validated across ${repositoryPaths.length} repositories.`);
+}
+
 
 
 
@@ -28,6 +62,7 @@ const db = require('./model');
   try {
     await db.sequelize.authenticate();
     console.log('Connected to PostgreSQL.');
+        validateSharedSequelizeConnection(db);
 
     if (process.env.NODE_ENV === 'development') {
       // Manually sync only the models we’re actively developing
