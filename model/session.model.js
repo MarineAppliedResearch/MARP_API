@@ -1,7 +1,27 @@
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
-  class Sessions extends Model {}
+  class Sessions extends Model {
+    static associate(models) {
+      this.belongsTo(models.users, {
+        sourceKey: 'user_id',
+        foreignKey: 'user_id',
+        as: 'user',
+      });
+
+      this.belongsTo(models.projects, {
+        sourceKey: 'project_id',
+        foreignKey: 'project_id',
+        as: 'project',
+      });
+
+      this.hasMany(models.observations, {
+        sourceKey: 'session_id',
+        foreignKey: 'session_id',
+        as: 'observation',
+      });
+    }
+  }
 
   Sessions.init(
     {

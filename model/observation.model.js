@@ -1,12 +1,30 @@
 const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
-  const Keyframes = require('./keyframe.model');
-
   class Observations extends Model {
     static associate(models) {
+      this.belongsTo(models.projects, {
+        sourceKey: 'project_id',
+        foreignKey: 'project_id',
+        as: 'project',
+      });
+
+      this.belongsTo(models.users, {
+        sourceKey: 'user_id',
+        foreignKey: 'user_id',
+        as: 'user',
+      });
+
+      this.belongsTo(models.sessions, {
+        sourceKey: 'session_id',
+        foreignKey: 'session_id',
+        as: 'session',
+      });
+
       this.hasMany(models.keyframes, {
+        sourceKey: 'observation_id',
         foreignKey: 'observation_id',
+        as: 'keyframes',
         onDelete: 'CASCADE',
       });
     }
