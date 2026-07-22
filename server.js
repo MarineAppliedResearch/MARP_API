@@ -654,25 +654,69 @@ app.get(
 );
 
 
-
 /**
- * Returns all observations that have associated keyframes and a comname in comnameList
- * @param {string[]} comnameList - An array of comname strings to filter observations
+ * @openapi
+ * /getObservationsWithKeyframesByComnames:
+ *   get:
+ *     summary: Retrieve observations with keyframes by common name
+ *     description: >
+ *       Returns observations whose comname matches one of the supplied common
+ *       names. The comnameList query parameter must contain a comma-separated
+ *       list of URL-encoded common names. Results are ordered by mediaPosition
+ *       in ascending order and include associated keyframes. Observations
+ *       without at least one keyframe are excluded. An empty array may indicate
+ *       that no observations matched or that the repository query failed.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: query
+ *         name: comnameList
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: Bat%20star,Leather%20star
+ *         description: >
+ *           Comma-separated list of common names. Each value is decoded after
+ *           the string is split on commas.
+ *     responses:
+ *       200:
+ *         description: Matching observations with keyframes returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/ObservationWithKeyframes'
+ *       500:
+ *         description: The API request failed before a response could be produced.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  */
-app.use('/api/getObservationsWithKeyframesByComnames', (req, res) => {
-    // Decode and split the comma-separated list into an array
+app.get('/api/getObservationsWithKeyframesByComnames', (req, res) => {
+    // Convert the comma-separated query value into an array of decoded
+    // common-name strings. A missing parameter produces an empty array.
     const comnameList = req.query.comnameList
-        ? req.query.comnameList.split(',').map(decodeURIComponent) // Decode each comname
+        ? req.query.comnameList.split(',').map(decodeURIComponent)
         : [];
 
+    // Delegate the filtered observation query to the observation controller.
     observationController
         .getObservationsWithKeyframesByComnames(comnameList)
         .then(data => res.json(data))
         .catch(err => {
+            // Log controller or request-processing failures that propagate
+            // through the returned promise.
             console.error('Error in API call:', err);
-            res.status(500).json({ error: 'An error occurred while fetching observations.' });
+
+            // Return a generic error response without exposing internal details.
+            res.status(500).json({
+                error: 'An error occurred while fetching observations.'
+            });
         });
 });
+
 
 /**
  * Retrieves all distinct comnames from observations that have associated keyframes.

@@ -367,6 +367,27 @@
         }
       }
     },
+    "/../developer-docs": {
+      "get": {
+        "summary": "Open internal developer documentation",
+        "description": "Serves the generated JSDoc website containing internal source-code and module documentation. This endpoint returns HTML and related static assets rather than a JSON API response.\n",
+        "tags": [
+          "Documentation"
+        ],
+        "responses": {
+          "200": {
+            "description": "Developer documentation page returned successfully.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/getObservationsByVideo": {
       "get": {
         "summary": "Retrieve observations for a video",
@@ -562,6 +583,52 @@
                     "type": "object",
                     "additionalProperties": true
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsWithKeyframesByComnames": {
+      "get": {
+        "summary": "Retrieve observations with keyframes by common name",
+        "description": "Returns observations whose comname matches one of the supplied common names. The comnameList query parameter must contain a comma-separated list of URL-encoded common names. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. An empty array may indicate that no observations matched or that the repository query failed.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "comnameList",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bat%20star,Leather%20star",
+            "description": "Comma-separated list of common names. Each value is decoded after the string is split on commas.\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations with keyframes returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObservationWithKeyframes"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API request failed before a response could be produced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

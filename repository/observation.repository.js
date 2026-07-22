@@ -1031,38 +1031,82 @@ class ObservationRepository {
         }
     }
 
+
     /**
-     * Returns all observations that have associated keyframes and a comname in comnameList
-     * @param {string[]} comnameList - An array of comname strings to filter observations
+     * Retrieve observations with keyframes whose common names belong to a supplied list.
+     *
+     * The query uses Sequelize's `Op.in` operator to match the observation
+     * `comname` field against the supplied array. Results are ordered by
+     * `mediaPosition` in ascending order.
+     *
+     * Associated keyframes are included with every returned observation. Because
+     * the keyframe association uses `required: true`, Sequelize performs an inner
+     * join and excludes observations without at least one associated keyframe.
+     *
+     * An empty `comnameList` normally produces no matching observations. The
+     * repository does not currently validate that the argument is an array.
+     *
+     * Database and Sequelize errors are logged and converted to an empty array.
+     * Callers therefore cannot distinguish between no matching observations and a
+     * failed repository query.
+     *
+     * @async
+     * @param {string[]} comnameList - Common names accepted by the query.
+     * @returns {Promise<Array<Object>>} Matching observations with associated
+     * keyframes, ordered by ascending `mediaPosition`, or an empty array when no
+     * observations match or the database query fails.
      */
     async getObservationsWithKeyframesByComnames(comnameList) {
         try {
-
-            // Fetch observations along with their associated keyframes
+            // Query observations whose comname appears in the supplied list.
             const observations = await this.db.observations.findAll({
                 where: {
+                    // Use SQL IN matching against the observation common-name field.
                     comname: {
-                        [Op.in]: comnameList  // Filter observations where comname is in comnameList
-                    }//,
-                    //note: 'R' // Only include observations with note = "R"
+                        [Op.in]: comnameList
+                    }
+
+                    // A previous review-state filter was considered here but is
+                    // currently disabled.
+                    // note: 'R'
                 },
-                order: [['mediaPosition', 'ASC']], // Sort by mediaPosition
+
+                // Return observations in ascending order within their source media.
+                order: [
+                    ['mediaPosition', 'ASC']
+                ],
+
+                // Load keyframes associated with every matching observation.
                 include: [
                     {
-                        model: this.db.keyframes,  // Include associated keyframes
-                        as: 'keyframes',           // Alias used in your associations
-                        required: true             // Only include observations that have keyframes
+                        // Use the keyframe model registered on the shared db object.
+                        model: this.db.keyframes,
+
+                        // Match the alias defined by the Sequelize association.
+                        as: 'keyframes',
+
+                        // Require at least one associated keyframe. This excludes
+                        // observations without keyframe records.
+                        required: true
                     }
                 ]
             });
 
+            // Return Sequelize observation instances with loaded keyframe data.
             return observations;
+
         } catch (err) {
-            console.error('Error in getObservationsWithKeyframesByComnames:', err);
+            // Log database and Sequelize failures for server-side diagnosis.
+            console.error(
+                'Error in getObservationsWithKeyframesByComnames:',
+                err
+            );
+
+            // Preserve the existing repository contract by returning an empty array.
+            // This prevents the repository error from reaching the route's catch block.
             return [];
         }
     }
-
 
 
     
