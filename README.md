@@ -1,6 +1,27 @@
 # MARE_API
 MARE Data Access API
 
+## Frontend app structure (static-first)
+
+Frontend application pages are now organized for multi-app static serving:
+
+- `frontend/apps/<appName>/` contains one frontend application.
+- `frontend/apps/<appName>/index.html` is the app entry page.
+- `frontend/shared/partials/` contains reusable HTML fragments (header/footer).
+- `frontend/shared/assets/` contains shared CSS and JavaScript.
+
+Runtime routes:
+
+- `/` serves `frontend/apps/entry/index.html`.
+- `/apps/<appName>/` serves a static frontend app.
+- `/shared/*` serves reusable shared assets and partials.
+
+Guidelines:
+
+- Use relative API calls (`/api/...`) from frontend pages.
+- Use `data-include` + `shared/assets/js/partials.js` for shared header/footer.
+- Keep API and static frontend concerns separate.
+
 npm run dev
 
 start with process manager: pm2 start server.js

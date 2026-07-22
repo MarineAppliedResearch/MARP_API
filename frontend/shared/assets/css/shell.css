@@ -1,0 +1,70 @@
+:root {
+  --shell-bg: #f4f7f9;
+  --shell-panel: #ffffff;
+  --shell-text: #182431;
+  --shell-muted: #5a6b79;
+  --shell-accent: #006d77;
+  --shell-accent-2: #83c5be;
+}
+
+body {
+  margin: 0;
+  background: var(--shell-bg);
+  color: var(--shell-text);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.marp-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background: linear-gradient(90deg, var(--shell-accent), var(--shell-accent-2));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+}
+
+.marp-header__inner,
+.marp-footer__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.85rem 1rem;
+}
+
+.marp-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.marp-logo {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.marp-nav {
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.marp-nav a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  opacity: 0.95;
+}
+
+.marp-nav a:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.marp-footer {
+  margin-top: 2rem;
+  background: #e7eef2;
+  border-top: 1px solid #d3dfe8;
+  color: var(--shell-muted);
+  font-size: 0.9rem;
+}

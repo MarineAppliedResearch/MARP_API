@@ -1158,13 +1158,45 @@ app.delete('/api/session/:id', (req, res) => {
     sessionController.deleteSession(req.params.id).then(data => res.json(data));
 });
 
-// Serve static files from the html folder.
-const htmlDirectory = path.join(__dirname, 'html');
-app.use(express.static(htmlDirectory, { index: false }));
+// Serve frontend shared assets and partials for all static apps.
+const frontendDirectory = path.join(__dirname, 'frontend');
+const frontendAppsDirectory = path.join(frontendDirectory, 'apps');
+const frontendSharedDirectory = path.join(frontendDirectory, 'shared');
 
-// Root route points to an existing dashboard page.
+app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
+app.use('/apps', express.static(frontendAppsDirectory, { index: false }));
+
+// Root route serves the MARP entry application landing page.
 app.get('/', (req, res) => {
-    res.sendFile(path.join(htmlDirectory, 'dashboard1.html'));
+    res.sendFile(path.join(frontendAppsDirectory, 'entry', 'index.html'));
+});
+
+// Generic app index route allows adding app folders without new server routes.
+app.get('/apps/:appName', (req, res, next) => {
+    const appIndexPath = path.join(
+        frontendAppsDirectory,
+        req.params.appName,
+        'index.html'
+    );
+
+    if (fs.existsSync(appIndexPath)) {
+        return res.sendFile(appIndexPath);
+    }
+
+    return next();
+});
+
+// Temporary compatibility routes from prior flat html page URLs.
+app.get('/dashboard1.html', (req, res) => {
+    res.redirect('/apps/dashboard/');
+});
+
+app.get('/userActivity.html', (req, res) => {
+    res.redirect('/apps/dashboard/user-activity.html');
+});
+
+app.get('/userHours.html', (req, res) => {
+    res.redirect('/apps/dashboard/user-hours.html');
 });
 
 // Return JSON for unknown API routes instead of falling through to a missing HTML file.
