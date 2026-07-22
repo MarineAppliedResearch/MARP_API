@@ -1163,6 +1163,9 @@ const frontendDirectory = path.join(__dirname, 'frontend');
 const frontendAppsDirectory = path.join(frontendDirectory, 'apps');
 const frontendSharedDirectory = path.join(frontendDirectory, 'shared');
 
+// Compatibility alias for landing pages that still reference /assets/*.
+app.use('/assets', express.static(path.join(frontendSharedDirectory, 'assets'), { index: false }));
+
 app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
 app.use('/apps', express.static(frontendAppsDirectory, { index: false }));
 
