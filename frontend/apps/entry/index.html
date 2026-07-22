@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="MARP connects ecological data, expert interpretation, video, machine learning, processing, and reporting through one shared platform.">
+  <meta name="theme-color" content="#020b18">
+
+  <title>MARP | Marine Analysis and Reporting Platform</title>
+
+  <!--
+    The landing page is intentionally split into a small HTML document,
+    one page-specific stylesheet, and one page-specific script. This keeps
+    visual iteration fast without coupling the prototype to another app.
+  -->
+  <link rel="stylesheet" href="assets/css/landing.css">
+  <script src="assets/js/landing.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <!--
+    Reusable inline icon sprite.
+    Symbols are referenced throughout the page with <use href="#icon-name">.
+    Keeping these icons together makes them easy to replace later with a
+    dedicated production asset bundle without changing page structure.
+  -->
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="icon-database" viewBox="0 0 48 48">
+      <ellipse cx="24" cy="10" rx="14" ry="6"></ellipse>
+      <path d="M10 10v20c0 3.3 6.3 6 14 6s14-2.7 14-6V10"></path>
+      <path d="M10 20c0 3.3 6.3 6 14 6s14-2.7 14-6"></path>
+      <path d="M10 30c0 3.3 6.3 6 14 6s14-2.7 14-6"></path>
+      <path d="M8 41c4-4 8 4 12 0s8 4 12 0 8 4 12 0"></path>
+    </symbol>
+
+    <symbol id="icon-video" viewBox="0 0 48 48">
+      <rect x="7" y="12" width="25" height="24" rx="4"></rect>
+      <path d="m32 20 10-6v20l-10-6z"></path>
+      <path d="m17 18 9 6-9 6z"></path>
+    </symbol>
+
+    <symbol id="icon-expert" viewBox="0 0 48 48">
+      <circle cx="24" cy="15" r="8"></circle>
+      <path d="M8 41c1.5-10 7-15 16-15s14.5 5 16 15"></path>
+      <circle cx="37" cy="34" r="8"></circle>
+      <path d="m33.5 34 2.5 2.5 5-5"></path>
+    </symbol>
+
+    <symbol id="icon-process" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="8"></circle>
+      <path d="M24 4v7M24 37v7M4 24h7M37 24h7M10 10l5 5M33 33l5 5M38 10l-5 5M15 33l-5 5"></path>
+      <circle cx="24" cy="24" r="16"></circle>
+    </symbol>
+
+    <symbol id="icon-ai" viewBox="0 0 48 48">
+      <path d="M18 9c-6 0-10 4-10 10 0 3 1 5 3 7-2 2-3 4-3 7 0 6 4 10 10 10 3 0 5-1 6-3 1 2 3 3 6 3 6 0 10-4 10-10 0-3-1-5-3-7 2-2 3-4 3-7 0-6-4-10-10-10-3 0-5 1-6 3-1-2-3-3-6-3Z"></path>
+      <path d="M24 12v28M14 19h5M29 19h5M14 32h5M29 32h5"></path>
+      <circle cx="16" cy="19" r="1.5"></circle>
+      <circle cx="32" cy="19" r="1.5"></circle>
+      <circle cx="16" cy="32" r="1.5"></circle>
+      <circle cx="32" cy="32" r="1.5"></circle>
+    </symbol>
+
+    <symbol id="icon-report" viewBox="0 0 48 48">
+      <path d="M12 5h18l8 8v30H12z"></path>
+      <path d="M30 5v10h8M18 34V24M24 34V18M30 34V28"></path>
+      <path d="M17 38h16"></path>
+    </symbol>
+
+    <symbol id="icon-collect" viewBox="0 0 48 48">
+      <path d="M8 30h32l-5 8H13z"></path>
+      <path d="M18 30V17h12v13M24 17V9M20 9h8"></path>
+      <path d="M5 42c4-4 8 4 12 0s8 4 12 0 8 4 14 0"></path>
+    </symbol>
+
+    <symbol id="icon-speed" viewBox="0 0 48 48">
+      <path d="M8 38a18 18 0 1 1 32 0"></path>
+      <path d="m24 31 10-12"></path>
+      <circle cx="24" cy="31" r="3"></circle>
+      <path d="M14 34h20"></path>
+    </symbol>
+
+    <symbol id="icon-insight" viewBox="0 0 48 48">
+      <path d="M7 40h35"></path>
+      <path d="M11 36V25h6v11M22 36V17h6v19M33 36V9h6v27"></path>
+      <path d="m9 18 10-7 8 4 12-11"></path>
+    </symbol>
+
+    <symbol id="icon-lock" viewBox="0 0 48 48">
+      <rect x="9" y="21" width="30" height="22" rx="4"></rect>
+      <path d="M16 21v-7a8 8 0 0 1 16 0v7"></path>
+      <circle cx="24" cy="31" r="3"></circle>
+      <path d="M24 34v4"></path>
+    </symbol>
+
+    <symbol id="icon-link" viewBox="0 0 48 48">
+      <path d="m20 29-3 3a9 9 0 0 1-13-13l7-7a9 9 0 0 1 13 0"></path>
+      <path d="m28 19 3-3a9 9 0 0 1 13 13l-7 7a9 9 0 0 1-13 0"></path>
+      <path d="m17 24 14 0"></path>
+    </symbol>
+
+    <symbol id="icon-cloud" viewBox="0 0 48 48">
+      <path d="M14 38h24a8 8 0 0 0 1-16 14 14 0 0 0-27-3A9.5 9.5 0 0 0 14 38Z"></path>
+      <path d="M24 31V18M18 24l6-6 6 6"></path>
+    </symbol>
+
+    <symbol id="icon-cube" viewBox="0 0 48 48">
+      <path d="m24 4 17 9v22l-17 9-17-9V13z"></path>
+      <path d="m7 13 17 9 17-9M24 22v22"></path>
+    </symbol>
+
+    <symbol id="icon-close" viewBox="0 0 48 48">
+      <path d="M12 12l24 24M36 12 12 36"></path>
+    </symbol>
+
+    <symbol id="icon-eye" viewBox="0 0 48 48">
+      <path d="M5 24s7-12 19-12 19 12 19 12-7 12-19 12S5 24 5 24Z"></path>
+      <circle cx="24" cy="24" r="5"></circle>
+    </symbol>
+  </svg>
+
+  <!-- Sticky global navigation. -->
+  <header class="site-header" data-site-header>
+    <div class="site-header__inner page-container">
+      <a class="site-brand" href="#home" aria-label="MARP home">
+        <img src="assets/images/marp-logo.png" alt="MARP - Marine Analysis and Reporting Platform">
+      </a>
+
+      <button
+        class="menu-toggle"
+        type="button"
+        aria-label="Open navigation menu"
+        aria-expanded="false"
+        aria-controls="primary-navigation"
+        data-menu-toggle>
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+      <nav class="primary-nav" id="primary-navigation" aria-label="Primary navigation" data-primary-nav>
+        <a href="#platform">Platform</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#applications">Applications</a>
+        <a href="#why-marp">About</a>
+        <button class="button button--outline button--compact" type="button" data-login-open>Login</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main-content">
+    <!--
+      Hero: real HTML content over layered artwork. The background image is a
+      decorative crop, while the headings and controls remain responsive and
+      accessible at every viewport size.
+    -->
+    <section class="hero" id="home" aria-labelledby="hero-title">
+      <div class="hero__art" aria-hidden="true"></div>
+      <div class="hero__shade" aria-hidden="true"></div>
+
+      <svg class="network-wave network-wave--hero" viewBox="0 0 1200 360" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="hero-line-gradient" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#a7ec35" stop-opacity="0"></stop>
+            <stop offset="0.35" stop-color="#31d8d8" stop-opacity="0.65"></stop>
+            <stop offset="0.8" stop-color="#1591ff" stop-opacity="0.9"></stop>
+            <stop offset="1" stop-color="#1591ff" stop-opacity="0"></stop>
+          </linearGradient>
+          <filter id="hero-glow" x="-20%" y="-50%" width="140%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur"></feGaussianBlur>
+            <feMerge>
+              <feMergeNode in="blur"></feMergeNode>
+              <feMergeNode in="SourceGraphic"></feMergeNode>
+            </feMerge>
+          </filter>
+        </defs>
+        <g class="network-wave__paths" filter="url(#hero-glow)">
+          <path d="M0 250 C220 185 285 300 480 225 S820 135 1200 225"></path>
+          <path d="M0 278 C225 210 320 326 510 250 S875 160 1200 250"></path>
+          <path d="M0 315 C260 250 330 345 545 286 S890 205 1200 285"></path>
+        </g>
+        <g class="network-wave__nodes">
+          <circle cx="230" cy="229" r="4"></circle>
+          <circle cx="480" cy="225" r="5"></circle>
+          <circle cx="735" cy="171" r="4"></circle>
+          <circle cx="930" cy="176" r="5"></circle>
+          <circle cx="1055" cy="206" r="3"></circle>
+        </g>
+      </svg>
+
+      <div class="hero__content page-container">
+        <div class="hero__copy reveal" data-reveal>
+          <img class="hero__logo" src="assets/images/marp-logo.png" alt="MARP - Marine Analysis and Reporting Platform">
+
+          <h1 id="hero-title">From observation<br>to <span>understanding.</span></h1>
+
+          <p>
+            MARP connects ecological data, expert interpretation, video,
+            machine learning, processing, and reporting through one shared platform.
+          </p>
+
+          <div class="hero__actions">
+            <a class="button button--primary" href="#platform">Explore MARP</a>
+            <button class="button button--outline" type="button" data-login-open>Login</button>
+          </div>
+        </div>
+      </div>
+
+      <a class="hero__scroll-cue" href="#platform" aria-label="Scroll to learn what MARP is">
+        <span>Discover the platform</span>
+        <span aria-hidden="true">↓</span>
+      </a>
+    </section>
+
+    <!-- Central platform/capability diagram. -->
+    <section class="page-section page-section--panel" id="platform" aria-labelledby="platform-title">
+      <div class="page-container">
+        <header class="section-heading reveal" data-reveal>
+          <p class="section-heading__eyebrow">What MARP Is</p>
+          <h2 id="platform-title">One platform. Many ecological workflows.</h2>
+          <p class="section-heading__summary">
+            MARP brings ecological data, media, expert review, processing,
+            machine learning, and reporting together through a shared platform.
+          </p>
+        </header>
+
+        <div class="platform-map reveal" data-reveal>
+          <svg class="platform-map__connectors" viewBox="0 0 1200 560" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="connector-gradient" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#a7ec35"></stop>
+                <stop offset="0.5" stop-color="#21d5da"></stop>
+                <stop offset="1" stop-color="#158bff"></stop>
+              </linearGradient>
+            </defs>
+            <g>
+              <path d="M345 104 H470 Q510 104 530 160"></path>
+              <path d="M345 280 H515"></path>
+              <path d="M345 456 H470 Q510 456 530 400"></path>
+              <path d="M855 104 H730 Q690 104 670 160"></path>
+              <path d="M855 280 H685"></path>
+              <path d="M855 456 H730 Q690 456 670 400"></path>
+            </g>
+          </svg>
+
+          <div class="platform-map__column platform-map__column--left">
+            <article class="capability-card">
+              <svg class="line-icon" aria-hidden="true"><use href="#icon-database"></use></svg>
+              <div>
+                <h3>Ecological Data</h3>
+                <p>Ingest, organize, and manage diverse datasets.</p>
+              </div>
+            </article>
+
+            <article class="capability-card">
+              <svg class="line-icon" aria-hidden="true"><use href="#icon-video"></use></svg>
+              <div>
+                <h3>Video &amp; Imagery</h3>
+                <p>Store, stream, and review underwater content.</p>
+              </div>
+            </article>
+
+            <article class="capability-card">
+              <svg class="line-icon" aria-hidden="true"><use href="#icon-expert"></use></svg>
+              <div>
+                <h3>Expert Review</h3>
+                <p>Biologist-led interpretation and quality assurance.</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="platform-hub" aria-label="MARP shared platform hub">
+            <div class="platform-hub__orbit platform-hub__orbit--outer"></div>
+            <div class="platform-hub__orbit platform-hub__orbit--inner"></div>
+            <img src="assets/images/marp-mark.png" alt="MARP">
+            <span>Shared API + Data Model</span>
+          </div>
+
+          <div class="platform-map__column platform-map__column--right">
+            <article class="capability-card">
+              <svg class="line-icon" aria-hidden="true"><use href="#icon-process"></use></svg>
+              <div>
+                <h3>Data Processing</h3>
+                <p>Clean, standardize, and transform data at scale.</p>
+              </div>
+            </article>
+
+            <article class="capability-card">
+              <svg class="line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg>
+              <div>
+                <h3>Machine Learning</h3>
+                <p>Models assist experts without replacing them.</p>
+              </div>
+            </article>
+
+            <article class="capability-card">
+              <svg class="line-icon" aria-hidden="true"><use href="#icon-report"></use></svg>
+              <div>
+                <h3>Reports &amp; Data Products</h3>
+                <p>Generate reports and deliver trusted outputs.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Five-stage platform workflow. -->
+    <section class="page-section workflow-section" id="how-it-works" aria-labelledby="workflow-title">
+      <div class="page-container">
+        <header class="section-heading section-heading--compact reveal" data-reveal>
+          <p class="section-heading__eyebrow">How MARP Works</p>
+          <h2 id="workflow-title">A connected path from field data to trusted outputs.</h2>
+        </header>
+
+        <ol class="workflow reveal" data-reveal>
+          <li class="workflow__step">
+            <span class="workflow__number">1</span>
+            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-collect"></use></svg></div>
+            <div class="workflow__copy">
+              <h3>Collect</h3>
+              <p>Gather data in the field or from connected systems.</p>
+            </div>
+          </li>
+
+          <li class="workflow__step">
+            <span class="workflow__number">2</span>
+            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-expert"></use></svg></div>
+            <div class="workflow__copy">
+              <h3>Review</h3>
+              <p>Experts review and annotate video, imagery, and data.</p>
+            </div>
+          </li>
+
+          <li class="workflow__step">
+            <span class="workflow__number">3</span>
+            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-process"></use></svg></div>
+            <div class="workflow__copy">
+              <h3>Process</h3>
+              <p>Data is cleaned, standardized, and prepared at scale.</p>
+            </div>
+          </li>
+
+          <li class="workflow__step">
+            <span class="workflow__number">4</span>
+            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg></div>
+            <div class="workflow__copy">
+              <h3>Assist</h3>
+              <p>Machine learning highlights patterns and observations.</p>
+            </div>
+          </li>
+
+          <li class="workflow__step">
+            <span class="workflow__number">5</span>
+            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-report"></use></svg></div>
+            <div class="workflow__copy">
+              <h3>Deliver</h3>
+              <p>Trusted reports and data products are ready to use.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Expert-support philosophy. -->
+    <section class="page-section page-section--textured" id="why-marp" aria-labelledby="why-title">
+      <div class="page-container">
+        <header class="section-heading reveal" data-reveal>
+          <p class="section-heading__eyebrow">Why MARP Matters</p>
+          <h2 id="why-title">Biologists lead. MARP amplifies.</h2>
+          <p class="section-heading__summary">
+            MARP reduces repetitive work while keeping ecological judgment,
+            validation, and interpretation in expert hands.
+          </p>
+        </header>
+
+        <div class="feature-grid">
+          <article class="feature-card reveal" data-reveal>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg>
+            <h3>AI Assistance</h3>
+            <p>MARP handles repetitive tasks so experts can focus on interpretation.</p>
+          </article>
+
+          <article class="feature-card reveal" data-reveal>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-expert"></use></svg>
+            <h3>Expert Control</h3>
+            <p>Biological expertise drives decisions and quality at every step.</p>
+          </article>
+
+          <article class="feature-card reveal" data-reveal>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
+            <h3>Faster Workflows</h3>
+            <p>Connected workflows reduce delays between observation and analysis.</p>
+          </article>
+
+          <article class="feature-card reveal" data-reveal>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-insight"></use></svg>
+            <h3>Deeper Insight</h3>
+            <p>Discover patterns, monitor change, and support ecological decisions.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Product/application showcase. -->
+    <section class="page-section applications-section" id="applications" aria-labelledby="applications-title">
+      <div class="page-container page-container--wide">
+        <header class="section-heading reveal" data-reveal>
+          <p class="section-heading__eyebrow">Applications</p>
+          <h2 id="applications-title">Powerful tools for ecological work.</h2>
+          <p class="section-heading__summary">
+            Purpose-built applications share MARP data and capabilities while
+            supporting different stages of the ecological workflow.
+          </p>
+        </header>
+
+        <div class="application-grid">
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-video-annotation.webp" alt="Concept interface for the MARP Video Annotation Tool" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">01</span>
+              <h3>Video Annotation Tool</h3>
+              <p>Annotate and catalog species, events, and habitats in video.</p>
+            </div>
+          </article>
+
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-mosaic-reviewer.webp" alt="Concept interface for the MARP Picture Mosaic Reviewer" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">02</span>
+              <h3>Picture Mosaic Reviewer</h3>
+              <p>Review and validate imagery efficiently and precisely.</p>
+            </div>
+          </article>
+
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-data-processing.webp" alt="Concept interface for the MARP Data Processing Workspace" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">03</span>
+              <h3>Data Processing Workspace</h3>
+              <p>Prepare and standardize ecological data with reproducible tools.</p>
+            </div>
+          </article>
+
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-machine-learning.webp" alt="Concept interface for the MARP Machine Learning Dashboard" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">04</span>
+              <h3>Machine Learning Dashboard</h3>
+              <p>Train, evaluate, deploy, and monitor models and workers.</p>
+            </div>
+          </article>
+
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-reporting.webp" alt="Concept interface for MARP Automated Report Generation" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">05</span>
+              <h3>Automated Report Generation</h3>
+              <p>Create polished reports and products from verified MARP data.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Compact platform credibility strip. -->
+    <section class="capability-strip" aria-label="MARP platform capabilities">
+      <div class="page-container">
+        <div class="capability-strip__grid reveal" data-reveal>
+          <article>
+            <svg class="line-icon" aria-hidden="true"><use href="#icon-lock"></use></svg>
+            <div><h3>Secure API</h3><p>Controlled access and protected services.</p></div>
+          </article>
+          <article>
+            <svg class="line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
+            <div><h3>Connected Data</h3><p>Integrate instruments, platforms, and databases.</p></div>
+          </article>
+          <article>
+            <svg class="line-icon" aria-hidden="true"><use href="#icon-cloud"></use></svg>
+            <div><h3>Scalable Compute</h3><p>Expand processing across available workers.</p></div>
+          </article>
+          <article>
+            <svg class="line-icon" aria-hidden="true"><use href="#icon-cube"></use></svg>
+            <div><h3>Reusable Services</h3><p>Shared capabilities for applications and partners.</p></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final conversion area. -->
+    <section class="final-cta" id="get-started" aria-labelledby="cta-title">
+      <svg class="network-wave network-wave--footer" viewBox="0 0 1200 320" preserveAspectRatio="none" aria-hidden="true">
+        <g class="network-wave__paths">
+          <path d="M0 210 C210 120 315 245 500 180 S840 85 1200 180"></path>
+          <path d="M0 255 C250 175 330 285 560 220 S925 130 1200 230"></path>
+          <path d="M0 300 C275 235 390 325 620 270 S980 195 1200 275"></path>
+        </g>
+        <g class="network-wave__nodes">
+          <circle cx="230" cy="177" r="4"></circle>
+          <circle cx="500" cy="180" r="5"></circle>
+          <circle cx="815" cy="101" r="4"></circle>
+          <circle cx="1015" cy="144" r="5"></circle>
+        </g>
+      </svg>
+
+      <div class="page-container final-cta__inner reveal" data-reveal>
+        <img src="assets/images/marp-mark.png" alt="" aria-hidden="true">
+        <h2 id="cta-title"><span>Explore.</span> <strong>Inform.</strong> <em>Protect.</em></h2>
+        <p>Connect to the platform, review the API, or explore the developer documentation.</p>
+        <div class="final-cta__actions">
+          <button class="button button--primary" type="button" data-login-open>Login to MARP</button>
+          <a class="button button--outline" href="/api-docs">API Docs</a>
+          <a class="button button--outline" href="/developer-docs">Developer Docs</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="page-container site-footer__inner">
+      <a class="site-footer__brand" href="#home">
+        <img src="assets/images/marp-logo.png" alt="MARP">
+      </a>
+      <p>Marine Analysis and Reporting Platform</p>
+      <p>© <span data-current-year></span> MARP</p>
+    </div>
+  </footer>
+
+  <!--
+    Login prototype dialog.
+    The form intentionally does not send credentials because authentication is
+    outside this static prototype. It provides the interaction and layout that
+    can later be connected to the production authentication endpoint.
+  -->
+  <dialog class="login-dialog" data-login-dialog aria-labelledby="login-dialog-title">
+    <div class="login-dialog__layout">
+      <aside class="login-dialog__visual" aria-hidden="true">
+        <img src="assets/images/marp-mark.png" alt="">
+        <p>One platform.<br>Many ecological workflows.</p>
+      </aside>
+
+      <div class="login-dialog__content">
+        <button class="login-dialog__close" type="button" aria-label="Close login dialog" data-login-close>
+          <svg class="line-icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
+
+        <p class="section-heading__eyebrow">Secure Access</p>
+        <h2 id="login-dialog-title">Sign in to MARP</h2>
+        <p class="login-dialog__intro">Use your MARP account to access platform applications and data.</p>
+
+        <form class="login-form" data-login-form novalidate>
+          <label>
+            <span>Email address</span>
+            <input type="email" name="email" autocomplete="username" required placeholder="name@example.org">
+          </label>
+
+          <label>
+            <span>Password</span>
+            <span class="password-field">
+              <input type="password" name="password" autocomplete="current-password" required placeholder="Enter your password" data-password-input>
+              <button type="button" aria-label="Show password" aria-pressed="false" data-password-toggle>
+                <svg class="line-icon" aria-hidden="true"><use href="#icon-eye"></use></svg>
+              </button>
+            </span>
+          </label>
+
+          <div class="login-form__options">
+            <label class="checkbox-field"><input type="checkbox" name="remember"><span>Remember me</span></label>
+            <a href="#">Forgot password?</a>
+          </div>
+
+          <button class="button button--primary button--full" type="submit">Sign in</button>
+          <p class="login-form__status" role="status" aria-live="polite" data-login-status></p>
+          <p class="login-form__prototype-note">Prototype interface — authentication is not connected yet.</p>
+        </form>
+      </div>
+    </div>
+  </dialog>
+</body>
+</html>
