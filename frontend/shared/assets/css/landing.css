@@ -48,7 +48,7 @@
   --page-width: 1440px;
   --page-width-wide: 1640px;
   --page-gutter: clamp(20px, 4.6vw, 78px);
-  --section-space: clamp(50px, 9vw, 100px);
+  --section-space: clamp(50px, 9vw, 80px);
   --header-height: 78px;
 
   --radius-sm: 12px;
@@ -464,7 +464,7 @@ h3 {
 
 .hero__logo {
   width: clamp(260px, 30vw, 470px);
-  margin-bottom: clamp(26px, 4vw, 50px);
+  margin-bottom: clamp(15px, 4vw, 30px);
   filter: drop-shadow(0 12px 26px rgba(0, 0, 0, 0.34));
 }
 
@@ -1193,7 +1193,6 @@ h3 {
 .login-dialog__visual p {
   position: relative;
   z-index: 1;
-  margin-bottom: 40%;
   color: var(--white);
   font-family: var(--display-font);
   font-size: 2.25rem;
@@ -1227,12 +1226,12 @@ h3 {
 }
 
 .login-dialog h2 {
-  margin-bottom: 12px;
-  font-size: clamp(2.4rem, 4vw, 3.5rem);
+  margin-bottom: 10px;
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
 }
 
 .login-dialog__intro {
-  margin-bottom: 30px;
+  margin-bottom: 10px;
   color: var(--muted);
 }
 
@@ -1719,10 +1718,11 @@ h3 {
 
   .login-dialog__visual p {
     font-size: 1.65rem;
+    transform: translateY(40px);
   }
 
   .login-dialog__content {
-    padding: 34px 24px 28px;
+    padding: 12px 24px 12px;
   }
 
   .login-form__options {
