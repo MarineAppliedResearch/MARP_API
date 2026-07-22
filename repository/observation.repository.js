@@ -1,11 +1,128 @@
+/**
+ * Repository module for observation-related database operations.
+ *
+ * This file contains Sequelize queries used to retrieve, filter, aggregate,
+ * create, update, and remove observation records and their related data.
+ *
+ * Observation queries may join projects, sessions, users, species, keyframes,
+ * and other associated models depending on the operation being performed.
+ *
+ * Repository functions should contain database-access logic only. Request
+ * handling belongs in controllers, while broader application behavior belongs
+ * in services.
+ *
+ * @fileoverview Observation database queries and persistence operations.
+ * @author Isaac Travers
+ * @module repository/observation
+ */
+
+
+/**
+ * Shared database registry containing the configured Sequelize connection,
+ * initialized models, and model associations.
+ *
+ * @constant
+ * @type {Object}
+ */
 const db = require('../model');
+
+
+/**
+ * Application logger used to record repository errors, warnings, and
+ * diagnostic information.
+ *
+ * @constant
+ * @type {Object}
+ */
 const logger = require('../logger/api.logger');
-const { Sequelize, Model, DataTypes } = require("sequelize");
+
+
+/**
+ * Sequelize classes and data-type definitions used by repository queries
+ * and model-related operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const { Sequelize, Model, DataTypes } = require('sequelize');
+
+
+/**
+ * Session controller used by observation operations that depend on
+ * session-level application behavior.
+ *
+ * Database repositories should generally depend on models or other
+ * repositories rather than controllers. This dependency should remain only
+ * where the repository currently requires controller behavior.
+ *
+ * @constant
+ * @type {Object}
+ */
 const sessionController = require('../controller/session.controller');
+
+
+/**
+ * Observation controller used by repository operations that invoke existing
+ * observation-level application behavior.
+ *
+ * A repository importing its own corresponding controller creates a circular
+ * dependency risk. This import should be retained only when required by an
+ * existing function.
+ *
+ * @constant
+ * @type {Object}
+ */
 const observationController = require('../controller/observation.controller');
+
+
+/**
+ * User controller used by observation operations that require user-related
+ * application behavior.
+ *
+ * Database repositories should generally access user data through models or
+ * repositories rather than through controllers.
+ *
+ * @constant
+ * @type {Object}
+ */
 const userController = require('../controller/user.controller');
-const {Sessions} = require("../model/old/sessions.js");
-const moment = require('moment'); // For date manipulation
+
+
+/**
+ * Legacy Sessions model retained for operations that still depend on the old
+ * model definition.
+ *
+ * This model is separate from the current model registry and should not be
+ * used for new queries unless the legacy schema behavior is specifically
+ * required.
+ *
+ * @constant
+ * @type {Object}
+ */
+const { Sessions } = require('../model/old/sessions.js');
+
+
+/**
+ * Date and time utility used to parse, compare, format, and manipulate
+ * observation-related timestamps.
+ *
+ * @constant
+ * @type {Function}
+ */
+const moment = require('moment');
+
+
+/**
+ * Sequelize query helpers used for operators, aggregate functions, and
+ * database-column references.
+ *
+ * `Op` provides query operators such as `in`, `between`, and comparison
+ * operators. `fn` creates SQL function expressions, and `col` references
+ * database columns in joins and aggregate queries.
+ *
+ * @constant
+ * @type {Object}
+ */
 const { Op, fn, col } = require('sequelize');
 
 
@@ -519,150 +636,397 @@ class ObservationRepository {
 
 
     /**
-     * Returns all observations associated with video videoName
-     * @param {*} videoName 
+     * Retrieve observations associated with a specific video source.
+     *
+     * The query performs an exact match against the `video_source` field. Results
+     * are ordered by `mediaPosition` in ascending order so observations are
+     * returned in video sequence.
+     *
+     * Associated keyframes are loaded with each observation. Because the keyframe
+     * association uses `required: true`, Sequelize performs an inner join and
+     * excludes observations that do not have at least one associated keyframe.
+     *
+     * Database errors are logged and converted to an empty array. As a result,
+     * callers cannot distinguish between a successful query with no matching
+     * observations and a database failure.
+     *
+     * @async
+     * @param {string} videoName - Exact value to match against the observation
+     * `video_source` field.
+     * @returns {Promise<Array<Object>>} Matching observations with associated
+     * keyframes, ordered by ascending `mediaPosition`. Returns an empty array when
+     * no observations match or when the database query fails.
      */
-    async getObservationsByVideo(videoName){
+    async getObservationsByVideo(videoName) {
 
         try {
-            // Fetch observations along with their associated keyframes
+            // Query the observations table for records whose video_source value
+            // exactly matches the supplied video name.
             const observations = await this.db.observations.findAll({
+
+                // Use an exact equality match. This does not perform partial,
+                // case-insensitive, normalized, or filename-only matching.
                 where: {
                     video_source: videoName
                 },
-                order: [['mediaPosition', 'ASC']], // Sort by createdAt to get them in order
+
+                // Return observations in ascending media position so the records
+                // follow their sequence within the source video.
+                order: [
+                    ['mediaPosition', 'ASC']
+                ],
+
+                // Load the keyframes associated with each returned observation.
                 include: [
                     {
-                        model: this.db.keyframes,  // Include keyframes related to each observation
-                        as: 'keyframes',           // Alias used during association
-                        required: true            // Include observations even if there are no keyframes
+                        // Use the keyframe model registered on the shared db object.
+                        model: this.db.keyframes,
+
+                        // Match the alias defined by the Sequelize association.
+                        as: 'keyframes',
+
+                        // Require at least one matching keyframe. This creates an
+                        // inner join and excludes observations without keyframes.
+                        required: true
                     }
                 ]
             });
-    
-            // console.log('observations:::', observations);
+
+            // Return the Sequelize observation instances, including their loaded
+            // keyframe associations, directly to the calling service or controller.
             return observations;
+
         } catch (err) {
+            // Record the database or Sequelize error in the server output.
             console.log(err);
+
+            // Preserve the current repository contract by returning an empty array.
+            // This also means callers cannot distinguish an error from no matches.
             return [];
         }
-        
     }
 
 
-
     /**
-     * Returns a summary of videos for a given project:
-     *  - video_source
-     *  - distinct species count (unique comname)
-     *  - session count
-     *  - representative dive and line
+     * Retrieve grouped video summaries for a specific project.
+     *
+     * The query selects observations whose associated session belongs to the
+     * supplied project. Results are grouped by both `video_source` and
+     * `videoLocation`, so the same video source may appear in more than one result
+     * when its observations contain different video-location values.
+     *
+     * Each result includes the number of distinct observation `comname` values,
+     * the number of distinct associated sessions, and representative session
+     * metadata. The representative dive, line, and session type values are selected
+     * independently using SQL `MIN` aggregation and therefore are not guaranteed
+     * to originate from the same session record.
+     *
+     * The session association is required, producing an inner join that excludes
+     * observations without a matching session in the requested project.
+     *
+     * Results are returned as plain objects because the query uses `raw: true`.
+     * Database errors are logged and converted to an empty array, so callers cannot
+     * distinguish a query failure from a successful query with no matching rows.
+     *
+     * @async
+     * @param {number|string} project_id - Project identifier matched against the
+     * associated session's `project_id` field.
+     * @returns {Promise<Array<Object>>} Grouped video-summary objects ordered by
+     * representative dive and line, or an empty array when no records match or
+     * when the database query fails.
      */
     async getVideoSummariesByProject(project_id) {
+
         try {
+            // Query observations and aggregate them into one result for each
+            // distinct video_source and videoLocation combination.
             const results = await this.db.observations.findAll({
                 attributes: [
+                    // Preserve the database video source in each grouped result.
                     'video_source',
-		    'videoLocation',
-                    [fn('COUNT', fn('DISTINCT', col('observations.comname'))), 'distinct_species_count'],
-                    [fn('COUNT', fn('DISTINCT', col('observations.session_id'))), 'session_count'],
-                    [fn('MIN', col('session.dive')), 'dive'],
-                    [fn('MIN', col('session.line')), 'line'],
-                    [fn('MIN', col('session.type')), 'session_type'] // 👈 add session type
+
+                    // Keep videoLocation in both the selected attributes and GROUP BY
+                    // clause so separate locations produce separate summary rows.
+                    'videoLocation',
+
+                    // Count unique non-null common names represented by observations
+                    // in the grouped video and location combination.
+                    [
+                        fn(
+                            'COUNT',
+                            fn('DISTINCT', col('observations.comname'))
+                        ),
+                        'distinct_species_count'
+                    ],
+
+                    // Count the number of distinct sessions contributing
+                    // observations to the grouped result.
+                    [
+                        fn(
+                            'COUNT',
+                            fn('DISTINCT', col('observations.session_id'))
+                        ),
+                        'session_count'
+                    ],
+
+                    // Select the lowest dive value from all matching sessions as
+                    // representative metadata for sorting and display.
+                    [
+                        fn('MIN', col('session.dive')),
+                        'dive'
+                    ],
+
+                    // Select the lowest line value from all matching sessions.
+                    // This value is aggregated independently from the dive value.
+                    [
+                        fn('MIN', col('session.line')),
+                        'line'
+                    ],
+
+                    // Select the minimum session type value across matching sessions.
+                    // For strings, MIN is determined by the database's text ordering.
+                    [
+                        fn('MIN', col('session.type')),
+                        'session_type'
+                    ]
                 ],
+
+                // Join each observation to its associated session so the query can
+                // restrict results to one project and aggregate session metadata.
                 include: [
                     {
+                        // Use the sessions model registered on the shared db object.
                         model: this.db.sessions,
+
+                        // Match the alias declared by the Sequelize association.
                         as: 'session',
-                        attributes: [], // don’t duplicate session data in results
-                        where: { project_id: project_id },
-                        required: true // ensures it acts like an INNER JOIN
+
+                        // Do not include a nested session object because the required
+                        // session values are selected explicitly as aggregate columns.
+                        attributes: [],
+
+                        // Restrict the joined sessions to the requested project.
+                        where: {
+                            project_id: project_id
+                        },
+
+                        // Require a matching session. This produces an inner join and
+                        // excludes observations without a qualifying session.
+                        required: true
                     }
                 ],
-                group: ['observations.video_source', 'observations.videoLocation'],
-                order: [
-                    [fn('MIN', col('session.dive')), 'ASC'],
-                    [fn('MIN', col('session.line')), 'ASC']
+
+                // Create one summary row for each unique video source and location.
+                group: [
+                    'observations.video_source',
+                    'observations.videoLocation'
                 ],
+
+                // Order summaries first by the minimum dive value and then by the
+                // minimum line value within each grouped result.
+                order: [
+                    [
+                        fn('MIN', col('session.dive')),
+                        'ASC'
+                    ],
+                    [
+                        fn('MIN', col('session.line')),
+                        'ASC'
+                    ]
+                ],
+
+                // Return plain JavaScript objects rather than Sequelize model instances.
                 raw: true
             });
 
+            // Return the grouped summaries directly to the service or controller.
             return results;
+
         } catch (err) {
+            // Log the database or Sequelize failure for server-side diagnosis.
             logger.error('Error in getVideoSummariesByProject::' + err);
+
+            // Preserve the current repository contract by returning an empty array.
+            // This makes database failures indistinguishable from no matching data.
             return [];
         }
     }
 
 
-
-
     /**
-     * Returns all observations associated with a given video name, and project name
-     * @param {*} videoSource 
-     * @param {*} projectName 
-     * @returns 
+     * Retrieve observations for a specific video within a named project.
+     *
+     * The function first performs an exact lookup of the project `name` field.
+     * It then retrieves observations whose `video_source` exactly matches the
+     * supplied video source and whose associated session belongs to that project.
+     *
+     * The session association uses `required: true`, so observations without a
+     * matching session in the selected project are excluded.
+     *
+     * The keyframe association uses `required: false`, so observations are returned
+     * whether or not they have associated keyframes. When keyframes exist, they are
+     * included under the configured `keyframes` association.
+     *
+     * Results are ordered by `mediaPosition` in ascending order.
+     *
+     * If the project is not found, accessing `project.project_id` causes an error.
+     * That error, along with database and Sequelize errors, is logged and converted
+     * to an empty array. Callers therefore cannot distinguish between no matching
+     * observations, a missing project, and a failed query.
+     *
+     * @async
+     * @param {string} videoSource - Exact value to match against `video_source`.
+     * @param {string} projectName - Exact project name used to locate the project.
+     * @returns {Promise<Array<Object>>} Matching observations with optional
+     * keyframes, ordered by ascending `mediaPosition`, or an empty array when no
+     * records match, the project is not found, or the query fails.
      */
-    async getObservationsByVideoAndProject(videoSource, projectName){
+    async getObservationsByVideoAndProject(videoSource, projectName) {
 
         try {
-            const project = await this.db.projects.findOne({ where: { name: projectName } });
-            //if (!project) return res.status(404).send({ error: 'Project not found' });
+            // Find the project whose name exactly matches the supplied project name.
+            // This lookup does not perform partial or case-insensitive matching.
+            const project = await this.db.projects.findOne({
+                where: {
+                    name: projectName
+                }
+            });
 
+            // Query observations that match the requested video source and belong
+            // to a session associated with the located project.
             const observations = await this.db.observations.findAll({
                 include: [
                     {
+                        // Join each observation to its associated session.
                         model: this.db.sessions,
+
+                        // Match the alias configured by the Sequelize association.
                         as: 'session',
+
+                        // Require a matching session so only observations belonging
+                        // to the selected project are included.
                         required: true,
-                        where: { project_id: project.project_id }
+
+                        // Restrict the joined session to the located project ID.
+                        where: {
+                            project_id: project.project_id
+                        }
                     },
                     {
-                        model: this.db.keyframes,  // Include keyframes related to each observation
-                        as: 'keyframes',           // Alias used during association
-                        required: false            // Include observations even if there are no keyframes
+                        // Load keyframes associated with each observation.
+                        model: this.db.keyframes,
+
+                        // Match the alias configured by the Sequelize association.
+                        as: 'keyframes',
+
+                        // Use an optional association so observations without
+                        // keyframes remain in the result.
+                        required: false
                     }
                 ],
-                where: { video_source: videoSource },
-                order: [['mediaPosition', 'ASC']]
+
+                // Match the stored video_source value exactly.
+                where: {
+                    video_source: videoSource
+                },
+
+                // Return observations in ascending position within the video.
+                order: [
+                    ['mediaPosition', 'ASC']
+                ]
             });
 
+            // Return Sequelize observation instances with their associated session
+            // and any available keyframes.
             return observations;
+
         } catch (err) {
-            logger.error('Error in getVideoSummariesByProject::' + err);
+            // Log missing-project errors and database or Sequelize failures.
+            logger.error(
+                'Error in getObservationsByVideoAndProject::' + err
+            );
+
+            // Preserve the current repository contract by returning an empty array.
+            // This makes missing projects and query failures indistinguishable from
+            // a successful query with no matching observations.
             return [];
         }
-    };
+    }
 
 
     /**
-     * Returns all observations associated with video videoName that have a comname in comnameList
-     * @param {string} videoName - The name of the video
-     * @param {string[]} comnameList - An array of comname strings to filter observations
+     * Retrieve observations for a video whose common names belong to a supplied list.
+     *
+     * The query performs an exact equality match against `video_source` and uses
+     * SQL `IN` matching against the observation `comname` field. Results are
+     * ordered by `mediaPosition` in ascending order so they follow their sequence
+     * within the source video.
+     *
+     * Associated keyframes are loaded with every returned observation. Because the
+     * keyframe association uses `required: true`, observations without at least one
+     * associated keyframe are excluded.
+     *
+     * The `comnameList` argument must be an array suitable for Sequelize's `Op.in`
+     * operator. A comma-separated string is not converted into an array by this
+     * function.
+     *
+     * Database errors are logged and converted to an empty array. Callers therefore
+     * cannot distinguish between no matching observations and a failed query.
+     *
+     * @async
+     * @param {string} videoName - Exact value to match against `video_source`.
+     * @param {string[]} comnameList - Common names accepted by the query.
+     * @returns {Promise<Array<Object>>} Matching observations with associated
+     * keyframes, ordered by ascending `mediaPosition`, or an empty array when no
+     * records match or the database query fails.
      */
     async getObservationsByVideoAndComnames(videoName, comnameList) {
         try {
-            // Fetch observations along with their associated keyframes
+            // Query observations matching both the exact video source and one of
+            // the supplied common-name values.
             const observations = await this.db.observations.findAll({
                 where: {
+                    // Match the stored video_source value exactly. This does not
+                    // perform partial, normalized, or case-insensitive matching.
                     video_source: videoName,
+
+                    // Restrict results to observations whose comname is included
+                    // in the supplied array.
                     comname: {
-                        [Op.in]: comnameList  // Filter observations where comname is in comnameList
+                        [Op.in]: comnameList
                     }
                 },
-                order: [['mediaPosition', 'ASC']], // Sort by mediaPosition
+
+                // Return observations in their ascending position within the video.
+                order: [
+                    ['mediaPosition', 'ASC']
+                ],
+
+                // Load keyframes associated with every returned observation.
                 include: [
                     {
-                        model: this.db.keyframes,  // Include keyframes related to each observation
-                        as: 'keyframes',           // Alias used during association
-                        required: true             // Only include observations that have keyframes
+                        // Use the keyframe model registered on the shared db object.
+                        model: this.db.keyframes,
+
+                        // Match the alias defined by the Sequelize association.
+                        as: 'keyframes',
+
+                        // Require at least one associated keyframe. This produces
+                        // an inner join and excludes observations without keyframes.
+                        required: true
                     }
                 ]
             });
-    
+
+            // Return Sequelize observation instances with loaded keyframe data.
             return observations;
+
         } catch (err) {
+            // Log Sequelize or database failures for server-side diagnosis.
             console.log(err);
+
+            // Preserve the current repository contract by returning an empty array.
+            // This makes errors indistinguishable from a query with no matches.
             return [];
         }
     }

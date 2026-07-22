@@ -22,7 +22,7 @@
     },
     {
       "name": "Observations",
-      "description": "Observation read and update operations"
+      "description": "Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates."
     }
   ],
   "components": {
@@ -34,10 +34,541 @@
             "type": "string"
           }
         }
+      },
+      "Keyframe": {
+        "type": "object",
+        "description": "Frame-specific annotation associated with an observation.",
+        "properties": {
+          "keyframe_id": {
+            "type": "integer",
+            "example": 48291
+          },
+          "observation_id": {
+            "type": "integer",
+            "example": 12045
+          },
+          "frame": {
+            "type": "integer",
+            "example": 18520
+          }
+        }
+      },
+      "Observation": {
+        "type": "object",
+        "description": "Biological or habitat observation recorded during a MARP session. The fields available in a response may depend on the query and any Sequelize associations included by that endpoint.\n",
+        "required": [
+          "observation_id",
+          "obsID"
+        ],
+        "properties": {
+          "observation_id": {
+            "type": "integer",
+            "example": 12045,
+            "description": "Primary database identifier for the observation."
+          },
+          "obsID": {
+            "type": "integer",
+            "example": 42,
+            "description": "Observation identifier used within the source workflow."
+          },
+          "PobsID": {
+            "type": "integer",
+            "nullable": true,
+            "example": 17,
+            "description": "Optional parent observation identifier."
+          },
+          "project_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 24,
+            "description": "Identifier of the project associated with the observation."
+          },
+          "session_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 718,
+            "description": "Identifier of the session associated with the observation."
+          },
+          "user_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 12,
+            "description": "Identifier of the user associated with the observation."
+          },
+          "tc": {
+            "type": "string",
+            "nullable": true,
+            "example": "00:12:21.520",
+            "description": "Starting time code for the observation."
+          },
+          "frame": {
+            "type": "string",
+            "nullable": true,
+            "example": "18322",
+            "description": "Stored source-frame value associated with the observation."
+          },
+          "taxserial": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1054,
+            "description": "Taxonomic serial identifier associated with the observation."
+          },
+          "comname": {
+            "type": "string",
+            "nullable": true,
+            "example": "Bat star",
+            "description": "Common name assigned to the observed taxon."
+          },
+          "count": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1,
+            "description": "Number of individuals represented by the observation."
+          },
+          "sex": {
+            "type": "string",
+            "nullable": true,
+            "example": "Unknown",
+            "description": "Recorded sex classification when available."
+          },
+          "coarsesize": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3,
+            "description": "Coarse size classification assigned to the observation."
+          },
+          "sizereview": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1,
+            "description": "Stored size-review state or classification."
+          },
+          "quadrant": {
+            "type": "integer",
+            "nullable": true,
+            "example": 2,
+            "description": "Quadrant value associated with the observation."
+          },
+          "etc": {
+            "type": "string",
+            "nullable": true,
+            "example": "00:12:29.840",
+            "description": "Ending time code for the observation."
+          },
+          "taxReview": {
+            "type": "string",
+            "nullable": true,
+            "example": "R",
+            "description": "Taxonomic review status or code."
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "example": "Partially obscured behind rock.",
+            "description": "Free-text note associated with the observation."
+          },
+          "downcamera": {
+            "type": "string",
+            "nullable": true,
+            "example": "false",
+            "description": "Stored down-camera value associated with the observation."
+          },
+          "timelog": {
+            "type": "string",
+            "nullable": true,
+            "example": "2024-07-30 19:21:14",
+            "description": "Stored observation time-log value."
+          },
+          "video_source": {
+            "type": "string",
+            "nullable": true,
+            "example": "20240730_190910 Fwd.mp4",
+            "description": "Video source associated with the observation."
+          },
+          "videoLocation": {
+            "type": "string",
+            "nullable": true,
+            "example": "/CAMPA2024/Dive12/FWD",
+            "description": "Stored location of the associated video."
+          },
+          "mediaPosition": {
+            "type": "string",
+            "nullable": true,
+            "example": "741.520",
+            "description": "Stored position of the observation within the source media."
+          },
+          "actualPosition": {
+            "type": "string",
+            "nullable": true,
+            "example": "741.520",
+            "description": "Stored actual-position value associated with the observation."
+          },
+          "substrate_bedrock": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether bedrock substrate was recorded."
+          },
+          "substrate_megaclast": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether megaclast substrate was recorded."
+          },
+          "substrate_boulder": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "Indicates whether boulder substrate was recorded."
+          },
+          "substrate_cobble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "Indicates whether cobble substrate was recorded."
+          },
+          "substrate_pebble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether pebble substrate was recorded."
+          },
+          "substrate_granule": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether granule substrate was recorded."
+          },
+          "substrate_sand": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "Indicates whether sand substrate was recorded."
+          },
+          "substrate_mud": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether mud substrate was recorded."
+          },
+          "substrate_coral_reef": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether coral-reef substrate was recorded."
+          },
+          "substrate_coral_rubble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether coral-rubble substrate was recorded."
+          },
+          "substrate_shell_hash": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether shell-hash substrate was recorded."
+          },
+          "substrate_shell_rubble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether shell-rubble substrate was recorded."
+          },
+          "substrate_algal": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether algal substrate was recorded."
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.93,
+            "description": "Machine-learning confidence score between zero and one."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the observation record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the observation record was last updated."
+          }
+        }
+      },
+      "ObservationWithKeyframes": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Observation"
+          },
+          {
+            "type": "object",
+            "description": "Observation response containing associated keyframes.",
+            "properties": {
+              "keyframes": {
+                "type": "array",
+                "description": "Keyframes associated with the observation.",
+                "items": {
+                  "$ref": "#/components/schemas/Keyframe"
+                }
+              }
+            }
+          }
+        ]
       }
     }
   },
   "paths": {
+    "/openapi.json": {
+      "get": {
+        "summary": "Retrieve the OpenAPI specification",
+        "description": "Returns the generated OpenAPI document used by the API documentation and development tools.",
+        "tags": [
+          "Documentation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/../openapi.json": {
+      "get": {
+        "summary": "Retrieve the OpenAPI specification from the root alias",
+        "description": "Returns the generated OpenAPI document from the root-level compatibility endpoint.",
+        "tags": [
+          "Documentation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsByVideo": {
+      "get": {
+        "summary": "Retrieve observations for a video",
+        "description": "Returns observations whose video_source exactly matches the supplied videoName. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without keyframes are excluded. An empty array may indicate either that no records matched or that the database query failed.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact video_source value to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getVideoSummaries/{project_id}": {
+      "get": {
+        "summary": "Retrieve video summaries for a project",
+        "description": "Returns one summary row for each distinct combination of video_source and videoLocation associated with sessions in the specified project. Each row includes the number of distinct observation common names, the number of distinct sessions, and representative dive, line, and session type values selected using MIN aggregation. Results are ordered by the representative dive and line in ascending order. Videos without a matching session in the project are excluded. An empty array may mean that no matching observations were found or that the database query failed.\n",
+        "tags": [
+          "Observations",
+          "Videos"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Database identifier of the project whose videos should be summarized."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Video summaries returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "video_source": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Video source value shared by the grouped observations."
+                      },
+                      "videoLocation": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Video location value shared by the grouped observations."
+                      },
+                      "distinct_species_count": {
+                        "type": "integer",
+                        "description": "Number of distinct non-null observation comname values."
+                      },
+                      "session_count": {
+                        "type": "integer",
+                        "description": "Number of distinct sessions represented in the group."
+                      },
+                      "dive": {
+                        "nullable": true,
+                        "description": "Minimum dive value among the matching sessions."
+                      },
+                      "line": {
+                        "nullable": true,
+                        "description": "Minimum line value among the matching sessions."
+                      },
+                      "session_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Minimum session type value among the matching sessions."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsByVideoAndComnames": {
+      "get": {
+        "summary": "Retrieve video observations filtered by common name",
+        "description": "Returns observations whose video_source exactly matches videoName and whose comname is included in comnameList. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. The current repository returns an empty array both when no observations match and when the database query fails.\n",
+        "tags": [
+          "Observations",
+          "Videos"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact value to match against the observation video_source field."
+          },
+          {
+            "in": "query",
+            "name": "comnameList",
+            "required": true,
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Common names used to filter observations. Supply the parameter repeatedly, such as comnameList=Bat%20star&comnameList=Leather%20star.\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsByVideoAndProject/{videoName}/{projectName}": {
+      "get": {
+        "summary": "Retrieve observations for a video within a project",
+        "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.\n",
+        "tags": [
+          "Observations",
+          "Projects",
+          "Videos"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact value to match against the observation video_source field."
+          },
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact project name used to locate the associated project record."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tasks": {
       "get": {
         "summary": "Fetch all tasks",

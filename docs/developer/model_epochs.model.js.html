@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>model/epochs.model.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">model/epochs.model.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * ===================================================================
+ * File: epoch.model.js
+ * Author: Isaac Assegai Travers
+ * Date: 2025-10-7
+ * -------------------------------------------------------------------
+ * Part of the MARP Machine Learning Database Schema.
+ *
+ * Purpose:
+ * Defines the `epochs` table, which stores per-epoch performance
+ * statistics and timing information for each training run.
+ *
+ * Each record represents one complete epoch during training,
+ * including start/end times, loss metrics, and precision/recall/mAP.
+ *
+ * This table supports training visualization, performance analysis,
+ * and historical comparison of model training behavior.
+ * ===================================================================
+ */
+
+const { Model } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+  /**
+   * Model: epochs
+   * ----------------------------------------------------------------
+   * Tracks the performance and timing of each training epoch.
+   * Each epoch belongs to a specific training run.
+   */
+  class epochs extends Model {
+    static associate(models) {
+      // Each epoch belongs to one training run
+      this.belongsTo(models.training_runs, {
+        as: 'training_run',
+        foreignKey: 'training_run_id',
+      });
+    }
+  }
+
+  epochs.init(
+    {
+      id: {
+        // Primary key for the epoch record
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        autoIncrement: true,
+        primaryKey: true,
+        comment: 'Unique identifier for this epoch record.',
+      },
+
+      training_run_id: {
+        // Foreign key to the parent training run
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        comment:
+          'Foreign key linking this epoch to its parent training run (training_runs.id).',
+      },
+
+      epoch_number: {
+        // Sequential number of the epoch (e.g., 1, 2, 3 ...)
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        comment:
+          'The ordinal number of this epoch in the training sequence.',
+      },
+
+      // -------------------------------
+      // TIMING INFORMATION
+      // -------------------------------
+
+      start_time: {
+        // When the epoch started (captured by the trainer)
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment:
+          'Timestamp marking when this epoch began processing.',
+      },
+
+      end_time: {
+        // When the epoch finished
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment:
+          'Timestamp marking when this epoch completed.',
+      },
+
+      duration_seconds: {
+        // Optional precomputed field for performance analysis
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Total elapsed time of this epoch, in seconds (end_time - start_time).',
+      },
+
+      // -------------------------------
+      // PERFORMANCE METRICS
+      // -------------------------------
+
+      precision: {
+        // Model precision for this epoch — fraction of true positives among predicted positives
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Precision metric value recorded at the end of this epoch.',
+      },
+
+      recall: {
+        // Model recall for this epoch — fraction of true positives among all actual positives
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Recall metric value recorded at the end of this epoch.',
+      },
+
+      map50: {
+        // Mean Average Precision at IoU threshold 0.5
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch.',
+      },
+
+      map5095: {
+        // Mean Average Precision averaged across IoU thresholds 0.5:0.95
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch.',
+      },
+
+      // -------------------------------
+      // LOSS METRICS
+      // -------------------------------
+
+      box_loss: {
+        // Bounding box regression loss
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Loss associated with bounding box coordinate regression during this epoch.',
+      },
+
+      cls_loss: {
+        // Classification loss
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Loss associated with class label predictions during this epoch.',
+      },
+
+      dfl_loss: {
+        // Distribution Focal Loss (YOLOv8 and related architectures)
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Distribution Focal Loss (DFL) for this epoch, if applicable to the model type.',
+      },
+
+      timestamp: {
+        // Optional: record when this epoch was logged
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this epoch record was inserted into the database.',
+      },
+
+      created_at: {
+        // Record creation timestamp
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this epoch record was created.',
+      },
+
+      updated_at: {
+        // Record update timestamp
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this epoch record was last updated.',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'epochs',
+      tableName: 'epochs',
+      schema: 'public',
+      timestamps: false, // we manage created_at/updated_at manually
+      comment:
+        'Stores per-epoch performance and timing metrics for each training run in the MARP ML system.',
+      indexes: [
+        {
+          name: 'epochs_pkey',
+          unique: true,
+          fields: ['id'],
+        },
+        {
+          name: 'epochs_training_run_id_idx',
+          fields: ['training_run_id'],
+        },
+        {
+          name: 'epochs_epoch_number_idx',
+          fields: ['epoch_number'],
+        },
+        {
+          name: 'epochs_start_time_idx',
+          fields: ['start_time'],
+        },
+      ],
+    }
+  );
+
+  return epochs;
+};</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

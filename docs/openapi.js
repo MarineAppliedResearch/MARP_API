@@ -31,11 +31,27 @@ const normalizeGlobPath = (filePath) => {
  */
 const buildOpenApiSpec = () => {
 
+    /**
+     * Absolute source-file patterns scanned by `swagger-jsdoc`.
+     *
+     * Route annotations are read from the server, controller, service, and
+     * repository layers. Reusable OpenAPI component schemas may also be defined
+     * beside the model files they describe.
+     *
+     * Each path is normalized to forward slashes so the glob patterns behave
+     * consistently across operating systems.
+     *
+     * @constant
+     * @type {string[]}
+     */
     const annotationFiles = [
-        normalizeGlobPath(path.join(PROJECT_ROOT, 'server.js')),
-        normalizeGlobPath(path.join(PROJECT_ROOT, 'controller', '**', '*.js')),
-        normalizeGlobPath(path.join(PROJECT_ROOT, 'service', '**', '*.js')),
+        normalizeGlobPath(path.join(PROJECT_ROOT, 'server.js')),                 // Main Express routes and documentation endpoints.
+        normalizeGlobPath(path.join(PROJECT_ROOT, 'controller', '**', '*.js')), // Controller-level OpenAPI annotations.
+        normalizeGlobPath(path.join(PROJECT_ROOT, 'service', '**', '*.js')),    // Service-level OpenAPI annotations.
+        normalizeGlobPath(path.join(PROJECT_ROOT, 'repository', '**', '*.js')), // Repository-related API documentation.
+        normalizeGlobPath(path.join(PROJECT_ROOT, 'model', '**', '*.js')),      // Reusable component schemas defined beside models.
     ];
+    
 
     const options = {
         failOnErrors: true,
@@ -67,8 +83,9 @@ const buildOpenApiSpec = () => {
                 },
                 {
                     name: 'Observations',
-                    description: 'Observation read and update operations',
-                },
+                    description:
+                        'Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates.'
+                }
             ],
 
             components: {

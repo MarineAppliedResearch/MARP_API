@@ -1,21 +1,28 @@
 {
   "source": {
     "include": [
-      "server.js",
-      "controller",
-      "service",
-      "repository"
+      "."
     ],
-    "exclude": [
-      "repository/observation.repository.js",
-      "repository/project.repository.js"
-    ],
-    "includePattern": ".+\\.js(doc|x)?$",
-    "excludePattern": "(^|/|\\\\)_"
+    "includePattern": ".+\\.js$",
+    "excludePattern": "(^|/|\\\\)(node_modules|docs|coverage|dist|build)(/|\\\\)"
   },
   "opts": {
     "destination": "docs/developer",
     "recurse": true,
-    "readme": "README.md"
+    "readme": "README.md",
+    "template": "node_modules/docdash"
+  },
+  "templates": {
+    "default": {
+      "includeDate": false
+    }
+  },
+  "docdash": {
+    "static": true,
+    "sort": true,
+    "search": true,
+    "collapse": true,
+    "typedefs": true,
+    "removeQuotes": "none"
   }
 }

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>model/hyperparameters.model.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">model/hyperparameters.model.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * ===================================================================
+ * File: hyperparameters.model.js
+ * Author: Isaac Assegai Travers
+ * Date: 2025-07-10
+ * -------------------------------------------------------------------
+ * Part of the MARP Machine Learning Database Schema.
+ *
+ * Purpose:
+ * Defines the `hyperparameters` table, which stores the full
+ * hyperparameter configuration used for a specific training run.
+ *
+ * Each record contains a JSON object describing model training
+ * parameters such as learning rate, batch size, optimizer type,
+ * momentum, weight decay, and augmentation options.
+ *
+ * This ensures reproducibility of training conditions and allows
+ * comparison between runs using different settings.
+ * ===================================================================
+ */
+
+const { Model } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+  /**
+   * Model: hyperparameters
+   * ----------------------------------------------------------------
+   * Each record represents one hyperparameter configuration
+   * associated with a specific training run.
+   */
+  class hyperparameters extends Model {
+    static associate(models) {
+      // Each hyperparameter set belongs to one training run
+      this.belongsTo(models.training_runs, {
+        as: 'training_run',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE', // If the training run is removed, delete config
+        onUpdate: 'CASCADE',
+      });
+    }
+  }
+
+  hyperparameters.init(
+    {
+      id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        autoIncrement: true,
+        primaryKey: true,
+        comment: 'Unique identifier for this hyperparameter configuration.',
+      },
+
+      training_run_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        comment:
+          'Foreign key referencing the training run this hyperparameter set belongs to (training_runs.id).',
+      },
+
+      params: {
+        type: DataTypes.JSONB,
+        allowNull: false,
+        comment:
+          'JSON object containing all hyperparameters used for this training run (e.g., lr0, momentum, epochs, etc.).',
+      },
+
+      created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this hyperparameter record was created.',
+      },
+
+      updated_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this hyperparameter record was last updated.',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'hyperparameters',
+      tableName: 'hyperparameters',
+      schema: 'public',
+      timestamps: false,
+      comment:
+        'Stores full hyperparameter configurations for each training run to ensure reproducibility and comparability.',
+      indexes: [
+        {
+          name: 'hyperparameters_pkey',
+          unique: true,
+          fields: ['id'],
+        },
+        {
+          name: 'hyperparameters_training_run_id_idx',
+          fields: ['training_run_id'],
+        },
+      ],
+    }
+  );
+
+  return hyperparameters;
+};</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

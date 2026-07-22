@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>model/datasets.model.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">model/datasets.model.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * ===================================================================
+ * File: datasets.model.js
+ * Author: Isaac Assegai Travers
+ * Date: 2025-10-7
+ * -------------------------------------------------------------------
+ * Part of the MARP Machine Learning Database Schema.
+ *
+ * Purpose:
+ * Defines the `datasets` table, which represents a curated set of
+ * observations and keyframes used for machine learning training,
+ * validation, or testing.
+ *
+ * Each dataset aggregates a subset of observations, typically drawn
+ * from ROV survey sessions, and may be reused across multiple
+ * training runs. Datasets are linked to observations via the
+ * `dataset_observations` join table.
+ *
+ * Note:
+ * Species are not directly linked yet — they are derived implicitly
+ * through observations (by comname). Once the observation table is
+ * normalized with a `species_id`, that linkage will propagate
+ * automatically.
+ * ===================================================================
+ */
+
+const { Model } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+  /**
+   * Model: datasets
+   * ----------------------------------------------------------------
+   * Stores metadata about a dataset used for model training, such as
+   * its name, size, source, and purpose. Each dataset can be used by
+   * multiple training runs and can contain many observations.
+   */
+  class datasets extends Model {
+    static associate(models) {
+      // Many-to-many: datasets ↔ observations
+      this.belongsToMany(models.observations, {
+        through: models.dataset_observations,
+        as: 'observations',
+        foreignKey: 'dataset_id',
+        otherKey: 'observation_id',
+      });
+
+      // One-to-many: datasets → training_runs
+      this.hasMany(models.training_runs, {
+        as: 'training_runs',
+        foreignKey: 'dataset_id',
+        onDelete: 'SET NULL',
+      });
+    }
+  }
+
+  datasets.init(
+    {
+      id: {
+        // Primary key for this dataset
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        autoIncrement: true,
+        primaryKey: true,
+        comment: 'Unique identifier for this dataset record.',
+      },
+
+      name: {
+        // Human-readable dataset name (e.g., "Fish_2024_Training_Set_v1")
+        type: DataTypes.STRING,
+        allowNull: false,
+        comment: 'Descriptive name of this dataset.',
+      },
+
+      description: {
+        // Freeform text explaining what the dataset is or how it was built
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'Detailed description or notes about the dataset’s purpose and composition.',
+      },
+
+      location: {
+        // Directory or URI path to where dataset files are stored
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Filesystem or network location of the dataset resources.',
+      },
+
+      num_samples: {
+        // Number of image or video samples in this dataset
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'Total number of samples (images, frames, or observations) included in this dataset.',
+      },
+
+      num_classes: {
+        // Number of unique species/classes represented
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Approximate number of unique classes (species) represented in this dataset (derived from observation comnames).',
+      },
+
+      source: {
+        // Indicates where the dataset originated
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment:
+          'Source or method of dataset creation (e.g., "auto-compiled", "manual curation", "legacy import").',
+      },
+
+      notes: {
+        // Additional comments or contextual notes
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'General notes about dataset preparation, inclusion criteria, or issues.',
+      },
+
+      created_at: {
+        // When this dataset record was created
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment: 'Timestamp when this dataset record was created.',
+      },
+
+      updated_at: {
+        // When this dataset record was last modified
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment: 'Timestamp when this dataset record was last updated.',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'datasets',        // internal Sequelize model name
+      tableName: 'datasets',        // PostgreSQL table name
+      schema: 'public',
+      timestamps: false,            // we manage created_at/updated_at manually
+      comment:
+        'Represents curated datasets of observations used for training, validation, or testing within MARP.',
+      indexes: [
+        {
+          name: 'datasets_pkey',
+          unique: true,
+          fields: ['id'],
+        },
+        {
+          name: 'datasets_name_idx',
+          fields: ['name'],
+        },
+        {
+          name: 'datasets_source_idx',
+          fields: ['source'],
+        },
+      ],
+    }
+  );
+
+  return datasets;
+};</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>model/training_runs.model.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">model/training_runs.model.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * ===================================================================
+ * File: training_run.model.js
+ * Author: Isaac Assegai Travers
+ * Date: 2025-10-7
+ * -------------------------------------------------------------------
+ * Part of the MARP Machine Learning Database Schema.
+ *
+ * Purpose:
+ * Defines the `training_runs` table, which represents each distinct
+ * training or retraining event of a machine learning model.
+ * Each record links to:
+ *   - the model being trained (`ml_models`)
+ *   - the dataset used (`datasets`)
+ *   - performance results (via `epochs`, `metrics_summary`, etc.)
+ *
+ * Tracks training configuration, duration, and runtime environment.
+ * ===================================================================
+ */
+
+const { Model } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+  /**
+   * Model: training_runs
+   * ----------------------------------------------------------------
+   * Stores metadata for each training or retraining event, including
+   * dataset association, compute parameters, and execution details.
+   */
+  class training_runs extends Model {
+    /**
+     * Define associations between models.
+     * Executed automatically in init-models.js
+     */
+    static associate(models) {
+      // Each training run belongs to a single ML model
+      this.belongsTo(models.ml_models, {
+        as: 'ml_model',
+        foreignKey: 'model_id',
+      });
+
+      // Each training run uses one dataset
+      this.belongsTo(models.datasets, {
+        as: 'dataset',
+        foreignKey: 'dataset_id',
+      });
+
+      // One training run can have many epochs
+      this.hasMany(models.epochs, {
+        as: 'epochs',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE',
+      });
+
+      // One training run can have many metrics summaries
+      this.hasMany(models.metrics_summary, {
+        as: 'metrics_summaries',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE',
+      });
+
+      // One training run can have one hyperparameter record
+      this.hasOne(models.hyperparameters, {
+        as: 'hyperparameters',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE',
+      });
+
+      // One training run can have many artifacts
+      this.hasMany(models.artifacts, {
+        as: 'artifacts',
+        foreignKey: 'training_run_id',
+        onDelete: 'CASCADE',
+      });
+    }
+  }
+
+  training_runs.init(
+    {
+      id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        autoIncrement: true,
+        primaryKey: true,
+        comment: 'Unique identifier for this training run.',
+      },
+
+      model_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        comment: 'Foreign key referencing the parent ML model (ml_models.id).',
+      },
+
+      dataset_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'Foreign key referencing the dataset used for training (datasets.id).',
+      },
+
+      start_time: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Timestamp when training began.',
+      },
+
+      end_time: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Timestamp when training completed.',
+      },
+
+      total_epochs: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'Total number of epochs configured for this run.',
+      },
+
+      batch_size: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment: 'Training batch size used during this run.',
+      },
+
+      learning_rate: {
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment: 'Base learning rate used during training.',
+      },
+
+      optimizer: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Optimization algorithm (e.g., "Adam", "SGD").',
+      },
+
+      loss_function: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Loss function used (e.g., "CrossEntropy", "FocalLoss").',
+      },
+
+      augmentation: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+        comment: 'JSON object containing data augmentation parameters and settings.',
+      },
+
+      compute_device: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Hardware used for training (e.g., "RTX 6000 Ada", "A100 GPU").',
+      },
+
+      train_script_commit: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        comment: 'Git commit hash or version identifier of the training script used.',
+      },
+
+      notes: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'Freeform notes describing experiment purpose or results context.',
+      },
+
+      created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment: 'Timestamp when this record was created.',
+      },
+
+      updated_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment: 'Timestamp when this record was last modified.',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'training_runs',    // used in Sequelize
+      tableName: 'training_runs',    // actual PostgreSQL table
+      schema: 'public',
+      timestamps: false,
+      comment:
+        'Records each machine learning training or retraining event within MARP.',
+      indexes: [
+        {
+          name: 'training_runs_pkey',
+          unique: true,
+          fields: ['id'],
+        },
+        {
+          name: 'training_runs_model_id_idx',
+          fields: ['model_id'],
+        },
+        {
+          name: 'training_runs_dataset_id_idx',
+          fields: ['dataset_id'],
+        },
+        {
+          name: 'training_runs_start_time_idx',
+          fields: ['start_time'],
+        },
+      ],
+    }
+  );
+
+  return training_runs;
+};</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

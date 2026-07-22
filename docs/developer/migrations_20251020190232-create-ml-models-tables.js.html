@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>migrations/20251020190232-create-ml-models-tables.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">migrations/20251020190232-create-ml-models-tables.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+/** @type {import('sequelize-cli').Migration} */
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    const transaction = await queryInterface.sequelize.transaction();
+    try {
+      
+
+    // 1. species
+
+    await queryInterface.createTable(
+        'species',
+        {
+          id: {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            autoIncrement: true,
+            primaryKey: true,
+            comment: 'Unique numeric identifier for this species record.',
+          },
+
+          taxserial: {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            comment:
+              'Internal MARP taxonomy serial number used as a unique ID across systems.',
+          },
+
+          // GUI DISPLAY CONFIGURATION
+          gui_home_order: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Ordering key used by MARP GUI to position this item on the home screen.',
+          },
+
+          gui_maintab: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Main tab category where this item appears in the GUI (e.g., "Fish", "Invertebrates").',
+          },
+
+          gui_subtab: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Sub-tab within the main tab where this item is displayed (e.g., "Sea Stars", "Crabs").',
+          },
+
+          gui_main_tab_order: {
+            type: Sequelize.INTEGER,
+            allowNull: true,
+            comment:
+              'Order number for the main tab this item belongs to (controls tab sequencing).',
+          },
+
+          gui_sub_tab_order: {
+            type: Sequelize.INTEGER,
+            allowNull: true,
+            comment:
+              'Order number for the sub-tab this item belongs to (controls layout within a tab).',
+          },
+
+          gui_item_order: {
+            type: Sequelize.INTEGER,
+            allowNull: true,
+            comment:
+              'Position of this species within its GUI sub-tab group.',
+          },
+
+          gui_display_name: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Display name for this item as shown in MARP GUI interfaces.',
+          },
+
+          // TAXONOMY / BIOLOGY
+          comname: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Common name used for this species (e.g., "Rockfish", "Sea Star").',
+          },
+
+          species: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Scientific or Latin name of the species (e.g., "Sebastes ruberrimus").',
+          },
+
+          observation_type: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Category describing what type of organism this is (e.g., "Fish", "Invertebrate").',
+          },
+
+          taxonomic_level: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Taxonomic rank (e.g., "Species", "Genus", "Phylum", "Class").',
+          },
+
+          report_group: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Report grouping (e.g., "Sea Stars", "Corals - Gorgonians", "Anemones").',
+          },
+
+          depth_min: {
+            type: Sequelize.FLOAT,
+            allowNull: true,
+            comment:
+              'Minimum depth (in meters) where this species is typically observed.',
+          },
+
+          depth_max: {
+            type: Sequelize.FLOAT,
+            allowNull: true,
+            comment:
+              'Maximum depth (in meters) where this species is typically observed.',
+          },
+
+          habitat_preference: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Habitat preference or substrate association (e.g., "Rocky", "Mud/Sand", "Mixed Hard/Soft").',
+          },
+
+          notes: {
+            type: Sequelize.TEXT,
+            allowNull: true,
+            comment:
+              'Freeform notes about this species, its classification, or GUI behavior.',
+          },
+
+          created_at: {
+            type: Sequelize.DATE,
+            allowNull: false,
+            defaultValue: Sequelize.NOW,
+            comment: 'Timestamp when this species record was created.',
+          },
+
+          updated_at: {
+            type: Sequelize.DATE,
+            allowNull: false,
+            defaultValue: Sequelize.NOW,
+            comment: 'Timestamp when this species record was last updated.',
+          },
+        },
+        {
+          transaction, // ensure this table creation is part of the transaction
+          comment:
+            'Taxonomic and GUI configuration table for species used in MARP observations, reports, and ML models.',
+        }
+    );
+
+    // Indexes — all inside the same transaction
+    await queryInterface.addIndex('species', ['taxserial'], {
+      name: 'species_taxserial_idx',
+      unique: true,
+      transaction,
+    });
+
+    await queryInterface.addIndex('species', ['comname'], {
+      name: 'species_comname_idx',
+      transaction,
+    });
+
+    await queryInterface.addIndex('species', ['report_group'], {
+      name: 'species_report_group_idx',
+      transaction,
+    });
+
+    await queryInterface.addIndex('species', ['gui_maintab'], {
+      name: 'species_gui_maintab_idx',
+      transaction,
+    });
+
+    await queryInterface.addIndex('species', ['gui_subtab'], {
+      name: 'species_gui_subtab_idx',
+      transaction,
+    });
+
+    // 2. datasets
+    await queryInterface.createTable(
+      'datasets',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique identifier for this dataset record.',
+        },
+
+        name: {
+          type: Sequelize.STRING,
+          allowNull: false,
+          comment: 'Descriptive name of this dataset (e.g., "Fish_2024_Training_Set_v1").',
+        },
+
+        description: {
+          type: Sequelize.TEXT,
+          allowNull: true,
+          comment: 'Detailed description or notes about the dataset’s purpose and composition.',
+        },
+
+        location: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Filesystem or network location of the dataset resources.',
+        },
+
+        num_samples: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          comment: 'Total number of samples (images, frames, or observations) included in this dataset.',
+        },
+
+        num_classes: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          comment:
+            'Approximate number of unique species/classes represented in this dataset (derived from observation comnames).',
+        },
+
+        source: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment:
+            'Source or method of dataset creation (e.g., "auto-compiled", "manual curation", "legacy import").',
+        },
+
+        notes: {
+          type: Sequelize.TEXT,
+          allowNull: true,
+          comment:
+            'General notes about dataset preparation, inclusion criteria, or issues.',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this dataset record was created.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this dataset record was last updated.',
+        },
+      },
+        
+        { transaction }
+    );
+
+    // Indexes
+    await queryInterface.addIndex('datasets', ['name'], {
+      name: 'datasets_name_idx',
+      transaction
+    });
+
+    await queryInterface.addIndex('datasets', ['source'], {
+      name: 'datasets_source_idx',
+      transaction
+    });
+
+    // 3. ml_models
+    await queryInterface.createTable(
+      'ml_models',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique numeric identifier for this ML model record.',
+        },
+
+        name: {
+          type: Sequelize.STRING,
+          allowNull: false,
+          comment: 'Human-readable name (e.g., "yolov8-marine-fish-2025").',
+        },
+
+        parent_model_id: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          references: { model: 'ml_models', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'SET NULL', // keep child; just clear lineage if parent deleted
+          comment: 'Optional self-reference for lineage.',
+        },
+
+        model_type: {
+          type: Sequelize.STRING,
+          allowNull: false,
+          comment: 'Architecture family (e.g., "yolov8", "resnet").',
+        },
+
+        architecture_version: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Architecture variant/version (e.g., "v8n", "2025a").',
+        },
+
+        storage_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Path/URI to weights and artifacts.',
+        },
+
+        status: {
+          type: Sequelize.STRING,
+          allowNull: false,
+          defaultValue: 'draft',
+          comment: 'Lifecycle: "draft" | "training" | "trained" | "archived".',
+        },
+
+        notes: {
+          type: Sequelize.TEXT,
+          allowNull: true,
+          comment: 'Freeform notes.',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+        },
+      },
+      {
+        transaction
+      }
+    );
+
+    // Non-unique index on name (matches your model)
+    await queryInterface.addIndex('ml_models', ['name'], {
+      name: 'ml_models_name_idx',
+      transaction,
+    });
+
+    // 4. training_runs
+    await queryInterface.createTable(
+      'training_runs',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique identifier for this training run.',
+        },
+
+        model_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'ml_models', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'CASCADE', // if model deleted, remove its runs
+          comment: 'Foreign key referencing the parent ML model (ml_models.id).',
+        },
+
+        dataset_id: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          references: { model: 'datasets', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'NO ACTION',
+          comment: 'Foreign key referencing the dataset used for training (datasets.id).',
+        },
+
+        start_time: {
+          type: Sequelize.DATE,
+          allowNull: true,
+          comment: 'Timestamp when training began.',
+        },
+
+        end_time: {
+          type: Sequelize.DATE,
+          allowNull: true,
+          comment: 'Timestamp when training completed.',
+        },
+
+        total_epochs: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          comment: 'Total number of epochs configured for this run.',
+        },
+
+        batch_size: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          comment: 'Training batch size used during this run.',
+        },
+
+        learning_rate: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment: 'Base learning rate used during training.',
+        },
+
+        optimizer: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Optimization algorithm (e.g., "Adam", "SGD").',
+        },
+
+        loss_function: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Loss function used (e.g., "CrossEntropy", "FocalLoss").',
+        },
+
+        augmentation: {
+          type: Sequelize.JSONB,
+          allowNull: true,
+          comment: 'JSON object containing data augmentation parameters and settings.',
+        },
+
+        compute_device: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Hardware used for training (e.g., "RTX 6000 Ada", "A100 GPU").',
+        },
+
+        train_script_commit: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Git commit hash or version identifier of the training script used.',
+        },
+
+        notes: {
+          type: Sequelize.TEXT,
+          allowNull: true,
+          comment: 'Freeform notes describing experiment purpose or results context.',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this record was created.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this record was last modified.',
+        },
+      },
+      
+      { transaction }
+    );
+
+    // Indexes
+    await queryInterface.addIndex('training_runs', ['model_id'], {
+      name: 'training_runs_model_id_idx',
+      transaction
+    });
+    await queryInterface.addIndex('training_runs', ['dataset_id'], {
+      name: 'training_runs_dataset_id_idx',
+      transaction
+    });
+    await queryInterface.addIndex('training_runs', ['start_time'], {
+      name: 'training_runs_start_time_idx',
+      transaction
+    });
+
+    // 5. epochs
+    await queryInterface.createTable(
+      'epochs',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique identifier for this epoch record.',
+        },
+
+        training_run_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'training_runs', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'CASCADE', // delete epochs when training run is deleted
+          comment:
+            'Foreign key linking this epoch to its parent training run (training_runs.id).',
+        },
+
+        epoch_number: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          comment:
+            'The ordinal number of this epoch in the training sequence.',
+        },
+
+        // Timing
+        start_time: {
+          type: Sequelize.DATE,
+          allowNull: true,
+          comment: 'Timestamp marking when this epoch began processing.',
+        },
+
+        end_time: {
+          type: Sequelize.DATE,
+          allowNull: true,
+          comment: 'Timestamp marking when this epoch completed.',
+        },
+
+        duration_seconds: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Total elapsed time of this epoch, in seconds (end_time - start_time).',
+        },
+
+        // Performance
+        precision: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment: 'Precision metric value recorded at the end of this epoch.',
+        },
+
+        recall: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment: 'Recall metric value recorded at the end of this epoch.',
+        },
+
+        map50: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch.',
+        },
+
+        map5095: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch.',
+        },
+
+        // Losses
+        box_loss: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Loss associated with bounding box coordinate regression during this epoch.',
+        },
+
+        cls_loss: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Loss associated with class label predictions during this epoch.',
+        },
+
+        dfl_loss: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Distribution Focal Loss (DFL) for this epoch, if applicable to the model type.',
+        },
+
+        timestamp: {
+          type: Sequelize.DATE,
+          allowNull: true,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this epoch record was inserted into the database.',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this epoch record was created.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this epoch record was last updated.',
+        },
+      },
+      
+      { transaction }
+    );
+
+    // Indexes
+    await queryInterface.addIndex('epochs', ['training_run_id'], {
+      name: 'epochs_training_run_id_idx',
+      transaction
+    });
+    await queryInterface.addIndex('epochs', ['epoch_number'], {
+      name: 'epochs_epoch_number_idx',
+      transaction
+    });
+    await queryInterface.addIndex('epochs', ['start_time'], {
+      name: 'epochs_start_time_idx',
+      transaction
+    });
+
+
+    // 6. metrics_summary
+    await queryInterface.createTable(
+      'metrics_summary',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique identifier for this metrics summary record.',
+        },
+
+        training_run_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'training_runs', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'CASCADE', // removing a training run removes its summaries
+          comment:
+            'Foreign key referencing the training run this metrics summary belongs to (training_runs.id).',
+        },
+
+        species_id: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          references: { model: 'species', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'NO ACTION',
+          comment:
+            'Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.',
+        },
+
+        dataset_split: {
+          type: Sequelize.STRING,
+          allowNull: false,
+          comment:
+            'Specifies which dataset split these metrics apply to: "train", "val", or "test".',
+        },
+
+        precision: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment: 'Aggregate precision achieved for this dataset split.',
+        },
+
+        recall: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment: 'Aggregate recall achieved for this dataset split.',
+        },
+
+        map50: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment: 'Mean Average Precision (mAP) at 0.5 IoU threshold for this split.',
+        },
+
+        map5095: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Mean Average Precision (mAP) averaged over IoU thresholds 0.5–0.95.',
+        },
+
+        fitness: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment: 'Weighted performance score used by YOLO to rank model checkpoints.',
+        },
+
+        f1_score: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Aggregate F1 score for this dataset split, typically computed from precision and recall.',
+        },
+
+        confusion_matrix_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment:
+            'Filesystem path or URI to the confusion matrix image generated for this dataset split.',
+        },
+
+        result_plot_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment:
+            'Filesystem path or URI to the overall results plot (e.g., PR or F1 curves) for this dataset split.',
+        },
+
+        confusion_matrix_norm_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment:
+            'Path to the normalized confusion matrix plot image generated during evaluation.',
+        },
+
+        box_f1_curve_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Path to the F1 vs confidence curve plot image.',
+        },
+
+        box_p_curve_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Path to the precision vs confidence curve plot image.',
+        },
+
+        box_pr_curve_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Path to the precision–recall (PR) curve plot image.',
+        },
+
+        box_r_curve_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment: 'Path to the recall vs confidence curve plot image.',
+        },
+
+        labels_plot_path: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment:
+            'Path to the label distribution plot image showing class balance in the dataset.',
+        },
+
+        details: {
+          type: Sequelize.JSONB,
+          allowNull: true,
+          comment:
+            'Optional JSON object storing additional data arrays (e.g., per-class metrics or PR/F1-confidence points).',
+        },
+
+        timestamp: {
+          type: Sequelize.DATE,
+          allowNull: true,
+          defaultValue: Sequelize.NOW,
+          comment:
+            'Timestamp when this metrics summary was created or finalized.',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Record creation timestamp.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Record last update timestamp.',
+        },
+      },
+      
+      { transaction }
+    );
+
+    // Indexes
+    await queryInterface.addIndex('metrics_summary', ['training_run_id'], {
+      name: 'metrics_summary_training_run_id_idx',
+      transaction
+    });
+    await queryInterface.addIndex('metrics_summary', ['dataset_split'], {
+      name: 'metrics_summary_split_idx',
+      transaction
+    });
+
+
+    // 7. metrics_curves
+    await queryInterface.createTable(
+      'metrics_curves',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique identifier for this metrics curve data point.',
+        },
+
+        metrics_summary_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'metrics_summary', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'CASCADE', // delete curves when summary is deleted
+          comment:
+            'Foreign key referencing the metrics summary record (metrics_summary.id) this curve point belongs to.',
+        },
+
+        species_id: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          references: { model: 'species', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'NO ACTION', // species deletion does not affect curves
+          comment:
+            'Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.',
+        },
+
+        confidence_threshold: {
+          type: Sequelize.FLOAT,
+          allowNull: false,
+          comment:
+            'Confidence threshold (between 0.0 and 1.0) at which these metrics were measured.',
+        },
+
+        precision: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Model precision value computed at this confidence threshold.',
+        },
+
+        recall: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Model recall value computed at this confidence threshold.',
+        },
+
+        f1_score: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Model F1 score computed at this confidence threshold.',
+        },
+
+        support: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          comment:
+            'Number of predictions or detections evaluated at this confidence threshold.',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this metrics curve record was created.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this metrics curve record was last updated.',
+        },
+      },
+      
+      { transaction }
+    );
+
+    // Indexes
+    await queryInterface.addIndex('metrics_curves', ['metrics_summary_id'], {
+      name: 'metrics_curves_summary_id_idx',
+      transaction
+    });
+    
+    await queryInterface.addIndex('metrics_curves', ['confidence_threshold'], {
+      name: 'metrics_curves_confidence_idx',
+      transaction
+    });
+
+    // 8. model_species
+
+    await queryInterface.createTable(
+      'model_species',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment:
+            'Unique numeric identifier for this model-species linkage record.',
+        },
+
+        model_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'ml_models', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'CASCADE', // delete links when model is deleted
+          comment:
+            'Foreign key referencing the associated ML model (ml_models.id).',
+        },
+
+        species_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'species', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'NO ACTION', // species deletion leaves links intact
+          comment:
+            'Foreign key referencing the species this model was trained on (species.id).',
+        },
+
+        dataset_size: {
+          type: Sequelize.INTEGER,
+          allowNull: true,
+          comment:
+            'Number of image or annotation samples of this species used for training this model.',
+        },
+
+        balance_weight: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Relative weight used for balancing this species during training (higher = more importance).',
+        },
+
+        precision_mean: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Mean precision achieved by the model for this species during evaluation (optional).',
+        },
+
+        recall_mean: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Mean recall achieved by the model for this species during evaluation (optional).',
+        },
+
+        f1_mean: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Mean F1-score for this species within this model, across validation epochs (optional).',
+        },
+
+        notes: {
+          type: Sequelize.TEXT,
+          allowNull: true,
+          comment:
+            'Freeform notes describing this model-species relationship (e.g., training quality, issues, or remarks).',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this model-species record was created.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this model-species record was last updated.',
+        },
+      },
+      
+      { transaction }
+    );
+
+    // Indexes
+    await queryInterface.addIndex('model_species', ['model_id'], {
+      name: 'model_species_model_id_idx',
+      transaction
+    });
+    
+    await queryInterface.addIndex('model_species', ['species_id'], {
+      name: 'model_species_species_id_idx',
+      transaction
+    });
+
+    await queryInterface.addIndex('model_species', ['model_id', 'species_id'], {
+      name: 'model_species_unique_model_species',
+      transaction,
+      unique: true,
+    });
+
+
+
+    // 9. artifacts
+    // Inside your `up()` function
+      await queryInterface.createTable(
+        'artifacts',
+        {
+          id: {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            autoIncrement: true,
+            primaryKey: true,
+            comment: 'Unique identifier for this artifact record.',
+          },
+
+          training_run_id: {
+            type: Sequelize.INTEGER,
+            allowNull: false,
+            references: { model: 'training_runs', key: 'id' },
+            onUpdate: 'NO ACTION',
+            onDelete: 'CASCADE', // delete artifacts when their training_run is deleted
+            comment:
+              'Foreign key referencing the training run this artifact belongs to (training_runs.id).',
+          },
+
+          artifact_type: {
+            type: Sequelize.STRING,
+            allowNull: false,
+            comment:
+              'Type of artifact (e.g., "weights", "log", "results_plot", "confusion_matrix", "export").',
+          },
+
+          path: {
+            type: Sequelize.STRING,
+            allowNull: false,
+            comment:
+              'Filesystem path or URI to the artifact file or directory.',
+          },
+
+          size_mb: {
+            type: Sequelize.FLOAT,
+            allowNull: true,
+            comment:
+              'File size in megabytes, if available (useful for monitoring disk usage).',
+          },
+
+          hash: {
+            type: Sequelize.STRING,
+            allowNull: true,
+            comment:
+              'Checksum or hash of the artifact file (e.g., SHA256) to verify integrity and detect duplicates.',
+          },
+
+          metadata: {
+            type: Sequelize.JSONB,
+            allowNull: true,
+            comment:
+              'Optional JSON metadata with contextual information (e.g., epoch number, export format, or framework version).',
+          },
+
+          created_at: {
+            type: Sequelize.DATE,
+            allowNull: false,
+            defaultValue: Sequelize.NOW,
+            comment:
+              'Timestamp when this artifact record was created (typically when the file was generated).',
+          },
+
+          updated_at: {
+            type: Sequelize.DATE,
+            allowNull: false,
+            defaultValue: Sequelize.NOW,
+            comment:
+              'Timestamp when this artifact record was last updated.',
+          },
+        },
+        {
+          transaction, // ✅ ensures this createTable is in the overall migration transaction
+          comment:
+            'Tracks files and outputs produced during a training run, including weights, logs, and result visualizations.',
+        }
+      );
+
+      // Indexes — all inside same transaction
+      await queryInterface.addIndex('artifacts', ['training_run_id'], {
+        name: 'artifacts_training_run_id_idx',
+        transaction,
+      });
+
+      await queryInterface.addIndex('artifacts', ['artifact_type'], {
+        name: 'artifacts_artifact_type_idx',
+        transaction,
+      });
+
+      await queryInterface.addIndex('artifacts', ['path'], {
+        name: 'artifacts_path_idx',
+        transaction,
+      });
+
+
+    // 10. hyperparameters
+    await queryInterface.createTable(
+      'hyperparameters',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique identifier for this hyperparameter configuration.',
+        },
+
+        training_run_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'training_runs', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'CASCADE', // delete when training_run deleted
+          comment:
+            'Foreign key referencing the training run this hyperparameter set belongs to (training_runs.id).',
+        },
+
+        params: {
+          type: Sequelize.JSONB,
+          allowNull: false,
+          comment:
+            'JSON object containing all hyperparameters used for this training run (e.g., lr0, momentum, epochs, etc.).',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this hyperparameter record was created.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this hyperparameter record was last updated.',
+        },
+      },
+      {
+        transaction, // ✅ ensure part of the migration transaction
+        comment:
+          'Stores full hyperparameter configurations for each training run to ensure reproducibility and comparability.',
+      }
+    );
+
+    // Indexes — all inside the same transaction
+    await queryInterface.addIndex('hyperparameters', ['training_run_id'], {
+      name: 'hyperparameters_training_run_id_idx',
+      transaction,
+    });
+
+
+    // 11. dataset_observations
+    // Inside your `up()` function
+    await queryInterface.createTable(
+      'dataset_observations',
+      {
+        id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          autoIncrement: true,
+          primaryKey: true,
+          comment: 'Unique identifier for this dataset-observation record.',
+        },
+
+        dataset_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'datasets', key: 'id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'CASCADE', // remove join records if dataset deleted
+          comment:
+            'Foreign key referencing the dataset that includes this observation (datasets.id).',
+        },
+
+        observation_id: {
+          type: Sequelize.INTEGER,
+          allowNull: false,
+          references: { model: 'observations', key: 'observation_id' },
+          onUpdate: 'NO ACTION',
+          onDelete: 'NO ACTION', // remove join records if observation deleted
+          comment:
+            'Foreign key referencing the observation included in this dataset (observations.observation_id).',
+        },
+
+        inclusion_type: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment:
+            'Indicates how this observation is used in the dataset: "train", "val", or "test".',
+        },
+
+        selection_method: {
+          type: Sequelize.STRING,
+          allowNull: true,
+          comment:
+            'Describes how this observation was chosen for inclusion (e.g., "manual", "auto", "random_sample", "legacy_import").',
+        },
+
+        weight: {
+          type: Sequelize.FLOAT,
+          allowNull: true,
+          comment:
+            'Optional weighting factor applied to this observation within the dataset for class balancing or sampling probability.',
+        },
+
+        notes: {
+          type: Sequelize.TEXT,
+          allowNull: true,
+          comment:
+            'Freeform notes about this dataset-observation inclusion (e.g., reasons for inclusion/exclusion, data quality remarks).',
+        },
+
+        created_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this dataset-observation record was created.',
+        },
+
+        updated_at: {
+          type: Sequelize.DATE,
+          allowNull: false,
+          defaultValue: Sequelize.NOW,
+          comment: 'Timestamp when this dataset-observation record was last updated.',
+        },
+      },
+      {
+        transaction, // ✅ ensure table creation is part of the migration transaction
+        comment:
+          'Join table linking datasets and observations, including inclusion type and selection metadata for traceability.',
+      }
+    );
+
+    // Indexes — all inside the same transaction
+    await queryInterface.addIndex('dataset_observations', ['dataset_id'], {
+      name: 'dataset_observations_dataset_id_idx',
+      transaction,
+    });
+
+    await queryInterface.addIndex('dataset_observations', ['observation_id'], {
+      name: 'dataset_observations_observation_id_idx',
+      transaction,
+    });
+
+    await queryInterface.addIndex('dataset_observations', ['dataset_id', 'observation_id'], {
+      name: 'dataset_observations_unique_dataset_observation',
+      unique: true,
+      transaction,
+    });
+
+
+
+
+      await transaction.commit();
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  },
+
+  async down(queryInterface) {
+    const transaction = await queryInterface.sequelize.transaction();
+    try {
+      
+      // Here's where you drop tables
+      await queryInterface.dropTable('dataset_observations', { transaction });
+      await queryInterface.dropTable('hyperparameters', { transaction });
+      await queryInterface.dropTable('artifacts', { transaction });
+      await queryInterface.dropTable('model_species', { transaction });
+      await queryInterface.dropTable('metrics_curves', { transaction });
+      await queryInterface.dropTable('metrics_summary', { transaction });
+      await queryInterface.dropTable('epochs', { transaction });
+      await queryInterface.dropTable('training_runs', { transaction });
+      await queryInterface.dropTable('ml_models', { transaction });
+      await queryInterface.dropTable('datasets', { transaction });
+      await queryInterface.dropTable('species', { transaction });
+
+
+      await transaction.commit();
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  },
+};</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

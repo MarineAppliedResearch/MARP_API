@@ -1,3 +1,23 @@
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Keyframe:
+ *       type: object
+ *       description: Frame-specific annotation associated with an observation.
+ *       properties:
+ *         keyframe_id:
+ *           type: integer
+ *           example: 48291
+ *         observation_id:
+ *           type: integer
+ *           example: 12045
+ *         frame:
+ *           type: integer
+ *           example: 18520
+ */
+
+
 const { Model } = require('sequelize');
 module.exports = (sequelize, DataTypes) => {
     class Keyframes extends Model {

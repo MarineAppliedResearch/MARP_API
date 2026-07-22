@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>seeders/20230201200325-seed_observations_table.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">seeders/20230201200325-seed_observations_table.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+/** @type {import('sequelize-cli').Migration} */
+module.exports = {
+  async up (queryInterface, Sequelize) {
+    /**
+     * Add seed commands here.
+     *
+     * Example:
+     * await queryInterface.bulkInsert('People', [{
+     *   name: 'John Doe',
+     *   isBetaMember: false
+     * }], {});
+    */
+    const transaction = await queryInterface.sequelize.transaction();
+
+    try {
+      var creationTime =   new Date() 
+
+      await queryInterface.bulkInsert('observations', [
+        {
+          observation_id: 0, obsID: 0, session_id: 0, tc: "21:22:22", frame: "12", 
+          taxserial: 9999996, comname: "YOY", count: 1, 
+          video_source: "20211115_211947 Fwd.mp4", videoLocation: "C:\\Users\\eurek\\Desktop\\Workspace\\Misc\\Video\\Dive 169\\Forward\\20211115_211947 Fwd.mp4",
+          mediaPosition: "00:02:34.7359957", actualPosition: "21:22:22.5179965", createdAt:  creationTime, updatedAt:  creationTime 
+        },
+        {
+          observation_id: 1, obsID: 1, session_id: 0, tc: "21:22:27", frame: "17", 
+          taxserial: 166767, comname: "Gopher Rockfish", count: 1, 
+          video_source: "20211115_211947 Fwd.mp4", videoLocation: "C:\\Users\\eurek\\Desktop\\Workspace\\Misc\\Video\\Dive 169\\Forward\\20211115_211947 Fwd.mp4",
+          mediaPosition: "00:02:39.9159968", actualPosition: "21:22:27.6979976", createdAt:  creationTime, updatedAt:  creationTime 
+        },
+        {
+          observation_id: 2, obsID: 2, session_id: 0, tc: "21:22:32", frame: "2", 
+          taxserial: 166767, comname: "Starry Rockfish", count: 1, 
+          video_source: "20211115_211947 Fwd.mp4", videoLocation: "C:\\Users\\eurek\\Desktop\\Workspace\\Misc\\Video\\Dive 169\\Forward\\20211115_211947 Fwd.mp4",
+          mediaPosition: "00:02:44.3159992", actualPosition: "21:22:32.0980000", createdAt:  creationTime, updatedAt:  creationTime 
+        }, 
+        {
+          observation_id: 3, obsID: 3, session_id: 0, tc: "21:22:34", frame: "21", 
+          taxserial: 166730, comname: "Blue/Deacon Rockfish", count: 1, 
+          video_source: "20211115_211947 Fwd.mp4", videoLocation: "C:\\Users\\eurek\\Desktop\\Workspace\\Misc\\Video\\Dive 169\\Forward\\20211115_211947 Fwd.mp4",
+          mediaPosition: "00:02:47.0959948", actualPosition: "21:22:34.8780008", createdAt:  creationTime, updatedAt:  creationTime 
+        }
+      ], {});
+        
+      
+
+      //Commit the transaction
+      await transaction.commit();
+
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  },
+
+  async down (queryInterface, Sequelize) {
+    /**
+     * Add commands to revert seed here.
+     *
+     * Example:
+     * await queryInterface.bulkDelete('People', null, {});
+     */
+
+    const transaction = await queryInterface.sequelize.transaction();
+
+    try {
+      // Remove all people in the users
+      await queryInterface.bulkDelete('observations', null, {});
+
+      //Commit the transaction
+      await transaction.commit();
+
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  }
+};
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

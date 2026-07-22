@@ -1,27 +1,190 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const fs = require('fs');
-const path = require('path');
-const cors = require('cors');
-require('dotenv').config()
+/**
+ * Main Express server and API endpoint definition file for the MARP API.
+ *
+ * This module initializes the Express application, loads environment
+ * configuration, registers shared middleware, connects API routes to their
+ * controllers, generates the OpenAPI specification, and serves API and
+ * internal developer documentation.
+ *
+ * The server provides the HTTP interface used by MARP applications,
+ * processing workers, reporting tools, and other authorized clients.
+ *
+ * Route handlers defined in this file should delegate application behavior to
+ * controllers rather than implementing database access or business logic
+ * directly.
+ *
+ * @fileoverview Express server initialization, middleware configuration,
+ * API route registration, and documentation setup for the MARP API.
+ * @author Isaac Travers
+ * @module server
+ */
 
-const taskController = require('./controller/task.controller') 
-const observationController = require('./controller/observation.controller') 
-const keyframeController = require('./controller/keyframe.controller') 
-const userController = require('./controller/user.controller') 
-const projectController = require('./controller/project.controller')
-const sessionController = require('./controller/session.controller')
-const metaInfoController = require('./controller/metaInfo.controller')
-const speciesController = require('./controller/species.controller')
-const datasetController = require('./controller/dataset.controller')
+
+/**
+ * Express framework used to create the HTTP server, register middleware,
+ * and define API routes.
+ *
+ * @constant
+ */
+const express = require('express');
+
+
+/**
+ * Middleware package used to parse incoming JSON request bodies.
+ *
+ * @constant
+ */
+const bodyParser = require('body-parser');
+
+
+/**
+ * Node.js filesystem module used to read local files required by the server.
+ *
+ * @constant
+ */
+const fs = require('fs');
+
+
+/**
+ * Node.js path module used to construct platform-independent filesystem paths.
+ *
+ * @constant
+ */
+const path = require('path');
+
+
+/**
+ * Express middleware used to enable cross-origin requests.
+ *
+ * @constant
+ */
+const cors = require('cors');
+
+
+/**
+ * Loads environment variables from the local `.env` file into `process.env`.
+ */
+require('dotenv').config();
+
+
+/**
+ * Controller responsible for task-related API operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const taskController = require('./controller/task.controller');
+
+
+/**
+ * Controller responsible for observation queries, updates, dashboard data,
+ * and observation-related operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const observationController = require('./controller/observation.controller');
+
+
+/**
+ * Controller responsible for observation keyframes and frame-related data.
+ *
+ * @constant
+ * @type {Object}
+ */
+const keyframeController = require('./controller/keyframe.controller');
+
+
+/**
+ * Controller responsible for user-related API operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const userController = require('./controller/user.controller');
+
+
+/**
+ * Controller responsible for project metadata and project-level operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const projectController = require('./controller/project.controller');
+
+
+/**
+ * Controller responsible for session, dive, transect, and related operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const sessionController = require('./controller/session.controller');
+
+
+/**
+ * Controller responsible for API, application, and database metadata.
+ *
+ * @constant
+ * @type {Object}
+ */
+const metaInfoController = require('./controller/metaInfo.controller');
+
+
+/**
+ * Controller responsible for species and taxonomic data operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const speciesController = require('./controller/species.controller');
+
+
+/**
+ * Controller responsible for machine-learning dataset operations.
+ *
+ * @constant
+ * @type {Object}
+ */
+const datasetController = require('./controller/dataset.controller');
+
+
+/**
+ * Builds the OpenAPI specification from annotations in the API source files.
+ *
+ * @constant
+ * @type {Function}
+ */
 const { buildOpenApiSpec } = require('./docs/openapi');
 
+
 //---------------------------------------------------------
-//  Database initialization (via models/index.js)
+// Database initialization and connection validation
 //---------------------------------------------------------
+
+/**
+ * Shared database object initialized by the model registry.
+ *
+ * The model registry creates the Sequelize connection, loads the database
+ * models, and exposes them through one shared object. Repositories must use
+ * this same Sequelize instance so all database operations share the same
+ * connection and model registry.
+ *
+ * @constant
+ * @type {Object}
+ */
 const db = require('./model');
 
-// Repository modules should all reference this shared db object.
+
+/**
+ * Repository modules that are expected to use the shared Sequelize instance.
+ *
+ * This list is checked during server initialization to detect repositories
+ * that created or imported a different database connection.
+ *
+ * @constant
+ * @type {string[]}
+ */
 const repositoryPaths = [
     './repository/metaInfo.repository',
     './repository/task.repository',
@@ -34,11 +197,30 @@ const repositoryPaths = [
     './repository/dataset.repository',
 ];
 
+
+/**
+ * Verify that every repository uses the application's shared Sequelize
+ * connection.
+ *
+ * Each repository is loaded and its exported `db.sequelize` reference is
+ * compared by identity with the Sequelize instance provided by the model
+ * registry. A mismatch indicates that a repository is using a separate
+ * database object or connection.
+ *
+ * @param {Object} sharedDb - Shared database object exported by the model registry.
+ * @param {Object} sharedDb.sequelize - Sequelize instance all repositories must use.
+ * @returns {void}
+ * @throws {Error} If one or more repositories use a different Sequelize instance.
+ */
 function validateSharedSequelizeConnection(sharedDb) {
+    // Collect every repository that does not reference the shared connection.
     const mismatchedRepositories = [];
 
     for (const repositoryPath of repositoryPaths) {
+        // Load the repository so its exported database reference can be checked.
         const repository = require(repositoryPath);
+
+        // Read the Sequelize instance exposed through the repository's db object.
         const repositorySequelize = repository?.db?.sequelize;
 
         if (repositorySequelize !== sharedDb.sequelize) {
@@ -48,108 +230,428 @@ function validateSharedSequelizeConnection(sharedDb) {
 
     if (mismatchedRepositories.length > 0) {
         throw new Error(
-            'Repository Sequelize mismatch detected for: ' + mismatchedRepositories.join(', ')
+            'Repository Sequelize mismatch detected for: ' +
+            mismatchedRepositories.join(', ')
         );
     }
 
-    console.log(`[DB Guard] Shared Sequelize validated across ${repositoryPaths.length} repositories.`);
+    console.log(
+        `[DB Guard] Shared Sequelize validated across ${repositoryPaths.length} repositories.`
+    );
 }
 
 
-
-
+/**
+ * Initialize and validate the database when the server starts.
+ *
+ * The initialization sequence authenticates the shared Sequelize connection,
+ * verifies that all repositories use that connection, and optionally performs
+ * explicitly enabled model synchronization during development.
+ *
+ * Core production tables are intentionally not synchronized automatically.
+ * Individual development model sync calls must be enabled manually.
+ *
+ * Database initialization errors are logged so the cause of a startup failure
+ * is visible in the server output.
+ *
+ * @async
+ * @returns {Promise<void>}
+ */
 (async () => {
+    try {
+        // Confirm that Sequelize can connect to the configured PostgreSQL database.
+        await db.sequelize.authenticate();
+        console.log('Connected to PostgreSQL.');
 
-
-  try {
-    await db.sequelize.authenticate();
-    console.log('Connected to PostgreSQL.');
+        // Ensure all repositories use the same Sequelize connection.
         validateSharedSequelizeConnection(db);
 
-    if (process.env.NODE_ENV === 'development') {
-      // Manually sync only the models we’re actively developing
-      
-        //await db.metrics_summary.sync({ alter: true });
-        //await db.metrics_curves.sync({ alter: true });
-        //await db.training_runs.sync({ alter: true });
-        //await db.epochs.sync({ alter: true });
-        //await db.ml_models.sync({ alter: true });
-        //await db.species.sync({ alter: true });
-        //await db.model_species.sync({ alter: true });
+        if (process.env.NODE_ENV === 'development') {
+            // Enable individual model sync calls only while actively developing
+            // the corresponding schema. These remain disabled by default to
+            // prevent unintended database changes.
 
-  // Explicitly skip syncing `observations`
-  console.log('Skipping sync for existing core tables (observations, sessions, etc.)');
-      console.log('Development schema synced safely (non-destructive).');
+            // await db.metrics_summary.sync({ alter: true });
+            // await db.metrics_curves.sync({ alter: true });
+            // await db.training_runs.sync({ alter: true });
+            // await db.epochs.sync({ alter: true });
+            // await db.ml_models.sync({ alter: true });
+            // await db.species.sync({ alter: true });
+            // await db.model_species.sync({ alter: true });
+
+            // Existing core tables are managed separately and are not
+            // automatically synchronized during application startup.
+            console.log(
+                'Skipping sync for existing core tables (observations, sessions, etc.)'
+            );
+            console.log(
+                'Development schema synced safely (non-destructive).'
+            );
+        }
+
+        console.log('Models initialized successfully.');
+    } catch (err) {
+        console.error('Database initialization failed:', err);
     }
-
-    console.log('Models initialized successfully.');
-
-  } catch (err) {
-    console.error('Database initialization failed:', err);
-  }
 })();
 
 
+/**
+ * Express application instance used to register middleware, routes,
+ * documentation endpoints, and static resources.
+ *
+ * @constant
+ * @type {Object}
+ */
 const app = express();
+
+
+/**
+ * TCP port used by the HTTP server.
+ *
+ * The PORT environment variable takes precedence. Port 3000 is used when
+ * no explicit port is configured.
+ *
+ * @constant
+ * @type {number|string}
+ */
 const port = process.env.PORT || 3000;
 
-// Enable CORS for all routes
+
+// Allow browser applications from other origins to access the API.
 app.use(cors());
 
-// API Documentation Library
-const swaggerUi = require('swagger-ui-express');
-// Generated spec reflects in-code @openapi annotations and is the single source for docs.
-const generatedSwaggerDocument = buildOpenApiSpec();
-const customCss = fs.readFileSync((process.cwd()+"/swagger.css"), 'utf8');
 
+/**
+ * Swagger UI middleware used to render the generated OpenAPI specification.
+ *
+ * @constant
+ * @type {Object}
+ */
+const swaggerUi = require('swagger-ui-express');
+
+
+/**
+ * Generated OpenAPI document built from source-code `@openapi` annotations.
+ *
+ * The document is used by Swagger UI and exposed directly as JSON for
+ * development tools, validation, and external API clients.
+ *
+ * @constant
+ * @type {Object}
+ */
+const generatedSwaggerDocument = buildOpenApiSpec();
+
+
+/**
+ * Custom CSS applied to the Swagger UI documentation site.
+ *
+ * @constant
+ * @type {string}
+ */
+const customCss = fs.readFileSync(
+    path.join(__dirname, 'swagger.css'),
+    'utf8'
+);
+
+
+// Parse incoming JSON request bodies.
 app.use(bodyParser.json());
 
-// Serve generated OpenAPI docs on the primary docs route.
-app.use('/api-docs', swaggerUi.serveFiles(generatedSwaggerDocument), swaggerUi.setup(generatedSwaggerDocument, {customCss}));
 
-// Raw generated JSON helps CI and tooling verify the current generated API contract.
+// Serve the interactive Swagger UI documentation site.
+app.use(
+    '/api-docs',
+    swaggerUi.serveFiles(generatedSwaggerDocument),
+    swaggerUi.setup(generatedSwaggerDocument, { customCss })
+);
+
+
+/**
+ * @openapi
+ * /openapi.json:
+ *   get:
+ *     summary: Retrieve the OpenAPI specification
+ *     description: Returns the generated OpenAPI document used by the API documentation and development tools.
+ *     tags:
+ *       - Documentation
+ *     responses:
+ *       200:
+ *         description: OpenAPI specification returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ */
 app.get('/api/openapi.json', (req, res) => {
     res.json(generatedSwaggerDocument);
 });
 
-// Root-level alias keeps spec access stable even if /api middleware evolves.
+
+/**
+ * @openapi
+ * /../openapi.json:
+ *   get:
+ *     summary: Retrieve the OpenAPI specification from the root alias
+ *     description: Returns the generated OpenAPI document from the root-level compatibility endpoint.
+ *     tags:
+ *       - Documentation
+ *     responses:
+ *       200:
+ *         description: OpenAPI specification returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ */
 app.get('/openapi.json', (req, res) => {
     res.json(generatedSwaggerDocument);
 });
 
-// GET HERE
 
-app.use("/api", require("./reporting/routes"));
+/**
+ * @openapi
+ * /../developer-docs:
+ *   get:
+ *     summary: Open internal developer documentation
+ *     description: >
+ *       Serves the generated JSDoc website containing internal source-code and
+ *       module documentation. This endpoint returns HTML and related static
+ *       assets rather than a JSON API response.
+ *     tags:
+ *       - Documentation
+ *     responses:
+ *       200:
+ *         description: Developer documentation page returned successfully.
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ */
+app.use(
+    '/developer-docs',
+    express.static(path.join(__dirname, 'docs', 'developer'))
+);
 
-app.use('/api/getObservationsByVideo', (req, res) => {
-    observationController.getObservationsByVideo(req.query.videoName).then(data => res.json(data));
+
+// Mount reporting endpoints under the shared /api base path.
+// Individual reporting routes must define their own @openapi blocks in
+// ./reporting/routes or the route modules imported from that directory.
+app.use('/api', require('./reporting/routes'));
+
+
+/**
+ * @openapi
+ * /getObservationsByVideo:
+ *   get:
+ *     summary: Retrieve observations for a video
+ *     description: >
+ *       Returns observations whose video_source exactly matches the supplied
+ *       videoName. Results are ordered by mediaPosition in ascending order and
+ *       include associated keyframes. Observations without keyframes are
+ *       excluded. An empty array may indicate either that no records matched
+ *       or that the database query failed.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: query
+ *         name: videoName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Exact video_source value to match.
+ *     responses:
+ *       200:
+ *         description: Matching observations returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Observation'
+ */
+app.get('/api/getObservationsByVideo', (req, res) => {
+    observationController
+        .getObservationsByVideo(req.query.videoName)
+        .then(data => res.json(data));
 });
 
 
+/**
+ * @openapi
+ * /getVideoSummaries/{project_id}:
+ *   get:
+ *     summary: Retrieve video summaries for a project
+ *     description: >
+ *       Returns one summary row for each distinct combination of video_source
+ *       and videoLocation associated with sessions in the specified project.
+ *       Each row includes the number of distinct observation common names, the
+ *       number of distinct sessions, and representative dive, line, and session
+ *       type values selected using MIN aggregation. Results are ordered by the
+ *       representative dive and line in ascending order. Videos without a
+ *       matching session in the project are excluded. An empty array may mean
+ *       that no matching observations were found or that the database query
+ *       failed.
+ *     tags:
+ *       - Observations
+ *       - Videos
+ *     parameters:
+ *       - in: path
+ *         name: project_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Database identifier of the project whose videos should be summarized.
+ *     responses:
+ *       200:
+ *         description: Video summaries returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   video_source:
+ *                     type: string
+ *                     nullable: true
+ *                     description: Video source value shared by the grouped observations.
+ *                   videoLocation:
+ *                     type: string
+ *                     nullable: true
+ *                     description: Video location value shared by the grouped observations.
+ *                   distinct_species_count:
+ *                     type: integer
+ *                     description: Number of distinct non-null observation comname values.
+ *                   session_count:
+ *                     type: integer
+ *                     description: Number of distinct sessions represented in the group.
+ *                   dive:
+ *                     nullable: true
+ *                     description: Minimum dive value among the matching sessions.
+ *                   line:
+ *                     nullable: true
+ *                     description: Minimum line value among the matching sessions.
+ *                   session_type:
+ *                     type: string
+ *                     nullable: true
+ *                     description: Minimum session type value among the matching sessions.
+ */
 app.get('/api/getVideoSummaries/:project_id', (req, res) => {
-    observationController.getVideoSummariesByProject(req.params.project_id).then(data => res.json(data));
+    observationController
+        .getVideoSummariesByProject(req.params.project_id)
+        .then(data => res.json(data));
 });
 
 
 
 /**
- * Returns all observations associated with video videoName that have a comname in comnameList
- * @param {string} req.query.videoName - The name of the video
- * @param {string[]} req.query.comnameList - An array of comname strings to filter observations
+ * @openapi
+ * /getObservationsByVideoAndComnames:
+ *   get:
+ *     summary: Retrieve video observations filtered by common name
+ *     description: >
+ *       Returns observations whose video_source exactly matches videoName and
+ *       whose comname is included in comnameList. Results are ordered by
+ *       mediaPosition in ascending order and include associated keyframes.
+ *       Observations without at least one keyframe are excluded. The current
+ *       repository returns an empty array both when no observations match and
+ *       when the database query fails.
+ *     tags:
+ *       - Observations
+ *       - Videos
+ *     parameters:
+ *       - in: query
+ *         name: videoName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Exact value to match against the observation video_source field.
+ *       - in: query
+ *         name: comnameList
+ *         required: true
+ *         style: form
+ *         explode: true
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *         description: >
+ *           Common names used to filter observations. Supply the parameter
+ *           repeatedly, such as comnameList=Bat%20star&comnameList=Leather%20star.
+ *     responses:
+ *       200:
+ *         description: Matching observations returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 additionalProperties: true
  */
-app.use('/api/getObservationsByVideoAndComnames', (req, res) => {
-    observationController.getObservationsByVideoAndComnames(req.query.videoName, req.query.comnameList).then(data => res.json(data));
+app.get('/api/getObservationsByVideoAndComnames', (req, res) => {
+    observationController
+        .getObservationsByVideoAndComnames(
+            req.query.videoName,
+            req.query.comnameList
+        )
+        .then(data => res.json(data));
 });
 
 
 /**
- * Returns all observations associated with video videoName a specific project name associated
- * @param {string} req.query.videoName - The name of the video
- * @param {string[]} req.query.projectName - An array of comname strings to filter observations
+ * @openapi
+ * /getObservationsByVideoAndProject/{videoName}/{projectName}:
+ *   get:
+ *     summary: Retrieve observations for a video within a project
+ *     description: >
+ *       Returns observations whose video_source exactly matches videoName and
+ *       whose associated session belongs to the project identified by
+ *       projectName. Results are ordered by mediaPosition in ascending order.
+ *       Associated keyframes are included when available, but observations
+ *       without keyframes are also returned. An empty array may indicate that
+ *       no observations matched, the project was not found, or the database
+ *       query failed.
+ *     tags:
+ *       - Observations
+ *       - Projects
+ *       - Videos
+ *     parameters:
+ *       - in: path
+ *         name: videoName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Exact value to match against the observation video_source field.
+ *       - in: path
+ *         name: projectName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Exact project name used to locate the associated project record.
+ *     responses:
+ *       200:
+ *         description: Matching observations returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 additionalProperties: true
  */
-app.use('/api/getObservationsByVideoAndProject/:videoName/:projectName', (req, res) => {
-    observationController.getObservationsByVideoAndProject(req.params.videoName, req.params.projectName).then(data => res.json(data));
-});
+app.get(
+    '/api/getObservationsByVideoAndProject/:videoName/:projectName',
+    (req, res) => {
+        observationController
+            .getObservationsByVideoAndProject(
+                req.params.videoName,
+                req.params.projectName
+            )
+            .then(data => res.json(data));
+    }
+);
 
 
 

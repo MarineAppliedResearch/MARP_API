@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>model/metrics_curves.model.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">model/metrics_curves.model.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * ===================================================================
+ * File: metrics_curves.model.js
+ * Author: Isaac Assegai Travers
+ * Date: 2025-10-7
+ * -------------------------------------------------------------------
+ * Part of the MARP Machine Learning Database Schema.
+ *
+ * Purpose:
+ * Defines the `metrics_curves` table, which stores per-confidence
+ * threshold performance metrics (precision, recall, F1 score) used
+ * for visualizing detailed model evaluation curves.
+ *
+ * Each record corresponds to a single confidence threshold point
+ * within a metrics summary (train, val, or test split).
+ * ===================================================================
+ */
+
+const { Model } = require('sequelize');
+
+module.exports = (sequelize, DataTypes) => {
+  /**
+   * Model: metrics_curves
+   * ----------------------------------------------------------------
+   * Stores precision/recall/F1 data per confidence threshold for
+   * each metrics summary record.
+   */
+  class metrics_curves extends Model {
+    static associate(models) {
+      // Each metrics curve point belongs to one summary
+      this.belongsTo(models.metrics_summary, {
+        as: 'metrics_summary',
+        foreignKey: 'metrics_summary_id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+    }
+  }
+
+  metrics_curves.init(
+    {
+      id: {
+        // Primary key for the curve record
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        autoIncrement: true,
+        primaryKey: true,
+        comment: 'Unique identifier for this metrics curve data point.',
+      },
+
+      metrics_summary_id: {
+        // Foreign key reference to the summary entry
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        comment:
+          'Foreign key referencing the metrics summary record (metrics_summary.id) this curve point belongs to.',
+      },
+
+      species_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        references: { model: 'species', key: 'id' },
+        comment:
+          'Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.'
+      },
+
+      confidence_threshold: {
+        // Confidence threshold value for this metric point (0.0–1.0)
+        type: DataTypes.FLOAT,
+        allowNull: false,
+        comment:
+          'Confidence threshold (between 0.0 and 1.0) at which these metrics were measured.',
+      },
+
+      precision: {
+        // Precision at this confidence threshold
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Model precision value computed at this confidence threshold.',
+      },
+
+      recall: {
+        // Recall at this confidence threshold
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Model recall value computed at this confidence threshold.',
+      },
+
+      f1_score: {
+        // F1 score at this confidence threshold
+        type: DataTypes.FLOAT,
+        allowNull: true,
+        comment:
+          'Model F1 score computed at this confidence threshold.',
+      },
+
+      support: {
+        // Number of detections contributing to these metrics
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Number of predictions or detections evaluated at this confidence threshold.',
+      },
+
+      created_at: {
+        // Record creation timestamp
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this metrics curve record was created.',
+      },
+
+      updated_at: {
+        // Record update timestamp
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment:
+          'Timestamp when this metrics curve record was last updated.',
+      },
+    },
+    {
+      sequelize,
+      modelName: 'metrics_curves',
+      tableName: 'metrics_curves',
+      schema: 'public',
+      timestamps: false,
+      comment:
+        'Stores precision/recall/F1 metrics per confidence threshold for each dataset split summary.',
+      indexes: [
+        {
+          name: 'metrics_curves_pkey',
+          unique: true,
+          fields: ['id'],
+        },
+        {
+          name: 'metrics_curves_summary_id_idx',
+          fields: ['metrics_summary_id'],
+        },
+        {
+          name: 'metrics_curves_confidence_idx',
+          fields: ['confidence_threshold'],
+        },
+      ],
+    }
+  );
+
+  return metrics_curves;
+};</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>
