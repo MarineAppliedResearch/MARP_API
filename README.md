@@ -4,7 +4,35 @@ Marine Analysis and Reporting Platform (MARP) backend and static frontend worksp
 
 MARP connects ecological data, expert interpretation, video workflows, machine-learning support, processing pipelines, and reporting into one platform.
 
-## What This Repository Contains
+<p align="center">
+	<img src="frontend/shared/assets/images/marp-logo.png" alt="MARP Logo" width="420" />
+</p>
+
+<p align="center">
+	<img src="frontend/shared/assets/images/hero-diver.webp" alt="MARP Hero" width="860" />
+</p>
+
+<p align="center">
+	<img src="frontend/shared/assets/images/marp-mark.png" alt="MARP Mark" width="72" />
+</p>
+
+## 🌊 Platform Snapshot
+
+| Collect | Review | Process | Assist | Deliver |
+|---|---|---|---|---|
+| Ecological data | Expert interpretation | Data processing | Machine learning | Reports and products |
+
+## 🧭 Application Imagery
+
+<p>
+	<img src="frontend/shared/assets/images/app-video-annotation.webp" alt="Video Annotation" width="19%" />
+	<img src="frontend/shared/assets/images/app-mosaic-reviewer.webp" alt="Mosaic Reviewer" width="19%" />
+	<img src="frontend/shared/assets/images/app-data-processing.webp" alt="Data Processing" width="19%" />
+	<img src="frontend/shared/assets/images/app-machine-learning.webp" alt="Machine Learning" width="19%" />
+	<img src="frontend/shared/assets/images/app-reporting.webp" alt="Reporting" width="19%" />
+</p>
+
+## 🧱 What This Repository Contains
 
 - Express API for MARP data, sessions, observations, users, projects, species, keyframes, tasks, and ML dataset workflows.
 - Static frontend applications served by the same Node server.
@@ -12,7 +40,7 @@ MARP connects ecological data, expert interpretation, video workflows, machine-l
 - Developer documentation generated with JSDoc.
 - Sequelize models, migrations, and seeders for PostgreSQL.
 
-## MARP Frontend Context
+## 🎛️ Frontend Context
 
 The frontend is organized as static apps with shared shell assets:
 
@@ -27,7 +55,7 @@ The entry experience communicates the current MARP product narrative:
 - Capability pillars: ecological data, video/imagery, expert review, processing, machine learning, reporting.
 - Prototype login UI exists for interaction design and accessibility, but it does not perform production authentication yet.
 
-## Runtime Route Map
+## 🗺️ Runtime Route Map
 
 Frontend routes:
 
@@ -53,7 +81,7 @@ API base path:
 
 - /api/*
 
-## Frontend Applications Included
+## 🧩 Frontend Applications Included
 
 Entry app:
 
@@ -70,7 +98,7 @@ Shared shell:
 
 - Shared header/footer loaded via data-include and frontend/shared/assets/js/partials.js.
 
-## Architecture Overview
+## 🏗️ Architecture Overview
 
 1. HTTP server: server.js initializes Express, middleware, static serving, API routes, and docs routes.
 2. Controllers: request handling and endpoint orchestration.
@@ -79,7 +107,7 @@ Shared shell:
 5. PostgreSQL: primary persistence layer.
 6. Frontend static apps: served directly by Express.
 
-## Quick Start
+## 🚀 Quick Start
 
 Prerequisites:
 
@@ -108,7 +136,7 @@ Default port behavior:
 - Uses PORT if set.
 - Falls back to 3000 when PORT is not set.
 
-## Database Migrations and Seeds
+## 🗃️ Database Migrations and Seeds
 
 Run all migrations:
 
@@ -146,7 +174,7 @@ Undo recent seed:
 
 1. npx sequelize-cli db:seed:undo
 
-## Documentation Build Commands
+## 📘 Documentation Build Commands
 
 Build OpenAPI only:
 
@@ -160,13 +188,13 @@ Build both:
 
 1. npm run docs:build
 
-## Notes and Current Constraints
+## ⚠️ Notes and Current Constraints
 
 - Frontend entry login is prototype-only and intentionally not connected to authentication services.
 - Dashboard pages mix production-like endpoints and demo visualization scaffolding.
 - Legacy HTML pages under html are compatibility-era artifacts; active served frontend is under frontend/apps.
 
-## Primary Directories
+## 📂 Primary Directories
 
 - controller: HTTP-level API handlers
 - service: business/domain orchestration
@@ -178,13 +206,13 @@ Build both:
 - frontend: static MARP web applications and shared assets
 - docs: generated OpenAPI and developer documentation
 
-## Suggested Next Improvements
+## 🛠️ Suggested Next Improvements
 
 1. Add environment variable documentation with required keys and example values.
 2. Promote dashboard prototype pages to a formally versioned frontend package with tests.
 3. Move report SQL view definitions into versioned migration scripts and dedicated docs.
 
-## Errata (Working SQL Notes)
+## 🧾 Errata (Working SQL Notes)
 
 This section is intentionally retained for ad hoc SQL notes, query drafts, and table references.
 
