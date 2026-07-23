@@ -48,6 +48,57 @@ class SpeciesService {
     }
 
     /**
+     * Fetch a single species record by its id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to fetch.
+     * @returns {Promise<Object|null>} The matching species record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getSpeciesById(speciesId) {
+        return await speciesRepository.getSpeciesById(speciesId);
+    }
+
+    /**
+     * Create a new species record.
+     *
+     * @async
+     * @param {Object} species - Species fields to insert (taxserial, comname, species, observation_type, etc.).
+     * @returns {Promise<Object>} The created species record. Rejects on a
+     * database failure rather than resolving to an error value.
+     */
+    async createSpecies(species) {
+        return await speciesRepository.createSpecies(species);
+    }
+
+    /**
+     * Update an existing species record by id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to update.
+     * @param {Object} newData - Species fields to update.
+     * @returns {Promise<Object|null>} The updated species record, or null if
+     * no row matched the given id. Rejects on a database failure rather
+     * than resolving to an error value.
+     */
+    async updateSpecies(speciesId, newData) {
+        return await speciesRepository.updateSpecies(speciesId, newData);
+    }
+
+    /**
+     * Delete a species record by id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteSpecies(speciesId) {
+        return await speciesRepository.deleteSpecies(speciesId);
+    }
+
+    /**
      * Create a new model_species linkage record.
      *
      * @async

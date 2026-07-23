@@ -411,6 +411,15 @@
             "nullable": true,
             "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
           },
+          "species": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Species"
+              }
+            ],
+            "nullable": true,
+            "description": "Optional associated species record when this curve point is scoped to one species."
+          },
           "confidence_threshold": {
             "type": "number",
             "format": "float",
@@ -475,6 +484,15 @@
             "type": "integer",
             "nullable": true,
             "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
+          },
+          "species": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Species"
+              }
+            ],
+            "nullable": true,
+            "description": "Optional associated species record when this summary is scoped to one species."
           },
           "dataset_split": {
             "type": "string",
@@ -980,6 +998,26 @@
                 "description": "Keyframes associated with the observation.",
                 "items": {
                   "$ref": "#/components/schemas/Keyframe"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ObservationWithDatasets": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Observation"
+          },
+          {
+            "type": "object",
+            "description": "Observation response containing associated curated datasets.",
+            "properties": {
+              "datasets": {
+                "type": "array",
+                "description": "Datasets that include this observation through the dataset_observations join table.",
+                "items": {
+                  "$ref": "#/components/schemas/Dataset"
                 }
               }
             }
@@ -2022,6 +2060,51 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Create a new species record",
+        "description": "Creates a new species record. The caller must supply a unique taxserial (see the species_taxserial_idx unique index in model/species.model.js). A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "species"
+                ],
+                "properties": {
+                  "species": {
+                    "$ref": "#/components/schemas/Species"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created species record."
+          },
+          "500": {
+            "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/species/by-comname/{comname}": {
@@ -2056,6 +2139,140 @@
                       "type": "null"
                     }
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/species/{id}": {
+      "get": {
+        "summary": "Fetch a species by id",
+        "description": "Returns a single species record by id, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching species record, or null if not found."
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing species record",
+        "description": "Updates an existing species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "species"
+                ],
+                "properties": {
+                  "species": {
+                    "$ref": "#/components/schemas/Species"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated species record, or null if no species matched the given id.\n"
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a species record",
+        "description": "Deletes a species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -2159,6 +2376,46 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Fetch a user by id",
+        "description": "Returns a single user record by user_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Registered under the plural /users path (rather than /user/:id) to avoid colliding with the existing name-based lookup at /user/{name}.\n",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "user_id of the user to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching user record, or null if not found."
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -2316,6 +2573,69 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/session/{id}": {
+      "get": {
+        "summary": "Fetch a session by id",
+        "description": "Returns a single session record by session_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "session_id of the session to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching session record, or null if not found."
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a session",
+        "description": "Deletes a session record by id.",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the session to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed, as returned by Sequelize."
           }
         }
       }
@@ -2563,6 +2883,100 @@
           },
           "500": {
             "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing dataset",
+        "description": "Updates an existing dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset"
+                ],
+                "properties": {
+                  "dataset": {
+                    "$ref": "#/components/schemas/Dataset"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated dataset record, or null if no dataset matched the given ID.\n"
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a dataset",
+        "description": "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3114,6 +3528,82 @@
             }
           }
         }
+      },
+      "get": {
+        "summary": "Fetch an ML model by id",
+        "description": "Returns a single ML model record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MlModel record, or null if not found."
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an ML model",
+        "description": "Deletes an ML model record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a model cascades to delete its training_runs (see model/ml_models.model.js).\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/dataset_observation": {
@@ -3447,7 +3937,7 @@
       },
       "put": {
         "summary": "Update an existing user",
-        "description": "CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer calls `userRepository.updateUser(...)`, but the repository only defines the method as `updateUsers` (plural). Every call throws a TypeError, and since this route has no `.catch()`, the request currently hangs without ever sending a response instead of returning an error.\n",
+        "description": "Updates an existing user record by its user_id field.",
         "tags": [
           "Users"
         ],
@@ -3471,7 +3961,22 @@
         },
         "responses": {
           "200": {
-            "description": "Intended to return the Sequelize update result, but see description — this endpoint is currently broken and never responds."
+            "description": "Sequelize's update result (typically `[affectedCount]`), or `{}` if the update failed.\n"
+          },
+          "500": {
+            "description": "The database update failed unexpectedly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3756,6 +4261,44 @@
       }
     },
     "/task/{id}": {
+      "get": {
+        "summary": "Fetch a task by id",
+        "description": "Returns a single task record, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching task record, or null if not found."
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a task",
         "description": "Deletes a task record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
@@ -3833,7 +4376,7 @@
     "/user/{id}": {
       "delete": {
         "summary": "Delete a user",
-        "description": "CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer calls `userRepository.deleteUsers(...)` (plural), but the repository only defines the method as `deleteUser` (singular). Every call throws a TypeError, and since this route has no `.catch()`, the request currently hangs without ever sending a response instead of returning an error.\n",
+        "description": "Deletes a user record by user_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
         "tags": [
           "Users"
         ],
@@ -3850,12 +4393,65 @@
         ],
         "responses": {
           "200": {
-            "description": "Intended to return the number of rows destroyed, but see description — this endpoint is currently broken and never responds."
+            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "description": "The database delete failed unexpectedly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/project/{id}": {
+      "get": {
+        "summary": "Fetch a project by id",
+        "description": "Returns a single project record by project_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "project_id of the project to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching project record, or null if not found."
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a project",
         "description": "Deletes a project record by id.",
@@ -3871,31 +4467,6 @@
               "type": "integer"
             },
             "description": "ID of the project to delete."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The number of rows destroyed, as returned by Sequelize."
-          }
-        }
-      }
-    },
-    "/session/{id}": {
-      "delete": {
-        "summary": "Delete a session",
-        "description": "Deletes a session record by id.",
-        "tags": [
-          "Sessions"
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            },
-            "description": "ID of the session to delete."
           }
         ],
         "responses": {

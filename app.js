@@ -1104,6 +1104,181 @@ app.get('/api/species/by-comname/:comname', (req, res) => {
 
 /**
  * @openapi
+ * /species/{id}:
+ *   get:
+ *     summary: Fetch a species by id
+ *     description: >
+ *       Returns a single species record by id, or null if not found. A
+ *       database failure rejects the returned promise, so the route's
+ *       .catch() responds with HTTP 500 in that case.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: id of the species record to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching species record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/species/:id', (req, res) => {
+    speciesController.getSpeciesById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/species/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch species' });
+        });
+});
+
+/**
+ * @openapi
+ * /species:
+ *   post:
+ *     summary: Create a new species record
+ *     description: >
+ *       Creates a new species record. The caller must supply a unique
+ *       taxserial (see the species_taxserial_idx unique index in
+ *       model/species.model.js). A database failure rejects the returned
+ *       promise, so the route's .catch() responds with HTTP 500 in that
+ *       case.
+ *     tags: [Species]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - species
+ *             properties:
+ *               species:
+ *                 $ref: '#/components/schemas/Species'
+ *     responses:
+ *       200:
+ *         description: The created species record.
+ *       500:
+ *         description: The database insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.post('/api/species', (req, res) => {
+    speciesController.createSpecies(req.body.species)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in POST /api/species:', err);
+            res.status(500).json({ error: 'Failed to create species' });
+        });
+});
+
+/**
+ * @openapi
+ * /species/{id}:
+ *   put:
+ *     summary: Update an existing species record
+ *     description: >
+ *       Updates an existing species record by id. A database failure
+ *       rejects the returned promise, so the route's .catch() responds
+ *       with HTTP 500 in that case.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: id of the species record to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - species
+ *             properties:
+ *               species:
+ *                 $ref: '#/components/schemas/Species'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The updated species record, or null if no species matched the
+ *           given id.
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.put('/api/species/:id', (req, res) => {
+    speciesController.updateSpecies(req.params.id, req.body.species)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/species/:id:', err);
+            res.status(500).json({ error: 'Failed to update species' });
+        });
+});
+
+/**
+ * @openapi
+ * /species/{id}:
+ *   delete:
+ *     summary: Delete a species record
+ *     description: >
+ *       Deletes a species record by id. A database failure rejects the
+ *       returned promise, so the route's .catch() responds with HTTP 500
+ *       in that case.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: id of the species record to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/species/:id', (req, res) => {
+    speciesController.deleteSpecies(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/species/:id:', err);
+            res.status(500).json({ error: 'Failed to delete species' });
+        });
+});
+
+/**
+ * @openapi
  * /model_species:
  *   post:
  *     summary: Create a model-species linkage record
@@ -1189,6 +1364,47 @@ app.post('/api/model_species', (req, res) => {
  */
 app.get('/api/users', (req, res) => {
     userController.getUsers().then(data => res.json(data));
+});
+
+/**
+ * @openapi
+ * /users/{id}:
+ *   get:
+ *     summary: Fetch a user by id
+ *     description: >
+ *       Returns a single user record by user_id, or null if not found.
+ *       Database failures reject the returned promise, so the route's
+ *       .catch() responds with HTTP 500 in that case. Registered under the
+ *       plural /users path (rather than /user/:id) to avoid colliding with
+ *       the existing name-based lookup at /user/{name}.
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: user_id of the user to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching user record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/users/:id', (req, res) => {
+    userController.getUserById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/users/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch user' });
+        });
 });
 
 /**
@@ -1329,6 +1545,45 @@ app.get('/api/project/getProjectByName/:projectName', (req, res) => {
  */
 app.get('/api/sessions', (req, res) => {
     sessionController.getSessions().then(data => res.json(data));
+});
+
+/**
+ * @openapi
+ * /session/{id}:
+ *   get:
+ *     summary: Fetch a session by id
+ *     description: >
+ *       Returns a single session record by session_id, or null if not
+ *       found. Database failures reject the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [Sessions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: session_id of the session to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching session record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/session/:id', (req, res) => {
+    sessionController.getSessionById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/session/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch session' });
+        });
 });
 
 /**
@@ -1529,6 +1784,97 @@ app.get('/api/dataset/:id', (req, res) => {
         .catch(err => {
             console.error("Error fetching dataset:", err);
             res.status(500).json({ error: "Failed to get dataset" });
+        });
+});
+
+/**
+ * @openapi
+ * /dataset/{id}:
+ *   put:
+ *     summary: Update an existing dataset
+ *     description: >
+ *       Updates an existing dataset record by ID. A database failure
+ *       rejects the returned promise, so the route's .catch() responds
+ *       with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the dataset to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dataset
+ *             properties:
+ *               dataset:
+ *                 $ref: '#/components/schemas/Dataset'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The updated dataset record, or null if no dataset matched the
+ *           given ID.
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.put('/api/dataset/:id', (req, res) => {
+    datasetController.updateDataset(req.params.id, req.body.dataset)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/dataset/:id:', err);
+            res.status(500).json({ error: 'Failed to update dataset' });
+        });
+});
+
+/**
+ * @openapi
+ * /dataset/{id}:
+ *   delete:
+ *     summary: Delete a dataset
+ *     description: >
+ *       Deletes a dataset record by ID. A database failure rejects the
+ *       returned promise, so the route's .catch() responds with HTTP 500
+ *       in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the dataset to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/dataset/:id', (req, res) => {
+    datasetController.deleteDataset(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/dataset/:id:', err);
+            res.status(500).json({ error: 'Failed to delete dataset' });
         });
 });
 
@@ -2060,6 +2406,85 @@ app.put('/api/model/:id', (req, res) => {
         });
 });
 
+/**
+ * @openapi
+ * /model/{id}:
+ *   get:
+ *     summary: Fetch an ML model by id
+ *     description: >
+ *       Returns a single ML model record by ID, or null if not found. A
+ *       database failure rejects the returned promise, so the route's
+ *       .catch() responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the ML model to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching MlModel record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/model/:id', (req, res) => {
+    datasetController.getModelById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/model/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch model' });
+        });
+});
+
+/**
+ * @openapi
+ * /model/{id}:
+ *   delete:
+ *     summary: Delete an ML model
+ *     description: >
+ *       Deletes an ML model record by ID. A database failure rejects the
+ *       returned promise, so the route's .catch() responds with HTTP 500
+ *       in that case. Deleting a model cascades to delete its
+ *       training_runs (see model/ml_models.model.js).
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the ML model to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/model/:id', (req, res) => {
+    datasetController.deleteModel(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/model/:id:', err);
+            res.status(500).json({ error: 'Failed to delete model' });
+        });
+});
+
 
 /**
  * @openapi
@@ -2565,13 +2990,7 @@ app.put('/api/observation', (req, res) => {
  * /user:
  *   put:
  *     summary: Update an existing user
- *     description: >
- *       CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer
- *       calls `userRepository.updateUser(...)`, but the repository only
- *       defines the method as `updateUsers` (plural). Every call throws a
- *       TypeError, and since this route has no `.catch()`, the request
- *       currently hangs without ever sending a response instead of
- *       returning an error.
+ *     description: Updates an existing user record by its user_id field.
  *     tags: [Users]
  *     requestBody:
  *       required: true
@@ -2586,10 +3005,26 @@ app.put('/api/observation', (req, res) => {
  *                 $ref: '#/components/schemas/User'
  *     responses:
  *       200:
- *         description: Intended to return the Sequelize update result, but see description — this endpoint is currently broken and never responds.
+ *         description: >
+ *           Sequelize's update result (typically `[affectedCount]`), or
+ *           `{}` if the update failed.
+ *       500:
+ *         description: The database update failed unexpectedly.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  */
 app.put('/api/user', (req, res) => {
-    userController.updateUser(req.body.user).then(data => res.json(data));
+    userController.updateUser(req.body.user)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/user:', err);
+            res.status(500).json({ error: 'Failed to update user' });
+        });
 });
 
 /**
@@ -2645,6 +3080,45 @@ app.put('/api/session', (req, res) => {
 });
 
 //DELETE HERE
+
+/**
+ * @openapi
+ * /task/{id}:
+ *   get:
+ *     summary: Fetch a task by id
+ *     description: >
+ *       Returns a single task record, or null if not found. Database
+ *       failures reject the returned promise, so the route's .catch()
+ *       responds with HTTP 500 in that case.
+ *     tags: [Tasks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the task to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching task record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/task/:id', (req, res) => {
+    taskController.getTaskById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/task/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch task' });
+        });
+});
 
 /**
  * @openapi
@@ -2731,12 +3205,8 @@ app.delete('/api/keyframe/:keyframe_id', (req, res) => {
  *   delete:
  *     summary: Delete a user
  *     description: >
- *       CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer
- *       calls `userRepository.deleteUsers(...)` (plural), but the
- *       repository only defines the method as `deleteUser` (singular).
- *       Every call throws a TypeError, and since this route has no
- *       `.catch()`, the request currently hangs without ever sending a
- *       response instead of returning an error.
+ *       Deletes a user record by user_id. Database failures are logged and
+ *       swallowed, resolving to an empty object `{}` rather than throwing.
  *     tags: [Users]
  *     parameters:
  *       - in: path
@@ -2747,10 +3217,65 @@ app.delete('/api/keyframe/:keyframe_id', (req, res) => {
  *         description: ID of the user to delete.
  *     responses:
  *       200:
- *         description: Intended to return the number of rows destroyed, but see description — this endpoint is currently broken and never responds.
+ *         description: >
+ *           The number of rows destroyed (as returned by Sequelize), or an
+ *           empty object `{}` if the delete failed.
+ *       500:
+ *         description: The database delete failed unexpectedly.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
  */
 app.delete('/api/user/:id', (req, res) => {
-    userController.deleteUser(req.params.id).then(data => res.json(data));
+    userController.deleteUser(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/user/:id:', err);
+            res.status(500).json({ error: 'Failed to delete user' });
+        });
+});
+
+/**
+ * @openapi
+ * /project/{id}:
+ *   get:
+ *     summary: Fetch a project by id
+ *     description: >
+ *       Returns a single project record by project_id, or null if not
+ *       found. Database failures reject the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [Projects]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: project_id of the project to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching project record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/project/:id', (req, res) => {
+    projectController.getProjectById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/project/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch project' });
+        });
 });
 
 /**

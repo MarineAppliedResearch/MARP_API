@@ -209,6 +209,29 @@ class SessionRepository {
     }
 
     /**
+     * Fetch a single session record by its session_id.
+     *
+     * Unlike most methods on this class, a database failure here is logged
+     * and re-thrown rather than swallowed to `[]`, so callers must
+     * catch/handle a rejected promise. A "not found" result, by contrast,
+     * resolves to `null` rather than throwing.
+     *
+     * @async
+     * @param {number|string} sessionId - session_id of the session to fetch.
+     * @returns {Promise<Object|null>} The matching session record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getSessionById(sessionId) {
+        try {
+            const session = await this.db.sessions.findByPk(sessionId);
+            return session || null;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
+    /**
      * Create a new session record.
      *
      * A `createdate` timestamp is stamped onto the record before insert.

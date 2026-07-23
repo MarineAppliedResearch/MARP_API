@@ -98,6 +98,29 @@ class TaskRepository {
     }
 
     /**
+     * Fetch a single task record by id.
+     *
+     * Unlike the other methods on this class, a database failure here is
+     * logged and re-thrown rather than swallowed to `{}`, so callers must
+     * catch/handle a rejected promise. A "not found" result, by contrast,
+     * resolves to `null` rather than throwing.
+     *
+     * @async
+     * @param {number|string} taskId - ID of the task to fetch.
+     * @returns {Promise<Object|null>} The matching task record, or null if
+     * not found. Rejects if the underlying query fails.
+     */
+    async getTaskById(taskId) {
+        try {
+            const task = await this.db.tasks.findByPk(taskId);
+            return task || null;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
+    /**
      * Update an existing task record.
      *
      * Stamps `updateddate` with the current timestamp before update.

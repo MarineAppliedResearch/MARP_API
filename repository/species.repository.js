@@ -114,6 +114,99 @@ class SpeciesRepository {
     }
 
     /**
+     * Fetch a single species record by its id.
+     *
+     * Unlike most methods on this class, a database failure here is logged
+     * and re-thrown rather than swallowed to a fallback value, so callers
+     * must catch/handle a rejected promise. A "not found" result, by
+     * contrast, resolves to `null` rather than throwing.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to fetch.
+     * @returns {Promise<Object|null>} The matching species record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getSpeciesById(speciesId) {
+        try {
+            const species = await this.db.species.findByPk(speciesId);
+            return species || null;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
+    /**
+     * Create a new species record.
+     *
+     * The caller is responsible for supplying a unique `taxserial` (see the
+     * `species_taxserial_idx` unique index in model/species.model.js).
+     *
+     * @async
+     * @param {Object} speciesData - Species fields to insert (taxserial, comname, species, observation_type, taxonomic_level, etc.).
+     * @returns {Promise<Object>} The created species record. A database
+     * failure is logged and re-thrown, so the returned promise rejects
+     * rather than resolving to an error value.
+     */
+    async createSpecies(speciesData) {
+        try {
+            const species = await this.db.species.create(speciesData);
+            return species;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
+    /**
+     * Update an existing species record by id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to update.
+     * @param {Object} newData - Species fields to update.
+     * @returns {Promise<Object|null>} The updated species record, or null if
+     * no row matched `speciesId`. A database failure is logged and
+     * re-thrown, so the returned promise rejects rather than resolving to
+     * an error value.
+     */
+    async updateSpecies(speciesId, newData) {
+        try {
+            const [rowsUpdated, [updatedSpecies]] = await this.db.species.update(
+                newData,
+                { where: { id: speciesId }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                return null;
+            }
+
+            return updatedSpecies;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a species record by id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteSpecies(speciesId) {
+        try {
+            const rowsDeleted = await this.db.species.destroy({ where: { id: speciesId } });
+            return rowsDeleted;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
+    /**
      * Create a new model_species join record linking an ML model to a
      * species.
      *

@@ -1,14 +1,15 @@
 /**
- * Endpoint tests for the project-by-name creation and lookup API.
+ * Endpoint tests for the project CRUD API.
  *
- * Pilot write-endpoint test for the MARP API test suite. Runs against the
- * app exported by app.js via Supertest, in-process, against the real dev
- * Postgres database (see jest.config.js) — there is no isolated test
- * database, so this suite is responsible for cleaning up any row it
- * creates.
+ * Full lifecycle test for the MARP API test suite: create by name, update,
+ * get by id (and by name), then delete. Runs against the app exported by
+ * app.js via Supertest, in-process, against the real dev Postgres database
+ * (see jest.config.js) — there is no isolated test database, so this suite
+ * is responsible for cleaning up any row it creates. Projects are
+ * standalone (no foreign-key dependencies), so no parent chain needs to be
+ * built.
  *
- * @fileoverview Endpoint tests for POST /api/project/createProjectByName
- * and GET /api/project/getProjectByName.
+ * @fileoverview Endpoint tests for POST/PUT/GET/DELETE /api/project(s).
  * @author Isaac Travers
  * @module tests/project
  */
@@ -17,10 +18,10 @@ const request = require('supertest');
 const app = require('../app');
 
 /**
- * Verifies that a project can be created by name and is then retrievable
- * by that same name.
+ * Verifies the full create -> update -> get -> delete lifecycle for a
+ * project record.
  */
-describe('POST /api/project/createProjectByName/:projectName', () => {
+describe('Project lifecycle', () => {
 
   /**
    * Unique per test run so repeated runs never collide with the unique
@@ -80,5 +81,42 @@ describe('POST /api/project/createProjectByName/:projectName', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.some((p) => p.name === projectName)).toBe(true);
+  });
+
+  /**
+   * PUT /api/project should update the project's fields by project_id.
+   */
+  it('updates the project', async () => {
+    const updatedName = `${projectName}-updated`;
+    const res = await request(app)
+      .put('/api/project')
+      .send({ project: { project_id: createdProjectId, name: updatedName } });
+
+    expect(res.status).toBe(200);
+  });
+
+  /**
+   * GET /api/project/:id should return the project, reflecting the update
+   * above.
+   */
+  it('gets the project by id', async () => {
+    const res = await request(app).get(`/api/project/${createdProjectId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.project_id).toBe(createdProjectId);
+    expect(res.body.name).toBe(`${projectName}-updated`);
+  });
+
+  /**
+   * DELETE /api/project/:id should remove the project, leaving no trace in
+   * the dev database.
+   */
+  it('deletes the project', async () => {
+    const res = await request(app).delete(`/api/project/${createdProjectId}`);
+
+    expect(res.status).toBe(200);
+
+    const getRes = await request(app).get(`/api/project/${createdProjectId}`);
+    expect(getRes.body).toBeNull();
   });
 });

@@ -45,7 +45,7 @@ const buildOpenApiSpec = () => {
      * @type {string[]}
      */
     const annotationFiles = [
-        normalizeGlobPath(path.join(PROJECT_ROOT, 'server.js')),                 // Main Express routes and documentation endpoints.
+        normalizeGlobPath(path.join(PROJECT_ROOT, 'app.js')),                    // Main Express routes and documentation endpoints.
         normalizeGlobPath(path.join(PROJECT_ROOT, 'controller', '**', '*.js')), // Controller-level OpenAPI annotations.
         normalizeGlobPath(path.join(PROJECT_ROOT, 'service', '**', '*.js')),    // Service-level OpenAPI annotations.
         normalizeGlobPath(path.join(PROJECT_ROOT, 'repository', '**', '*.js')), // Repository-related API documentation.

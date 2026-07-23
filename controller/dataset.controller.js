@@ -70,6 +70,35 @@ class DatasetController {
     }
 
     /**
+     * Update an existing dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetID - ID of the dataset to update.
+     * @param {Object} newData - Dataset fields to update.
+     * @returns {Promise<Object|null>} The updated Dataset record, or null if
+     * no dataset matched the given ID. Rejects on a database failure rather
+     * than resolving to an error value.
+     */
+    async updateDataset(datasetID, newData){
+        logger.info('Controller: updateDataset: ')
+        return await datasetService.updateDataset(datasetID, newData);
+    }
+
+    /**
+     * Delete a dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetID - ID of the dataset to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteDataset(datasetID){
+        logger.info('Controller: deleteDataset: ')
+        return await datasetService.deleteDataset(datasetID);
+    }
+
+    /**
      * Create a new dataset_observation join record linking a dataset to an
      * observation.
      *
@@ -143,6 +172,34 @@ class DatasetController {
     async updateModel(mlID, newData){
         logger.info('Controller: updateModel: ')
         return await datasetService.updateModel(mlID, newData);
+    }
+
+    /**
+     * Fetch a single ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to fetch.
+     * @returns {Promise<Object|null>} The matching MlModel record, or null
+     * if not found. Rejects on a database failure rather than resolving to
+     * a fallback value.
+     */
+    async getModelById(mlID){
+        logger.info('Controller: getModelById: ')
+        return await datasetService.getModelById(mlID);
+    }
+
+    /**
+     * Delete an ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteModel(mlID){
+        logger.info('Controller: deleteModel: ')
+        return await datasetService.deleteModel(mlID);
     }
 
 

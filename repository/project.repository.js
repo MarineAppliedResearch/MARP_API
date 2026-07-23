@@ -162,6 +162,29 @@ class ProjectRepository {
     
 
     /**
+     * Fetch a single project record by its project_id.
+     *
+     * Unlike most methods on this class, a database failure here is logged
+     * and re-thrown rather than swallowed to a fallback value, so callers
+     * must catch/handle a rejected promise. A "not found" result, by
+     * contrast, resolves to `null` rather than throwing.
+     *
+     * @async
+     * @param {number|string} projectId - project_id of the project to fetch.
+     * @returns {Promise<Object|null>} The matching project record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getProjectById(projectId) {
+        try {
+            const project = await this.db.projects.findByPk(projectId);
+            return project || null;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
+    /**
      * Insert a new project record.
      *
      * Stamps the supplied object with a `createdate` field before

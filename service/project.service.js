@@ -63,6 +63,18 @@ class ProjectService {
     }
 
     /**
+     * Fetch a single project record by its project_id.
+     *
+     * @async
+     * @param {number|string} projectId - project_id of the project to fetch.
+     * @returns {Promise<Object|null>} The matching project record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getProjectById(projectId) {
+        return await projectRepository.getProjectById(projectId);
+    }
+
+    /**
      * Create a new project record.
      *
      * @async

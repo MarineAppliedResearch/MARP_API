@@ -160,6 +160,55 @@ class DatasetRepository {
 
 
     /**
+     * Update an existing dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetId - ID of the dataset to update.
+     * @param {Object} newData - Dataset fields to update.
+     * @returns {Promise<Object|null>} The updated Dataset record, or null if
+     * no row matched `datasetId` (logged as a warning rather than treated
+     * as an error). A database failure is logged and re-thrown, so the
+     * returned promise rejects rather than resolving to an error value.
+     */
+    async updateDataset(datasetId, newData) {
+        try {
+            const [rowsUpdated, [updatedDataset]] = await this.db.datasets.update(
+                newData,
+                { where: { id: datasetId }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                console.warn(`[WARN] No dataset found with id=${datasetId}`);
+                return null;
+            }
+
+            return updatedDataset;
+        } catch (err) {
+            console.error(`Error in updateDataset(${datasetId}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetId - ID of the dataset to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteDataset(datasetId) {
+        try {
+            const rowsDeleted = await this.db.datasets.destroy({ where: { id: datasetId } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteDataset(${datasetId}):`, err);
+            throw err;
+        }
+    }
+
+    /**
      * Inserts a new record into the dataset_observations table.
      *
      * Parameters:
@@ -349,6 +398,44 @@ class DatasetRepository {
         }
     }
 
+
+    /**
+     * Fetch a single ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to fetch.
+     * @returns {Promise<Object|null>} The matching MlModel record, or null
+     * if not found. A database failure is logged and re-thrown, so the
+     * returned promise rejects rather than resolving to a fallback value.
+     */
+    async getModelById(mlID) {
+        try {
+            const model = await this.db.ml_models.findByPk(mlID);
+            return model || null;
+        } catch (err) {
+            console.error(`Error in getModelById(${mlID}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete an ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteModel(mlID) {
+        try {
+            const rowsDeleted = await this.db.ml_models.destroy({ where: { id: mlID } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteModel(${mlID}):`, err);
+            throw err;
+        }
+    }
 
     /**
      * Insert a new training run record.

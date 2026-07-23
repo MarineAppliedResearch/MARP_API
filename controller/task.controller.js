@@ -49,6 +49,19 @@ class TodoController {
     }
 
     /**
+     * Fetch a single task record by id.
+     *
+     * @async
+     * @param {number|string} taskId - ID of the task to fetch, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<Object|null>} The matching task record, or null if
+     * not found. Rejects if the underlying query fails.
+     */
+    async getTaskById(taskId) {
+        logger.info('Controller: getTaskById', taskId);
+        return await taskService.getTaskById(taskId);
+    }
+
+    /**
      * Update an existing task record.
      *
      * @async

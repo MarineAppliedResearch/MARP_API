@@ -128,8 +128,8 @@ const { Model } = require('sequelize');
  *
  * Sequelize calls this factory with the shared database connection and
  * configured data-type collection. The returned model is registered in the
- * central model registry and later connected to the ml_models model through
- * {@link species.associate}.
+ * central model registry and later connected to the ml_models,
+ * metrics_summary, and metrics_curves models through {@link species.associate}.
  *
  * @param {Object} sequelize - Shared Sequelize connection.
  * @param {Object} DataTypes - Sequelize data-type definitions.
@@ -164,6 +164,18 @@ module.exports = (sequelize, DataTypes) => {
         as: 'ml_models',
         foreignKey: 'species_id',
         otherKey: 'model_id',
+      });
+
+      // One species can appear in many aggregated metrics summaries.
+      this.hasMany(models.metrics_summary, {
+        as: 'metrics_summaries',
+        foreignKey: 'species_id',
+      });
+
+      // One species can appear in many fine-grained metrics curve points.
+      this.hasMany(models.metrics_curves, {
+        as: 'metrics_curves',
+        foreignKey: 'species_id',
       });
     }
   }

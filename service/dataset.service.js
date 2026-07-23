@@ -63,6 +63,33 @@ class DatasetService {
     }
 
     /**
+     * Update an existing dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetID - ID of the dataset to update.
+     * @param {Object} newData - Dataset fields to update.
+     * @returns {Promise<Object|null>} The updated Dataset record, or null if
+     * no dataset matched the given ID. Rejects on a database failure rather
+     * than resolving to an error value.
+     */
+    async updateDataset(datasetID, newData){
+        return await datasetRepository.updateDataset(datasetID, newData);
+    }
+
+    /**
+     * Delete a dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetID - ID of the dataset to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteDataset(datasetID){
+        return await datasetRepository.deleteDataset(datasetID);
+    }
+
+    /**
      * Create a new dataset_observation join record linking a dataset to an
      * observation.
      *
@@ -125,6 +152,32 @@ class DatasetService {
      */
     async updateModel(mlID, newData){
         return await datasetRepository.updateModel(mlID, newData);
+    }
+
+    /**
+     * Fetch a single ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to fetch.
+     * @returns {Promise<Object|null>} The matching MlModel record, or null
+     * if not found. Rejects on a database failure rather than resolving to
+     * a fallback value.
+     */
+    async getModelById(mlID){
+        return await datasetRepository.getModelById(mlID);
+    }
+
+    /**
+     * Delete an ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteModel(mlID){
+        return await datasetRepository.deleteModel(mlID);
     }
 
     /**

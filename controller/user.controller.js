@@ -80,15 +80,10 @@ class UserController {
      * Update an existing user record.
      *
      * @async
-     * @param {Object} user - Fields to update, including `user_id` identifying which row to update; the server.js route (`PUT /api/user`) supplies this from `req.body.user`.
-     * @returns {Promise<Object>} Intended to resolve with the update result.
-     * CAUTION: as currently wired, this call is broken — it flows to
-     * service/user.service.js#updateUser, which calls
-     * `userRepository.updateUser`, a method that does not exist on
-     * UserRepository (only the plural `updateUsers` is defined there). That
-     * call throws a `TypeError`, so this promise rejects rather than
-     * resolving. The `PUT /api/user` route in server.js has no `.catch()`,
-     * so today this endpoint never sends a response for a valid request.
+     * @param {Object} user - Fields to update, including `user_id` identifying which row to update; the app.js route (`PUT /api/user`) supplies this from `req.body.user`.
+     * @returns {Promise<Object>} Sequelize's update result (typically
+     * `[affectedCount]`), or `{}` if the update failed. A failed update
+     * resolves rather than throwing.
      */
     async updateUser(user) {
         logger.info('Controller: updateUser', user);
@@ -99,20 +94,26 @@ class UserController {
      * Delete a user record by id.
      *
      * @async
-     * @param {string|number} user_id - Identifier of the user to delete; the server.js route (`DELETE /api/user/:id`) supplies this from `req.params.id`.
-     * @returns {Promise<Object>} Intended to resolve with the deletion
-     * result. CAUTION: as currently wired, this call is broken — it flows
-     * to service/user.service.js#deleteUser, which calls
-     * `userRepository.deleteUsers`, a method that does not exist on
-     * UserRepository (only the singular `deleteUser` is defined there).
-     * That call throws a `TypeError`, so this promise rejects rather than
-     * resolving. The `DELETE /api/user/:id` route in server.js has no
-     * `.catch()`, so today this endpoint never sends a response for a
-     * valid request.
+     * @param {string|number} user_id - Identifier of the user to delete; the app.js route (`DELETE /api/user/:id`) supplies this from `req.params.id`.
+     * @returns {Promise<Object>} The number of rows deleted, or `{}` if the
+     * delete failed. A failed delete resolves rather than throwing.
      */
     async deleteUser(user_id) {
         logger.info('Controller: deleteUser', user_id);
         return await userService.deleteUser(user_id);
+    }
+
+    /**
+     * Fetch a single user record by id.
+     *
+     * @async
+     * @param {number|string} userId - ID of the user to fetch, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<Object|null>} The matching user record, or null if
+     * not found. Rejects if the underlying query fails.
+     */
+    async getUserById(userId) {
+        logger.info('Controller: getUserById', userId);
+        return await userService.getUserById(userId);
     }
 
     /**

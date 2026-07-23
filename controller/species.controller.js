@@ -48,6 +48,61 @@ class SpeciesController {
     }
 
     /**
+     * Fetch a single species record by its id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to fetch, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<Object|null>} The matching species record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getSpeciesById(speciesId) {
+        logger.info('Controller: getSpeciesById', speciesId);
+        return await speciesService.getSpeciesById(speciesId);
+    }
+
+    /**
+     * Create a new species record.
+     *
+     * @async
+     * @param {Object} species - Species fields to insert (taxserial, comname, species, observation_type, etc.), taken from `req.body.species` by the caller in app.js.
+     * @returns {Promise<Object>} The created species record. Rejects on a
+     * database failure rather than resolving to an error value.
+     */
+    async createSpecies(species) {
+        logger.info('Controller: createSpecies', species);
+        return await speciesService.createSpecies(species);
+    }
+
+    /**
+     * Update an existing species record by id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to update, taken from `req.params.id` by the caller in app.js.
+     * @param {Object} newData - Species fields to update, taken from `req.body.species` by the caller in app.js.
+     * @returns {Promise<Object|null>} The updated species record, or null if
+     * no row matched the given id. Rejects on a database failure rather
+     * than resolving to an error value.
+     */
+    async updateSpecies(speciesId, newData) {
+        logger.info('Controller: updateSpecies', speciesId);
+        return await speciesService.updateSpecies(speciesId, newData);
+    }
+
+    /**
+     * Delete a species record by id.
+     *
+     * @async
+     * @param {number|string} speciesId - id of the species record to delete, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteSpecies(speciesId) {
+        logger.info('Controller: deleteSpecies', speciesId);
+        return await speciesService.deleteSpecies(speciesId);
+    }
+
+    /**
      * Create a new model_species linkage record.
      *
      * @async

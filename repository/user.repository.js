@@ -167,12 +167,6 @@ class UserRepository {
      * Database errors are logged and swallowed: on failure this resolves to
      * the initial empty object (`{}`) rather than rejecting.
      *
-     * NOTE: this method is named `updateUsers` (plural), but
-     * service/user.service.js#updateUser calls `userRepository.updateUser`
-     * (singular), which does not exist on this class. That call throws a
-     * `TypeError`, so in the current codebase this method is never actually
-     * reached via the `PUT /api/user` route.
-     *
      * @async
      * @param {Object} user - Fields to update; `user.user_id` selects the row via the WHERE clause and the remaining fields (plus the ignored `updateddate`) are passed to Sequelize's `update()`.
      * @returns {Promise<Object>} Sequelize's update result (typically `[affectedCount]`), or `{}` if the update failed.
@@ -198,14 +192,9 @@ class UserRepository {
      * Database errors are logged and swallowed: on failure this resolves to
      * the initial empty object (`{}`) rather than rejecting.
      *
-     * NOTE: this method is named `deleteUser` (singular), but
-     * service/user.service.js#deleteUser calls
-     * `userRepository.deleteUsers` (plural), which does not exist on this
-     * class. That call throws a `TypeError`, so in the current codebase
-     * this method is never actually reached via the `DELETE /api/user/:id`
-     * route. Separately, the final `return {status: ...}` statement below
-     * is unreachable dead code (it follows an unconditional `return data;`)
-     * and, even if reached, would be incorrect: `data` from
+     * NOTE: the final `return {status: ...}` statement below is unreachable
+     * dead code (it follows an unconditional `return data;`) and, even if
+     * reached, would be incorrect: `data` from
      * `this.db.users.destroy()` is a plain number (the deleted row count),
      * which has no `.deletedCount` property.
      *
@@ -227,6 +216,29 @@ class UserRepository {
         }
         return data;
         return {status: `${data.deletedCount > 0 ? true : false}`};
+    }
+
+    /**
+     * Fetch a single user record by id.
+     *
+     * Unlike most methods on this class, a database failure here is logged
+     * and re-thrown rather than swallowed to a fallback value, so callers
+     * must catch/handle a rejected promise. A "not found" result, by
+     * contrast, resolves to `null` rather than throwing.
+     *
+     * @async
+     * @param {number|string} userId - ID of the user to fetch.
+     * @returns {Promise<Object|null>} The matching user record, or null if
+     * not found. Rejects if the underlying query fails.
+     */
+    async getUserById(userId) {
+        try {
+            const user = await this.db.users.findByPk(userId);
+            return user || null;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
     }
 
     /**

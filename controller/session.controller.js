@@ -116,6 +116,19 @@ class SessionController {
     }
 
     /**
+     * Fetch a single session record by its session_id.
+     *
+     * @async
+     * @param {number|string} sessionId - session_id of the session to fetch, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<Object|null>} The matching session record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getSessionById(sessionId) {
+        logger.info('Controller: getSessionById', sessionId);
+        return await sessionService.getSessionById(sessionId);
+    }
+
+    /**
      * Create a new session record.
      *
      * @async

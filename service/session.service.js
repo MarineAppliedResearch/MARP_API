@@ -89,6 +89,18 @@ class SessionService {
     }
 
     /**
+     * Fetch a single session record by its session_id.
+     *
+     * @async
+     * @param {number|string} sessionId - session_id of the session to fetch.
+     * @returns {Promise<Object|null>} The matching session record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
+    async getSessionById(sessionId) {
+        return await sessionRepository.getSessionById(sessionId);
+    }
+
+    /**
      * Create a new session record.
      *
      * @async

@@ -48,6 +48,18 @@ class TaskService {
     }
 
     /**
+     * Fetch a single task record by id.
+     *
+     * @async
+     * @param {number|string} taskId - ID of the task to fetch.
+     * @returns {Promise<Object|null>} The matching task record, or null if
+     * not found. Rejects if the underlying query fails.
+     */
+    async getTaskById(taskId) {
+        return await taskRepository.getTaskById(taskId);
+    }
+
+    /**
      * Update an existing task record.
      *
      * @async
