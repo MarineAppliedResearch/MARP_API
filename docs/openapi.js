@@ -90,12 +90,139 @@ const buildOpenApiSpec = () => {
 
             components: {
                 schemas: {
-                    ErrorResponse: {
+                    ErrorDetail: {
                         type: 'object',
-
+                        required: ['issue'],
+                        properties: {
+                            field: {
+                                type: 'string',
+                                nullable: true,
+                                description: 'Optional field/key associated with this validation or domain issue.',
+                            },
+                            issue: {
+                                type: 'string',
+                                description: 'Human-readable description of the specific issue.',
+                            },
+                        },
+                    },
+                    ErrorObject: {
+                        type: 'object',
+                        required: ['code', 'message', 'status', 'requestId'],
+                        properties: {
+                            code: {
+                                type: 'string',
+                                description: 'Stable machine-readable error code (UPPER_SNAKE_CASE).',
+                                example: 'RESOURCE_NOT_FOUND',
+                            },
+                            message: {
+                                type: 'string',
+                                description: 'Client-safe summary of the error.',
+                                example: 'Requested session was not found.',
+                            },
+                            status: {
+                                type: 'integer',
+                                description: 'HTTP status code returned with this error.',
+                                example: 404,
+                            },
+                            requestId: {
+                                type: 'string',
+                                description: 'Request correlation identifier for tracing and logs.',
+                                example: 'req_mdxv3u_4f7k2q',
+                            },
+                            details: {
+                                type: 'array',
+                                nullable: true,
+                                description: 'Optional structured issue list (commonly used for validation failures).',
+                                items: {
+                                    $ref: '#/components/schemas/ErrorDetail',
+                                },
+                            },
+                        },
+                    },
+                    ErrorEnvelope: {
+                        type: 'object',
+                        required: ['error'],
                         properties: {
                             error: {
-                                type: 'string',
+                                $ref: '#/components/schemas/ErrorObject',
+                            },
+                        },
+                    },
+                    ErrorResponse: {
+                        allOf: [
+                            { $ref: '#/components/schemas/ErrorEnvelope' },
+                        ],
+                        description: 'Backward-compatible alias for the standardized error envelope.',
+                    },
+                },
+                responses: {
+                    BadRequestError: {
+                        description: 'Request payload, query, or path parameters are invalid.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    UnauthorizedError: {
+                        description: 'Authentication is required or failed.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    ForbiddenError: {
+                        description: 'Authenticated caller does not have permission for this action.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    NotFoundError: {
+                        description: 'Requested route or resource was not found.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    ConflictError: {
+                        description: 'Operation conflicts with current resource state (for example unique-constraint violation).',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    UnprocessableEntityError: {
+                        description: 'Request was syntactically valid but semantically invalid.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    InternalServerError: {
+                        description: 'Unexpected server-side failure.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
                             },
                         },
                     },

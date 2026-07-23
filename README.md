@@ -10,7 +10,7 @@
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white">
   <img alt="Express" src="https://img.shields.io/badge/Express-API-000000?logo=express&logoColor=white">
   <img alt="Sequelize" src="https://img.shields.io/badge/Sequelize-ORM-52B0E7?logo=sequelize&logoColor=white">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-a7e735">
+  <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-a7e735">
 </p>
 
 
@@ -33,8 +33,52 @@ MARP is currently an internal production platform under active development. The 
 
 ---
 
+## Open source
+
+MARP source code and documentation are released under the [Apache License 2.0](LICENSE).
+
+- Individuals and organizations may use, study, modify, host, fork, and redistribute MARP subject to the license.
+- Commercial, nonprofit, academic, government, and personal use are all permitted.
+- Contributions are encouraged but are not required.
+- The open-source model is intended to support high adoption and long-term technical continuity.
+- Organizations are expected to host and configure their own deployments.
+
+Related documents:
+
+- [Apache License 2.0](LICENSE)
+- [Contributing to MARP](CONTRIBUTING.md)
+- [Project governance](GOVERNANCE.md)
+
+### License scope
+
+The Apache License 2.0 applies to:
+
+- MARP source code
+- MARP project documentation
+
+The following are **not** automatically licensed under Apache 2.0:
+
+- MARP logos
+- official MARP branding
+- ecological datasets
+- survey data
+- video and imagery
+- model weights
+- third-party assets
+- partner-owned content
+- confidential or restricted materials
+
+Unless explicitly stated otherwise, these materials remain subject to their own ownership, permissions, or license terms.
+
+### Branding
+
+The MARP logo and official branding are excluded from the Apache 2.0 software license. Use of official MARP branding requires written permission. Truthful descriptive statements such as "Built with MARP" or "Based on MARP" are permitted when they do not imply endorsement, certification, or official status. Independent forks must not present themselves as official MARP releases without authorization.
+
+---
+
 ## Contents
 
+- [Open source](#open-source)
 - [Why MARP](#why-marp)
 - [Platform workflow](#platform-workflow)
 - [What this repository contains](#what-this-repository-contains)
@@ -403,6 +447,14 @@ npx sequelize-cli db:seed:undo
 
 MARP generates API documentation from source annotations and developer documentation from JSDoc.
 
+Canonical API documentation sources:
+
+1. Runtime Swagger UI: `/api-docs`
+2. Runtime OpenAPI JSON: `/api/openapi.json`
+3. Generated artifact: `docs/openapi.generated.json`
+
+Legacy Swagger 2 artifacts have been removed from this repository to avoid contract drift.
+
 ### Build OpenAPI documentation
 
 ```bash
@@ -447,6 +499,26 @@ Use additional constraints when known:
 
 If a field has context-dependent semantics, document that caveat directly in the field description rather than leaving it implicit.
 
+### Error contract
+
+MARP uses a standardized API error envelope for non-2xx responses.
+
+```json
+{
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "Requested session was not found.",
+    "status": 404,
+    "requestId": "req_mdxv3u_4f7k2q",
+    "details": [
+      { "field": "session_id", "issue": "must be an integer" }
+    ]
+  }
+}
+```
+
+See `docs/error-contract.md` for the full contract, code catalog, and migration guidance.
+
 ---
 
 ## Hosting
@@ -490,6 +562,8 @@ Production deployments should also define:
 ## Contributing
 
 MARP development should remain modular, documented, and reviewable.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete contribution process, and [GOVERNANCE.md](GOVERNANCE.md) for project roles and technical decision-making.
 
 ### Recommended workflow
 
@@ -859,7 +933,14 @@ ALTER TABLE observations ADD COLUMN "PobsID" integer;
 
 ## License
 
-This project is currently licensed under the [MIT License](LICENSE).
+MARP source code and project documentation are licensed under the
+[Apache License, Version 2.0](LICENSE).
+
+Copyright 2026 Marine Applied Research and Exploration.
+
+The MARP name, logo, official branding, ecological data, video, imagery,
+model weights, partner materials, and third-party assets are not automatically
+included under the Apache 2.0 license.
 
 ---
 

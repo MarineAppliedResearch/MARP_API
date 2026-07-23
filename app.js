@@ -160,6 +160,14 @@ const datasetController = require('./controller/dataset.controller');
  * @type {Function}
  */
 const { buildOpenApiSpec } = require('./docs/openapi');
+const {
+    ApiError,
+    ERROR_CODES,
+    asyncHandler,
+    apiNotFoundHandler,
+    errorHandler,
+    requestIdMiddleware,
+} = require('./middleware/error-contract.middleware');
 
 
 //---------------------------------------------------------
@@ -349,6 +357,9 @@ const customCss = fs.readFileSync(
 
 // Parse incoming JSON request bodies.
 app.use(bodyParser.json());
+
+// Attach or generate an API request correlation id.
+app.use(requestIdMiddleware);
 
 
 // Serve the interactive Swagger UI documentation site.
@@ -831,8 +842,7 @@ app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
  *             schema:
  *               type: array
  *               items:
- *                 type: object
- *                 additionalProperties: true
+ *                 $ref: '#/components/schemas/Task'
  */
 app.get('/api/tasks', (req, res) => {
     taskController.getTasks().then(data => res.json(data));
@@ -848,6 +858,12 @@ app.get('/api/tasks', (req, res) => {
  *     responses:
  *       200:
  *         description: Observation list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Observation'
  */
 app.get('/api/observations', (req, res) => {
     observationController.getObservations().then(data => res.json(data));
@@ -1542,31 +1558,29 @@ app.get('/api/users', (req, res) => {
  *         description: user_id of the user to fetch.
  *     responses:
  *       200:
- *         description: The matching user record, or null if not found.
+ *         description: The matching user record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/User'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/User'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/users/:id', (req, res) => {
-    userController.getUserById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/users/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch user' });
-        });
-});
+app.get('/api/users/:id', asyncHandler(async (req, res) => {
+    const data = await userController.getUserById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `User ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1727,31 +1741,29 @@ app.get('/api/sessions', (req, res) => {
  *         description: session_id of the session to fetch.
  *     responses:
  *       200:
- *         description: The matching session record, or null if not found.
+ *         description: The matching session record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/Session'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/Session'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/session/:id', (req, res) => {
-    sessionController.getSessionById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/session/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch session' });
-        });
-});
+app.get('/api/session/:id', asyncHandler(async (req, res) => {
+    const data = await sessionController.getSessionById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `Session ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3876,31 +3888,29 @@ app.put('/api/session', (req, res) => {
  *         description: ID of the task to fetch.
  *     responses:
  *       200:
- *         description: The matching task record, or null if not found.
+ *         description: The matching task record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/Task'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/Task'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/task/:id', (req, res) => {
-    taskController.getTaskById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/task/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch task' });
-        });
-});
+app.get('/api/task/:id', asyncHandler(async (req, res) => {
+    const data = await taskController.getTaskById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `Task ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3947,31 +3957,29 @@ app.delete('/api/task/:id', (req, res) => {
  *         description: observation_id of the observation to fetch.
  *     responses:
  *       200:
- *         description: The matching observation record, or null if not found.
+ *         description: The matching observation record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/Observation'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/Observation'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/observation/:id', (req, res) => {
-    observationController.getObservationById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/observation/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch observation' });
-        });
-});
+app.get('/api/observation/:id', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservationById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `Observation ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4019,31 +4027,29 @@ app.delete('/api/observation/:id', (req, res) => {
  *         description: keyframe_id of the keyframe to fetch.
  *     responses:
  *       200:
- *         description: The matching keyframe record, or null if not found.
+ *         description: The matching keyframe record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/Keyframe'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/Keyframe'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/keyframe/:keyframe_id', (req, res) => {
-    keyframeController.getKeyframeById(req.params.keyframe_id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/keyframe/:keyframe_id:', err);
-            res.status(500).json({ error: 'Failed to fetch keyframe' });
-        });
-});
+app.get('/api/keyframe/:keyframe_id', asyncHandler(async (req, res) => {
+    const data = await keyframeController.getKeyframeById(req.params.keyframe_id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `Keyframe ${req.params.keyframe_id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4188,31 +4194,29 @@ app.delete('/api/user/:id', (req, res) => {
  *         description: project_id of the project to fetch.
  *     responses:
  *       200:
- *         description: The matching project record, or null if not found.
+ *         description: The matching project record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/Project'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/Project'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/project/:id', (req, res) => {
-    projectController.getProjectById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/project/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch project' });
-        });
-});
+app.get('/api/project/:id', asyncHandler(async (req, res) => {
+    const data = await projectController.getProjectById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `Project ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4358,8 +4362,11 @@ app.get('/userHours.html', (req, res) => {
  * so API clients always receive a JSON error body.
  */
 app.use('/api', (req, res) => {
-    res.status(404).json({ error: 'API route not found' });
+    apiNotFoundHandler(req, res);
 });
+
+// Standardize uncaught API errors with one shared contract envelope.
+app.use(errorHandler);
 
 /**
  * Catch-all 404 handler for any request that matched no route above,
