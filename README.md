@@ -13,10 +13,8 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-a7e735">
 </p>
 
-<p align="center">
-  <img src="frontend/shared/assets/images/hero-diver.webp" alt="MARP underwater landing-page artwork" width="100%">
-</p>
 
+<div  bgcolor="#03101f">
 <table width="100%">
   <tr>
     <td align="center" bgcolor="#03101f">
@@ -26,6 +24,7 @@
     </td>
   </tr>
 </table>
+</div>
 
 > **From observation to understanding.**  
 > MARP connects ecological observations, expert judgment, video, data processing, machine learning, and reporting through one shared platform.
