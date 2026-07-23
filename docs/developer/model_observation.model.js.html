@@ -299,6 +299,15 @@ const { Model } = require('sequelize');
  *               items:
  *                 $ref: '#/components/schemas/Keyframe'
  *
+ *     ObservationWithSessionAndKeyframes:
+ *       allOf:
+ *         - $ref: '#/components/schemas/ObservationWithKeyframes'
+ *         - type: object
+ *           description: Observation response containing both its owning session and associated keyframes.
+ *           properties:
+ *             session:
+ *               $ref: '#/components/schemas/Session'
+ *
  *     ObservationWithDatasets:
  *       allOf:
  *         - $ref: '#/components/schemas/Observation'

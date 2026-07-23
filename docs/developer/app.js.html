@@ -522,11 +522,10 @@ app.use('/api', require('./reporting/routes'));
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/getObservationsByVideo', (req, res) => {
-    observationController
-        .getObservationsByVideo(req.query.videoName)
-        .then(data => res.json(data));
-});
+app.get('/api/getObservationsByVideo', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservationsByVideo(req.query.videoName);
+    res.json(data);
+}));
 
 
 /**
@@ -556,44 +555,21 @@ app.get('/api/getObservationsByVideo', (req, res) => {
  *         description: Database identifier of the project whose videos should be summarized.
  *     responses:
  *       200:
- *         description: Video summaries returned successfully.
+ *         description: >
+ *           Video summaries returned successfully. distinct_species_count,
+ *           session_count, dive, and line are numeric strings rather than
+ *           numbers because they come back from raw Postgres aggregates
+ *           (Sequelize raw:true); see VideoSummaryReport for the verified
+ *           field-by-field shape, captured from real response samples.
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   video_source:
- *                     type: string
- *                     nullable: true
- *                     description: Video source value shared by the grouped observations.
- *                   videoLocation:
- *                     type: string
- *                     nullable: true
- *                     description: Video location value shared by the grouped observations.
- *                   distinct_species_count:
- *                     type: integer
- *                     description: Number of distinct non-null observation comname values.
- *                   session_count:
- *                     type: integer
- *                     description: Number of distinct sessions represented in the group.
- *                   dive:
- *                     nullable: true
- *                     description: Minimum dive value among the matching sessions.
- *                   line:
- *                     nullable: true
- *                     description: Minimum line value among the matching sessions.
- *                   session_type:
- *                     type: string
- *                     nullable: true
- *                     description: Minimum session type value among the matching sessions.
+ *               $ref: '#/components/schemas/VideoSummaryReport'
  */
-app.get('/api/getVideoSummaries/:project_id', (req, res) => {
-    observationController
-        .getVideoSummariesByProject(req.params.project_id)
-        .then(data => res.json(data));
-});
+app.get('/api/getVideoSummaries/:project_id', asyncHandler(async (req, res) => {
+    const data = await observationController.getVideoSummariesByProject(req.params.project_id);
+    res.json(data);
+}));
 
 
 
@@ -639,17 +615,15 @@ app.get('/api/getVideoSummaries/:project_id', (req, res) => {
  *             schema:
  *               type: array
  *               items:
- *                 type: object
- *                 additionalProperties: true
+ *                 $ref: '#/components/schemas/ObservationWithKeyframes'
  */
-app.get('/api/getObservationsByVideoAndComnames', (req, res) => {
-    observationController
-        .getObservationsByVideoAndComnames(
-            req.query.videoName,
-            req.query.comnameList
-        )
-        .then(data => res.json(data));
-});
+app.get('/api/getObservationsByVideoAndComnames', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservationsByVideoAndComnames(
+        req.query.videoName,
+        req.query.comnameList
+    );
+    res.json(data);
+}));
 
 
 /**
@@ -661,6 +635,8 @@ app.get('/api/getObservationsByVideoAndComnames', (req, res) => {
  *       Returns observations whose video_source exactly matches videoName and
  *       whose associated session belongs to the project identified by
  *       projectName. Results are ordered by mediaPosition in ascending order.
+ *       Each observation includes its full associated session object (the
+ *       session join has no attribute restriction) in addition to keyframes.
  *       Associated keyframes are included when available, but observations
  *       without keyframes are also returned. An empty array may indicate that
  *       no observations matched, the project was not found, or the database
@@ -690,19 +666,17 @@ app.get('/api/getObservationsByVideoAndComnames', (req, res) => {
  *             schema:
  *               type: array
  *               items:
- *                 type: object
- *                 additionalProperties: true
+ *                 $ref: '#/components/schemas/ObservationWithSessionAndKeyframes'
  */
 app.get(
     '/api/getObservationsByVideoAndProject/:videoName/:projectName',
-    (req, res) => {
-        observationController
-            .getObservationsByVideoAndProject(
-                req.params.videoName,
-                req.params.projectName
-            )
-            .then(data => res.json(data));
-    }
+    asyncHandler(async (req, res) => {
+        const data = await observationController.getObservationsByVideoAndProject(
+            req.params.videoName,
+            req.params.projectName
+        );
+        res.json(data);
+    })
 );
 
 
@@ -777,9 +751,10 @@ app.get('/api/getObservationsWithKeyframesByComnames', asyncHandler(async (req, 
  *               items:
  *                 type: string
  */
-app.use('/api/getDistinctComnamesWithKeyframes', (req, res) => {
-    observationController.getDistinctComnamesWithKeyframes().then(data => res.json(data));
-});
+app.use('/api/getDistinctComnamesWithKeyframes', asyncHandler(async (req, res) => {
+    const data = await observationController.getDistinctComnamesWithKeyframes();
+    res.json(data);
+}));
 
 
 /**
@@ -789,11 +764,12 @@ app.use('/api/getDistinctComnamesWithKeyframes', (req, res) => {
  *     summary: Fetch per-user dashboard activity data
  *     description: >
  *       Returns per-user, per-date observation activity counts for a
- *       dashboard view. CAUTION: the underlying grouped-observation query
- *       this endpoint depends on is invoked with no date arguments
- *       internally, so the start/end query parameters below are not
- *       actually applied as a filter — the endpoint currently returns data
- *       across all time regardless of what is passed.
+ *       dashboard view. Both start and end are required for any data to come
+ *       back: the underlying query filters observations.createdAt with a
+ *       Sequelize Op.between, and an undefined bound matches nothing, so
+ *       omitting either parameter returns {} rather than unfiltered data.
+ *       sessions and projects are always 0 in the current implementation;
+ *       only the observations count is actually populated.
  *     tags:
  *       - Observations
  *     parameters:
@@ -802,25 +778,25 @@ app.use('/api/getDistinctComnamesWithKeyframes', (req, res) => {
  *         required: false
  *         schema:
  *           type: string
- *         description: Intended start of the date range (currently not applied; see description).
+ *         description: Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *       - in: query
  *         name: end
  *         required: false
  *         schema:
  *           type: string
- *         description: Intended end of the date range (currently not applied; see description).
+ *         description: End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *     responses:
  *       200:
  *         description: Dashboard data returned successfully.
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               additionalProperties: true
+ *               $ref: '#/components/schemas/UserDashboardData'
  */
-app.get('/api/dashboardData', (req, res) => {
-    observationController.getUserDashboardData(req.query.start, req.query.end).then(data => res.json(data));
-});
+app.get('/api/dashboardData', asyncHandler(async (req, res) => {
+    const data = await observationController.getUserDashboardData(req.query.start, req.query.end);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -830,9 +806,13 @@ app.get('/api/dashboardData', (req, res) => {
  *     description: >
  *       Returns an object keyed by project name, then by date, then by user
  *       name, containing the estimated minutes recorded within the given
- *       date range. KNOWN BUG: the last observation of every session/day
- *       contributes zero minutes to the total, so returned time is
- *       systematically undercounted.
+ *       date range. Both start and end are required for any data to come
+ *       back: the underlying query filters observations.createdAt with a
+ *       Sequelize Op.between, and an undefined bound matches nothing, so
+ *       omitting either parameter returns {} rather than unfiltered data.
+ *       KNOWN BUG: the last observation of every session/day contributes
+ *       zero minutes to the total, so returned time is systematically
+ *       undercounted.
  *     tags:
  *       - Observations
  *     parameters:
@@ -841,25 +821,25 @@ app.get('/api/dashboardData', (req, res) => {
  *         required: false
  *         schema:
  *           type: string
- *         description: Start of the date range (inclusive) used to filter observations by createdAt.
+ *         description: Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *       - in: query
  *         name: end
  *         required: false
  *         schema:
  *           type: string
- *         description: End of the date range (inclusive) used to filter observations by createdAt.
+ *         description: End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *     responses:
  *       200:
  *         description: Grouped time data returned successfully.
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               additionalProperties: true
+ *               $ref: '#/components/schemas/ProjectTimeByDateAndUser'
  */
-app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
-    observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end).then(data => res.json(data));
-});
+app.get('/api/getProjectTimeByDateAndUser', asyncHandler(async (req, res) => {
+    const data = await observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -878,9 +858,10 @@ app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Task'
  */
-app.get('/api/tasks', (req, res) => {
-    taskController.getTasks().then(data => res.json(data));
-});
+app.get('/api/tasks', asyncHandler(async (req, res) => {
+    const data = await taskController.getTasks();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -899,9 +880,10 @@ app.get('/api/tasks', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/observations', (req, res) => {
-    observationController.getObservations().then(data => res.json(data));
-});
+app.get('/api/observations', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservations();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -921,9 +903,10 @@ app.get('/api/observations', (req, res) => {
  *       200:
  *         description: Last video information returned successfully.
  */
-app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
-    observationController.getLastVideoInfo(req.params.session_id).then(data => res.json(data));
-});
+app.get('/api/observation/getLastVideoInfo/:session_id', asyncHandler(async (req, res) => {
+    const data = await observationController.getLastVideoInfo(req.params.session_id);
+    res.json(data);
+}));
 
 
 /**
@@ -956,9 +939,10 @@ app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/observation/getMaxObservationFromVideo/:video_source', (req, res) => {
-    observationController.getMaxObservationFromVideo(req.params.video_source).then(data => res.json(data));
-});
+app.get('/api/observation/getMaxObservationFromVideo/:video_source', asyncHandler(async (req, res) => {
+    const data = await observationController.getMaxObservationFromVideo(req.params.video_source);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1006,9 +990,10 @@ app.get('/api/observation/getMaxObservationFromVideo/:video_source', (req, res) 
  *             schema:
  *               type: integer
  */
-app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id/:count', (req, res) => {
-    observationController.updateObservationWithCount(req.params.session_id, req.params.observation_id, req.params.count).then(data => res.json(data));
-});
+app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id/:count', asyncHandler(async (req, res) => {
+    const data = await observationController.updateObservationWithCount(req.params.session_id, req.params.observation_id, req.params.count);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1058,9 +1043,10 @@ app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id
  *             schema:
  *               type: integer
  */
-app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/:size', (req, res) => {
-    observationController.updateObservationWithSize(req.params.session_id, req.params.observation_id, req.params.size).then(data => res.json(data));
-});
+app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/:size', asyncHandler(async (req, res) => {
+    const data = await observationController.updateObservationWithSize(req.params.session_id, req.params.observation_id, req.params.size);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1089,9 +1075,10 @@ app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/observations/bySessionID/:session_id', (req, res) => {
-    observationController.getObservationsBySessionID(req.params.session_id).then(data => res.json(data));
-});
+app.get('/api/observations/bySessionID/:session_id', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservationsBySessionID(req.params.session_id);
+    res.json(data);
+}));
 
 
 
@@ -1117,9 +1104,10 @@ app.get('/api/observations/bySessionID/:session_id', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Species'
  */
-app.get('/api/species', (req, res) => {
-    speciesController.getSpecies().then(data => res.json(data));
-});
+app.get('/api/species', asyncHandler(async (req, res) => {
+    const data = await speciesController.getSpecies();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1148,9 +1136,10 @@ app.get('/api/species', (req, res) => {
  *                 - $ref: '#/components/schemas/Species'
  *                 - type: 'null'
  */
-app.get('/api/species/by-comname/:comname', (req, res) => {
-  speciesController.getSpeciesByComname(req, res).then(data => res.json(data));
-});
+app.get('/api/species/by-comname/:comname', asyncHandler(async (req, res) => {
+    const data = await speciesController.getSpeciesByComname(req, res);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1497,9 +1486,10 @@ app.delete('/api/model_species/:id', asyncHandler(async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/User'
  */
-app.get('/api/users', (req, res) => {
-    userController.getUsers().then(data => res.json(data));
-});
+app.get('/api/users', asyncHandler(async (req, res) => {
+    const data = await userController.getUsers();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1573,9 +1563,10 @@ app.get('/api/users/:id', asyncHandler(async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/User'
  */
-app.get('/api/user/:name', (req, res) => {
-    userController.getUserByName(req.params.name).then(data => res.json(data));
-});
+app.get('/api/user/:name', asyncHandler(async (req, res) => {
+    const data = await userController.getUserByName(req.params.name);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1594,9 +1585,10 @@ app.get('/api/user/:name', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Project'
  */
-app.get('/api/projects', (req, res) => {
-    projectController.getProjects().then(data => res.json(data));
-});
+app.get('/api/projects', asyncHandler(async (req, res) => {
+    const data = await projectController.getProjects();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1624,9 +1616,10 @@ app.get('/api/projects', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Project'
  */
-app.get('/api/projects/user/:userID', (req, res) => {
-    projectController.getProjectsByUserID(req.params.userID).then(data => res.json(data));
-});
+app.get('/api/projects/user/:userID', asyncHandler(async (req, res) => {
+    const data = await projectController.getProjectsByUserID(req.params.userID);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1661,9 +1654,10 @@ app.get('/api/projects/user/:userID', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Project'
  */
-app.get('/api/project/getProjectByName/:projectName', (req, res) => {
-    projectController.getProjectByName(req.params.projectName).then(data => res.json(data));
-});
+app.get('/api/project/getProjectByName/:projectName', asyncHandler(async (req, res) => {
+    const data = await projectController.getProjectByName(req.params.projectName);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1682,9 +1676,10 @@ app.get('/api/project/getProjectByName/:projectName', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Session'
  */
-app.get('/api/sessions', (req, res) => {
-    sessionController.getSessions().then(data => res.json(data));
-});
+app.get('/api/sessions', asyncHandler(async (req, res) => {
+    const data = await sessionController.getSessions();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1761,16 +1756,20 @@ app.get('/api/session/:id', asyncHandler(async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Session'
  */
-app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
-    sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID).then(data => res.json(data));
-});
+app.get('/api/sessions/user/:userID/project/:projectID', asyncHandler(async (req, res) => {
+    const data = await sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID);
+    res.json(data);
+}));
 
 /**
  * @openapi
  * /metaInfo/dbName:
  *   get:
  *     summary: Retrieve active database name
- *     description: Returns metadata identifying the current configured database.
+ *     description: >
+ *       Returns metadata identifying the current configured database as a
+ *       single-element array containing only a name field (never the full
+ *       metaInfo row).
  *     tags: [Health]
  *     responses:
  *       200:
@@ -1778,12 +1777,12 @@ app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               additionalProperties: true
+ *               $ref: '#/components/schemas/MetaInfoDbName'
  */
-app.get('/api/metaInfo/dbName', (req, res) => {
-    metaInfoController.getDBName().then(data => res.json(data));
-});
+app.get('/api/metaInfo/dbName', asyncHandler(async (req, res) => {
+    const data = await metaInfoController.getDBName();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1813,9 +1812,10 @@ app.get('/api/metaInfo/dbName', (req, res) => {
  *             schema:
  *               type: string
  */
-app.get('/api/user/getUserNameByID/:userID', (req, res) => {
-    userController.getUserNameByID(req.params.userID).then(data => res.json(data));
-});
+app.get('/api/user/getUserNameByID/:userID', asyncHandler(async (req, res) => {
+    const data = await userController.getUserNameByID(req.params.userID);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1869,9 +1869,10 @@ app.get('/api/ml_models', asyncHandler(async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Dataset'
  */
-app.get('/api/dataset', (req, res) => {
-    datasetController.getDatasets().then(data => res.json(data));
-});
+app.get('/api/dataset', asyncHandler(async (req, res) => {
+    const data = await datasetController.getDatasets();
+    res.json(data);
+}));
 
 
 /**
@@ -3118,10 +3119,11 @@ app.post('/api/dataset_observations/bulk', asyncHandler(async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Task'
  */
-app.post('/api/task', (req, res) => {
+app.post('/api/task', asyncHandler(async (req, res) => {
     console.log(req.body);
-    taskController.createTask(req.body.task).then(data => res.json(data));
-});
+    const data = await taskController.createTask(req.body.task);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3154,10 +3156,11 @@ app.post('/api/task', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Observation'
  */
-app.post('/api/observation', (req, res) => {
+app.post('/api/observation', asyncHandler(async (req, res) => {
     console.log(req.body);
-    observationController.createObservation(req.body.observation).then(data => res.json(data));
-});
+    const data = await observationController.createObservation(req.body.observation);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3195,9 +3198,10 @@ app.post('/api/observation', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Keyframe'
  */
-app.post('/api/keyframe', (req, res) => {
-    keyframeController.createKeyframes(req.body).then(data => res.json(data));
-});
+app.post('/api/keyframe', asyncHandler(async (req, res) => {
+    const data = await keyframeController.createKeyframes(req.body);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3225,10 +3229,11 @@ app.post('/api/keyframe', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/User'
  */
-app.post('/api/user', (req, res) => {
+app.post('/api/user', asyncHandler(async (req, res) => {
     console.log(req.body);
-    userController.createUser(req.body.user).then(data => res.json(data));
-});
+    const data = await userController.createUser(req.body.user);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3254,10 +3259,11 @@ app.post('/api/user', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/User'
  */
-app.post('/api/user/createUserByName/:userName', (req, res) => {
+app.post('/api/user/createUserByName/:userName', asyncHandler(async (req, res) => {
     console.log(req.body);
-    userController.createUserByName(req.params.userName).then(data => res.json(data));
-});
+    const data = await userController.createUserByName(req.params.userName);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3285,10 +3291,11 @@ app.post('/api/user/createUserByName/:userName', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Project'
  */
-app.post('/api/project', (req, res) => {
+app.post('/api/project', asyncHandler(async (req, res) => {
     console.log(req.body);
-    projectController.createProject(req.body.project).then(data => res.json(data));
-});
+    const data = await projectController.createProject(req.body.project);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3314,10 +3321,11 @@ app.post('/api/project', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Project'
  */
-app.post('/api/project/createProjectByName/:projectName', (req, res) => {
+app.post('/api/project/createProjectByName/:projectName', asyncHandler(async (req, res) => {
     console.log(req.body);
-    projectController.createProjectByName(req.params.projectName).then(data => res.json(data));
-});
+    const data = await projectController.createProjectByName(req.params.projectName);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3345,10 +3353,11 @@ app.post('/api/project/createProjectByName/:projectName', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Session'
  */
-app.post('/api/session', (req, res) => {
+app.post('/api/session', asyncHandler(async (req, res) => {
     console.log(req.body);
-    sessionController.createSession(req.body.session).then(data => res.json(data));
-});
+    const data = await sessionController.createSession(req.body.session);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3406,10 +3415,18 @@ app.post('/api/session', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Session'
  */
-app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/:lineID/:type', (req, res) => {
+app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/:lineID/:type', asyncHandler(async (req, res) => {
     console.log(req.body);
-    sessionController.createSessionAndProjectandProcessor(req.params.processorName, req.params.projectName, req.params.line, req.params.dive, req.params.lineID, req.params.type).then(data => res.json(data));
-});
+    const data = await sessionController.createSessionAndProjectandProcessor(
+        req.params.processorName,
+        req.params.projectName,
+        req.params.line,
+        req.params.dive,
+        req.params.lineID,
+        req.params.type
+    );
+    res.json(data);
+}));
 
 //PUT HERE
 
@@ -3930,9 +3947,10 @@ app.get('/api/project/:id', asyncHandler(async (req, res) => {
  *       200:
  *         description: The number of rows destroyed, as returned by Sequelize.
  */
-app.delete('/api/project/:id', (req, res) => {
-    projectController.deleteProject(req.params.id).then(data => res.json(data));
-});
+app.delete('/api/project/:id', asyncHandler(async (req, res) => {
+    const data = await projectController.deleteProject(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3952,9 +3970,10 @@ app.delete('/api/project/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed, as returned by Sequelize.
  */
-app.delete('/api/session/:id', (req, res) => {
-    sessionController.deleteSession(req.params.id).then(data => res.json(data));
-});
+app.delete('/api/session/:id', asyncHandler(async (req, res) => {
+    const data = await sessionController.deleteSession(req.params.id);
+    res.json(data);
+}));
 
 // Serve frontend shared assets and partials for all static apps.
 

@@ -460,6 +460,16 @@ Legacy Swagger 2 artifacts have been removed from this repository to avoid contr
 npm run docs:api:build
 ```
 
+### Infer a response schema from real JSON samples
+
+For custom report endpoints that return unique joined shapes, infer a draft OpenAPI schema from one or more response samples:
+
+```bash
+npm run docs:schema:infer -- --name VideoSummaryReport --out docs/tmp/video-summary.schema.json samples/video-summary-1.json samples/video-summary-2.json
+```
+
+This workflow avoids route refactors and keeps contracts route-specific. See `docs/openapi-response-schema-workflow.md` for the full process.
+
 ### Build developer documentation
 
 ```bash

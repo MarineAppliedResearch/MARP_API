@@ -537,6 +537,11 @@ DB_DIALECT=postgres
 <h3>Build OpenAPI documentation</h3>
 <pre class="prettyprint source lang-bash"><code>npm run docs:api:build
 </code></pre>
+<h3>Infer a response schema from real JSON samples</h3>
+<p>For custom report endpoints that return unique joined shapes, infer a draft OpenAPI schema from one or more response samples:</p>
+<pre class="prettyprint source lang-bash"><code>npm run docs:schema:infer -- --name VideoSummaryReport --out docs/tmp/video-summary.schema.json samples/video-summary-1.json samples/video-summary-2.json
+</code></pre>
+<p>This workflow avoids route refactors and keeps contracts route-specific. See <code>docs/openapi-response-schema-workflow.md</code> for the full process.</p>
 <h3>Build developer documentation</h3>
 <pre class="prettyprint source lang-bash"><code>npm run docs:dev:build
 </code></pre>

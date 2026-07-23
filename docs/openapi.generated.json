@@ -102,6 +102,148 @@
         ],
         "description": "Backward-compatible alias for the standardized error envelope."
       },
+      "VideoSummaryReport": {
+        "type": "array",
+        "description": "One aggregated row per distinct video_source/videoLocation combination within a project, produced by observationRepository.getVideoSummariesByProject and served by GET /getVideoSummaries/{project_id}.",
+        "items": {
+          "type": "object",
+          "required": [
+            "video_source",
+            "videoLocation",
+            "distinct_species_count",
+            "session_count",
+            "dive",
+            "line",
+            "session_type"
+          ],
+          "properties": {
+            "video_source": {
+              "type": "string",
+              "nullable": true,
+              "example": "20251007_164658 Fwd.mp4",
+              "description": "Video source shared by every observation in this group. Nullable because observations.video_source itself allows null."
+            },
+            "videoLocation": {
+              "type": "string",
+              "nullable": true,
+              "example": "E:\\Video\\Dive01\\FWD\\20251007_164658 Fwd.mp4",
+              "description": "Video location shared by every observation in this group. Nullable because observations.videoLocation itself allows null."
+            },
+            "distinct_species_count": {
+              "type": "string",
+              "example": "5",
+              "description": "Count of distinct non-null observation comname values in the group. Returned as a numeric string, not a number, because it is a raw Postgres COUNT(DISTINCT ...) aggregate served through Sequelize with raw:true."
+            },
+            "session_count": {
+              "type": "string",
+              "example": "1",
+              "description": "Count of distinct sessions contributing observations to the group. Returned as a numeric string for the same raw-aggregate reason as distinct_species_count."
+            },
+            "dive": {
+              "type": "string",
+              "example": "453",
+              "description": "Lowest sessions.dive value (database MIN, so string ordering rather than numeric) among the sessions joined into this group. The session join is required and sessions.dive is a required column, so this value is always present."
+            },
+            "line": {
+              "type": "string",
+              "example": "3455",
+              "description": "Lowest sessions.line value, aggregated independently from dive. Always present for the same reasons as dive."
+            },
+            "session_type": {
+              "type": "string",
+              "example": "Fish",
+              "description": "Lowest sessions.type value (database MIN, string ordering). Always present for the same reasons as dive."
+            }
+          }
+        }
+      },
+      "DashboardUserDateEntry": {
+        "type": "object",
+        "description": "Per-day activity counts for one user, nested inside UserDashboardData. KNOWN LIMITATION: sessions and projects are always 0 in the current implementation -- observationRepository.getUserDashboardData only ever populates the observations count.",
+        "required": [
+          "sessions",
+          "observations",
+          "projects"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "example": 0,
+            "description": "Always 0 in the current implementation; session counting was never wired up."
+          },
+          "observations": {
+            "type": "integer",
+            "example": 26,
+            "description": "Number of observations the user created on this date, from a COUNT grouped by session.user_id and DATE(observations.createdAt)."
+          },
+          "projects": {
+            "type": "integer",
+            "example": 0,
+            "description": "Always 0 in the current implementation; project counting was never wired up."
+          }
+        }
+      },
+      "UserDashboardData": {
+        "type": "object",
+        "description": "Dashboard activity data keyed by user display name, then by ISO date (YYYY-MM-DD). Returned by GET /dashboardData. Both start and end query parameters are required for any rows to be returned -- omitting either produces {} because the underlying Sequelize Op.between filter cannot match against an undefined bound.",
+        "additionalProperties": {
+          "type": "object",
+          "description": "Map of ISO date (YYYY-MM-DD) to that date's activity entry for this user.",
+          "additionalProperties": {
+            "$ref": "#/components/schemas/DashboardUserDateEntry"
+          }
+        },
+        "example": {
+          "Isaac Travers": {
+            "2026-07-01": {
+              "sessions": 0,
+              "observations": 26,
+              "projects": 0
+            }
+          }
+        }
+      },
+      "ProjectTimeByDateAndUser": {
+        "type": "object",
+        "description": "Estimated recording minutes keyed by project name, then by ISO date (YYYY-MM-DD), then by user display name. Returned by GET /getProjectTimeByDateAndUser. Both start and end query parameters are required for any rows to be returned, for the same Op.between reason as UserDashboardData. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.",
+        "additionalProperties": {
+          "type": "object",
+          "description": "Map of ISO date (YYYY-MM-DD) to that date's per-user minute totals.",
+          "additionalProperties": {
+            "type": "object",
+            "description": "Map of user display name to estimated minutes recorded on this date for this project.",
+            "additionalProperties": {
+              "type": "number",
+              "example": 89.41666666666667
+            }
+          }
+        },
+        "example": {
+          "CAMPA-2025": {
+            "2026-07-01": {
+              "Camille Werner": 89.41666666666667
+            }
+          }
+        }
+      },
+      "MetaInfoDbName": {
+        "type": "array",
+        "description": "Response shape for GET /metaInfo/dbName. Always a single-element array projecting only the name column -- never the full MetaInfo row. metaInfoRepository.getDBName returns [{name: \"NO DB Name Found\"}] when the metaInfo table has no rows, and an empty array only when the query itself throws.",
+        "items": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "nullable": true,
+              "example": "Production",
+              "description": "Value of the first metaInfo row's name column, or the literal \"NO DB Name Found\" placeholder when no row exists."
+            }
+          }
+        }
+      },
       "Artifact": {
         "type": "object",
         "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
@@ -1176,6 +1318,22 @@
           }
         ]
       },
+      "ObservationWithSessionAndKeyframes": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ObservationWithKeyframes"
+          },
+          {
+            "type": "object",
+            "description": "Observation response containing both its owning session and associated keyframes.",
+            "properties": {
+              "session": {
+                "$ref": "#/components/schemas/Session"
+              }
+            }
+          }
+        ]
+      },
       "ObservationWithDatasets": {
         "allOf": [
           {
@@ -1831,47 +1989,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Video summaries returned successfully.",
+            "description": "Video summaries returned successfully. distinct_species_count, session_count, dive, and line are numeric strings rather than numbers because they come back from raw Postgres aggregates (Sequelize raw:true); see VideoSummaryReport for the verified field-by-field shape, captured from real response samples.\n",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "video_source": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Video source value shared by the grouped observations."
-                      },
-                      "videoLocation": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Video location value shared by the grouped observations."
-                      },
-                      "distinct_species_count": {
-                        "type": "integer",
-                        "description": "Number of distinct non-null observation comname values."
-                      },
-                      "session_count": {
-                        "type": "integer",
-                        "description": "Number of distinct sessions represented in the group."
-                      },
-                      "dive": {
-                        "nullable": true,
-                        "description": "Minimum dive value among the matching sessions."
-                      },
-                      "line": {
-                        "nullable": true,
-                        "description": "Minimum line value among the matching sessions."
-                      },
-                      "session_type": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Minimum session type value among the matching sessions."
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/VideoSummaryReport"
                 }
               }
             }
@@ -1920,8 +2042,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/ObservationWithKeyframes"
                   }
                 }
               }
@@ -1933,7 +2054,7 @@
     "/getObservationsByVideoAndProject/{videoName}/{projectName}": {
       "get": {
         "summary": "Retrieve observations for a video within a project",
-        "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.\n",
+        "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Each observation includes its full associated session object (the session join has no attribute restriction) in addition to keyframes. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.\n",
         "tags": [
           "Observations",
           "Projects",
@@ -1967,8 +2088,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/ObservationWithSessionAndKeyframes"
                   }
                 }
               }
@@ -2043,7 +2163,7 @@
     "/dashboardData": {
       "get": {
         "summary": "Fetch per-user dashboard activity data",
-        "description": "Returns per-user, per-date observation activity counts for a dashboard view. CAUTION: the underlying grouped-observation query this endpoint depends on is invoked with no date arguments internally, so the start/end query parameters below are not actually applied as a filter — the endpoint currently returns data across all time regardless of what is passed.\n",
+        "description": "Returns per-user, per-date observation activity counts for a dashboard view. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. sessions and projects are always 0 in the current implementation; only the observations count is actually populated.\n",
         "tags": [
           "Observations"
         ],
@@ -2055,7 +2175,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Intended start of the date range (currently not applied; see description)."
+            "description": "Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           },
           {
             "in": "query",
@@ -2064,7 +2184,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Intended end of the date range (currently not applied; see description)."
+            "description": "End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           }
         ],
         "responses": {
@@ -2073,8 +2193,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/UserDashboardData"
                 }
               }
             }
@@ -2085,7 +2204,7 @@
     "/getProjectTimeByDateAndUser": {
       "get": {
         "summary": "Fetch estimated recording time by project, date, and user",
-        "description": "Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.\n",
+        "description": "Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.\n",
         "tags": [
           "Observations"
         ],
@@ -2097,7 +2216,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Start of the date range (inclusive) used to filter observations by createdAt."
+            "description": "Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           },
           {
             "in": "query",
@@ -2106,7 +2225,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "End of the date range (inclusive) used to filter observations by createdAt."
+            "description": "End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           }
         ],
         "responses": {
@@ -2115,8 +2234,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/ProjectTimeByDateAndUser"
                 }
               }
             }
@@ -3110,7 +3228,7 @@
     "/metaInfo/dbName": {
       "get": {
         "summary": "Retrieve active database name",
-        "description": "Returns metadata identifying the current configured database.",
+        "description": "Returns metadata identifying the current configured database as a single-element array containing only a name field (never the full metaInfo row).\n",
         "tags": [
           "Health"
         ],
@@ -3120,8 +3238,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetaInfoDbName"
                 }
               }
             }

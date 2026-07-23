@@ -506,38 +506,16 @@ app.get('/api/getObservationsByVideo', asyncHandler(async (req, res) => {
  *         description: Database identifier of the project whose videos should be summarized.
  *     responses:
  *       200:
- *         description: Video summaries returned successfully.
+ *         description: >
+ *           Video summaries returned successfully. distinct_species_count,
+ *           session_count, dive, and line are numeric strings rather than
+ *           numbers because they come back from raw Postgres aggregates
+ *           (Sequelize raw:true); see VideoSummaryReport for the verified
+ *           field-by-field shape, captured from real response samples.
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   video_source:
- *                     type: string
- *                     nullable: true
- *                     description: Video source value shared by the grouped observations.
- *                   videoLocation:
- *                     type: string
- *                     nullable: true
- *                     description: Video location value shared by the grouped observations.
- *                   distinct_species_count:
- *                     type: integer
- *                     description: Number of distinct non-null observation comname values.
- *                   session_count:
- *                     type: integer
- *                     description: Number of distinct sessions represented in the group.
- *                   dive:
- *                     nullable: true
- *                     description: Minimum dive value among the matching sessions.
- *                   line:
- *                     nullable: true
- *                     description: Minimum line value among the matching sessions.
- *                   session_type:
- *                     type: string
- *                     nullable: true
- *                     description: Minimum session type value among the matching sessions.
+ *               $ref: '#/components/schemas/VideoSummaryReport'
  */
 app.get('/api/getVideoSummaries/:project_id', asyncHandler(async (req, res) => {
     const data = await observationController.getVideoSummariesByProject(req.params.project_id);
@@ -588,8 +566,7 @@ app.get('/api/getVideoSummaries/:project_id', asyncHandler(async (req, res) => {
  *             schema:
  *               type: array
  *               items:
- *                 type: object
- *                 additionalProperties: true
+ *                 $ref: '#/components/schemas/ObservationWithKeyframes'
  */
 app.get('/api/getObservationsByVideoAndComnames', asyncHandler(async (req, res) => {
     const data = await observationController.getObservationsByVideoAndComnames(
@@ -609,6 +586,8 @@ app.get('/api/getObservationsByVideoAndComnames', asyncHandler(async (req, res) 
  *       Returns observations whose video_source exactly matches videoName and
  *       whose associated session belongs to the project identified by
  *       projectName. Results are ordered by mediaPosition in ascending order.
+ *       Each observation includes its full associated session object (the
+ *       session join has no attribute restriction) in addition to keyframes.
  *       Associated keyframes are included when available, but observations
  *       without keyframes are also returned. An empty array may indicate that
  *       no observations matched, the project was not found, or the database
@@ -638,8 +617,7 @@ app.get('/api/getObservationsByVideoAndComnames', asyncHandler(async (req, res) 
  *             schema:
  *               type: array
  *               items:
- *                 type: object
- *                 additionalProperties: true
+ *                 $ref: '#/components/schemas/ObservationWithSessionAndKeyframes'
  */
 app.get(
     '/api/getObservationsByVideoAndProject/:videoName/:projectName',
@@ -737,11 +715,12 @@ app.use('/api/getDistinctComnamesWithKeyframes', asyncHandler(async (req, res) =
  *     summary: Fetch per-user dashboard activity data
  *     description: >
  *       Returns per-user, per-date observation activity counts for a
- *       dashboard view. CAUTION: the underlying grouped-observation query
- *       this endpoint depends on is invoked with no date arguments
- *       internally, so the start/end query parameters below are not
- *       actually applied as a filter — the endpoint currently returns data
- *       across all time regardless of what is passed.
+ *       dashboard view. Both start and end are required for any data to come
+ *       back: the underlying query filters observations.createdAt with a
+ *       Sequelize Op.between, and an undefined bound matches nothing, so
+ *       omitting either parameter returns {} rather than unfiltered data.
+ *       sessions and projects are always 0 in the current implementation;
+ *       only the observations count is actually populated.
  *     tags:
  *       - Observations
  *     parameters:
@@ -750,21 +729,20 @@ app.use('/api/getDistinctComnamesWithKeyframes', asyncHandler(async (req, res) =
  *         required: false
  *         schema:
  *           type: string
- *         description: Intended start of the date range (currently not applied; see description).
+ *         description: Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *       - in: query
  *         name: end
  *         required: false
  *         schema:
  *           type: string
- *         description: Intended end of the date range (currently not applied; see description).
+ *         description: End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *     responses:
  *       200:
  *         description: Dashboard data returned successfully.
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               additionalProperties: true
+ *               $ref: '#/components/schemas/UserDashboardData'
  */
 app.get('/api/dashboardData', asyncHandler(async (req, res) => {
     const data = await observationController.getUserDashboardData(req.query.start, req.query.end);
@@ -779,9 +757,13 @@ app.get('/api/dashboardData', asyncHandler(async (req, res) => {
  *     description: >
  *       Returns an object keyed by project name, then by date, then by user
  *       name, containing the estimated minutes recorded within the given
- *       date range. KNOWN BUG: the last observation of every session/day
- *       contributes zero minutes to the total, so returned time is
- *       systematically undercounted.
+ *       date range. Both start and end are required for any data to come
+ *       back: the underlying query filters observations.createdAt with a
+ *       Sequelize Op.between, and an undefined bound matches nothing, so
+ *       omitting either parameter returns {} rather than unfiltered data.
+ *       KNOWN BUG: the last observation of every session/day contributes
+ *       zero minutes to the total, so returned time is systematically
+ *       undercounted.
  *     tags:
  *       - Observations
  *     parameters:
@@ -790,21 +772,20 @@ app.get('/api/dashboardData', asyncHandler(async (req, res) => {
  *         required: false
  *         schema:
  *           type: string
- *         description: Start of the date range (inclusive) used to filter observations by createdAt.
+ *         description: Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *       - in: query
  *         name: end
  *         required: false
  *         schema:
  *           type: string
- *         description: End of the date range (inclusive) used to filter observations by createdAt.
+ *         description: End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.
  *     responses:
  *       200:
  *         description: Grouped time data returned successfully.
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               additionalProperties: true
+ *               $ref: '#/components/schemas/ProjectTimeByDateAndUser'
  */
 app.get('/api/getProjectTimeByDateAndUser', asyncHandler(async (req, res) => {
     const data = await observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end);
@@ -1736,7 +1717,10 @@ app.get('/api/sessions/user/:userID/project/:projectID', asyncHandler(async (req
  * /metaInfo/dbName:
  *   get:
  *     summary: Retrieve active database name
- *     description: Returns metadata identifying the current configured database.
+ *     description: >
+ *       Returns metadata identifying the current configured database as a
+ *       single-element array containing only a name field (never the full
+ *       metaInfo row).
  *     tags: [Health]
  *     responses:
  *       200:
@@ -1744,8 +1728,7 @@ app.get('/api/sessions/user/:userID/project/:projectID', asyncHandler(async (req
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               additionalProperties: true
+ *               $ref: '#/components/schemas/MetaInfoDbName'
  */
 app.get('/api/metaInfo/dbName', asyncHandler(async (req, res) => {
     const data = await metaInfoController.getDBName();

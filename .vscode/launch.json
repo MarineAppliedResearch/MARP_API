@@ -2,16 +2,56 @@
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "4.2.1", 
+    "version": "0.2.0",
     "configurations": [
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch Program",
+            "name": "Launch server.js",
+            "program": "${workspaceFolder}/server.js",
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
             "skipFiles": [
                 "<node_internals>/**"
-            ],
-            "program": "${file}"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch via nodemon (auto-restart)",
+            "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/nodemon",
+            "program": "${workspaceFolder}/server.js",
+            "envFile": "${workspaceFolder}/.env",
+            "restart": true,
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Generate API docs",
+            "command": "npm run docs:api:build"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Generate dev docs",
+            "command": "npm run docs:dev:build"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Generate ERD docs",
+            "command": "npm run docs:erd"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Generate API + dev docs",
+            "command": "npm run docs:build"
         }
     ]
 }

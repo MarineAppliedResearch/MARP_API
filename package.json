@@ -8,6 +8,7 @@
     "dev": "nodemon ./server.js localhost 3081",
     "test": "jest --runInBand --forceExit",
     "docs:api:build": "node ./scripts/generate-openapi.js",
+    "docs:schema:infer": "node ./scripts/infer-openapi-schema.js",
     "docs:erd": "node ./sequelize-erd.js",
     "docs:dev:build": "jsdoc -c ./jsdoc.config.json --lenient",
     "docs:build": "npm run docs:api:build && npm run docs:dev:build"
