@@ -118,5 +118,48 @@ class SpeciesController {
         logger.info('Controller: createModelSpecies')
         return await speciesService.createModelSpecies(req, res);
     }
+
+    /**
+     * Fetch a single model_species join record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the model_species record to fetch, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<Object|null>} The matching model_species record, or
+     * null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getModelSpeciesById(id) {
+        logger.info('Controller: getModelSpeciesById', id);
+        return await speciesService.getModelSpeciesById(id);
+    }
+
+    /**
+     * Update an existing model_species join record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the model_species record to update, taken from `req.params.id` by the caller in app.js.
+     * @param {Object} newData - model_species fields to update, taken from `req.body.model_species` by the caller in app.js.
+     * @returns {Promise<Object|null>} The updated model_species record, or
+     * null if no row matched the given ID. Rejects on a database failure
+     * rather than resolving to an error value.
+     */
+    async updateModelSpecies(id, newData) {
+        logger.info('Controller: updateModelSpecies', id);
+        return await speciesService.updateModelSpecies(id, newData);
+    }
+
+    /**
+     * Delete a model_species join record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the model_species record to delete, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteModelSpecies(id) {
+        logger.info('Controller: deleteModelSpecies', id);
+        return await speciesService.deleteModelSpecies(id);
+    }
 }
 module.exports = new SpeciesController();

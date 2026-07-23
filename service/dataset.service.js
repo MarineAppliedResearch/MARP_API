@@ -117,6 +117,46 @@ class DatasetService {
     }
 
     /**
+     * Fetch a single dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to fetch.
+     * @returns {Promise<Object|null>} The matching DatasetObservation
+     * record, or null if not found. Rejects on a database failure rather
+     * than resolving to a fallback value.
+     */
+    async getDatasetObservationById(id){
+        return await datasetRepository.getDatasetObservationById(id);
+    }
+
+    /**
+     * Update an existing dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to update.
+     * @param {Object} newData - DatasetObservation fields to update.
+     * @returns {Promise<Object|null>} The updated DatasetObservation
+     * record, or null if no row matched the given ID. Rejects on a
+     * database failure rather than resolving to an error value.
+     */
+    async updateDatasetObservation(id, newData){
+        return await datasetRepository.updateDatasetObservation(id, newData);
+    }
+
+    /**
+     * Delete a dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteDatasetObservation(id){
+        return await datasetRepository.deleteDatasetObservation(id);
+    }
+
+    /**
      * Fetch every ML model record.
      *
      * @async
@@ -204,6 +244,32 @@ class DatasetService {
      */
     async updateTrainingRun(id, training_run){
         return await datasetRepository.updateTrainingRun(id, training_run);
+    }
+
+    /**
+     * Fetch a single training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to fetch.
+     * @returns {Promise<Object|null>} The matching TrainingRun record, or
+     * null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getTrainingRunById(runID){
+        return await datasetRepository.getTrainingRunById(runID);
+    }
+
+    /**
+     * Delete a training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteTrainingRun(runID){
+        return await datasetRepository.deleteTrainingRun(runID);
     }
 
     /**

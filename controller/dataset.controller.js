@@ -133,6 +133,49 @@ class DatasetController {
     }
 
     /**
+     * Fetch a single dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to fetch.
+     * @returns {Promise<Object|null>} The matching DatasetObservation
+     * record, or null if not found. Rejects on a database failure rather
+     * than resolving to a fallback value.
+     */
+    async getDatasetObservationById(id){
+        logger.info('Controller: getDatasetObservationById: ')
+        return await datasetService.getDatasetObservationById(id);
+    }
+
+    /**
+     * Update an existing dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to update.
+     * @param {Object} newData - DatasetObservation fields to update.
+     * @returns {Promise<Object|null>} The updated DatasetObservation
+     * record, or null if no row matched the given ID. Rejects on a
+     * database failure rather than resolving to an error value.
+     */
+    async updateDatasetObservation(id, newData){
+        logger.info('Controller: updateDatasetObservation: ')
+        return await datasetService.updateDatasetObservation(id, newData);
+    }
+
+    /**
+     * Delete a dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteDatasetObservation(id){
+        logger.info('Controller: deleteDatasetObservation: ')
+        return await datasetService.deleteDatasetObservation(id);
+    }
+
+    /**
      * Fetch every ML model record.
      *
      * @async
@@ -229,6 +272,34 @@ class DatasetController {
     async updateTrainingRun(id, training_run){
         logger.info('Controller: updateTrainingRun: ')
         return await datasetService.updateTrainingRun(id, training_run);
+    }
+
+    /**
+     * Fetch a single training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to fetch.
+     * @returns {Promise<Object|null>} The matching TrainingRun record, or
+     * null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getTrainingRunById(runID){
+        logger.info('Controller: getTrainingRunById: ')
+        return await datasetService.getTrainingRunById(runID);
+    }
+
+    /**
+     * Delete a training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteTrainingRun(runID){
+        logger.info('Controller: deleteTrainingRun: ')
+        return await datasetService.deleteTrainingRun(runID);
     }
 
     /**

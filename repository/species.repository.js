@@ -237,6 +237,73 @@ class SpeciesRepository {
         }
     }
 
+    /**
+     * Fetch a single model_species join record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the model_species record to fetch.
+     * @returns {Promise<Object|null>} The matching model_species record, or
+     * null if not found. A database failure is logged and re-thrown, so
+     * the returned promise rejects rather than resolving to a fallback
+     * value.
+     */
+    async getModelSpeciesById(id) {
+        try {
+            const record = await this.db.model_species.findByPk(id);
+            return record || null;
+        } catch (err) {
+            console.error(`Error in getModelSpeciesById(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Update an existing model_species join record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the model_species record to update.
+     * @param {Object} newData - model_species fields to update.
+     * @returns {Promise<Object|null>} The updated model_species record, or
+     * null if no row matched `id`. A database failure is logged and
+     * re-thrown, so the returned promise rejects rather than resolving to
+     * an error value.
+     */
+    async updateModelSpecies(id, newData) {
+        try {
+            const [rowsUpdated, [updatedRecord]] = await this.db.model_species.update(
+                newData,
+                { where: { id }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                return null;
+            }
+
+            return updatedRecord;
+        } catch (err) {
+            console.error(`Error in updateModelSpecies(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a model_species join record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the model_species record to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteModelSpecies(id) {
+        try {
+            const rowsDeleted = await this.db.model_species.destroy({ where: { id } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteModelSpecies(${id}):`, err);
+            throw err;
+        }
+    }
 
 }
 

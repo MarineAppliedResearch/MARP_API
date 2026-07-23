@@ -2095,6 +2095,86 @@ app.put('/api/training_run/:id', (req, res) => {
         });
 });
 
+/**
+ * @openapi
+ * /training_run/{id}:
+ *   get:
+ *     summary: Fetch a training run by id
+ *     description: >
+ *       Returns a single training run record by ID, or null if not found.
+ *       A database failure rejects the returned promise, so the route's
+ *       .catch() responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the training run to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching TrainingRun record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/training_run/:id', (req, res) => {
+    datasetController.getTrainingRunById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/training_run/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch training run' });
+        });
+});
+
+/**
+ * @openapi
+ * /training_run/{id}:
+ *   delete:
+ *     summary: Delete a training run
+ *     description: >
+ *       Deletes a training run record by ID. A database failure rejects
+ *       the returned promise, so the route's .catch() responds with HTTP
+ *       500 in that case. Deleting a training run cascades to delete its
+ *       epochs, metrics_summary, hyperparameters, and artifacts (see
+ *       model/training_runs.model.js).
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the training run to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/training_run/:id', (req, res) => {
+    datasetController.deleteTrainingRun(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/training_run/:id:', err);
+            res.status(500).json({ error: 'Failed to delete training run' });
+        });
+});
+
 
 /**
  * @openapi
@@ -2529,6 +2609,136 @@ app.post('/api/dataset_observation', (req, res) => {
         .catch(err => {
             console.error("Error creating dataset_observation:", err);
             res.status(500).json({ error: "Failed to create dataset_observation" });
+        });
+});
+
+/**
+ * @openapi
+ * /dataset_observation/{id}:
+ *   get:
+ *     summary: Fetch a dataset_observation by id
+ *     description: >
+ *       Returns a single dataset_observation record by ID, or null if not
+ *       found. A database failure rejects the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the dataset_observation to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching DatasetObservation record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/dataset_observation/:id', (req, res) => {
+    datasetController.getDatasetObservationById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/dataset_observation/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch dataset_observation' });
+        });
+});
+
+/**
+ * @openapi
+ * /dataset_observation/{id}:
+ *   put:
+ *     summary: Update an existing dataset_observation
+ *     description: >
+ *       Updates an existing dataset_observation record by ID. A database
+ *       failure rejects the returned promise, so the route's .catch()
+ *       responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the dataset_observation to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dataset_observation
+ *             properties:
+ *               dataset_observation:
+ *                 $ref: '#/components/schemas/DatasetObservation'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The updated dataset_observation record, or null if no row
+ *           matched the given ID.
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.put('/api/dataset_observation/:id', (req, res) => {
+    datasetController.updateDatasetObservation(req.params.id, req.body.dataset_observation)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/dataset_observation/:id:', err);
+            res.status(500).json({ error: 'Failed to update dataset_observation' });
+        });
+});
+
+/**
+ * @openapi
+ * /dataset_observation/{id}:
+ *   delete:
+ *     summary: Delete a dataset_observation
+ *     description: >
+ *       Deletes a dataset_observation record by ID. A database failure
+ *       rejects the returned promise, so the route's .catch() responds
+ *       with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the dataset_observation to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/dataset_observation/:id', (req, res) => {
+    datasetController.deleteDatasetObservation(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/dataset_observation/:id:', err);
+            res.status(500).json({ error: 'Failed to delete dataset_observation' });
         });
 });
 
@@ -3210,6 +3420,97 @@ app.get('/api/observation/:id', (req, res) => {
  */
 app.delete('/api/observation/:id', (req, res) => {
     observationController.deleteObservation(req.params.id).then(data => res.json(data));
+});
+
+/**
+ * @openapi
+ * /keyframe/{keyframe_id}:
+ *   get:
+ *     summary: Fetch a keyframe by id
+ *     description: >
+ *       Returns a single keyframe record by keyframe_id, or null if not
+ *       found. Database failures reject the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [Keyframes]
+ *     parameters:
+ *       - in: path
+ *         name: keyframe_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: keyframe_id of the keyframe to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching keyframe record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/keyframe/:keyframe_id', (req, res) => {
+    keyframeController.getKeyframeById(req.params.keyframe_id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/keyframe/:keyframe_id:', err);
+            res.status(500).json({ error: 'Failed to fetch keyframe' });
+        });
+});
+
+/**
+ * @openapi
+ * /keyframe/{keyframe_id}:
+ *   put:
+ *     summary: Update an existing keyframe
+ *     description: >
+ *       Updates an existing keyframe record by keyframe_id. A database
+ *       failure rejects the returned promise, so the route's .catch()
+ *       responds with HTTP 500 in that case.
+ *     tags: [Keyframes]
+ *     parameters:
+ *       - in: path
+ *         name: keyframe_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: keyframe_id of the keyframe to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - keyframe
+ *             properties:
+ *               keyframe:
+ *                 $ref: '#/components/schemas/Keyframe'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The updated keyframe record, or null if no keyframe matched
+ *           the given id.
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.put('/api/keyframe/:keyframe_id', (req, res) => {
+    keyframeController.updateKeyframe(req.params.keyframe_id, req.body.keyframe)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/keyframe/:keyframe_id:', err);
+            res.status(500).json({ error: 'Failed to update keyframe' });
+        });
 });
 
 /**

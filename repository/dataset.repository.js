@@ -293,6 +293,74 @@ class DatasetRepository {
 
 
     /**
+     * Fetch a single dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to fetch.
+     * @returns {Promise<Object|null>} The matching DatasetObservation
+     * record, or null if not found. A database failure is logged and
+     * re-thrown, so the returned promise rejects rather than resolving to
+     * a fallback value.
+     */
+    async getDatasetObservationById(id) {
+        try {
+            const record = await this.db.dataset_observations.findByPk(id);
+            return record || null;
+        } catch (err) {
+            console.error(`Error in getDatasetObservationById(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Update an existing dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to update.
+     * @param {Object} newData - DatasetObservation fields to update.
+     * @returns {Promise<Object|null>} The updated DatasetObservation
+     * record, or null if no row matched `id`. A database failure is
+     * logged and re-thrown, so the returned promise rejects rather than
+     * resolving to an error value.
+     */
+    async updateDatasetObservation(id, newData) {
+        try {
+            const [rowsUpdated, [updatedRecord]] = await this.db.dataset_observations.update(
+                newData,
+                { where: { id }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                return null;
+            }
+
+            return updatedRecord;
+        } catch (err) {
+            console.error(`Error in updateDatasetObservation(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteDatasetObservation(id) {
+        try {
+            const rowsDeleted = await this.db.dataset_observations.destroy({ where: { id } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteDatasetObservation(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
      * Fetch every ML model record.
      *
      * @async
@@ -520,6 +588,49 @@ class DatasetRepository {
     }
 
 
+
+    /**
+     * Fetch a single training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to fetch.
+     * @returns {Promise<Object|null>} The matching TrainingRun record, or
+     * null if not found. A database failure is logged and re-thrown, so
+     * the returned promise rejects rather than resolving to a fallback
+     * value.
+     */
+    async getTrainingRunById(runID) {
+        try {
+            const run = await this.db.training_runs.findByPk(runID);
+            return run || null;
+        } catch (err) {
+            console.error(`Error in getTrainingRunById(${runID}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a training run record by ID.
+     *
+     * Deleting a training run cascades to delete its epochs,
+     * metrics_summary, hyperparameters, and artifacts (see
+     * model/training_runs.model.js).
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteTrainingRun(runID) {
+        try {
+            const rowsDeleted = await this.db.training_runs.destroy({ where: { id: runID } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteTrainingRun(${runID}):`, err);
+            throw err;
+        }
+    }
 
     /**
      * Insert a new epoch record for a training run.
