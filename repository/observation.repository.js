@@ -88,19 +88,6 @@ const observationController = require('../controller/observation.controller');
 const userController = require('../controller/user.controller');
 
 
-/**
- * Legacy Sessions model retained for operations that still depend on the old
- * model definition.
- *
- * This model is separate from the current model registry and should not be
- * used for new queries unless the legacy schema behavior is specifically
- * required.
- *
- * @constant
- * @type {Object}
- */
-const { Sessions } = require('../model/old/sessions.js');
-
 
 /**
  * Date and time utility used to parse, compare, format, and manipulate

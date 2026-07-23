@@ -3,7 +3,7 @@
 <head>
     
     <meta charset="utf-8">
-    <title>model/hyperparameters - Documentation</title>
+    <title>config/config - Documentation</title>
     
     
     <script src="scripts/prettify/prettify.js"></script>
@@ -37,7 +37,7 @@
 
 <div id="main">
     
-    <h1 class="page-title">model/hyperparameters</h1>
+    <h1 class="page-title">config/config</h1>
     
 
     
@@ -62,7 +62,7 @@
         <div class="container-overview">
         
             
-                <div class="description usertext">Sequelize model and OpenAPI response schema for hyperparameters.</div>
+                <div class="description usertext">Sequelize database configuration for all runtime environments.</div>
             
 
             
@@ -74,13 +74,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Sequelize model and OpenAPI response schema for hyperparameters.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Sequelize database configuration for all runtime environments.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="model_hyperparameters.model.js.html">model/hyperparameters.model.js</a>, <a href="model_hyperparameters.model.js.html#line1">line 1</a>
+        <a href="config_config.js.html">config/config.js</a>, <a href="config_config.js.html#line1">line 1</a>
     </li></ul></dd>
     
 
@@ -104,7 +104,7 @@
     <dt class="tag-author">Author:</dt>
     <dd class="tag-author">
         <ul>
-            <li>Isaac Assegai Travers</li>
+            <li>Isaac Travers</li>
         </ul>
     </dd>
     
@@ -156,7 +156,7 @@
 
     
 
-    <h4 class="name" id="module:model/hyperparameters"><span class="type-signature"></span>(require("model/hyperparameters"))<span class="signature">(sequelize, DataTypes)</span><span class="type-signature"> &rarr; {Model}</span></h4>
+    <h4 class="name" id="module:config/config"><span class="type-signature type-signature-constant">(constant) </span>module:config/config<span class="type-signature"> :Object</span></h4>
 
     
 
@@ -166,18 +166,220 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Create and initialize the hyperparameters Sequelize model.
+    <dd class="tag-description"><ul class="dummy"><li>Sequelize configuration keyed by runtime environment.
 
-Sequelize calls this factory with the shared database connection and
-configured data-type collection. The returned model is registered in the
-central model registry and later connected to the training_runs model
-through hyperparameters.associate.</li></ul></dd>
+model/index.js selects one of these configurations using NODE_ENV.
+Sequelize CLI also uses these names when running migrations and seeders.
+All three environments currently share the same underlying config object.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="model_hyperparameters.model.js.html">model/hyperparameters.model.js</a>, <a href="model_hyperparameters.model.js.html#line75">line 75</a>
+        <a href="config_config.js.html">config/config.js</a>, <a href="config_config.js.html#line72">line 72</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+    <h5 class="subsection-title">Properties:</h5>
+
+    
+
+<table class="props">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>development</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Configuration used when NODE_ENV is unset or 'development'.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>test</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Configuration used when NODE_ENV is 'test'.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>production</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Configuration used when NODE_ENV is 'production'.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
+        
+        </div>
+    
+
+    
+
+    
+
+    
+    
+    
+
+     
+
+    
+
+    
+        <h3 class="subsection-title">Members</h3>
+
+        
+            
+<h4 class="name" id="~dotenv"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>dotenv<span class="type-signature"> :Object</span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Loads environment variables from the repository's local `.env` file into
+`process.env`.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="config_config.js.html">config/config.js</a>, <a href="config_config.js.html#line22">line 22</a>
     </li></ul></dd>
     
 
@@ -216,152 +418,116 @@ through hyperparameters.associate.</li></ul></dd>
 
 
 
-
-
-
-
-
-
-
-
-    <h5 class="h5-parameters">Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>sequelize</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Shared Sequelize connection.</td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>DataTypes</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Sequelize data-type definitions.</td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5 class="h5-returns">Returns:</h5>
-
-        
-<div class="param-desc">
-    Initialized hyperparameters model.
+<div class="description usertext">
+    Loads environment variables from the repository's local `.env` file into
+`process.env`.
 </div>
 
 
 
-<dl class="param-type">
-    <dt>
-        Type
-    </dt>
-    <dd>
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Object</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
         
-<span class="param-type">Model</span>
+            
+<h4 class="name" id="~sharedConfig"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>sharedConfig<span class="type-signature"> :Object</span></h4>
 
 
 
-    </dd>
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Shared Sequelize configuration.
+
+Development, test, and production currently use the same environment-based
+configuration structure. Individual environments can be separated later
+without changing the code that initializes Sequelize.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="config_config.js.html">config/config.js</a>, <a href="config_config.js.html#line38">line 38</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
 </dl>
 
-    
 
 
 
+
+<div class="description usertext">
+    Shared Sequelize configuration.
+
+Development, test, and production currently use the same environment-based
+configuration structure. Individual environments can be separated later
+without changing the code that initializes Sequelize.
+</div>
+
+
+
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
             
+<span class="param-type">Object</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
         
-        </div>
-    
-
-    
-
-    
-
-    
-        <h3 class="subsection-title">Classes</h3>
-
-        <dl>
-            <dt><a href="module-model_hyperparameters-hyperparameters.html">hyperparameters</a></dt>
-            <dd></dd>
-        </dl>
-    
-    
-    
-
-     
-
-    
-
     
 
     

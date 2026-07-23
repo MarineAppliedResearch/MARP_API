@@ -3,7 +3,7 @@
 <head>
     
     <meta charset="utf-8">
-    <title>model/hyperparameters - Documentation</title>
+    <title>logger/api.logger - Documentation</title>
     
     
     <script src="scripts/prettify/prettify.js"></script>
@@ -37,7 +37,7 @@
 
 <div id="main">
     
-    <h1 class="page-title">model/hyperparameters</h1>
+    <h1 class="page-title">logger/api.logger</h1>
     
 
     
@@ -49,12 +49,6 @@
 
 <header>
     
-        
-            
-        
-            
-        
-    
 </header>
 
 <article>
@@ -62,25 +56,17 @@
         <div class="container-overview">
         
             
-                <div class="description usertext">Sequelize model and OpenAPI response schema for hyperparameters.</div>
-            
-
-            
-                
-
-
-
 
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Sequelize model and OpenAPI response schema for hyperparameters.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Thin wrapper around the pine logger used throughout the API.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="model_hyperparameters.model.js.html">model/hyperparameters.model.js</a>, <a href="model_hyperparameters.model.js.html#line1">line 1</a>
+        <a href="logger_api.logger.js.html">logger/api.logger.js</a>, <a href="logger_api.logger.js.html#line1">line 1</a>
     </li></ul></dd>
     
 
@@ -104,7 +90,7 @@
     <dt class="tag-author">Author:</dt>
     <dd class="tag-author">
         <ul>
-            <li>Isaac Assegai Travers</li>
+            <li>Isaac Travers</li>
         </ul>
     </dd>
     
@@ -125,40 +111,41 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            
+                <div class="description usertext">Thin wrapper around the pine logger used throughout the API.</div>
+            
 
             
-                
+        
+        </div>
+    
 
     
 
-    <h4 class="name" id="module:model/hyperparameters"><span class="type-signature"></span>(require("model/hyperparameters"))<span class="signature">(sequelize, DataTypes)</span><span class="type-signature"> &rarr; {Model}</span></h4>
+    
 
     
+        <h3 class="subsection-title">Classes</h3>
+
+        <dl>
+            <dt><a href="logger_api.module_logger-APILogger.html">APILogger</a></dt>
+            <dd></dd>
+        </dl>
+    
+    
+    
+
+     
+
+    
+
+    
+        <h3 class="subsection-title">Members</h3>
+
+        
+            
+<h4 class="name" id="~logger"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>logger<span class="type-signature"> :Object</span></h4>
+
 
 
 
@@ -166,18 +153,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Create and initialize the hyperparameters Sequelize model.
-
-Sequelize calls this factory with the shared database connection and
-configured data-type collection. The returned model is registered in the
-central model registry and later connected to the training_runs model
-through hyperparameters.associate.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Shared pine logger instance used by every method on APILogger.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="model_hyperparameters.model.js.html">model/hyperparameters.model.js</a>, <a href="model_hyperparameters.model.js.html#line75">line 75</a>
+        <a href="logger_api.logger.js.html">logger/api.logger.js</a>, <a href="logger_api.logger.js.html#line24">line 24</a>
     </li></ul></dd>
     
 
@@ -216,152 +198,107 @@ through hyperparameters.associate.</li></ul></dd>
 
 
 
-
-
-
-
-
-
-
-
-    <h5 class="h5-parameters">Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>sequelize</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Shared Sequelize connection.</td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>DataTypes</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Sequelize data-type definitions.</td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5 class="h5-returns">Returns:</h5>
-
-        
-<div class="param-desc">
-    Initialized hyperparameters model.
+<div class="description usertext">
+    Shared pine logger instance used by every method on APILogger.
 </div>
 
 
 
-<dl class="param-type">
-    <dt>
-        Type
-    </dt>
-    <dd>
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Object</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
         
-<span class="param-type">Model</span>
+            
+<h4 class="name" id="~pine"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>pine<span class="type-signature"> :function</span></h4>
 
 
 
-    </dd>
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Pine logging library used to write formatted log output.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="logger_api.logger.js.html">logger/api.logger.js</a>, <a href="logger_api.logger.js.html#line16">line 16</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
 </dl>
 
-    
 
 
 
+
+<div class="description usertext">
+    Pine logging library used to write formatted log output.
+</div>
+
+
+
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
             
+<span class="param-type">function</span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
         
-        </div>
-    
-
-    
-
-    
-
-    
-        <h3 class="subsection-title">Classes</h3>
-
-        <dl>
-            <dt><a href="module-model_hyperparameters-hyperparameters.html">hyperparameters</a></dt>
-            <dd></dd>
-        </dl>
-    
-    
-    
-
-     
-
-    
-
     
 
     

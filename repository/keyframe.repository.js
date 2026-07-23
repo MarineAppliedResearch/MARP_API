@@ -21,7 +21,6 @@ const { Op } = require("sequelize");
 const sessionController = require('../controller/session.controller');
 const observationController = require('../controller/observation.controller');
 const userController = require('../controller/user.controller');
-const {Sessions} = require("../model/old/sessions.js");
 const moment = require('moment'); // For date manipulation
 
 

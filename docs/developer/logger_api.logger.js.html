@@ -3,7 +3,7 @@
 <head>
     
     <meta charset="utf-8">
-    <title>model/hyperparameters - Documentation</title>
+    <title>logger/api.logger.js - Documentation</title>
     
     
     <script src="scripts/prettify/prettify.js"></script>
@@ -37,341 +37,97 @@
 
 <div id="main">
     
-    <h1 class="page-title">model/hyperparameters</h1>
+    <h1 class="page-title">logger/api.logger.js</h1>
     
 
     
 
 
 
-
-<section>
-
-<header>
     
-        
-            
-        
-            
-        
-    
-</header>
-
-<article>
-    
-        <div class="container-overview">
-        
-            
-                <div class="description usertext">Sequelize model and OpenAPI response schema for hyperparameters.</div>
-            
-
-            
-                
-
-
-
-
-<dl class="details">
-    
-    <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Sequelize model and OpenAPI response schema for hyperparameters.</li></ul></dd>
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="model_hyperparameters.model.js.html">model/hyperparameters.model.js</a>, <a href="model_hyperparameters.model.js.html#line1">line 1</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-author">Author:</dt>
-    <dd class="tag-author">
-        <ul>
-            <li>Isaac Assegai Travers</li>
-        </ul>
-    </dd>
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            
-                
-
-    
-
-    <h4 class="name" id="module:model/hyperparameters"><span class="type-signature"></span>(require("model/hyperparameters"))<span class="signature">(sequelize, DataTypes)</span><span class="type-signature"> &rarr; {Model}</span></h4>
-
-    
-
-
-
-
-<dl class="details">
-    
-    <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Create and initialize the hyperparameters Sequelize model.
-
-Sequelize calls this factory with the shared database connection and
-configured data-type collection. The returned model is registered in the
-central model registry and later connected to the training_runs model
-through hyperparameters.associate.</li></ul></dd>
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="model_hyperparameters.model.js.html">model/hyperparameters.model.js</a>, <a href="model_hyperparameters.model.js.html#line75">line 75</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-    <h5 class="h5-parameters">Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>sequelize</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Shared Sequelize connection.</td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>DataTypes</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">Object</span>
-
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Sequelize data-type definitions.</td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5 class="h5-returns">Returns:</h5>
-
-        
-<div class="param-desc">
-    Initialized hyperparameters model.
-</div>
-
-
-
-<dl class="param-type">
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Model</span>
-
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-            
-        
-        </div>
-    
-
-    
-
-    
-
-    
-        <h3 class="subsection-title">Classes</h3>
-
-        <dl>
-            <dt><a href="module-model_hyperparameters-hyperparameters.html">hyperparameters</a></dt>
-            <dd></dd>
-        </dl>
-    
-    
-    
-
-     
-
-    
-
-    
-
-    
-
-    
-
-    
-</article>
-
-</section>
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Application-wide logging wrapper used by controllers, services, and
+ * repositories to record informational and error messages.
+ *
+ * @fileoverview Thin wrapper around the pine logger used throughout the API.
+ * @author Isaac Travers
+ * @module logger/api.logger
+ */
+
+/**
+ * Pine logging library used to write formatted log output.
+ *
+ * @constant
+ * @type {Function}
+ */
+const pine = require('pine');
+
+/**
+ * Shared pine logger instance used by every method on APILogger.
+ *
+ * @constant
+ * @type {Object}
+ */
+const logger = pine();
+
+
+/**
+ * Application-wide logger used across controllers, services, and
+ * repositories.
+ *
+ * @class APILogger
+ */
+class APILogger {
+
+    /**
+     * Log an informational message.
+     *
+     * CAUTION: this single-argument overload is dead code — the two-argument
+     * `info(message, data)` defined immediately below it has the same name,
+     * so it silently overwrites this one on the class prototype. Calling
+     * `logger.info(message)` with one argument still works (`data` is
+     * simply `undefined` in the surviving method), but this method body is
+     * never actually reached.
+     *
+     * @param {string} message - Message to log.
+     * @returns {void}
+     */
+    info(message) {
+        logger.info(message);
+    }
+
+    /**
+     * Log an informational message, optionally with structured data.
+     *
+     * This is the method that actually runs for every `logger.info(...)`
+     * call in the codebase (see caution on the overload above). When
+     * `data` is provided, it is JSON-stringified and appended to the
+     * message.
+     *
+     * @param {string} message - Message to log.
+     * @param {*} [data] - Optional additional data to log alongside the message, JSON-stringified if present.
+     * @returns {void}
+     */
+    info(message, data) {
+        logger.info(`${message}   ${undefined != data ? JSON.stringify(data) : ''}`);
+    }
+
+    /**
+     * Log an error message.
+     *
+     * @param {string} message - Message to log.
+     * @returns {void}
+     */
+    error(message) {
+        logger.error(message);
+    }
+}
+
+module.exports = new APILogger();</code></pre>
+        </article>
+    </section>
 
 
 
