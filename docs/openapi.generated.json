@@ -2011,14 +2011,7 @@
             }
           },
           "500": {
-            "description": "The API request failed before a response could be produced.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2434,19 +2427,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2527,19 +2508,7 @@
             }
           },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -2597,19 +2566,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -2635,19 +2592,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2713,21 +2658,17 @@
         },
         "responses": {
           "200": {
-            "description": "Model-species record created successfully, or an ErrorResponse body if the insert failed (see description).\n",
+            "description": "Model-species record created successfully.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ModelSpecies"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/ModelSpecies"
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2815,19 +2756,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -2853,19 +2782,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3266,19 +3183,7 @@
             }
           },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3442,19 +3347,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -3480,19 +3373,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3534,19 +3415,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3588,19 +3457,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3660,19 +3517,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -3734,19 +3579,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3788,19 +3621,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3896,19 +3717,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -3934,19 +3743,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3988,19 +3785,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4096,19 +3881,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4134,19 +3907,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4173,31 +3934,22 @@
         },
         "responses": {
           "200": {
-            "description": "On success, an { inserted: number } summary object (not the created records). On failure, an { error: string } object is still returned with HTTP 200 (see description).\n",
+            "description": "On success, an { inserted: number } summary object (not the created records).\n",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "inserted": {
-                          "type": "integer"
-                        }
-                      }
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "string"
-                        }
-                      }
+                  "type": "object",
+                  "properties": {
+                    "inserted": {
+                      "type": "integer"
                     }
-                  ]
+                  }
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4239,19 +3991,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4311,19 +4051,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4385,19 +4113,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4457,19 +4173,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4531,19 +4235,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4585,19 +4277,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4693,19 +4373,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4731,19 +4399,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize)."
           },
           "500": {
-            "description": "The database delete failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4793,19 +4449,7 @@
             }
           },
           "500": {
-            "description": "The bulk insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4875,6 +4519,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result, or an empty object `{}` if the update failed (see description).\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -4944,6 +4591,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result (an array whose first element is the number of affected rows)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -5052,19 +4702,7 @@
             "description": "Sequelize's update result (typically `[affectedCount]`), or `{}` if the update failed.\n"
           },
           "500": {
-            "description": "The database update failed unexpectedly.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -5166,6 +4804,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -5267,6 +4908,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -5405,6 +5049,9 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -5466,6 +5113,9 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -5561,19 +5211,7 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -5597,6 +5235,9 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -5624,19 +5265,7 @@
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
           },
           "500": {
-            "description": "The database delete failed unexpectedly.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }

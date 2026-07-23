@@ -104,19 +104,12 @@ class SpeciesService {
      * @async
      * @param {Object} req - Express request; `req.body` supplies the model_species fields to insert directly.
      * @param {Object} res - Accepted for signature consistency with the controller; not used by this implementation.
-     * @returns {Promise<Object>} The created model_species record, or an
-     * `{ error: string }` object if the insert failed. A failed insert
-     * resolves rather than rejecting, so callers must check for an `error`
-     * property.
+     * @returns {Promise<Object>} The created model_species record.
+     * Rejects on a database failure rather than resolving to an ad-hoc
+     * error object.
      */
     async createModelSpecies(req, res){
-        try {
-            const data = await speciesRepository.createModelSpecies(req.body);
-            return data; // response handled by .then() in route
-        } catch (err) {
-            console.error('Error creating model_species record:', err);
-            return { error: 'Failed to create model_species record' };
-        }
+        return await speciesRepository.createModelSpecies(req.body);
     }
 
     /**

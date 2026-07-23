@@ -214,17 +214,12 @@ class SpeciesRepository {
      * here, so the caller is responsible for providing valid `model_id` and
      * `species_id` values.
      *
-     * Unlike most repository methods in this codebase, a failure here does
-     * not resolve to an empty array or null — it resolves to an
-     * `{ error: string }` object. Callers must check for that property
-     * explicitly, and note that the API route built on this method
-     * (`POST /api/model_species`) still responds with HTTP 200 in that
-     * case.
+    * A database failure is logged and re-thrown, so callers can handle
+    * errors via the API error contract middleware.
      *
      * @async
      * @param {Object} record - model_species fields to insert (model_id, species_id, dataset_size, balance_weight, precision_mean, recall_mean, f1_mean, notes).
-     * @returns {Promise<Object>} The created model_species record, or an
-     * `{ error: string }` object if the insert failed.
+     * @returns {Promise<Object>} The created model_species record.
      */
     async createModelSpecies(record) {
         try {
@@ -233,7 +228,7 @@ class SpeciesRepository {
             return newRecord;
         } catch (err) {
             console.error('Error in createModelSpecies:', err);
-            return { error: 'Database insert failed' };
+            throw err;
         }
     }
 

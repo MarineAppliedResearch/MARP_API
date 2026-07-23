@@ -108,7 +108,8 @@ function sendError(res, { status, code, message, requestId, details }) {
  * Convert common runtime/Sequelize errors into the API error contract.
  *
  * @param {Error|Object} err - Thrown error.
- * @returns {{status:number, code:string, message:string, details:Array<Object>|undefined}}
+ * @returns {Object} Normalized error with `status` (number), `code`
+ * (string), `message` (string), and optional `details` (Array<Object>).
  */
 function normalizeError(err) {
   if (err instanceof ApiError) {

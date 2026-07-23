@@ -473,11 +473,10 @@ app.use('/api', require('./reporting/routes'));
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/getObservationsByVideo', (req, res) => {
-    observationController
-        .getObservationsByVideo(req.query.videoName)
-        .then(data => res.json(data));
-});
+app.get('/api/getObservationsByVideo', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservationsByVideo(req.query.videoName);
+    res.json(data);
+}));
 
 
 /**
@@ -540,11 +539,10 @@ app.get('/api/getObservationsByVideo', (req, res) => {
  *                     nullable: true
  *                     description: Minimum session type value among the matching sessions.
  */
-app.get('/api/getVideoSummaries/:project_id', (req, res) => {
-    observationController
-        .getVideoSummariesByProject(req.params.project_id)
-        .then(data => res.json(data));
-});
+app.get('/api/getVideoSummaries/:project_id', asyncHandler(async (req, res) => {
+    const data = await observationController.getVideoSummariesByProject(req.params.project_id);
+    res.json(data);
+}));
 
 
 
@@ -593,14 +591,13 @@ app.get('/api/getVideoSummaries/:project_id', (req, res) => {
  *                 type: object
  *                 additionalProperties: true
  */
-app.get('/api/getObservationsByVideoAndComnames', (req, res) => {
-    observationController
-        .getObservationsByVideoAndComnames(
-            req.query.videoName,
-            req.query.comnameList
-        )
-        .then(data => res.json(data));
-});
+app.get('/api/getObservationsByVideoAndComnames', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservationsByVideoAndComnames(
+        req.query.videoName,
+        req.query.comnameList
+    );
+    res.json(data);
+}));
 
 
 /**
@@ -646,14 +643,13 @@ app.get('/api/getObservationsByVideoAndComnames', (req, res) => {
  */
 app.get(
     '/api/getObservationsByVideoAndProject/:videoName/:projectName',
-    (req, res) => {
-        observationController
-            .getObservationsByVideoAndProject(
-                req.params.videoName,
-                req.params.projectName
-            )
-            .then(data => res.json(data));
-    }
+    asyncHandler(async (req, res) => {
+        const data = await observationController.getObservationsByVideoAndProject(
+            req.params.videoName,
+            req.params.projectName
+        );
+        res.json(data);
+    })
 );
 
 
@@ -691,13 +687,9 @@ app.get(
  *               items:
  *                 $ref: '#/components/schemas/ObservationWithKeyframes'
  *       500:
- *         description: The API request failed before a response could be produced.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/getObservationsWithKeyframesByComnames', (req, res) => {
+app.get('/api/getObservationsWithKeyframesByComnames', asyncHandler(async (req, res) => {
     // Convert the comma-separated query value into an array of decoded
     // common-name strings. A missing parameter produces an empty array.
     const comnameList = req.query.comnameList
@@ -705,20 +697,9 @@ app.get('/api/getObservationsWithKeyframesByComnames', (req, res) => {
         : [];
 
     // Delegate the filtered observation query to the observation controller.
-    observationController
-        .getObservationsWithKeyframesByComnames(comnameList)
-        .then(data => res.json(data))
-        .catch(err => {
-            // Log controller or request-processing failures that propagate
-            // through the returned promise.
-            console.error('Error in API call:', err);
-
-            // Return a generic error response without exposing internal details.
-            res.status(500).json({
-                error: 'An error occurred while fetching observations.'
-            });
-        });
-});
+    const data = await observationController.getObservationsWithKeyframesByComnames(comnameList);
+    res.json(data);
+}));
 
 
 /**
@@ -743,9 +724,10 @@ app.get('/api/getObservationsWithKeyframesByComnames', (req, res) => {
  *               items:
  *                 type: string
  */
-app.use('/api/getDistinctComnamesWithKeyframes', (req, res) => {
-    observationController.getDistinctComnamesWithKeyframes().then(data => res.json(data));
-});
+app.use('/api/getDistinctComnamesWithKeyframes', asyncHandler(async (req, res) => {
+    const data = await observationController.getDistinctComnamesWithKeyframes();
+    res.json(data);
+}));
 
 
 /**
@@ -784,9 +766,10 @@ app.use('/api/getDistinctComnamesWithKeyframes', (req, res) => {
  *               type: object
  *               additionalProperties: true
  */
-app.get('/api/dashboardData', (req, res) => {
-    observationController.getUserDashboardData(req.query.start, req.query.end).then(data => res.json(data));
-});
+app.get('/api/dashboardData', asyncHandler(async (req, res) => {
+    const data = await observationController.getUserDashboardData(req.query.start, req.query.end);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -823,9 +806,10 @@ app.get('/api/dashboardData', (req, res) => {
  *               type: object
  *               additionalProperties: true
  */
-app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
-    observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end).then(data => res.json(data));
-});
+app.get('/api/getProjectTimeByDateAndUser', asyncHandler(async (req, res) => {
+    const data = await observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -844,9 +828,10 @@ app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Task'
  */
-app.get('/api/tasks', (req, res) => {
-    taskController.getTasks().then(data => res.json(data));
-});
+app.get('/api/tasks', asyncHandler(async (req, res) => {
+    const data = await taskController.getTasks();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -865,9 +850,10 @@ app.get('/api/tasks', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/observations', (req, res) => {
-    observationController.getObservations().then(data => res.json(data));
-});
+app.get('/api/observations', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservations();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -887,9 +873,10 @@ app.get('/api/observations', (req, res) => {
  *       200:
  *         description: Last video information returned successfully.
  */
-app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
-    observationController.getLastVideoInfo(req.params.session_id).then(data => res.json(data));
-});
+app.get('/api/observation/getLastVideoInfo/:session_id', asyncHandler(async (req, res) => {
+    const data = await observationController.getLastVideoInfo(req.params.session_id);
+    res.json(data);
+}));
 
 
 /**
@@ -922,9 +909,10 @@ app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/observation/getMaxObservationFromVideo/:video_source', (req, res) => {
-    observationController.getMaxObservationFromVideo(req.params.video_source).then(data => res.json(data));
-});
+app.get('/api/observation/getMaxObservationFromVideo/:video_source', asyncHandler(async (req, res) => {
+    const data = await observationController.getMaxObservationFromVideo(req.params.video_source);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -972,9 +960,10 @@ app.get('/api/observation/getMaxObservationFromVideo/:video_source', (req, res) 
  *             schema:
  *               type: integer
  */
-app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id/:count', (req, res) => {
-    observationController.updateObservationWithCount(req.params.session_id, req.params.observation_id, req.params.count).then(data => res.json(data));
-});
+app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id/:count', asyncHandler(async (req, res) => {
+    const data = await observationController.updateObservationWithCount(req.params.session_id, req.params.observation_id, req.params.count);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1024,9 +1013,10 @@ app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id
  *             schema:
  *               type: integer
  */
-app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/:size', (req, res) => {
-    observationController.updateObservationWithSize(req.params.session_id, req.params.observation_id, req.params.size).then(data => res.json(data));
-});
+app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/:size', asyncHandler(async (req, res) => {
+    const data = await observationController.updateObservationWithSize(req.params.session_id, req.params.observation_id, req.params.size);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1055,9 +1045,10 @@ app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/
  *               items:
  *                 $ref: '#/components/schemas/Observation'
  */
-app.get('/api/observations/bySessionID/:session_id', (req, res) => {
-    observationController.getObservationsBySessionID(req.params.session_id).then(data => res.json(data));
-});
+app.get('/api/observations/bySessionID/:session_id', asyncHandler(async (req, res) => {
+    const data = await observationController.getObservationsBySessionID(req.params.session_id);
+    res.json(data);
+}));
 
 
 
@@ -1083,9 +1074,10 @@ app.get('/api/observations/bySessionID/:session_id', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Species'
  */
-app.get('/api/species', (req, res) => {
-    speciesController.getSpecies().then(data => res.json(data));
-});
+app.get('/api/species', asyncHandler(async (req, res) => {
+    const data = await speciesController.getSpecies();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1114,9 +1106,10 @@ app.get('/api/species', (req, res) => {
  *                 - $ref: '#/components/schemas/Species'
  *                 - type: 'null'
  */
-app.get('/api/species/by-comname/:comname', (req, res) => {
-  speciesController.getSpeciesByComname(req, res).then(data => res.json(data));
-});
+app.get('/api/species/by-comname/:comname', asyncHandler(async (req, res) => {
+    const data = await speciesController.getSpeciesByComname(req, res);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1145,23 +1138,12 @@ app.get('/api/species/by-comname/:comname', (req, res) => {
  *                 - $ref: '#/components/schemas/Species'
  *                 - type: 'null'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/species/:id', (req, res) => {
-    speciesController.getSpeciesById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/species/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch species' });
-        });
-});
+app.get('/api/species/:id', asyncHandler(async (req, res) => {
+    const data = await speciesController.getSpeciesById(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1194,23 +1176,12 @@ app.get('/api/species/:id', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Species'
  *       500:
- *         description: The database insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.post('/api/species', (req, res) => {
-    speciesController.createSpecies(req.body.species)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in POST /api/species:', err);
-            res.status(500).json({ error: 'Failed to create species' });
-        });
-});
+app.post('/api/species', asyncHandler(async (req, res) => {
+    const data = await speciesController.createSpecies(req.body.species);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1252,23 +1223,12 @@ app.post('/api/species', (req, res) => {
  *                 - $ref: '#/components/schemas/Species'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/species/:id', (req, res) => {
-    speciesController.updateSpecies(req.params.id, req.body.species)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/species/:id:', err);
-            res.status(500).json({ error: 'Failed to update species' });
-        });
-});
+app.put('/api/species/:id', asyncHandler(async (req, res) => {
+    const data = await speciesController.updateSpecies(req.params.id, req.body.species);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1291,23 +1251,12 @@ app.put('/api/species/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/species/:id', (req, res) => {
-    speciesController.deleteSpecies(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/species/:id:', err);
-            res.status(500).json({ error: 'Failed to delete species' });
-        });
-});
+app.delete('/api/species/:id', asyncHandler(async (req, res) => {
+    const data = await speciesController.deleteSpecies(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1361,20 +1310,18 @@ app.delete('/api/species/:id', (req, res) => {
  *                 nullable: true
  *     responses:
  *       200:
- *         description: >
- *           Model-species record created successfully, or an ErrorResponse
- *           body if the insert failed (see description).
+ *         description: Model-species record created successfully.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/ModelSpecies'
- *                 - $ref: '#/components/schemas/ErrorResponse'
+ *               $ref: '#/components/schemas/ModelSpecies'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.post('/api/model_species', (req, res) => {
-  speciesController.createModelSpecies(req, res)
-    .then(data => res.json(data));
-});
+app.post('/api/model_species', asyncHandler(async (req, res) => {
+    const data = await speciesController.createModelSpecies(req, res);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1456,23 +1403,12 @@ app.get('/api/model_species/:id', asyncHandler(async (req, res) => {
  *                 - $ref: '#/components/schemas/ModelSpecies'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/model_species/:id', (req, res) => {
-    speciesController.updateModelSpecies(req.params.id, req.body)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/model_species/:id:', err);
-            res.status(500).json({ error: 'Failed to update model_species' });
-        });
-});
+app.put('/api/model_species/:id', asyncHandler(async (req, res) => {
+    const data = await speciesController.updateModelSpecies(req.params.id, req.body);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1495,23 +1431,12 @@ app.put('/api/model_species/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/model_species/:id', (req, res) => {
-    speciesController.deleteModelSpecies(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/model_species/:id:', err);
-            res.status(500).json({ error: 'Failed to delete model_species' });
-        });
-});
+app.delete('/api/model_species/:id', asyncHandler(async (req, res) => {
+    const data = await speciesController.deleteModelSpecies(req.params.id);
+    res.json(data);
+}));
 
 
 /**
@@ -1531,9 +1456,10 @@ app.delete('/api/model_species/:id', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/User'
  */
-app.get('/api/users', (req, res) => {
-    userController.getUsers().then(data => res.json(data));
-});
+app.get('/api/users', asyncHandler(async (req, res) => {
+    const data = await userController.getUsers();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1607,9 +1533,10 @@ app.get('/api/users/:id', asyncHandler(async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/User'
  */
-app.get('/api/user/:name', (req, res) => {
-    userController.getUserByName(req.params.name).then(data => res.json(data));
-});
+app.get('/api/user/:name', asyncHandler(async (req, res) => {
+    const data = await userController.getUserByName(req.params.name);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1628,9 +1555,10 @@ app.get('/api/user/:name', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Project'
  */
-app.get('/api/projects', (req, res) => {
-    projectController.getProjects().then(data => res.json(data));
-});
+app.get('/api/projects', asyncHandler(async (req, res) => {
+    const data = await projectController.getProjects();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1658,9 +1586,10 @@ app.get('/api/projects', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Project'
  */
-app.get('/api/projects/user/:userID', (req, res) => {
-    projectController.getProjectsByUserID(req.params.userID).then(data => res.json(data));
-});
+app.get('/api/projects/user/:userID', asyncHandler(async (req, res) => {
+    const data = await projectController.getProjectsByUserID(req.params.userID);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1695,9 +1624,10 @@ app.get('/api/projects/user/:userID', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Project'
  */
-app.get('/api/project/getProjectByName/:projectName', (req, res) => {
-    projectController.getProjectByName(req.params.projectName).then(data => res.json(data));
-});
+app.get('/api/project/getProjectByName/:projectName', asyncHandler(async (req, res) => {
+    const data = await projectController.getProjectByName(req.params.projectName);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1716,9 +1646,10 @@ app.get('/api/project/getProjectByName/:projectName', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Session'
  */
-app.get('/api/sessions', (req, res) => {
-    sessionController.getSessions().then(data => res.json(data));
-});
+app.get('/api/sessions', asyncHandler(async (req, res) => {
+    const data = await sessionController.getSessions();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1795,9 +1726,10 @@ app.get('/api/session/:id', asyncHandler(async (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Session'
  */
-app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
-    sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID).then(data => res.json(data));
-});
+app.get('/api/sessions/user/:userID/project/:projectID', asyncHandler(async (req, res) => {
+    const data = await sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1815,9 +1747,10 @@ app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
  *               type: object
  *               additionalProperties: true
  */
-app.get('/api/metaInfo/dbName', (req, res) => {
-    metaInfoController.getDBName().then(data => res.json(data));
-});
+app.get('/api/metaInfo/dbName', asyncHandler(async (req, res) => {
+    const data = await metaInfoController.getDBName();
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1847,9 +1780,10 @@ app.get('/api/metaInfo/dbName', (req, res) => {
  *             schema:
  *               type: string
  */
-app.get('/api/user/getUserNameByID/:userID', (req, res) => {
-    userController.getUserNameByID(req.params.userID).then(data => res.json(data));
-});
+app.get('/api/user/getUserNameByID/:userID', asyncHandler(async (req, res) => {
+    const data = await userController.getUserNameByID(req.params.userID);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1871,24 +1805,13 @@ app.get('/api/user/getUserNameByID/:userID', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/MlModel'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // GET /api/models
-app.get('/api/ml_models', (req, res) => {
-    datasetController.getMl_models()
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error fetching models:", err);
-            res.status(500).json({ error: "Failed to get models" });
-        });
-});
+app.get('/api/ml_models', asyncHandler(async (req, res) => {
+    const data = await datasetController.getMl_models();
+    res.json(data);
+}));
 
 
 
@@ -1914,9 +1837,10 @@ app.get('/api/ml_models', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Dataset'
  */
-app.get('/api/dataset', (req, res) => {
-    datasetController.getDatasets().then(data => res.json(data));
-});
+app.get('/api/dataset', asyncHandler(async (req, res) => {
+    const data = await datasetController.getDatasets();
+    res.json(data);
+}));
 
 
 /**
@@ -2002,23 +1926,12 @@ app.get('/api/dataset/:id', asyncHandler(async (req, res) => {
  *                 - $ref: '#/components/schemas/Dataset'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/dataset/:id', (req, res) => {
-    datasetController.updateDataset(req.params.id, req.body.dataset)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/dataset/:id:', err);
-            res.status(500).json({ error: 'Failed to update dataset' });
-        });
-});
+app.put('/api/dataset/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.updateDataset(req.params.id, req.body.dataset);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2041,23 +1954,12 @@ app.put('/api/dataset/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/dataset/:id', (req, res) => {
-    datasetController.deleteDataset(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/dataset/:id:', err);
-            res.status(500).json({ error: 'Failed to delete dataset' });
-        });
-});
+app.delete('/api/dataset/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.deleteDataset(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2095,15 +1997,11 @@ app.delete('/api/dataset/:id', (req, res) => {
  *                 - type: 'null'
  */
 // POST HERE
-app.post('/api/dataset', (req, res) => {
+app.post('/api/dataset', asyncHandler(async (req, res) => {
     console.log(req.body);
-    datasetController.createDataset(req.body.dataset)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error creating dataset:", err);
-            res.status(500).json({ error: "Failed to create dataset" });
-        });
-});
+    const data = await datasetController.createDataset(req.body.dataset);
+    res.json(data);
+}));
 
 
 /**
@@ -2134,14 +2032,7 @@ app.post('/api/dataset', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/MlModel'
  *       500:
- *         description: The database insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // ==========================================================
 // POST /api/model
@@ -2160,16 +2051,12 @@ app.post('/api/dataset', (req, res) => {
 //   }
 // }
 // ==========================================================
-app.post('/api/model', (req, res) => {
+app.post('/api/model', asyncHandler(async (req, res) => {
     console.log("[API] POST /api/model", req.body);
 
-    datasetController.createModel(req.body.model)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error creating model:", err);
-            res.status(500).json({ error: "Failed to create model" });
-        });
-});
+    const data = await datasetController.createModel(req.body.model);
+    res.json(data);
+}));
 
 
 /**
@@ -2198,25 +2085,14 @@ app.post('/api/model', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/TrainingRun'
  *       500:
- *         description: The database insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // POST /api/training_run
-app.post('/api/training_run', (req, res) => {
+app.post('/api/training_run', asyncHandler(async (req, res) => {
     console.log(req.body);
-    datasetController.createTrainingRun(req.body.training_run)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error creating training run:", err);
-            res.status(500).json({ error: "Failed to create training run" });
-        });
-});
+    const data = await datasetController.createTrainingRun(req.body.training_run);
+    res.json(data);
+}));
 
 
 /**
@@ -2256,25 +2132,14 @@ app.post('/api/training_run', (req, res) => {
  *                 - $ref: '#/components/schemas/TrainingRun'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // PUT /api/training_run/:id
-app.put('/api/training_run/:id', (req, res) => {
+app.put('/api/training_run/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
-    datasetController.updateTrainingRun(id, req.body.training_run)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error updating training run:", err);
-            res.status(500).json({ error: "Failed to update training run" });
-        });
-});
+    const data = await datasetController.updateTrainingRun(id, req.body.training_run);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2342,23 +2207,12 @@ app.get('/api/training_run/:id', asyncHandler(async (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/training_run/:id', (req, res) => {
-    datasetController.deleteTrainingRun(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/training_run/:id:', err);
-            res.status(500).json({ error: 'Failed to delete training run' });
-        });
-});
+app.delete('/api/training_run/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.deleteTrainingRun(req.params.id);
+    res.json(data);
+}));
 
 
 /**
@@ -2387,21 +2241,13 @@ app.delete('/api/training_run/:id', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/MetricsSummary'
  *       500:
- *         description: The database insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // POST /api/metrics_summary
-app.post('/api/metrics_summary', (req, res) => {
-    datasetController.createMetricsSummary(req.body.metrics_summary)
-        .then(data => res.json(data))
-        .catch(err => res.status(500).json({ error: "Failed to create metrics_summary" }));
-});
+app.post('/api/metrics_summary', asyncHandler(async (req, res) => {
+    const data = await datasetController.createMetricsSummary(req.body.metrics_summary);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2486,23 +2332,12 @@ app.get('/api/metrics_summary/:id', asyncHandler(async (req, res) => {
  *                 - $ref: '#/components/schemas/MetricsSummary'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/metrics_summary/:id', (req, res) => {
-    datasetController.updateMetricsSummary(req.params.id, req.body.metrics_summary)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/metrics_summary/:id:', err);
-            res.status(500).json({ error: 'Failed to update metrics_summary' });
-        });
-});
+app.put('/api/metrics_summary/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.updateMetricsSummary(req.params.id, req.body.metrics_summary);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2526,23 +2361,12 @@ app.put('/api/metrics_summary/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/metrics_summary/:id', (req, res) => {
-    datasetController.deleteMetricsSummary(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/metrics_summary/:id:', err);
-            res.status(500).json({ error: 'Failed to delete metrics_summary' });
-        });
-});
+app.delete('/api/metrics_summary/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.deleteMetricsSummary(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2570,21 +2394,13 @@ app.delete('/api/metrics_summary/:id', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/MetricsCurve'
  *       500:
- *         description: The database insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // POST /api/metrics_curve
-app.post('/api/metrics_curve', (req, res) => {
-    datasetController.createMetricsCurve(req.body.metrics_curve)
-        .then(data => res.json(data))
-        .catch(err => res.status(500).json({ error: "Failed to create metrics_curve" }));
-});
+app.post('/api/metrics_curve', asyncHandler(async (req, res) => {
+    const data = await datasetController.createMetricsCurve(req.body.metrics_curve);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2669,23 +2485,12 @@ app.get('/api/metrics_curve/:id', asyncHandler(async (req, res) => {
  *                 - $ref: '#/components/schemas/MetricsCurve'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/metrics_curve/:id', (req, res) => {
-    datasetController.updateMetricsCurve(req.params.id, req.body.metrics_curve)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/metrics_curve/:id:', err);
-            res.status(500).json({ error: 'Failed to update metrics_curve' });
-        });
-});
+app.put('/api/metrics_curve/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.updateMetricsCurve(req.params.id, req.body.metrics_curve);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2708,23 +2513,12 @@ app.put('/api/metrics_curve/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/metrics_curve/:id', (req, res) => {
-    datasetController.deleteMetricsCurve(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/metrics_curve/:id:', err);
-            res.status(500).json({ error: 'Failed to delete metrics_curve' });
-        });
-});
+app.delete('/api/metrics_curve/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.deleteMetricsCurve(req.params.id);
+    res.json(data);
+}));
 
 
 /**
@@ -2754,26 +2548,22 @@ app.delete('/api/metrics_curve/:id', (req, res) => {
  *       200:
  *         description: >
  *           On success, an { inserted: number } summary object (not the
- *           created records). On failure, an { error: string } object is
- *           still returned with HTTP 200 (see description).
+ *           created records).
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - type: object
- *                   properties:
- *                     inserted:
- *                       type: integer
- *                 - type: object
- *                   properties:
- *                     error:
- *                       type: string
+ *               type: object
+ *               properties:
+ *                 inserted:
+ *                   type: integer
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // server.js or routes.js
-app.post('/api/metrics_curves/bulk', (req, res) => {
-  datasetController.bulkCreateMetricsCurves(req, res)
-    .then(data => res.json(data));
-});
+app.post('/api/metrics_curves/bulk', asyncHandler(async (req, res) => {
+    const data = await datasetController.bulkCreateMetricsCurves(req, res);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2801,25 +2591,14 @@ app.post('/api/metrics_curves/bulk', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Epoch'
  *       500:
- *         description: The database insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // POST /api/epoch
-app.post('/api/epoch', (req, res) => {
+app.post('/api/epoch', asyncHandler(async (req, res) => {
     console.log(req.body);
-    datasetController.createEpoch(req.body.epoch)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error creating epoch:", err);
-            res.status(500).json({ error: "Failed to create epoch" });
-        });
-});
+    const data = await datasetController.createEpoch(req.body.epoch);
+    res.json(data);
+}));
 
 
 /**
@@ -2859,25 +2638,14 @@ app.post('/api/epoch', (req, res) => {
  *                 - $ref: '#/components/schemas/Epoch'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // PUT /api/epoch/:id
-app.put('/api/epoch/:id', (req, res) => {
+app.put('/api/epoch/:id', asyncHandler(async (req, res) => {
     const id = req.params.id;
-    datasetController.updateEpoch(id, req.body.epoch)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error updating epoch:", err);
-            res.status(500).json({ error: "Failed to update epoch" });
-        });
-});
+    const data = await datasetController.updateEpoch(id, req.body.epoch);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2943,23 +2711,12 @@ app.get('/api/epoch/:id', asyncHandler(async (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/epoch/:id', (req, res) => {
-    datasetController.deleteEpoch(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/epoch/:id:', err);
-            res.status(500).json({ error: 'Failed to delete epoch' });
-        });
-});
+app.delete('/api/epoch/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.deleteEpoch(req.params.id);
+    res.json(data);
+}));
 
 
 
@@ -3001,14 +2758,7 @@ app.delete('/api/epoch/:id', (req, res) => {
  *                 - $ref: '#/components/schemas/MlModel'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // ==========================================================
 // PUT /api/model/:id
@@ -3023,16 +2773,12 @@ app.delete('/api/epoch/:id', (req, res) => {
 //   }
 // }
 // ==========================================================
-app.put('/api/model/:id', (req, res) => {
+app.put('/api/model/:id', asyncHandler(async (req, res) => {
     console.log(`[API] PUT /api/model/${req.params.id}`, req.body);
 
-    datasetController.updateModel(req.params.id, req.body.model)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error updating model:", err);
-            res.status(500).json({ error: "Failed to update model" });
-        });
-});
+    const data = await datasetController.updateModel(req.params.id, req.body.model);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3099,23 +2845,12 @@ app.get('/api/model/:id', asyncHandler(async (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/model/:id', (req, res) => {
-    datasetController.deleteModel(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/model/:id:', err);
-            res.status(500).json({ error: 'Failed to delete model' });
-        });
-});
+app.delete('/api/model/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.deleteModel(req.params.id);
+    res.json(data);
+}));
 
 
 /**
@@ -3144,25 +2879,14 @@ app.delete('/api/model/:id', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/DatasetObservation'
  *       500:
- *         description: The database insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // POST /api/dataset_observation
-app.post('/api/dataset_observation', (req, res) => {
+app.post('/api/dataset_observation', asyncHandler(async (req, res) => {
     console.log(req.body);
-    datasetController.createDatasetObservation(req.body.dataset_observation)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error creating dataset_observation:", err);
-            res.status(500).json({ error: "Failed to create dataset_observation" });
-        });
-});
+    const data = await datasetController.createDatasetObservation(req.body.dataset_observation);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3247,23 +2971,12 @@ app.get('/api/dataset_observation/:id', asyncHandler(async (req, res) => {
  *                 - $ref: '#/components/schemas/DatasetObservation'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/dataset_observation/:id', (req, res) => {
-    datasetController.updateDatasetObservation(req.params.id, req.body.dataset_observation)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/dataset_observation/:id:', err);
-            res.status(500).json({ error: 'Failed to update dataset_observation' });
-        });
-});
+app.put('/api/dataset_observation/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.updateDatasetObservation(req.params.id, req.body.dataset_observation);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3286,23 +2999,12 @@ app.put('/api/dataset_observation/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed (as returned by Sequelize).
  *       500:
- *         description: The database delete failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/dataset_observation/:id', (req, res) => {
-    datasetController.deleteDatasetObservation(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/dataset_observation/:id:', err);
-            res.status(500).json({ error: 'Failed to delete dataset_observation' });
-        });
-});
+app.delete('/api/dataset_observation/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.deleteDatasetObservation(req.params.id);
+    res.json(data);
+}));
 
 
 /**
@@ -3344,25 +3046,14 @@ app.delete('/api/dataset_observation/:id', (req, res) => {
  *                 inserted:
  *                   type: integer
  *       500:
- *         description: The bulk insert failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
 // POST /api/dataset_observations/bulk
-app.post('/api/dataset_observations/bulk', (req, res) => {
+app.post('/api/dataset_observations/bulk', asyncHandler(async (req, res) => {
     console.log(`[INFO] Bulk insert ${req.body.dataset_observations?.length || 0} dataset_observations`);
-    datasetController.bulkCreateDatasetObservations(req.body.dataset_observations)
-        .then(data => res.json({ inserted: data.length }))
-        .catch(err => {
-            console.error("Error in bulk dataset_observation insert:", err);
-            res.status(500).json({ error: "Failed bulk insert" });
-        });
-});
+    const data = await datasetController.bulkCreateDatasetObservations(req.body.dataset_observations);
+    res.json({ inserted: data.length });
+}));
 
 
 /**
@@ -3396,10 +3087,11 @@ app.post('/api/dataset_observations/bulk', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Task'
  */
-app.post('/api/task', (req, res) => {
+app.post('/api/task', asyncHandler(async (req, res) => {
     console.log(req.body);
-    taskController.createTask(req.body.task).then(data => res.json(data));
-});
+    const data = await taskController.createTask(req.body.task);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3432,10 +3124,11 @@ app.post('/api/task', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Observation'
  */
-app.post('/api/observation', (req, res) => {
+app.post('/api/observation', asyncHandler(async (req, res) => {
     console.log(req.body);
-    observationController.createObservation(req.body.observation).then(data => res.json(data));
-});
+    const data = await observationController.createObservation(req.body.observation);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3473,9 +3166,10 @@ app.post('/api/observation', (req, res) => {
  *               items:
  *                 $ref: '#/components/schemas/Keyframe'
  */
-app.post('/api/keyframe', (req, res) => {
-    keyframeController.createKeyframes(req.body).then(data => res.json(data));
-});
+app.post('/api/keyframe', asyncHandler(async (req, res) => {
+    const data = await keyframeController.createKeyframes(req.body);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3503,10 +3197,11 @@ app.post('/api/keyframe', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/User'
  */
-app.post('/api/user', (req, res) => {
+app.post('/api/user', asyncHandler(async (req, res) => {
     console.log(req.body);
-    userController.createUser(req.body.user).then(data => res.json(data));
-});
+    const data = await userController.createUser(req.body.user);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3532,10 +3227,11 @@ app.post('/api/user', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/User'
  */
-app.post('/api/user/createUserByName/:userName', (req, res) => {
+app.post('/api/user/createUserByName/:userName', asyncHandler(async (req, res) => {
     console.log(req.body);
-    userController.createUserByName(req.params.userName).then(data => res.json(data));
-});
+    const data = await userController.createUserByName(req.params.userName);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3563,10 +3259,11 @@ app.post('/api/user/createUserByName/:userName', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Project'
  */
-app.post('/api/project', (req, res) => {
+app.post('/api/project', asyncHandler(async (req, res) => {
     console.log(req.body);
-    projectController.createProject(req.body.project).then(data => res.json(data));
-});
+    const data = await projectController.createProject(req.body.project);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3592,10 +3289,11 @@ app.post('/api/project', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Project'
  */
-app.post('/api/project/createProjectByName/:projectName', (req, res) => {
+app.post('/api/project/createProjectByName/:projectName', asyncHandler(async (req, res) => {
     console.log(req.body);
-    projectController.createProjectByName(req.params.projectName).then(data => res.json(data));
-});
+    const data = await projectController.createProjectByName(req.params.projectName);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3623,10 +3321,11 @@ app.post('/api/project/createProjectByName/:projectName', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Session'
  */
-app.post('/api/session', (req, res) => {
+app.post('/api/session', asyncHandler(async (req, res) => {
     console.log(req.body);
-    sessionController.createSession(req.body.session).then(data => res.json(data));
-});
+    const data = await sessionController.createSession(req.body.session);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3684,10 +3383,18 @@ app.post('/api/session', (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Session'
  */
-app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/:lineID/:type', (req, res) => {
+app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/:lineID/:type', asyncHandler(async (req, res) => {
     console.log(req.body);
-    sessionController.createSessionAndProjectandProcessor(req.params.processorName, req.params.projectName, req.params.line, req.params.dive, req.params.lineID, req.params.type).then(data => res.json(data));
-});
+    const data = await sessionController.createSessionAndProjectandProcessor(
+        req.params.processorName,
+        req.params.projectName,
+        req.params.line,
+        req.params.dive,
+        req.params.lineID,
+        req.params.type
+    );
+    res.json(data);
+}));
 
 //PUT HERE
 
@@ -3718,10 +3425,13 @@ app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/
  *         description: >
  *           The Sequelize update result, or an empty object `{}` if the
  *           update failed (see description).
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/task', (req, res) => {
-    taskController.updateTask(req.body.task).then(data => res.json(data));
-});
+app.put('/api/task', asyncHandler(async (req, res) => {
+    const data = await taskController.updateTask(req.body.task);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3752,10 +3462,13 @@ app.put('/api/task', (req, res) => {
  *     responses:
  *       200:
  *         description: The Sequelize update result (an array whose first element is the number of affected rows).
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/observation', (req, res) => {
-    observationController.updateObservation(req.body.observation).then(data => res.json(data));
-});
+app.put('/api/observation', asyncHandler(async (req, res) => {
+    const data = await observationController.updateObservation(req.body.observation);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3781,23 +3494,12 @@ app.put('/api/observation', (req, res) => {
  *           Sequelize's update result (typically `[affectedCount]`), or
  *           `{}` if the update failed.
  *       500:
- *         description: The database update failed unexpectedly.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/user', (req, res) => {
-    userController.updateUser(req.body.user)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/user:', err);
-            res.status(500).json({ error: 'Failed to update user' });
-        });
-});
+app.put('/api/user', asyncHandler(async (req, res) => {
+    const data = await userController.updateUser(req.body.user);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3820,10 +3522,13 @@ app.put('/api/user', (req, res) => {
  *     responses:
  *       200:
  *         description: The Sequelize update result.
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/project', (req, res) => {
-    projectController.updateProject(req.body.project).then(data => res.json(data));
-});
+app.put('/api/project', asyncHandler(async (req, res) => {
+    const data = await projectController.updateProject(req.body.project);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3846,10 +3551,13 @@ app.put('/api/project', (req, res) => {
  *     responses:
  *       200:
  *         description: The Sequelize update result.
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/session', (req, res) => {
-    sessionController.updateSession(req.body.session).then(data => res.json(data));
-});
+app.put('/api/session', asyncHandler(async (req, res) => {
+    const data = await sessionController.updateSession(req.body.session);
+    res.json(data);
+}));
 
 //DELETE HERE
 
@@ -3917,10 +3625,13 @@ app.get('/api/task/:id', asyncHandler(async (req, res) => {
  *         description: >
  *           The number of rows destroyed (as returned by Sequelize), or an
  *           empty object `{}` if the delete failed.
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/task/:id', (req, res) => {
-    taskController.deleteTask(req.params.id).then(data => res.json(data));
-});
+app.delete('/api/task/:id', asyncHandler(async (req, res) => {
+    const data = await taskController.deleteTask(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3987,10 +3698,13 @@ app.get('/api/observation/:id', asyncHandler(async (req, res) => {
  *         description: >
  *           The number of rows destroyed (as returned by Sequelize), or an
  *           empty object `{}` if the delete failed.
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/observation/:id', (req, res) => {
-    observationController.deleteObservation(req.params.id).then(data => res.json(data));
-});
+app.delete('/api/observation/:id', asyncHandler(async (req, res) => {
+    const data = await observationController.deleteObservation(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4075,23 +3789,12 @@ app.get('/api/keyframe/:keyframe_id', asyncHandler(async (req, res) => {
  *                 - $ref: '#/components/schemas/Keyframe'
  *                 - type: 'null'
  *       500:
- *         description: The database update failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.put('/api/keyframe/:keyframe_id', (req, res) => {
-    keyframeController.updateKeyframe(req.params.keyframe_id, req.body.keyframe)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in PUT /api/keyframe/:keyframe_id:', err);
-            res.status(500).json({ error: 'Failed to update keyframe' });
-        });
-});
+app.put('/api/keyframe/:keyframe_id', asyncHandler(async (req, res) => {
+    const data = await keyframeController.updateKeyframe(req.params.keyframe_id, req.body.keyframe);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4114,10 +3817,13 @@ app.put('/api/keyframe/:keyframe_id', (req, res) => {
  *         description: >
  *           The number of rows destroyed (as returned by Sequelize), or an
  *           empty object `{}` if the delete failed.
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/keyframe/:keyframe_id', (req, res) => {
-    keyframeController.deleteKeyframe(req.params.keyframe_id).then(data => res.json(data));
-});
+app.delete('/api/keyframe/:keyframe_id', asyncHandler(async (req, res) => {
+    const data = await keyframeController.deleteKeyframe(req.params.keyframe_id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4141,23 +3847,12 @@ app.delete('/api/keyframe/:keyframe_id', (req, res) => {
  *           The number of rows destroyed (as returned by Sequelize), or an
  *           empty object `{}` if the delete failed.
  *       500:
- *         description: The database delete failed unexpectedly.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.delete('/api/user/:id', (req, res) => {
-    userController.deleteUser(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in DELETE /api/user/:id:', err);
-            res.status(500).json({ error: 'Failed to delete user' });
-        });
-});
+app.delete('/api/user/:id', asyncHandler(async (req, res) => {
+    const data = await userController.deleteUser(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4220,9 +3915,10 @@ app.get('/api/project/:id', asyncHandler(async (req, res) => {
  *       200:
  *         description: The number of rows destroyed, as returned by Sequelize.
  */
-app.delete('/api/project/:id', (req, res) => {
-    projectController.deleteProject(req.params.id).then(data => res.json(data));
-});
+app.delete('/api/project/:id', asyncHandler(async (req, res) => {
+    const data = await projectController.deleteProject(req.params.id);
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -4242,9 +3938,10 @@ app.delete('/api/project/:id', (req, res) => {
  *       200:
  *         description: The number of rows destroyed, as returned by Sequelize.
  */
-app.delete('/api/session/:id', (req, res) => {
-    sessionController.deleteSession(req.params.id).then(data => res.json(data));
-});
+app.delete('/api/session/:id', asyncHandler(async (req, res) => {
+    const data = await sessionController.deleteSession(req.params.id);
+    res.json(data);
+}));
 
 // Serve frontend shared assets and partials for all static apps.
 

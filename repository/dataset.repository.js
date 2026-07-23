@@ -962,22 +962,17 @@ class DatasetRepository {
     /**
      * Bulk-insert metrics_curve records.
      *
-     * Unlike every other create/bulk method in this file (all of which
-     * re-throw on a database failure), this method swallows the error and
-     * resolves to an `{ error: string }` object instead. It also differs
-     * from `bulkCreateDatasetObservations()` in its success shape: it
+    * This method differs from `bulkCreateDatasetObservations()` in its
+    * success shape: it
      * returns a summary `{ inserted: number }` object rather than the
      * created records themselves, so callers cannot inspect the inserted
      * rows from the return value alone.
      *
      * @async
      * @param {Array<Object>} records - Array of MetricsCurve fields to insert, one object per row.
-     * @returns {Promise<Object>} `{ inserted: number }` on success, or
-     * `{ error: string }` if the bulk insert failed. A failed insert
-     * resolves rather than rejecting, so callers must check for an
-     * `error` property; the `/api/metrics_curves/bulk` route in server.js
-     * has no `.catch()` handler, so this is the only way a caller of that
-     * route can detect a failure — the HTTP status is still 200.
+    * @returns {Promise<Object>} `{ inserted: number }` on success.
+    * Rejects on database failure so callers can use centralized API
+    * error handling.
      */
     // repositories/metricsCurvesRepository.js
     async bulkCreateMetricsCurves(records) {
@@ -986,7 +981,7 @@ class DatasetRepository {
             return { inserted: records.length };
         } catch (err) {
             console.error("Error in bulkCreateMetricsCurves:", err);
-            return { error: err.message };
+            throw err;
         }
     }
 
