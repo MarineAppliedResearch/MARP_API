@@ -1,0 +1,258 @@
+/**
+ * MARP public landing page interactions.
+ *
+ * Responsibilities:
+ * 1. Manage the responsive navigation menu.
+ * 2. Open and close the login prototype dialog accessibly.
+ * 3. Provide the password visibility control.
+ * 4. Add subtle scroll-based header and reveal behavior.
+ *
+ * The file deliberately contains no API or authentication logic. Production
+ * authentication can be connected later without changing the page components.
+ */
+
+"use strict";
+
+// Add the JS marker immediately so CSS enhancement rules can activate.
+document.documentElement.classList.add("js");
+
+/**
+ * Initializes all landing-page behavior after the DOM is available.
+ * Inputs: none.
+ * Output: none.
+ * Usage: registered once on DOMContentLoaded at the bottom of this file.
+ */
+function initializeLandingPage() {
+
+  initializeMobileNavigation();
+  initializeLoginDialog();
+  initializeScrollEffects();
+  initializeCurrentYear();
+}
+
+
+/**
+ * Controls the mobile navigation panel and its accessibility state.
+ * Inputs: DOM elements selected by data attributes.
+ * Output: updated menu classes, aria-expanded state, and body scroll state.
+ * Usage: called once during page initialization.
+ */
+function initializeMobileNavigation() {
+
+  const toggleButton = document.querySelector("[data-menu-toggle]");
+  const navigation = document.querySelector("[data-primary-nav]");
+
+  if (!toggleButton || !navigation) {
+    return;
+  }
+
+  const closeMenu = () => {
+    toggleButton.setAttribute("aria-expanded", "false");
+    toggleButton.setAttribute("aria-label", "Open navigation menu");
+    navigation.classList.remove("is-open");
+    document.body.classList.remove("menu-open");
+  };
+
+  const openMenu = () => {
+    toggleButton.setAttribute("aria-expanded", "true");
+    toggleButton.setAttribute("aria-label", "Close navigation menu");
+    navigation.classList.add("is-open");
+    document.body.classList.add("menu-open");
+  };
+
+  toggleButton.addEventListener("click", () => {
+    const isExpanded = toggleButton.getAttribute("aria-expanded") === "true";
+
+    if (isExpanded) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
+  });
+
+  navigation.addEventListener("click", (event) => {
+    if (event.target.closest("a") || event.target.closest("[data-login-open]")) {
+      closeMenu();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeMenu();
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 980) {
+      closeMenu();
+    }
+  });
+}
+
+
+/**
+ * Configures the login dialog and its prototype form behavior.
+ * Inputs: all elements carrying the login dialog data attributes.
+ * Output: dialog open/close state and an explanatory form status message.
+ * Usage: called once during page initialization.
+ */
+function initializeLoginDialog() {
+
+  const dialog = document.querySelector("[data-login-dialog]");
+  const openButtons = document.querySelectorAll("[data-login-open]");
+  const closeButton = document.querySelector("[data-login-close]");
+  const loginForm = document.querySelector("[data-login-form]");
+  const statusMessage = document.querySelector("[data-login-status]");
+  const passwordInput = document.querySelector("[data-password-input]");
+  const passwordToggle = document.querySelector("[data-password-toggle]");
+
+  if (!dialog) {
+    return;
+  }
+
+  const openDialog = () => {
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+      document.body.classList.add("dialog-open");
+
+      const emailInput = dialog.querySelector("input[type='email']");
+      window.setTimeout(() => emailInput?.focus(), 40);
+    }
+  };
+
+  const closeDialog = () => {
+    if (dialog.open) {
+      dialog.close();
+    }
+
+    document.body.classList.remove("dialog-open");
+  };
+
+  openButtons.forEach((button) => {
+    button.addEventListener("click", openDialog);
+  });
+
+  closeButton?.addEventListener("click", closeDialog);
+
+  // Clicking the shaded backdrop closes the modal without interfering with
+  // clicks inside the dialog panel itself.
+  dialog.addEventListener("click", (event) => {
+    const dialogBounds = dialog.getBoundingClientRect();
+    const clickWasInside = (
+      event.clientX >= dialogBounds.left &&
+      event.clientX <= dialogBounds.right &&
+      event.clientY >= dialogBounds.top &&
+      event.clientY <= dialogBounds.bottom
+    );
+
+    if (!clickWasInside) {
+      closeDialog();
+    }
+  });
+
+  dialog.addEventListener("close", () => {
+    document.body.classList.remove("dialog-open");
+  });
+
+  passwordToggle?.addEventListener("click", () => {
+    if (!passwordInput) {
+      return;
+    }
+
+    const isVisible = passwordInput.type === "text";
+    passwordInput.type = isVisible ? "password" : "text";
+    passwordToggle.setAttribute("aria-pressed", String(!isVisible));
+    passwordToggle.setAttribute("aria-label", isVisible ? "Show password" : "Hide password");
+  });
+
+  loginForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    if (!loginForm.checkValidity()) {
+      loginForm.reportValidity();
+      return;
+    }
+
+    if (statusMessage) {
+      statusMessage.textContent = "Demo complete — production authentication is not connected yet.";
+    }
+  });
+}
+
+
+/**
+ * Adds the scrolled header style, active navigation state, and reveal effects.
+ * Inputs: page sections and elements marked with data-reveal.
+ * Output: CSS classes that describe current scroll position and visibility.
+ * Usage: called once during page initialization.
+ */
+function initializeScrollEffects() {
+
+  const header = document.querySelector("[data-site-header]");
+  const revealElements = document.querySelectorAll("[data-reveal]");
+  const sectionLinks = Array.from(document.querySelectorAll(".primary-nav a[href^='#']"));
+  const sections = sectionLinks
+    .map((link) => document.querySelector(link.getAttribute("href")))
+    .filter(Boolean);
+
+  const updateHeader = () => {
+    header?.classList.toggle("is-scrolled", window.scrollY > 18);
+  };
+
+  updateHeader();
+  window.addEventListener("scroll", updateHeader, { passive: true });
+
+  if ("IntersectionObserver" in window) {
+    const revealObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        }
+      });
+    }, {
+      threshold: 0.12,
+      rootMargin: "0px 0px -8% 0px"
+    });
+
+    revealElements.forEach((element) => revealObserver.observe(element));
+
+    const sectionObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) {
+          return;
+        }
+
+        sectionLinks.forEach((link) => {
+          const matchesSection = link.getAttribute("href") === `#${entry.target.id}`;
+          link.classList.toggle("is-active", matchesSection);
+        });
+      });
+    }, {
+      rootMargin: "-35% 0px -55% 0px",
+      threshold: 0
+    });
+
+    sections.forEach((section) => sectionObserver.observe(section));
+  } else {
+    revealElements.forEach((element) => element.classList.add("is-visible"));
+  }
+}
+
+
+/**
+ * Writes the current year into footer placeholders.
+ * Inputs: elements marked with data-current-year.
+ * Output: text content containing the current four-digit year.
+ * Usage: called once during page initialization.
+ */
+function initializeCurrentYear() {
+
+  const currentYear = String(new Date().getFullYear());
+  document.querySelectorAll("[data-current-year]").forEach((element) => {
+    element.textContent = currentYear;
+  });
+}
+
+
+document.addEventListener("DOMContentLoaded", initializeLandingPage);

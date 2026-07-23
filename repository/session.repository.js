@@ -1,12 +1,34 @@
+/**
+ * Repository module for session (dive/transect) database operations.
+ *
+ * This file contains Sequelize queries used to retrieve, create, update,
+ * and delete session records, which group the observations recorded during
+ * a single dive or survey line, along with helpers used to look up derived
+ * fields (owning project, session type) and aggregate session activity.
+ *
+ * Repository functions should contain database-access logic only. Request
+ * handling belongs in controllers, while broader application behavior
+ * belongs in services.
+ *
+ * @fileoverview Session, dive, and transect database queries and persistence operations.
+ * @author Isaac Travers
+ * @module repository/session
+ */
+
 const db = require('../model');
 const logger = require('../logger/api.logger');
-const userController = require('../controller/user.controller'); 
+const userController = require('../controller/user.controller');
 const projectController = require('../controller/project.controller');
 const observationController = require('../controller/observation.controller');
 const { Sequelize, Model, DataTypes } = require("sequelize");
 
 
 
+/**
+ * Repository for session, dive, and transect database operations.
+ *
+ * @class SessionRepository
+ */
 class SessionRepository {
 
     db = {};
@@ -21,8 +43,20 @@ class SessionRepository {
 
     }
 
+    /**
+     * Fetch every session record.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} All session records, each including
+     * its associated `user`. Returns an empty array when none exist or
+     * when the database query fails.
+     */
     async getSessions() {
-        
+
         try {
             const sessions = await this.db.sessions.findAll({ include: ["user"] });
             //console.log('sessions:::', sessions);
@@ -33,6 +67,22 @@ class SessionRepository {
         }
     }
 
+    /**
+     * Fetch the project id associated with a session.
+     *
+     * Database errors, and the case where no session matches `session_id`
+     * (in which case `sessions` is null and `sessions.project_id` throws),
+     * are both caught and converted to an empty array. As a result this
+     * method returns a scalar `project_id` on success but an array on any
+     * failure or not-found case, and callers cannot distinguish "not
+     * found" from "database error" from the return value alone.
+     *
+     * @async
+     * @param {number|string} session_id - Identifier of the session to look up.
+     * @returns {Promise<number|Array>} The `project_id` of the matching
+     * session record, or an empty array if the session does not exist or
+     * the query fails.
+     */
     async  getProjectIDFromSessionID(session_id){
         try {
             // Join Project to session
@@ -49,6 +99,22 @@ class SessionRepository {
         }
     }
 
+    /**
+     * Fetch the type of a session.
+     *
+     * Database errors, and the case where no session matches `session_id`
+     * (in which case `sessions` is null and `sessions.type` throws), are
+     * both caught and converted to an empty array. As a result this method
+     * returns a scalar `type` string on success but an array on any
+     * failure or not-found case, and callers cannot distinguish "not
+     * found" from "database error" from the return value alone.
+     *
+     * @async
+     * @param {number|string} session_id - Identifier of the session to look up.
+     * @returns {Promise<string|Array>} The `type` of the matching session
+     * record, or an empty array if the session does not exist or the
+     * query fails.
+     */
     async getTypeFromSessionID(session_id){
         try {
             // Join Project to session
@@ -66,6 +132,19 @@ class SessionRepository {
     }
 
 
+    /**
+     * Fetch every session belonging to a project.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @param {number|string} project_id - Identifier of the project whose sessions should be fetched.
+     * @returns {Promise<Array<Object>>} Sessions belonging to the project,
+     * each including its associated `project`. Returns an empty array when
+     * none exist or when the database query fails.
+     */
     async getSessionsByProjectID(project_id){
         try {
             // Join Project to session
@@ -86,12 +165,26 @@ class SessionRepository {
         }
     }
 
+    /**
+     * Fetch every session belonging to a given user within a given project.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @param {number|string} userID - Identifier of the user whose sessions should be fetched.
+     * @param {number|string} projectID - Identifier of the project to scope the sessions to.
+     * @returns {Promise<Array<Object>>} Sessions matching the user and
+     * project, each including its associated `user` and `project`. Returns
+     * an empty array when none exist or when the database query fails.
+     */
     // THIS LOOKS LIKE WE ARE NOT LOOKING FOR USERID AND PROJECTID LIKE WE ARE SUPPOSED TO
     async getSessionsByUserIdAndProjectId(userID, projectID) {
-        
+
         try {
 
-            // First we need to get a list of 
+            // First we need to get a list of
 
             // Join Project to session, and session to user
             const sessions = await this.db.sessions.findAll({
@@ -115,6 +208,25 @@ class SessionRepository {
         }
     }
 
+    /**
+     * Create a new session record.
+     *
+     * A `createdate` timestamp is stamped onto the record before insert.
+     * Note that this is a plain property assignment, not one of the
+     * `sessions` model's defined attributes (the model instead relies on
+     * Sequelize's automatic `createdAt` timestamp column), so this
+     * assignment has no persisted effect.
+     *
+     * Unlike most repository methods in this file, a failure here is not
+     * converted to an empty array/object — the caught Error object itself
+     * is returned (not thrown, and not re-wrapped), so callers must check
+     * the resolved value's shape/type to detect failure.
+     *
+     * @async
+     * @param {Object} session - Session fields to insert directly (e.g. user_id, project_id, dive, line, lineId, type).
+     * @returns {Promise<Object|Error>} The created session record, or the
+     * caught Error object if the insert failed.
+     */
     async createSession(session) {
         let data = {};
         try {
@@ -131,8 +243,43 @@ class SessionRepository {
      *  then checks if we have a project of projectName and returns projectID, if not create a project, and return it
      *  then checks if we have a session with this processorname, project name, line, dive, lineid and type.
      *  If not, create the session, always return the sessions id.
-     * 
+     *
      *  Data Sceme    |Project|1/1 --------0/M|session|0/M ----- 1/1|user|
+     *
+     * Find-or-create a processor (user), project, and session all in one
+     * call, returning the resulting session.
+     *
+     * Looks up the user by `processorName` via {@link userController#getUserByName},
+     * creating one via {@link userController#createUserByName} if it does
+     * not exist; then looks up the project by `projectName` via
+     * {@link projectController#getProjectByName}, creating one via
+     * {@link projectController#createProjectByName} if it does not exist.
+     * The resolved `user_id`/`project_id` are then combined with `dive`,
+     * `line`, `lineID` (stored as `lineId`), and `type` to find an existing
+     * matching session, or create a new one if none matches.
+     *
+     * The logic that unwraps `user`/`project` from either an array (as
+     * returned by the "getBy" lookups) or a single object (as apparently
+     * returned by the "create" helpers) via repeated `.length`/`[0]` checks
+     * is fragile: it assumes a specific shape from each collaborator
+     * without validating it, and will throw if an unexpected shape is
+     * returned (e.g. `user_id`/`project_id` both undefined).
+     *
+     * As with {@link SessionRepository#createSession}, a failure here
+     * returns the caught Error object itself rather than throwing or
+     * returning a fallback empty value.
+     *
+     * @async
+     * @param {string} processorName - Name of the user who ran the session; used to find or create the corresponding user record.
+     * @param {string} projectName - Name of the project the session belongs to; used to find or create the corresponding project record.
+     * @param {string} line - Transect line identifier for the new/matched session.
+     * @param {string} dive - Dive identifier for the new/matched session.
+     * @param {string} lineID - Survey line id for the new/matched session (stored as `lineId`).
+     * @param {string} type - Session type/category for the new/matched session.
+     * @returns {Promise<Object|Error>} The existing matching session record
+     * if one was found, the newly created session record otherwise, or the
+     * caught Error object if resolving/creating the user, project, or
+     * session failed.
      */
     async createSessionAndProjectandProcessor(processorName, projectName, line, dive, lineID, type){
         let data = {};
@@ -147,7 +294,7 @@ class SessionRepository {
             if(user == undefined || user.length <= 0){
                 // Create user here
                 user = await userController.createUserByName(processorName);
-            } 
+            }
 
             if(user.length >= 1) user = user[0];
 
@@ -176,7 +323,7 @@ class SessionRepository {
             }else{
                 projectID = project[0].project_id;
             }
-            
+
 
             // Now we have all the info to build a session object. lets build one
             let session = {
@@ -209,8 +356,8 @@ class SessionRepository {
                 data = await this.db.sessions.create(session);
             }
 
-            
-           
+
+
         } catch(err) {
             // If an error occurs, then user didn't exist.
             logger.error('Error::' + err);
@@ -219,6 +366,25 @@ class SessionRepository {
         return data;
     }
 
+    /**
+     * Update an existing session record.
+     *
+     * An `updateddate` timestamp is stamped onto the record before update.
+     * Note that this is a plain property assignment, not one of the
+     * `sessions` model's defined attributes (the model instead relies on
+     * Sequelize's automatic `updatedAt` timestamp column), so this
+     * assignment has no persisted effect.
+     *
+     * On failure, the error is only logged via `logger.error` — it is
+     * neither thrown nor returned — so this resolves to the initial `{}`
+     * value instead of reflecting the failure in any way.
+     *
+     * @async
+     * @param {Object} session - Session fields to update; must include `session_id` identifying the record to update.
+     * @returns {Promise<Array<number>|Object>} Sequelize's update result
+     * (an array whose first element is the number of affected rows) on
+     * success, or `{}` if the update failed.
+     */
     async updateSession(session) {
         let data = {};
         try {
@@ -234,6 +400,22 @@ class SessionRepository {
         return data;
     }
 
+    /**
+     * Delete a session record by id.
+     *
+     * On failure, the error is only logged via `logger.error` — it is
+     * neither thrown nor returned — so this resolves to the initial `{}`
+     * value instead of reflecting the failure in any way.
+     *
+     * Note: the final `return {status: ...}` statement below is
+     * unreachable dead code, since the preceding `return data;` always
+     * returns first.
+     *
+     * @async
+     * @param {number|string} sessionId - Identifier of the session to delete.
+     * @returns {Promise<number|Object>} The number of destroyed rows (0 or
+     * 1) on success, or `{}` if the delete failed.
+     */
     async deleteSession(sessionId) {
         let data = {};
         try {
@@ -249,6 +431,20 @@ class SessionRepository {
         return {status: `${data.deletedCount > 0 ? true : false}`};
     }
 
+    /**
+     * Fetch the session ids for a project restricted to a given session type.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @param {number|string} project_id - Identifier of the project to scope the search to.
+     * @param {string} type - Session type/category to filter by.
+     * @returns {Promise<Array<Object>>} Records containing only the
+     * `session_id` attribute for matching sessions. Returns an empty array
+     * when none exist or when the database query fails.
+     */
     async getSessionIDsWithProjectAndType(project_id, type){
         try {
             const session_ids = await this.db.sessions.findAll({
@@ -265,6 +461,20 @@ class SessionRepository {
         }
     }
 
+    /**
+     * Fetch session counts grouped by user and date within a date range.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero rows and a database failure.
+     *
+     * @async
+     * @param {string|Date} startDate - Start of the date range (inclusive) to filter sessions' `createdAt` by.
+     * @param {string|Date} endDate - End of the date range (inclusive) to filter sessions' `createdAt` by.
+     * @returns {Promise<Array<Object>>} Raw rows of `{ user_id, date,
+     * sessionCount }` for each user/date combination in range. Returns an
+     * empty array when none exist or when the database query fails.
+     */
     async getSessionsGroupedByUserAndDate(startDate, endDate){
         try{
             // Fetch the number of sessions each user worked on, grouped by user and date

@@ -1,6 +1,68 @@
+/**
+ * Sequelize model definition for observation keyframes.
+ *
+ * Defines the `keyframes` table, which stores frame-specific bounding-box
+ * annotations tied to an observation. Each record marks a single annotated
+ * frame (start, middle, or end) for a species/subset within an observation's
+ * video, including the annotation rectangle and optional model confidence.
+ *
+ * @fileoverview Sequelize model and OpenAPI response schema for keyframes.
+ * @author Isaac Travers
+ * @module model/keyframe
+ */
+
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Keyframe:
+ *       type: object
+ *       description: Frame-specific annotation associated with an observation.
+ *       properties:
+ *         keyframe_id:
+ *           type: integer
+ *           example: 48291
+ *         observation_id:
+ *           type: integer
+ *           example: 12045
+ *         frame:
+ *           type: integer
+ *           example: 18520
+ */
+
+
 const { Model } = require('sequelize');
+
+/**
+ * Create and initialize the keyframes Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to the observations model
+ * through {@link Keyframes.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {Model} Initialized keyframes model.
+ */
 module.exports = (sequelize, DataTypes) => {
+    /**
+     * Sequelize model representing one frame-specific annotation belonging
+     * to an observation.
+     *
+     * @class Keyframes
+     * @extends Model
+     */
     class Keyframes extends Model {
+      /**
+       * Register relationships between keyframes and related models.
+       *
+       * Associations are configured after all Sequelize models have been
+       * loaded into the shared model registry.
+       *
+       * @param {Object} models - Initialized Sequelize model registry.
+       * @returns {void}
+       */
       static associate(models) {
         this.belongsTo(models.observations, {
           sourceKey: 'observation_id',
@@ -17,7 +79,7 @@ module.exports = (sequelize, DataTypes) => {
         });
       }
     }
-  
+
     Keyframes.init({
       // Unique identifier for each keyframe
       keyframe_id: {
@@ -80,8 +142,8 @@ module.exports = (sequelize, DataTypes) => {
         comment: 'Confidence score (0.0–1.0)',
       }
     }, {
-      sequelize,
-      modelName: 'keyframes' // Define the model name
+      sequelize,                    // shared Sequelize connection instance
+      modelName: 'keyframes'        // used inside Sequelize
     });
 
     

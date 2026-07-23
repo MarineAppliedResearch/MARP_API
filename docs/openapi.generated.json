@@ -1,0 +1,3909 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MARE API",
+    "version": "1.0.0",
+    "description": "Generated OpenAPI specification for MARE API V1 routes."
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Relative API base path"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Service status and diagnostics"
+    },
+    {
+      "name": "Tasks",
+      "description": "Task read operations"
+    },
+    {
+      "name": "Observations",
+      "description": "Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates."
+    }
+  ],
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "Artifact": {
+        "type": "object",
+        "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "artifact_type",
+          "path"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 2201,
+            "description": "Unique identifier for this artifact record."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key referencing the training run this artifact belongs to (training_runs.id)."
+          },
+          "artifact_type": {
+            "type": "string",
+            "example": "weights",
+            "description": "Type of artifact (e.g., \"weights\", \"log\", \"results_plot\", \"confusion_matrix\", \"export\")."
+          },
+          "path": {
+            "type": "string",
+            "description": "Filesystem path or URI to the artifact file or directory."
+          },
+          "size_mb": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "File size in megabytes, if available (useful for monitoring disk usage)."
+          },
+          "hash": {
+            "type": "string",
+            "nullable": true,
+            "description": "Checksum or hash of the artifact file (e.g., SHA256) to verify integrity and detect duplicates."
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "Optional JSON blob with contextual information (e.g., epoch number, export format, or framework version)."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this artifact record was created (typically when the file was generated)."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this artifact record was last updated."
+          }
+        }
+      },
+      "DatasetObservation": {
+        "type": "object",
+        "description": "Join record linking a dataset to one observation it includes, with metadata describing how and why that observation was selected for the dataset (train/val/test split, selection method, and sampling weight).\n",
+        "required": [
+          "id",
+          "dataset_id",
+          "observation_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 512,
+            "description": "Unique identifier for this dataset-observation record."
+          },
+          "dataset_id": {
+            "type": "integer",
+            "example": 3,
+            "description": "Foreign key referencing the dataset that includes this observation (datasets.id)."
+          },
+          "observation_id": {
+            "type": "integer",
+            "example": 918,
+            "description": "Foreign key referencing the observation included in this dataset (observations.observation_id)."
+          },
+          "inclusion_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "train",
+            "description": "Indicates how this observation is used in the dataset (\"train\", \"val\", or \"test\")."
+          },
+          "selection_method": {
+            "type": "string",
+            "nullable": true,
+            "example": "manual",
+            "description": "Describes how this observation was chosen for inclusion (e.g., \"manual\", \"auto\", \"random_sample\", \"legacy_import\")."
+          },
+          "weight": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Optional weighting factor applied to this observation within the dataset for class balancing or sampling probability."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes about this dataset-observation inclusion (e.g., reasons for inclusion/exclusion, data quality remarks)."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset-observation record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset-observation record was last updated."
+          }
+        }
+      },
+      "Dataset": {
+        "type": "object",
+        "description": "Curated collection of observations used for machine learning training, validation, or testing. Linked to individual observations through the dataset_observations join table.\n",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3,
+            "description": "Unique identifier for this dataset record."
+          },
+          "name": {
+            "type": "string",
+            "example": "Fish_2024_Training_Set_v1",
+            "description": "Descriptive name of this dataset."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "Detailed description or notes about the dataset's purpose and composition."
+          },
+          "location": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem or network location of the dataset resources."
+          },
+          "num_samples": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Total number of samples (images, frames, or observations) included in this dataset."
+          },
+          "num_classes": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Approximate number of unique classes (species) represented in this dataset (derived from observation comnames)."
+          },
+          "source": {
+            "type": "string",
+            "nullable": true,
+            "example": "auto-compiled",
+            "description": "Source or method of dataset creation (e.g., \"auto-compiled\", \"manual curation\", \"legacy import\")."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "General notes about dataset preparation, inclusion criteria, or issues."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset record was last updated."
+          }
+        }
+      },
+      "Epoch": {
+        "type": "object",
+        "description": "Per-epoch performance and timing data captured during a single training run, including loss values and precision/recall/mAP metrics recorded at the end of that epoch.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "epoch_number"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Unique identifier for this epoch record."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key linking this epoch to its parent training run (training_runs.id)."
+          },
+          "epoch_number": {
+            "type": "integer",
+            "example": 3,
+            "description": "The ordinal number of this epoch in the training sequence."
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp marking when this epoch began processing."
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp marking when this epoch completed."
+          },
+          "duration_seconds": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Total elapsed time of this epoch, in seconds (end_time - start_time)."
+          },
+          "precision": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Precision metric value recorded at the end of this epoch."
+          },
+          "recall": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Recall metric value recorded at the end of this epoch."
+          },
+          "map50": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch."
+          },
+          "map5095": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch."
+          },
+          "box_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Loss associated with bounding box coordinate regression during this epoch."
+          },
+          "cls_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Loss associated with class label predictions during this epoch."
+          },
+          "dfl_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Distribution Focal Loss (DFL) for this epoch, if applicable to the model type."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when this epoch record was inserted into the database."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this epoch record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this epoch record was last updated."
+          }
+        }
+      },
+      "Hyperparameters": {
+        "type": "object",
+        "description": "Full hyperparameter configuration used for a specific training run, stored as a JSON blob to preserve reproducibility of training conditions across differing pipelines and model types.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "params"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 88,
+            "description": "Unique identifier for this hyperparameter configuration."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key referencing the training run this hyperparameter set belongs to (training_runs.id)."
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "JSON blob containing all hyperparameters used for this training run (e.g., lr0, momentum, epochs, batch, weight decay, augmentation options). Keys vary by training pipeline and are not individually enumerated here.\n"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this hyperparameter record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this hyperparameter record was last updated."
+          }
+        }
+      },
+      "Keyframe": {
+        "type": "object",
+        "description": "Frame-specific annotation associated with an observation.",
+        "properties": {
+          "keyframe_id": {
+            "type": "integer",
+            "example": 48291
+          },
+          "observation_id": {
+            "type": "integer",
+            "example": 12045
+          },
+          "frame": {
+            "type": "integer",
+            "example": 18520
+          }
+        }
+      },
+      "MetaInfo": {
+        "type": "object",
+        "description": "A single named metadata record used to store miscellaneous reference information for MARP.\n",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique numeric identifier for this metadata record."
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Name of this metadata entry."
+          }
+        }
+      },
+      "MetricsCurve": {
+        "type": "object",
+        "description": "A single confidence-threshold data point (precision, recall, F1, support) belonging to a metrics_summary record, used to plot detailed evaluation curves.\n",
+        "required": [
+          "id",
+          "metrics_summary_id",
+          "confidence_threshold"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 9001,
+            "description": "Unique identifier for this metrics curve data point."
+          },
+          "metrics_summary_id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Foreign key referencing the metrics summary record (metrics_summary.id) this curve point belongs to."
+          },
+          "species_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
+          },
+          "confidence_threshold": {
+            "type": "number",
+            "format": "float",
+            "example": 0.25,
+            "description": "Confidence threshold (between 0.0 and 1.0) at which these metrics were measured."
+          },
+          "precision": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Model precision value computed at this confidence threshold."
+          },
+          "recall": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Model recall value computed at this confidence threshold."
+          },
+          "f1_score": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Model F1 score computed at this confidence threshold."
+          },
+          "support": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Number of predictions or detections evaluated at this confidence threshold."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this metrics curve record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this metrics curve record was last updated."
+          }
+        }
+      },
+      "MetricsSummary": {
+        "type": "object",
+        "description": "Aggregated evaluation metrics for a single dataset split (train/val/test) within a training run, including paths to generated visualization artifacts and optional per-class detail.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "dataset_split"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Unique identifier for this metrics summary record."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key referencing the training run this metrics summary belongs to (training_runs.id)."
+          },
+          "species_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
+          },
+          "dataset_split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "description": "Specifies which dataset split these metrics apply to - \"train\", \"val\", or \"test\"."
+          },
+          "precision": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Aggregate precision achieved for this dataset split."
+          },
+          "recall": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Aggregate recall achieved for this dataset split."
+          },
+          "map50": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) at 0.5 IoU threshold for this split."
+          },
+          "map5095": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) averaged over IoU thresholds 0.5-0.95."
+          },
+          "fitness": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Weighted performance score used by YOLO to rank model checkpoints."
+          },
+          "f1_score": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Aggregate F1 score for this dataset split, typically computed from precision and recall."
+          },
+          "confusion_matrix_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem path or URI to the confusion matrix image generated for this dataset split."
+          },
+          "result_plot_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem path or URI to the overall results plot (e.g., PR or F1 curves) for this dataset split."
+          },
+          "confusion_matrix_norm_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the normalized confusion matrix plot image generated during evaluation."
+          },
+          "box_f1_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the F1 vs confidence curve plot image."
+          },
+          "box_p_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the precision vs confidence curve plot image."
+          },
+          "box_pr_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the precision-recall (PR) curve plot image."
+          },
+          "box_r_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the recall vs confidence curve plot image."
+          },
+          "labels_plot_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the label distribution plot image showing class balance in the dataset."
+          },
+          "details": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "Optional JSON blob storing additional data arrays (e.g., per-class metrics or PR/F1-confidence points)."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when this metrics summary was created or finalized."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Record creation timestamp."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Record last update timestamp."
+          }
+        }
+      },
+      "MlModel": {
+        "type": "object",
+        "description": "Metadata record for a distinct machine learning model identity used within MARP (e.g., \"yolov8-marine-fish-2025\"). Represents the conceptual model itself, not any individual training run; runs, metrics, and artifacts are linked through the training_runs table.\n",
+        "required": [
+          "id",
+          "name",
+          "model_type"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 7,
+            "description": "Unique numeric identifier for this ML model record."
+          },
+          "name": {
+            "type": "string",
+            "example": "yolov8-marine-fish-2025",
+            "description": "Human-readable name of the model (e.g., \"yolov8-marine-fish-2025\")."
+          },
+          "parent_model_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "If this model was derived or fine-tuned from another, references that parent model's ID."
+          },
+          "model_type": {
+            "type": "string",
+            "example": "yolov8",
+            "description": "Model architecture family (e.g., \"yolov8\", \"resnet\", \"deepsort\")."
+          },
+          "architecture_version": {
+            "type": "string",
+            "nullable": true,
+            "example": "v8n",
+            "description": "Specific version or variant of the architecture (e.g., \"v8n\", \"custom-2025a\")."
+          },
+          "storage_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem or URI path to the stored model weights and artifacts."
+          },
+          "status": {
+            "type": "string",
+            "example": "draft",
+            "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\")."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes providing experiment details, context, or remarks."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this model entry was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this model record was last updated."
+          }
+        }
+      },
+      "ModelSpecies": {
+        "type": "object",
+        "description": "Join record linking an ML model to a species it was trained to detect or classify, including per-species dataset size, training weight, and evaluation metrics.\n",
+        "required": [
+          "id",
+          "model_id",
+          "species_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 301,
+            "description": "Unique numeric identifier for this model-species linkage record."
+          },
+          "model_id": {
+            "type": "integer",
+            "example": 7,
+            "description": "Identifier of the associated ML model."
+          },
+          "species_id": {
+            "type": "integer",
+            "example": 42,
+            "description": "Identifier of the associated species."
+          },
+          "dataset_size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Number of image or annotation samples of this species used for training this model."
+          },
+          "balance_weight": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Relative weight used for balancing this species during training. Higher means more importance."
+          },
+          "precision_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean precision achieved by the model for this species during evaluation."
+          },
+          "recall_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean recall achieved by the model for this species during evaluation."
+          },
+          "f1_mean": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean F1-score for this species within this model, across validation epochs."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes describing this model-species relationship."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this record was last updated."
+          }
+        }
+      },
+      "Observation": {
+        "type": "object",
+        "description": "Biological or habitat observation recorded during a MARP session. The fields available in a response may depend on the query and any Sequelize associations included by that endpoint.\n",
+        "required": [
+          "observation_id",
+          "obsID"
+        ],
+        "properties": {
+          "observation_id": {
+            "type": "integer",
+            "example": 12045,
+            "description": "Primary database identifier for the observation."
+          },
+          "obsID": {
+            "type": "integer",
+            "example": 42,
+            "description": "Observation identifier used within the source workflow."
+          },
+          "PobsID": {
+            "type": "integer",
+            "nullable": true,
+            "example": 17,
+            "description": "Optional parent observation identifier."
+          },
+          "project_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 24,
+            "description": "Identifier of the project associated with the observation."
+          },
+          "session_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 718,
+            "description": "Identifier of the session associated with the observation."
+          },
+          "user_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 12,
+            "description": "Identifier of the user associated with the observation."
+          },
+          "tc": {
+            "type": "string",
+            "nullable": true,
+            "example": "00:12:21.520",
+            "description": "Starting time code for the observation."
+          },
+          "frame": {
+            "type": "string",
+            "nullable": true,
+            "example": "18322",
+            "description": "Stored source-frame value associated with the observation."
+          },
+          "taxserial": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1054,
+            "description": "Taxonomic serial identifier associated with the observation."
+          },
+          "comname": {
+            "type": "string",
+            "nullable": true,
+            "example": "Bat star",
+            "description": "Common name assigned to the observed taxon."
+          },
+          "count": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1,
+            "description": "Number of individuals represented by the observation."
+          },
+          "sex": {
+            "type": "string",
+            "nullable": true,
+            "example": "Unknown",
+            "description": "Recorded sex classification when available."
+          },
+          "coarsesize": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3,
+            "description": "Coarse size classification assigned to the observation."
+          },
+          "sizereview": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1,
+            "description": "Stored size-review state or classification."
+          },
+          "quadrant": {
+            "type": "integer",
+            "nullable": true,
+            "example": 2,
+            "description": "Quadrant value associated with the observation."
+          },
+          "etc": {
+            "type": "string",
+            "nullable": true,
+            "example": "00:12:29.840",
+            "description": "Ending time code for the observation."
+          },
+          "taxReview": {
+            "type": "string",
+            "nullable": true,
+            "example": "R",
+            "description": "Taxonomic review status or code."
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "example": "Partially obscured behind rock.",
+            "description": "Free-text note associated with the observation."
+          },
+          "downcamera": {
+            "type": "string",
+            "nullable": true,
+            "example": "false",
+            "description": "Stored down-camera value associated with the observation."
+          },
+          "timelog": {
+            "type": "string",
+            "nullable": true,
+            "example": "2024-07-30 19:21:14",
+            "description": "Stored observation time-log value."
+          },
+          "video_source": {
+            "type": "string",
+            "nullable": true,
+            "example": "20240730_190910 Fwd.mp4",
+            "description": "Video source associated with the observation."
+          },
+          "videoLocation": {
+            "type": "string",
+            "nullable": true,
+            "example": "/CAMPA2024/Dive12/FWD",
+            "description": "Stored location of the associated video."
+          },
+          "mediaPosition": {
+            "type": "string",
+            "nullable": true,
+            "example": "741.520",
+            "description": "Stored position of the observation within the source media."
+          },
+          "actualPosition": {
+            "type": "string",
+            "nullable": true,
+            "example": "741.520",
+            "description": "Stored actual-position value associated with the observation."
+          },
+          "substrate_bedrock": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether bedrock substrate was recorded."
+          },
+          "substrate_megaclast": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether megaclast substrate was recorded."
+          },
+          "substrate_boulder": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "Indicates whether boulder substrate was recorded."
+          },
+          "substrate_cobble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "Indicates whether cobble substrate was recorded."
+          },
+          "substrate_pebble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether pebble substrate was recorded."
+          },
+          "substrate_granule": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether granule substrate was recorded."
+          },
+          "substrate_sand": {
+            "type": "boolean",
+            "nullable": true,
+            "example": true,
+            "description": "Indicates whether sand substrate was recorded."
+          },
+          "substrate_mud": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether mud substrate was recorded."
+          },
+          "substrate_coral_reef": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether coral-reef substrate was recorded."
+          },
+          "substrate_coral_rubble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether coral-rubble substrate was recorded."
+          },
+          "substrate_shell_hash": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether shell-hash substrate was recorded."
+          },
+          "substrate_shell_rubble": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether shell-rubble substrate was recorded."
+          },
+          "substrate_algal": {
+            "type": "boolean",
+            "nullable": true,
+            "example": false,
+            "description": "Indicates whether algal substrate was recorded."
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.93,
+            "description": "Machine-learning confidence score between zero and one."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the observation record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the observation record was last updated."
+          }
+        }
+      },
+      "ObservationWithKeyframes": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Observation"
+          },
+          {
+            "type": "object",
+            "description": "Observation response containing associated keyframes.",
+            "properties": {
+              "keyframes": {
+                "type": "array",
+                "description": "Keyframes associated with the observation.",
+                "items": {
+                  "$ref": "#/components/schemas/Keyframe"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Project": {
+        "type": "object",
+        "description": "Named project grouping used to organize sessions and observations recorded throughout MARP.\n",
+        "required": [
+          "project_id",
+          "name"
+        ],
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "example": 24,
+            "description": "Unique numeric identifier for this project."
+          },
+          "name": {
+            "type": "string",
+            "example": "Channel Islands 2024",
+            "description": "Unique display name for the project."
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "description": "Dive or survey session grouping the observations recorded during a single dive/line, along with its owning project and user.\n",
+        "required": [
+          "session_id",
+          "dive",
+          "line",
+          "lineId",
+          "type"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Unique numeric identifier for this session record."
+          },
+          "project_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 24,
+            "description": "Identifier of the project this session was conducted under."
+          },
+          "user_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 8,
+            "description": "Identifier of the user who recorded or owns this session."
+          },
+          "dive": {
+            "type": "string",
+            "example": "Dive 12",
+            "description": "Dive identifier or name associated with this session."
+          },
+          "line": {
+            "type": "string",
+            "example": "Line A",
+            "description": "Transect line identifier associated with this session."
+          },
+          "lineId": {
+            "type": "string",
+            "example": "L-2024-012A",
+            "description": "Identifier of the specific survey line tied to this session."
+          },
+          "type": {
+            "type": "string",
+            "example": "ROV",
+            "description": "Type or category of this session (e.g., survey platform or method)."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this session record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this session record was last updated."
+          }
+        }
+      },
+      "Species": {
+        "type": "object",
+        "description": "Taxonomic and GUI display entry used to classify observations, datasets, and ML model training labels throughout MARP.\n",
+        "required": [
+          "id",
+          "taxserial"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 42,
+            "description": "Unique numeric identifier for this species record."
+          },
+          "taxserial": {
+            "type": "integer",
+            "example": 1054,
+            "description": "Internal MARP taxonomy serial number used as a unique ID across systems."
+          },
+          "gui_home_order": {
+            "type": "string",
+            "nullable": true,
+            "description": "Ordering key used by the MARP GUI to position this item on the home screen."
+          },
+          "gui_maintab": {
+            "type": "string",
+            "nullable": true,
+            "example": "Fish",
+            "description": "Main tab category where this item appears in the GUI."
+          },
+          "gui_subtab": {
+            "type": "string",
+            "nullable": true,
+            "example": "Sea Stars",
+            "description": "Sub-tab within the main tab where this item is displayed."
+          },
+          "gui_main_tab_order": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Order number for the main tab this item belongs to."
+          },
+          "gui_sub_tab_order": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Order number for the sub-tab this item belongs to."
+          },
+          "gui_item_order": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Position of this species within its GUI sub-tab group."
+          },
+          "gui_display_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Display name for this item shown in MARP GUI interfaces, may differ from comname."
+          },
+          "comname": {
+            "type": "string",
+            "nullable": true,
+            "example": "Bat star",
+            "description": "Common name used for this species."
+          },
+          "species": {
+            "type": "string",
+            "nullable": true,
+            "example": "Patiria miniata",
+            "description": "Scientific or Latin name of the species."
+          },
+          "observation_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "Invertebrate",
+            "description": "Category describing what type of organism this is."
+          },
+          "taxonomic_level": {
+            "type": "string",
+            "nullable": true,
+            "example": "Species",
+            "description": "Taxonomic rank."
+          },
+          "report_group": {
+            "type": "string",
+            "nullable": true,
+            "example": "Sea Stars",
+            "description": "Report grouping used for rollups or reports."
+          },
+          "depth_min": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Minimum depth in meters where this species is typically observed."
+          },
+          "depth_max": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Maximum depth in meters where this species is typically observed."
+          },
+          "habitat_preference": {
+            "type": "string",
+            "nullable": true,
+            "example": "Rocky",
+            "description": "Habitat preference or substrate association."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes about this species, its classification, or GUI behavior."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this species record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this species record was last updated."
+          }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "description": "A discrete work item tracked by MARP, including free-text description and audit fields for who created/updated it and when.\n",
+        "required": [
+          "name",
+          "createdby"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name/title of the task."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform description of the task."
+          },
+          "createdate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when the task was created."
+          },
+          "updateddate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when the task was last updated."
+          },
+          "createdby": {
+            "type": "string",
+            "description": "Identifier or username of the person who created the task."
+          },
+          "updatedby": {
+            "type": "string",
+            "nullable": true,
+            "description": "Identifier or username of the person who last updated the task."
+          }
+        }
+      },
+      "TrainingRun": {
+        "type": "object",
+        "description": "A single training or retraining event of an ML model, linking the model, the dataset used, and the resulting epochs, metrics, and artifacts produced during that run.\n",
+        "required": [
+          "id",
+          "model_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Unique identifier for this training run."
+          },
+          "model_id": {
+            "type": "integer",
+            "example": 7,
+            "description": "Foreign key referencing the parent ML model (ml_models.id)."
+          },
+          "dataset_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Foreign key referencing the dataset used for training (datasets.id)."
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when training began."
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when training completed."
+          },
+          "total_epochs": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Total number of epochs configured for this run."
+          },
+          "batch_size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Training batch size used during this run."
+          },
+          "learning_rate": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Base learning rate used during training."
+          },
+          "optimizer": {
+            "type": "string",
+            "nullable": true,
+            "example": "Adam",
+            "description": "Optimization algorithm (e.g., \"Adam\", \"SGD\")."
+          },
+          "loss_function": {
+            "type": "string",
+            "nullable": true,
+            "example": "FocalLoss",
+            "description": "Loss function used (e.g., \"CrossEntropy\", \"FocalLoss\")."
+          },
+          "augmentation": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "JSON blob containing data augmentation parameters and settings applied during this run. Keys vary by training pipeline.\n"
+          },
+          "compute_device": {
+            "type": "string",
+            "nullable": true,
+            "example": "RTX 6000 Ada",
+            "description": "Hardware used for training (e.g., \"RTX 6000 Ada\", \"A100 GPU\")."
+          },
+          "train_script_commit": {
+            "type": "string",
+            "nullable": true,
+            "description": "Git commit hash or version identifier of the training script used."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes describing experiment purpose or results context."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this record was last modified."
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "description": "Individual who records or owns sessions and observations throughout MARP.\n",
+        "required": [
+          "user_id",
+          "name"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Unique numeric identifier for this user."
+          },
+          "name": {
+            "type": "string",
+            "example": "Jane Diver",
+            "description": "Unique display name for the user."
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/openapi.json": {
+      "get": {
+        "summary": "Retrieve the OpenAPI specification",
+        "description": "Returns the generated OpenAPI document used by the API documentation and development tools.",
+        "tags": [
+          "Documentation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/../openapi.json": {
+      "get": {
+        "summary": "Retrieve the OpenAPI specification from the root alias",
+        "description": "Returns the generated OpenAPI document from the root-level compatibility endpoint.",
+        "tags": [
+          "Documentation"
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/../developer-docs": {
+      "get": {
+        "summary": "Open internal developer documentation",
+        "description": "Serves the generated JSDoc website containing internal source-code and module documentation. This endpoint returns HTML and related static assets rather than a JSON API response.\n",
+        "tags": [
+          "Documentation"
+        ],
+        "responses": {
+          "200": {
+            "description": "Developer documentation page returned successfully.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsByVideo": {
+      "get": {
+        "summary": "Retrieve observations for a video",
+        "description": "Returns observations whose video_source exactly matches the supplied videoName. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without keyframes are excluded. An empty array may indicate either that no records matched or that the database query failed.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact video_source value to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getVideoSummaries/{project_id}": {
+      "get": {
+        "summary": "Retrieve video summaries for a project",
+        "description": "Returns one summary row for each distinct combination of video_source and videoLocation associated with sessions in the specified project. Each row includes the number of distinct observation common names, the number of distinct sessions, and representative dive, line, and session type values selected using MIN aggregation. Results are ordered by the representative dive and line in ascending order. Videos without a matching session in the project are excluded. An empty array may mean that no matching observations were found or that the database query failed.\n",
+        "tags": [
+          "Observations",
+          "Videos"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Database identifier of the project whose videos should be summarized."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Video summaries returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "video_source": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Video source value shared by the grouped observations."
+                      },
+                      "videoLocation": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Video location value shared by the grouped observations."
+                      },
+                      "distinct_species_count": {
+                        "type": "integer",
+                        "description": "Number of distinct non-null observation comname values."
+                      },
+                      "session_count": {
+                        "type": "integer",
+                        "description": "Number of distinct sessions represented in the group."
+                      },
+                      "dive": {
+                        "nullable": true,
+                        "description": "Minimum dive value among the matching sessions."
+                      },
+                      "line": {
+                        "nullable": true,
+                        "description": "Minimum line value among the matching sessions."
+                      },
+                      "session_type": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Minimum session type value among the matching sessions."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsByVideoAndComnames": {
+      "get": {
+        "summary": "Retrieve video observations filtered by common name",
+        "description": "Returns observations whose video_source exactly matches videoName and whose comname is included in comnameList. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. The current repository returns an empty array both when no observations match and when the database query fails.\n",
+        "tags": [
+          "Observations",
+          "Videos"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact value to match against the observation video_source field."
+          },
+          {
+            "in": "query",
+            "name": "comnameList",
+            "required": true,
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Common names used to filter observations. Supply the parameter repeatedly, such as comnameList=Bat%20star&comnameList=Leather%20star.\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsByVideoAndProject/{videoName}/{projectName}": {
+      "get": {
+        "summary": "Retrieve observations for a video within a project",
+        "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.\n",
+        "tags": [
+          "Observations",
+          "Projects",
+          "Videos"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact value to match against the observation video_source field."
+          },
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact project name used to locate the associated project record."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getObservationsWithKeyframesByComnames": {
+      "get": {
+        "summary": "Retrieve observations with keyframes by common name",
+        "description": "Returns observations whose comname matches one of the supplied common names. The comnameList query parameter must contain a comma-separated list of URL-encoded common names. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. An empty array may indicate that no observations matched or that the repository query failed.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "comnameList",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bat%20star,Leather%20star",
+            "description": "Comma-separated list of common names. Each value is decoded after the string is split on commas.\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations with keyframes returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObservationWithKeyframes"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The API request failed before a response could be produced.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getDistinctComnamesWithKeyframes": {
+      "get": {
+        "summary": "Fetch distinct common names that have keyframes",
+        "description": "Returns every distinct comname value found on observations that have at least one associated keyframe. This route is registered with `app.use` rather than `app.get`, so it technically responds to any HTTP method, not just GET.\n",
+        "tags": [
+          "Observations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Distinct common names returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboardData": {
+      "get": {
+        "summary": "Fetch per-user dashboard activity data",
+        "description": "Returns per-user, per-date observation activity counts for a dashboard view. CAUTION: the underlying grouped-observation query this endpoint depends on is invoked with no date arguments internally, so the start/end query parameters below are not actually applied as a filter — the endpoint currently returns data across all time regardless of what is passed.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Intended start of the date range (currently not applied; see description)."
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Intended end of the date range (currently not applied; see description)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard data returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/getProjectTimeByDateAndUser": {
+      "get": {
+        "summary": "Fetch estimated recording time by project, date, and user",
+        "description": "Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Start of the date range (inclusive) used to filter observations by createdAt."
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "End of the date range (inclusive) used to filter observations by createdAt."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grouped time data returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "summary": "Fetch all tasks",
+        "description": "Returns every task row currently available in storage.",
+        "tags": [
+          "Tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "Task list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observations": {
+      "get": {
+        "summary": "Fetch all observations",
+        "description": "Returns all observation records available through the V1 API.",
+        "tags": [
+          "Observations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Observation list returned successfully."
+          }
+        }
+      }
+    },
+    "/observation/getLastVideoInfo/{session_id}": {
+      "get": {
+        "summary": "Fetch latest video info for a session",
+        "description": "Returns the most recent video metadata associated with a session.",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Last video information returned successfully."
+          }
+        }
+      }
+    },
+    "/observation/getMaxObservationFromVideo/{video_source}": {
+      "get": {
+        "summary": "Fetch the observation with the highest observation_id for a video",
+        "description": "Returns the observation record(s) matching the maximum observation_id for the given video_source. Note that despite the name, the repository implementation returns an array of matching observation records (from a findAll query) rather than a single integer id.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "video_source",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Video source value to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observation record(s) returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observation/updateObservationWithCount/{session_id}/{observation_id}/{count}": {
+      "get": {
+        "summary": "Update an observation's count field",
+        "description": "Updates the count field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier used together with obsID to locate the target observation."
+          },
+          {
+            "in": "path",
+            "name": "observation_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Matched against the obsID column, not the observation_id primary key, despite the parameter name.\n"
+          },
+          {
+            "in": "path",
+            "name": "count",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "New count value to persist."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "1 if the update statement executed without throwing, 0 if it failed. Does not indicate whether any row was actually matched.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observation/updateObservationWithSize/{session_id}/{observation_id}/{size}": {
+      "get": {
+        "summary": "Update an observation's size field",
+        "description": "Updates the coarsesize field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier used together with obsID to locate the target observation."
+          },
+          {
+            "in": "path",
+            "name": "observation_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Matched against the obsID column, not the observation_id primary key, despite the parameter name.\n"
+          },
+          {
+            "in": "path",
+            "name": "size",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float"
+            },
+            "description": "New coarse-size value to persist."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "1 if the update statement executed without throwing, 0 if it failed. Does not indicate whether any row was actually matched.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observations/bySessionID/{session_id}": {
+      "get": {
+        "summary": "Fetch observations for a session",
+        "description": "Returns every observation belonging to a session, including associated keyframes when present.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/species": {
+      "get": {
+        "summary": "Fetch all species",
+        "description": "Returns every species record used for taxonomy, GUI display configuration, and ML model training labels. An empty array may indicate either that no records exist or that the database query failed.\n",
+        "tags": [
+          "Species"
+        ],
+        "responses": {
+          "200": {
+            "description": "Species list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Species"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/species/by-comname/{comname}": {
+      "get": {
+        "summary": "Fetch a species by common name",
+        "description": "Returns the species record whose comname matches the supplied value, case-insensitively. Returns null both when no species matches and when the database query fails.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comname",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Common name to match, case-insensitively."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching species returned, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/model_species": {
+      "post": {
+        "summary": "Create a model-species linkage record",
+        "description": "Creates a model_species join record linking an ML model to a species, using the request body directly as the record to insert. Note that when the insert fails the response body is an ErrorResponse-shaped object, but the endpoint currently still responds with HTTP 200 rather than an error status.\n",
+        "tags": [
+          "Species"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model_id",
+                  "species_id"
+                ],
+                "properties": {
+                  "model_id": {
+                    "type": "integer",
+                    "example": 7
+                  },
+                  "species_id": {
+                    "type": "integer",
+                    "example": 42
+                  },
+                  "dataset_size": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "balance_weight": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "precision_mean": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "recall_mean": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "f1_mean": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Model-species record created successfully, or an ErrorResponse body if the insert failed (see description).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ModelSpecies"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "summary": "Fetch all users",
+        "description": "Returns every user record.",
+        "tags": [
+          "Users"
+        ],
+        "responses": {
+          "200": {
+            "description": "User list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/{name}": {
+      "get": {
+        "summary": "Fetch a user by name",
+        "description": "Returns the user record(s) matching an exact display name. Resolves to an empty array both when no user has that name and when the underlying database query fails.\n",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact display name to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching user record(s) returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "summary": "Fetch all projects",
+        "description": "Returns every project record.",
+        "tags": [
+          "Projects"
+        ],
+        "responses": {
+          "200": {
+            "description": "Project list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/user/{userID}": {
+      "get": {
+        "summary": "Fetch projects belonging to a user",
+        "description": "Returns every project that has at least one session belonging to the given user.\n",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the user whose projects should be returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching project records returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/project/getProjectByName/{projectName}": {
+      "get": {
+        "summary": "Fetch a project by name",
+        "description": "Returns the project record(s) matching an exact project name. CRITICAL: unlike other repository methods in this codebase, a database failure here resolves with the raw JavaScript Error object itself (not null, not an array, not an ErrorResponse-shaped body) — so a failure response will not match a typical error schema and callers should not rely on a consistent error shape from this endpoint.\n",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact project name to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching project record(s) as an array, or a raw Error object if the query failed (see description).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions": {
+      "get": {
+        "summary": "Fetch all sessions",
+        "description": "Returns every session record, each including its associated user.",
+        "tags": [
+          "Sessions"
+        ],
+        "responses": {
+          "200": {
+            "description": "Session list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/user/{userID}/project/{projectID}": {
+      "get": {
+        "summary": "Fetch sessions for a user within a project",
+        "description": "Returns sessions matching the given user and project, each including its associated user and project.\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the user whose sessions should be fetched."
+          },
+          {
+            "in": "path",
+            "name": "projectID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the project to scope the sessions to."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching session records returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metaInfo/dbName": {
+      "get": {
+        "summary": "Retrieve active database name",
+        "description": "Returns metadata identifying the current configured database.",
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Database name returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user/getUserNameByID/{userID}": {
+      "get": {
+        "summary": "Fetch a user's display name by id",
+        "description": "Returns the display name of the user matching the given id. CRITICAL: if no user matches the given ID, this can throw / return an unhandled error (HTTP 500 via the framework's default error handling, or an unhandled rejection since the route has no .catch()), because the repository accesses a property on the query result without checking whether it's null first.\n",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the user whose name should be returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User name returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ml_models": {
+      "get": {
+        "summary": "Fetch all ML models",
+        "description": "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "responses": {
+          "200": {
+            "description": "MlModel list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MlModel"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataset": {
+      "get": {
+        "summary": "Fetch all datasets",
+        "description": "Returns every dataset record. Database errors are swallowed and resolve to an empty array, so an empty result doesn't distinguish \"no datasets\" from \"query failed.\"\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "responses": {
+          "200": {
+            "description": "Dataset list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Dataset"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new dataset",
+        "description": "Creates a new dataset record. CRITICAL: a database failure here resolves to null rather than rejecting, so the route's .catch() handler is effectively dead code — a failed insert currently still responds with HTTP 200 and a null body rather than an error status.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset"
+                ],
+                "properties": {
+                  "dataset": {
+                    "$ref": "#/components/schemas/Dataset"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created dataset record, or null if the insert failed (see description; the failure still returns HTTP 200).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Dataset"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataset/{id}": {
+      "get": {
+        "summary": "Fetch a dataset by id",
+        "description": "Returns a single dataset record, or null if not found. Unlike getDatasets, a database error here does actually reject/throw, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching dataset record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Dataset"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/model": {
+      "post": {
+        "summary": "Create a new ML model",
+        "description": "Creates a new ML model record. Has a real .catch() handler that responds with HTTP 500 on failure.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model"
+                ],
+                "properties": {
+                  "model": {
+                    "$ref": "#/components/schemas/MlModel"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created MlModel record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlModel"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training_run": {
+      "post": {
+        "summary": "Create a new training run",
+        "description": "Creates a new training run record.",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "training_run"
+                ],
+                "properties": {
+                  "training_run": {
+                    "$ref": "#/components/schemas/TrainingRun"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created TrainingRun record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingRun"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/training_run/{id}": {
+      "put": {
+        "summary": "Update an existing training run",
+        "description": "Updates an existing training run record by id. Returns the updated TrainingRun, or null if no row matched.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "training_run"
+                ],
+                "properties": {
+                  "training_run": {
+                    "$ref": "#/components/schemas/TrainingRun"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated TrainingRun record, or null if no row matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TrainingRun"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics_summary": {
+      "post": {
+        "summary": "Create a new metrics summary",
+        "description": "Creates a new metrics_summary record for a training run and dataset split.",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "metrics_summary"
+                ],
+                "properties": {
+                  "metrics_summary": {
+                    "$ref": "#/components/schemas/MetricsSummary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created MetricsSummary record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSummary"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics_curve": {
+      "post": {
+        "summary": "Create a single metrics curve point",
+        "description": "Creates a single metrics_curve point tied to a metrics_summary record.",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "metrics_curve"
+                ],
+                "properties": {
+                  "metrics_curve": {
+                    "$ref": "#/components/schemas/MetricsCurve"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created MetricsCurve record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsCurve"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics_curves/bulk": {
+      "post": {
+        "summary": "Bulk-create metrics curve records",
+        "description": "Bulk-inserts metrics_curve records. CRITICAL: unlike every sibling create/bulk route, this method takes the raw Express req/res directly rather than an already-extracted body field — the request body must be a raw JSON array of MetricsCurve fields (req.body itself is passed straight to Sequelize's bulkCreate). CRITICAL: on a database failure this resolves to { error: err.message } at HTTP 200 rather than rejecting or returning a non-200 status; the route has no .catch() at all.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MetricsCurve"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "On success, an { inserted: number } summary object (not the created records). On failure, an { error: string } object is still returned with HTTP 200 (see description).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "inserted": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/epoch": {
+      "post": {
+        "summary": "Create a new epoch record",
+        "description": "Creates a new epoch record for a training run.",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "epoch"
+                ],
+                "properties": {
+                  "epoch": {
+                    "$ref": "#/components/schemas/Epoch"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Epoch record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Epoch"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/epoch/{id}": {
+      "put": {
+        "summary": "Update an existing epoch record",
+        "description": "Updates an existing epoch record by id. Returns the updated Epoch, or null if no row matched.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "epoch"
+                ],
+                "properties": {
+                  "epoch": {
+                    "$ref": "#/components/schemas/Epoch"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated Epoch record, or null if no row matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Epoch"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/model/{id}": {
+      "put": {
+        "summary": "Update an existing ML model",
+        "description": "Updates an existing ML model record by id. Returns the updated MlModel, or null if no row matched the given id (logged as a warning rather than an error in that case).\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model"
+                ],
+                "properties": {
+                  "model": {
+                    "$ref": "#/components/schemas/MlModel"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated MlModel record, or null if no row matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MlModel"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataset_observation": {
+      "post": {
+        "summary": "Create a new dataset-observation link",
+        "description": "Creates a new dataset_observation join record linking a dataset to an observation.",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset_observation"
+                ],
+                "properties": {
+                  "dataset_observation": {
+                    "$ref": "#/components/schemas/DatasetObservation"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created DatasetObservation record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetObservation"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataset_observations/bulk": {
+      "post": {
+        "summary": "Bulk-create dataset-observation links",
+        "description": "Bulk-inserts dataset_observation records. The response (per the route code) is { inserted: <count> }, NOT the created records. Uses ignoreDuplicates: true internally, which may not reliably suppress unique-constraint errors on Postgres depending on Sequelize version, so a 500 is still possible on duplicate observation_id values despite the flag.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset_observations"
+                ],
+                "properties": {
+                  "dataset_observations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DatasetObservation"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An { inserted: number } summary object rather than the created records.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inserted": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The bulk insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/task": {
+      "post": {
+        "summary": "Create a new task",
+        "description": "Creates a new task record. Stamps createdate before insert. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details.\n",
+        "tags": [
+          "Tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "task"
+                ],
+                "properties": {
+                  "task": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Task record, or an empty object `{}` if the insert failed (see description).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing task",
+        "description": "Updates an existing task record by its id field. Stamps updateddate before update. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details.\n",
+        "tags": [
+          "Tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "task"
+                ],
+                "properties": {
+                  "task": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result, or an empty object `{}` if the update failed (see description).\n"
+          }
+        }
+      }
+    },
+    "/observation": {
+      "post": {
+        "summary": "Create a new observation",
+        "description": "Creates a new observation record. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details.\n",
+        "tags": [
+          "Observations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "observation"
+                ],
+                "properties": {
+                  "observation": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Observation record, or an empty object `{}` if the insert failed (see description).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Observation"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing observation",
+        "description": "Updates an existing observation by its observation_id field. If comname changes, the new value is propagated to every keyframe associated with the same observation, all within one transaction. Unlike most write methods in this codebase, this one does NOT swallow errors: if the observation_id doesn't exist or the update fails, the transaction is rolled back and the error is rethrown, resulting in an HTTP 500 by default (there is no explicit .catch() on this route, so Express's default error handling applies).\n",
+        "tags": [
+          "Observations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "observation"
+                ],
+                "properties": {
+                  "observation": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result (an array whose first element is the number of affected rows)."
+          }
+        }
+      }
+    },
+    "/keyframe": {
+      "post": {
+        "summary": "Bulk-create keyframe records",
+        "description": "Creates one or more keyframe records in a single transaction. CRITICAL: unlike most other POST routes, the request body itself must be a JSON array of keyframe objects (not wrapped in a named field) — only the observation_id, x, y, width, height, subset, type, comname, and framenum fields are copied from each input object; any others are ignored. If the bulk insert fails, the transaction is rolled back and the failure is only logged, so the response resolves to an empty array `[]` rather than an error — callers cannot distinguish \"nothing to insert\" from \"insert failed.\"\n",
+        "tags": [
+          "Keyframes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Keyframe"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Keyframe records, or an empty array if the bulk insert failed (see description).\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Keyframe"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user": {
+      "post": {
+        "summary": "Create a new user",
+        "description": "Creates a new user record.",
+        "tags": [
+          "Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user"
+                ],
+                "properties": {
+                  "user": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created User record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing user",
+        "description": "CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer calls `userRepository.updateUser(...)`, but the repository only defines the method as `updateUsers` (plural). Every call throws a TypeError, and since this route has no `.catch()`, the request currently hangs without ever sending a response instead of returning an error.\n",
+        "tags": [
+          "Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "user"
+                ],
+                "properties": {
+                  "user": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Intended to return the Sequelize update result, but see description — this endpoint is currently broken and never responds."
+          }
+        }
+      }
+    },
+    "/user/createUserByName/{userName}": {
+      "post": {
+        "summary": "Create a new user by name only",
+        "description": "Creates a new user record from a name alone, without a request body.\n",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Display name for the new user."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The created User record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/project": {
+      "post": {
+        "summary": "Create a new project",
+        "description": "Creates a new project record.",
+        "tags": [
+          "Projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project"
+                ],
+                "properties": {
+                  "project": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Project record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing project",
+        "description": "Updates an existing project record by its project_id field.",
+        "tags": [
+          "Projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project"
+                ],
+                "properties": {
+                  "project": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result."
+          }
+        }
+      }
+    },
+    "/project/createProjectByName/{projectName}": {
+      "post": {
+        "summary": "Create a new project by name only",
+        "description": "Creates a new project record from a name alone, without a request body.\n",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name for the new project."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The created Project record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/session": {
+      "post": {
+        "summary": "Create a new session",
+        "description": "Creates a new session record.",
+        "tags": [
+          "Sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "session"
+                ],
+                "properties": {
+                  "session": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Session record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing session",
+        "description": "Updates an existing session record by its session_id field.",
+        "tags": [
+          "Sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "session"
+                ],
+                "properties": {
+                  "session": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result."
+          }
+        }
+      }
+    },
+    "/session/createNewSession/{processorName}/{projectName}/{line}/{dive}/{lineID}/{type}": {
+      "post": {
+        "summary": "Create a session, creating its project and processor user if needed",
+        "description": "Convenience endpoint that looks up or creates the named processor (user) and project, then creates a new session linking them with the given line, dive, and type. All identifying values are passed as path segments rather than a request body.\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "processorName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the user to look up or create as the session's processor."
+          },
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the project to look up or create."
+          },
+          {
+            "in": "path",
+            "name": "line",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Line value for the new session."
+          },
+          {
+            "in": "path",
+            "name": "dive",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Dive value for the new session."
+          },
+          {
+            "in": "path",
+            "name": "lineID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Line identifier for the new session."
+          },
+          {
+            "in": "path",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Session type value."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The created Session record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/task/{id}": {
+      "delete": {
+        "summary": "Delete a task",
+        "description": "Deletes a task record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          }
+        }
+      }
+    },
+    "/observation/{id}": {
+      "delete": {
+        "summary": "Delete an observation",
+        "description": "Deletes an observation record by its observation_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "observation_id of the observation to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          }
+        }
+      }
+    },
+    "/keyframe/{keyframe_id}": {
+      "delete": {
+        "summary": "Delete a keyframe",
+        "description": "Deletes a keyframe record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
+        "tags": [
+          "Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          }
+        }
+      }
+    },
+    "/user/{id}": {
+      "delete": {
+        "summary": "Delete a user",
+        "description": "CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer calls `userRepository.deleteUsers(...)` (plural), but the repository only defines the method as `deleteUser` (singular). Every call throws a TypeError, and since this route has no `.catch()`, the request currently hangs without ever sending a response instead of returning an error.\n",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the user to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Intended to return the number of rows destroyed, but see description — this endpoint is currently broken and never responds."
+          }
+        }
+      }
+    },
+    "/project/{id}": {
+      "delete": {
+        "summary": "Delete a project",
+        "description": "Deletes a project record by id.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the project to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed, as returned by Sequelize."
+          }
+        }
+      }
+    },
+    "/session/{id}": {
+      "delete": {
+        "summary": "Delete a session",
+        "description": "Deletes a session record by id.",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the session to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed, as returned by Sequelize."
+          }
+        }
+      }
+    }
+  }
+}

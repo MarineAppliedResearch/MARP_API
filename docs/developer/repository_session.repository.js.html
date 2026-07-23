@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>repository/session.repository.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="logger_api.module_logger-APILogger.html">APILogger</a><ul class='methods'><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#error">error</a></li><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#info">info</a></li><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#info">info</a></li></ul></li><li><a href="module-controller_dataset-DatasetController.html">DatasetController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-controller_keyframe-KeyframeController.html">KeyframeController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-controller_metaInfo-MetaInfoController.html">MetaInfoController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_metaInfo-MetaInfoController.html#getDBName">getDBName</a></li></ul></li><li><a href="module-controller_observation-ObservationController.html">ObservationController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#createObservation">createObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#deleteObservation">deleteObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getDistinctComnamesWithKeyframes">getDistinctComnamesWithKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getLastVideoInfo">getLastVideoInfo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getMaxObservationFromVideo">getMaxObservationFromVideo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getMaxPobsID">getMaxPobsID</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservations">getObservations</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsBySessionID">getObservationsBySessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideo">getObservationsByVideo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideoAndComnames">getObservationsByVideoAndComnames</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideoAndProject">getObservationsByVideoAndProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsGroupedByUserAndDate">getObservationsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsWithKeyframesByComnames">getObservationsWithKeyframesByComnames</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getProjectTimeByDateAndUser">getProjectTimeByDateAndUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getUserDashboardData">getUserDashboardData</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getVideoSummariesByProject">getVideoSummariesByProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservation">updateObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservationWithCount">updateObservationWithCount</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservationWithSize">updateObservationWithSize</a></li></ul></li><li><a href="module-controller_project-ProjectController.html">ProjectController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#updateProject">updateProject</a></li></ul></li><li><a href="module-controller_session-SessionController.html">SessionController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#updateSession">updateSession</a></li></ul></li><li><a href="module-controller_species-SpeciesController.html">SpeciesController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getSpeciesByComname">getSpeciesByComname</a></li></ul></li><li><a href="module-controller_task-TodoController.html">TodoController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#updateTask">updateTask</a></li></ul></li><li><a href="module-controller_user-UserController.html">UserController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#updateUser">updateUser</a></li></ul></li><li><a href="module-model_artifacts-artifacts.html">artifacts</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_artifacts-artifacts.html#.associate">associate</a></li></ul></li><li><a href="module-model_dataset_observations-dataset_observations.html">dataset_observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_dataset_observations-dataset_observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_datasets-datasets.html">datasets</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_datasets-datasets.html#.associate">associate</a></li></ul></li><li><a href="module-model_epochs-epochs.html">epochs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_epochs-epochs.html#.associate">associate</a></li></ul></li><li><a href="module-model_hyperparameters-hyperparameters.html">hyperparameters</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_hyperparameters-hyperparameters.html#.associate">associate</a></li></ul></li><li><a href="module-model_keyframe-Keyframes.html">Keyframes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_keyframe-Keyframes.html#.associate">associate</a></li></ul></li><li><a href="module-model_metaInfo-MetaInfo.html">MetaInfo</a></li><li><a href="module-model_metrics_curves-metrics_curves.html">metrics_curves</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_metrics_curves-metrics_curves.html#.associate">associate</a></li></ul></li><li><a href="module-model_metrics_summary-metrics_summary.html">metrics_summary</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_metrics_summary-metrics_summary.html#.associate">associate</a></li></ul></li><li><a href="module-model_ml_models-ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_ml_models-ml_models.html#.associate">associate</a></li></ul></li><li><a href="module-model_model_species-model_species.html">model_species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_model_species-model_species.html#.associate">associate</a></li></ul></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_project-Projects.html">Projects</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_project-Projects.html#.associate">associate</a></li></ul></li><li><a href="module-model_session-Sessions.html">Sessions</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_session-Sessions.html#.associate">associate</a></li></ul></li><li><a href="module-model_species-species.html">species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_species-species.html#.associate">associate</a></li></ul></li><li><a href="module-model_task-Tasks.html">Tasks</a></li><li><a href="module-model_training_runs-training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_training_runs-training_runs.html#.associate">associate</a></li></ul></li><li><a href="module-model_user-Users.html">Users</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_user-Users.html#.associate">associate</a></li></ul></li><li><a href="module-repository_dataset-DatasetRepository.html">DatasetRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-repository_keyframe-KeyframeRepository.html">KeyframeRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-repository_metaInfo-MetaInfoRepository.html">MetaInfoRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_metaInfo-MetaInfoRepository.html#getDBName">getDBName</a></li></ul></li><li><a href="module-repository_project-ProjectRepository.html">ProjectRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#updateProject">updateProject</a></li></ul></li><li><a href="module-repository_session-SessionRepository.html">SessionRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#updateSession">updateSession</a></li></ul></li><li><a href="module-repository_species-SpeciesRepository.html">SpeciesRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getSpeciesByComname">getSpeciesByComname</a></li></ul></li><li><a href="module-repository_task-TaskRepository.html">TaskRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#updateTask">updateTask</a></li></ul></li><li><a href="module-repository_user-UserRepository.html">UserRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#updateUsers">updateUsers</a></li></ul></li><li><a href="module-service_dataset-DatasetService.html">DatasetService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-service_keyframe-KeyframeService.html">KeyframeService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-service_metaInfo-MetaInfoService.html">MetaInfoService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_metaInfo-MetaInfoService.html#getDBName">getDBName</a></li></ul></li><li><a href="module-service_observation-ObservationService.html">ObservationService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#createObservation">createObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#deleteObservation">deleteObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getDistinctComnamesWithKeyframes">getDistinctComnamesWithKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getLastVideoInfo">getLastVideoInfo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getMaxObservationFromVideo">getMaxObservationFromVideo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getMaxPobsID">getMaxPobsID</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservations">getObservations</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsBySessionID">getObservationsBySessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideo">getObservationsByVideo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideoAndComnames">getObservationsByVideoAndComnames</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideoAndProject">getObservationsByVideoAndProject</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsGroupedByUserAndDate">getObservationsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsWithKeyframesByComnames">getObservationsWithKeyframesByComnames</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getProjectTimeByDateAndUser">getProjectTimeByDateAndUser</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getUserDashboardData">getUserDashboardData</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getVideoSummariesByProject">getVideoSummariesByProject</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservation">updateObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservationWithCount">updateObservationWithCount</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservationWithSize">updateObservationWithSize</a></li></ul></li><li><a href="module-service_project-ProjectService.html">ProjectService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#updateProject">updateProject</a></li></ul></li><li><a href="module-service_session-SessionService.html">SessionService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#updateSession">updateSession</a></li></ul></li><li><a href="module-service_species-SpeciesService.html">SpeciesService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getSpeciesByComname">getSpeciesByComname</a></li></ul></li><li><a href="module-service_task-TaskService.html">TaskService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#updateTask">updateTask</a></li></ul></li><li><a href="module-service_user-UserService.html">UserService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#updateUser">updateUser</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="logger_api.module_logger.html">logger/api.logger</a></li><li><a href="module-config_config.html">config/config</a></li><li><a href="module-controller_dataset.html">controller/dataset</a></li><li><a href="module-controller_keyframe.html">controller/keyframe</a></li><li><a href="module-controller_metaInfo.html">controller/metaInfo</a></li><li><a href="module-controller_observation.html">controller/observation</a></li><li><a href="module-controller_project.html">controller/project</a></li><li><a href="module-controller_session.html">controller/session</a></li><li><a href="module-controller_species.html">controller/species</a></li><li><a href="module-controller_task.html">controller/task</a></li><li><a href="module-controller_user.html">controller/user</a></li><li><a href="module-model_SequelizeMeta.html">model/SequelizeMeta</a></li><li><a href="module-model_artifacts.html">model/artifacts</a></li><li><a href="module-model_dataset_observations.html">model/dataset_observations</a></li><li><a href="module-model_datasets.html">model/datasets</a></li><li><a href="module-model_epochs.html">model/epochs</a></li><li><a href="module-model_hyperparameters.html">model/hyperparameters</a></li><li><a href="module-model_index.html">model/index</a></li><li><a href="module-model_init-models.html">model/init-models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_init-models.html#~initModels">initModels</a></li></ul></li><li><a href="module-model_keyframe.html">model/keyframe</a></li><li><a href="module-model_metaInfo.html">model/metaInfo</a></li><li><a href="module-model_metrics_curves.html">model/metrics_curves</a></li><li><a href="module-model_metrics_summary.html">model/metrics_summary</a></li><li><a href="module-model_ml_models.html">model/ml_models</a></li><li><a href="module-model_model_species.html">model/model_species</a></li><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-model_project.html">model/project</a></li><li><a href="module-model_session.html">model/session</a></li><li><a href="module-model_species.html">model/species</a></li><li><a href="module-model_task.html">model/task</a></li><li><a href="module-model_training_runs.html">model/training_runs</a></li><li><a href="module-model_user.html">model/user</a></li><li><a href="module-repository_dataset.html">repository/dataset</a></li><li><a href="module-repository_keyframe.html">repository/keyframe</a></li><li><a href="module-repository_metaInfo.html">repository/metaInfo</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-repository_project.html">repository/project</a></li><li><a href="module-repository_session.html">repository/session</a></li><li><a href="module-repository_species.html">repository/species</a></li><li><a href="module-repository_task.html">repository/task</a></li><li><a href="module-repository_user.html">repository/user</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~GET/">GET /</a></li><li data-type='method' style='display: none;'><a href="module-server.html#~GET/apps/:appName">GET /apps/:appName</a></li><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li><li><a href="module-service_dataset.html">service/dataset</a></li><li><a href="module-service_keyframe.html">service/keyframe</a></li><li><a href="module-service_metaInfo.html">service/metaInfo</a></li><li><a href="module-service_observation.html">service/observation</a></li><li><a href="module-service_project.html">service/project</a></li><li><a href="module-service_session.html">service/session</a></li><li><a href="module-service_species.html">service/species</a></li><li><a href="module-service_task.html">service/task</a></li><li><a href="module-service_user.html">service/user</a></li></ul><h3>Global</h3><ul><li><a href="global.html#fs">fs</a></li><li><a href="global.html#initializeCurrentYear">initializeCurrentYear</a></li><li><a href="global.html#initializeLandingPage">initializeLandingPage</a></li><li><a href="global.html#initializeLoginDialog">initializeLoginDialog</a></li><li><a href="global.html#initializeMobileNavigation">initializeMobileNavigation</a></li><li><a href="global.html#initializeScrollEffects">initializeScrollEffects</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">repository/session.repository.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Repository module for session (dive/transect) database operations.
+ *
+ * This file contains Sequelize queries used to retrieve, create, update,
+ * and delete session records, which group the observations recorded during
+ * a single dive or survey line, along with helpers used to look up derived
+ * fields (owning project, session type) and aggregate session activity.
+ *
+ * Repository functions should contain database-access logic only. Request
+ * handling belongs in controllers, while broader application behavior
+ * belongs in services.
+ *
+ * @fileoverview Session, dive, and transect database queries and persistence operations.
+ * @author Isaac Travers
+ * @module repository/session
+ */
+
+const db = require('../model');
+const logger = require('../logger/api.logger');
+const userController = require('../controller/user.controller');
+const projectController = require('../controller/project.controller');
+const observationController = require('../controller/observation.controller');
+const { Sequelize, Model, DataTypes } = require("sequelize");
+
+
+
+/**
+ * Repository for session, dive, and transect database operations.
+ *
+ * @class SessionRepository
+ */
+class SessionRepository {
+
+    db = {};
+
+    constructor() {
+        this.db = db;
+        // For Development
+        /*this.db.sequelize.sync({ force: true }).then(() => {
+            console.log("Drop and re-sync db.");
+        });*/
+
+
+    }
+
+    /**
+     * Fetch every session record.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @returns {Promise&lt;Array&lt;Object>>} All session records, each including
+     * its associated `user`. Returns an empty array when none exist or
+     * when the database query fails.
+     */
+    async getSessions() {
+
+        try {
+            const sessions = await this.db.sessions.findAll({ include: ["user"] });
+            //console.log('sessions:::', sessions);
+            return sessions;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+    /**
+     * Fetch the project id associated with a session.
+     *
+     * Database errors, and the case where no session matches `session_id`
+     * (in which case `sessions` is null and `sessions.project_id` throws),
+     * are both caught and converted to an empty array. As a result this
+     * method returns a scalar `project_id` on success but an array on any
+     * failure or not-found case, and callers cannot distinguish "not
+     * found" from "database error" from the return value alone.
+     *
+     * @async
+     * @param {number|string} session_id - Identifier of the session to look up.
+     * @returns {Promise&lt;number|Array>} The `project_id` of the matching
+     * session record, or an empty array if the session does not exist or
+     * the query fails.
+     */
+    async  getProjectIDFromSessionID(session_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findOne({
+                 where: {
+                    session_id: session_id
+                }
+              });
+            //console.log('sessionsWithProject:::', sessions);
+            return sessions.project_id;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+    /**
+     * Fetch the type of a session.
+     *
+     * Database errors, and the case where no session matches `session_id`
+     * (in which case `sessions` is null and `sessions.type` throws), are
+     * both caught and converted to an empty array. As a result this method
+     * returns a scalar `type` string on success but an array on any
+     * failure or not-found case, and callers cannot distinguish "not
+     * found" from "database error" from the return value alone.
+     *
+     * @async
+     * @param {number|string} session_id - Identifier of the session to look up.
+     * @returns {Promise&lt;string|Array>} The `type` of the matching session
+     * record, or an empty array if the session does not exist or the
+     * query fails.
+     */
+    async getTypeFromSessionID(session_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findOne({
+                 where: {
+                    session_id: session_id
+                }
+              });
+            //console.log('sessionsWithProject:::', sessions);
+            return sessions.type;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+
+    /**
+     * Fetch every session belonging to a project.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @param {number|string} project_id - Identifier of the project whose sessions should be fetched.
+     * @returns {Promise&lt;Array&lt;Object>>} Sessions belonging to the project,
+     * each including its associated `project`. Returns an empty array when
+     * none exist or when the database query fails.
+     */
+    async getSessionsByProjectID(project_id){
+        try {
+            // Join Project to session
+            const sessions = await this.db.sessions.findAll({
+                include: [{
+                    model: this.db.projects, as: "project",
+                    required: true
+                 }],
+                 where: {
+                    project_id: project_id
+                }
+              });
+            //console.log('sessionsWithProject:::', sessions);
+            return sessions;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+    /**
+     * Fetch every session belonging to a given user within a given project.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @param {number|string} userID - Identifier of the user whose sessions should be fetched.
+     * @param {number|string} projectID - Identifier of the project to scope the sessions to.
+     * @returns {Promise&lt;Array&lt;Object>>} Sessions matching the user and
+     * project, each including its associated `user` and `project`. Returns
+     * an empty array when none exist or when the database query fails.
+     */
+    // THIS LOOKS LIKE WE ARE NOT LOOKING FOR USERID AND PROJECTID LIKE WE ARE SUPPOSED TO
+    async getSessionsByUserIdAndProjectId(userID, projectID) {
+
+        try {
+
+            // First we need to get a list of
+
+            // Join Project to session, and session to user
+            const sessions = await this.db.sessions.findAll({
+                include: [{
+                    model: this.db.users, as: "user",
+                    required: true
+                 },{
+                    model: this.db.projects, as: "project",
+                    required: true
+                 }],
+                 where: {
+                    user_id: userID,
+                    project_id: projectID
+                }
+              });
+            //console.log('projects:::', sessions);
+            return sessions;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+    /**
+     * Create a new session record.
+     *
+     * A `createdate` timestamp is stamped onto the record before insert.
+     * Note that this is a plain property assignment, not one of the
+     * `sessions` model's defined attributes (the model instead relies on
+     * Sequelize's automatic `createdAt` timestamp column), so this
+     * assignment has no persisted effect.
+     *
+     * Unlike most repository methods in this file, a failure here is not
+     * converted to an empty array/object — the caught Error object itself
+     * is returned (not thrown, and not re-wrapped), so callers must check
+     * the resolved value's shape/type to detect failure.
+     *
+     * @async
+     * @param {Object} session - Session fields to insert directly (e.g. user_id, project_id, dive, line, lineId, type).
+     * @returns {Promise&lt;Object|Error>} The created session record, or the
+     * caught Error object if the insert failed.
+     */
+    async createSession(session) {
+        let data = {};
+        try {
+            session.createdate = new Date().toISOString();
+            data = await this.db.sessions.create(session);
+        } catch(err) {
+            logger.error('Error::' + err);
+            return err;
+        }
+        return data;
+    }
+
+    /** checks if we have a processor of processor Name returns processorID, if not create processor, and return it
+     *  then checks if we have a project of projectName and returns projectID, if not create a project, and return it
+     *  then checks if we have a session with this processorname, project name, line, dive, lineid and type.
+     *  If not, create the session, always return the sessions id.
+     *
+     *  Data Sceme    |Project|1/1 --------0/M|session|0/M ----- 1/1|user|
+     *
+     * Find-or-create a processor (user), project, and session all in one
+     * call, returning the resulting session.
+     *
+     * Looks up the user by `processorName` via {@link userController#getUserByName},
+     * creating one via {@link userController#createUserByName} if it does
+     * not exist; then looks up the project by `projectName` via
+     * {@link projectController#getProjectByName}, creating one via
+     * {@link projectController#createProjectByName} if it does not exist.
+     * The resolved `user_id`/`project_id` are then combined with `dive`,
+     * `line`, `lineID` (stored as `lineId`), and `type` to find an existing
+     * matching session, or create a new one if none matches.
+     *
+     * The logic that unwraps `user`/`project` from either an array (as
+     * returned by the "getBy" lookups) or a single object (as apparently
+     * returned by the "create" helpers) via repeated `.length`/`[0]` checks
+     * is fragile: it assumes a specific shape from each collaborator
+     * without validating it, and will throw if an unexpected shape is
+     * returned (e.g. `user_id`/`project_id` both undefined).
+     *
+     * As with {@link SessionRepository#createSession}, a failure here
+     * returns the caught Error object itself rather than throwing or
+     * returning a fallback empty value.
+     *
+     * @async
+     * @param {string} processorName - Name of the user who ran the session; used to find or create the corresponding user record.
+     * @param {string} projectName - Name of the project the session belongs to; used to find or create the corresponding project record.
+     * @param {string} line - Transect line identifier for the new/matched session.
+     * @param {string} dive - Dive identifier for the new/matched session.
+     * @param {string} lineID - Survey line id for the new/matched session (stored as `lineId`).
+     * @param {string} type - Session type/category for the new/matched session.
+     * @returns {Promise&lt;Object|Error>} The existing matching session record
+     * if one was found, the newly created session record otherwise, or the
+     * caught Error object if resolving/creating the user, project, or
+     * session failed.
+     */
+    async createSessionAndProjectandProcessor(processorName, projectName, line, dive, lineID, type){
+        let data = {};
+        let user = {};
+        let project = {};
+
+        try {
+            // Get this user by name, if it exists
+            user = await userController.getUserByName(processorName);
+
+            // check if the user exists, if it does not exist, create it
+            if(user == undefined || user.length &lt;= 0){
+                // Create user here
+                user = await userController.createUserByName(processorName);
+            }
+
+            if(user.length >= 1) user = user[0];
+
+            // Get this project by name, if it exists
+            project = await projectController.getProjectByName(projectName);
+
+            // Check if this project exists, if it doesn't, create it
+            if(project.length &lt;= 0){
+                project = await projectController.createProjectByName(projectName);
+            }
+
+            if(project.length >= 1) project = project[0];
+
+            let userID = -1;
+
+            if(user[0] == undefined || user[0].user_id == undefined){
+                userID = user.user_id;
+            }else{
+                userID = user[0].user_id;
+            }
+
+            let projectID = -1;
+
+            if(project[0] == undefined || project[0].project_id == undefined){
+                projectID = project.project_id;
+            }else{
+                projectID = project[0].project_id;
+            }
+
+
+            // Now we have all the info to build a session object. lets build one
+            let session = {
+                "user_id": userID,
+                "project_id": projectID,
+                "dive": dive,
+                "line": line,
+                "lineId": lineID,
+                "type": type
+              };
+
+            // We'll try to find this session, if it exists in the db, we'll return that
+            var currentSession = await this.db.sessions.findAll( {
+                where: {
+                    user_id: session.user_id,
+                    project_id: session.project_id,
+                    dive: session.dive,
+                    line: session.line,
+                    type: session.type
+                }
+            });
+
+            // Check if our query has found an existing session.
+            if(currentSession.length >= 1){
+                // We have found a current session. unwrap it
+                data = currentSession[0];
+            }else{
+                // We have not found a current session. create a new one.
+                session.createdate = new Date().toISOString();
+                data = await this.db.sessions.create(session);
+            }
+
+
+
+        } catch(err) {
+            // If an error occurs, then user didn't exist.
+            logger.error('Error::' + err);
+            return err;
+        }
+        return data;
+    }
+
+    /**
+     * Update an existing session record.
+     *
+     * An `updateddate` timestamp is stamped onto the record before update.
+     * Note that this is a plain property assignment, not one of the
+     * `sessions` model's defined attributes (the model instead relies on
+     * Sequelize's automatic `updatedAt` timestamp column), so this
+     * assignment has no persisted effect.
+     *
+     * On failure, the error is only logged via `logger.error` — it is
+     * neither thrown nor returned — so this resolves to the initial `{}`
+     * value instead of reflecting the failure in any way.
+     *
+     * @async
+     * @param {Object} session - Session fields to update; must include `session_id` identifying the record to update.
+     * @returns {Promise&lt;Array&lt;number>|Object>} Sequelize's update result
+     * (an array whose first element is the number of affected rows) on
+     * success, or `{}` if the update failed.
+     */
+    async updateSession(session) {
+        let data = {};
+        try {
+            session.updateddate = new Date().toISOString();
+            data = await this.db.sessions.update({...session}, {
+                where: {
+                    session_id: session.session_id
+                }
+            });
+        } catch(err) {
+            logger.error('Error::' + err);
+        }
+        return data;
+    }
+
+    /**
+     * Delete a session record by id.
+     *
+     * On failure, the error is only logged via `logger.error` — it is
+     * neither thrown nor returned — so this resolves to the initial `{}`
+     * value instead of reflecting the failure in any way.
+     *
+     * Note: the final `return {status: ...}` statement below is
+     * unreachable dead code, since the preceding `return data;` always
+     * returns first.
+     *
+     * @async
+     * @param {number|string} sessionId - Identifier of the session to delete.
+     * @returns {Promise&lt;number|Object>} The number of destroyed rows (0 or
+     * 1) on success, or `{}` if the delete failed.
+     */
+    async deleteSession(sessionId) {
+        let data = {};
+        try {
+            data = await this.db.sessions.destroy({
+                where: {
+                    session_id: sessionId
+                }
+            });
+        } catch(err) {
+            logger.error('Error::' + err);
+        }
+        return data;
+        return {status: `${data.deletedCount > 0 ? true : false}`};
+    }
+
+    /**
+     * Fetch the session ids for a project restricted to a given session type.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero sessions and a database failure.
+     *
+     * @async
+     * @param {number|string} project_id - Identifier of the project to scope the search to.
+     * @param {string} type - Session type/category to filter by.
+     * @returns {Promise&lt;Array&lt;Object>>} Records containing only the
+     * `session_id` attribute for matching sessions. Returns an empty array
+     * when none exist or when the database query fails.
+     */
+    async getSessionIDsWithProjectAndType(project_id, type){
+        try {
+            const session_ids = await this.db.sessions.findAll({
+                 attributes: ['session_id'],
+                 where: {
+                    type: type,
+                    project_id: project_id
+                }
+              });
+            return session_ids;
+        } catch (err) {
+            console.log(err);
+            return [];
+        }
+    }
+
+    /**
+     * Fetch session counts grouped by user and date within a date range.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero rows and a database failure.
+     *
+     * @async
+     * @param {string|Date} startDate - Start of the date range (inclusive) to filter sessions' `createdAt` by.
+     * @param {string|Date} endDate - End of the date range (inclusive) to filter sessions' `createdAt` by.
+     * @returns {Promise&lt;Array&lt;Object>>} Raw rows of `{ user_id, date,
+     * sessionCount }` for each user/date combination in range. Returns an
+     * empty array when none exist or when the database query fails.
+     */
+    async getSessionsGroupedByUserAndDate(startDate, endDate){
+        try{
+            // Fetch the number of sessions each user worked on, grouped by user and date
+            const sessionData = await this.db.sessions.findAll({
+                attributes: [
+                    'user_id',
+                    [Sequelize.fn('DATE', Sequelize.col('createdAt')), 'date'],
+                    [Sequelize.fn('COUNT', Sequelize.col('session_id')), 'sessionCount']
+                ],
+                where: {
+                    createdAt: {
+                        [Sequelize.Op.between]: [startDate, endDate]
+                    }
+                },
+                group: ['user_id', 'date'],
+                raw: true
+            });
+
+            return sessionData;
+        }catch(err){
+            console.log(err);
+            return [];
+        }
+    }
+
+}
+
+
+
+module.exports = new SessionRepository();
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

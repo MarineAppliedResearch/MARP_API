@@ -1,0 +1,3396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>ObservationService - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="logger_api.module_logger-APILogger.html">APILogger</a><ul class='methods'><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#error">error</a></li><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#info">info</a></li><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#info">info</a></li></ul></li><li><a href="module-controller_dataset-DatasetController.html">DatasetController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-controller_keyframe-KeyframeController.html">KeyframeController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-controller_metaInfo-MetaInfoController.html">MetaInfoController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_metaInfo-MetaInfoController.html#getDBName">getDBName</a></li></ul></li><li><a href="module-controller_observation-ObservationController.html">ObservationController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#createObservation">createObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#deleteObservation">deleteObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getDistinctComnamesWithKeyframes">getDistinctComnamesWithKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getLastVideoInfo">getLastVideoInfo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getMaxObservationFromVideo">getMaxObservationFromVideo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getMaxPobsID">getMaxPobsID</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservations">getObservations</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsBySessionID">getObservationsBySessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideo">getObservationsByVideo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideoAndComnames">getObservationsByVideoAndComnames</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideoAndProject">getObservationsByVideoAndProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsGroupedByUserAndDate">getObservationsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsWithKeyframesByComnames">getObservationsWithKeyframesByComnames</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getProjectTimeByDateAndUser">getProjectTimeByDateAndUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getUserDashboardData">getUserDashboardData</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getVideoSummariesByProject">getVideoSummariesByProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservation">updateObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservationWithCount">updateObservationWithCount</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservationWithSize">updateObservationWithSize</a></li></ul></li><li><a href="module-controller_project-ProjectController.html">ProjectController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#updateProject">updateProject</a></li></ul></li><li><a href="module-controller_session-SessionController.html">SessionController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#updateSession">updateSession</a></li></ul></li><li><a href="module-controller_species-SpeciesController.html">SpeciesController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getSpeciesByComname">getSpeciesByComname</a></li></ul></li><li><a href="module-controller_task-TodoController.html">TodoController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#updateTask">updateTask</a></li></ul></li><li><a href="module-controller_user-UserController.html">UserController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#updateUser">updateUser</a></li></ul></li><li><a href="module-model_artifacts-artifacts.html">artifacts</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_artifacts-artifacts.html#.associate">associate</a></li></ul></li><li><a href="module-model_dataset_observations-dataset_observations.html">dataset_observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_dataset_observations-dataset_observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_datasets-datasets.html">datasets</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_datasets-datasets.html#.associate">associate</a></li></ul></li><li><a href="module-model_epochs-epochs.html">epochs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_epochs-epochs.html#.associate">associate</a></li></ul></li><li><a href="module-model_hyperparameters-hyperparameters.html">hyperparameters</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_hyperparameters-hyperparameters.html#.associate">associate</a></li></ul></li><li><a href="module-model_keyframe-Keyframes.html">Keyframes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_keyframe-Keyframes.html#.associate">associate</a></li></ul></li><li><a href="module-model_metaInfo-MetaInfo.html">MetaInfo</a></li><li><a href="module-model_metrics_curves-metrics_curves.html">metrics_curves</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_metrics_curves-metrics_curves.html#.associate">associate</a></li></ul></li><li><a href="module-model_metrics_summary-metrics_summary.html">metrics_summary</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_metrics_summary-metrics_summary.html#.associate">associate</a></li></ul></li><li><a href="module-model_ml_models-ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_ml_models-ml_models.html#.associate">associate</a></li></ul></li><li><a href="module-model_model_species-model_species.html">model_species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_model_species-model_species.html#.associate">associate</a></li></ul></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_project-Projects.html">Projects</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_project-Projects.html#.associate">associate</a></li></ul></li><li><a href="module-model_session-Sessions.html">Sessions</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_session-Sessions.html#.associate">associate</a></li></ul></li><li><a href="module-model_species-species.html">species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_species-species.html#.associate">associate</a></li></ul></li><li><a href="module-model_task-Tasks.html">Tasks</a></li><li><a href="module-model_training_runs-training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_training_runs-training_runs.html#.associate">associate</a></li></ul></li><li><a href="module-model_user-Users.html">Users</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_user-Users.html#.associate">associate</a></li></ul></li><li><a href="module-repository_dataset-DatasetRepository.html">DatasetRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-repository_keyframe-KeyframeRepository.html">KeyframeRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-repository_metaInfo-MetaInfoRepository.html">MetaInfoRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_metaInfo-MetaInfoRepository.html#getDBName">getDBName</a></li></ul></li><li><a href="module-repository_project-ProjectRepository.html">ProjectRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#updateProject">updateProject</a></li></ul></li><li><a href="module-repository_session-SessionRepository.html">SessionRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#updateSession">updateSession</a></li></ul></li><li><a href="module-repository_species-SpeciesRepository.html">SpeciesRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getSpeciesByComname">getSpeciesByComname</a></li></ul></li><li><a href="module-repository_task-TaskRepository.html">TaskRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#updateTask">updateTask</a></li></ul></li><li><a href="module-repository_user-UserRepository.html">UserRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#updateUsers">updateUsers</a></li></ul></li><li><a href="module-service_dataset-DatasetService.html">DatasetService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-service_keyframe-KeyframeService.html">KeyframeService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-service_metaInfo-MetaInfoService.html">MetaInfoService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_metaInfo-MetaInfoService.html#getDBName">getDBName</a></li></ul></li><li><a href="module-service_observation-ObservationService.html">ObservationService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#createObservation">createObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#deleteObservation">deleteObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getDistinctComnamesWithKeyframes">getDistinctComnamesWithKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getLastVideoInfo">getLastVideoInfo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getMaxObservationFromVideo">getMaxObservationFromVideo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getMaxPobsID">getMaxPobsID</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservations">getObservations</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsBySessionID">getObservationsBySessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideo">getObservationsByVideo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideoAndComnames">getObservationsByVideoAndComnames</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideoAndProject">getObservationsByVideoAndProject</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsGroupedByUserAndDate">getObservationsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsWithKeyframesByComnames">getObservationsWithKeyframesByComnames</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getProjectTimeByDateAndUser">getProjectTimeByDateAndUser</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getUserDashboardData">getUserDashboardData</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getVideoSummariesByProject">getVideoSummariesByProject</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservation">updateObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservationWithCount">updateObservationWithCount</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservationWithSize">updateObservationWithSize</a></li></ul></li><li><a href="module-service_project-ProjectService.html">ProjectService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#updateProject">updateProject</a></li></ul></li><li><a href="module-service_session-SessionService.html">SessionService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#updateSession">updateSession</a></li></ul></li><li><a href="module-service_species-SpeciesService.html">SpeciesService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getSpeciesByComname">getSpeciesByComname</a></li></ul></li><li><a href="module-service_task-TaskService.html">TaskService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#updateTask">updateTask</a></li></ul></li><li><a href="module-service_user-UserService.html">UserService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#updateUser">updateUser</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="logger_api.module_logger.html">logger/api.logger</a></li><li><a href="module-config_config.html">config/config</a></li><li><a href="module-controller_dataset.html">controller/dataset</a></li><li><a href="module-controller_keyframe.html">controller/keyframe</a></li><li><a href="module-controller_metaInfo.html">controller/metaInfo</a></li><li><a href="module-controller_observation.html">controller/observation</a></li><li><a href="module-controller_project.html">controller/project</a></li><li><a href="module-controller_session.html">controller/session</a></li><li><a href="module-controller_species.html">controller/species</a></li><li><a href="module-controller_task.html">controller/task</a></li><li><a href="module-controller_user.html">controller/user</a></li><li><a href="module-model_SequelizeMeta.html">model/SequelizeMeta</a></li><li><a href="module-model_artifacts.html">model/artifacts</a></li><li><a href="module-model_dataset_observations.html">model/dataset_observations</a></li><li><a href="module-model_datasets.html">model/datasets</a></li><li><a href="module-model_epochs.html">model/epochs</a></li><li><a href="module-model_hyperparameters.html">model/hyperparameters</a></li><li><a href="module-model_index.html">model/index</a></li><li><a href="module-model_init-models.html">model/init-models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_init-models.html#~initModels">initModels</a></li></ul></li><li><a href="module-model_keyframe.html">model/keyframe</a></li><li><a href="module-model_metaInfo.html">model/metaInfo</a></li><li><a href="module-model_metrics_curves.html">model/metrics_curves</a></li><li><a href="module-model_metrics_summary.html">model/metrics_summary</a></li><li><a href="module-model_ml_models.html">model/ml_models</a></li><li><a href="module-model_model_species.html">model/model_species</a></li><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-model_project.html">model/project</a></li><li><a href="module-model_session.html">model/session</a></li><li><a href="module-model_species.html">model/species</a></li><li><a href="module-model_task.html">model/task</a></li><li><a href="module-model_training_runs.html">model/training_runs</a></li><li><a href="module-model_user.html">model/user</a></li><li><a href="module-repository_dataset.html">repository/dataset</a></li><li><a href="module-repository_keyframe.html">repository/keyframe</a></li><li><a href="module-repository_metaInfo.html">repository/metaInfo</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-repository_project.html">repository/project</a></li><li><a href="module-repository_session.html">repository/session</a></li><li><a href="module-repository_species.html">repository/species</a></li><li><a href="module-repository_task.html">repository/task</a></li><li><a href="module-repository_user.html">repository/user</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~GET/">GET /</a></li><li data-type='method' style='display: none;'><a href="module-server.html#~GET/apps/:appName">GET /apps/:appName</a></li><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li><li><a href="module-service_dataset.html">service/dataset</a></li><li><a href="module-service_keyframe.html">service/keyframe</a></li><li><a href="module-service_metaInfo.html">service/metaInfo</a></li><li><a href="module-service_observation.html">service/observation</a></li><li><a href="module-service_project.html">service/project</a></li><li><a href="module-service_session.html">service/session</a></li><li><a href="module-service_species.html">service/species</a></li><li><a href="module-service_task.html">service/task</a></li><li><a href="module-service_user.html">service/user</a></li></ul><h3>Global</h3><ul><li><a href="global.html#fs">fs</a></li><li><a href="global.html#initializeCurrentYear">initializeCurrentYear</a></li><li><a href="global.html#initializeLandingPage">initializeLandingPage</a></li><li><a href="global.html#initializeLoginDialog">initializeLoginDialog</a></li><li><a href="global.html#initializeMobileNavigation">initializeMobileNavigation</a></li><li><a href="global.html#initializeScrollEffects">initializeScrollEffects</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">ObservationService</h1>
+    
+
+    
+
+
+
+
+<section>
+
+<header>
+    
+        <h2>
+            <span class="ancestors"><a href="module-service_observation.html">service/observation</a>~</span>
+        
+        
+            ObservationService
+        
+        </h2>
+        
+    
+</header>
+
+<article>
+    
+        <div class="container-overview">
+        
+            
+
+    
+
+    <h4 class="name" id="ObservationService"><span class="type-signature"></span>new ObservationService<span class="signature">()</span><span class="type-signature"></span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Coordinates observation operations between the controller and repository
+layers.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line16">line 16</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+        </div>
+    
+
+    
+
+    
+
+    
+    
+    
+
+     
+
+    
+
+    
+
+    
+        <h3 class="subsection-title">Methods</h3>
+
+        
+            
+
+    
+
+    <h4 class="name" id="createObservation"><span class="type-signature type-signature-async">(async) </span>createObservation<span class="signature">(observation)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Create a new observation record, generating its `observation_id`,
+`obsID`, and `PobsID` values from existing data.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line130">line 130</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>observation</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Observation fields to insert, including
+`session_id` and optional nested `keyframes`. `observation_id`,
+`obsID`, `PobsID`, and `createdate` are computed and overwritten by
+the repository regardless of any values supplied here.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    The created observation record. If the
+underlying insert fails, resolves to an empty object rather than
+throwing or returning null, so callers cannot detect failure from the
+return value alone.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Object></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="deleteObservation"><span class="type-signature type-signature-async">(async) </span>deleteObservation<span class="signature">(observationId)</span><span class="type-signature"> &rarr; {Promise.&lt;number>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Delete an observation by its `observation_id`.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line160">line 160</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>observationId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">`observation_id` of the record
+to delete.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    The number of rows deleted, or an empty
+object if the delete failed; the error is logged rather than
+propagated, so callers cannot distinguish "zero rows matched" from
+"the query failed" in that case.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;number></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getDistinctComnamesWithKeyframes"><span class="type-signature type-signature-async">(async) </span>getDistinctComnamesWithKeyframes<span class="signature">()</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;string>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Retrieves all distinct comnames from observations that have associated keyframes.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line260">line 260</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    - A promise that resolves to an array of distinct comnames.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;string>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getLastVideoInfo"><span class="type-signature type-signature-async">(async) </span>getLastVideoInfo<span class="signature">(session_id)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch the video location and position info for the highest-numbered
+observation in a session.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line49">line 49</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>session_id</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Session identifier whose latest
+observation's video info should be retrieved.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    The observation record(s) matching
+the session's maximum `observation_id`. Resolves to an empty array
+when the session has no observations or the underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getMaxObservationFromVideo"><span class="type-signature type-signature-async">(async) </span>getMaxObservationFromVideo<span class="signature">(video_source)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch the observation with the largest `observation_id` associated
+with a specific video source.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line63">line 63</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>video_source</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Video source value to match.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    The observation record(s) matching
+the video's maximum `observation_id`. Resolves to an empty array when
+no observations match or the underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getMaxPobsID"><span class="type-signature type-signature-async">(async) </span>getMaxPobsID<span class="signature">(project_id, type)</span><span class="type-signature"> &rarr; {Promise.&lt;number>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch the maximum `PobsID` across all sessions sharing a project and
+type.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line176">line 176</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>project_id</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Project identifier used to locate
+candidate sessions.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>type</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Session type used together with `project_id`
+to locate candidate sessions.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    The highest `PobsID` found, or `-1` if no
+observations match or the underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;number></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getObservations"><span class="type-signature type-signature-async">(async) </span>getObservations<span class="signature">()</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch every observation record.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line34">line 34</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    All observation records ordered by
+ascending `obsID`. Resolves to an empty array when none exist or the
+underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getObservationsBySessionID"><span class="type-signature type-signature-async">(async) </span>getObservationsBySessionID<span class="signature">(session_id)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch every observation belonging to a session, including associated
+keyframes.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line112">line 112</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>session_id</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Session identifier to match.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    Matching observations with their
+keyframes (if any). Resolves to an empty array when none exist or the
+underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getObservationsByVideo"><span class="type-signature type-signature-async">(async) </span>getObservationsByVideo<span class="signature">(videoName)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch observations for a specific video source, including keyframes.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line192">line 192</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>videoName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Exact value to match against the
+observation `video_source` field.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    Matching observations with
+associated keyframes, ordered by ascending `mediaPosition`. Only
+observations that have at least one keyframe are returned. Resolves
+to an empty array when no observations match or the underlying query
+fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getObservationsByVideoAndComnames"><span class="type-signature type-signature-async">(async) </span>getObservationsByVideoAndComnames<span class="signature">()</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Returns all observations associated with video videoName that have a comname in comnameList</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line222">line 222</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>req.query.videoName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The name of the video</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>req.query.comnameList</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;string></span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">An array of comname strings to filter observations</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    Matching observations with associated
+keyframes, ordered by ascending `mediaPosition`. Resolves to an empty
+array when no observations match or the underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getObservationsByVideoAndProject"><span class="type-signature type-signature-async">(async) </span>getObservationsByVideoAndProject<span class="signature">(videoName, projectName)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Returns all observations associated with video videoName that have a comname in comnameList</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line237">line 237</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>videoName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The name of the video</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>projectName</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;string></span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">An array of comname strings to filter observations</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    Matching observations with optional
+keyframes, ordered by ascending `mediaPosition`. Resolves to an empty
+array when no records match, the project is not found, or the
+underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getObservationsGroupedByUserAndDate"><span class="type-signature type-signature-async">(async) </span>getObservationsGroupedByUserAndDate<span class="signature">()</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch observation counts grouped by user and creation date.
+
+This method accepts no parameters and forwards none to the
+repository, even though the underlying query filters `createdAt`
+against a `startDate`/`endDate` range. As written, the repository
+receives `undefined` for both bounds.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line299">line 299</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    Raw rows containing `user_id`,
+`date`, and `observationCount`. Resolves to `undefined` if the
+underlying query fails, since the error is logged rather than
+converted to a fallback value.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getObservationsWithKeyframesByComnames"><span class="type-signature type-signature-async">(async) </span>getObservationsWithKeyframesByComnames<span class="signature">(comnameList)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Returns all observations that have associated keyframes and a comname in comnameList</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line250">line 250</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>comnameList</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;string></span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">An array of comname strings to filter observations</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    Matching observations with associated
+keyframes, ordered by ascending `mediaPosition`. Resolves to an empty
+array when no observations match or the underlying query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getProjectTimeByDateAndUser"><span class="type-signature type-signature-async">(async) </span>getProjectTimeByDateAndUser<span class="signature">(startDate, endDate)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch, for each project/date/user combination, the estimated minutes
+spent recording observations within a date range.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line315">line 315</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>startDate</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+|
+
+<span class="param-type">Date</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Start of the date range (inclusive)
+used to filter observations by `createdAt`.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>endDate</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+|
+
+<span class="param-type">Date</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">End of the date range (inclusive) used
+to filter observations by `createdAt`.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    An object keyed by project name, then by
+date, then by user name, containing the estimated minutes recorded.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Object></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getUserDashboardData"><span class="type-signature type-signature-async">(async) </span>getUserDashboardData<span class="signature">(startDate, endDate)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch per-user, per-date activity counts (observation totals) for a
+dashboard view.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line281">line 281</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>startDate</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+|
+
+<span class="param-type">Date</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Start of the date range (inclusive)
+used to filter observations by `createdAt`.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>endDate</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+|
+
+<span class="param-type">Date</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">End of the date range (inclusive) used
+to filter observations by `createdAt`.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    An object keyed by user name, then by date,
+containing `sessions`, `observations`, and `projects` counts
+(`sessions` and `projects` are currently always `0`, only
+`observations` is populated). Resolves to `undefined` if the
+underlying query fails, since the error is logged rather than
+converted to a fallback value.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Object></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="getVideoSummariesByProject"><span class="type-signature type-signature-async">(async) </span>getVideoSummariesByProject<span class="signature">(project_id)</span><span class="type-signature"> &rarr; {Promise.&lt;Array.&lt;Object>>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch grouped video summaries (species/session counts and
+representative session metadata) for a project.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line208">line 208</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>project_id</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Project identifier matched
+against the associated session's `project_id` field.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    Grouped video-summary objects.
+Resolves to an empty array when no records match or the underlying
+query fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Array.&lt;Object>></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="updateObservation"><span class="type-signature type-signature-async">(async) </span>updateObservation<span class="signature">(observation)</span><span class="type-signature"> &rarr; {Promise.&lt;Object>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Update an existing observation, propagating a changed `comname` to
+its associated keyframes within the same transaction.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line145">line 145</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>observation</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Observation fields to update; must
+include `observation_id` identifying the record to modify.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    The Sequelize update result (affected row
+count array). Throws (after rolling back the transaction) if the
+observation does not exist or if the update fails.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;Object></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="updateObservationWithCount"><span class="type-signature type-signature-async">(async) </span>updateObservationWithCount<span class="signature">(session_id, obsID, count)</span><span class="type-signature"> &rarr; {Promise.&lt;number>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Update the `count` field of a specific observation within a session.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line80">line 80</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>session_id</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Session identifier used together
+with `obsID` to locate the target observation.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>obsID</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Per-session sequential observation
+identifier (distinct from the `observation_id` primary key) to update.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>count</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">New count value to persist.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    `1` if the update statement executed
+without throwing, or `0` if it failed. This does not indicate whether
+any row actually matched `session_id`/`obsID`.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;number></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="updateObservationWithSize"><span class="type-signature type-signature-async">(async) </span>updateObservationWithSize<span class="signature">(session_id, obsID, size)</span><span class="type-signature"> &rarr; {Promise.&lt;number>}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Update the `coarsesize` field of a specific observation within a
+session.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="service_observation.service.js.html">service/observation.service.js</a>, <a href="service_observation.service.js.html#line98">line 98</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>session_id</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Session identifier used together
+with `obsID` to locate the target observation.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>obsID</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Per-session sequential observation
+identifier (distinct from the `observation_id` primary key) to update.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>size</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+|
+
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">New coarse-size value to persist.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    `1` if the update statement executed
+without throwing, or `0` if it failed. This does not indicate whether
+any row actually matched `session_id`/`obsID`.
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">Promise.&lt;number></span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+    
+
+    
+
+    
+</article>
+
+</section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

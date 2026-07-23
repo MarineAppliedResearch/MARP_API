@@ -1,287 +1,622 @@
+/**
+ * Sequelize model definition for biological and habitat observations.
+ *
+ * This module defines the database fields, constraints, indexes, and model
+ * associations used by observation records throughout the MARP API.
+ *
+ * Observation records connect project, session, user, taxonomy, video,
+ * annotation, habitat, review, and machine-learning information. Related
+ * keyframes describe frame-specific annotation data belonging to an
+ * observation.
+ *
+ * The OpenAPI schemas in this file describe observation objects returned by
+ * API endpoints. The base `Observation` schema contains fields stored directly
+ * on the observation record. `ObservationWithKeyframes` extends that schema
+ * with the optional keyframe association returned by applicable queries.
+ *
+ * @fileoverview Sequelize model and OpenAPI response schemas for observations.
+ * @author Isaac Travers
+ * @module model/observations
+ */
+
+
 const { Model } = require('sequelize');
 
+
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Observation:
+ *       type: object
+ *       description: >
+ *         Biological or habitat observation recorded during a MARP session.
+ *         The fields available in a response may depend on the query and any
+ *         Sequelize associations included by that endpoint.
+ *       required:
+ *         - observation_id
+ *         - obsID
+ *       properties:
+ *         observation_id:
+ *           type: integer
+ *           example: 12045
+ *           description: Primary database identifier for the observation.
+ *         obsID:
+ *           type: integer
+ *           example: 42
+ *           description: Observation identifier used within the source workflow.
+ *         PobsID:
+ *           type: integer
+ *           nullable: true
+ *           example: 17
+ *           description: Optional parent observation identifier.
+ *         project_id:
+ *           type: integer
+ *           nullable: true
+ *           example: 24
+ *           description: Identifier of the project associated with the observation.
+ *         session_id:
+ *           type: integer
+ *           nullable: true
+ *           example: 718
+ *           description: Identifier of the session associated with the observation.
+ *         user_id:
+ *           type: integer
+ *           nullable: true
+ *           example: 12
+ *           description: Identifier of the user associated with the observation.
+ *         tc:
+ *           type: string
+ *           nullable: true
+ *           example: "00:12:21.520"
+ *           description: Starting time code for the observation.
+ *         frame:
+ *           type: string
+ *           nullable: true
+ *           example: "18322"
+ *           description: Stored source-frame value associated with the observation.
+ *         taxserial:
+ *           type: integer
+ *           nullable: true
+ *           example: 1054
+ *           description: Taxonomic serial identifier associated with the observation.
+ *         comname:
+ *           type: string
+ *           nullable: true
+ *           example: Bat star
+ *           description: Common name assigned to the observed taxon.
+ *         count:
+ *           type: integer
+ *           nullable: true
+ *           example: 1
+ *           description: Number of individuals represented by the observation.
+ *         sex:
+ *           type: string
+ *           nullable: true
+ *           example: Unknown
+ *           description: Recorded sex classification when available.
+ *         coarsesize:
+ *           type: integer
+ *           nullable: true
+ *           example: 3
+ *           description: Coarse size classification assigned to the observation.
+ *         sizereview:
+ *           type: integer
+ *           nullable: true
+ *           example: 1
+ *           description: Stored size-review state or classification.
+ *         quadrant:
+ *           type: integer
+ *           nullable: true
+ *           example: 2
+ *           description: Quadrant value associated with the observation.
+ *         etc:
+ *           type: string
+ *           nullable: true
+ *           example: "00:12:29.840"
+ *           description: Ending time code for the observation.
+ *         taxReview:
+ *           type: string
+ *           nullable: true
+ *           example: R
+ *           description: Taxonomic review status or code.
+ *         note:
+ *           type: string
+ *           nullable: true
+ *           example: Partially obscured behind rock.
+ *           description: Free-text note associated with the observation.
+ *         downcamera:
+ *           type: string
+ *           nullable: true
+ *           example: "false"
+ *           description: Stored down-camera value associated with the observation.
+ *         timelog:
+ *           type: string
+ *           nullable: true
+ *           example: "2024-07-30 19:21:14"
+ *           description: Stored observation time-log value.
+ *         video_source:
+ *           type: string
+ *           nullable: true
+ *           example: 20240730_190910 Fwd.mp4
+ *           description: Video source associated with the observation.
+ *         videoLocation:
+ *           type: string
+ *           nullable: true
+ *           example: /CAMPA2024/Dive12/FWD
+ *           description: Stored location of the associated video.
+ *         mediaPosition:
+ *           type: string
+ *           nullable: true
+ *           example: "741.520"
+ *           description: Stored position of the observation within the source media.
+ *         actualPosition:
+ *           type: string
+ *           nullable: true
+ *           example: "741.520"
+ *           description: Stored actual-position value associated with the observation.
+ *         substrate_bedrock:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether bedrock substrate was recorded.
+ *         substrate_megaclast:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether megaclast substrate was recorded.
+ *         substrate_boulder:
+ *           type: boolean
+ *           nullable: true
+ *           example: true
+ *           description: Indicates whether boulder substrate was recorded.
+ *         substrate_cobble:
+ *           type: boolean
+ *           nullable: true
+ *           example: true
+ *           description: Indicates whether cobble substrate was recorded.
+ *         substrate_pebble:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether pebble substrate was recorded.
+ *         substrate_granule:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether granule substrate was recorded.
+ *         substrate_sand:
+ *           type: boolean
+ *           nullable: true
+ *           example: true
+ *           description: Indicates whether sand substrate was recorded.
+ *         substrate_mud:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether mud substrate was recorded.
+ *         substrate_coral_reef:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether coral-reef substrate was recorded.
+ *         substrate_coral_rubble:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether coral-rubble substrate was recorded.
+ *         substrate_shell_hash:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether shell-hash substrate was recorded.
+ *         substrate_shell_rubble:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether shell-rubble substrate was recorded.
+ *         substrate_algal:
+ *           type: boolean
+ *           nullable: true
+ *           example: false
+ *           description: Indicates whether algal substrate was recorded.
+ *         confidence:
+ *           type: number
+ *           format: double
+ *           nullable: true
+ *           minimum: 0
+ *           maximum: 1
+ *           example: 0.93
+ *           description: Machine-learning confidence score between zero and one.
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when the observation record was created.
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when the observation record was last updated.
+ *
+ *     ObservationWithKeyframes:
+ *       allOf:
+ *         - $ref: '#/components/schemas/Observation'
+ *         - type: object
+ *           description: Observation response containing associated keyframes.
+ *           properties:
+ *             keyframes:
+ *               type: array
+ *               description: Keyframes associated with the observation.
+ *               items:
+ *                 $ref: '#/components/schemas/Keyframe'
+ */
+
+
+/**
+ * Create and initialize the observations Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to related models through
+ * {@link Observations.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {Model} Initialized observations model.
+ */
 module.exports = (sequelize, DataTypes) => {
-  class Observations extends Model {
-    static associate(models) {
-      this.belongsTo(models.projects, {
-        sourceKey: 'project_id',
-        foreignKey: 'project_id',
-        as: 'project',
-      });
 
-      this.belongsTo(models.users, {
-        sourceKey: 'user_id',
-        foreignKey: 'user_id',
-        as: 'user',
-      });
+    /**
+     * Sequelize model representing one observation database record.
+     *
+     * @class Observations
+     * @extends Model
+     */
+    class Observations extends Model {
 
-      this.belongsTo(models.sessions, {
-        sourceKey: 'session_id',
-        foreignKey: 'session_id',
-        as: 'session',
-      });
+        /**
+         * Register relationships between observations and related models.
+         *
+         * Associations are configured after all Sequelize models have been
+         * loaded into the shared model registry.
+         *
+         * @param {Object} models - Initialized Sequelize model registry.
+         * @returns {void}
+         */
+        static associate(models) {
 
-      this.hasMany(models.keyframes, {
-        sourceKey: 'observation_id',
-        foreignKey: 'observation_id',
-        as: 'keyframes',
-        onDelete: 'CASCADE',
-      });
+            // Connect each observation to its associated project.
+            this.belongsTo(models.projects, {
+                sourceKey: 'project_id',
+                foreignKey: 'project_id',
+                as: 'project',
+            });
+
+            // Connect each observation to the user associated with the record.
+            this.belongsTo(models.users, {
+                sourceKey: 'user_id',
+                foreignKey: 'user_id',
+                as: 'user',
+            });
+
+            // Connect each observation to the session in which it was recorded.
+            this.belongsTo(models.sessions, {
+                sourceKey: 'session_id',
+                foreignKey: 'session_id',
+                as: 'session',
+            });
+
+            // Connect each observation to its frame-specific keyframe records.
+            this.hasMany(models.keyframes, {
+                sourceKey: 'observation_id',
+                foreignKey: 'observation_id',
+                as: 'keyframes',
+
+                // Delete dependent keyframes when their observation is deleted.
+                onDelete: 'CASCADE',
+            });
+        }
     }
-  }
-
-  Observations.init(
-    {
-      observation_id: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-        primaryKey: true,
-        autoIncrement: true,
-      },
-
-      obsID: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-      },
-
-      PobsID: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      project_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: {
-          model: 'projects',
-          key: 'project_id',
-        },
-      },
-
-      session_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: {
-          model: 'sessions',
-          key: 'session_id',
-        },
-      },
-
-      user_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-        references: {
-          model: 'users',
-          key: 'user_id',
-        },
-      },
-
-      tc: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
 
 
-      frame: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      taxserial: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-      },
-
-      comname: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      count: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-      },
-
-      sex: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      coarsesize: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-      },
-
-      sizereview: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-      },
-
-      quadrant: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-      },
-
-      etc: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      taxReview: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      note: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      downcamera: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      timelog: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      video_source: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      videoLocation: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      mediaPosition: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      actualPosition: {
-        type: DataTypes.STRING(255),
-        allowNull: true,
-        defaultValue: null,
-      },
-
-      substrate_bedrock: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_megaclast: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_boulder: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_cobble: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_pebble: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_granule: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_sand: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_mud: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_coral_reef: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_coral_rubble: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_shell_hash: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_shell_rubble: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-
-      substrate_algal: {
-        type: DataTypes.BOOLEAN,
-        allowNull: true,
-        defaultValue: false,
-      },
-      confidence: {
-        type: DataTypes.DOUBLE,
-        allowNull: true,
-        comment: 'Confidence score (0.0–1.0)',
-      },
-    },
-    {
-      sequelize,
-      modelName: 'observations',
-      tableName: 'observations',
-      schema: 'public',
-      timestamps: true,
-      freezeTableName: true,
-      underscored: false,
-      sync: { alter: false },  // <— prevents any future alters
-      indexes: [
+    // Define the database fields and validation rules for observation records.
+    Observations.init(
         {
-          name: 'observations_pkey',
-          unique: true,
-          fields: ['observation_id'],
-        },
-      ],
-    }
-  );
+            // Primary database identifier generated for each observation.
+            observation_id: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+                primaryKey: true,
+                autoIncrement: true,
+            },
 
-  return Observations;
+            // Observation identifier used by the source observation workflow.
+            obsID: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+            },
+
+            // Optional identifier of a parent observation.
+            PobsID: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Optional project directly associated with the observation.
+            project_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: {
+                    model: 'projects',
+                    key: 'project_id',
+                },
+            },
+
+            // Optional session in which the observation was recorded.
+            session_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: {
+                    model: 'sessions',
+                    key: 'session_id',
+                },
+            },
+
+            // Optional user associated with the observation record.
+            user_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: {
+                    model: 'users',
+                    key: 'user_id',
+                },
+            },
+
+            // Starting time code of the observation in the source media.
+            tc: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Stored source-frame value associated with the observation.
+            frame: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Taxonomic serial identifier associated with the observation.
+            taxserial: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
+
+            // Common name assigned to the observed biological taxon.
+            comname: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Number of individuals represented by the observation.
+            count: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
+
+            // Recorded sex classification when available.
+            sex: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Coarse size category assigned to the observation.
+            coarsesize: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
+
+            // Stored size-review state or classification.
+            sizereview: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
+
+            // Quadrant associated with the observation.
+            quadrant: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
+
+            // Ending time code of the observation in the source media.
+            etc: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Taxonomic review status or code.
+            taxReview: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Free-text note describing the observation.
+            note: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Stored down-camera value associated with the observation.
+            downcamera: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Stored time-log value associated with the observation.
+            timelog: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Name or identifier of the source video.
+            video_source: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Stored filesystem, server, or logical location of the source video.
+            videoLocation: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Stored position of the observation within the source media.
+            mediaPosition: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Stored actual-position value associated with the observation.
+            actualPosition: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+            },
+
+            // Substrate classification flags allow multiple substrate types to
+            // be recorded for the same observation.
+            substrate_bedrock: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_megaclast: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_boulder: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_cobble: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_pebble: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_granule: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_sand: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_mud: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_coral_reef: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_coral_rubble: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_shell_hash: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_shell_rubble: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            substrate_algal: {
+                type: DataTypes.BOOLEAN,
+                allowNull: true,
+                defaultValue: false,
+            },
+
+            // Optional model confidence score represented on a zero-to-one scale.
+            confidence: {
+                type: DataTypes.DOUBLE,
+                allowNull: true,
+                comment: 'Confidence score (0.0–1.0)',
+            },
+        },
+        {
+            // Use the shared Sequelize connection supplied to the model factory.
+            sequelize,
+
+            // Register the model under the observations name.
+            modelName: 'observations',
+
+            // Map the model directly to the existing observations table.
+            tableName: 'observations',
+            schema: 'public',
+
+            // Maintain Sequelize-created createdAt and updatedAt fields.
+            timestamps: true,
+
+            // Prevent Sequelize from pluralizing or modifying the table name.
+            freezeTableName: true,
+
+            // Preserve the field names declared above instead of converting
+            // them automatically to underscored database-column names.
+            underscored: false,
+
+            // Do not allow synchronization to alter the existing table schema.
+            sync: {
+                alter: false,
+            },
+
+            // Declare the existing primary-key index for Sequelize metadata.
+            indexes: [
+                {
+                    name: 'observations_pkey',
+                    unique: true,
+                    fields: ['observation_id'],
+                },
+            ],
+        }
+    );
+
+    // Return the initialized model to the central model registry.
+    return Observations;
 };
