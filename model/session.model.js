@@ -35,6 +35,7 @@ const { Model } = require('sequelize');
  *         session_id:
  *           type: integer
  *           example: 501
+ *           readOnly: true
  *           description: Unique numeric identifier for this session record.
  *         project_id:
  *           type: integer
@@ -48,27 +49,39 @@ const { Model } = require('sequelize');
  *           description: Identifier of the user who recorded or owns this session.
  *         dive:
  *           type: string
+ *           minLength: 1
+ *           maxLength: 255
  *           example: Dive 12
  *           description: Dive identifier or name associated with this session.
  *         line:
  *           type: string
+ *           minLength: 1
+ *           maxLength: 255
  *           example: Line A
  *           description: Transect line identifier associated with this session.
  *         lineId:
  *           type: string
+ *           minLength: 1
+ *           maxLength: 255
  *           example: L-2024-012A
  *           description: Identifier of the specific survey line tied to this session.
  *         type:
  *           type: string
+ *           minLength: 1
+ *           maxLength: 255
  *           example: ROV
  *           description: Type or category of this session (e.g., survey platform or method).
  *         createdAt:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-22T15:33:10.000Z"
  *           description: Timestamp when this session record was created.
  *         updatedAt:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-23T09:12:01.000Z"
  *           description: Timestamp when this session record was last updated.
  */
 

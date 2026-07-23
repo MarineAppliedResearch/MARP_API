@@ -18,18 +18,23 @@ const { Model } = require('sequelize');
  *     MetaInfo:
  *       type: object
  *       description: >
- *         A single named metadata record used to store miscellaneous
- *         reference information for MARP.
+ *         A small reference metadata record used for lightweight
+ *         application-level values (for example labels or environment
+ *         metadata) that do not belong to a larger domain table.
  *       required:
  *         - id
  *       properties:
  *         id:
  *           type: integer
+ *           readOnly: true
+ *           example: 3
  *           description: Unique numeric identifier for this metadata record.
  *         name:
  *           type: string
  *           nullable: true
- *           description: Name of this metadata entry.
+ *           maxLength: 255
+ *           example: MARE_PRODUCTION
+ *           description: Optional metadata value or label stored in this record.
  */
 
 /**

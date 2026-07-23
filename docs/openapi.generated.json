@@ -454,19 +454,23 @@
       },
       "MetaInfo": {
         "type": "object",
-        "description": "A single named metadata record used to store miscellaneous reference information for MARP.\n",
+        "description": "A small reference metadata record used for lightweight application-level values (for example labels or environment metadata) that do not belong to a larger domain table.\n",
         "required": [
           "id"
         ],
         "properties": {
           "id": {
             "type": "integer",
+            "readOnly": true,
+            "example": 3,
             "description": "Unique numeric identifier for this metadata record."
           },
           "name": {
             "type": "string",
             "nullable": true,
-            "description": "Name of this metadata entry."
+            "maxLength": 255,
+            "example": "MARE_PRODUCTION",
+            "description": "Optional metadata value or label stored in this record."
           }
         }
       },
@@ -1109,7 +1113,7 @@
       },
       "Project": {
         "type": "object",
-        "description": "Named project grouping used to organize sessions and observations recorded throughout MARP.\n",
+        "description": "Named organizational unit used to group sessions and observations for a survey effort, campaign, or reporting scope.\n",
         "required": [
           "project_id",
           "name"
@@ -1118,12 +1122,29 @@
           "project_id": {
             "type": "integer",
             "example": 24,
-            "description": "Unique numeric identifier for this project."
+            "readOnly": true,
+            "description": "Unique numeric identifier for this project record."
           },
           "name": {
             "type": "string",
             "example": "Channel Islands 2024",
-            "description": "Unique display name for the project."
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Unique display name used across UI filters and API queries."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
+            "description": "Timestamp when this project record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
+            "description": "Timestamp when this project record was last updated."
           }
         }
       },
@@ -1141,6 +1162,7 @@
           "session_id": {
             "type": "integer",
             "example": 501,
+            "readOnly": true,
             "description": "Unique numeric identifier for this session record."
           },
           "project_id": {
@@ -1157,32 +1179,44 @@
           },
           "dive": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "Dive 12",
             "description": "Dive identifier or name associated with this session."
           },
           "line": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "Line A",
             "description": "Transect line identifier associated with this session."
           },
           "lineId": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "L-2024-012A",
             "description": "Identifier of the specific survey line tied to this session."
           },
           "type": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "ROV",
             "description": "Type or category of this session (e.g., survey platform or method)."
           },
           "createdAt": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this session record was created."
           },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this session record was last updated."
           }
         }
@@ -1198,6 +1232,7 @@
           "id": {
             "type": "integer",
             "example": 42,
+            "readOnly": true,
             "description": "Unique numeric identifier for this species record."
           },
           "taxserial": {
@@ -1208,6 +1243,7 @@
           "gui_home_order": {
             "type": "string",
             "nullable": true,
+            "example": "010",
             "description": "Ordering key used by the MARP GUI to position this item on the home screen."
           },
           "gui_maintab": {
@@ -1225,21 +1261,25 @@
           "gui_main_tab_order": {
             "type": "integer",
             "nullable": true,
+            "example": 2,
             "description": "Order number for the main tab this item belongs to."
           },
           "gui_sub_tab_order": {
             "type": "integer",
             "nullable": true,
+            "example": 5,
             "description": "Order number for the sub-tab this item belongs to."
           },
           "gui_item_order": {
             "type": "integer",
             "nullable": true,
+            "example": 12,
             "description": "Position of this species within its GUI sub-tab group."
           },
           "gui_display_name": {
             "type": "string",
             "nullable": true,
+            "example": "Bat Star",
             "description": "Display name for this item shown in MARP GUI interfaces, may differ from comname."
           },
           "comname": {
@@ -1276,13 +1316,15 @@
             "type": "number",
             "format": "float",
             "nullable": true,
-            "description": "Minimum depth in meters where this species is typically observed."
+            "example": 5.5,
+            "description": "Minimum depth in meters where this species is typically observed (range semantics are dataset-dependent)."
           },
           "depth_max": {
             "type": "number",
             "format": "float",
             "nullable": true,
-            "description": "Maximum depth in meters where this species is typically observed."
+            "example": 45,
+            "description": "Maximum depth in meters where this species is typically observed (range semantics are dataset-dependent)."
           },
           "habitat_preference": {
             "type": "string",
@@ -1293,23 +1335,28 @@
           "notes": {
             "type": "string",
             "nullable": true,
+            "example": "Legacy synonym handled in reporting mapper.",
             "description": "Freeform notes about this species, its classification, or GUI behavior."
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this species record was created."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this species record was last updated."
           }
         }
       },
       "Task": {
         "type": "object",
-        "description": "A discrete work item tracked by MARP, including free-text description and audit fields for who created/updated it and when.\n",
+        "description": "A discrete work item tracked in MARP, including descriptive text and basic audit fields showing who created and last updated it.\n",
         "required": [
           "name",
           "createdby"
@@ -1317,33 +1364,43 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Name/title of the task."
+            "minLength": 1,
+            "maxLength": 255,
+            "example": "Review kelp transect annotations",
+            "description": "Human-readable title of the task."
           },
           "description": {
             "type": "string",
             "nullable": true,
-            "description": "Freeform description of the task."
+            "example": "Validate species labels for line A before report export.",
+            "description": "Optional freeform details describing scope or next actions."
           },
           "createdate": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Timestamp when the task was created."
+            "example": "2026-07-23T14:05:00.000Z",
+            "description": "Timestamp when this task was first recorded."
           },
           "updateddate": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Timestamp when the task was last updated."
+            "example": "2026-07-23T15:12:41.000Z",
+            "description": "Timestamp when this task was last updated."
           },
           "createdby": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "example": "i.travers",
             "description": "Identifier or username of the person who created the task."
           },
           "updatedby": {
             "type": "string",
             "nullable": true,
-            "description": "Identifier or username of the person who last updated the task."
+            "example": "j.diver",
+            "description": "Identifier or username of the person who last modified the task."
           }
         }
       },
@@ -1446,7 +1503,7 @@
       },
       "User": {
         "type": "object",
-        "description": "Individual who records or owns sessions and observations throughout MARP.\n",
+        "description": "Individual identity record used to attribute sessions, observations, and related reporting outputs throughout MARP.\n",
         "required": [
           "user_id",
           "name"
@@ -1455,12 +1512,29 @@
           "user_id": {
             "type": "integer",
             "example": 12,
-            "description": "Unique numeric identifier for this user."
+            "readOnly": true,
+            "description": "Unique numeric identifier for this user record."
           },
           "name": {
             "type": "string",
             "example": "Jane Diver",
-            "description": "Unique display name for the user."
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Unique display name used by API and reporting views."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
+            "description": "Timestamp when this user record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
+            "description": "Timestamp when this user record was last updated."
           }
         }
       }

@@ -34,6 +34,7 @@ const { Model } = require('sequelize');
  *         id:
  *           type: integer
  *           example: 42
+ *           readOnly: true
  *           description: Unique numeric identifier for this species record.
  *         taxserial:
  *           type: integer
@@ -42,6 +43,7 @@ const { Model } = require('sequelize');
  *         gui_home_order:
  *           type: string
  *           nullable: true
+ *           example: "010"
  *           description: Ordering key used by the MARP GUI to position this item on the home screen.
  *         gui_maintab:
  *           type: string
@@ -56,18 +58,22 @@ const { Model } = require('sequelize');
  *         gui_main_tab_order:
  *           type: integer
  *           nullable: true
+ *           example: 2
  *           description: Order number for the main tab this item belongs to.
  *         gui_sub_tab_order:
  *           type: integer
  *           nullable: true
+ *           example: 5
  *           description: Order number for the sub-tab this item belongs to.
  *         gui_item_order:
  *           type: integer
  *           nullable: true
+ *           example: 12
  *           description: Position of this species within its GUI sub-tab group.
  *         gui_display_name:
  *           type: string
  *           nullable: true
+ *           example: Bat Star
  *           description: Display name for this item shown in MARP GUI interfaces, may differ from comname.
  *         comname:
  *           type: string
@@ -98,12 +104,14 @@ const { Model } = require('sequelize');
  *           type: number
  *           format: float
  *           nullable: true
- *           description: Minimum depth in meters where this species is typically observed.
+ *           example: 5.5
+ *           description: Minimum depth in meters where this species is typically observed (range semantics are dataset-dependent).
  *         depth_max:
  *           type: number
  *           format: float
  *           nullable: true
- *           description: Maximum depth in meters where this species is typically observed.
+ *           example: 45
+ *           description: Maximum depth in meters where this species is typically observed (range semantics are dataset-dependent).
  *         habitat_preference:
  *           type: string
  *           nullable: true
@@ -112,14 +120,19 @@ const { Model } = require('sequelize');
  *         notes:
  *           type: string
  *           nullable: true
+ *           example: Legacy synonym handled in reporting mapper.
  *           description: Freeform notes about this species, its classification, or GUI behavior.
  *         created_at:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-22T15:33:10.000Z"
  *           description: Timestamp when this species record was created.
  *         updated_at:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-23T09:12:01.000Z"
  *           description: Timestamp when this species record was last updated.
  */
 
