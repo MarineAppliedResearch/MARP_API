@@ -22,6 +22,71 @@
 
 const { Model } = require('sequelize');
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     ModelSpecies:
+ *       type: object
+ *       description: >
+ *         Join record linking an ML model to a species it was trained to
+ *         detect or classify, including per-species dataset size, training
+ *         weight, and evaluation metrics.
+ *       required:
+ *         - id
+ *         - model_id
+ *         - species_id
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 301
+ *           description: Unique numeric identifier for this model-species linkage record.
+ *         model_id:
+ *           type: integer
+ *           example: 7
+ *           description: Identifier of the associated ML model.
+ *         species_id:
+ *           type: integer
+ *           example: 42
+ *           description: Identifier of the associated species.
+ *         dataset_size:
+ *           type: integer
+ *           nullable: true
+ *           description: Number of image or annotation samples of this species used for training this model.
+ *         balance_weight:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Relative weight used for balancing this species during training. Higher means more importance.
+ *         precision_mean:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Mean precision achieved by the model for this species during evaluation.
+ *         recall_mean:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Mean recall achieved by the model for this species during evaluation.
+ *         f1_mean:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Mean F1-score for this species within this model, across validation epochs.
+ *         notes:
+ *           type: string
+ *           nullable: true
+ *           description: Freeform notes describing this model-species relationship.
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this record was created.
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this record was last updated.
+ */
+
 module.exports = (sequelize, DataTypes) => {
   /**
    * Model: model_species

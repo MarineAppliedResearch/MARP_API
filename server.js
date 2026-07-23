@@ -814,14 +814,124 @@ app.get('/api/observations/bySessionID/:session_id', (req, res) => {
 
 
 
+/**
+ * @openapi
+ * /species:
+ *   get:
+ *     summary: Fetch all species
+ *     description: >
+ *       Returns every species record used for taxonomy, GUI display
+ *       configuration, and ML model training labels. An empty array may
+ *       indicate either that no records exist or that the database query
+ *       failed.
+ *     tags: [Species]
+ *     responses:
+ *       200:
+ *         description: Species list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Species'
+ */
 app.get('/api/species', (req, res) => {
     speciesController.getSpecies().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /species/by-comname/{comname}:
+ *   get:
+ *     summary: Fetch a species by common name
+ *     description: >
+ *       Returns the species record whose comname matches the supplied value,
+ *       case-insensitively. Returns null both when no species matches and
+ *       when the database query fails.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: comname
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Common name to match, case-insensitively.
+ *     responses:
+ *       200:
+ *         description: Matching species returned, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Species'
+ *                 - type: 'null'
+ */
 app.get('/api/species/by-comname/:comname', (req, res) => {
   speciesController.getSpeciesByComname(req, res).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /model_species:
+ *   post:
+ *     summary: Create a model-species linkage record
+ *     description: >
+ *       Creates a model_species join record linking an ML model to a species,
+ *       using the request body directly as the record to insert. Note that
+ *       when the insert fails the response body is an ErrorResponse-shaped
+ *       object, but the endpoint currently still responds with HTTP 200
+ *       rather than an error status.
+ *     tags: [Species]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - model_id
+ *               - species_id
+ *             properties:
+ *               model_id:
+ *                 type: integer
+ *                 example: 7
+ *               species_id:
+ *                 type: integer
+ *                 example: 42
+ *               dataset_size:
+ *                 type: integer
+ *                 nullable: true
+ *               balance_weight:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               precision_mean:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               recall_mean:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               f1_mean:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               notes:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: >
+ *           Model-species record created successfully, or an ErrorResponse
+ *           body if the insert failed (see description).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/ModelSpecies'
+ *                 - $ref: '#/components/schemas/ErrorResponse'
+ */
 app.post('/api/model_species', (req, res) => {
   speciesController.createModelSpecies(req, res)
     .then(data => res.json(data));

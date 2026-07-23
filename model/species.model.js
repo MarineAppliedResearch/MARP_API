@@ -1,36 +1,162 @@
 /**
- * ===================================================================
- * File: species.model.js
- * Author: Isaac Assegai Travers
- * Date: 2025-10-7
- * -------------------------------------------------------------------
- * Part of the MARP Machine Learning Database Schema.
+ * Sequelize model definition for the species taxonomy and GUI display table.
  *
- * Purpose:
- * Defines the `species` table, which catalogs all taxa recognized
- * within MARP’s ecosystem. Each record represents a single taxon
- * (species, genus, family, etc.) and includes information needed by:
+ * Defines the `species` table, which catalogs all taxa recognized within
+ * MARP's ecosystem. Each record represents a single taxon (species, genus,
+ * family, etc.) and includes information needed by:
  *   - the machine learning pipeline (class labels, taxserial, etc.)
  *   - the MARP GUI (display order, tabs, and grouping)
  *   - reporting systems (expected habitats, depth range, etc.)
  *
- * This table is used by observations, datasets, and ML model
- * training processes for classification and display purposes.
- * ===================================================================
+ * This table is used by observations, datasets, and ML model training
+ * processes for classification and display purposes.
+ *
+ * @fileoverview Sequelize model and OpenAPI response schema for species.
+ * @author Isaac Assegai Travers
+ * @module model/species
  */
 
 const { Model } = require('sequelize');
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Species:
+ *       type: object
+ *       description: >
+ *         Taxonomic and GUI display entry used to classify observations,
+ *         datasets, and ML model training labels throughout MARP.
+ *       required:
+ *         - id
+ *         - taxserial
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 42
+ *           description: Unique numeric identifier for this species record.
+ *         taxserial:
+ *           type: integer
+ *           example: 1054
+ *           description: Internal MARP taxonomy serial number used as a unique ID across systems.
+ *         gui_home_order:
+ *           type: string
+ *           nullable: true
+ *           description: Ordering key used by the MARP GUI to position this item on the home screen.
+ *         gui_maintab:
+ *           type: string
+ *           nullable: true
+ *           example: Fish
+ *           description: Main tab category where this item appears in the GUI.
+ *         gui_subtab:
+ *           type: string
+ *           nullable: true
+ *           example: Sea Stars
+ *           description: Sub-tab within the main tab where this item is displayed.
+ *         gui_main_tab_order:
+ *           type: integer
+ *           nullable: true
+ *           description: Order number for the main tab this item belongs to.
+ *         gui_sub_tab_order:
+ *           type: integer
+ *           nullable: true
+ *           description: Order number for the sub-tab this item belongs to.
+ *         gui_item_order:
+ *           type: integer
+ *           nullable: true
+ *           description: Position of this species within its GUI sub-tab group.
+ *         gui_display_name:
+ *           type: string
+ *           nullable: true
+ *           description: Display name for this item shown in MARP GUI interfaces, may differ from comname.
+ *         comname:
+ *           type: string
+ *           nullable: true
+ *           example: Bat star
+ *           description: Common name used for this species.
+ *         species:
+ *           type: string
+ *           nullable: true
+ *           example: Patiria miniata
+ *           description: Scientific or Latin name of the species.
+ *         observation_type:
+ *           type: string
+ *           nullable: true
+ *           example: Invertebrate
+ *           description: Category describing what type of organism this is.
+ *         taxonomic_level:
+ *           type: string
+ *           nullable: true
+ *           example: Species
+ *           description: Taxonomic rank.
+ *         report_group:
+ *           type: string
+ *           nullable: true
+ *           example: Sea Stars
+ *           description: Report grouping used for rollups or reports.
+ *         depth_min:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Minimum depth in meters where this species is typically observed.
+ *         depth_max:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Maximum depth in meters where this species is typically observed.
+ *         habitat_preference:
+ *           type: string
+ *           nullable: true
+ *           example: Rocky
+ *           description: Habitat preference or substrate association.
+ *         notes:
+ *           type: string
+ *           nullable: true
+ *           description: Freeform notes about this species, its classification, or GUI behavior.
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this species record was created.
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this species record was last updated.
+ */
+
+/**
+ * Create and initialize the species Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to the ml_models model through
+ * {@link species.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {typeof Model} Initialized species model.
+ */
 module.exports = (sequelize, DataTypes) => {
   /**
-   * Model: species
-   * ----------------------------------------------------------------
-   * Represents a taxonomic entry or display class used throughout
-   * MARP. This table links biological taxonomy with GUI display
-   * configuration, ensuring consistency between data analysis,
-   * training labels, and user-facing tools.
+   * Sequelize model representing one species taxonomy/display record.
+   *
+   * Links biological taxonomy with GUI display configuration, ensuring
+   * consistency between data analysis, training labels, and user-facing
+   * tools.
+   *
+   * @class species
+   * @extends Model
    */
   class species extends Model {
+
+    /**
+     * Register relationships between species and related models.
+     *
+     * Associations are configured after all Sequelize models have been
+     * loaded into the shared model registry.
+     *
+     * @param {Object} models - Initialized Sequelize model registry.
+     * @returns {void}
+     */
     static associate(models) {
       // Many-to-many relationship: species ↔ models
       this.belongsToMany(models.ml_models, {
@@ -216,38 +342,38 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      sequelize,
+      sequelize,                     // shared Sequelize connection instance
       modelName: 'species',          // used inside Sequelize
       tableName: 'species',          // actual PostgreSQL table
-      schema: 'public',
+      schema: 'public',              // database schema containing the table
       timestamps: false,             // handled manually
       comment:
         'Taxonomic and GUI configuration table for species used in MARP observations, reports, and ML models.',
       indexes: [
         {
-          name: 'species_pkey',
+          name: 'species_pkey',            // primary key index
           unique: true,
           fields: ['id'],
         },
         {
-          name: 'species_taxserial_idx',
+          name: 'species_taxserial_idx',    // enforces one record per taxonomic serial number
           unique: true,
           fields: ['taxserial'],
         },
         {
-          name: 'species_comname_idx',
+          name: 'species_comname_idx',      // speeds up lookups by common name
           fields: ['comname'],
         },
         {
-          name: 'species_report_group_idx',
+          name: 'species_report_group_idx', // speeds up report rollups by group
           fields: ['report_group'],
         },
         {
-          name: 'species_gui_maintab_idx',
+          name: 'species_gui_maintab_idx',  // speeds up GUI main-tab grouping queries
           fields: ['gui_maintab'],
         },
         {
-          name: 'species_gui_subtab_idx',
+          name: 'species_gui_subtab_idx',   // speeds up GUI sub-tab grouping queries
           fields: ['gui_subtab'],
         },
       ],
