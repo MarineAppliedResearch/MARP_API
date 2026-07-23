@@ -195,3 +195,38 @@ describe('GET /api/metaInfo/dbName', () => {
     expect(res.status).toBe(200);
   });
 });
+
+/**
+ * PUT /api/metaInfo/dbName mutates the single shared metaInfo row that the
+ * running app treats as real configuration, so this test reads the current
+ * value first and restores it afterward rather than leaving a disposable
+ * test value in place.
+ */
+describe('PUT /api/metaInfo/dbName', () => {
+  it('updates the database name and restores the original value afterward', async () => {
+    const before = await request(app).get('/api/metaInfo/dbName');
+    const originalName = before.body[0].name;
+
+    try {
+      const putRes = await request(app)
+        .put('/api/metaInfo/dbName')
+        .send({ name: 'Test DB Name' });
+
+      expect(putRes.status).toBe(200);
+      expect(putRes.body[0].name).toBe('Test DB Name');
+
+      const after = await request(app).get('/api/metaInfo/dbName');
+      expect(after.body[0].name).toBe('Test DB Name');
+    } finally {
+      await request(app)
+        .put('/api/metaInfo/dbName')
+        .send({ name: originalName });
+    }
+  });
+
+  it('returns 400 when name is missing from the request body', async () => {
+    const res = await request(app).put('/api/metaInfo/dbName').send({});
+
+    expect(res.status).toBe(400);
+  });
+});

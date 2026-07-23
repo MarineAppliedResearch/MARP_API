@@ -151,6 +151,7 @@ const speciesController = require('./controller/species.controller');
  * @type {Object}
  */
 const datasetController = require('./controller/dataset.controller');
+const schemaController = require('./controller/schema.controller');
 
 
 /**
@@ -207,6 +208,7 @@ const repositoryPaths = [
     './repository/observation.repository',
     './repository/keyframe.repository',
     './repository/dataset.repository',
+    './repository/schema.repository',
 ];
 
 
@@ -441,6 +443,94 @@ app.use(
 // Individual reporting routes must define their own @openapi blocks in
 // ./reporting/routes or the route modules imported from that directory.
 app.use('/api', require('./reporting/routes'));
+
+
+/**
+ * @openapi
+ * /schema/tables:
+ *   get:
+ *     summary: Retrieve public table metadata
+ *     description: >
+ *       Returns one object per base table in the public schema, including
+ *       table comments, row-estimate metadata, all columns with data types
+ *       and defaults, primary keys, foreign keys, unique constraints, check
+ *       constraints, and indexes. Intended for building schema browsers,
+ *       table grids, query builders, and relationship explorers.
+ *     tags:
+ *       - Schema
+ *     responses:
+ *       200:
+ *         description: Public table metadata returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/SchemaTable'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+app.get('/api/schema/tables', asyncHandler(async (req, res) => {
+    const data = await schemaController.getPublicTables();
+    res.json(data);
+}));
+
+/**
+ * @openapi
+ * /schema/views:
+ *   get:
+ *     summary: Retrieve public view metadata
+ *     description: >
+ *       Returns one object per public view (including materialized views),
+ *       including SQL definition text, updatability flag, column metadata,
+ *       and dependencies on other public tables/views. Intended for building
+ *       view browsers and dependency visualizations.
+ *     tags:
+ *       - Schema
+ *     responses:
+ *       200:
+ *         description: Public view metadata returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/SchemaView'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+app.get('/api/schema/views', asyncHandler(async (req, res) => {
+    const data = await schemaController.getPublicViews();
+    res.json(data);
+}));
+
+/**
+ * @openapi
+ * /schema/relationships:
+ *   get:
+ *     summary: Retrieve public foreign-key relationships
+ *     description: >
+ *       Returns normalized foreign-key relationships between public-schema
+ *       tables, including source/target columns and ON UPDATE / ON DELETE
+ *       actions. Intended for relationship graphs and join-aware UI tooling.
+ *     tags:
+ *       - Schema
+ *     responses:
+ *       200:
+ *         description: Public foreign-key relationships returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/SchemaRelationship'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+app.get('/api/schema/relationships', asyncHandler(async (req, res) => {
+    const data = await schemaController.getPublicRelationships();
+    res.json(data);
+}));
 
 
 /**
@@ -1732,6 +1822,60 @@ app.get('/api/sessions/user/:userID/project/:projectID', asyncHandler(async (req
  */
 app.get('/api/metaInfo/dbName', asyncHandler(async (req, res) => {
     const data = await metaInfoController.getDBName();
+    res.json(data);
+}));
+
+/**
+ * @openapi
+ * /metaInfo/dbName:
+ *   put:
+ *     summary: Set the active database name
+ *     description: >
+ *       Sets the configured database name on the singleton metaInfo row.
+ *       Upserts: if the metaInfo table already has a row, its name column
+ *       is updated in place; if the table is empty, a new row is created.
+ *       This affects the single shared configuration record also read by
+ *       GET /metaInfo/dbName. Unlike the GET, a database failure here is
+ *       not swallowed to an empty/placeholder result -- it responds with
+ *       a standard 500 error envelope so callers can tell the write did
+ *       not happen.
+ *     tags: [Health]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 minLength: 1
+ *                 example: Production
+ *                 description: New value to store as the database name.
+ *     responses:
+ *       200:
+ *         description: Database name set successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MetaInfoDbName'
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+app.put('/api/metaInfo/dbName', asyncHandler(async (req, res) => {
+    if (typeof req.body.name !== 'string' || req.body.name.trim().length === 0) {
+        throw new ApiError(
+            400,
+            ERROR_CODES.VALIDATION_ERROR,
+            'name is required and must be a non-empty string.'
+        );
+    }
+
+    const data = await metaInfoController.setDBName(req.body.name);
     res.json(data);
 }));
 

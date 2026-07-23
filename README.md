@@ -486,8 +486,10 @@ When changing an endpoint:
 
 1. Keep the OpenAPI annotation consistent with actual behavior.
 2. Update JSDoc where the public or developer contract changes.
-3. Rebuild the documentation.
-4. Verify `/api-docs`, `/api/openapi.json`, and `/developer-docs`.
+3. Ensure non-2xx responses use the standardized error contract (`ErrorEnvelope`) rather than ad hoc error shapes.
+4. Add or update automated tests for the endpoint change (new endpoints must ship with tests).
+5. Rebuild the documentation.
+6. Verify `/api-docs`, `/api/openapi.json`, and `/developer-docs`.
 
 ### Schema field note template
 

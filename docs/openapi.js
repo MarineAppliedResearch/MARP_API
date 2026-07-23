@@ -85,6 +85,11 @@ const buildOpenApiSpec = () => {
                     name: 'Observations',
                     description:
                         'Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates.'
+                },
+                {
+                    name: 'Schema',
+                    description:
+                        'Database schema introspection endpoints for tables, views, columns, constraints, indexes, and relationships in the public schema.'
                 }
             ],
 
@@ -303,6 +308,135 @@ const buildOpenApiSpec = () => {
                                     description: 'Value of the first metaInfo row\'s name column, or the literal "NO DB Name Found" placeholder when no row exists.',
                                 },
                             },
+                        },
+                    },
+
+                    SchemaColumn: {
+                        type: 'object',
+                        required: ['name', 'ordinalPosition', 'dataType', 'udtName', 'isNullable', 'isIdentity'],
+                        properties: {
+                            name: { type: 'string', example: 'project_id', description: 'Column name.' },
+                            ordinalPosition: { type: 'integer', example: 1, description: '1-based column position in the table/view.' },
+                            dataType: { type: 'string', example: 'integer', description: 'Generic SQL type reported by information_schema.' },
+                            udtName: { type: 'string', example: 'int4', description: 'PostgreSQL underlying type name.' },
+                            isNullable: { type: 'boolean', example: false, description: 'True when NULL values are allowed.' },
+                            defaultValue: { type: 'string', nullable: true, example: "nextval('projects_project_id_seq'::regclass)", description: 'Raw default expression, if defined.' },
+                            maxLength: { type: 'integer', nullable: true, example: 255, description: 'Character max length for character types.' },
+                            numericPrecision: { type: 'integer', nullable: true, example: 32, description: 'Numeric precision, when applicable.' },
+                            numericScale: { type: 'integer', nullable: true, example: 0, description: 'Numeric scale, when applicable.' },
+                            datetimePrecision: { type: 'integer', nullable: true, example: 6, description: 'Datetime precision, when applicable.' },
+                            isIdentity: { type: 'boolean', example: false, description: 'True when column is an identity column.' },
+                            identityGeneration: { type: 'string', nullable: true, example: 'BY DEFAULT', description: 'Identity generation mode when isIdentity is true.' },
+                            comment: { type: 'string', nullable: true, example: 'Primary key for projects table.', description: 'Column comment from PostgreSQL metadata, when set.' },
+                        },
+                    },
+
+                    SchemaPrimaryKey: {
+                        type: 'object',
+                        required: ['name', 'columns'],
+                        properties: {
+                            name: { type: 'string', example: 'projects_pkey', description: 'Primary-key constraint name.' },
+                            columns: { type: 'array', items: { type: 'string' }, example: ['project_id'], description: 'Ordered list of primary-key columns.' },
+                        },
+                    },
+
+                    SchemaForeignKey: {
+                        type: 'object',
+                        required: ['name', 'columns', 'referencedSchema', 'referencedTable', 'referencedColumns', 'onUpdate', 'onDelete'],
+                        properties: {
+                            name: { type: 'string', example: 'sessions_project_id_fkey', description: 'Foreign-key constraint name.' },
+                            columns: { type: 'array', items: { type: 'string' }, example: ['project_id'], description: 'Ordered source columns.' },
+                            referencedSchema: { type: 'string', example: 'public', description: 'Referenced table schema.' },
+                            referencedTable: { type: 'string', example: 'projects', description: 'Referenced table name.' },
+                            referencedColumns: { type: 'array', items: { type: 'string' }, example: ['project_id'], description: 'Ordered referenced columns.' },
+                            onUpdate: { type: 'string', example: 'NO ACTION', description: 'ON UPDATE action.' },
+                            onDelete: { type: 'string', example: 'CASCADE', description: 'ON DELETE action.' },
+                        },
+                    },
+
+                    SchemaUniqueConstraint: {
+                        type: 'object',
+                        required: ['name', 'columns'],
+                        properties: {
+                            name: { type: 'string', example: 'species_taxserial_key', description: 'Unique constraint name.' },
+                            columns: { type: 'array', items: { type: 'string' }, example: ['taxserial'], description: 'Ordered constrained columns.' },
+                        },
+                    },
+
+                    SchemaCheckConstraint: {
+                        type: 'object',
+                        required: ['name', 'expression'],
+                        properties: {
+                            name: { type: 'string', example: 'sessions_dive_check', description: 'Check constraint name.' },
+                            expression: { type: 'string', example: 'CHECK ((dive > 0))', description: 'Rendered check expression from PostgreSQL.' },
+                        },
+                    },
+
+                    SchemaIndex: {
+                        type: 'object',
+                        required: ['name', 'isUnique', 'isPrimary', 'definition'],
+                        properties: {
+                            name: { type: 'string', example: 'projects_pkey', description: 'Index name.' },
+                            isUnique: { type: 'boolean', example: true, description: 'True when index enforces uniqueness.' },
+                            isPrimary: { type: 'boolean', example: true, description: 'True when index backs a primary key.' },
+                            definition: { type: 'string', example: 'CREATE UNIQUE INDEX projects_pkey ON public.projects USING btree (project_id)', description: 'Full index definition SQL.' },
+                        },
+                    },
+
+                    SchemaTable: {
+                        type: 'object',
+                        required: ['schema', 'name', 'rowEstimate', 'columns', 'foreignKeys', 'uniqueConstraints', 'checkConstraints', 'indexes'],
+                        properties: {
+                            schema: { type: 'string', example: 'public', description: 'Table schema.' },
+                            name: { type: 'string', example: 'projects', description: 'Table name.' },
+                            rowEstimate: { type: 'integer', example: 2412, description: 'Approximate row count from PostgreSQL catalog statistics.' },
+                            comment: { type: 'string', nullable: true, example: 'Stores project metadata.', description: 'Table comment from PostgreSQL metadata, when set.' },
+                            columns: { type: 'array', items: { $ref: '#/components/schemas/SchemaColumn' }, description: 'All table columns in ordinal order.' },
+                            primaryKey: { oneOf: [{ $ref: '#/components/schemas/SchemaPrimaryKey' }, { type: 'null' }], description: 'Primary key metadata, or null if no primary key exists.' },
+                            foreignKeys: { type: 'array', items: { $ref: '#/components/schemas/SchemaForeignKey' }, description: 'Outgoing foreign-key constraints.' },
+                            uniqueConstraints: { type: 'array', items: { $ref: '#/components/schemas/SchemaUniqueConstraint' }, description: 'Unique constraints defined on the table.' },
+                            checkConstraints: { type: 'array', items: { $ref: '#/components/schemas/SchemaCheckConstraint' }, description: 'Check constraints defined on the table.' },
+                            indexes: { type: 'array', items: { $ref: '#/components/schemas/SchemaIndex' }, description: 'All table indexes, including primary and non-unique indexes.' },
+                        },
+                    },
+
+                    SchemaViewDependency: {
+                        type: 'object',
+                        required: ['schema', 'name', 'type'],
+                        properties: {
+                            schema: { type: 'string', example: 'public', description: 'Dependency object schema.' },
+                            name: { type: 'string', example: 'observations', description: 'Dependency object name.' },
+                            type: { type: 'string', example: 'TABLE', description: 'Dependency object type.' },
+                        },
+                    },
+
+                    SchemaView: {
+                        type: 'object',
+                        required: ['schema', 'name', 'type', 'isUpdatable', 'definition', 'columns', 'dependencies'],
+                        properties: {
+                            schema: { type: 'string', example: 'public', description: 'View schema.' },
+                            name: { type: 'string', example: 'observations_report', description: 'View name.' },
+                            type: { type: 'string', example: 'VIEW', description: 'VIEW or MATERIALIZED_VIEW.' },
+                            isUpdatable: { type: 'boolean', example: false, description: 'True when PostgreSQL marks the view as updatable.' },
+                            definition: { type: 'string', example: ' SELECT observations.observation_id, observations.comname FROM observations;', description: 'SQL definition text for the view.' },
+                            columns: { type: 'array', items: { $ref: '#/components/schemas/SchemaColumn' }, description: 'View columns in ordinal order.' },
+                            dependencies: { type: 'array', items: { $ref: '#/components/schemas/SchemaViewDependency' }, description: 'Referenced public tables/views discovered from PostgreSQL dependency metadata.' },
+                        },
+                    },
+
+                    SchemaRelationship: {
+                        type: 'object',
+                        required: ['name', 'source_schema', 'source_table', 'source_columns', 'target_schema', 'target_table', 'target_columns', 'on_update', 'on_delete'],
+                        properties: {
+                            name: { type: 'string', example: 'sessions_project_id_fkey', description: 'Foreign-key constraint name.' },
+                            source_schema: { type: 'string', example: 'public', description: 'Source table schema.' },
+                            source_table: { type: 'string', example: 'sessions', description: 'Source table name.' },
+                            source_columns: { type: 'array', items: { type: 'string' }, example: ['project_id'], description: 'Ordered source columns participating in the relationship.' },
+                            target_schema: { type: 'string', example: 'public', description: 'Referenced table schema.' },
+                            target_table: { type: 'string', example: 'projects', description: 'Referenced table name.' },
+                            target_columns: { type: 'array', items: { type: 'string' }, example: ['project_id'], description: 'Ordered referenced columns participating in the relationship.' },
+                            on_update: { type: 'string', example: 'NO ACTION', description: 'ON UPDATE action.' },
+                            on_delete: { type: 'string', example: 'CASCADE', description: 'ON DELETE action.' },
                         },
                     },
                 },

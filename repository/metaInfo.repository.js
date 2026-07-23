@@ -91,6 +91,49 @@ class MetaInfoRepository {
             return [];
         }
     }
+
+    /**
+     * Set the configured database name metadata record.
+     *
+     * Upserts the singleton `metaInfo` row: if a row already exists, its
+     * `name` column is updated in place; if the table is empty, a new row
+     * is created with the supplied name.
+     *
+     * Unlike `getDBName`, this method does NOT swallow database errors to
+     * an empty array. This is a write path, so a silently-eaten failure
+     * would report a misleading HTTP 200 with no indication the update
+     * never happened. Errors are logged and rethrown instead, following
+     * the same non-swallowing pattern already used by
+     * {@link module:repository/observation~ObservationRepository#updateObservation}
+     * so the route's `asyncHandler` wrapper and the shared error-contract
+     * middleware can convert the failure into a proper error response.
+     *
+     * @async
+     * @param {string} name - New value to store in the metaInfo row's
+     * `name` column.
+     * @returns {Promise<Array<Object>>} A single-element array containing
+     * `{ name }` on success.
+     * @throws {Error} Rethrows any Sequelize/database error after logging it.
+     */
+    async setDBName(name) {
+
+        try {
+            const existing = await this.db.metaInfo.findOne();
+            let record;
+
+            if (existing) {
+                existing.name = name;
+                record = await existing.save();
+            } else {
+                record = await this.db.metaInfo.create({ name });
+            }
+
+            return [{ "name": record.name }];
+        } catch (err) {
+            logger.error('Error in setDBName::' + err);
+            throw err;
+        }
+    }
 }
 
 module.exports = new MetaInfoRepository();
