@@ -1,23 +1,20 @@
 /**
- * ===================================================================
- * File: model_species.model.js
- * Author: Isaac Assegai Travers
- * Date: 2025-10-7
- * -------------------------------------------------------------------
- * Part of the MARP Machine Learning Database Schema.
+ * Sequelize model definition for the model_species join table.
  *
- * Purpose:
  * Defines the `model_species` join table, which links machine learning
  * models (`ml_models`) to the species (`species`) they are trained to
  * detect or classify.
  *
- * Each record describes a specific model–species relationship,
- * including how many training examples were used and any weighting or
- * notes relevant to that species within the model context.
+ * Each record describes a specific model-species relationship, including
+ * how many training examples were used and any weighting or notes relevant
+ * to that species within the model context.
  *
  * This table is essential for tracking model coverage and per-class
  * dataset composition.
- * ===================================================================
+ *
+ * @fileoverview Sequelize model and OpenAPI response schema for model_species.
+ * @author Isaac Assegai Travers
+ * @module model/model_species
  */
 
 const { Model } = require('sequelize');
@@ -87,15 +84,40 @@ const { Model } = require('sequelize');
  *           description: Timestamp when this record was last updated.
  */
 
+/**
+ * Create and initialize the model_species Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to the ml_models and species
+ * models through {@link model_species.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {typeof Model} Initialized model_species model.
+ */
 module.exports = (sequelize, DataTypes) => {
   /**
-   * Model: model_species
-   * ----------------------------------------------------------------
-   * Join table connecting ML models and species, providing details
-   * about how many examples of each species were used to train a
-   * given model and what balance weights were applied.
+   * Sequelize model representing one model-species join record.
+   *
+   * Connects ML models and species, providing details about how many
+   * examples of each species were used to train a given model and what
+   * balance weights and evaluation metrics were applied.
+   *
+   * @class model_species
+   * @extends Model
    */
   class model_species extends Model {
+
+    /**
+     * Register relationships between model_species and related models.
+     *
+     * Associations are configured after all Sequelize models have been
+     * loaded into the shared model registry.
+     *
+     * @param {Object} models - Initialized Sequelize model registry.
+     * @returns {void}
+     */
     static associate(models) {
       // Belongs to one ML model
       this.belongsTo(models.ml_models, {
@@ -206,29 +228,29 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      sequelize,
+      sequelize,                      // shared Sequelize connection instance
       modelName: 'model_species',     // internal Sequelize name
       tableName: 'model_species',     // actual PostgreSQL table
-      schema: 'public',
+      schema: 'public',              // database schema containing the table
       timestamps: false,              // we manage manually
       comment:
         'Join table linking ML models and species, including dataset size, weighting, and per-species metrics.',
       indexes: [
         {
-          name: 'model_species_pkey',
+          name: 'model_species_pkey',                 // primary key index
           unique: true,
           fields: ['id'],
         },
         {
-          name: 'model_species_model_id_idx',
+          name: 'model_species_model_id_idx',          // speeds up lookups by ML model
           fields: ['model_id'],
         },
         {
-          name: 'model_species_species_id_idx',
+          name: 'model_species_species_id_idx',        // speeds up lookups by species
           fields: ['species_id'],
         },
         {
-          name: 'model_species_unique_model_species',
+          name: 'model_species_unique_model_species',  // enforces one record per model-species pair
           unique: true,
           fields: ['model_id', 'species_id'],
         },

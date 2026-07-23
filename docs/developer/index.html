@@ -31,7 +31,7 @@
     <input type="text" id="nav-search" placeholder="Search" />
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="module-model_model_species-model_species.html">model_species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_model_species-model_species.html#.associate">associate</a></li></ul></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_species-species.html">species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_species-species.html#.associate">associate</a></li></ul></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_model_species.html">model/model_species</a></li><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-model_species.html">model/species</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#initializeCurrentYear">initializeCurrentYear</a></li><li><a href="global.html#initializeLandingPage">initializeLandingPage</a></li><li><a href="global.html#initializeLoginDialog">initializeLoginDialog</a></li><li><a href="global.html#initializeMobileNavigation">initializeMobileNavigation</a></li><li><a href="global.html#initializeScrollEffects">initializeScrollEffects</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
     
 </nav>
 
@@ -64,6 +64,26 @@
     <section class="readme usertext">
         <article><h1>MARE_API</h1>
 <p>MARE Data Access API</p>
+<h2>Frontend app structure (static-first)</h2>
+<p>Frontend application pages are now organized for multi-app static serving:</p>
+<ul>
+<li><code>frontend/apps/&lt;appName&gt;/</code> contains one frontend application.</li>
+<li><code>frontend/apps/&lt;appName&gt;/index.html</code> is the app entry page.</li>
+<li><code>frontend/shared/partials/</code> contains reusable HTML fragments (header/footer).</li>
+<li><code>frontend/shared/assets/</code> contains shared CSS and JavaScript.</li>
+</ul>
+<p>Runtime routes:</p>
+<ul>
+<li><code>/</code> serves <code>frontend/apps/entry/index.html</code>.</li>
+<li><code>/apps/&lt;appName&gt;/</code> serves a static frontend app.</li>
+<li><code>/shared/*</code> serves reusable shared assets and partials.</li>
+</ul>
+<p>Guidelines:</p>
+<ul>
+<li>Use relative API calls (<code>/api/...</code>) from frontend pages.</li>
+<li>Use <code>data-include</code> + <code>shared/assets/js/partials.js</code> for shared header/footer.</li>
+<li>Keep API and static frontend concerns separate.</li>
+</ul>
 <p>npm run dev</p>
 <p>start with process manager: pm2 start server.js</p>
 <p>Environmental Variables in Linux must be set to be the

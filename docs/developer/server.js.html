@@ -31,7 +31,7 @@
     <input type="text" id="nav-search" placeholder="Search" />
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="model_species.html">model_species</a></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="species.html">species</a></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="artifacts.html">artifacts</a></li><li><a href="dataset_observations.html">dataset_observations</a></li><li><a href="datasets.html">datasets</a></li><li><a href="epochs.html">epochs</a></li><li><a href="hyperparameters.html">hyperparameters</a></li><li><a href="metrics_curves.html">metrics_curves</a></li><li><a href="metrics_summary.html">metrics_summary</a></li><li><a href="ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="ml_models.html#.associate">associate</a></li></ul></li><li><a href="module-model_model_species-model_species.html">model_species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_model_species-model_species.html#.associate">associate</a></li></ul></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_species-species.html">species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_species-species.html#.associate">associate</a></li></ul></li><li><a href="training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="training_runs.html#.associate">associate</a></li></ul></li></ul><h3>Modules</h3><ul><li><a href="module-model_model_species.html">model/model_species</a></li><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-model_species.html">model/species</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-server.html">server</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-server.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#dotenv">dotenv</a></li><li><a href="global.html#fs">fs</a></li><li><a href="global.html#initializeCurrentYear">initializeCurrentYear</a></li><li><a href="global.html#initializeLandingPage">initializeLandingPage</a></li><li><a href="global.html#initializeLoginDialog">initializeLoginDialog</a></li><li><a href="global.html#initializeMobileNavigation">initializeMobileNavigation</a></li><li><a href="global.html#initializeScrollEffects">initializeScrollEffects</a></li><li><a href="global.html#sharedConfig">sharedConfig</a></li></ul>
     
 </nav>
 
@@ -863,14 +863,124 @@ app.get('/api/observations/bySessionID/:session_id', (req, res) => {
 
 
 
+/**
+ * @openapi
+ * /species:
+ *   get:
+ *     summary: Fetch all species
+ *     description: >
+ *       Returns every species record used for taxonomy, GUI display
+ *       configuration, and ML model training labels. An empty array may
+ *       indicate either that no records exist or that the database query
+ *       failed.
+ *     tags: [Species]
+ *     responses:
+ *       200:
+ *         description: Species list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Species'
+ */
 app.get('/api/species', (req, res) => {
     speciesController.getSpecies().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /species/by-comname/{comname}:
+ *   get:
+ *     summary: Fetch a species by common name
+ *     description: >
+ *       Returns the species record whose comname matches the supplied value,
+ *       case-insensitively. Returns null both when no species matches and
+ *       when the database query fails.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: comname
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Common name to match, case-insensitively.
+ *     responses:
+ *       200:
+ *         description: Matching species returned, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Species'
+ *                 - type: 'null'
+ */
 app.get('/api/species/by-comname/:comname', (req, res) => {
   speciesController.getSpeciesByComname(req, res).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /model_species:
+ *   post:
+ *     summary: Create a model-species linkage record
+ *     description: >
+ *       Creates a model_species join record linking an ML model to a species,
+ *       using the request body directly as the record to insert. Note that
+ *       when the insert fails the response body is an ErrorResponse-shaped
+ *       object, but the endpoint currently still responds with HTTP 200
+ *       rather than an error status.
+ *     tags: [Species]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - model_id
+ *               - species_id
+ *             properties:
+ *               model_id:
+ *                 type: integer
+ *                 example: 7
+ *               species_id:
+ *                 type: integer
+ *                 example: 42
+ *               dataset_size:
+ *                 type: integer
+ *                 nullable: true
+ *               balance_weight:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               precision_mean:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               recall_mean:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               f1_mean:
+ *                 type: number
+ *                 format: float
+ *                 nullable: true
+ *               notes:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: >
+ *           Model-species record created successfully, or an ErrorResponse
+ *           body if the insert failed (see description).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/ModelSpecies'
+ *                 - $ref: '#/components/schemas/ErrorResponse'
+ */
 app.post('/api/model_species', (req, res) => {
   speciesController.createModelSpecies(req, res)
     .then(data => res.json(data));
@@ -1207,13 +1317,48 @@ app.delete('/api/session/:id', (req, res) => {
     sessionController.deleteSession(req.params.id).then(data => res.json(data));
 });
 
-// Serve static files from the html folder.
-const htmlDirectory = path.join(__dirname, 'html');
-app.use(express.static(htmlDirectory, { index: false }));
+// Serve frontend shared assets and partials for all static apps.
+const frontendDirectory = path.join(__dirname, 'frontend');
+const frontendAppsDirectory = path.join(frontendDirectory, 'apps');
+const frontendSharedDirectory = path.join(frontendDirectory, 'shared');
 
-// Root route points to an existing dashboard page.
+// Compatibility alias for landing pages that still reference /assets/*.
+app.use('/assets', express.static(path.join(frontendSharedDirectory, 'assets'), { index: false }));
+
+app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
+app.use('/apps', express.static(frontendAppsDirectory, { index: false }));
+
+// Root route serves the MARP entry application landing page.
 app.get('/', (req, res) => {
-    res.sendFile(path.join(htmlDirectory, 'dashboard1.html'));
+    res.sendFile(path.join(frontendAppsDirectory, 'entry', 'index.html'));
+});
+
+// Generic app index route allows adding app folders without new server routes.
+app.get('/apps/:appName', (req, res, next) => {
+    const appIndexPath = path.join(
+        frontendAppsDirectory,
+        req.params.appName,
+        'index.html'
+    );
+
+    if (fs.existsSync(appIndexPath)) {
+        return res.sendFile(appIndexPath);
+    }
+
+    return next();
+});
+
+// Temporary compatibility routes from prior flat html page URLs.
+app.get('/dashboard1.html', (req, res) => {
+    res.redirect('/apps/dashboard/');
+});
+
+app.get('/userActivity.html', (req, res) => {
+    res.redirect('/apps/dashboard/user-activity.html');
+});
+
+app.get('/userHours.html', (req, res) => {
+    res.redirect('/apps/dashboard/user-hours.html');
 });
 
 // Return JSON for unknown API routes instead of falling through to a missing HTML file.
