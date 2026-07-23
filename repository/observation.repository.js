@@ -147,9 +147,20 @@ class ObservationRepository {
         });*/
     }
 
-    
+    /**
+     * Fetch every observation record.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero observations and a database failure.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} All observation records ordered by
+     * ascending `obsID`. Returns an empty array when none exist or when the
+     * database query fails.
+     */
     async getObservations() {
-        
+
         try {
             const observations = await this.db.observations.findAll({
                 order: [
@@ -160,13 +171,32 @@ class ObservationRepository {
             return observations;
         } catch (err) {
             console.log(err);
-            
+
             return [];
         }
     }
 
-        // This function returns videoLocation, mediaPosition, and actualPosition 
-    // of the record with the max obsID in the given session.
+    /**
+     * Fetch the videoLocation, mediaPosition, and actualPosition of the
+     * observation with the maximum `observation_id` within a session.
+     *
+     * This is implemented as two sequential queries: the first computes the
+     * max `observation_id` for the session, and the second fetches the full
+     * observation row(s) matching that ID. This is not done in a single
+     * query/transaction, so it is possible (if rare) for a new observation
+     * to be inserted between the two queries.
+     *
+     * Database errors from either query are logged and converted to an
+     * empty array. As a result, callers cannot distinguish between "the
+     * session has no observations" and "the database query failed".
+     *
+     * @async
+     * @param {number|string} session_id - Session identifier whose latest
+     * observation's video info should be retrieved.
+     * @returns {Promise<Array<Object>>} The observation record(s) matching
+     * the session's maximum `observation_id`. Returns an empty array when
+     * the session has no observations or when either query fails.
+     */
     async getLastVideoInfo(session_id){
 
         let maxObservation_id = {};
@@ -205,8 +235,24 @@ class ObservationRepository {
 
 
 
-    // Returns the observation with the largerst observation_id
-    // that is associated with a specific video name
+    /**
+     * Fetch the observation with the largest `observation_id` associated
+     * with a specific video source.
+     *
+     * Like {@link getLastVideoInfo}, this is implemented as two sequential
+     * queries (max `observation_id` lookup, then row fetch) rather than a
+     * single atomic query.
+     *
+     * Database errors from either query are logged and converted to an
+     * empty array. As a result, callers cannot distinguish between "no
+     * observations for this video" and "the database query failed".
+     *
+     * @async
+     * @param {string} video_source - Video source value to match.
+     * @returns {Promise<Array<Object>>} The observation record(s) matching
+     * the video's maximum `observation_id`. Returns an empty array when no
+     * observations match or when either query fails.
+     */
     async getMaxObservationFromVideo(video_source){
 
         let maxObservation_id = {};
@@ -244,7 +290,27 @@ class ObservationRepository {
     }
 
 
-    // Updates a given observation with the given count
+    /**
+     * Update the `count` field of a specific observation within a session.
+     *
+     * Matches on both `session_id` and `obsID` (the per-session sequential
+     * identifier, distinct from the `observation_id` primary key).
+     *
+     * Database errors are logged and converted to `0`. The success path
+     * always returns `1` regardless of how many rows Sequelize actually
+     * updated, so a call whose `session_id`/`obsID` combination matches no
+     * row still resolves to `1` as if the update succeeded.
+     *
+     * @async
+     * @param {number|string} session_id - Session identifier used together
+     * with `obsID` to locate the target observation.
+     * @param {number|string} obsID - Per-session sequential observation
+     * identifier to update.
+     * @param {number|string} count - New count value to persist.
+     * @returns {Promise<number>} `1` if the update statement executed
+     * without throwing, or `0` if it threw. Does not reflect the number of
+     * rows actually affected.
+     */
     async updateObservationWithCount(session_id, obsID, count){
         try {
             const result = await this.db.observations.update(
@@ -259,7 +325,28 @@ class ObservationRepository {
           }
     }
 
-    // Updates a given observation with the given count
+    /**
+     * Update the `coarsesize` field of a specific observation within a
+     * session.
+     *
+     * Matches on both `session_id` and `obsID` (the per-session sequential
+     * identifier, distinct from the `observation_id` primary key).
+     *
+     * Database errors are logged and converted to `0`. The success path
+     * always returns `1` regardless of how many rows Sequelize actually
+     * updated, so a call whose `session_id`/`obsID` combination matches no
+     * row still resolves to `1` as if the update succeeded.
+     *
+     * @async
+     * @param {number|string} session_id - Session identifier used together
+     * with `obsID` to locate the target observation.
+     * @param {number|string} obsID - Per-session sequential observation
+     * identifier to update.
+     * @param {number|string} size - New coarse-size value to persist.
+     * @returns {Promise<number>} `1` if the update statement executed
+     * without throwing, or `0` if it threw. Does not reflect the number of
+     * rows actually affected.
+     */
     async updateObservationWithSize(session_id, obsID, size){
         try {
             const result = await this.db.observations.update(
@@ -276,6 +363,27 @@ class ObservationRepository {
 
     
 
+    /**
+     * Fetch every observation belonging to a session, including associated
+     * keyframes.
+     *
+     * The keyframe association uses `required: false`, so observations are
+     * returned whether or not they have any keyframes.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a session with no
+     * observations and a database failure.
+     *
+     * An older version of this method (which queried observations without
+     * including keyframes) is retained as a commented-out block immediately
+     * below this one.
+     *
+     * @async
+     * @param {number|string} session_id - Session identifier to match.
+     * @returns {Promise<Array<Object>>} Matching observations with their
+     * keyframes (if any). Returns an empty array when none exist or when
+     * the database query fails.
+     */
     async getObservationsBySessionID(session_id) {
         try {
             // Fetch observations along with their associated keyframes
@@ -321,7 +429,22 @@ class ObservationRepository {
 
     /**
      * Returns the max PobsID by project
-     * @param {*} project_id 
+     *
+     * Looks up all sessions for the project via the session controller,
+     * then queries the maximum `PobsID` across observations belonging to
+     * any of those sessions. This method does not currently appear to be
+     * called from any controller, service, or route in this codebase.
+     *
+     * Database errors are logged and converted to an empty array (note:
+     * unlike most other max-lookup methods in this file, which fall back to
+     * `-1`, a failure here returns `[]`).
+     *
+     * @async
+     * @param {*} project_id - Project identifier used to locate candidate
+     * sessions via `sessionController.getSessionsByProjectID`.
+     * @returns {Promise<Array<Object>>} A single-element array containing
+     * the aggregate max `PobsID` result, or an empty array if the database
+     * query fails.
      */
     async getMaxPobsIDInProject(project_id){
 
@@ -355,6 +478,23 @@ class ObservationRepository {
 
     }
 
+    /**
+     * Returns the maximum `observation_id` within a session.
+     *
+     * This method does not currently appear to be called from anywhere
+     * else in this file, the service layer, the controller layer, or
+     * server.js; it appears to be unused/dead code.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a session with no
+     * observations and a database failure.
+     *
+     * @async
+     * @param {number|string} session_id - Session identifier to match.
+     * @returns {Promise<Array<Object>>} A single-element array containing
+     * the aggregate max `observation_id` result, or an empty array if the
+     * database query fails.
+     */
     async getMaxObservationIDInSession(session_id) {
         try {
             const observations = await this.db.observations.findAll({
@@ -371,6 +511,38 @@ class ObservationRepository {
         }
     }
 
+    /**
+     * Create a new observation record, computing its `observation_id`,
+     * `obsID`, and `PobsID` values rather than trusting any values supplied
+     * by the caller.
+     *
+     * `observation_id` is derived from the global max `observation_id`
+     * across all observations, plus one. `obsID` is derived from the max
+     * `obsID` within the observation's own session, plus one. `PobsID` is
+     * derived by looking up the observation's project (via its session)
+     * and calling {@link getMaxPobsID}, plus one. `createdate` is always
+     * overwritten with the current time.
+     *
+     * Error handling is layered: the two "compute max ID" lookups each have
+     * their own try/catch that only logs (the computed value keeps its
+     * initialized default, `-1` or unset, if the lookup fails). The actual
+     * `this.db.observations.create(...)` call is wrapped in an inner
+     * try/catch that logs and re-throws, and that re-thrown error is caught
+     * by an outer try/catch that only logs via `logger.error` and does not
+     * re-throw. As a result, if the insert itself fails, this method
+     * resolves to `{}` (the initial value of `data`) instead of throwing or
+     * returning `null` — callers cannot detect the failure from the return
+     * value alone and must inspect the logs.
+     *
+     * @async
+     * @param {Object} observation - Observation fields to insert, including
+     * `session_id` and optional nested `keyframes` (created via the
+     * `keyframes` association). `observation_id`, `obsID`, `PobsID`, and
+     * `createdate` on this object are overwritten before the insert.
+     * @returns {Promise<Object>} The created Sequelize observation instance
+     * (with its keyframes, if supplied), or an empty object if the insert
+     * failed.
+     */
     async createObservation(observation) {
         let data = {};
         let max_obs = {};
@@ -460,9 +632,33 @@ class ObservationRepository {
     }
 
 
-    /*
-     * Updates an observation with new data, also updates
-     * keyframes if comname has changed.
+    /**
+     * Updates an observation with new data, also updates keyframes if
+     * comname has changed.
+     *
+     * Runs inside a Sequelize transaction. First fetches the existing
+     * observation to detect whether `comname` changed; if so, the new
+     * `comname` is propagated to every keyframe associated with the same
+     * `observation_id` within the same transaction. `updateddate` is always
+     * set to the current time before the update.
+     *
+     * Unlike most write methods in this file, this method does not swallow
+     * errors: if the observation does not exist, or if any step fails, the
+     * transaction is rolled back, the error is logged via `logger.error`,
+     * and the error is re-thrown to the caller.
+     *
+     * An older version of this method (which did not propagate `comname`
+     * changes to keyframes) is retained as a commented-out block
+     * immediately below this one.
+     *
+     * @async
+     * @param {Object} observation - Observation fields to update. Must
+     * include `observation_id` (coerced to an integer) identifying the
+     * record to modify. If `comname` is present and differs from the
+     * stored value, associated keyframes are updated to match.
+     * @returns {Promise<Array>} The Sequelize `update()` result (an array
+     * whose first element is the number of affected rows). Throws if the
+     * observation is not found or if the update/transaction fails.
      */
     async updateObservation(observation) {
         observation.observation_id = parseInt(observation.observation_id);
@@ -542,6 +738,28 @@ class ObservationRepository {
         return data;
     }*/
 
+    /**
+     * Delete an observation by its `observation_id`.
+     *
+     * Database errors are logged via `logger.error` and swallowed; the
+     * method returns whatever `data` currently holds in that case, which is
+     * `{}` (its initial value) since the failed `destroy()` call never
+     * assigns to it. Callers cannot distinguish "zero rows deleted" (a
+     * legitimate `0` from Sequelize) from "the delete failed" (`{}`) purely
+     * by checking truthiness, since both are falsy/empty in different ways.
+     *
+     * There is also a `return {status: ...}` statement immediately after
+     * the `return data;` statement below; it is unreachable dead code and
+     * references `data.deletedCount`, a property Sequelize's `destroy()`
+     * does not actually return (the real return value is a plain row
+     * count), so it would have been incorrect even if reachable.
+     *
+     * @async
+     * @param {number|string} observationId - `observation_id` of the record
+     * to delete.
+     * @returns {Promise<number|Object>} The number of rows deleted (from
+     * Sequelize's `destroy()`), or `{}` if the delete threw an error.
+     */
     async deleteObservation(observationId) {
         let data = {};
         try {
@@ -578,6 +796,30 @@ class ObservationRepository {
         return maxID;
     }*/
 
+    /**
+     * Fetch the maximum `PobsID` across all sessions sharing a project and
+     * type.
+     *
+     * First looks up matching sessions via
+     * `sessionController.getSessionIDsWithProjectAndType`, then queries the
+     * max `PobsID` directly from the database restricted to those session
+     * IDs (an improvement over the commented-out older implementation
+     * immediately above, which fetched every observation for the sessions
+     * into memory and computed the max in JavaScript).
+     *
+     * Database errors are logged and converted to `-1`, which is also the
+     * value returned when no matching `PobsID` is found. As a result,
+     * callers cannot distinguish "no observations have a PobsID yet" from
+     * "the database query failed".
+     *
+     * @async
+     * @param {number|string} project_id - Project identifier used together
+     * with `type` to locate candidate sessions.
+     * @param {string} type - Session type used together with `project_id`
+     * to locate candidate sessions.
+     * @returns {Promise<number>} The highest `PobsID` found, or `-1` if no
+     * observations match or the database query fails.
+     */
     async getMaxPobsID(project_id, type) {
         // Get a list of session_id's that share this project_id and type
         let sessionID_list = await sessionController.getSessionIDsWithProjectAndType(project_id, type);
@@ -605,6 +847,27 @@ class ObservationRepository {
         }
     }  
 
+    /**
+     * Fetch all observations belonging to any session in a supplied list of
+     * session objects.
+     *
+     * This method is only referenced from the commented-out, older
+     * implementation of {@link getMaxPobsID} earlier in this file, so as
+     * written it does not currently appear to be reachable from any live
+     * code path, controller, service, or route.
+     *
+     * Unlike most other methods in this file, the `catch` block here only
+     * logs the error and does not return a fallback value, so a database
+     * failure causes this method to resolve to `undefined` rather than an
+     * empty array.
+     *
+     * @async
+     * @param {Array<Object>} session_list - Session objects, each expected
+     * to have a `session_id` property, used to build the `IN` filter.
+     * @returns {Promise<Array<Object>|undefined>} Observations belonging to
+     * any of the supplied sessions, or `undefined` if the database query
+     * fails.
+     */
     async getObservationsAssociatedWithSessionList(session_list){
         // We have a list of session
         // we need to query all observations associated with these sessions.
@@ -1145,8 +1408,33 @@ class ObservationRepository {
     
 
 
-    /* Returns data for a user dashboard that gives us counts
-     * on how much activity a user has participated in
+    /**
+     * Returns data for a user dashboard that gives us counts on how much
+     * activity a user has participated in.
+     *
+     * Delegates the actual aggregation to
+     * {@link getObservationsGroupedByUserAndDate}, then resolves each row's
+     * numeric `user_id` to a display name via
+     * `userController.getUserNameByID`, building a
+     * `{ [userName]: { [date]: { sessions, observations, projects } } }`
+     * structure. Only the `observations` count is currently populated;
+     * `sessions` and `projects` are initialized to `0` and never updated
+     * (the commented-out `sessionController.getSessionsGroupedByUserAndDate`
+     * call that would presumably populate `sessions` is disabled).
+     *
+     * If the underlying grouped-observation query fails and resolves to
+     * `undefined` (see {@link getObservationsGroupedByUserAndDate}),
+     * iterating over it here throws a `TypeError`, which is caught by this
+     * method's own `catch` block; the error is logged and this method then
+     * resolves to `undefined` as well, rather than an empty object.
+     *
+     * @async
+     * @param {string|Date} startDate - Start of the date range (inclusive)
+     * forwarded to the grouped-observation query.
+     * @param {string|Date} endDate - End of the date range (inclusive)
+     * forwarded to the grouped-observation query.
+     * @returns {Promise<Object|undefined>} Dashboard data keyed by user name
+     * then by date, or `undefined` if the underlying query fails or throws.
      */
     async getUserDashboardData(startDate, endDate) {
         // Combine all the data by user and date into a single object
@@ -1181,6 +1469,30 @@ class ObservationRepository {
     }
 
     
+    /**
+     * Fetch observation counts grouped by session owner (`user_id`) and
+     * creation date within a date range.
+     *
+     * Joins each observation to its session (`required: true`, so
+     * observations without a session are excluded) to obtain `user_id`,
+     * groups by `user_id` and the date portion of `createdAt`, and counts
+     * observations per group. Restricts to observations whose `createdAt`
+     * falls between `startDate` and `endDate` (inclusive, via `Op.between`).
+     *
+     * Database errors are logged and swallowed without a `return`
+     * statement in the `catch` block, so this method resolves to
+     * `undefined` (not an empty array) when the query fails. Callers
+     * (e.g. {@link getUserDashboardData}) must handle that case.
+     *
+     * @async
+     * @param {string|Date} startDate - Start of the date range (inclusive)
+     * used to filter observations by `createdAt`.
+     * @param {string|Date} endDate - End of the date range (inclusive) used
+     * to filter observations by `createdAt`.
+     * @returns {Promise<Array<Object>|undefined>} Raw rows containing
+     * `user_id`, `date`, and `observationCount`, or `undefined` if the
+     * database query fails.
+     */
     async getObservationsGroupedByUserAndDate(startDate, endDate){
         try{
             // Fetch the number of observations each user made, grouped by user and date
@@ -1212,6 +1524,40 @@ class ObservationRepository {
     
     }
 
+    /**
+     * Determines whether a given observation is the first observation of
+     * its session on its calendar day, using a per-session/per-day memo
+     * cache (`this.firstLastSessionObsPerDay`) to avoid repeating the
+     * lookup query for later observations in the same session/day.
+     *
+     * If `obsIndex` is `0`, the observation is assumed to be first without
+     * querying the database (this is only correct if the caller's
+     * `observations` array is itself already sorted so that index `0` is
+     * chronologically first for every session, which is the case for the
+     * one caller, {@link getProjectTimeByDateAndUser}, but is not verified
+     * here). Otherwise, the first observation for the session/day is looked
+     * up once via a `findOne` ordered by ascending `createdAt` and cached.
+     *
+     * `this.firstLastSessionObsPerDay` is a plain object stored on this
+     * singleton repository instance. It is never cleared, so its memory
+     * usage grows for the lifetime of the process across all requests, and
+     * cached values persist across unrelated calls (including calls for
+     * different date ranges covering the same session/day).
+     *
+     * This method has no `try`/`catch`; a database failure in the
+     * `findOne` call propagates as a rejected promise to the caller.
+     *
+     * @async
+     * @param {Array<Object>} observations - The full, chronologically
+     * sorted list of observations being processed by the caller. Only used
+     * to detect the `obsIndex === 0` case.
+     * @param {Object} observation - The observation to test. Must have
+     * `session_id`, `createdAt`, and `observation_id`.
+     * @param {number} obsIndex - Index of `observation` within
+     * `observations`.
+     * @returns {Promise<boolean>} `true` if `observation` is the first
+     * observation of its session on its day, `false` otherwise.
+     */
     async isFirstObservationForSessionOnDay(observations, observation, obsIndex) {
     
         let returnVal = false;
@@ -1284,6 +1630,31 @@ class ObservationRepository {
     }
 
 
+    /**
+     * Determines whether a given observation is the last observation of
+     * its session on its calendar day. Mirrors
+     * {@link isFirstObservationForSessionOnDay}, but checks whether
+     * `obsIndex` is the last index in `observations` and, when querying,
+     * orders by descending `createdAt` and caches under the `"last"` key of
+     * the same per-session/per-day memo cache
+     * (`this.firstLastSessionObsPerDay`).
+     *
+     * The same caveats apply as for {@link isFirstObservationForSessionOnDay}:
+     * the memo cache is unbounded and never cleared for the lifetime of
+     * this singleton repository instance, and there is no `try`/`catch`, so
+     * a database failure propagates as a rejected promise to the caller.
+     *
+     * @async
+     * @param {Array<Object>} observations - The full, chronologically
+     * sorted list of observations being processed by the caller. Only used
+     * to detect whether `obsIndex` is the last index.
+     * @param {Object} observation - The observation to test. Must have
+     * `session_id`, `createdAt`, and `observation_id`.
+     * @param {number} obsIndex - Index of `observation` within
+     * `observations`.
+     * @returns {Promise<boolean>} `true` if `observation` is the last
+     * observation of its session on its day, `false` otherwise.
+     */
     async isLastObservationForSessionOnDay(observations, observation, obsIndex) {
     
         let returnVal = false;
@@ -1393,6 +1764,43 @@ class ObservationRepository {
     /**
      * Returns a list of projects, with a sublist of dates, and a subsublist of users, which each
      * users time on that date for that project recorded.
+     *
+     * Fetches every observation whose `createdAt` falls within
+     * `startDate`/`endDate` (inclusive), joined through its session to the
+     * recording user and project. For each observation, estimates elapsed
+     * time using a 5-minute padding heuristic:
+     *  - If it is the first observation of its session on that day (per
+     *    {@link isFirstObservationForSessionOnDay}), the clock starts 5
+     *    minutes before it; otherwise the clock starts at the observation's
+     *    own timestamp.
+     *  - If it is the last observation of its session on that day (per
+     *    {@link isLastObservationForSessionOnDay}), the clock ends 5
+     *    minutes after it. Otherwise, the next observation for the same
+     *    session/day is located via {@link getNextObservation}; if the gap
+     *    to it is 5 minutes or more, the clock ends 5 minutes after the
+     *    current observation, otherwise it ends exactly at the next
+     *    observation's timestamp.
+     *
+     * Note that the accumulated `timeSpent` is only added to
+     * `minutes_recorded` inside the `else` branch of the "is this the last
+     * observation" check (i.e. only for observations that are not the last
+     * of their session/day) — the last observation of each session/day
+     * therefore does not have its own time window added to the total, so
+     * totals are likely undercounted by roughly one observation's worth of
+     * time per session per day.
+     *
+     * This method has no top-level `try`/`catch`; a failure in the
+     * underlying query or in any of the per-observation helper methods
+     * propagates as a rejected promise to the caller.
+     *
+     * @async
+     * @param {string|Date} startDate - Start of the date range (inclusive)
+     * used to filter observations by `createdAt`.
+     * @param {string|Date} endDate - End of the date range (inclusive) used
+     * to filter observations by `createdAt`.
+     * @returns {Promise<Object>} An object of the shape
+     * `{ [project_name]: { [date]: { [user_name]: minutes } } }`. Throws if
+     * the underlying query or any per-observation lookup fails.
      */
     async getProjectTimeByDateAndUser(startDate, endDate){
 
@@ -1545,7 +1953,30 @@ class ObservationRepository {
 
     
 
-    // Utility function to get the previous observation in the same session
+    /**
+     * Utility function to get the observation immediately preceding a given
+     * observation within the same session, ordered by `createdAt`.
+     *
+     * Fetches every observation for the session (ordered ascending by
+     * `createdAt`), then locates the given `obsID` by comparing
+     * `obs.obsID === obsID` and returns the element immediately before it.
+     * Only referenced from {@link getTimeSpentPerUserPerProject}, which is
+     * itself not wired to any controller/service/route (see that method's
+     * documentation).
+     *
+     * This method has no `try`/`catch`; a database failure propagates as a
+     * rejected promise to the caller.
+     *
+     * @async
+     * @param {number|string} sessionId - Session identifier whose
+     * observations are searched.
+     * @param {number|string} obsID - Per-session sequential observation
+     * identifier identifying the reference observation. Compared with
+     * strict equality (`===`) against each fetched observation's `obsID`.
+     * @returns {Promise<Object|null>} The observation immediately preceding
+     * the identified one, or `null` if the identified observation is the
+     * first in the session or is not found at all.
+     */
     async getPreviousObservation(sessionId, obsID) {
         // Fetch observations for the specified session, ordered by createdAt
         const observations = await this.db.observations.findAll({
@@ -1564,7 +1995,27 @@ class ObservationRepository {
         return null; // Return null if there's no previous observation
     }
 
-    // Group time data by month
+    /**
+     * Group per-user, per-project time totals by month.
+     *
+     * Only referenced from {@link getTimeSpentPerUserPerProject}, which is
+     * itself not wired to any controller/service/route.
+     *
+     * The month key used for every entry is `moment().format('YYYY-MM')`,
+     * i.e. the current month at the time this function runs, rather than
+     * the month the underlying observation data actually occurred in. As
+     * written, all input data ends up grouped under a single "current
+     * month" bucket regardless of when the recorded time actually took
+     * place.
+     *
+     * @async
+     * @param {Object} data - Time totals keyed as
+     * `{ [userId]: { [projectId]: totalMinutes } }`.
+     * @returns {Promise<Object>} Data re-keyed as
+     * `{ [month]: { [userId]: { [projectId]: totalMinutes } } }`, where
+     * `month` is always the current month rather than a month derived from
+     * the input data.
+     */
     async groupByMonth(data) {
         const groupedData = {};
         Object.keys(data).forEach(userId => {
@@ -1582,7 +2033,35 @@ class ObservationRepository {
         return groupedData;
     }
 
-    // Function to get the first observation for a specific session ID
+    /**
+     * Function to get the first observation (by ascending `createdAt`) for
+     * a specific session ID, intended to memoize the result on
+     * `this.firstLastSessionObs` so repeated calls for the same session
+     * skip the database query.
+     *
+     * BUG: every reference to the memo cache in this method's body uses the
+     * bare identifier `firstLastSessionObs` instead of
+     * `this.firstLastSessionObs` (the actual class field declared near the
+     * top of this class). Class bodies execute in strict mode, and no
+     * top-level or outer-scope `firstLastSessionObs` variable exists in
+     * this module, so every invocation of this method throws
+     * `ReferenceError: firstLastSessionObs is not defined` on the first
+     * line that touches it, before any query is even attempted. There is no
+     * `try`/`catch`, so that error propagates directly to the caller.
+     *
+     * Only referenced from {@link getTimeSpentPerUserPerProject}, which is
+     * itself not wired to any controller/service/route in this codebase, so
+     * this bug is not currently reachable from any live API request — but
+     * it will surface immediately if this method or its caller is ever
+     * wired up.
+     *
+     * @async
+     * @param {number|string} sessionId - Session identifier whose earliest
+     * observation should be retrieved.
+     * @returns {Promise<Object|null>} Intended to resolve to the earliest
+     * observation for the session, or `null` if none exists. In its
+     * current state, always throws a `ReferenceError` instead.
+     */
     async getFirstObservationBySessionId(sessionId) {
 
         let firstObservation = null;
@@ -1610,7 +2089,31 @@ class ObservationRepository {
         return firstObservation;
     }
 
-    // Function to get the first observation for a specific session ID
+    /**
+     * Function to get the last observation (by descending `createdAt`) for
+     * a specific session ID, intended to memoize the result on
+     * `this.firstLastSessionObs` so repeated calls for the same session
+     * skip the database query.
+     *
+     * BUG: as with {@link getFirstObservationBySessionId}, every reference
+     * to the memo cache here uses the bare identifier
+     * `firstLastSessionObs` instead of `this.firstLastSessionObs`. Since
+     * class bodies run in strict mode and no such variable is declared in
+     * this module's scope, every call to this method throws
+     * `ReferenceError: firstLastSessionObs is not defined` before any query
+     * runs. There is no `try`/`catch`, so the error propagates to the
+     * caller.
+     *
+     * Only referenced from {@link getTimeSpentPerUserPerProject}, which is
+     * itself not wired to any controller/service/route in this codebase.
+     *
+     * @async
+     * @param {number|string} sessionId - Session identifier whose latest
+     * observation should be retrieved.
+     * @returns {Promise<Object|null>} Intended to resolve to the latest
+     * observation for the session, or `null` if none exists. In its
+     * current state, always throws a `ReferenceError` instead.
+     */
     async getLastObservationBySessionId(sessionId) {
 
         let lastObservation = null;
@@ -1638,7 +2141,37 @@ class ObservationRepository {
         return lastObservation;
     }
 
-    // Main function to calculate time spent per user per project
+    /**
+     * Main function to calculate time spent per user per project, across
+     * all observations (not restricted to a date range), grouped by month.
+     *
+     * For every observation, joined to its session/user/project, this
+     * computes a start/end time window using a 5-minute padding heuristic
+     * around the session's first/last observation (via
+     * {@link getFirstObservationBySessionId} and
+     * {@link getLastObservationBySessionId}), adds a gap adjustment based
+     * on {@link getPreviousObservation}, and accumulates minutes per user
+     * per project. The totals are then grouped by month via
+     * {@link groupByMonth}.
+     *
+     * This method, and everything it calls
+     * ({@link getFirstObservationBySessionId},
+     * {@link getLastObservationBySessionId}, {@link getPreviousObservation},
+     * {@link groupByMonth}), is not currently referenced from the
+     * observation service, controller, or server.js — it is unreachable
+     * from any API route. It is also currently broken: because
+     * {@link getFirstObservationBySessionId} and
+     * {@link getLastObservationBySessionId} unconditionally throw a
+     * `ReferenceError` (see their documentation), any call to this method
+     * will throw as soon as it processes its first observation. There is no
+     * `try`/`catch` here either, so that error (or any query failure)
+     * propagates directly to the caller.
+     *
+     * @async
+     * @returns {Promise<Object>} Intended to resolve to time totals grouped
+     * as `{ [month]: { [userName]: { [projectName]: minutes } } }`. In its
+     * current state, always throws before returning.
+     */
     async getTimeSpentPerUserPerProject() {
 
         // Fetch observations along with session and user data

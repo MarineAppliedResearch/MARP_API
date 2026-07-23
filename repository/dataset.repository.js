@@ -1,7 +1,46 @@
+/**
+ * Repository module for the MARP machine-learning pipeline database
+ * operations.
+ *
+ * This file contains Sequelize queries covering the full ML pipeline
+ * surface: ML models, datasets, dataset observations (the join table
+ * linking datasets to observations), training runs, epochs, and metrics
+ * (summary and curve) records.
+ *
+ * Repository functions should contain database-access logic only. Request
+ * handling belongs in controllers, while broader application behavior
+ * belongs in services.
+ *
+ * NOTE: error handling is inconsistent across the methods in this file.
+ * Some methods swallow database errors and resolve to a fallback value
+ * instead of throwing (`getDatasets()` -> `[]`, `createDataset()` -> `null`,
+ * `bulkCreateMetricsCurves()` -> `{ error: string }`), while most others
+ * (`getDatasetById()`, `createDatasetObservation()`,
+ * `bulkCreateDatasetObservations()`, `getMl_models()`, `createModel()`,
+ * `updateModel()`, `createTrainingRun()`, `updateTrainingRun()`,
+ * `createEpoch()`, `updateEpoch()`, `createMetricsSummary()`,
+ * `createMetricsCurve()`) re-throw and let the caller's promise reject.
+ * The four `update*`/`getDatasetById` "not found" cases additionally
+ * resolve to `null` (not an error) when the target row does not exist.
+ * Callers (and the server.js routes built on this repository) must
+ * account for all three shapes: thrown rejection, `null`/`[]` fallback,
+ * and `{ error: string }` object.
+ *
+ * @fileoverview ML pipeline (models, datasets, training runs, epochs, metrics) database queries and persistence operations.
+ * @author Isaac Travers
+ * @module repository/dataset
+ */
+
 const db = require('../model');
 const logger = require('../logger/api.logger');
 
 
+/**
+ * Repository for ML pipeline database operations covering models,
+ * datasets, dataset observations, training runs, epochs, and metrics.
+ *
+ * @class DatasetRepository
+ */
 class DatasetRepository {
 
     db = {};
@@ -9,16 +48,27 @@ class DatasetRepository {
     constructor() {
         this.db = db;
         // For Development
-        
+
         /*this.db.sequelize.sync({ force: true }).then(() => {
             console.log("Drop and re-sync db.");
         });*/
-        
+
     }
 
-    
+
+    /**
+     * Fetch every dataset record.
+     *
+     * Database errors are logged and converted to an empty array. As a
+     * result, callers cannot distinguish between a successful query that
+     * matched zero datasets and a database failure.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} All Dataset records. Returns an
+     * empty array when none exist or when the database query fails.
+     */
     async getDatasets() {
-        
+
         try {
             const datasets = await this.db.datasets.findAll();
             console.log('datasets:::', datasets);
@@ -30,6 +80,19 @@ class DatasetRepository {
     }
 
 
+    /**
+     * Fetch a single dataset record by its ID.
+     *
+     * Unlike `getDatasets()`, a database error here is logged and
+     * re-thrown rather than swallowed, so callers must catch/handle a
+     * rejected promise. A "not found" result, by contrast, resolves to
+     * `null` rather than throwing.
+     *
+     * @async
+     * @param {number|string} datasetId - ID of the dataset to fetch.
+     * @returns {Promise<Object|null>} The matching Dataset record, or null
+     * if not found. Rejects if the underlying query fails.
+     */
     // ------------------------------------------------------------
     // getDatasetById
     // ------------------------------------------------------------
@@ -75,6 +138,14 @@ class DatasetRepository {
          *
          * Returns:
          *   (object) The created dataset record, or null on error.
+         *
+         * @async
+         * @param {Object} datasetData - Dataset fields to insert (name, location, description, num_samples, num_classes, source, notes).
+         * @returns {Promise<Object|null>} The created Dataset record, or
+         * null if the insert failed. Unlike most other create* methods in
+         * this file, a failure here is logged and swallowed to `null`
+         * rather than re-thrown, so callers must check for a null return
+         * instead of relying on a rejected promise.
          */
     async createDataset(datasetData) {
         try {
@@ -104,9 +175,15 @@ class DatasetRepository {
      *
      * Returns:
      *   (object) The created dataset_observation record.
+     *
+     * @async
+     * @param {Object} datasetObservationData - DatasetObservation fields to insert (dataset_id, observation_id, inclusion_type, num_keyframes, selected_by, added_at).
+     * @returns {Promise<Object>} The created DatasetObservation record.
+     * A database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to an error value.
      */
     async createDatasetObservation(datasetObservationData) {
-    
+
         try {
             console.log("[controller] Creating dataset_observation:", datasetObservationData);
             const record = await this.db.dataset_observations.create(datasetObservationData);
@@ -131,9 +208,21 @@ class DatasetRepository {
      *
      * Returns:
      *   Array of created records (or throws on error).
+     *
+     * @async
+     * @param {Array<Object>} datasetObservationArray - Array of DatasetObservation fields to insert, one object per row.
+     * @returns {Promise<Array<Object>>} The created DatasetObservation
+     * records. Rejects (rather than resolving to an error value) if the
+     * array is missing/empty or if the bulk insert fails. Note: the
+     * `ignoreDuplicates: true` bulkCreate option is passed as a safeguard
+     * against repeated `observation_id` values, but this only suppresses
+     * duplicate-key errors on dialects that support it (e.g. MySQL) — on
+     * Postgres it does not translate to an `ON CONFLICT DO NOTHING` clause
+     * in all Sequelize versions, so duplicate rows may still raise a
+     * unique-constraint error here depending on the configured dialect.
      */
     async bulkCreateDatasetObservations(datasetObservationArray) {
-    
+
         try {
             if (!Array.isArray(datasetObservationArray) || datasetObservationArray.length === 0) {
                 throw new Error("No dataset observations provided");
@@ -154,6 +243,15 @@ class DatasetRepository {
 
 
 
+    /**
+     * Fetch every ML model record.
+     *
+     * @async
+     * @returns {Promise<Array<Object>>} All MlModel records. A database
+     * failure is logged and re-thrown, so the returned promise rejects
+     * rather than resolving to an empty array (unlike `getDatasets()`,
+     * which swallows errors to `[]`).
+     */
     // ------------------------------------------------------------
     // getModels
     // ------------------------------------------------------------
@@ -172,6 +270,18 @@ class DatasetRepository {
 
 
 
+    /**
+     * Insert a new ML model record.
+     *
+     * Defaults `created_at`/`updated_at` to the current time when not
+     * supplied on the input object.
+     *
+     * @async
+     * @param {Object} mlmodel - MlModel fields to insert (name, description, version, framework, architecture, storage_path, etc.).
+     * @returns {Promise<Object>} The created MlModel record. A database
+     * failure is logged and re-thrown, so the returned promise rejects
+     * rather than resolving to an error value.
+     */
     // ------------------------------------------------------------
     // createModel
     // ------------------------------------------------------------
@@ -194,6 +304,20 @@ class DatasetRepository {
 
 
 
+    /**
+     * Update an existing ML model record by ID.
+     *
+     * Always refreshes `updated_at` to the current time, overwriting
+     * anything the caller may have supplied for that field.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to update.
+     * @param {Object} newData - MlModel fields to update.
+     * @returns {Promise<Object|null>} The updated MlModel record, or null
+     * if no row matched `mlID` (logged as a warning rather than treated as
+     * an error). A database failure is logged and re-thrown, so the
+     * returned promise rejects rather than resolving to an error value.
+     */
     // ------------------------------------------------------------
     // updateModel
     // ------------------------------------------------------------
@@ -226,6 +350,18 @@ class DatasetRepository {
     }
 
 
+    /**
+     * Insert a new training run record.
+     *
+     * Defaults `created_at`/`updated_at` to the current time when not
+     * supplied on the input object.
+     *
+     * @async
+     * @param {Object} runData - TrainingRun fields to insert (model_id, dataset_id, run_name, description, status, start_time, end_time, total_epochs, batch_size, learning_rate, optimizer, etc.).
+     * @returns {Promise<Object>} The created TrainingRun record. A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to an error value.
+     */
     // ------------------------------------------------------------
     // createTrainingRun
     // ------------------------------------------------------------
@@ -251,6 +387,21 @@ class DatasetRepository {
     }
 
 
+    /**
+     * Update an existing training run record by ID.
+     *
+     * Always refreshes `updated_at` to the current time, overwriting
+     * anything the caller may have supplied for that field.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to update.
+     * @param {Object} newData - TrainingRun fields to update.
+     * @returns {Promise<Object|null>} The updated TrainingRun record, or
+     * null if no row matched `runID` (logged as a warning rather than
+     * treated as an error). A database failure is logged and re-thrown, so
+     * the returned promise rejects rather than resolving to an error
+     * value.
+     */
     // ------------------------------------------------------------
     // updateTrainingRun
     // ------------------------------------------------------------
@@ -283,6 +434,18 @@ class DatasetRepository {
 
 
 
+    /**
+     * Insert a new epoch record for a training run.
+     *
+     * Defaults `created_at`/`updated_at` to the current time when not
+     * supplied on the input object.
+     *
+     * @async
+     * @param {Object} epochData - Epoch fields to insert (training_run_id, epoch_number, start_time, end_time, duration_seconds, precision, recall, map50, map5095, box_loss, cls_loss, dfl_loss, etc.).
+     * @returns {Promise<Object>} The created Epoch record. A database
+     * failure is logged and re-thrown, so the returned promise rejects
+     * rather than resolving to an error value.
+     */
     // ------------------------------------------------------------
     // createEpoch
     // ------------------------------------------------------------
@@ -308,6 +471,20 @@ class DatasetRepository {
 
 
 
+    /**
+     * Update an existing epoch record by ID.
+     *
+     * Always refreshes `updated_at` to the current time, overwriting
+     * anything the caller may have supplied for that field.
+     *
+     * @async
+     * @param {number|string} epochID - ID of the epoch to update.
+     * @param {Object} newData - Epoch fields to update.
+     * @returns {Promise<Object|null>} The updated Epoch record, or null if
+     * no row matched `epochID` (logged as a warning rather than treated as
+     * an error). A database failure is logged and re-thrown, so the
+     * returned promise rejects rather than resolving to an error value.
+     */
     // ------------------------------------------------------------
     // updateEpoch
     // ------------------------------------------------------------
@@ -340,6 +517,19 @@ class DatasetRepository {
 
 
 
+    /**
+     * Insert a new metrics_summary record for a training run and dataset
+     * split.
+     *
+     * Defaults `created_at`/`updated_at` to the current time when not
+     * supplied on the input object.
+     *
+     * @async
+     * @param {Object} summaryData - MetricsSummary fields to insert (training_run_id, dataset_split, precision, recall, map50, map5095, f1_score, confusion_matrix_path, result_plot_path, details, timestamp, etc.).
+     * @returns {Promise<Object>} The created MetricsSummary record. A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to an error value.
+     */
     // ------------------------------------------------------------
     // createMetricsSummary
     // ------------------------------------------------------------
@@ -361,6 +551,19 @@ class DatasetRepository {
     }
 
 
+    /**
+     * Insert a single precision/recall/F1 curve point tied to a
+     * metrics_summary record.
+     *
+     * Defaults `created_at`/`updated_at` to the current time when not
+     * supplied on the input object.
+     *
+     * @async
+     * @param {Object} curveData - MetricsCurve fields to insert (metrics_summary_id, confidence_threshold, precision, recall, f1_score, support, etc.).
+     * @returns {Promise<Object>} The created MetricsCurve record. A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to an error value.
+     */
     // ------------------------------------------------------------
     // createMetricsCurve
     // ------------------------------------------------------------
@@ -381,6 +584,26 @@ class DatasetRepository {
     }
 
 
+    /**
+     * Bulk-insert metrics_curve records.
+     *
+     * Unlike every other create/bulk method in this file (all of which
+     * re-throw on a database failure), this method swallows the error and
+     * resolves to an `{ error: string }` object instead. It also differs
+     * from `bulkCreateDatasetObservations()` in its success shape: it
+     * returns a summary `{ inserted: number }` object rather than the
+     * created records themselves, so callers cannot inspect the inserted
+     * rows from the return value alone.
+     *
+     * @async
+     * @param {Array<Object>} records - Array of MetricsCurve fields to insert, one object per row.
+     * @returns {Promise<Object>} `{ inserted: number }` on success, or
+     * `{ error: string }` if the bulk insert failed. A failed insert
+     * resolves rather than rejecting, so callers must check for an
+     * `error` property; the `/api/metrics_curves/bulk` route in server.js
+     * has no `.catch()` handler, so this is the only way a caller of that
+     * route can detect a failure — the HTTP status is still 200.
+     */
     // repositories/metricsCurvesRepository.js
     async bulkCreateMetricsCurves(records) {
         try {

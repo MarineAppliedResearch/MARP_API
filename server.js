@@ -719,18 +719,107 @@ app.get('/api/getObservationsWithKeyframesByComnames', (req, res) => {
 
 
 /**
- * Retrieves all distinct comnames from observations that have associated keyframes.
- * @returns {Promise<string[]>} - A promise that resolves to an array of distinct comnames.
+ * @openapi
+ * /getDistinctComnamesWithKeyframes:
+ *   get:
+ *     summary: Fetch distinct common names that have keyframes
+ *     description: >
+ *       Returns every distinct comname value found on observations that have
+ *       at least one associated keyframe. This route is registered with
+ *       `app.use` rather than `app.get`, so it technically responds to any
+ *       HTTP method, not just GET.
+ *     tags:
+ *       - Observations
+ *     responses:
+ *       200:
+ *         description: Distinct common names returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: string
  */
 app.use('/api/getDistinctComnamesWithKeyframes', (req, res) => {
     observationController.getDistinctComnamesWithKeyframes().then(data => res.json(data));
 });
 
 
+/**
+ * @openapi
+ * /dashboardData:
+ *   get:
+ *     summary: Fetch per-user dashboard activity data
+ *     description: >
+ *       Returns per-user, per-date observation activity counts for a
+ *       dashboard view. CAUTION: the underlying grouped-observation query
+ *       this endpoint depends on is invoked with no date arguments
+ *       internally, so the start/end query parameters below are not
+ *       actually applied as a filter — the endpoint currently returns data
+ *       across all time regardless of what is passed.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: query
+ *         name: start
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Intended start of the date range (currently not applied; see description).
+ *       - in: query
+ *         name: end
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Intended end of the date range (currently not applied; see description).
+ *     responses:
+ *       200:
+ *         description: Dashboard data returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties: true
+ */
 app.get('/api/dashboardData', (req, res) => {
     observationController.getUserDashboardData(req.query.start, req.query.end).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /getProjectTimeByDateAndUser:
+ *   get:
+ *     summary: Fetch estimated recording time by project, date, and user
+ *     description: >
+ *       Returns an object keyed by project name, then by date, then by user
+ *       name, containing the estimated minutes recorded within the given
+ *       date range. KNOWN BUG: the last observation of every session/day
+ *       contributes zero minutes to the total, so returned time is
+ *       systematically undercounted.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: query
+ *         name: start
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Start of the date range (inclusive) used to filter observations by createdAt.
+ *       - in: query
+ *         name: end
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: End of the date range (inclusive) used to filter observations by createdAt.
+ *     responses:
+ *       200:
+ *         description: Grouped time data returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               additionalProperties: true
+ */
 app.get('/api/getProjectTimeByDateAndUser', (req, res) => {
     observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end).then(data => res.json(data));
 });
@@ -795,18 +884,169 @@ app.get('/api/observation/getLastVideoInfo/:session_id', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /observation/getMaxObservationFromVideo/{video_source}:
+ *   get:
+ *     summary: Fetch the observation with the highest observation_id for a video
+ *     description: >
+ *       Returns the observation record(s) matching the maximum
+ *       observation_id for the given video_source. Note that despite the
+ *       name, the repository implementation returns an array of matching
+ *       observation records (from a findAll query) rather than a single
+ *       integer id.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: path
+ *         name: video_source
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Video source value to match.
+ *     responses:
+ *       200:
+ *         description: Matching observation record(s) returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Observation'
+ */
 app.get('/api/observation/getMaxObservationFromVideo/:video_source', (req, res) => {
     observationController.getMaxObservationFromVideo(req.params.video_source).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /observation/updateObservationWithCount/{session_id}/{observation_id}/{count}:
+ *   get:
+ *     summary: Update an observation's count field
+ *     description: >
+ *       Updates the count field of a specific observation within a session.
+ *       CRITICAL: despite using HTTP GET, this endpoint performs a database
+ *       UPDATE — a REST verb violation. CRITICAL: the observation_id path
+ *       parameter is actually matched against the obsID column, not the
+ *       observation_id primary key column — supplying the real primary-key
+ *       value will silently match zero rows, and the repository reports
+ *       success regardless of how many rows were actually affected.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: path
+ *         name: session_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Session identifier used together with obsID to locate the target observation.
+ *       - in: path
+ *         name: observation_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: >
+ *           Matched against the obsID column, not the observation_id
+ *           primary key, despite the parameter name.
+ *       - in: path
+ *         name: count
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: New count value to persist.
+ *     responses:
+ *       200:
+ *         description: >
+ *           1 if the update statement executed without throwing, 0 if it
+ *           failed. Does not indicate whether any row was actually matched.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: integer
+ */
 app.get('/api/observation/updateObservationWithCount/:session_id/:observation_id/:count', (req, res) => {
     observationController.updateObservationWithCount(req.params.session_id, req.params.observation_id, req.params.count).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /observation/updateObservationWithSize/{session_id}/{observation_id}/{size}:
+ *   get:
+ *     summary: Update an observation's size field
+ *     description: >
+ *       Updates the coarsesize field of a specific observation within a
+ *       session. CRITICAL: despite using HTTP GET, this endpoint performs a
+ *       database UPDATE — a REST verb violation. CRITICAL: the
+ *       observation_id path parameter is actually matched against the
+ *       obsID column, not the observation_id primary key column —
+ *       supplying the real primary-key value will silently match zero
+ *       rows, and the repository reports success regardless of how many
+ *       rows were actually affected.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: path
+ *         name: session_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Session identifier used together with obsID to locate the target observation.
+ *       - in: path
+ *         name: observation_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: >
+ *           Matched against the obsID column, not the observation_id
+ *           primary key, despite the parameter name.
+ *       - in: path
+ *         name: size
+ *         required: true
+ *         schema:
+ *           type: number
+ *           format: float
+ *         description: New coarse-size value to persist.
+ *     responses:
+ *       200:
+ *         description: >
+ *           1 if the update statement executed without throwing, 0 if it
+ *           failed. Does not indicate whether any row was actually matched.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: integer
+ */
 app.get('/api/observation/updateObservationWithSize/:session_id/:observation_id/:size', (req, res) => {
     observationController.updateObservationWithSize(req.params.session_id, req.params.observation_id, req.params.size).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /observations/bySessionID/{session_id}:
+ *   get:
+ *     summary: Fetch observations for a session
+ *     description: >
+ *       Returns every observation belonging to a session, including
+ *       associated keyframes when present.
+ *     tags:
+ *       - Observations
+ *     parameters:
+ *       - in: path
+ *         name: session_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Session identifier to match.
+ *     responses:
+ *       200:
+ *         description: Matching observations returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Observation'
+ */
 app.get('/api/observations/bySessionID/:session_id', (req, res) => {
     observationController.getObservationsBySessionID(req.params.session_id).then(data => res.json(data));
 });
@@ -938,30 +1178,199 @@ app.post('/api/model_species', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /users:
+ *   get:
+ *     summary: Fetch all users
+ *     description: Returns every user record.
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: User list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/User'
+ */
 app.get('/api/users', (req, res) => {
     userController.getUsers().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /user/{name}:
+ *   get:
+ *     summary: Fetch a user by name
+ *     description: >
+ *       Returns the user record(s) matching an exact display name. Resolves
+ *       to an empty array both when no user has that name and when the
+ *       underlying database query fails.
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Exact display name to match.
+ *     responses:
+ *       200:
+ *         description: Matching user record(s) returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/User'
+ */
 app.get('/api/user/:name', (req, res) => {
     userController.getUserByName(req.params.name).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /projects:
+ *   get:
+ *     summary: Fetch all projects
+ *     description: Returns every project record.
+ *     tags: [Projects]
+ *     responses:
+ *       200:
+ *         description: Project list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Project'
+ */
 app.get('/api/projects', (req, res) => {
     projectController.getProjects().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /projects/user/{userID}:
+ *   get:
+ *     summary: Fetch projects belonging to a user
+ *     description: >
+ *       Returns every project that has at least one session belonging to
+ *       the given user.
+ *     tags: [Projects]
+ *     parameters:
+ *       - in: path
+ *         name: userID
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Identifier of the user whose projects should be returned.
+ *     responses:
+ *       200:
+ *         description: Matching project records returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Project'
+ */
 app.get('/api/projects/user/:userID', (req, res) => {
     projectController.getProjectsByUserID(req.params.userID).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /project/getProjectByName/{projectName}:
+ *   get:
+ *     summary: Fetch a project by name
+ *     description: >
+ *       Returns the project record(s) matching an exact project name.
+ *       CRITICAL: unlike other repository methods in this codebase, a
+ *       database failure here resolves with the raw JavaScript Error
+ *       object itself (not null, not an array, not an ErrorResponse-shaped
+ *       body) — so a failure response will not match a typical error
+ *       schema and callers should not rely on a consistent error shape
+ *       from this endpoint.
+ *     tags: [Projects]
+ *     parameters:
+ *       - in: path
+ *         name: projectName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Exact project name to match.
+ *     responses:
+ *       200:
+ *         description: >
+ *           Matching project record(s) as an array, or a raw Error object
+ *           if the query failed (see description).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Project'
+ */
 app.get('/api/project/getProjectByName/:projectName', (req, res) => {
     projectController.getProjectByName(req.params.projectName).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /sessions:
+ *   get:
+ *     summary: Fetch all sessions
+ *     description: Returns every session record, each including its associated user.
+ *     tags: [Sessions]
+ *     responses:
+ *       200:
+ *         description: Session list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Session'
+ */
 app.get('/api/sessions', (req, res) => {
     sessionController.getSessions().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /sessions/user/{userID}/project/{projectID}:
+ *   get:
+ *     summary: Fetch sessions for a user within a project
+ *     description: >
+ *       Returns sessions matching the given user and project, each
+ *       including its associated user and project.
+ *     tags: [Sessions]
+ *     parameters:
+ *       - in: path
+ *         name: userID
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Identifier of the user whose sessions should be fetched.
+ *       - in: path
+ *         name: projectID
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Identifier of the project to scope the sessions to.
+ *     responses:
+ *       200:
+ *         description: Matching session records returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Session'
+ */
 app.get('/api/sessions/user/:userID/project/:projectID', (req, res) => {
     sessionController.getSessionsByUserIdAndProjectId(req.params.userID, req.params.projectID).then(data => res.json(data));
 });
@@ -986,10 +1395,67 @@ app.get('/api/metaInfo/dbName', (req, res) => {
     metaInfoController.getDBName().then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /user/getUserNameByID/{userID}:
+ *   get:
+ *     summary: Fetch a user's display name by id
+ *     description: >
+ *       Returns the display name of the user matching the given id.
+ *       CRITICAL: if no user matches the given ID, this can throw / return
+ *       an unhandled error (HTTP 500 via the framework's default error
+ *       handling, or an unhandled rejection since the route has no
+ *       .catch()), because the repository accesses a property on the
+ *       query result without checking whether it's null first.
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: userID
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Identifier of the user whose name should be returned.
+ *     responses:
+ *       200:
+ *         description: User name returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: string
+ */
 app.get('/api/user/getUserNameByID/:userID', (req, res) => {
     userController.getUserNameByID(req.params.userID).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /ml_models:
+ *   get:
+ *     summary: Fetch all ML models
+ *     description: >
+ *       Returns every ML model record. A database failure rejects rather
+ *       than resolving to an empty array; the route's .catch() handles
+ *       this and responds with HTTP 500.
+ *     tags: [MachineLearning]
+ *     responses:
+ *       200:
+ *         description: MlModel list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/MlModel'
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // GET /api/models
 app.get('/api/ml_models', (req, res) => {
     datasetController.getMl_models()
@@ -1004,11 +1470,67 @@ app.get('/api/ml_models', (req, res) => {
 
 
 
+/**
+ * @openapi
+ * /dataset:
+ *   get:
+ *     summary: Fetch all datasets
+ *     description: >
+ *       Returns every dataset record. Database errors are swallowed and
+ *       resolve to an empty array, so an empty result doesn't distinguish
+ *       "no datasets" from "query failed."
+ *     tags: [MachineLearning]
+ *     responses:
+ *       200:
+ *         description: Dataset list returned successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Dataset'
+ */
 app.get('/api/dataset', (req, res) => {
     datasetController.getDatasets().then(data => res.json(data));
 });
 
 
+/**
+ * @openapi
+ * /dataset/{id}:
+ *   get:
+ *     summary: Fetch a dataset by id
+ *     description: >
+ *       Returns a single dataset record, or null if not found. Unlike
+ *       getDatasets, a database error here does actually reject/throw, so
+ *       the route's .catch() responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the dataset to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching dataset record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Dataset'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 app.get('/api/dataset/:id', (req, res) => {
     datasetController.getDatasetById(req.params.id)
         .then(data => res.json(data))
@@ -1018,6 +1540,41 @@ app.get('/api/dataset/:id', (req, res) => {
         });
 });
 
+/**
+ * @openapi
+ * /dataset:
+ *   post:
+ *     summary: Create a new dataset
+ *     description: >
+ *       Creates a new dataset record. CRITICAL: a database failure here
+ *       resolves to null rather than rejecting, so the route's .catch()
+ *       handler is effectively dead code — a failed insert currently still
+ *       responds with HTTP 200 and a null body rather than an error
+ *       status.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dataset
+ *             properties:
+ *               dataset:
+ *                 $ref: '#/components/schemas/Dataset'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The created dataset record, or null if the insert failed (see
+ *           description; the failure still returns HTTP 200).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Dataset'
+ *                 - type: 'null'
+ */
 // POST HERE
 app.post('/api/dataset', (req, res) => {
     console.log(req.body);
@@ -1030,6 +1587,43 @@ app.post('/api/dataset', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /model:
+ *   post:
+ *     summary: Create a new ML model
+ *     description: >
+ *       Creates a new ML model record. Has a real .catch() handler that
+ *       responds with HTTP 500 on failure.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - model
+ *             properties:
+ *               model:
+ *                 $ref: '#/components/schemas/MlModel'
+ *     responses:
+ *       200:
+ *         description: The created MlModel record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MlModel'
+ *       500:
+ *         description: The database insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // ==========================================================
 // POST /api/model
 // ----------------------------------------------------------
@@ -1059,6 +1653,41 @@ app.post('/api/model', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /training_run:
+ *   post:
+ *     summary: Create a new training run
+ *     description: Creates a new training run record.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - training_run
+ *             properties:
+ *               training_run:
+ *                 $ref: '#/components/schemas/TrainingRun'
+ *     responses:
+ *       200:
+ *         description: The created TrainingRun record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TrainingRun'
+ *       500:
+ *         description: The database insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // POST /api/training_run
 app.post('/api/training_run', (req, res) => {
     console.log(req.body);
@@ -1071,6 +1700,52 @@ app.post('/api/training_run', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /training_run/{id}:
+ *   put:
+ *     summary: Update an existing training run
+ *     description: >
+ *       Updates an existing training run record by id. Returns the updated
+ *       TrainingRun, or null if no row matched.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the training run to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - training_run
+ *             properties:
+ *               training_run:
+ *                 $ref: '#/components/schemas/TrainingRun'
+ *     responses:
+ *       200:
+ *         description: The updated TrainingRun record, or null if no row matched.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/TrainingRun'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // PUT /api/training_run/:id
 app.put('/api/training_run/:id', (req, res) => {
     const id = req.params.id;
@@ -1083,6 +1758,41 @@ app.put('/api/training_run/:id', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /metrics_summary:
+ *   post:
+ *     summary: Create a new metrics summary
+ *     description: Creates a new metrics_summary record for a training run and dataset split.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - metrics_summary
+ *             properties:
+ *               metrics_summary:
+ *                 $ref: '#/components/schemas/MetricsSummary'
+ *     responses:
+ *       200:
+ *         description: The created MetricsSummary record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MetricsSummary'
+ *       500:
+ *         description: The database insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // POST /api/metrics_summary
 app.post('/api/metrics_summary', (req, res) => {
     datasetController.createMetricsSummary(req.body.metrics_summary)
@@ -1090,6 +1800,41 @@ app.post('/api/metrics_summary', (req, res) => {
         .catch(err => res.status(500).json({ error: "Failed to create metrics_summary" }));
 });
 
+/**
+ * @openapi
+ * /metrics_curve:
+ *   post:
+ *     summary: Create a single metrics curve point
+ *     description: Creates a single metrics_curve point tied to a metrics_summary record.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - metrics_curve
+ *             properties:
+ *               metrics_curve:
+ *                 $ref: '#/components/schemas/MetricsCurve'
+ *     responses:
+ *       200:
+ *         description: The created MetricsCurve record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/MetricsCurve'
+ *       500:
+ *         description: The database insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // POST /api/metrics_curve
 app.post('/api/metrics_curve', (req, res) => {
     datasetController.createMetricsCurve(req.body.metrics_curve)
@@ -1098,12 +1843,89 @@ app.post('/api/metrics_curve', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /metrics_curves/bulk:
+ *   post:
+ *     summary: Bulk-create metrics curve records
+ *     description: >
+ *       Bulk-inserts metrics_curve records. CRITICAL: unlike every sibling
+ *       create/bulk route, this method takes the raw Express req/res
+ *       directly rather than an already-extracted body field — the
+ *       request body must be a raw JSON array of MetricsCurve fields
+ *       (req.body itself is passed straight to Sequelize's bulkCreate).
+ *       CRITICAL: on a database failure this resolves to
+ *       { error: err.message } at HTTP 200 rather than rejecting or
+ *       returning a non-200 status; the route has no .catch() at all.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               $ref: '#/components/schemas/MetricsCurve'
+ *     responses:
+ *       200:
+ *         description: >
+ *           On success, an { inserted: number } summary object (not the
+ *           created records). On failure, an { error: string } object is
+ *           still returned with HTTP 200 (see description).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - type: object
+ *                   properties:
+ *                     inserted:
+ *                       type: integer
+ *                 - type: object
+ *                   properties:
+ *                     error:
+ *                       type: string
+ */
 // server.js or routes.js
 app.post('/api/metrics_curves/bulk', (req, res) => {
   datasetController.bulkCreateMetricsCurves(req, res)
     .then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /epoch:
+ *   post:
+ *     summary: Create a new epoch record
+ *     description: Creates a new epoch record for a training run.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - epoch
+ *             properties:
+ *               epoch:
+ *                 $ref: '#/components/schemas/Epoch'
+ *     responses:
+ *       200:
+ *         description: The created Epoch record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Epoch'
+ *       500:
+ *         description: The database insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // POST /api/epoch
 app.post('/api/epoch', (req, res) => {
     console.log(req.body);
@@ -1116,6 +1938,52 @@ app.post('/api/epoch', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /epoch/{id}:
+ *   put:
+ *     summary: Update an existing epoch record
+ *     description: >
+ *       Updates an existing epoch record by id. Returns the updated Epoch,
+ *       or null if no row matched.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the epoch to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - epoch
+ *             properties:
+ *               epoch:
+ *                 $ref: '#/components/schemas/Epoch'
+ *     responses:
+ *       200:
+ *         description: The updated Epoch record, or null if no row matched.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Epoch'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // PUT /api/epoch/:id
 app.put('/api/epoch/:id', (req, res) => {
     const id = req.params.id;
@@ -1129,6 +1997,53 @@ app.put('/api/epoch/:id', (req, res) => {
 
 
 
+/**
+ * @openapi
+ * /model/{id}:
+ *   put:
+ *     summary: Update an existing ML model
+ *     description: >
+ *       Updates an existing ML model record by id. Returns the updated
+ *       MlModel, or null if no row matched the given id (logged as a
+ *       warning rather than an error in that case).
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the ML model to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - model
+ *             properties:
+ *               model:
+ *                 $ref: '#/components/schemas/MlModel'
+ *     responses:
+ *       200:
+ *         description: The updated MlModel record, or null if no row matched.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/MlModel'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // ==========================================================
 // PUT /api/model/:id
 // ----------------------------------------------------------
@@ -1154,6 +2069,41 @@ app.put('/api/model/:id', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /dataset_observation:
+ *   post:
+ *     summary: Create a new dataset-observation link
+ *     description: Creates a new dataset_observation join record linking a dataset to an observation.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dataset_observation
+ *             properties:
+ *               dataset_observation:
+ *                 $ref: '#/components/schemas/DatasetObservation'
+ *     responses:
+ *       200:
+ *         description: The created DatasetObservation record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DatasetObservation'
+ *       500:
+ *         description: The database insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // POST /api/dataset_observation
 app.post('/api/dataset_observation', (req, res) => {
     console.log(req.body);
@@ -1166,6 +2116,54 @@ app.post('/api/dataset_observation', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /dataset_observations/bulk:
+ *   post:
+ *     summary: Bulk-create dataset-observation links
+ *     description: >
+ *       Bulk-inserts dataset_observation records. The response (per the
+ *       route code) is { inserted: <count> }, NOT the created records.
+ *       Uses ignoreDuplicates: true internally, which may not reliably
+ *       suppress unique-constraint errors on Postgres depending on
+ *       Sequelize version, so a 500 is still possible on duplicate
+ *       observation_id values despite the flag.
+ *     tags: [MachineLearning]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dataset_observations
+ *             properties:
+ *               dataset_observations:
+ *                 type: array
+ *                 items:
+ *                   $ref: '#/components/schemas/DatasetObservation'
+ *     responses:
+ *       200:
+ *         description: >
+ *           An { inserted: number } summary object rather than the created
+ *           records.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 inserted:
+ *                   type: integer
+ *       500:
+ *         description: The bulk insert failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
 // POST /api/dataset_observations/bulk
 app.post('/api/dataset_observations/bulk', (req, res) => {
     console.log(`[INFO] Bulk insert ${req.body.dataset_observations?.length || 0} dataset_observations`);

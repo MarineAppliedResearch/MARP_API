@@ -1,3 +1,25 @@
+/**
+ * Legacy manual Sequelize model initializer.
+ *
+ * This file is not currently required or invoked anywhere in the
+ * application. The live model registry used at runtime is
+ * model/index.js, which dynamically discovers and loads every
+ * `*.model.js` factory file (core tables and machine-learning tables
+ * alike) and wires up associations through each model's own
+ * `associate()` method instead.
+ *
+ * This file predates that dynamic loader: it manually requires each core
+ * model file, initializes it against a supplied connection, and
+ * re-declares associations between observations/projects/sessions/users/
+ * keyframes that largely duplicate what those same models' `associate()`
+ * methods already do. It has been kept as legacy/reference code rather
+ * than deleted. New work should go through model/index.js, not this file.
+ *
+ * @fileoverview Legacy manual Sequelize model initializer (currently unused; superseded by model/index.js).
+ * @author Isaac Travers
+ * @module model/init-models
+ */
+
 var DataTypes = require("sequelize").DataTypes;
 var _SequelizeMeta = require("./SequelizeMeta");
 //var _observations = require("./observations");
@@ -27,6 +49,15 @@ var _metrics_summary = require("./metrics_summary.model");
 var _metrics_curves = require("./metrics_curves.model");
 var _artifacts = require("./artifacts.model");
 
+/**
+ * Manually initialize the core and machine-learning Sequelize models and
+ * wire up their associations.
+ *
+ * @param {Object} sequelize - Sequelize connection to initialize each model against.
+ * @returns {Object} An object exposing every initialized model (SequelizeMeta,
+ * observations, projects, sessions, tasks, users, keyframes, and the
+ * machine-learning tables) by name.
+ */
 function initModels(sequelize) {
   var SequelizeMeta = _SequelizeMeta(sequelize, DataTypes);
   var observations = _observations(sequelize, DataTypes);
