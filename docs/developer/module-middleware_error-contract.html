@@ -3,7 +3,7 @@
 <head>
     
     <meta charset="utf-8">
-    <title>controller/user.controller.js - Documentation</title>
+    <title>middleware/error-contract - Documentation</title>
     
     
     <script src="scripts/prettify/prettify.js"></script>
@@ -37,154 +37,1579 @@
 
 <div id="main">
     
-    <h1 class="page-title">controller/user.controller.js</h1>
+    <h1 class="page-title">middleware/error-contract</h1>
     
 
     
 
 
 
+
+<section>
+
+<header>
     
-    <section>
-        <article>
-            <pre class="prettyprint source linenums"><code>/**
- * Controller layer for user API endpoints.
- *
- * Delegates incoming requests to the user service and logs each call.
- * Controllers in this codebase should contain request delegation and
- * logging only; database access belongs in the repository and broader
- * business logic belongs in the service layer.
- *
- * @fileoverview User request delegation.
- * @author Isaac Travers
- * @module controller/user
- */
+        
+            
+        
+    
+</header>
 
-const userService  = require('../service/user.service');
-const logger = require('../logger/api.logger');
+<article>
+    
+        <div class="container-overview">
+        
+            
+                <div class="description usertext">API error contract middleware.</div>
+            
 
-/**
- * Handles user HTTP request delegation.
- *
- * @class UserController
- */
-class UserController {
+            
+                
 
-    /**
-     * Fetch every user record.
-     *
-     * @async
-     * @returns {Promise&lt;Array&lt;Object>>} All user records. Resolves to an
-     * empty array when none exist or the underlying query fails.
-     */
-    async getUsers() {
-        logger.info('Controller: getUsers')
-        return await userService.getUsers();
-    }
 
-    /**
-     * Fetch user record(s) by display name.
-     *
-     * @async
-     * @param {string} userName - Name of the user to look up; the server.js route (`GET /api/user/:name`) supplies this from `req.params.name`. Note the log message below reads "getUserIDByName", left over from an earlier version of this method; it is a stale log label, not an indication that lookup is by id.
-     * @returns {Promise&lt;Array&lt;Object>>} Matching user record(s). Resolves to
-     * an empty array when no user has that name or the underlying query
-     * fails.
-     */
-    async getUserByName(userName){
-        logger.info('Controller: getUserIDByName');
-        return await userService.getUserByName(userName);
-    }
 
-    /**
-     * Create a new user record.
-     *
-     * @async
-     * @param {Object} user - Fields for the new user record (see the User schema); the server.js route (`POST /api/user`) supplies this from `req.body.user`.
-     * @returns {Promise&lt;Object>} The created user record, or `{}` if the
-     * insert failed. A failed insert resolves rather than throwing, so
-     * callers cannot distinguish failure from a genuinely empty result
-     * without inspecting the returned object's fields.
-     */
-    async createUser(user) {
-        logger.info('Controller: createUser', user);
-        return await userService.createUser(user);
-    }
 
-    /**
-     * Create a new user record given only a display name.
-     *
-     * @async
-     * @param {string} userName - Name to assign to the new user; the server.js route (`POST /api/user/createUserByName/:userName`) supplies this from `req.params.userName`.
-     * @returns {Promise&lt;Object>} The created user record, or `{}` if the
-     * insert failed (e.g. the name already exists and violates the unique
-     * constraint on `users.name`).
-     */
-    async createUserByName(userName){
-        logger.info('Controller: createUserByName', userName);
-        return await userService.createUserByName(userName);
-    }
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>API error contract middleware.</li></ul></dd>
+    
 
-    /**
-     * Update an existing user record.
-     *
-     * @async
-     * @param {Object} user - Fields to update, including `user_id` identifying which row to update; the app.js route (`PUT /api/user`) supplies this from `req.body.user`.
-     * @returns {Promise&lt;Object>} Sequelize's update result (typically
-     * `[affectedCount]`), or `{}` if the update failed. A failed update
-     * resolves rather than throwing.
-     */
-    async updateUser(user) {
-        logger.info('Controller: updateUser', user);
-        return await userService.updateUser(user);
-    }
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line1">line 1</a>
+    </li></ul></dd>
+    
 
-    /**
-     * Delete a user record by id.
-     *
-     * @async
-     * @param {string|number} user_id - Identifier of the user to delete; the app.js route (`DELETE /api/user/:id`) supplies this from `req.params.id`.
-     * @returns {Promise&lt;Object>} The number of rows deleted, or `{}` if the
-     * delete failed. A failed delete resolves rather than throwing.
-     */
-    async deleteUser(user_id) {
-        logger.info('Controller: deleteUser', user_id);
-        return await userService.deleteUser(user_id);
-    }
+    
 
-    /**
-     * Fetch a single user record by id.
-     *
-     * @async
-     * @param {number|string} userId - ID of the user to fetch, taken from `req.params.id` by the caller in app.js.
-     * @returns {Promise&lt;Object|null>} The matching user record, or null if
-     * not found. Rejects if the underlying query fails.
-     */
-    async getUserById(userId) {
-        logger.info('Controller: getUserById', userId);
-        return await userService.getUserById(userId);
-    }
+    
 
-    /**
-     * Fetch a user's display name by id.
-     *
-     * @async
-     * @param {string|number} user_id - Identifier of the user whose name should be returned; the server.js route (`GET /api/user/getUserNameByID/:userID`) supplies this from `req.params.userID`.
-     * @returns {Promise&lt;string>} The user's name. CAUTION: if no user
-     * matches `user_id`, or the underlying query fails, the repository
-     * layer throws (`Cannot read properties of ... 'dataValues'`) rather
-     * than resolving to `null`/`''`, so this promise rejects in those
-     * cases; the calling route has no `.catch()`, so a not-found id
-     * currently hangs the request instead of returning a 404/500.
-     */
-    async getUserNameByID(user_id){
-        logger.info('Controller: getUserNameByID', user_id);
-        return await userService.getUserNameByID(user_id);
-    }
-}
-module.exports = new UserController();</code></pre>
-        </article>
-    </section>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-author">Author:</dt>
+    <dd class="tag-author">
+        <ul>
+            <li>Isaac Travers</li>
+        </ul>
+    </dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
+        
+        </div>
+    
+
+    
+
+    
+
+    
+        <h3 class="subsection-title">Classes</h3>
+
+        <dl>
+            <dt><a href="module-middleware_error-contract-ApiError.html">ApiError</a></dt>
+            <dd></dd>
+        </dl>
+    
+    
+    
+
+     
+
+    
+
+    
+        <h3 class="subsection-title">Members</h3>
+
+        
+            
+<h4 class="name" id="~ERROR_CODES"><span class="type-signature type-signature-inner, constant">(inner, constant) </span>ERROR_CODES<span class="type-signature"> :Object.&lt;string, string></span></h4>
+
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Canonical machine-readable error codes used by the API contract.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line18">line 18</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+<div class="description usertext">
+    Canonical machine-readable error codes used by the API contract.
+</div>
+
+
+
+    <h5 class="h5-types">Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Object.&lt;string, string></span>
+
+
+
+        </li>
+    </ul>
+
+
+
+
+
+
+        
+    
+
+    
+        <h3 class="subsection-title">Methods</h3>
+
+        
+            
+
+    
+
+    <h4 class="name" id="~apiNotFoundHandler"><span class="type-signature type-signature-inner">(inner) </span>apiNotFoundHandler<span class="signature">(req, res)</span><span class="type-signature"> &rarr; {void}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Standard JSON 404 for unmatched API routes.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line162">line 162</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>req</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express request.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>res</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express response.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">void</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="~asyncHandler"><span class="type-signature type-signature-inner">(inner) </span>asyncHandler<span class="signature">(handler)</span><span class="type-signature"> &rarr; {function}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Wrap an async route handler so rejected promises are forwarded to Express
+error middleware.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line207">line 207</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>handler</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Async Express route handler.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="~errorHandler"><span class="type-signature type-signature-inner">(inner) </span>errorHandler<span class="signature">(err, req, res, next)</span><span class="type-signature"> &rarr; {void}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Global Express error middleware returning the standardized contract.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line180">line 180</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>err</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Error</span>
+|
+
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Error passed through Express.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>req</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express request.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>res</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express response.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>next</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express next callback.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">void</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="~generateRequestId"><span class="type-signature type-signature-inner">(inner) </span>generateRequestId<span class="signature">()</span><span class="type-signature"> &rarr; {string}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Create a lightweight request id when one was not provided by the caller.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line52">line 52</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">string</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="~normalizeError"><span class="type-signature type-signature-inner">(inner) </span>normalizeError<span class="signature">(err)</span><span class="type-signature"></span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Convert common runtime/Sequelize errors into the API error contract.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line113">line 113</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>err</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Error</span>
+|
+
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Thrown error.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="~requestIdMiddleware"><span class="type-signature type-signature-inner">(inner) </span>requestIdMiddleware<span class="signature">(req, res, next)</span><span class="type-signature"> &rarr; {void}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Attach request id context to every request and echo it in the response.
+
+Uses incoming x-request-id if present, otherwise generates one.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line68">line 68</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>req</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express request.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>res</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express response.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>next</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express next callback.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">void</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="~sendError"><span class="type-signature type-signature-inner">(inner) </span>sendError<span class="signature">(res, payload)</span><span class="type-signature"> &rarr; {void}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li>Send one standardized error envelope payload.</li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="middleware_error-contract.middleware.js.html">middleware/error-contract.middleware.js</a>, <a href="middleware_error-contract.middleware.js.html#line90">line 90</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>res</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Express response.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>payload</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Error payload fields.
+                <h6>Properties</h6>
+                
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>status</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">HTTP status code.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>code</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Machine-readable contract code.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>message</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Client-safe message.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>requestId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Correlation id for this request.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>details</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Array.&lt;Object></span>
+|
+
+<span class="param-type">undefined</span>
+
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">Optional issue details.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+            </td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">void</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+    
+
+    
+
+    
+</article>
+
+</section>
 
 
 

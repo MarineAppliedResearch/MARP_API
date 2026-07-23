@@ -160,6 +160,9 @@ describe('Dataset observation lifecycle', () => {
     expect(res.status).toBe(200);
 
     const getRes = await request(app).get(`/api/dataset_observation/${datasetObservationId}`);
-    expect(getRes.body).toBeNull();
+      expect(getRes.status).toBe(404);
+      expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
+      expect(getRes.body.error.status).toBe(404);
+      expect(typeof getRes.body.error.requestId).toBe('string');
   });
 });

@@ -3,7 +3,7 @@
 <head>
     
     <meta charset="utf-8">
-    <title>controller/user.controller.js - Documentation</title>
+    <title>middleware/error-contract.middleware.js - Documentation</title>
     
     
     <script src="scripts/prettify/prettify.js"></script>
@@ -37,7 +37,7 @@
 
 <div id="main">
     
-    <h1 class="page-title">controller/user.controller.js</h1>
+    <h1 class="page-title">middleware/error-contract.middleware.js</h1>
     
 
     
@@ -48,141 +48,227 @@
     <section>
         <article>
             <pre class="prettyprint source linenums"><code>/**
- * Controller layer for user API endpoints.
+ * Shared API error contract middleware and helpers.
  *
- * Delegates incoming requests to the user service and logs each call.
- * Controllers in this codebase should contain request delegation and
- * logging only; database access belongs in the repository and broader
- * business logic belongs in the service layer.
+ * Defines one standardized error envelope shape and reusable helpers for
+ * request correlation ids, API not-found responses, and global error handling.
  *
- * @fileoverview User request delegation.
+ * @fileoverview API error contract middleware.
  * @author Isaac Travers
- * @module controller/user
+ * @module middleware/error-contract
  */
-
-const userService  = require('../service/user.service');
-const logger = require('../logger/api.logger');
 
 /**
- * Handles user HTTP request delegation.
+ * Canonical machine-readable error codes used by the API contract.
  *
- * @class UserController
+ * @constant
+ * @type {Object&lt;string, string>}
  */
-class UserController {
+const ERROR_CODES = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+  ROUTE_NOT_FOUND: 'ROUTE_NOT_FOUND',
+  CONFLICT: 'CONFLICT',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  FORBIDDEN: 'FORBIDDEN',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+};
 
-    /**
-     * Fetch every user record.
-     *
-     * @async
-     * @returns {Promise&lt;Array&lt;Object>>} All user records. Resolves to an
-     * empty array when none exist or the underlying query fails.
-     */
-    async getUsers() {
-        logger.info('Controller: getUsers')
-        return await userService.getUsers();
-    }
-
-    /**
-     * Fetch user record(s) by display name.
-     *
-     * @async
-     * @param {string} userName - Name of the user to look up; the server.js route (`GET /api/user/:name`) supplies this from `req.params.name`. Note the log message below reads "getUserIDByName", left over from an earlier version of this method; it is a stale log label, not an indication that lookup is by id.
-     * @returns {Promise&lt;Array&lt;Object>>} Matching user record(s). Resolves to
-     * an empty array when no user has that name or the underlying query
-     * fails.
-     */
-    async getUserByName(userName){
-        logger.info('Controller: getUserIDByName');
-        return await userService.getUserByName(userName);
-    }
-
-    /**
-     * Create a new user record.
-     *
-     * @async
-     * @param {Object} user - Fields for the new user record (see the User schema); the server.js route (`POST /api/user`) supplies this from `req.body.user`.
-     * @returns {Promise&lt;Object>} The created user record, or `{}` if the
-     * insert failed. A failed insert resolves rather than throwing, so
-     * callers cannot distinguish failure from a genuinely empty result
-     * without inspecting the returned object's fields.
-     */
-    async createUser(user) {
-        logger.info('Controller: createUser', user);
-        return await userService.createUser(user);
-    }
-
-    /**
-     * Create a new user record given only a display name.
-     *
-     * @async
-     * @param {string} userName - Name to assign to the new user; the server.js route (`POST /api/user/createUserByName/:userName`) supplies this from `req.params.userName`.
-     * @returns {Promise&lt;Object>} The created user record, or `{}` if the
-     * insert failed (e.g. the name already exists and violates the unique
-     * constraint on `users.name`).
-     */
-    async createUserByName(userName){
-        logger.info('Controller: createUserByName', userName);
-        return await userService.createUserByName(userName);
-    }
-
-    /**
-     * Update an existing user record.
-     *
-     * @async
-     * @param {Object} user - Fields to update, including `user_id` identifying which row to update; the app.js route (`PUT /api/user`) supplies this from `req.body.user`.
-     * @returns {Promise&lt;Object>} Sequelize's update result (typically
-     * `[affectedCount]`), or `{}` if the update failed. A failed update
-     * resolves rather than throwing.
-     */
-    async updateUser(user) {
-        logger.info('Controller: updateUser', user);
-        return await userService.updateUser(user);
-    }
-
-    /**
-     * Delete a user record by id.
-     *
-     * @async
-     * @param {string|number} user_id - Identifier of the user to delete; the app.js route (`DELETE /api/user/:id`) supplies this from `req.params.id`.
-     * @returns {Promise&lt;Object>} The number of rows deleted, or `{}` if the
-     * delete failed. A failed delete resolves rather than throwing.
-     */
-    async deleteUser(user_id) {
-        logger.info('Controller: deleteUser', user_id);
-        return await userService.deleteUser(user_id);
-    }
-
-    /**
-     * Fetch a single user record by id.
-     *
-     * @async
-     * @param {number|string} userId - ID of the user to fetch, taken from `req.params.id` by the caller in app.js.
-     * @returns {Promise&lt;Object|null>} The matching user record, or null if
-     * not found. Rejects if the underlying query fails.
-     */
-    async getUserById(userId) {
-        logger.info('Controller: getUserById', userId);
-        return await userService.getUserById(userId);
-    }
-
-    /**
-     * Fetch a user's display name by id.
-     *
-     * @async
-     * @param {string|number} user_id - Identifier of the user whose name should be returned; the server.js route (`GET /api/user/getUserNameByID/:userID`) supplies this from `req.params.userID`.
-     * @returns {Promise&lt;string>} The user's name. CAUTION: if no user
-     * matches `user_id`, or the underlying query fails, the repository
-     * layer throws (`Cannot read properties of ... 'dataValues'`) rather
-     * than resolving to `null`/`''`, so this promise rejects in those
-     * cases; the calling route has no `.catch()`, so a not-found id
-     * currently hangs the request instead of returning a 404/500.
-     */
-    async getUserNameByID(user_id){
-        logger.info('Controller: getUserNameByID', user_id);
-        return await userService.getUserNameByID(user_id);
-    }
+/**
+ * Application error with explicit HTTP status and contract code.
+ */
+class ApiError extends Error {
+  /**
+   * @param {number} status - HTTP status code.
+   * @param {string} code - Machine-readable contract error code.
+   * @param {string} message - Client-safe error message.
+   * @param {Array&lt;Object>|undefined} details - Optional structured issue details.
+   */
+  constructor(status, code, message, details) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
 }
-module.exports = new UserController();</code></pre>
+
+/**
+ * Create a lightweight request id when one was not provided by the caller.
+ *
+ * @returns {string}
+ */
+function generateRequestId() {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `req_${ts}_${rand}`;
+}
+
+/**
+ * Attach request id context to every request and echo it in the response.
+ *
+ * Uses incoming x-request-id if present, otherwise generates one.
+ *
+ * @param {Object} req - Express request.
+ * @param {Object} res - Express response.
+ * @param {Function} next - Express next callback.
+ * @returns {void}
+ */
+function requestIdMiddleware(req, res, next) {
+  const incomingId = req.get('x-request-id');
+  const requestId = incomingId &amp;&amp; incomingId.trim() ? incomingId.trim() : generateRequestId();
+
+  req.requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+
+  next();
+}
+
+/**
+ * Send one standardized error envelope payload.
+ *
+ * @param {Object} res - Express response.
+ * @param {Object} payload - Error payload fields.
+ * @param {number} payload.status - HTTP status code.
+ * @param {string} payload.code - Machine-readable contract code.
+ * @param {string} payload.message - Client-safe message.
+ * @param {string} payload.requestId - Correlation id for this request.
+ * @param {Array&lt;Object>|undefined} payload.details - Optional issue details.
+ * @returns {void}
+ */
+function sendError(res, { status, code, message, requestId, details }) {
+  const body = {
+    error: {
+      code,
+      message,
+      status,
+      requestId,
+    },
+  };
+
+  if (Array.isArray(details) &amp;&amp; details.length > 0) {
+    body.error.details = details;
+  }
+
+  res.status(status).json(body);
+}
+
+/**
+ * Convert common runtime/Sequelize errors into the API error contract.
+ *
+ * @param {Error|Object} err - Thrown error.
+ * @returns {{status:number, code:string, message:string, details:Array&lt;Object>|undefined}}
+ */
+function normalizeError(err) {
+  if (err instanceof ApiError) {
+    return {
+      status: err.status,
+      code: err.code,
+      message: err.message,
+      details: err.details,
+    };
+  }
+
+  if (err &amp;&amp; err.name === 'SequelizeValidationError') {
+    return {
+      status: 422,
+      code: ERROR_CODES.VALIDATION_ERROR,
+      message: 'Request validation failed.',
+      details: (err.errors || []).map((item) => ({
+        field: item.path,
+        issue: item.message,
+      })),
+    };
+  }
+
+  if (err &amp;&amp; err.name === 'SequelizeUniqueConstraintError') {
+    return {
+      status: 409,
+      code: ERROR_CODES.CONFLICT,
+      message: 'A unique constraint was violated.',
+      details: (err.errors || []).map((item) => ({
+        field: item.path,
+        issue: item.message,
+      })),
+    };
+  }
+
+  return {
+    status: 500,
+    code: ERROR_CODES.INTERNAL_ERROR,
+    message: 'An unexpected server error occurred.',
+    details: undefined,
+  };
+}
+
+/**
+ * Standard JSON 404 for unmatched API routes.
+ *
+ * @param {Object} req - Express request.
+ * @param {Object} res - Express response.
+ * @returns {void}
+ */
+function apiNotFoundHandler(req, res) {
+  sendError(res, {
+    status: 404,
+    code: ERROR_CODES.ROUTE_NOT_FOUND,
+    message: 'API route not found.',
+    requestId: req.requestId || generateRequestId(),
+  });
+}
+
+/**
+ * Global Express error middleware returning the standardized contract.
+ *
+ * @param {Error|Object} err - Error passed through Express.
+ * @param {Object} req - Express request.
+ * @param {Object} res - Express response.
+ * @param {Function} next - Express next callback.
+ * @returns {void}
+ */
+function errorHandler(err, req, res, next) {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const normalized = normalizeError(err);
+
+  console.error('[API Error]', {
+    requestId: req.requestId,
+    code: normalized.code,
+    status: normalized.status,
+    message: err &amp;&amp; err.message ? err.message : String(err),
+  });
+
+  return sendError(res, {
+    ...normalized,
+    requestId: req.requestId || generateRequestId(),
+  });
+}
+
+/**
+ * Wrap an async route handler so rejected promises are forwarded to Express
+ * error middleware.
+ *
+ * @param {Function} handler - Async Express route handler.
+ * @returns {Function}
+ */
+function asyncHandler(handler) {
+  return (req, res, next) => {
+    Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
+module.exports = {
+  ERROR_CODES,
+  ApiError,
+  asyncHandler,
+  apiNotFoundHandler,
+  errorHandler,
+  requestIdMiddleware,
+  sendError,
+};
+</code></pre>
         </article>
     </section>
 

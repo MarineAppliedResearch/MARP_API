@@ -2752,36 +2752,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching model_species record, or null if not found.",
+            "description": "The matching model_species record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ModelSpecies"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/ModelSpecies"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -3387,36 +3371,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching dataset record, or null if not found.",
+            "description": "The matching dataset record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Dataset"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/Dataset"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -3727,36 +3695,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching TrainingRun record, or null if not found.",
+            "description": "The matching TrainingRun record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/TrainingRun"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/TrainingRun"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -3873,36 +3825,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching MetricsSummary record, or null if not found.",
+            "description": "The matching MetricsSummary record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/MetricsSummary"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/MetricsSummary"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4089,36 +4025,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching MetricsCurve record, or null if not found.",
+            "description": "The matching MetricsCurve record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/MetricsCurve"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/MetricsCurve"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4426,36 +4346,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching Epoch record, or null if not found.",
+            "description": "The matching Epoch record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/Epoch"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/Epoch"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4588,36 +4492,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching MlModel record, or null if not found.",
+            "description": "The matching MlModel record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/MlModel"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/MlModel"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },
@@ -4734,36 +4622,20 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching DatasetObservation record, or null if not found.",
+            "description": "The matching DatasetObservation record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/DatasetObservation"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/DatasetObservation"
                 }
               }
             }
           },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       },

@@ -1395,31 +1395,29 @@ app.post('/api/model_species', (req, res) => {
  *         description: ID of the model_species record to fetch.
  *     responses:
  *       200:
- *         description: The matching model_species record, or null if not found.
+ *         description: The matching model_species record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/ModelSpecies'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/ModelSpecies'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/model_species/:id', (req, res) => {
-    speciesController.getModelSpeciesById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/model_species/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch model_species' });
-        });
-});
+app.get('/api/model_species/:id', asyncHandler(async (req, res) => {
+    const data = await speciesController.getModelSpeciesById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `ModelSpecies ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -1940,31 +1938,29 @@ app.get('/api/dataset', (req, res) => {
  *         description: ID of the dataset to fetch.
  *     responses:
  *       200:
- *         description: The matching dataset record, or null if not found.
+ *         description: The matching dataset record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/Dataset'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/Dataset'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/dataset/:id', (req, res) => {
-    datasetController.getDatasetById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error("Error fetching dataset:", err);
-            res.status(500).json({ error: "Failed to get dataset" });
-        });
-});
+app.get('/api/dataset/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.getDatasetById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `Dataset ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2299,31 +2295,29 @@ app.put('/api/training_run/:id', (req, res) => {
  *         description: ID of the training run to fetch.
  *     responses:
  *       200:
- *         description: The matching TrainingRun record, or null if not found.
+ *         description: The matching TrainingRun record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/TrainingRun'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/TrainingRun'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/training_run/:id', (req, res) => {
-    datasetController.getTrainingRunById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/training_run/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch training run' });
-        });
-});
+app.get('/api/training_run/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.getTrainingRunById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `TrainingRun ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2428,31 +2422,29 @@ app.post('/api/metrics_summary', (req, res) => {
  *         description: ID of the metrics_summary to fetch.
  *     responses:
  *       200:
- *         description: The matching MetricsSummary record, or null if not found.
+ *         description: The matching MetricsSummary record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/MetricsSummary'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/MetricsSummary'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/metrics_summary/:id', (req, res) => {
-    datasetController.getMetricsSummaryById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/metrics_summary/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch metrics_summary' });
-        });
-});
+app.get('/api/metrics_summary/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.getMetricsSummaryById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `MetricsSummary ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2613,31 +2605,29 @@ app.post('/api/metrics_curve', (req, res) => {
  *         description: ID of the metrics_curve to fetch.
  *     responses:
  *       200:
- *         description: The matching MetricsCurve record, or null if not found.
+ *         description: The matching MetricsCurve record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/MetricsCurve'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/MetricsCurve'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/metrics_curve/:id', (req, res) => {
-    datasetController.getMetricsCurveById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/metrics_curve/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch metrics_curve' });
-        });
-});
+app.get('/api/metrics_curve/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.getMetricsCurveById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `MetricsCurve ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -2908,31 +2898,29 @@ app.put('/api/epoch/:id', (req, res) => {
  *         description: ID of the epoch to fetch.
  *     responses:
  *       200:
- *         description: The matching Epoch record, or null if not found.
+ *         description: The matching Epoch record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/Epoch'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/Epoch'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/epoch/:id', (req, res) => {
-    datasetController.getEpochById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/epoch/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch epoch' });
-        });
-});
+app.get('/api/epoch/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.getEpochById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `Epoch ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3065,31 +3053,29 @@ app.put('/api/model/:id', (req, res) => {
  *         description: ID of the ML model to fetch.
  *     responses:
  *       200:
- *         description: The matching MlModel record, or null if not found.
+ *         description: The matching MlModel record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/MlModel'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/MlModel'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/model/:id', (req, res) => {
-    datasetController.getModelById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/model/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch model' });
-        });
-});
+app.get('/api/model/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.getModelById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `MlModel ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
@@ -3197,31 +3183,29 @@ app.post('/api/dataset_observation', (req, res) => {
  *         description: ID of the dataset_observation to fetch.
  *     responses:
  *       200:
- *         description: The matching DatasetObservation record, or null if not found.
+ *         description: The matching DatasetObservation record.
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - $ref: '#/components/schemas/DatasetObservation'
- *                 - type: 'null'
+ *               $ref: '#/components/schemas/DatasetObservation'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
  *       500:
- *         description: The database query failed.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
+ *         $ref: '#/components/responses/InternalServerError'
  */
-app.get('/api/dataset_observation/:id', (req, res) => {
-    datasetController.getDatasetObservationById(req.params.id)
-        .then(data => res.json(data))
-        .catch(err => {
-            console.error('Error in GET /api/dataset_observation/:id:', err);
-            res.status(500).json({ error: 'Failed to fetch dataset_observation' });
-        });
-});
+app.get('/api/dataset_observation/:id', asyncHandler(async (req, res) => {
+    const data = await datasetController.getDatasetObservationById(req.params.id);
+
+    if (!data) {
+        throw new ApiError(
+            404,
+            ERROR_CODES.RESOURCE_NOT_FOUND,
+            `DatasetObservation ${req.params.id} was not found.`
+        );
+    }
+
+    res.json(data);
+}));
 
 /**
  * @openapi
