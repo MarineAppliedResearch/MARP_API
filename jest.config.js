@@ -24,4 +24,41 @@ module.exports = {
    * mock.
    */
   testTimeout: 10000,
+
+  /**
+   * Replaces Jest's default reporter with tests/reporters/summary-reporter.js,
+   * which prints a compact pass/fail line per test instead of interleaving
+   * the application's own console output (Sequelize SQL logs,
+   * `logger.info` calls, etc.) with test results, and writes a timestamped
+   * copy of the report to tests/logs/.
+   */
+  reporters: ['<rootDir>/tests/reporters/summary-reporter.js'],
+
+  /**
+   * Suppresses Jest's own immediate printing of each test file's console
+   * output (this happens in Jest's test runner itself, before reporters
+   * ever run, so removing the default reporter alone doesn't stop it).
+   * testResult.console is still populated for reporters even when this is
+   * set, so the summary reporter above can still surface a failing test
+   * file's console output in its failure section.
+   */
+  silent: true,
+
+  /**
+   * Redirects every require of logger/api.logger.js to a no-op stand-in
+   * during tests. The real logger is built on the `pine` library, which
+   * writes directly to stdout in a way `silent` above does not catch.
+   */
+  moduleNameMapper: {
+    '.*/logger/api\\.logger$': '<rootDir>/tests/mocks/silent-logger.js',
+  },
+
+  /**
+   * Runs once per test file, after the test framework is installed.
+   * tests/setup/console-error-passthrough.js keeps console.error visible
+   * despite `silent: true` above, since that's where a failing route's
+   * real root cause (e.g. the underlying DB error behind a 500) actually
+   * gets logged.
+   */
+  setupFilesAfterEnv: ['<rootDir>/tests/setup/console-error-passthrough.js'],
 };
