@@ -330,6 +330,34 @@ class DatasetController {
         return await datasetService.updateEpoch(id, epoch);
     }
 
+    /**
+     * Fetch a single epoch record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the epoch to fetch.
+     * @returns {Promise<Object|null>} The matching Epoch record, or null
+     * if not found. Rejects on a database failure rather than resolving
+     * to a fallback value.
+     */
+    async getEpochById(id){
+        logger.info('Controller: getEpochById: ')
+        return await datasetService.getEpochById(id);
+    }
+
+    /**
+     * Delete an epoch record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the epoch to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteEpoch(id){
+        logger.info('Controller: deleteEpoch: ')
+        return await datasetService.deleteEpoch(id);
+    }
+
 
     /**
      * Create a new metrics_summary record for a training run and dataset
@@ -346,6 +374,49 @@ class DatasetController {
     }
 
     /**
+     * Fetch a single metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to fetch.
+     * @returns {Promise<Object|null>} The matching MetricsSummary record,
+     * or null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getMetricsSummaryById(id){
+        logger.info('Controller: getMetricsSummaryById: ')
+        return await datasetService.getMetricsSummaryById(id);
+    }
+
+    /**
+     * Update an existing metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to update.
+     * @param {Object} newData - MetricsSummary fields to update.
+     * @returns {Promise<Object|null>} The updated MetricsSummary record,
+     * or null if no row matched the given ID. Rejects on a database
+     * failure rather than resolving to an error value.
+     */
+    async updateMetricsSummary(id, newData){
+        logger.info('Controller: updateMetricsSummary: ')
+        return await datasetService.updateMetricsSummary(id, newData);
+    }
+
+    /**
+     * Delete a metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteMetricsSummary(id){
+        logger.info('Controller: deleteMetricsSummary: ')
+        return await datasetService.deleteMetricsSummary(id);
+    }
+
+    /**
      * Create a single metrics_curve point tied to a metrics_summary record.
      *
      * @async
@@ -356,6 +427,49 @@ class DatasetController {
     async createMetricsCurve(metrics_curve){
         logger.info('Controller: createMetricsCurve: ')
         return await datasetService.createMetricsCurve(metrics_curve);
+    }
+
+    /**
+     * Fetch a single metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to fetch.
+     * @returns {Promise<Object|null>} The matching MetricsCurve record, or
+     * null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getMetricsCurveById(id){
+        logger.info('Controller: getMetricsCurveById: ')
+        return await datasetService.getMetricsCurveById(id);
+    }
+
+    /**
+     * Update an existing metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to update.
+     * @param {Object} newData - MetricsCurve fields to update.
+     * @returns {Promise<Object|null>} The updated MetricsCurve record, or
+     * null if no row matched the given ID. Rejects on a database failure
+     * rather than resolving to an error value.
+     */
+    async updateMetricsCurve(id, newData){
+        logger.info('Controller: updateMetricsCurve: ')
+        return await datasetService.updateMetricsCurve(id, newData);
+    }
+
+    /**
+     * Delete a metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteMetricsCurve(id){
+        logger.info('Controller: deleteMetricsCurve: ')
+        return await datasetService.deleteMetricsCurve(id);
     }
 
     /**

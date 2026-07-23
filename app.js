@@ -1122,6 +1122,12 @@ app.get('/api/species/by-comname/:comname', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching species record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Species'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -1167,6 +1173,10 @@ app.get('/api/species/:id', (req, res) => {
  *     responses:
  *       200:
  *         description: The created species record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Species'
  *       500:
  *         description: The database insert failed.
  *         content:
@@ -1219,6 +1229,12 @@ app.post('/api/species', (req, res) => {
  *         description: >
  *           The updated species record, or null if no species matched the
  *           given id.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Species'
+ *                 - type: 'null'
  *       500:
  *         description: The database update failed.
  *         content:
@@ -1344,6 +1360,145 @@ app.post('/api/model_species', (req, res) => {
     .then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /model_species/{id}:
+ *   get:
+ *     summary: Fetch a model_species record by id
+ *     description: >
+ *       Returns a single model_species join record by ID, or null if not
+ *       found. A database failure rejects the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the model_species record to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching model_species record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/ModelSpecies'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/model_species/:id', (req, res) => {
+    speciesController.getModelSpeciesById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/model_species/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch model_species' });
+        });
+});
+
+/**
+ * @openapi
+ * /model_species/{id}:
+ *   put:
+ *     summary: Update an existing model_species record
+ *     description: >
+ *       Updates an existing model_species join record by ID. The request
+ *       body fields are used directly (unwrapped), matching the
+ *       POST /model_species convention. A database failure rejects the
+ *       returned promise, so the route's .catch() responds with HTTP 500
+ *       in that case.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the model_species record to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ModelSpecies'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The updated model_species record, or null if no row matched
+ *           the given ID.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/ModelSpecies'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.put('/api/model_species/:id', (req, res) => {
+    speciesController.updateModelSpecies(req.params.id, req.body)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/model_species/:id:', err);
+            res.status(500).json({ error: 'Failed to update model_species' });
+        });
+});
+
+/**
+ * @openapi
+ * /model_species/{id}:
+ *   delete:
+ *     summary: Delete a model_species record
+ *     description: >
+ *       Deletes a model_species join record by ID. A database failure
+ *       rejects the returned promise, so the route's .catch() responds
+ *       with HTTP 500 in that case.
+ *     tags: [Species]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the model_species record to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/model_species/:id', (req, res) => {
+    speciesController.deleteModelSpecies(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/model_species/:id:', err);
+            res.status(500).json({ error: 'Failed to delete model_species' });
+        });
+});
+
 
 /**
  * @openapi
@@ -1388,6 +1543,12 @@ app.get('/api/users', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching user record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/User'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -1567,6 +1728,12 @@ app.get('/api/sessions', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching session record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Session'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -1820,6 +1987,12 @@ app.get('/api/dataset/:id', (req, res) => {
  *         description: >
  *           The updated dataset record, or null if no dataset matched the
  *           given ID.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Dataset'
+ *                 - type: 'null'
  *       500:
  *         description: The database update failed.
  *         content:
@@ -2115,6 +2288,12 @@ app.put('/api/training_run/:id', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching TrainingRun record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/TrainingRun'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -2220,6 +2399,149 @@ app.post('/api/metrics_summary', (req, res) => {
 
 /**
  * @openapi
+ * /metrics_summary/{id}:
+ *   get:
+ *     summary: Fetch a metrics_summary by id
+ *     description: >
+ *       Returns a single metrics_summary record by ID, or null if not
+ *       found. A database failure rejects the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the metrics_summary to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching MetricsSummary record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/MetricsSummary'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/metrics_summary/:id', (req, res) => {
+    datasetController.getMetricsSummaryById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/metrics_summary/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch metrics_summary' });
+        });
+});
+
+/**
+ * @openapi
+ * /metrics_summary/{id}:
+ *   put:
+ *     summary: Update an existing metrics_summary
+ *     description: >
+ *       Updates an existing metrics_summary record by ID. A database
+ *       failure rejects the returned promise, so the route's .catch()
+ *       responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the metrics_summary to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - metrics_summary
+ *             properties:
+ *               metrics_summary:
+ *                 $ref: '#/components/schemas/MetricsSummary'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The updated metrics_summary record, or null if no row matched
+ *           the given ID.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/MetricsSummary'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.put('/api/metrics_summary/:id', (req, res) => {
+    datasetController.updateMetricsSummary(req.params.id, req.body.metrics_summary)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/metrics_summary/:id:', err);
+            res.status(500).json({ error: 'Failed to update metrics_summary' });
+        });
+});
+
+/**
+ * @openapi
+ * /metrics_summary/{id}:
+ *   delete:
+ *     summary: Delete a metrics_summary
+ *     description: >
+ *       Deletes a metrics_summary record by ID. A database failure
+ *       rejects the returned promise, so the route's .catch() responds
+ *       with HTTP 500 in that case. Deleting a metrics_summary cascades
+ *       to delete its metrics_curves (see model/metrics_summary.model.js).
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the metrics_summary to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/metrics_summary/:id', (req, res) => {
+    datasetController.deleteMetricsSummary(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/metrics_summary/:id:', err);
+            res.status(500).json({ error: 'Failed to delete metrics_summary' });
+        });
+});
+
+/**
+ * @openapi
  * /metrics_curve:
  *   post:
  *     summary: Create a single metrics curve point
@@ -2258,6 +2580,148 @@ app.post('/api/metrics_curve', (req, res) => {
     datasetController.createMetricsCurve(req.body.metrics_curve)
         .then(data => res.json(data))
         .catch(err => res.status(500).json({ error: "Failed to create metrics_curve" }));
+});
+
+/**
+ * @openapi
+ * /metrics_curve/{id}:
+ *   get:
+ *     summary: Fetch a metrics_curve by id
+ *     description: >
+ *       Returns a single metrics_curve record by ID, or null if not
+ *       found. A database failure rejects the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the metrics_curve to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching MetricsCurve record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/MetricsCurve'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/metrics_curve/:id', (req, res) => {
+    datasetController.getMetricsCurveById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/metrics_curve/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch metrics_curve' });
+        });
+});
+
+/**
+ * @openapi
+ * /metrics_curve/{id}:
+ *   put:
+ *     summary: Update an existing metrics_curve
+ *     description: >
+ *       Updates an existing metrics_curve record by ID. A database
+ *       failure rejects the returned promise, so the route's .catch()
+ *       responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the metrics_curve to update.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - metrics_curve
+ *             properties:
+ *               metrics_curve:
+ *                 $ref: '#/components/schemas/MetricsCurve'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The updated metrics_curve record, or null if no row matched
+ *           the given ID.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/MetricsCurve'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database update failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.put('/api/metrics_curve/:id', (req, res) => {
+    datasetController.updateMetricsCurve(req.params.id, req.body.metrics_curve)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in PUT /api/metrics_curve/:id:', err);
+            res.status(500).json({ error: 'Failed to update metrics_curve' });
+        });
+});
+
+/**
+ * @openapi
+ * /metrics_curve/{id}:
+ *   delete:
+ *     summary: Delete a metrics_curve
+ *     description: >
+ *       Deletes a metrics_curve record by ID. A database failure rejects
+ *       the returned promise, so the route's .catch() responds with HTTP
+ *       500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the metrics_curve to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/metrics_curve/:id', (req, res) => {
+    datasetController.deleteMetricsCurve(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/metrics_curve/:id:', err);
+            res.status(500).json({ error: 'Failed to delete metrics_curve' });
+        });
 });
 
 
@@ -2413,6 +2877,90 @@ app.put('/api/epoch/:id', (req, res) => {
         });
 });
 
+/**
+ * @openapi
+ * /epoch/{id}:
+ *   get:
+ *     summary: Fetch an epoch by id
+ *     description: >
+ *       Returns a single epoch record by ID, or null if not found. A
+ *       database failure rejects the returned promise, so the route's
+ *       .catch() responds with HTTP 500 in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the epoch to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching Epoch record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Epoch'
+ *                 - type: 'null'
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/epoch/:id', (req, res) => {
+    datasetController.getEpochById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/epoch/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch epoch' });
+        });
+});
+
+/**
+ * @openapi
+ * /epoch/{id}:
+ *   delete:
+ *     summary: Delete an epoch
+ *     description: >
+ *       Deletes an epoch record by ID. A database failure rejects the
+ *       returned promise, so the route's .catch() responds with HTTP 500
+ *       in that case.
+ *     tags: [MachineLearning]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the epoch to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed (as returned by Sequelize).
+ *       500:
+ *         description: The database delete failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.delete('/api/epoch/:id', (req, res) => {
+    datasetController.deleteEpoch(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in DELETE /api/epoch/:id:', err);
+            res.status(500).json({ error: 'Failed to delete epoch' });
+        });
+});
+
 
 
 /**
@@ -2506,6 +3054,12 @@ app.put('/api/model/:id', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching MlModel record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/MlModel'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -2632,6 +3186,12 @@ app.post('/api/dataset_observation', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching DatasetObservation record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/DatasetObservation'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -2684,6 +3244,12 @@ app.get('/api/dataset_observation/:id', (req, res) => {
  *         description: >
  *           The updated dataset_observation record, or null if no row
  *           matched the given ID.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/DatasetObservation'
+ *                 - type: 'null'
  *       500:
  *         description: The database update failed.
  *         content:
@@ -3311,6 +3877,12 @@ app.put('/api/session', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching task record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Task'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -3376,6 +3948,12 @@ app.delete('/api/task/:id', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching observation record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Observation'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -3442,6 +4020,12 @@ app.delete('/api/observation/:id', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching keyframe record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Keyframe'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:
@@ -3494,6 +4078,12 @@ app.get('/api/keyframe/:keyframe_id', (req, res) => {
  *         description: >
  *           The updated keyframe record, or null if no keyframe matched
  *           the given id.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Keyframe'
+ *                 - type: 'null'
  *       500:
  *         description: The database update failed.
  *         content:
@@ -3599,6 +4189,12 @@ app.delete('/api/user/:id', (req, res) => {
  *     responses:
  *       200:
  *         description: The matching project record, or null if not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/Project'
+ *                 - type: 'null'
  *       500:
  *         description: The database query failed.
  *         content:

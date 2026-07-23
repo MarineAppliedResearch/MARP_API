@@ -2087,7 +2087,14 @@
         },
         "responses": {
           "200": {
-            "description": "The created species record."
+            "description": "The created species record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Species"
+                }
+              }
+            }
           },
           "500": {
             "description": "The database insert failed.",
@@ -2166,7 +2173,21 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching species record, or null if not found."
+            "description": "The matching species record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database query failed.",
@@ -2222,7 +2243,21 @@
         },
         "responses": {
           "200": {
-            "description": "The updated species record, or null if no species matched the given id.\n"
+            "description": "The updated species record, or null if no species matched the given id.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database update failed.",
@@ -2360,6 +2395,160 @@
         }
       }
     },
+    "/model_species/{id}": {
+      "get": {
+        "summary": "Fetch a model_species record by id",
+        "description": "Returns a single model_species join record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching model_species record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ModelSpecies"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing model_species record",
+        "description": "Updates an existing model_species join record by ID. The request body fields are used directly (unwrapped), matching the POST /model_species convention. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSpecies"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated model_species record, or null if no row matched the given ID.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ModelSpecies"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a model_species record",
+        "description": "Deletes a model_species join record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users": {
       "get": {
         "summary": "Fetch all users",
@@ -2404,7 +2593,21 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching user record, or null if not found."
+            "description": "The matching user record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database query failed.",
@@ -2597,7 +2800,21 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching session record, or null if not found."
+            "description": "The matching session record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Session"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database query failed.",
@@ -2935,7 +3152,21 @@
         },
         "responses": {
           "200": {
-            "description": "The updated dataset record, or null if no dataset matched the given ID.\n"
+            "description": "The updated dataset record, or null if no dataset matched the given ID.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Dataset"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database update failed.",
@@ -3171,6 +3402,96 @@
             }
           }
         }
+      },
+      "get": {
+        "summary": "Fetch a training run by id",
+        "description": "Returns a single training run record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching TrainingRun record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TrainingRun"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a training run",
+        "description": "Deletes a training run record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a training run cascades to delete its epochs, metrics_summary, hyperparameters, and artifacts (see model/training_runs.model.js).\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/metrics_summary": {
@@ -3211,6 +3532,168 @@
           },
           "500": {
             "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics_summary/{id}": {
+      "get": {
+        "summary": "Fetch a metrics_summary by id",
+        "description": "Returns a single metrics_summary record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MetricsSummary record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MetricsSummary"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing metrics_summary",
+        "description": "Updates an existing metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "metrics_summary"
+                ],
+                "properties": {
+                  "metrics_summary": {
+                    "$ref": "#/components/schemas/MetricsSummary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated metrics_summary record, or null if no row matched the given ID.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MetricsSummary"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a metrics_summary",
+        "description": "Deletes a metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a metrics_summary cascades to delete its metrics_curves (see model/metrics_summary.model.js).\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3456,6 +3939,96 @@
             }
           }
         }
+      },
+      "get": {
+        "summary": "Fetch an epoch by id",
+        "description": "Returns a single epoch record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching Epoch record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Epoch"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an epoch",
+        "description": "Deletes an epoch record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/model/{id}": {
@@ -3548,7 +4121,21 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching MlModel record, or null if not found."
+            "description": "The matching MlModel record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MlModel"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database query failed.",
@@ -3644,6 +4231,168 @@
           },
           "500": {
             "description": "The database insert failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dataset_observation/{id}": {
+      "get": {
+        "summary": "Fetch a dataset_observation by id",
+        "description": "Returns a single dataset_observation record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching DatasetObservation record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DatasetObservation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing dataset_observation",
+        "description": "Updates an existing dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset_observation"
+                ],
+                "properties": {
+                  "dataset_observation": {
+                    "$ref": "#/components/schemas/DatasetObservation"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated dataset_observation record, or null if no row matched the given ID.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DatasetObservation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a dataset_observation",
+        "description": "Deletes a dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "description": "The database delete failed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4280,7 +5029,21 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching task record, or null if not found."
+            "description": "The matching task record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Task"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database query failed.",
@@ -4324,6 +5087,58 @@
       }
     },
     "/observation/{id}": {
+      "get": {
+        "summary": "Fetch an observation by id",
+        "description": "Returns a single observation record by observation_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "observation_id of the observation to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching observation record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Observation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "summary": "Delete an observation",
         "description": "Deletes an observation record by its observation_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
@@ -4349,6 +5164,128 @@
       }
     },
     "/keyframe/{keyframe_id}": {
+      "get": {
+        "summary": "Fetch a keyframe by id",
+        "description": "Returns a single keyframe record by keyframe_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching keyframe record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Keyframe"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database query failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing keyframe",
+        "description": "Updates an existing keyframe record by keyframe_id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "keyframe"
+                ],
+                "properties": {
+                  "keyframe": {
+                    "$ref": "#/components/schemas/Keyframe"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated keyframe record, or null if no keyframe matched the given id.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Keyframe"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The database update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a keyframe",
         "description": "Deletes a keyframe record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
@@ -4433,7 +5370,21 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching project record, or null if not found."
+            "description": "The matching project record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Project"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
           },
           "500": {
             "description": "The database query failed.",
