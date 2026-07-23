@@ -143,6 +143,19 @@ class ObservationController {
     }
 
     /**
+     * Fetch a single observation record by its observation_id.
+     *
+     * @async
+     * @param {number|string} observationId - observation_id of the observation to fetch, taken from `req.params.id` by the caller in app.js.
+     * @returns {Promise<Object|null>} The matching observation record, or
+     * null if not found. Rejects if the underlying query fails.
+     */
+    async getObservationById(observationId) {
+        logger.info('Controller: getObservationById', observationId);
+        return await observationService.getObservationById(observationId);
+    }
+
+    /**
      * Update an existing observation, propagating a changed `comname` to
      * its associated keyframes within the same transaction.
      *

@@ -3149,6 +3149,45 @@ app.delete('/api/task/:id', (req, res) => {
 /**
  * @openapi
  * /observation/{id}:
+ *   get:
+ *     summary: Fetch an observation by id
+ *     description: >
+ *       Returns a single observation record by observation_id, or null if
+ *       not found. Database failures reject the returned promise, so the
+ *       route's .catch() responds with HTTP 500 in that case.
+ *     tags: [Observations]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: observation_id of the observation to fetch.
+ *     responses:
+ *       200:
+ *         description: The matching observation record, or null if not found.
+ *       500:
+ *         description: The database query failed.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ */
+app.get('/api/observation/:id', (req, res) => {
+    observationController.getObservationById(req.params.id)
+        .then(data => res.json(data))
+        .catch(err => {
+            console.error('Error in GET /api/observation/:id:', err);
+            res.status(500).json({ error: 'Failed to fetch observation' });
+        });
+});
+
+/**
+ * @openapi
+ * /observation/{id}:
  *   delete:
  *     summary: Delete an observation
  *     description: >

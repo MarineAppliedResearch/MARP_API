@@ -132,6 +132,18 @@ class ObservationService {
     }
 
     /**
+     * Fetch a single observation record by its observation_id.
+     *
+     * @async
+     * @param {number|string} observationId - observation_id of the observation to fetch.
+     * @returns {Promise<Object|null>} The matching observation record, or
+     * null if not found. Rejects if the underlying query fails.
+     */
+    async getObservationById(observationId) {
+        return await observationRepository.getObservationById(observationId);
+    }
+
+    /**
      * Update an existing observation, propagating a changed `comname` to
      * its associated keyframes within the same transaction.
      *
