@@ -1,33 +1,148 @@
 /**
- * ===================================================================
- * File: epoch.model.js
- * Author: Isaac Assegai Travers
- * Date: 2025-10-7
- * -------------------------------------------------------------------
- * Part of the MARP Machine Learning Database Schema.
+ * Sequelize model definition for the epochs table.
  *
- * Purpose:
  * Defines the `epochs` table, which stores per-epoch performance
  * statistics and timing information for each training run.
  *
- * Each record represents one complete epoch during training,
- * including start/end times, loss metrics, and precision/recall/mAP.
+ * Each record represents one complete epoch during training, including
+ * start/end times, loss metrics, and precision/recall/mAP.
  *
- * This table supports training visualization, performance analysis,
- * and historical comparison of model training behavior.
- * ===================================================================
+ * This table supports training visualization, performance analysis, and
+ * historical comparison of model training behavior as part of the MARP
+ * Machine Learning Database Schema.
+ *
+ * @fileoverview Sequelize model and OpenAPI response schema for epochs.
+ * @author Isaac Assegai Travers
+ * @module model/epochs
  */
 
 const { Model } = require('sequelize');
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Epoch:
+ *       type: object
+ *       description: >
+ *         Per-epoch performance and timing data captured during a single
+ *         training run, including loss values and precision/recall/mAP
+ *         metrics recorded at the end of that epoch.
+ *       required:
+ *         - id
+ *         - training_run_id
+ *         - epoch_number
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 501
+ *           description: Unique identifier for this epoch record.
+ *         training_run_id:
+ *           type: integer
+ *           example: 12
+ *           description: Foreign key linking this epoch to its parent training run (training_runs.id).
+ *         epoch_number:
+ *           type: integer
+ *           example: 3
+ *           description: The ordinal number of this epoch in the training sequence.
+ *         start_time:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Timestamp marking when this epoch began processing.
+ *         end_time:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Timestamp marking when this epoch completed.
+ *         duration_seconds:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Total elapsed time of this epoch, in seconds (end_time - start_time).
+ *         precision:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Precision metric value recorded at the end of this epoch.
+ *         recall:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Recall metric value recorded at the end of this epoch.
+ *         map50:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch.
+ *         map5095:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch.
+ *         box_loss:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Loss associated with bounding box coordinate regression during this epoch.
+ *         cls_loss:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Loss associated with class label predictions during this epoch.
+ *         dfl_loss:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Distribution Focal Loss (DFL) for this epoch, if applicable to the model type.
+ *         timestamp:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Timestamp when this epoch record was inserted into the database.
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this epoch record was created.
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this epoch record was last updated.
+ */
+
+/**
+ * Create and initialize the epochs Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to the training_runs model
+ * through {@link epochs.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {Model} Initialized epochs model.
+ */
 module.exports = (sequelize, DataTypes) => {
   /**
-   * Model: epochs
-   * ----------------------------------------------------------------
-   * Tracks the performance and timing of each training epoch.
-   * Each epoch belongs to a specific training run.
+   * Sequelize model representing one training epoch's performance and
+   * timing data.
+   *
+   * Tracks the performance and timing of each training epoch. Each epoch
+   * belongs to a specific training run.
+   *
+   * @class epochs
+   * @extends Model
    */
   class epochs extends Model {
+    /**
+     * Register relationships between epochs and related models.
+     *
+     * Associations are configured after all Sequelize models have been
+     * loaded into the shared model registry.
+     *
+     * @param {Object} models - Initialized Sequelize model registry.
+     * @returns {void}
+     */
     static associate(models) {
       // Each epoch belongs to one training run
       this.belongsTo(models.training_runs, {
@@ -184,29 +299,29 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      sequelize,
-      modelName: 'epochs',
-      tableName: 'epochs',
-      schema: 'public',
-      timestamps: false, // we manage created_at/updated_at manually
+      sequelize,                        // shared Sequelize connection instance
+      modelName: 'epochs',              // used inside Sequelize
+      tableName: 'epochs',              // actual PostgreSQL table
+      schema: 'public',                 // database schema containing the table
+      timestamps: false,                // we manage created_at/updated_at manually
       comment:
         'Stores per-epoch performance and timing metrics for each training run in the MARP ML system.',
       indexes: [
         {
-          name: 'epochs_pkey',
+          name: 'epochs_pkey',                     // primary key index
           unique: true,
           fields: ['id'],
         },
         {
-          name: 'epochs_training_run_id_idx',
+          name: 'epochs_training_run_id_idx',      // speeds up lookups by training run
           fields: ['training_run_id'],
         },
         {
-          name: 'epochs_epoch_number_idx',
+          name: 'epochs_epoch_number_idx',         // speeds up ordering/lookups by epoch number
           fields: ['epoch_number'],
         },
         {
-          name: 'epochs_start_time_idx',
+          name: 'epochs_start_time_idx',           // speeds up chronological queries
           fields: ['start_time'],
         },
       ],

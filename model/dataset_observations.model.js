@@ -1,36 +1,114 @@
 /**
- * ===================================================================
- * File: dataset_observations.model.js
- * Author: Isaac Assegai Travers
- * Date: 2025-10-7
- * -------------------------------------------------------------------
- * Part of the MARP Machine Learning Database Schema.
+ * Sequelize model definition for the dataset_observations join table.
  *
- * Purpose:
- * Defines the `dataset_observations` join table, which connects
- * datasets to the specific observations they include.
+ * Defines the `dataset_observations` join table, which connects datasets
+ * to the specific observations they include.
  *
- * Each record links one observation to one dataset, optionally
- * recording how that observation was chosen (e.g., manual, auto, or
- * legacy import) and whether it was used for training, validation,
- * or testing.
+ * Each record links one observation to one dataset, optionally recording
+ * how that observation was chosen (e.g., manual, auto, or legacy import)
+ * and whether it was used for training, validation, or testing.
  *
- * This table is central to reproducing datasets, verifying model
- * training inputs, and ensuring traceability between observations,
- * datasets, and resulting machine learning models.
- * ===================================================================
+ * This table is central to reproducing datasets, verifying model training
+ * inputs, and ensuring traceability between observations, datasets, and
+ * resulting machine learning models.
+ *
+ * @fileoverview Sequelize model and OpenAPI response schema for dataset_observations.
+ * @author Isaac Assegai Travers
+ * @module model/dataset_observations
  */
 
 const { Model } = require('sequelize');
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     DatasetObservation:
+ *       type: object
+ *       description: >
+ *         Join record linking a dataset to one observation it includes,
+ *         with metadata describing how and why that observation was
+ *         selected for the dataset (train/val/test split, selection
+ *         method, and sampling weight).
+ *       required:
+ *         - id
+ *         - dataset_id
+ *         - observation_id
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 512
+ *           description: Unique identifier for this dataset-observation record.
+ *         dataset_id:
+ *           type: integer
+ *           example: 3
+ *           description: Foreign key referencing the dataset that includes this observation (datasets.id).
+ *         observation_id:
+ *           type: integer
+ *           example: 918
+ *           description: Foreign key referencing the observation included in this dataset (observations.observation_id).
+ *         inclusion_type:
+ *           type: string
+ *           nullable: true
+ *           example: train
+ *           description: Indicates how this observation is used in the dataset ("train", "val", or "test").
+ *         selection_method:
+ *           type: string
+ *           nullable: true
+ *           example: manual
+ *           description: Describes how this observation was chosen for inclusion (e.g., "manual", "auto", "random_sample", "legacy_import").
+ *         weight:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: Optional weighting factor applied to this observation within the dataset for class balancing or sampling probability.
+ *         notes:
+ *           type: string
+ *           nullable: true
+ *           description: Freeform notes about this dataset-observation inclusion (e.g., reasons for inclusion/exclusion, data quality remarks).
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this dataset-observation record was created.
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this dataset-observation record was last updated.
+ */
+
+/**
+ * Create and initialize the dataset_observations Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to the datasets and
+ * observations models through {@link dataset_observations.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {Model} Initialized dataset_observations model.
+ */
 module.exports = (sequelize, DataTypes) => {
   /**
-   * Model: dataset_observations
-   * ----------------------------------------------------------------
+   * Sequelize model representing one dataset-observation join record.
+   *
    * Many-to-many relationship table linking datasets and observations.
    * Includes selection metadata for auditing and reproducibility.
+   *
+   * @class dataset_observations
+   * @extends Model
    */
   class dataset_observations extends Model {
+    /**
+     * Register relationships between dataset_observations and related
+     * models.
+     *
+     * Associations are configured after all Sequelize models have been
+     * loaded into the shared model registry.
+     *
+     * @param {Object} models - Initialized Sequelize model registry.
+     * @returns {void}
+     */
     static associate(models) {
       // A dataset-observation record belongs to one dataset
       this.belongsTo(models.datasets, {
@@ -119,29 +197,29 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      sequelize,
-      modelName: 'dataset_observations',
-      tableName: 'dataset_observations',
-      schema: 'public',
-      timestamps: false,
+      sequelize,                                  // shared Sequelize connection instance
+      modelName: 'dataset_observations',           // used inside Sequelize
+      tableName: 'dataset_observations',           // actual table name in PostgreSQL
+      schema: 'public',                            // database schema containing the table
+      timestamps: false,                           // we manage created_at/updated_at manually
       comment:
         'Join table linking datasets and observations, including inclusion type and selection metadata for traceability.',
       indexes: [
         {
-          name: 'dataset_observations_pkey',
+          name: 'dataset_observations_pkey',                 // primary key index
           unique: true,
           fields: ['id'],
         },
         {
-          name: 'dataset_observations_dataset_id_idx',
+          name: 'dataset_observations_dataset_id_idx',       // speeds up lookups by dataset
           fields: ['dataset_id'],
         },
         {
-          name: 'dataset_observations_observation_id_idx',
+          name: 'dataset_observations_observation_id_idx',   // speeds up lookups by observation
           fields: ['observation_id'],
         },
         {
-          name: 'dataset_observations_unique_dataset_observation',
+          name: 'dataset_observations_unique_dataset_observation', // enforces one record per dataset-observation pair
           unique: true,
           fields: ['dataset_id', 'observation_id'],
         },

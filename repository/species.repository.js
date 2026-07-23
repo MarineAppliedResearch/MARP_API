@@ -91,8 +91,8 @@ class SpeciesRepository {
      * database query failed" from the return value alone.
      *
      * @async
-     * @param {import('express').Request} req - Express request; `req.params.comname` supplies the common name to match.
-     * @param {import('express').Response} res - Accepted for signature consistency with the calling service; not used by this implementation.
+     * @param {Object} req - Express request; `req.params.comname` supplies the common name to match.
+     * @param {Object} res - Accepted for signature consistency with the calling service; not used by this implementation.
      * @returns {Promise<Object|null>} The matching species record, or null
      * if not found or the query fails.
      */

@@ -1,40 +1,118 @@
 /**
- * ===================================================================
- * File: datasets.model.js
- * Author: Isaac Assegai Travers
- * Date: 2025-10-7
- * -------------------------------------------------------------------
- * Part of the MARP Machine Learning Database Schema.
+ * Sequelize model definition for the datasets table.
  *
- * Purpose:
  * Defines the `datasets` table, which represents a curated set of
  * observations and keyframes used for machine learning training,
  * validation, or testing.
  *
- * Each dataset aggregates a subset of observations, typically drawn
- * from ROV survey sessions, and may be reused across multiple
- * training runs. Datasets are linked to observations via the
- * `dataset_observations` join table.
+ * Each dataset aggregates a subset of observations, typically drawn from
+ * ROV survey sessions, and may be reused across multiple training runs.
+ * Datasets are linked to observations via the `dataset_observations` join
+ * table.
  *
  * Note:
  * Species are not directly linked yet — they are derived implicitly
  * through observations (by comname). Once the observation table is
  * normalized with a `species_id`, that linkage will propagate
  * automatically.
- * ===================================================================
+ *
+ * @fileoverview Sequelize model and OpenAPI response schema for datasets.
+ * @author Isaac Assegai Travers
+ * @module model/datasets
  */
 
 const { Model } = require('sequelize');
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Dataset:
+ *       type: object
+ *       description: >
+ *         Curated collection of observations used for machine learning
+ *         training, validation, or testing. Linked to individual
+ *         observations through the dataset_observations join table.
+ *       required:
+ *         - id
+ *         - name
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 3
+ *           description: Unique identifier for this dataset record.
+ *         name:
+ *           type: string
+ *           example: Fish_2024_Training_Set_v1
+ *           description: Descriptive name of this dataset.
+ *         description:
+ *           type: string
+ *           nullable: true
+ *           description: Detailed description or notes about the dataset's purpose and composition.
+ *         location:
+ *           type: string
+ *           nullable: true
+ *           description: Filesystem or network location of the dataset resources.
+ *         num_samples:
+ *           type: integer
+ *           nullable: true
+ *           description: Total number of samples (images, frames, or observations) included in this dataset.
+ *         num_classes:
+ *           type: integer
+ *           nullable: true
+ *           description: Approximate number of unique classes (species) represented in this dataset (derived from observation comnames).
+ *         source:
+ *           type: string
+ *           nullable: true
+ *           example: auto-compiled
+ *           description: Source or method of dataset creation (e.g., "auto-compiled", "manual curation", "legacy import").
+ *         notes:
+ *           type: string
+ *           nullable: true
+ *           description: General notes about dataset preparation, inclusion criteria, or issues.
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this dataset record was created.
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this dataset record was last updated.
+ */
+
+/**
+ * Create and initialize the datasets Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to the observations and
+ * training_runs models through {@link datasets.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {Model} Initialized datasets model.
+ */
 module.exports = (sequelize, DataTypes) => {
   /**
-   * Model: datasets
-   * ----------------------------------------------------------------
+   * Sequelize model representing one curated dataset of observations.
+   *
    * Stores metadata about a dataset used for model training, such as
    * its name, size, source, and purpose. Each dataset can be used by
    * multiple training runs and can contain many observations.
+   *
+   * @class datasets
+   * @extends Model
    */
   class datasets extends Model {
+    /**
+     * Register relationships between datasets and related models.
+     *
+     * Associations are configured after all Sequelize models have been
+     * loaded into the shared model registry.
+     *
+     * @param {Object} models - Initialized Sequelize model registry.
+     * @returns {void}
+     */
     static associate(models) {
       // Many-to-many: datasets ↔ observations
       this.belongsToMany(models.observations, {
@@ -132,25 +210,25 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      sequelize,
+      sequelize,                    // shared Sequelize connection instance
       modelName: 'datasets',        // internal Sequelize model name
       tableName: 'datasets',        // PostgreSQL table name
-      schema: 'public',
+      schema: 'public',             // database schema containing the table
       timestamps: false,            // we manage created_at/updated_at manually
       comment:
         'Represents curated datasets of observations used for training, validation, or testing within MARP.',
       indexes: [
         {
-          name: 'datasets_pkey',
+          name: 'datasets_pkey',        // primary key index
           unique: true,
           fields: ['id'],
         },
         {
-          name: 'datasets_name_idx',
+          name: 'datasets_name_idx',    // speeds up lookups by dataset name
           fields: ['name'],
         },
         {
-          name: 'datasets_source_idx',
+          name: 'datasets_source_idx',  // speeds up lookups/filtering by source
           fields: ['source'],
         },
       ],

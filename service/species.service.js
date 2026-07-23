@@ -38,8 +38,8 @@ class SpeciesService {
      * Fetch a single species record by common name.
      *
      * @async
-     * @param {import('express').Request} req - Express request; `req.params.comname` supplies the common name to match, case-insensitively.
-     * @param {import('express').Response} res - Accepted for signature consistency with the repository; not used by this implementation.
+     * @param {Object} req - Express request; `req.params.comname` supplies the common name to match, case-insensitively.
+     * @param {Object} res - Accepted for signature consistency with the repository; not used by this implementation.
      * @returns {Promise<Object|null>} The matching species record, or null
      * if not found or the underlying query fails.
      */
@@ -51,8 +51,8 @@ class SpeciesService {
      * Create a new model_species linkage record.
      *
      * @async
-     * @param {import('express').Request} req - Express request; `req.body` supplies the model_species fields to insert directly.
-     * @param {import('express').Response} res - Accepted for signature consistency with the controller; not used by this implementation.
+     * @param {Object} req - Express request; `req.body` supplies the model_species fields to insert directly.
+     * @param {Object} res - Accepted for signature consistency with the controller; not used by this implementation.
      * @returns {Promise<Object>} The created model_species record, or an
      * `{ error: string }` object if the insert failed. A failed insert
      * resolves rather than rejecting, so callers must check for an `error`

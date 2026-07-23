@@ -94,7 +94,7 @@ const { Model } = require('sequelize');
  *
  * @param {Object} sequelize - Shared Sequelize connection.
  * @param {Object} DataTypes - Sequelize data-type definitions.
- * @returns {typeof Model} Initialized model_species model.
+ * @returns {Model} Initialized model_species model.
  */
 module.exports = (sequelize, DataTypes) => {
   /**

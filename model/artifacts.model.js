@@ -1,32 +1,109 @@
 /**
- * ===================================================================
- * File: artifacts.model.js
- * Author: Isaac Assegai Travers
- * Date: 2025-10-07
- * -------------------------------------------------------------------
- * Part of the MARP Machine Learning Database Schema.
+ * Sequelize model definition for the artifacts output-tracking table.
  *
- * Purpose:
- * Defines the `artifacts` table, which tracks all output files
- * generated during a training run. This includes model weights,
- * logs, plots, result summaries, exported formats, and more.
+ * Defines the `artifacts` table, which tracks all output files generated
+ * during a training run. This includes model weights, logs, plots, result
+ * summaries, exported formats, and more.
  *
- * Each artifact record stores metadata such as file path, size,
- * hash (checksum), and creation timestamp to ensure reproducibility
- * and data integrity across runs.
- * ===================================================================
+ * Each artifact record stores metadata such as file path, size, hash
+ * (checksum), and optional contextual JSON metadata to help ensure
+ * reproducibility and data integrity across runs.
+ *
+ * @fileoverview Sequelize model and OpenAPI response schema for artifacts.
+ * @author Isaac Assegai Travers
+ * @module model/artifacts
  */
 
 const { Model } = require('sequelize');
 
+/**
+ * @openapi
+ * components:
+ *   schemas:
+ *     Artifact:
+ *       type: object
+ *       description: >
+ *         A tracked output file (weights, log, plot, export, etc.) produced
+ *         during a training run, including its path, size, checksum, and
+ *         optional contextual metadata.
+ *       required:
+ *         - id
+ *         - training_run_id
+ *         - artifact_type
+ *         - path
+ *       properties:
+ *         id:
+ *           type: integer
+ *           example: 2201
+ *           description: Unique identifier for this artifact record.
+ *         training_run_id:
+ *           type: integer
+ *           example: 12
+ *           description: Foreign key referencing the training run this artifact belongs to (training_runs.id).
+ *         artifact_type:
+ *           type: string
+ *           example: weights
+ *           description: Type of artifact (e.g., "weights", "log", "results_plot", "confusion_matrix", "export").
+ *         path:
+ *           type: string
+ *           description: Filesystem path or URI to the artifact file or directory.
+ *         size_mb:
+ *           type: number
+ *           format: float
+ *           nullable: true
+ *           description: File size in megabytes, if available (useful for monitoring disk usage).
+ *         hash:
+ *           type: string
+ *           nullable: true
+ *           description: Checksum or hash of the artifact file (e.g., SHA256) to verify integrity and detect duplicates.
+ *         metadata:
+ *           type: object
+ *           nullable: true
+ *           additionalProperties: true
+ *           description: Optional JSON blob with contextual information (e.g., epoch number, export format, or framework version).
+ *         created_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this artifact record was created (typically when the file was generated).
+ *         updated_at:
+ *           type: string
+ *           format: date-time
+ *           description: Timestamp when this artifact record was last updated.
+ */
+
+/**
+ * Create and initialize the artifacts Sequelize model.
+ *
+ * Sequelize calls this factory with the shared database connection and
+ * configured data-type collection. The returned model is registered in the
+ * central model registry and later connected to the training_runs model
+ * through {@link artifacts.associate}.
+ *
+ * @param {Object} sequelize - Shared Sequelize connection.
+ * @param {Object} DataTypes - Sequelize data-type definitions.
+ * @returns {Model} Initialized artifacts model.
+ */
 module.exports = (sequelize, DataTypes) => {
   /**
-   * Model: artifacts
-   * ----------------------------------------------------------------
-   * Stores metadata for files and other outputs generated during
-   * a machine learning training run.
+   * Sequelize model representing one tracked training-run output file.
+   *
+   * Stores metadata for files and other outputs generated during a machine
+   * learning training run.
+   *
+   * @class artifacts
+   * @extends Model
    */
   class artifacts extends Model {
+
+    /**
+     * Register relationships between artifacts and related models.
+     *
+     * Associations are configured after all Sequelize models have been
+     * loaded into the shared model registry.
+     *
+     * @param {Object} models - Initialized Sequelize model registry.
+     * @returns {void}
+     */
     static associate(models) {
       // Each artifact belongs to one training run
       this.belongsTo(models.training_runs, {
@@ -116,29 +193,29 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      sequelize,
-      modelName: 'artifacts',
-      tableName: 'artifacts',
-      schema: 'public',
-      timestamps: false,
+      sequelize,                          // shared Sequelize connection instance
+      modelName: 'artifacts',              // used inside Sequelize
+      tableName: 'artifacts',              // actual PostgreSQL table
+      schema: 'public',                    // database schema containing the table
+      timestamps: false,                   // handled manually via created_at/updated_at
       comment:
         'Tracks files and outputs produced during a training run, including weights, logs, and result visualizations.',
       indexes: [
         {
-          name: 'artifacts_pkey',
+          name: 'artifacts_pkey',                    // primary key index
           unique: true,
           fields: ['id'],
         },
         {
-          name: 'artifacts_training_run_id_idx',
+          name: 'artifacts_training_run_id_idx',      // speeds up lookups by training run
           fields: ['training_run_id'],
         },
         {
-          name: 'artifacts_artifact_type_idx',
+          name: 'artifacts_artifact_type_idx',        // speeds up filtering by artifact type
           fields: ['artifact_type'],
         },
         {
-          name: 'artifacts_path_idx',
+          name: 'artifacts_path_idx',                 // speeds up lookups/dedup by file path
           fields: ['path'],
         },
       ],

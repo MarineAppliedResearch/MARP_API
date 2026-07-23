@@ -35,6 +35,322 @@
           }
         }
       },
+      "Artifact": {
+        "type": "object",
+        "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "artifact_type",
+          "path"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 2201,
+            "description": "Unique identifier for this artifact record."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key referencing the training run this artifact belongs to (training_runs.id)."
+          },
+          "artifact_type": {
+            "type": "string",
+            "example": "weights",
+            "description": "Type of artifact (e.g., \"weights\", \"log\", \"results_plot\", \"confusion_matrix\", \"export\")."
+          },
+          "path": {
+            "type": "string",
+            "description": "Filesystem path or URI to the artifact file or directory."
+          },
+          "size_mb": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "File size in megabytes, if available (useful for monitoring disk usage)."
+          },
+          "hash": {
+            "type": "string",
+            "nullable": true,
+            "description": "Checksum or hash of the artifact file (e.g., SHA256) to verify integrity and detect duplicates."
+          },
+          "metadata": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "Optional JSON blob with contextual information (e.g., epoch number, export format, or framework version)."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this artifact record was created (typically when the file was generated)."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this artifact record was last updated."
+          }
+        }
+      },
+      "DatasetObservation": {
+        "type": "object",
+        "description": "Join record linking a dataset to one observation it includes, with metadata describing how and why that observation was selected for the dataset (train/val/test split, selection method, and sampling weight).\n",
+        "required": [
+          "id",
+          "dataset_id",
+          "observation_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 512,
+            "description": "Unique identifier for this dataset-observation record."
+          },
+          "dataset_id": {
+            "type": "integer",
+            "example": 3,
+            "description": "Foreign key referencing the dataset that includes this observation (datasets.id)."
+          },
+          "observation_id": {
+            "type": "integer",
+            "example": 918,
+            "description": "Foreign key referencing the observation included in this dataset (observations.observation_id)."
+          },
+          "inclusion_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "train",
+            "description": "Indicates how this observation is used in the dataset (\"train\", \"val\", or \"test\")."
+          },
+          "selection_method": {
+            "type": "string",
+            "nullable": true,
+            "example": "manual",
+            "description": "Describes how this observation was chosen for inclusion (e.g., \"manual\", \"auto\", \"random_sample\", \"legacy_import\")."
+          },
+          "weight": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Optional weighting factor applied to this observation within the dataset for class balancing or sampling probability."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes about this dataset-observation inclusion (e.g., reasons for inclusion/exclusion, data quality remarks)."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset-observation record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset-observation record was last updated."
+          }
+        }
+      },
+      "Dataset": {
+        "type": "object",
+        "description": "Curated collection of observations used for machine learning training, validation, or testing. Linked to individual observations through the dataset_observations join table.\n",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3,
+            "description": "Unique identifier for this dataset record."
+          },
+          "name": {
+            "type": "string",
+            "example": "Fish_2024_Training_Set_v1",
+            "description": "Descriptive name of this dataset."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "Detailed description or notes about the dataset's purpose and composition."
+          },
+          "location": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem or network location of the dataset resources."
+          },
+          "num_samples": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Total number of samples (images, frames, or observations) included in this dataset."
+          },
+          "num_classes": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Approximate number of unique classes (species) represented in this dataset (derived from observation comnames)."
+          },
+          "source": {
+            "type": "string",
+            "nullable": true,
+            "example": "auto-compiled",
+            "description": "Source or method of dataset creation (e.g., \"auto-compiled\", \"manual curation\", \"legacy import\")."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "General notes about dataset preparation, inclusion criteria, or issues."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this dataset record was last updated."
+          }
+        }
+      },
+      "Epoch": {
+        "type": "object",
+        "description": "Per-epoch performance and timing data captured during a single training run, including loss values and precision/recall/mAP metrics recorded at the end of that epoch.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "epoch_number"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Unique identifier for this epoch record."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key linking this epoch to its parent training run (training_runs.id)."
+          },
+          "epoch_number": {
+            "type": "integer",
+            "example": 3,
+            "description": "The ordinal number of this epoch in the training sequence."
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp marking when this epoch began processing."
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp marking when this epoch completed."
+          },
+          "duration_seconds": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Total elapsed time of this epoch, in seconds (end_time - start_time)."
+          },
+          "precision": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Precision metric value recorded at the end of this epoch."
+          },
+          "recall": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Recall metric value recorded at the end of this epoch."
+          },
+          "map50": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch."
+          },
+          "map5095": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch."
+          },
+          "box_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Loss associated with bounding box coordinate regression during this epoch."
+          },
+          "cls_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Loss associated with class label predictions during this epoch."
+          },
+          "dfl_loss": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Distribution Focal Loss (DFL) for this epoch, if applicable to the model type."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when this epoch record was inserted into the database."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this epoch record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this epoch record was last updated."
+          }
+        }
+      },
+      "Hyperparameters": {
+        "type": "object",
+        "description": "Full hyperparameter configuration used for a specific training run, stored as a JSON blob to preserve reproducibility of training conditions across differing pipelines and model types.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "params"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 88,
+            "description": "Unique identifier for this hyperparameter configuration."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key referencing the training run this hyperparameter set belongs to (training_runs.id)."
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "JSON blob containing all hyperparameters used for this training run (e.g., lr0, momentum, epochs, batch, weight decay, augmentation options). Keys vary by training pipeline and are not individually enumerated here.\n"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this hyperparameter record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this hyperparameter record was last updated."
+          }
+        }
+      },
       "Keyframe": {
         "type": "object",
         "description": "Frame-specific annotation associated with an observation.",
@@ -50,6 +366,284 @@
           "frame": {
             "type": "integer",
             "example": 18520
+          }
+        }
+      },
+      "MetaInfo": {
+        "type": "object",
+        "description": "A single named metadata record used to store miscellaneous reference information for MARP.\n",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique numeric identifier for this metadata record."
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Name of this metadata entry."
+          }
+        }
+      },
+      "MetricsCurve": {
+        "type": "object",
+        "description": "A single confidence-threshold data point (precision, recall, F1, support) belonging to a metrics_summary record, used to plot detailed evaluation curves.\n",
+        "required": [
+          "id",
+          "metrics_summary_id",
+          "confidence_threshold"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 9001,
+            "description": "Unique identifier for this metrics curve data point."
+          },
+          "metrics_summary_id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Foreign key referencing the metrics summary record (metrics_summary.id) this curve point belongs to."
+          },
+          "species_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
+          },
+          "confidence_threshold": {
+            "type": "number",
+            "format": "float",
+            "example": 0.25,
+            "description": "Confidence threshold (between 0.0 and 1.0) at which these metrics were measured."
+          },
+          "precision": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Model precision value computed at this confidence threshold."
+          },
+          "recall": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Model recall value computed at this confidence threshold."
+          },
+          "f1_score": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Model F1 score computed at this confidence threshold."
+          },
+          "support": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Number of predictions or detections evaluated at this confidence threshold."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this metrics curve record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this metrics curve record was last updated."
+          }
+        }
+      },
+      "MetricsSummary": {
+        "type": "object",
+        "description": "Aggregated evaluation metrics for a single dataset split (train/val/test) within a training run, including paths to generated visualization artifacts and optional per-class detail.\n",
+        "required": [
+          "id",
+          "training_run_id",
+          "dataset_split"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Unique identifier for this metrics summary record."
+          },
+          "training_run_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Foreign key referencing the training run this metrics summary belongs to (training_runs.id)."
+          },
+          "species_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
+          },
+          "dataset_split": {
+            "type": "string",
+            "enum": [
+              "train",
+              "val",
+              "test"
+            ],
+            "description": "Specifies which dataset split these metrics apply to - \"train\", \"val\", or \"test\"."
+          },
+          "precision": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Aggregate precision achieved for this dataset split."
+          },
+          "recall": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Aggregate recall achieved for this dataset split."
+          },
+          "map50": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) at 0.5 IoU threshold for this split."
+          },
+          "map5095": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Mean Average Precision (mAP) averaged over IoU thresholds 0.5-0.95."
+          },
+          "fitness": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Weighted performance score used by YOLO to rank model checkpoints."
+          },
+          "f1_score": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Aggregate F1 score for this dataset split, typically computed from precision and recall."
+          },
+          "confusion_matrix_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem path or URI to the confusion matrix image generated for this dataset split."
+          },
+          "result_plot_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem path or URI to the overall results plot (e.g., PR or F1 curves) for this dataset split."
+          },
+          "confusion_matrix_norm_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the normalized confusion matrix plot image generated during evaluation."
+          },
+          "box_f1_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the F1 vs confidence curve plot image."
+          },
+          "box_p_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the precision vs confidence curve plot image."
+          },
+          "box_pr_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the precision-recall (PR) curve plot image."
+          },
+          "box_r_curve_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the recall vs confidence curve plot image."
+          },
+          "labels_plot_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Path to the label distribution plot image showing class balance in the dataset."
+          },
+          "details": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "Optional JSON blob storing additional data arrays (e.g., per-class metrics or PR/F1-confidence points)."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when this metrics summary was created or finalized."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Record creation timestamp."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Record last update timestamp."
+          }
+        }
+      },
+      "MlModel": {
+        "type": "object",
+        "description": "Metadata record for a distinct machine learning model identity used within MARP (e.g., \"yolov8-marine-fish-2025\"). Represents the conceptual model itself, not any individual training run; runs, metrics, and artifacts are linked through the training_runs table.\n",
+        "required": [
+          "id",
+          "name",
+          "model_type"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 7,
+            "description": "Unique numeric identifier for this ML model record."
+          },
+          "name": {
+            "type": "string",
+            "example": "yolov8-marine-fish-2025",
+            "description": "Human-readable name of the model (e.g., \"yolov8-marine-fish-2025\")."
+          },
+          "parent_model_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "If this model was derived or fine-tuned from another, references that parent model's ID."
+          },
+          "model_type": {
+            "type": "string",
+            "example": "yolov8",
+            "description": "Model architecture family (e.g., \"yolov8\", \"resnet\", \"deepsort\")."
+          },
+          "architecture_version": {
+            "type": "string",
+            "nullable": true,
+            "example": "v8n",
+            "description": "Specific version or variant of the architecture (e.g., \"v8n\", \"custom-2025a\")."
+          },
+          "storage_path": {
+            "type": "string",
+            "nullable": true,
+            "description": "Filesystem or URI path to the stored model weights and artifacts."
+          },
+          "status": {
+            "type": "string",
+            "example": "draft",
+            "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\")."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes providing experiment details, context, or remarks."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this model entry was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this model record was last updated."
           }
         }
       },
@@ -392,6 +986,86 @@
           }
         ]
       },
+      "Project": {
+        "type": "object",
+        "description": "Named project grouping used to organize sessions and observations recorded throughout MARP.\n",
+        "required": [
+          "project_id",
+          "name"
+        ],
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "example": 24,
+            "description": "Unique numeric identifier for this project."
+          },
+          "name": {
+            "type": "string",
+            "example": "Channel Islands 2024",
+            "description": "Unique display name for the project."
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "description": "Dive or survey session grouping the observations recorded during a single dive/line, along with its owning project and user.\n",
+        "required": [
+          "session_id",
+          "dive",
+          "line",
+          "lineId",
+          "type"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "integer",
+            "example": 501,
+            "description": "Unique numeric identifier for this session record."
+          },
+          "project_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 24,
+            "description": "Identifier of the project this session was conducted under."
+          },
+          "user_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 8,
+            "description": "Identifier of the user who recorded or owns this session."
+          },
+          "dive": {
+            "type": "string",
+            "example": "Dive 12",
+            "description": "Dive identifier or name associated with this session."
+          },
+          "line": {
+            "type": "string",
+            "example": "Line A",
+            "description": "Transect line identifier associated with this session."
+          },
+          "lineId": {
+            "type": "string",
+            "example": "L-2024-012A",
+            "description": "Identifier of the specific survey line tied to this session."
+          },
+          "type": {
+            "type": "string",
+            "example": "ROV",
+            "description": "Type or category of this session (e.g., survey platform or method)."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this session record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this session record was last updated."
+          }
+        }
+      },
       "Species": {
         "type": "object",
         "description": "Taxonomic and GUI display entry used to classify observations, datasets, and ML model training labels throughout MARP.\n",
@@ -509,6 +1183,163 @@
             "type": "string",
             "format": "date-time",
             "description": "Timestamp when this species record was last updated."
+          }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "description": "A discrete work item tracked by MARP, including free-text description and audit fields for who created/updated it and when.\n",
+        "required": [
+          "name",
+          "createdby"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name/title of the task."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform description of the task."
+          },
+          "createdate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when the task was created."
+          },
+          "updateddate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when the task was last updated."
+          },
+          "createdby": {
+            "type": "string",
+            "description": "Identifier or username of the person who created the task."
+          },
+          "updatedby": {
+            "type": "string",
+            "nullable": true,
+            "description": "Identifier or username of the person who last updated the task."
+          }
+        }
+      },
+      "TrainingRun": {
+        "type": "object",
+        "description": "A single training or retraining event of an ML model, linking the model, the dataset used, and the resulting epochs, metrics, and artifacts produced during that run.\n",
+        "required": [
+          "id",
+          "model_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Unique identifier for this training run."
+          },
+          "model_id": {
+            "type": "integer",
+            "example": 7,
+            "description": "Foreign key referencing the parent ML model (ml_models.id)."
+          },
+          "dataset_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Foreign key referencing the dataset used for training (datasets.id)."
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when training began."
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when training completed."
+          },
+          "total_epochs": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Total number of epochs configured for this run."
+          },
+          "batch_size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Training batch size used during this run."
+          },
+          "learning_rate": {
+            "type": "number",
+            "format": "float",
+            "nullable": true,
+            "description": "Base learning rate used during training."
+          },
+          "optimizer": {
+            "type": "string",
+            "nullable": true,
+            "example": "Adam",
+            "description": "Optimization algorithm (e.g., \"Adam\", \"SGD\")."
+          },
+          "loss_function": {
+            "type": "string",
+            "nullable": true,
+            "example": "FocalLoss",
+            "description": "Loss function used (e.g., \"CrossEntropy\", \"FocalLoss\")."
+          },
+          "augmentation": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "JSON blob containing data augmentation parameters and settings applied during this run. Keys vary by training pipeline.\n"
+          },
+          "compute_device": {
+            "type": "string",
+            "nullable": true,
+            "example": "RTX 6000 Ada",
+            "description": "Hardware used for training (e.g., \"RTX 6000 Ada\", \"A100 GPU\")."
+          },
+          "train_script_commit": {
+            "type": "string",
+            "nullable": true,
+            "description": "Git commit hash or version identifier of the training script used."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "description": "Freeform notes describing experiment purpose or results context."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when this record was last modified."
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "description": "Individual who records or owns sessions and observations throughout MARP.\n",
+        "required": [
+          "user_id",
+          "name"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "example": 12,
+            "description": "Unique numeric identifier for this user."
+          },
+          "name": {
+            "type": "string",
+            "example": "Jane Diver",
+            "description": "Unique display name for the user."
           }
         }
       }
