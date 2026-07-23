@@ -35,6 +35,7 @@ const { Model } = require('sequelize');
  *         id:
  *           type: integer
  *           example: 12
+ *           readOnly: true
  *           description: Unique identifier for this training run.
  *         model_id:
  *           type: integer
@@ -43,6 +44,7 @@ const { Model } = require('sequelize');
  *         dataset_id:
  *           type: integer
  *           nullable: true
+ *           example: 3
  *           description: Foreign key referencing the dataset used for training (datasets.id).
  *         start_time:
  *           type: string
@@ -57,15 +59,21 @@ const { Model } = require('sequelize');
  *         total_epochs:
  *           type: integer
  *           nullable: true
+ *           minimum: 1
+ *           example: 120
  *           description: Total number of epochs configured for this run.
  *         batch_size:
  *           type: integer
  *           nullable: true
+ *           minimum: 1
+ *           example: 16
  *           description: Training batch size used during this run.
  *         learning_rate:
  *           type: number
  *           format: float
  *           nullable: true
+ *           minimum: 0
+ *           example: 0.001
  *           description: Base learning rate used during training.
  *         optimizer:
  *           type: string
@@ -92,18 +100,24 @@ const { Model } = require('sequelize');
  *         train_script_commit:
  *           type: string
  *           nullable: true
+ *           example: 3d9a0a91e7fa3b9f4c1f8f46cb2fda32729d8f1a
  *           description: Git commit hash or version identifier of the training script used.
  *         notes:
  *           type: string
  *           nullable: true
+ *           example: Best mAP50 observed around epoch 98; monitor overfitting after 110.
  *           description: Freeform notes describing experiment purpose or results context.
  *         created_at:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-22T15:33:10.000Z"
  *           description: Timestamp when this record was created.
  *         updated_at:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-23T09:12:01.000Z"
  *           description: Timestamp when this record was last modified.
  */
 

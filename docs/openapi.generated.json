@@ -702,21 +702,27 @@
           "id": {
             "type": "integer",
             "example": 7,
+            "readOnly": true,
             "description": "Unique numeric identifier for this ML model record."
           },
           "name": {
             "type": "string",
             "example": "yolov8-marine-fish-2025",
+            "minLength": 1,
+            "maxLength": 255,
             "description": "Human-readable name of the model (e.g., \"yolov8-marine-fish-2025\")."
           },
           "parent_model_id": {
             "type": "integer",
             "nullable": true,
+            "example": 3,
             "description": "If this model was derived or fine-tuned from another, references that parent model's ID."
           },
           "model_type": {
             "type": "string",
             "example": "yolov8",
+            "minLength": 1,
+            "maxLength": 255,
             "description": "Model architecture family (e.g., \"yolov8\", \"resnet\", \"deepsort\")."
           },
           "architecture_version": {
@@ -728,26 +734,38 @@
           "storage_path": {
             "type": "string",
             "nullable": true,
+            "example": "/models/yolov8-marine-fish-2025/",
             "description": "Filesystem or URI path to the stored model weights and artifacts."
           },
           "status": {
             "type": "string",
+            "enum": [
+              "draft",
+              "training",
+              "trained",
+              "archived"
+            ],
             "example": "draft",
             "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\")."
           },
           "notes": {
             "type": "string",
             "nullable": true,
+            "example": "Fine-tuned from 2025 baseline using added invertebrate labels.",
             "description": "Freeform notes providing experiment details, context, or remarks."
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this model entry was created."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this model record was last updated."
           }
         }
@@ -1415,6 +1433,7 @@
           "id": {
             "type": "integer",
             "example": 12,
+            "readOnly": true,
             "description": "Unique identifier for this training run."
           },
           "model_id": {
@@ -1425,6 +1444,7 @@
           "dataset_id": {
             "type": "integer",
             "nullable": true,
+            "example": 3,
             "description": "Foreign key referencing the dataset used for training (datasets.id)."
           },
           "start_time": {
@@ -1442,17 +1462,23 @@
           "total_epochs": {
             "type": "integer",
             "nullable": true,
+            "minimum": 1,
+            "example": 120,
             "description": "Total number of epochs configured for this run."
           },
           "batch_size": {
             "type": "integer",
             "nullable": true,
+            "minimum": 1,
+            "example": 16,
             "description": "Training batch size used during this run."
           },
           "learning_rate": {
             "type": "number",
             "format": "float",
             "nullable": true,
+            "minimum": 0,
+            "example": 0.001,
             "description": "Base learning rate used during training."
           },
           "optimizer": {
@@ -1482,21 +1508,27 @@
           "train_script_commit": {
             "type": "string",
             "nullable": true,
+            "example": "3d9a0a91e7fa3b9f4c1f8f46cb2fda32729d8f1a",
             "description": "Git commit hash or version identifier of the training script used."
           },
           "notes": {
             "type": "string",
             "nullable": true,
+            "example": "Best mAP50 observed around epoch 98; monitor overfitting after 110.",
             "description": "Freeform notes describing experiment purpose or results context."
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this record was created."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this record was last modified."
           }
         }
