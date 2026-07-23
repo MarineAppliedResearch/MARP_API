@@ -2176,45 +2176,325 @@ app.post('/api/dataset_observations/bulk', (req, res) => {
 });
 
 
+/**
+ * @openapi
+ * /task:
+ *   post:
+ *     summary: Create a new task
+ *     description: >
+ *       Creates a new task record. Stamps createdate before insert.
+ *       Database failures are logged and swallowed, resolving to an empty
+ *       object `{}` rather than throwing or exposing error details.
+ *     tags: [Tasks]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - task
+ *             properties:
+ *               task:
+ *                 $ref: '#/components/schemas/Task'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The created Task record, or an empty object `{}` if the insert
+ *           failed (see description).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Task'
+ */
 app.post('/api/task', (req, res) => {
     console.log(req.body);
     taskController.createTask(req.body.task).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /observation:
+ *   post:
+ *     summary: Create a new observation
+ *     description: >
+ *       Creates a new observation record. Database failures are logged and
+ *       swallowed, resolving to an empty object `{}` rather than throwing
+ *       or exposing error details.
+ *     tags: [Observations]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - observation
+ *             properties:
+ *               observation:
+ *                 $ref: '#/components/schemas/Observation'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The created Observation record, or an empty object `{}` if the
+ *           insert failed (see description).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Observation'
+ */
 app.post('/api/observation', (req, res) => {
     console.log(req.body);
     observationController.createObservation(req.body.observation).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /keyframe:
+ *   post:
+ *     summary: Bulk-create keyframe records
+ *     description: >
+ *       Creates one or more keyframe records in a single transaction.
+ *       CRITICAL: unlike most other POST routes, the request body itself
+ *       must be a JSON array of keyframe objects (not wrapped in a named
+ *       field) — only the observation_id, x, y, width, height, subset,
+ *       type, comname, and framenum fields are copied from each input
+ *       object; any others are ignored. If the bulk insert fails, the
+ *       transaction is rolled back and the failure is only logged, so the
+ *       response resolves to an empty array `[]` rather than an error —
+ *       callers cannot distinguish "nothing to insert" from "insert failed."
+ *     tags: [Keyframes]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: array
+ *             items:
+ *               $ref: '#/components/schemas/Keyframe'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The created Keyframe records, or an empty array if the bulk
+ *           insert failed (see description).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Keyframe'
+ */
 app.post('/api/keyframe', (req, res) => {
     keyframeController.createKeyframes(req.body).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /user:
+ *   post:
+ *     summary: Create a new user
+ *     description: Creates a new user record.
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user
+ *             properties:
+ *               user:
+ *                 $ref: '#/components/schemas/User'
+ *     responses:
+ *       200:
+ *         description: The created User record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ */
 app.post('/api/user', (req, res) => {
     console.log(req.body);
     userController.createUser(req.body.user).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /user/createUserByName/{userName}:
+ *   post:
+ *     summary: Create a new user by name only
+ *     description: >
+ *       Creates a new user record from a name alone, without a request
+ *       body.
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: userName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Display name for the new user.
+ *     responses:
+ *       200:
+ *         description: The created User record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ */
 app.post('/api/user/createUserByName/:userName', (req, res) => {
     console.log(req.body);
     userController.createUserByName(req.params.userName).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /project:
+ *   post:
+ *     summary: Create a new project
+ *     description: Creates a new project record.
+ *     tags: [Projects]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - project
+ *             properties:
+ *               project:
+ *                 $ref: '#/components/schemas/Project'
+ *     responses:
+ *       200:
+ *         description: The created Project record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
+ */
 app.post('/api/project', (req, res) => {
     console.log(req.body);
     projectController.createProject(req.body.project).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /project/createProjectByName/{projectName}:
+ *   post:
+ *     summary: Create a new project by name only
+ *     description: >
+ *       Creates a new project record from a name alone, without a request
+ *       body.
+ *     tags: [Projects]
+ *     parameters:
+ *       - in: path
+ *         name: projectName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name for the new project.
+ *     responses:
+ *       200:
+ *         description: The created Project record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
+ */
 app.post('/api/project/createProjectByName/:projectName', (req, res) => {
     console.log(req.body);
     projectController.createProjectByName(req.params.projectName).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /session:
+ *   post:
+ *     summary: Create a new session
+ *     description: Creates a new session record.
+ *     tags: [Sessions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - session
+ *             properties:
+ *               session:
+ *                 $ref: '#/components/schemas/Session'
+ *     responses:
+ *       200:
+ *         description: The created Session record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Session'
+ */
 app.post('/api/session', (req, res) => {
     console.log(req.body);
     sessionController.createSession(req.body.session).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /session/createNewSession/{processorName}/{projectName}/{line}/{dive}/{lineID}/{type}:
+ *   post:
+ *     summary: Create a session, creating its project and processor user if needed
+ *     description: >
+ *       Convenience endpoint that looks up or creates the named processor
+ *       (user) and project, then creates a new session linking them with
+ *       the given line, dive, and type. All identifying values are passed
+ *       as path segments rather than a request body.
+ *     tags: [Sessions]
+ *     parameters:
+ *       - in: path
+ *         name: processorName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the user to look up or create as the session's processor.
+ *       - in: path
+ *         name: projectName
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Name of the project to look up or create.
+ *       - in: path
+ *         name: line
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Line value for the new session.
+ *       - in: path
+ *         name: dive
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Dive value for the new session.
+ *       - in: path
+ *         name: lineID
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Line identifier for the new session.
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Session type value.
+ *     responses:
+ *       200:
+ *         description: The created Session record.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Session'
+ */
 app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/:lineID/:type', (req, res) => {
     console.log(req.body);
     sessionController.createSessionAndProjectandProcessor(req.params.processorName, req.params.projectName, req.params.line, req.params.dive, req.params.lineID, req.params.type).then(data => res.json(data));
@@ -2222,53 +2502,336 @@ app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/
 
 //PUT HERE
 
+/**
+ * @openapi
+ * /task:
+ *   put:
+ *     summary: Update an existing task
+ *     description: >
+ *       Updates an existing task record by its id field. Stamps
+ *       updateddate before update. Database failures are logged and
+ *       swallowed, resolving to an empty object `{}` rather than throwing
+ *       or exposing error details.
+ *     tags: [Tasks]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - task
+ *             properties:
+ *               task:
+ *                 $ref: '#/components/schemas/Task'
+ *     responses:
+ *       200:
+ *         description: >
+ *           The Sequelize update result, or an empty object `{}` if the
+ *           update failed (see description).
+ */
 app.put('/api/task', (req, res) => {
     taskController.updateTask(req.body.task).then(data => res.json(data));
 });
+
+/**
+ * @openapi
+ * /observation:
+ *   put:
+ *     summary: Update an existing observation
+ *     description: >
+ *       Updates an existing observation by its observation_id field. If
+ *       comname changes, the new value is propagated to every keyframe
+ *       associated with the same observation, all within one transaction.
+ *       Unlike most write methods in this codebase, this one does NOT
+ *       swallow errors: if the observation_id doesn't exist or the update
+ *       fails, the transaction is rolled back and the error is rethrown,
+ *       resulting in an HTTP 500 by default (there is no explicit .catch()
+ *       on this route, so Express's default error handling applies).
+ *     tags: [Observations]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - observation
+ *             properties:
+ *               observation:
+ *                 $ref: '#/components/schemas/Observation'
+ *     responses:
+ *       200:
+ *         description: The Sequelize update result (an array whose first element is the number of affected rows).
+ */
 app.put('/api/observation', (req, res) => {
     observationController.updateObservation(req.body.observation).then(data => res.json(data));
 });
+
+/**
+ * @openapi
+ * /user:
+ *   put:
+ *     summary: Update an existing user
+ *     description: >
+ *       CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer
+ *       calls `userRepository.updateUser(...)`, but the repository only
+ *       defines the method as `updateUsers` (plural). Every call throws a
+ *       TypeError, and since this route has no `.catch()`, the request
+ *       currently hangs without ever sending a response instead of
+ *       returning an error.
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - user
+ *             properties:
+ *               user:
+ *                 $ref: '#/components/schemas/User'
+ *     responses:
+ *       200:
+ *         description: Intended to return the Sequelize update result, but see description — this endpoint is currently broken and never responds.
+ */
 app.put('/api/user', (req, res) => {
     userController.updateUser(req.body.user).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /project:
+ *   put:
+ *     summary: Update an existing project
+ *     description: Updates an existing project record by its project_id field.
+ *     tags: [Projects]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - project
+ *             properties:
+ *               project:
+ *                 $ref: '#/components/schemas/Project'
+ *     responses:
+ *       200:
+ *         description: The Sequelize update result.
+ */
 app.put('/api/project', (req, res) => {
     projectController.updateProject(req.body.project).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /session:
+ *   put:
+ *     summary: Update an existing session
+ *     description: Updates an existing session record by its session_id field.
+ *     tags: [Sessions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - session
+ *             properties:
+ *               session:
+ *                 $ref: '#/components/schemas/Session'
+ *     responses:
+ *       200:
+ *         description: The Sequelize update result.
+ */
 app.put('/api/session', (req, res) => {
     sessionController.updateSession(req.body.session).then(data => res.json(data));
 });
 
 //DELETE HERE
 
+/**
+ * @openapi
+ * /task/{id}:
+ *   delete:
+ *     summary: Delete a task
+ *     description: >
+ *       Deletes a task record by id. Database failures are logged and
+ *       swallowed, resolving to an empty object `{}` rather than throwing.
+ *     tags: [Tasks]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the task to delete.
+ *     responses:
+ *       200:
+ *         description: >
+ *           The number of rows destroyed (as returned by Sequelize), or an
+ *           empty object `{}` if the delete failed.
+ */
 app.delete('/api/task/:id', (req, res) => {
     taskController.deleteTask(req.params.id).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /observation/{id}:
+ *   delete:
+ *     summary: Delete an observation
+ *     description: >
+ *       Deletes an observation record by its observation_id. Database
+ *       failures are logged and swallowed, resolving to an empty object
+ *       `{}` rather than throwing.
+ *     tags: [Observations]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: observation_id of the observation to delete.
+ *     responses:
+ *       200:
+ *         description: >
+ *           The number of rows destroyed (as returned by Sequelize), or an
+ *           empty object `{}` if the delete failed.
+ */
 app.delete('/api/observation/:id', (req, res) => {
     observationController.deleteObservation(req.params.id).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /keyframe/{keyframe_id}:
+ *   delete:
+ *     summary: Delete a keyframe
+ *     description: >
+ *       Deletes a keyframe record by id. Database failures are logged and
+ *       swallowed, resolving to an empty object `{}` rather than throwing.
+ *     tags: [Keyframes]
+ *     parameters:
+ *       - in: path
+ *         name: keyframe_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: keyframe_id of the keyframe to delete.
+ *     responses:
+ *       200:
+ *         description: >
+ *           The number of rows destroyed (as returned by Sequelize), or an
+ *           empty object `{}` if the delete failed.
+ */
 app.delete('/api/keyframe/:keyframe_id', (req, res) => {
     keyframeController.deleteKeyframe(req.params.keyframe_id).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /user/{id}:
+ *   delete:
+ *     summary: Delete a user
+ *     description: >
+ *       CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer
+ *       calls `userRepository.deleteUsers(...)` (plural), but the
+ *       repository only defines the method as `deleteUser` (singular).
+ *       Every call throws a TypeError, and since this route has no
+ *       `.catch()`, the request currently hangs without ever sending a
+ *       response instead of returning an error.
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the user to delete.
+ *     responses:
+ *       200:
+ *         description: Intended to return the number of rows destroyed, but see description — this endpoint is currently broken and never responds.
+ */
 app.delete('/api/user/:id', (req, res) => {
     userController.deleteUser(req.params.id).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /project/{id}:
+ *   delete:
+ *     summary: Delete a project
+ *     description: Deletes a project record by id.
+ *     tags: [Projects]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the project to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed, as returned by Sequelize.
+ */
 app.delete('/api/project/:id', (req, res) => {
     projectController.deleteProject(req.params.id).then(data => res.json(data));
 });
 
+/**
+ * @openapi
+ * /session/{id}:
+ *   delete:
+ *     summary: Delete a session
+ *     description: Deletes a session record by id.
+ *     tags: [Sessions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID of the session to delete.
+ *     responses:
+ *       200:
+ *         description: The number of rows destroyed, as returned by Sequelize.
+ */
 app.delete('/api/session/:id', (req, res) => {
     sessionController.deleteSession(req.params.id).then(data => res.json(data));
 });
 
 // Serve frontend shared assets and partials for all static apps.
+
+/**
+ * Root filesystem directory containing every static MARP frontend asset
+ * (shared assets/partials and individual per-app bundles).
+ *
+ * @constant
+ * @type {string}
+ */
 const frontendDirectory = path.join(__dirname, 'frontend');
+
+/**
+ * Directory containing one subfolder per static frontend application,
+ * each with its own `index.html`.
+ *
+ * @constant
+ * @type {string}
+ */
 const frontendAppsDirectory = path.join(frontendDirectory, 'apps');
+
+/**
+ * Directory containing static assets and partials shared across every
+ * frontend application (styles, shared scripts, images).
+ *
+ * @constant
+ * @type {string}
+ */
 const frontendSharedDirectory = path.join(frontendDirectory, 'shared');
 
 // Compatibility alias for landing pages that still reference /assets/*.
@@ -2277,12 +2840,32 @@ app.use('/assets', express.static(path.join(frontendSharedDirectory, 'assets'), 
 app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
 app.use('/apps', express.static(frontendAppsDirectory, { index: false }));
 
-// Root route serves the MARP entry application landing page.
+/**
+ * Serve the MARP entry application landing page at the site root.
+ *
+ * @name GET /
+ * @function
+ * @returns {void}
+ */
 app.get('/', (req, res) => {
     res.sendFile(path.join(frontendAppsDirectory, 'entry', 'index.html'));
 });
 
-// Generic app index route allows adding app folders without new server routes.
+/**
+ * Serve the index.html of any frontend app folder by name.
+ *
+ * Allows new frontend apps to be added under frontend/apps/<appName>/
+ * without requiring a new server route for each one. Falls through to the
+ * next middleware (ultimately the 404 handler) if no matching app folder
+ * exists.
+ *
+ * @name GET /apps/:appName
+ * @function
+ * @param {Object} req - Express request; `req.params.appName` names the app folder to serve.
+ * @param {Object} res - Express response.
+ * @param {Function} next - Called when no matching app folder exists, so the request falls through to later middleware.
+ * @returns {void}
+ */
 app.get('/apps/:appName', (req, res, next) => {
     const appIndexPath = path.join(
         frontendAppsDirectory,
@@ -2297,7 +2880,12 @@ app.get('/apps/:appName', (req, res, next) => {
     return next();
 });
 
-// Temporary compatibility routes from prior flat html page URLs.
+/**
+ * Temporary compatibility redirects from prior flat HTML page URLs to
+ * their current locations under /apps/dashboard/. Kept only so old
+ * bookmarks/links continue to resolve; new links should target the
+ * /apps/dashboard/ paths directly.
+ */
 app.get('/dashboard1.html', (req, res) => {
     res.redirect('/apps/dashboard/');
 });
@@ -2310,16 +2898,28 @@ app.get('/userHours.html', (req, res) => {
     res.redirect('/apps/dashboard/user-hours.html');
 });
 
-// Return JSON for unknown API routes instead of falling through to a missing HTML file.
+/**
+ * Catch-all for unmatched /api routes. Registered after every real API
+ * route above, so it only runs when nothing else matched. Returns a JSON
+ * 404 instead of falling through to the plain-text/HTML 404 handler below,
+ * so API clients always receive a JSON error body.
+ */
 app.use('/api', (req, res) => {
     res.status(404).json({ error: 'API route not found' });
 });
 
-// Return plain 404 for unknown non-API routes.
+/**
+ * Catch-all 404 handler for any request that matched no route above,
+ * including non-API paths that didn't match a static frontend file or app
+ * folder.
+ */
 app.use((req, res) => {
     res.status(404).send('Not found');
 });
 
+/**
+ * Start the HTTP server listening on the configured port.
+ */
 app.listen(port, () => {
     console.log(`Server listening on the port  ${port}`);
 })
