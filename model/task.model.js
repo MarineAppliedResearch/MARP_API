@@ -18,36 +18,46 @@ const { Model } = require('sequelize');
  *     Task:
  *       type: object
  *       description: >
- *         A discrete work item tracked by MARP, including free-text
- *         description and audit fields for who created/updated it and when.
+ *         A discrete work item tracked in MARP, including descriptive text
+ *         and basic audit fields showing who created and last updated it.
  *       required:
  *         - name
  *         - createdby
  *       properties:
  *         name:
  *           type: string
- *           description: Name/title of the task.
+ *           minLength: 1
+ *           maxLength: 255
+ *           example: Review kelp transect annotations
+ *           description: Human-readable title of the task.
  *         description:
  *           type: string
  *           nullable: true
- *           description: Freeform description of the task.
+ *           example: Validate species labels for line A before report export.
+ *           description: Optional freeform details describing scope or next actions.
  *         createdate:
  *           type: string
  *           format: date-time
  *           nullable: true
- *           description: Timestamp when the task was created.
+ *           example: "2026-07-23T14:05:00.000Z"
+ *           description: Timestamp when this task was first recorded.
  *         updateddate:
  *           type: string
  *           format: date-time
  *           nullable: true
- *           description: Timestamp when the task was last updated.
+ *           example: "2026-07-23T15:12:41.000Z"
+ *           description: Timestamp when this task was last updated.
  *         createdby:
  *           type: string
+ *           minLength: 1
+ *           maxLength: 255
+ *           example: i.travers
  *           description: Identifier or username of the person who created the task.
  *         updatedby:
  *           type: string
  *           nullable: true
- *           description: Identifier or username of the person who last updated the task.
+ *           example: j.diver
+ *           description: Identifier or username of the person who last modified the task.
  */
 
 /**

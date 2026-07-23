@@ -132,37 +132,55 @@ class KeyframeRepository {
     }
 
     /**
-     * Update an existing keyframe record.
+     * Fetch a single keyframe record by its keyframe_id.
      *
-     * This method is currently a no-op: its Sequelize update logic is
-     * entirely commented out (and, as written, references an
-     * `observations` model rather than `keyframes`), so calling this
-     * method neither reads nor writes the database — it simply resolves
-     * to the empty object `data` was initialized to.
+     * Unlike most methods on this class, a database failure here is logged
+     * and re-thrown rather than swallowed to a fallback value, so callers
+     * must catch/handle a rejected promise. A "not found" result, by
+     * contrast, resolves to `null` rather than throwing.
      *
      * @async
-     * @param {Object} keyframe - Keyframe fields intended to be updated. Currently unused.
-     * @returns {Promise<Object>} Always resolves to an empty object.
+     * @param {number|string} keyframeId - keyframe_id of the keyframe to fetch.
+     * @returns {Promise<Object|null>} The matching keyframe record, or null
+     * if not found. Rejects if the underlying query fails.
      */
-    async updateKeyframe(keyframe) {
-        let data = {};
-
-        /*
+    async getKeyframeById(keyframeId) {
         try {
-            observation.updateddate = new Date().toISOString();
-            data = await this.db.observations.update({...observation}, {
-                where: {
-                    observation_id: observation.observation_id
-                },
-                raw: true
-            });
-        } catch(err) {
+            const keyframe = await this.db.keyframes.findByPk(keyframeId);
+            return keyframe || null;
+        } catch (err) {
             logger.error('Error::' + err);
+            throw err;
         }
-            */
+    }
 
+    /**
+     * Update an existing keyframe record by id.
+     *
+     * @async
+     * @param {number|string} keyframeId - keyframe_id of the keyframe to update.
+     * @param {Object} newData - Keyframe fields to update.
+     * @returns {Promise<Object|null>} The updated keyframe record, or null
+     * if no row matched `keyframeId`. A database failure is logged and
+     * re-thrown, so the returned promise rejects rather than resolving to
+     * an error value.
+     */
+    async updateKeyframe(keyframeId, newData) {
+        try {
+            const [rowsUpdated, [updatedKeyframe]] = await this.db.keyframes.update(
+                newData,
+                { where: { keyframe_id: keyframeId }, returning: true }
+            );
 
-        return data;
+            if (rowsUpdated === 0) {
+                return null;
+            }
+
+            return updatedKeyframe;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
     }
 
     /**

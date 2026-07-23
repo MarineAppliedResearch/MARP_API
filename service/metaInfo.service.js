@@ -35,6 +35,19 @@ class MetaInfoService {
     async getDBName() {
         return await metaInfoRepository.getDBName();
     }
+
+    /**
+     * Set the configured database name metadata record.
+     *
+     * @async
+     * @param {string} name - New value to store as the database name.
+     * @returns {Promise<Array<Object>>} A single-element array containing
+     * `{ name }` on success, or an empty array if the underlying
+     * upsert fails.
+     */
+    async setDBName(name) {
+        return await metaInfoRepository.setDBName(name);
+    }
 }
 
 module.exports = new MetaInfoService();

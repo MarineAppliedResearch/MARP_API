@@ -1,0 +1,57 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "npm",
+            "script": "start",
+            "label": "npm: start",
+            "detail": "node ./server.js",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "dev",
+            "label": "npm: dev",
+            "detail": "nodemon ./server.js localhost 3081",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "test",
+            "label": "npm: test",
+            "detail": "jest --runInBand --forceExit",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "docs:api:build",
+            "label": "npm: docs:api:build",
+            "detail": "node ./scripts/generate-openapi.js",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "docs:dev:build",
+            "label": "npm: docs:dev:build",
+            "detail": "jsdoc -c ./jsdoc.config.json --lenient",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "docs:erd",
+            "label": "npm: docs:erd",
+            "detail": "node ./sequelize-erd.js",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "docs:build",
+            "label": "npm: docs:build",
+            "detail": "npm run docs:api:build && npm run docs:dev:build",
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

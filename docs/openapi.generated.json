@@ -23,15 +23,701 @@
     {
       "name": "Observations",
       "description": "Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates."
+    },
+    {
+      "name": "Schema",
+      "description": "Database schema introspection endpoints for tables, views, columns, constraints, indexes, and relationships in the public schema."
     }
   ],
   "components": {
     "schemas": {
-      "ErrorResponse": {
+      "ErrorDetail": {
         "type": "object",
+        "required": [
+          "issue"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional field/key associated with this validation or domain issue."
+          },
+          "issue": {
+            "type": "string",
+            "description": "Human-readable description of the specific issue."
+          }
+        }
+      },
+      "ErrorObject": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "status",
+          "requestId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code (UPPER_SNAKE_CASE).",
+            "example": "RESOURCE_NOT_FOUND"
+          },
+          "message": {
+            "type": "string",
+            "description": "Client-safe summary of the error.",
+            "example": "Requested session was not found."
+          },
+          "status": {
+            "type": "integer",
+            "description": "HTTP status code returned with this error.",
+            "example": 404
+          },
+          "requestId": {
+            "type": "string",
+            "description": "Request correlation identifier for tracing and logs.",
+            "example": "req_mdxv3u_4f7k2q"
+          },
+          "details": {
+            "type": "array",
+            "nullable": true,
+            "description": "Optional structured issue list (commonly used for validation failures).",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            }
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
         "properties": {
           "error": {
-            "type": "string"
+            "$ref": "#/components/schemas/ErrorObject"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ErrorEnvelope"
+          }
+        ],
+        "description": "Backward-compatible alias for the standardized error envelope."
+      },
+      "VideoSummaryReport": {
+        "type": "array",
+        "description": "One aggregated row per distinct video_source/videoLocation combination within a project, produced by observationRepository.getVideoSummariesByProject and served by GET /getVideoSummaries/{project_id}.",
+        "items": {
+          "type": "object",
+          "required": [
+            "video_source",
+            "videoLocation",
+            "distinct_species_count",
+            "session_count",
+            "dive",
+            "line",
+            "session_type"
+          ],
+          "properties": {
+            "video_source": {
+              "type": "string",
+              "nullable": true,
+              "example": "20251007_164658 Fwd.mp4",
+              "description": "Video source shared by every observation in this group. Nullable because observations.video_source itself allows null."
+            },
+            "videoLocation": {
+              "type": "string",
+              "nullable": true,
+              "example": "E:\\Video\\Dive01\\FWD\\20251007_164658 Fwd.mp4",
+              "description": "Video location shared by every observation in this group. Nullable because observations.videoLocation itself allows null."
+            },
+            "distinct_species_count": {
+              "type": "string",
+              "example": "5",
+              "description": "Count of distinct non-null observation comname values in the group. Returned as a numeric string, not a number, because it is a raw Postgres COUNT(DISTINCT ...) aggregate served through Sequelize with raw:true."
+            },
+            "session_count": {
+              "type": "string",
+              "example": "1",
+              "description": "Count of distinct sessions contributing observations to the group. Returned as a numeric string for the same raw-aggregate reason as distinct_species_count."
+            },
+            "dive": {
+              "type": "string",
+              "example": "453",
+              "description": "Lowest sessions.dive value (database MIN, so string ordering rather than numeric) among the sessions joined into this group. The session join is required and sessions.dive is a required column, so this value is always present."
+            },
+            "line": {
+              "type": "string",
+              "example": "3455",
+              "description": "Lowest sessions.line value, aggregated independently from dive. Always present for the same reasons as dive."
+            },
+            "session_type": {
+              "type": "string",
+              "example": "Fish",
+              "description": "Lowest sessions.type value (database MIN, string ordering). Always present for the same reasons as dive."
+            }
+          }
+        }
+      },
+      "DashboardUserDateEntry": {
+        "type": "object",
+        "description": "Per-day activity counts for one user, nested inside UserDashboardData. KNOWN LIMITATION: sessions and projects are always 0 in the current implementation -- observationRepository.getUserDashboardData only ever populates the observations count.",
+        "required": [
+          "sessions",
+          "observations",
+          "projects"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "integer",
+            "example": 0,
+            "description": "Always 0 in the current implementation; session counting was never wired up."
+          },
+          "observations": {
+            "type": "integer",
+            "example": 26,
+            "description": "Number of observations the user created on this date, from a COUNT grouped by session.user_id and DATE(observations.createdAt)."
+          },
+          "projects": {
+            "type": "integer",
+            "example": 0,
+            "description": "Always 0 in the current implementation; project counting was never wired up."
+          }
+        }
+      },
+      "UserDashboardData": {
+        "type": "object",
+        "description": "Dashboard activity data keyed by user display name, then by ISO date (YYYY-MM-DD). Returned by GET /dashboardData. Both start and end query parameters are required for any rows to be returned -- omitting either produces {} because the underlying Sequelize Op.between filter cannot match against an undefined bound.",
+        "additionalProperties": {
+          "type": "object",
+          "description": "Map of ISO date (YYYY-MM-DD) to that date's activity entry for this user.",
+          "additionalProperties": {
+            "$ref": "#/components/schemas/DashboardUserDateEntry"
+          }
+        },
+        "example": {
+          "Isaac Travers": {
+            "2026-07-01": {
+              "sessions": 0,
+              "observations": 26,
+              "projects": 0
+            }
+          }
+        }
+      },
+      "ProjectTimeByDateAndUser": {
+        "type": "object",
+        "description": "Estimated recording minutes keyed by project name, then by ISO date (YYYY-MM-DD), then by user display name. Returned by GET /getProjectTimeByDateAndUser. Both start and end query parameters are required for any rows to be returned, for the same Op.between reason as UserDashboardData. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.",
+        "additionalProperties": {
+          "type": "object",
+          "description": "Map of ISO date (YYYY-MM-DD) to that date's per-user minute totals.",
+          "additionalProperties": {
+            "type": "object",
+            "description": "Map of user display name to estimated minutes recorded on this date for this project.",
+            "additionalProperties": {
+              "type": "number",
+              "example": 89.41666666666667
+            }
+          }
+        },
+        "example": {
+          "CAMPA-2025": {
+            "2026-07-01": {
+              "Camille Werner": 89.41666666666667
+            }
+          }
+        }
+      },
+      "MetaInfoDbName": {
+        "type": "array",
+        "description": "Response shape for GET /metaInfo/dbName. Always a single-element array projecting only the name column -- never the full MetaInfo row. metaInfoRepository.getDBName returns [{name: \"NO DB Name Found\"}] when the metaInfo table has no rows, and an empty array only when the query itself throws.",
+        "items": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "nullable": true,
+              "example": "Production",
+              "description": "Value of the first metaInfo row's name column, or the literal \"NO DB Name Found\" placeholder when no row exists."
+            }
+          }
+        }
+      },
+      "SchemaColumn": {
+        "type": "object",
+        "required": [
+          "name",
+          "ordinalPosition",
+          "dataType",
+          "udtName",
+          "isNullable",
+          "isIdentity"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "project_id",
+            "description": "Column name."
+          },
+          "ordinalPosition": {
+            "type": "integer",
+            "example": 1,
+            "description": "1-based column position in the table/view."
+          },
+          "dataType": {
+            "type": "string",
+            "example": "integer",
+            "description": "Generic SQL type reported by information_schema."
+          },
+          "udtName": {
+            "type": "string",
+            "example": "int4",
+            "description": "PostgreSQL underlying type name."
+          },
+          "isNullable": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when NULL values are allowed."
+          },
+          "defaultValue": {
+            "type": "string",
+            "nullable": true,
+            "example": "nextval('projects_project_id_seq'::regclass)",
+            "description": "Raw default expression, if defined."
+          },
+          "maxLength": {
+            "type": "integer",
+            "nullable": true,
+            "example": 255,
+            "description": "Character max length for character types."
+          },
+          "numericPrecision": {
+            "type": "integer",
+            "nullable": true,
+            "example": 32,
+            "description": "Numeric precision, when applicable."
+          },
+          "numericScale": {
+            "type": "integer",
+            "nullable": true,
+            "example": 0,
+            "description": "Numeric scale, when applicable."
+          },
+          "datetimePrecision": {
+            "type": "integer",
+            "nullable": true,
+            "example": 6,
+            "description": "Datetime precision, when applicable."
+          },
+          "isIdentity": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when column is an identity column."
+          },
+          "identityGeneration": {
+            "type": "string",
+            "nullable": true,
+            "example": "BY DEFAULT",
+            "description": "Identity generation mode when isIdentity is true."
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "example": "Primary key for projects table.",
+            "description": "Column comment from PostgreSQL metadata, when set."
+          }
+        }
+      },
+      "SchemaPrimaryKey": {
+        "type": "object",
+        "required": [
+          "name",
+          "columns"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "projects_pkey",
+            "description": "Primary-key constraint name."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "project_id"
+            ],
+            "description": "Ordered list of primary-key columns."
+          }
+        }
+      },
+      "SchemaForeignKey": {
+        "type": "object",
+        "required": [
+          "name",
+          "columns",
+          "referencedSchema",
+          "referencedTable",
+          "referencedColumns",
+          "onUpdate",
+          "onDelete"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "sessions_project_id_fkey",
+            "description": "Foreign-key constraint name."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "project_id"
+            ],
+            "description": "Ordered source columns."
+          },
+          "referencedSchema": {
+            "type": "string",
+            "example": "public",
+            "description": "Referenced table schema."
+          },
+          "referencedTable": {
+            "type": "string",
+            "example": "projects",
+            "description": "Referenced table name."
+          },
+          "referencedColumns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "project_id"
+            ],
+            "description": "Ordered referenced columns."
+          },
+          "onUpdate": {
+            "type": "string",
+            "example": "NO ACTION",
+            "description": "ON UPDATE action."
+          },
+          "onDelete": {
+            "type": "string",
+            "example": "CASCADE",
+            "description": "ON DELETE action."
+          }
+        }
+      },
+      "SchemaUniqueConstraint": {
+        "type": "object",
+        "required": [
+          "name",
+          "columns"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "species_taxserial_key",
+            "description": "Unique constraint name."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "taxserial"
+            ],
+            "description": "Ordered constrained columns."
+          }
+        }
+      },
+      "SchemaCheckConstraint": {
+        "type": "object",
+        "required": [
+          "name",
+          "expression"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "sessions_dive_check",
+            "description": "Check constraint name."
+          },
+          "expression": {
+            "type": "string",
+            "example": "CHECK ((dive > 0))",
+            "description": "Rendered check expression from PostgreSQL."
+          }
+        }
+      },
+      "SchemaIndex": {
+        "type": "object",
+        "required": [
+          "name",
+          "isUnique",
+          "isPrimary",
+          "definition"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "projects_pkey",
+            "description": "Index name."
+          },
+          "isUnique": {
+            "type": "boolean",
+            "example": true,
+            "description": "True when index enforces uniqueness."
+          },
+          "isPrimary": {
+            "type": "boolean",
+            "example": true,
+            "description": "True when index backs a primary key."
+          },
+          "definition": {
+            "type": "string",
+            "example": "CREATE UNIQUE INDEX projects_pkey ON public.projects USING btree (project_id)",
+            "description": "Full index definition SQL."
+          }
+        }
+      },
+      "SchemaTable": {
+        "type": "object",
+        "required": [
+          "schema",
+          "name",
+          "rowEstimate",
+          "columns",
+          "foreignKeys",
+          "uniqueConstraints",
+          "checkConstraints",
+          "indexes"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "example": "public",
+            "description": "Table schema."
+          },
+          "name": {
+            "type": "string",
+            "example": "projects",
+            "description": "Table name."
+          },
+          "rowEstimate": {
+            "type": "integer",
+            "example": 2412,
+            "description": "Approximate row count from PostgreSQL catalog statistics."
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true,
+            "example": "Stores project metadata.",
+            "description": "Table comment from PostgreSQL metadata, when set."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchemaColumn"
+            },
+            "description": "All table columns in ordinal order."
+          },
+          "primaryKey": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SchemaPrimaryKey"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Primary key metadata, or null if no primary key exists."
+          },
+          "foreignKeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchemaForeignKey"
+            },
+            "description": "Outgoing foreign-key constraints."
+          },
+          "uniqueConstraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchemaUniqueConstraint"
+            },
+            "description": "Unique constraints defined on the table."
+          },
+          "checkConstraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchemaCheckConstraint"
+            },
+            "description": "Check constraints defined on the table."
+          },
+          "indexes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchemaIndex"
+            },
+            "description": "All table indexes, including primary and non-unique indexes."
+          }
+        }
+      },
+      "SchemaViewDependency": {
+        "type": "object",
+        "required": [
+          "schema",
+          "name",
+          "type"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "example": "public",
+            "description": "Dependency object schema."
+          },
+          "name": {
+            "type": "string",
+            "example": "observations",
+            "description": "Dependency object name."
+          },
+          "type": {
+            "type": "string",
+            "example": "TABLE",
+            "description": "Dependency object type."
+          }
+        }
+      },
+      "SchemaView": {
+        "type": "object",
+        "required": [
+          "schema",
+          "name",
+          "type",
+          "isUpdatable",
+          "definition",
+          "columns",
+          "dependencies"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "example": "public",
+            "description": "View schema."
+          },
+          "name": {
+            "type": "string",
+            "example": "observations_report",
+            "description": "View name."
+          },
+          "type": {
+            "type": "string",
+            "example": "VIEW",
+            "description": "VIEW or MATERIALIZED_VIEW."
+          },
+          "isUpdatable": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when PostgreSQL marks the view as updatable."
+          },
+          "definition": {
+            "type": "string",
+            "example": " SELECT observations.observation_id, observations.comname FROM observations;",
+            "description": "SQL definition text for the view."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchemaColumn"
+            },
+            "description": "View columns in ordinal order."
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SchemaViewDependency"
+            },
+            "description": "Referenced public tables/views discovered from PostgreSQL dependency metadata."
+          }
+        }
+      },
+      "SchemaRelationship": {
+        "type": "object",
+        "required": [
+          "name",
+          "source_schema",
+          "source_table",
+          "source_columns",
+          "target_schema",
+          "target_table",
+          "target_columns",
+          "on_update",
+          "on_delete"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "sessions_project_id_fkey",
+            "description": "Foreign-key constraint name."
+          },
+          "source_schema": {
+            "type": "string",
+            "example": "public",
+            "description": "Source table schema."
+          },
+          "source_table": {
+            "type": "string",
+            "example": "sessions",
+            "description": "Source table name."
+          },
+          "source_columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "project_id"
+            ],
+            "description": "Ordered source columns participating in the relationship."
+          },
+          "target_schema": {
+            "type": "string",
+            "example": "public",
+            "description": "Referenced table schema."
+          },
+          "target_table": {
+            "type": "string",
+            "example": "projects",
+            "description": "Referenced table name."
+          },
+          "target_columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "project_id"
+            ],
+            "description": "Ordered referenced columns participating in the relationship."
+          },
+          "on_update": {
+            "type": "string",
+            "example": "NO ACTION",
+            "description": "ON UPDATE action."
+          },
+          "on_delete": {
+            "type": "string",
+            "example": "CASCADE",
+            "description": "ON DELETE action."
           }
         }
       },
@@ -353,37 +1039,124 @@
       },
       "Keyframe": {
         "type": "object",
-        "description": "Frame-specific annotation associated with an observation.",
+        "description": "Frame-level annotation associated with a single observation. One observation can contain multiple tracked subsets (for example, two boxed organisms tracked in parallel) distinguished by the `subset` field.\n",
+        "required": [
+          "keyframe_id",
+          "observation_id",
+          "subset",
+          "comname",
+          "type",
+          "framenum",
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
         "properties": {
           "keyframe_id": {
             "type": "integer",
-            "example": 48291
+            "example": 48291,
+            "readOnly": true,
+            "description": "Unique identifier for this keyframe record."
           },
           "observation_id": {
             "type": "integer",
-            "example": 12045
+            "example": 12045,
+            "description": "Foreign key to the parent observation record."
+          },
+          "subset": {
+            "type": "string",
+            "example": "0",
+            "description": "Tracker/group label used to separate multiple boxed items within the same observation (for example, subset \"0\" and subset \"1\" for two independently tracked items).\n"
+          },
+          "comname": {
+            "type": "string",
+            "example": "Bat star",
+            "description": "Common-name label assigned to this keyframe annotation."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "start",
+              "middle",
+              "end"
+            ],
+            "example": "start",
+            "description": "Position marker in the tracked sequence for this subset."
+          },
+          "framenum": {
+            "type": "integer",
+            "example": 18520,
+            "description": "Frame-position value captured by the current keyframe workflow. See `frame` for an alternate frame-position label used by some contexts.\n"
           },
           "frame": {
             "type": "integer",
-            "example": 18520
+            "nullable": true,
+            "example": 20,
+            "description": "Optional alternate frame-position label used by some contexts. Semantics can vary by capture/export source and may represent a local frame index rather than the absolute video frame.\n"
+          },
+          "x": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.423,
+            "description": "Normalized left coordinate of the annotation box (0..1)."
+          },
+          "y": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.318,
+            "description": "Normalized top coordinate of the annotation box (0..1)."
+          },
+          "width": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.112,
+            "description": "Normalized annotation-box width (0..1)."
+          },
+          "height": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.169,
+            "description": "Normalized annotation-box height (0..1)."
+          },
+          "confidence": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "maximum": 1,
+            "nullable": true,
+            "example": 0.91,
+            "description": "Optional model confidence score for this annotation."
           }
         }
       },
       "MetaInfo": {
         "type": "object",
-        "description": "A single named metadata record used to store miscellaneous reference information for MARP.\n",
+        "description": "A small reference metadata record used for lightweight application-level values (for example labels or environment metadata) that do not belong to a larger domain table.\n",
         "required": [
           "id"
         ],
         "properties": {
           "id": {
             "type": "integer",
+            "readOnly": true,
+            "example": 3,
             "description": "Unique numeric identifier for this metadata record."
           },
           "name": {
             "type": "string",
             "nullable": true,
-            "description": "Name of this metadata entry."
+            "maxLength": 255,
+            "example": "MARE_PRODUCTION",
+            "description": "Optional metadata value or label stored in this record."
           }
         }
       },
@@ -410,6 +1183,15 @@
             "type": "integer",
             "nullable": true,
             "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
+          },
+          "species": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Species"
+              }
+            ],
+            "nullable": true,
+            "description": "Optional associated species record when this curve point is scoped to one species."
           },
           "confidence_threshold": {
             "type": "number",
@@ -475,6 +1257,15 @@
             "type": "integer",
             "nullable": true,
             "description": "Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species."
+          },
+          "species": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Species"
+              }
+            ],
+            "nullable": true,
+            "description": "Optional associated species record when this summary is scoped to one species."
           },
           "dataset_split": {
             "type": "string",
@@ -597,21 +1388,27 @@
           "id": {
             "type": "integer",
             "example": 7,
+            "readOnly": true,
             "description": "Unique numeric identifier for this ML model record."
           },
           "name": {
             "type": "string",
             "example": "yolov8-marine-fish-2025",
+            "minLength": 1,
+            "maxLength": 255,
             "description": "Human-readable name of the model (e.g., \"yolov8-marine-fish-2025\")."
           },
           "parent_model_id": {
             "type": "integer",
             "nullable": true,
+            "example": 3,
             "description": "If this model was derived or fine-tuned from another, references that parent model's ID."
           },
           "model_type": {
             "type": "string",
             "example": "yolov8",
+            "minLength": 1,
+            "maxLength": 255,
             "description": "Model architecture family (e.g., \"yolov8\", \"resnet\", \"deepsort\")."
           },
           "architecture_version": {
@@ -623,26 +1420,38 @@
           "storage_path": {
             "type": "string",
             "nullable": true,
+            "example": "/models/yolov8-marine-fish-2025/",
             "description": "Filesystem or URI path to the stored model weights and artifacts."
           },
           "status": {
             "type": "string",
+            "enum": [
+              "draft",
+              "training",
+              "trained",
+              "archived"
+            ],
             "example": "draft",
             "description": "Lifecycle state of the model (\"draft\", \"training\", \"trained\", or \"archived\")."
           },
           "notes": {
             "type": "string",
             "nullable": true,
+            "example": "Fine-tuned from 2025 baseline using added invertebrate labels.",
             "description": "Freeform notes providing experiment details, context, or remarks."
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this model entry was created."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this model record was last updated."
           }
         }
@@ -986,9 +1795,45 @@
           }
         ]
       },
+      "ObservationWithSessionAndKeyframes": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ObservationWithKeyframes"
+          },
+          {
+            "type": "object",
+            "description": "Observation response containing both its owning session and associated keyframes.",
+            "properties": {
+              "session": {
+                "$ref": "#/components/schemas/Session"
+              }
+            }
+          }
+        ]
+      },
+      "ObservationWithDatasets": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Observation"
+          },
+          {
+            "type": "object",
+            "description": "Observation response containing associated curated datasets.",
+            "properties": {
+              "datasets": {
+                "type": "array",
+                "description": "Datasets that include this observation through the dataset_observations join table.",
+                "items": {
+                  "$ref": "#/components/schemas/Dataset"
+                }
+              }
+            }
+          }
+        ]
+      },
       "Project": {
         "type": "object",
-        "description": "Named project grouping used to organize sessions and observations recorded throughout MARP.\n",
+        "description": "Named organizational unit used to group sessions and observations for a survey effort, campaign, or reporting scope.\n",
         "required": [
           "project_id",
           "name"
@@ -997,12 +1842,29 @@
           "project_id": {
             "type": "integer",
             "example": 24,
-            "description": "Unique numeric identifier for this project."
+            "readOnly": true,
+            "description": "Unique numeric identifier for this project record."
           },
           "name": {
             "type": "string",
             "example": "Channel Islands 2024",
-            "description": "Unique display name for the project."
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Unique display name used across UI filters and API queries."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
+            "description": "Timestamp when this project record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
+            "description": "Timestamp when this project record was last updated."
           }
         }
       },
@@ -1020,6 +1882,7 @@
           "session_id": {
             "type": "integer",
             "example": 501,
+            "readOnly": true,
             "description": "Unique numeric identifier for this session record."
           },
           "project_id": {
@@ -1036,32 +1899,44 @@
           },
           "dive": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "Dive 12",
             "description": "Dive identifier or name associated with this session."
           },
           "line": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "Line A",
             "description": "Transect line identifier associated with this session."
           },
           "lineId": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "L-2024-012A",
             "description": "Identifier of the specific survey line tied to this session."
           },
           "type": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
             "example": "ROV",
             "description": "Type or category of this session (e.g., survey platform or method)."
           },
           "createdAt": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this session record was created."
           },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this session record was last updated."
           }
         }
@@ -1077,6 +1952,7 @@
           "id": {
             "type": "integer",
             "example": 42,
+            "readOnly": true,
             "description": "Unique numeric identifier for this species record."
           },
           "taxserial": {
@@ -1087,6 +1963,7 @@
           "gui_home_order": {
             "type": "string",
             "nullable": true,
+            "example": "010",
             "description": "Ordering key used by the MARP GUI to position this item on the home screen."
           },
           "gui_maintab": {
@@ -1104,21 +1981,25 @@
           "gui_main_tab_order": {
             "type": "integer",
             "nullable": true,
+            "example": 2,
             "description": "Order number for the main tab this item belongs to."
           },
           "gui_sub_tab_order": {
             "type": "integer",
             "nullable": true,
+            "example": 5,
             "description": "Order number for the sub-tab this item belongs to."
           },
           "gui_item_order": {
             "type": "integer",
             "nullable": true,
+            "example": 12,
             "description": "Position of this species within its GUI sub-tab group."
           },
           "gui_display_name": {
             "type": "string",
             "nullable": true,
+            "example": "Bat Star",
             "description": "Display name for this item shown in MARP GUI interfaces, may differ from comname."
           },
           "comname": {
@@ -1155,13 +2036,15 @@
             "type": "number",
             "format": "float",
             "nullable": true,
-            "description": "Minimum depth in meters where this species is typically observed."
+            "example": 5.5,
+            "description": "Minimum depth in meters where this species is typically observed (range semantics are dataset-dependent)."
           },
           "depth_max": {
             "type": "number",
             "format": "float",
             "nullable": true,
-            "description": "Maximum depth in meters where this species is typically observed."
+            "example": 45,
+            "description": "Maximum depth in meters where this species is typically observed (range semantics are dataset-dependent)."
           },
           "habitat_preference": {
             "type": "string",
@@ -1172,23 +2055,28 @@
           "notes": {
             "type": "string",
             "nullable": true,
+            "example": "Legacy synonym handled in reporting mapper.",
             "description": "Freeform notes about this species, its classification, or GUI behavior."
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this species record was created."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this species record was last updated."
           }
         }
       },
       "Task": {
         "type": "object",
-        "description": "A discrete work item tracked by MARP, including free-text description and audit fields for who created/updated it and when.\n",
+        "description": "A discrete work item tracked in MARP, including descriptive text and basic audit fields showing who created and last updated it.\n",
         "required": [
           "name",
           "createdby"
@@ -1196,33 +2084,43 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Name/title of the task."
+            "minLength": 1,
+            "maxLength": 255,
+            "example": "Review kelp transect annotations",
+            "description": "Human-readable title of the task."
           },
           "description": {
             "type": "string",
             "nullable": true,
-            "description": "Freeform description of the task."
+            "example": "Validate species labels for line A before report export.",
+            "description": "Optional freeform details describing scope or next actions."
           },
           "createdate": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Timestamp when the task was created."
+            "example": "2026-07-23T14:05:00.000Z",
+            "description": "Timestamp when this task was first recorded."
           },
           "updateddate": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "Timestamp when the task was last updated."
+            "example": "2026-07-23T15:12:41.000Z",
+            "description": "Timestamp when this task was last updated."
           },
           "createdby": {
             "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "example": "i.travers",
             "description": "Identifier or username of the person who created the task."
           },
           "updatedby": {
             "type": "string",
             "nullable": true,
-            "description": "Identifier or username of the person who last updated the task."
+            "example": "j.diver",
+            "description": "Identifier or username of the person who last modified the task."
           }
         }
       },
@@ -1237,6 +2135,7 @@
           "id": {
             "type": "integer",
             "example": 12,
+            "readOnly": true,
             "description": "Unique identifier for this training run."
           },
           "model_id": {
@@ -1247,6 +2146,7 @@
           "dataset_id": {
             "type": "integer",
             "nullable": true,
+            "example": 3,
             "description": "Foreign key referencing the dataset used for training (datasets.id)."
           },
           "start_time": {
@@ -1264,17 +2164,23 @@
           "total_epochs": {
             "type": "integer",
             "nullable": true,
+            "minimum": 1,
+            "example": 120,
             "description": "Total number of epochs configured for this run."
           },
           "batch_size": {
             "type": "integer",
             "nullable": true,
+            "minimum": 1,
+            "example": 16,
             "description": "Training batch size used during this run."
           },
           "learning_rate": {
             "type": "number",
             "format": "float",
             "nullable": true,
+            "minimum": 0,
+            "example": 0.001,
             "description": "Base learning rate used during training."
           },
           "optimizer": {
@@ -1304,28 +2210,34 @@
           "train_script_commit": {
             "type": "string",
             "nullable": true,
+            "example": "3d9a0a91e7fa3b9f4c1f8f46cb2fda32729d8f1a",
             "description": "Git commit hash or version identifier of the training script used."
           },
           "notes": {
             "type": "string",
             "nullable": true,
+            "example": "Best mAP50 observed around epoch 98; monitor overfitting after 110.",
             "description": "Freeform notes describing experiment purpose or results context."
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
             "description": "Timestamp when this record was created."
           },
           "updated_at": {
             "type": "string",
             "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
             "description": "Timestamp when this record was last modified."
           }
         }
       },
       "User": {
         "type": "object",
-        "description": "Individual who records or owns sessions and observations throughout MARP.\n",
+        "description": "Individual identity record used to attribute sessions, observations, and related reporting outputs throughout MARP.\n",
         "required": [
           "user_id",
           "name"
@@ -1334,12 +2246,101 @@
           "user_id": {
             "type": "integer",
             "example": 12,
-            "description": "Unique numeric identifier for this user."
+            "readOnly": true,
+            "description": "Unique numeric identifier for this user record."
           },
           "name": {
             "type": "string",
             "example": "Jane Diver",
-            "description": "Unique display name for the user."
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Unique display name used by API and reporting views."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-22T15:33:10.000Z",
+            "description": "Timestamp when this user record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "readOnly": true,
+            "example": "2026-07-23T09:12:01.000Z",
+            "description": "Timestamp when this user record was last updated."
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequestError": {
+        "description": "Request payload, query, or path parameters are invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "UnauthorizedError": {
+        "description": "Authentication is required or failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "ForbiddenError": {
+        "description": "Authenticated caller does not have permission for this action.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "NotFoundError": {
+        "description": "Requested route or resource was not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "ConflictError": {
+        "description": "Operation conflicts with current resource state (for example unique-constraint violation).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "UnprocessableEntityError": {
+        "description": "Request was syntactically valid but semantically invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Unexpected server-side failure.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
           }
         }
       }
@@ -1409,6 +2410,87 @@
         }
       }
     },
+    "/schema/tables": {
+      "get": {
+        "summary": "Retrieve public table metadata",
+        "description": "Returns one object per base table in the public schema, including table comments, row-estimate metadata, all columns with data types and defaults, primary keys, foreign keys, unique constraints, check constraints, and indexes. Intended for building schema browsers, table grids, query builders, and relationship explorers.\n",
+        "tags": [
+          "Schema"
+        ],
+        "responses": {
+          "200": {
+            "description": "Public table metadata returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaTable"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/schema/views": {
+      "get": {
+        "summary": "Retrieve public view metadata",
+        "description": "Returns one object per public view (including materialized views), including SQL definition text, updatability flag, column metadata, and dependencies on other public tables/views. Intended for building view browsers and dependency visualizations.\n",
+        "tags": [
+          "Schema"
+        ],
+        "responses": {
+          "200": {
+            "description": "Public view metadata returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaView"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/schema/relationships": {
+      "get": {
+        "summary": "Retrieve public foreign-key relationships",
+        "description": "Returns normalized foreign-key relationships between public-schema tables, including source/target columns and ON UPDATE / ON DELETE actions. Intended for relationship graphs and join-aware UI tooling.\n",
+        "tags": [
+          "Schema"
+        ],
+        "responses": {
+          "200": {
+            "description": "Public foreign-key relationships returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaRelationship"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/getObservationsByVideo": {
       "get": {
         "summary": "Retrieve observations for a video",
@@ -1465,47 +2547,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Video summaries returned successfully.",
+            "description": "Video summaries returned successfully. distinct_species_count, session_count, dive, and line are numeric strings rather than numbers because they come back from raw Postgres aggregates (Sequelize raw:true); see VideoSummaryReport for the verified field-by-field shape, captured from real response samples.\n",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "video_source": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Video source value shared by the grouped observations."
-                      },
-                      "videoLocation": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Video location value shared by the grouped observations."
-                      },
-                      "distinct_species_count": {
-                        "type": "integer",
-                        "description": "Number of distinct non-null observation comname values."
-                      },
-                      "session_count": {
-                        "type": "integer",
-                        "description": "Number of distinct sessions represented in the group."
-                      },
-                      "dive": {
-                        "nullable": true,
-                        "description": "Minimum dive value among the matching sessions."
-                      },
-                      "line": {
-                        "nullable": true,
-                        "description": "Minimum line value among the matching sessions."
-                      },
-                      "session_type": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Minimum session type value among the matching sessions."
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/VideoSummaryReport"
                 }
               }
             }
@@ -1554,8 +2600,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/ObservationWithKeyframes"
                   }
                 }
               }
@@ -1567,7 +2612,7 @@
     "/getObservationsByVideoAndProject/{videoName}/{projectName}": {
       "get": {
         "summary": "Retrieve observations for a video within a project",
-        "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.\n",
+        "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Each observation includes its full associated session object (the session join has no attribute restriction) in addition to keyframes. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.\n",
         "tags": [
           "Observations",
           "Projects",
@@ -1601,8 +2646,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/ObservationWithSessionAndKeyframes"
                   }
                 }
               }
@@ -1645,14 +2689,7 @@
             }
           },
           "500": {
-            "description": "The API request failed before a response could be produced.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -1684,7 +2721,7 @@
     "/dashboardData": {
       "get": {
         "summary": "Fetch per-user dashboard activity data",
-        "description": "Returns per-user, per-date observation activity counts for a dashboard view. CAUTION: the underlying grouped-observation query this endpoint depends on is invoked with no date arguments internally, so the start/end query parameters below are not actually applied as a filter — the endpoint currently returns data across all time regardless of what is passed.\n",
+        "description": "Returns per-user, per-date observation activity counts for a dashboard view. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. sessions and projects are always 0 in the current implementation; only the observations count is actually populated.\n",
         "tags": [
           "Observations"
         ],
@@ -1696,7 +2733,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Intended start of the date range (currently not applied; see description)."
+            "description": "Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           },
           {
             "in": "query",
@@ -1705,7 +2742,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Intended end of the date range (currently not applied; see description)."
+            "description": "End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           }
         ],
         "responses": {
@@ -1714,8 +2751,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/UserDashboardData"
                 }
               }
             }
@@ -1726,7 +2762,7 @@
     "/getProjectTimeByDateAndUser": {
       "get": {
         "summary": "Fetch estimated recording time by project, date, and user",
-        "description": "Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.\n",
+        "description": "Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.\n",
         "tags": [
           "Observations"
         ],
@@ -1738,7 +2774,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Start of the date range (inclusive) used to filter observations by createdAt."
+            "description": "Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           },
           {
             "in": "query",
@@ -1747,7 +2783,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "End of the date range (inclusive) used to filter observations by createdAt."
+            "description": "End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
           }
         ],
         "responses": {
@@ -1756,8 +2792,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/ProjectTimeByDateAndUser"
                 }
               }
             }
@@ -1780,8 +2815,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "$ref": "#/components/schemas/Task"
                   }
                 }
               }
@@ -1799,7 +2833,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Observation list returned successfully."
+            "description": "Observation list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2022,6 +3066,46 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Create a new species record",
+        "description": "Creates a new species record. The caller must supply a unique taxserial (see the species_taxserial_idx unique index in model/species.model.js). A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "species"
+                ],
+                "properties": {
+                  "species": {
+                    "$ref": "#/components/schemas/Species"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created species record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Species"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
       }
     },
     "/species/by-comname/{comname}": {
@@ -2059,6 +3143,132 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/species/{id}": {
+      "get": {
+        "summary": "Fetch a species by id",
+        "description": "Returns a single species record by id, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching species record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing species record",
+        "description": "Updates an existing species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "species"
+                ],
+                "properties": {
+                  "species": {
+                    "$ref": "#/components/schemas/Species"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated species record, or null if no species matched the given id.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a species record",
+        "description": "Deletes a species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2124,7 +3334,88 @@
         },
         "responses": {
           "200": {
-            "description": "Model-species record created successfully, or an ErrorResponse body if the insert failed (see description).\n",
+            "description": "Model-species record created successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSpecies"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/model_species/{id}": {
+      "get": {
+        "summary": "Fetch a model_species record by id",
+        "description": "Returns a single model_species join record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching model_species record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSpecies"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing model_species record",
+        "description": "Updates an existing model_species join record by ID. The request body fields are used directly (unwrapped), matching the POST /model_species convention. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSpecies"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated model_species record, or null if no row matched the given ID.\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -2133,12 +3424,41 @@
                       "$ref": "#/components/schemas/ModelSpecies"
                     },
                     {
-                      "$ref": "#/components/schemas/ErrorResponse"
+                      "type": "null"
                     }
                   ]
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a model_species record",
+        "description": "Deletes a model_species join record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2163,6 +3483,44 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Fetch a user by id",
+        "description": "Returns a single user record by user_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Registered under the plural /users path (rather than /user/:id) to avoid colliding with the existing name-based lookup at /user/{name}.\n",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "user_id of the user to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching user record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2320,6 +3678,67 @@
         }
       }
     },
+    "/session/{id}": {
+      "get": {
+        "summary": "Fetch a session by id",
+        "description": "Returns a single session record by session_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "session_id of the session to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching session record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a session",
+        "description": "Deletes a session record by id.",
+        "tags": [
+          "Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the session to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed, as returned by Sequelize."
+          }
+        }
+      }
+    },
     "/sessions/user/{userID}/project/{projectID}": {
       "get": {
         "summary": "Fetch sessions for a user within a project",
@@ -2367,7 +3786,7 @@
     "/metaInfo/dbName": {
       "get": {
         "summary": "Retrieve active database name",
-        "description": "Returns metadata identifying the current configured database.",
+        "description": "Returns metadata identifying the current configured database as a single-element array containing only a name field (never the full metaInfo row).\n",
         "tags": [
           "Health"
         ],
@@ -2377,11 +3796,56 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetaInfoDbName"
                 }
               }
             }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the active database name",
+        "description": "Sets the configured database name on the singleton metaInfo row. Upserts: if the metaInfo table already has a row, its name column is updated in place; if the table is empty, a new row is created. This affects the single shared configuration record also read by GET /metaInfo/dbName. Unlike the GET, a database failure here is not swallowed to an empty/placeholder result -- it responds with a standard 500 error envelope so callers can tell the write did not happen.\n",
+        "tags": [
+          "Health"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "Production",
+                    "description": "New value to store as the database name."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Database name set successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaInfoDbName"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2440,19 +3904,7 @@
             }
           },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2545,7 +3997,61 @@
         ],
         "responses": {
           "200": {
-            "description": "The matching dataset record, or null if not found.",
+            "description": "The matching dataset record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dataset"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing dataset",
+        "description": "Updates an existing dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset"
+                ],
+                "properties": {
+                  "dataset": {
+                    "$ref": "#/components/schemas/Dataset"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated dataset record, or null if no dataset matched the given ID.\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -2562,19 +4068,33 @@
             }
           },
           "500": {
-            "description": "The database query failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a dataset",
+        "description": "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2616,19 +4136,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2670,19 +4178,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2742,19 +4238,69 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch a training run by id",
+        "description": "Returns a single training run record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching TrainingRun record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/TrainingRun"
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a training run",
+        "description": "Deletes a training run record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a training run cascades to delete its epochs, metrics_summary, hyperparameters, and artifacts (see model/training_runs.model.js).\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2796,19 +4342,129 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/metrics_summary/{id}": {
+      "get": {
+        "summary": "Fetch a metrics_summary by id",
+        "description": "Returns a single metrics_summary record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MetricsSummary record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
+                  "$ref": "#/components/schemas/MetricsSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing metrics_summary",
+        "description": "Updates an existing metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "metrics_summary"
+                ],
+                "properties": {
+                  "metrics_summary": {
+                    "$ref": "#/components/schemas/MetricsSummary"
                   }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated metrics_summary record, or null if no row matched the given ID.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MetricsSummary"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a metrics_summary",
+        "description": "Deletes a metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a metrics_summary cascades to delete its metrics_curves (see model/metrics_summary.model.js).\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2850,19 +4506,129 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/metrics_curve/{id}": {
+      "get": {
+        "summary": "Fetch a metrics_curve by id",
+        "description": "Returns a single metrics_curve record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_curve to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MetricsCurve record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
+                  "$ref": "#/components/schemas/MetricsCurve"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing metrics_curve",
+        "description": "Updates an existing metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_curve to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "metrics_curve"
+                ],
+                "properties": {
+                  "metrics_curve": {
+                    "$ref": "#/components/schemas/MetricsCurve"
                   }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated metrics_curve record, or null if no row matched the given ID.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MetricsCurve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a metrics_curve",
+        "description": "Deletes a metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_curve to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2889,31 +4655,22 @@
         },
         "responses": {
           "200": {
-            "description": "On success, an { inserted: number } summary object (not the created records). On failure, an { error: string } object is still returned with HTTP 200 (see description).\n",
+            "description": "On success, an { inserted: number } summary object (not the created records).\n",
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "inserted": {
-                          "type": "integer"
-                        }
-                      }
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "string"
-                        }
-                      }
+                  "type": "object",
+                  "properties": {
+                    "inserted": {
+                      "type": "integer"
                     }
-                  ]
+                  }
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -2955,19 +4712,7 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3027,19 +4772,69 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch an epoch by id",
+        "description": "Returns a single epoch record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching Epoch record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/Epoch"
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an epoch",
+        "description": "Deletes an epoch record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3099,19 +4894,69 @@
             }
           },
           "500": {
-            "description": "The database update failed.",
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch an ML model by id",
+        "description": "Returns a single ML model record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MlModel record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/MlModel"
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an ML model",
+        "description": "Deletes an ML model record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a model cascades to delete its training_runs (see model/ml_models.model.js).\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3153,19 +4998,129 @@
             }
           },
           "500": {
-            "description": "The database insert failed.",
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/dataset_observation/{id}": {
+      "get": {
+        "summary": "Fetch a dataset_observation by id",
+        "description": "Returns a single dataset_observation record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching DatasetObservation record.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
+                  "$ref": "#/components/schemas/DatasetObservation"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing dataset_observation",
+        "description": "Updates an existing dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset_observation"
+                ],
+                "properties": {
+                  "dataset_observation": {
+                    "$ref": "#/components/schemas/DatasetObservation"
                   }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated dataset_observation record, or null if no row matched the given ID.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DatasetObservation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a dataset_observation",
+        "description": "Deletes a dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3215,19 +5170,7 @@
             }
           },
           "500": {
-            "description": "The bulk insert failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3297,6 +5240,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result, or an empty object `{}` if the update failed (see description).\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3366,6 +5312,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result (an array whose first element is the number of affected rows)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3447,7 +5396,7 @@
       },
       "put": {
         "summary": "Update an existing user",
-        "description": "CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer calls `userRepository.updateUser(...)`, but the repository only defines the method as `updateUsers` (plural). Every call throws a TypeError, and since this route has no `.catch()`, the request currently hangs without ever sending a response instead of returning an error.\n",
+        "description": "Updates an existing user record by its user_id field.",
         "tags": [
           "Users"
         ],
@@ -3471,7 +5420,10 @@
         },
         "responses": {
           "200": {
-            "description": "Intended to return the Sequelize update result, but see description — this endpoint is currently broken and never responds."
+            "description": "Sequelize's update result (typically `[affectedCount]`), or `{}` if the update failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3573,6 +5525,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3674,6 +5629,9 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3756,6 +5714,42 @@
       }
     },
     "/task/{id}": {
+      "get": {
+        "summary": "Fetch a task by id",
+        "description": "Returns a single task record, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching task record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a task",
         "description": "Deletes a task record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
@@ -3776,11 +5770,50 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
     },
     "/observation/{id}": {
+      "get": {
+        "summary": "Fetch an observation by id",
+        "description": "Returns a single observation record by observation_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "observation_id of the observation to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching observation record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Observation"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
       "delete": {
         "summary": "Delete an observation",
         "description": "Deletes an observation record by its observation_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
@@ -3801,11 +5834,108 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
     },
     "/keyframe/{keyframe_id}": {
+      "get": {
+        "summary": "Fetch a keyframe by id",
+        "description": "Returns a single keyframe record by keyframe_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching keyframe record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Keyframe"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing keyframe",
+        "description": "Updates an existing keyframe record by keyframe_id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "keyframe"
+                ],
+                "properties": {
+                  "keyframe": {
+                    "$ref": "#/components/schemas/Keyframe"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated keyframe record, or null if no keyframe matched the given id.\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Keyframe"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a keyframe",
         "description": "Deletes a keyframe record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
@@ -3826,6 +5956,9 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
@@ -3833,7 +5966,7 @@
     "/user/{id}": {
       "delete": {
         "summary": "Delete a user",
-        "description": "CRITICAL — THIS ENDPOINT IS CURRENTLY BROKEN: the service layer calls `userRepository.deleteUsers(...)` (plural), but the repository only defines the method as `deleteUser` (singular). Every call throws a TypeError, and since this route has no `.catch()`, the request currently hangs without ever sending a response instead of returning an error.\n",
+        "description": "Deletes a user record by user_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
         "tags": [
           "Users"
         ],
@@ -3850,12 +5983,51 @@
         ],
         "responses": {
           "200": {
-            "description": "Intended to return the number of rows destroyed, but see description — this endpoint is currently broken and never responds."
+            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
     },
     "/project/{id}": {
+      "get": {
+        "summary": "Fetch a project by id",
+        "description": "Returns a single project record by project_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "project_id of the project to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching project record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
       "delete": {
         "summary": "Delete a project",
         "description": "Deletes a project record by id.",
@@ -3871,31 +6043,6 @@
               "type": "integer"
             },
             "description": "ID of the project to delete."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The number of rows destroyed, as returned by Sequelize."
-          }
-        }
-      }
-    },
-    "/session/{id}": {
-      "delete": {
-        "summary": "Delete a session",
-        "description": "Deletes a session record by id.",
-        "tags": [
-          "Sessions"
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            },
-            "description": "ID of the session to delete."
           }
         ],
         "responses": {

@@ -160,6 +160,55 @@ class DatasetRepository {
 
 
     /**
+     * Update an existing dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetId - ID of the dataset to update.
+     * @param {Object} newData - Dataset fields to update.
+     * @returns {Promise<Object|null>} The updated Dataset record, or null if
+     * no row matched `datasetId` (logged as a warning rather than treated
+     * as an error). A database failure is logged and re-thrown, so the
+     * returned promise rejects rather than resolving to an error value.
+     */
+    async updateDataset(datasetId, newData) {
+        try {
+            const [rowsUpdated, [updatedDataset]] = await this.db.datasets.update(
+                newData,
+                { where: { id: datasetId }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                console.warn(`[WARN] No dataset found with id=${datasetId}`);
+                return null;
+            }
+
+            return updatedDataset;
+        } catch (err) {
+            console.error(`Error in updateDataset(${datasetId}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetId - ID of the dataset to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteDataset(datasetId) {
+        try {
+            const rowsDeleted = await this.db.datasets.destroy({ where: { id: datasetId } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteDataset(${datasetId}):`, err);
+            throw err;
+        }
+    }
+
+    /**
      * Inserts a new record into the dataset_observations table.
      *
      * Parameters:
@@ -242,6 +291,74 @@ class DatasetRepository {
     }
 
 
+
+    /**
+     * Fetch a single dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to fetch.
+     * @returns {Promise<Object|null>} The matching DatasetObservation
+     * record, or null if not found. A database failure is logged and
+     * re-thrown, so the returned promise rejects rather than resolving to
+     * a fallback value.
+     */
+    async getDatasetObservationById(id) {
+        try {
+            const record = await this.db.dataset_observations.findByPk(id);
+            return record || null;
+        } catch (err) {
+            console.error(`Error in getDatasetObservationById(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Update an existing dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to update.
+     * @param {Object} newData - DatasetObservation fields to update.
+     * @returns {Promise<Object|null>} The updated DatasetObservation
+     * record, or null if no row matched `id`. A database failure is
+     * logged and re-thrown, so the returned promise rejects rather than
+     * resolving to an error value.
+     */
+    async updateDatasetObservation(id, newData) {
+        try {
+            const [rowsUpdated, [updatedRecord]] = await this.db.dataset_observations.update(
+                newData,
+                { where: { id }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                return null;
+            }
+
+            return updatedRecord;
+        } catch (err) {
+            console.error(`Error in updateDatasetObservation(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteDatasetObservation(id) {
+        try {
+            const rowsDeleted = await this.db.dataset_observations.destroy({ where: { id } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteDatasetObservation(${id}):`, err);
+            throw err;
+        }
+    }
 
     /**
      * Fetch every ML model record.
@@ -351,6 +468,44 @@ class DatasetRepository {
 
 
     /**
+     * Fetch a single ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to fetch.
+     * @returns {Promise<Object|null>} The matching MlModel record, or null
+     * if not found. A database failure is logged and re-thrown, so the
+     * returned promise rejects rather than resolving to a fallback value.
+     */
+    async getModelById(mlID) {
+        try {
+            const model = await this.db.ml_models.findByPk(mlID);
+            return model || null;
+        } catch (err) {
+            console.error(`Error in getModelById(${mlID}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete an ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteModel(mlID) {
+        try {
+            const rowsDeleted = await this.db.ml_models.destroy({ where: { id: mlID } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteModel(${mlID}):`, err);
+            throw err;
+        }
+    }
+
+    /**
      * Insert a new training run record.
      *
      * Defaults `created_at`/`updated_at` to the current time when not
@@ -433,6 +588,49 @@ class DatasetRepository {
     }
 
 
+
+    /**
+     * Fetch a single training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to fetch.
+     * @returns {Promise<Object|null>} The matching TrainingRun record, or
+     * null if not found. A database failure is logged and re-thrown, so
+     * the returned promise rejects rather than resolving to a fallback
+     * value.
+     */
+    async getTrainingRunById(runID) {
+        try {
+            const run = await this.db.training_runs.findByPk(runID);
+            return run || null;
+        } catch (err) {
+            console.error(`Error in getTrainingRunById(${runID}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a training run record by ID.
+     *
+     * Deleting a training run cascades to delete its epochs,
+     * metrics_summary, hyperparameters, and artifacts (see
+     * model/training_runs.model.js).
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteTrainingRun(runID) {
+        try {
+            const rowsDeleted = await this.db.training_runs.destroy({ where: { id: runID } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteTrainingRun(${runID}):`, err);
+            throw err;
+        }
+    }
 
     /**
      * Insert a new epoch record for a training run.
@@ -518,6 +716,44 @@ class DatasetRepository {
 
 
     /**
+     * Fetch a single epoch record by ID.
+     *
+     * @async
+     * @param {number|string} epochID - ID of the epoch to fetch.
+     * @returns {Promise<Object|null>} The matching Epoch record, or null if
+     * not found. A database failure is logged and re-thrown, so the
+     * returned promise rejects rather than resolving to a fallback value.
+     */
+    async getEpochById(epochID) {
+        try {
+            const epoch = await this.db.epochs.findByPk(epochID);
+            return epoch || null;
+        } catch (err) {
+            console.error(`Error in getEpochById(${epochID}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete an epoch record by ID.
+     *
+     * @async
+     * @param {number|string} epochID - ID of the epoch to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteEpoch(epochID) {
+        try {
+            const rowsDeleted = await this.db.epochs.destroy({ where: { id: epochID } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteEpoch(${epochID}):`, err);
+            throw err;
+        }
+    }
+
+    /**
      * Insert a new metrics_summary record for a training run and dataset
      * split.
      *
@@ -546,6 +782,77 @@ class DatasetRepository {
             return summary;
         } catch (err) {
             console.error("Error in createMetricsSummary():", err);
+            throw err;
+        }
+    }
+
+    /**
+     * Fetch a single metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to fetch.
+     * @returns {Promise<Object|null>} The matching MetricsSummary record,
+     * or null if not found. A database failure is logged and re-thrown,
+     * so the returned promise rejects rather than resolving to a fallback
+     * value.
+     */
+    async getMetricsSummaryById(id) {
+        try {
+            const summary = await this.db.metrics_summary.findByPk(id);
+            return summary || null;
+        } catch (err) {
+            console.error(`Error in getMetricsSummaryById(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Update an existing metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to update.
+     * @param {Object} newData - MetricsSummary fields to update.
+     * @returns {Promise<Object|null>} The updated MetricsSummary record,
+     * or null if no row matched `id`. A database failure is logged and
+     * re-thrown, so the returned promise rejects rather than resolving to
+     * an error value.
+     */
+    async updateMetricsSummary(id, newData) {
+        try {
+            const [rowsUpdated, [updatedSummary]] = await this.db.metrics_summary.update(
+                newData,
+                { where: { id }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                return null;
+            }
+
+            return updatedSummary;
+        } catch (err) {
+            console.error(`Error in updateMetricsSummary(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a metrics_summary record by ID.
+     *
+     * Deleting a metrics_summary cascades to delete its metrics_curves
+     * (see model/metrics_summary.model.js).
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteMetricsSummary(id) {
+        try {
+            const rowsDeleted = await this.db.metrics_summary.destroy({ where: { id } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteMetricsSummary(${id}):`, err);
             throw err;
         }
     }
@@ -583,26 +890,89 @@ class DatasetRepository {
         }
     }
 
+    /**
+     * Fetch a single metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to fetch.
+     * @returns {Promise<Object|null>} The matching MetricsCurve record, or
+     * null if not found. A database failure is logged and re-thrown, so
+     * the returned promise rejects rather than resolving to a fallback
+     * value.
+     */
+    async getMetricsCurveById(id) {
+        try {
+            const curve = await this.db.metrics_curves.findByPk(id);
+            return curve || null;
+        } catch (err) {
+            console.error(`Error in getMetricsCurveById(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Update an existing metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to update.
+     * @param {Object} newData - MetricsCurve fields to update.
+     * @returns {Promise<Object|null>} The updated MetricsCurve record, or
+     * null if no row matched `id`. A database failure is logged and
+     * re-thrown, so the returned promise rejects rather than resolving to
+     * an error value.
+     */
+    async updateMetricsCurve(id, newData) {
+        try {
+            const [rowsUpdated, [updatedCurve]] = await this.db.metrics_curves.update(
+                newData,
+                { where: { id }, returning: true }
+            );
+
+            if (rowsUpdated === 0) {
+                return null;
+            }
+
+            return updatedCurve;
+        } catch (err) {
+            console.error(`Error in updateMetricsCurve(${id}):`, err);
+            throw err;
+        }
+    }
+
+    /**
+     * Delete a metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1). A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to a fallback value.
+     */
+    async deleteMetricsCurve(id) {
+        try {
+            const rowsDeleted = await this.db.metrics_curves.destroy({ where: { id } });
+            return rowsDeleted;
+        } catch (err) {
+            console.error(`Error in deleteMetricsCurve(${id}):`, err);
+            throw err;
+        }
+    }
+
 
     /**
      * Bulk-insert metrics_curve records.
      *
-     * Unlike every other create/bulk method in this file (all of which
-     * re-throw on a database failure), this method swallows the error and
-     * resolves to an `{ error: string }` object instead. It also differs
-     * from `bulkCreateDatasetObservations()` in its success shape: it
+    * This method differs from `bulkCreateDatasetObservations()` in its
+    * success shape: it
      * returns a summary `{ inserted: number }` object rather than the
      * created records themselves, so callers cannot inspect the inserted
      * rows from the return value alone.
      *
      * @async
      * @param {Array<Object>} records - Array of MetricsCurve fields to insert, one object per row.
-     * @returns {Promise<Object>} `{ inserted: number }` on success, or
-     * `{ error: string }` if the bulk insert failed. A failed insert
-     * resolves rather than rejecting, so callers must check for an
-     * `error` property; the `/api/metrics_curves/bulk` route in server.js
-     * has no `.catch()` handler, so this is the only way a caller of that
-     * route can detect a failure — the HTTP status is still 200.
+    * @returns {Promise<Object>} `{ inserted: number }` on success.
+    * Rejects on database failure so callers can use centralized API
+    * error handling.
      */
     // repositories/metricsCurvesRepository.js
     async bulkCreateMetricsCurves(records) {
@@ -611,7 +981,7 @@ class DatasetRepository {
             return { inserted: records.length };
         } catch (err) {
             console.error("Error in bulkCreateMetricsCurves:", err);
-            return { error: err.message };
+            throw err;
         }
     }
 

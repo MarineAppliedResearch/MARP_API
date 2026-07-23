@@ -1,11 +1,40 @@
+/**
+ * Creates the eleven tables backing MARP's machine-learning pipeline in
+ * dependency order: `species`, `datasets`, `ml_models`, `training_runs`,
+ * `epochs`, `metrics_summary`, `metrics_curves`, `model_species`,
+ * `artifacts`, `hyperparameters`, and `dataset_observations`.
+ *
+ * `species` and `datasets` are standalone; every other table hangs off
+ * `ml_models` and `training_runs` via foreign keys, which is why they are
+ * created in this order and torn down in the reverse order in `down`.
+ * Column-level `comment` strings on each field (visible in `psql \d+`)
+ * describe individual fields in detail; see the corresponding Sequelize
+ * models under `model/` (`species.model.js`, `datasets.model.js`,
+ * `ml_models.model.js`, etc.) for the matching OpenAPI schemas.
+ *
+ * @fileoverview Migration that creates the ML-pipeline table set.
+ * @author Isaac Travers
+ * @module migrations/create-ml-models-tables
+ */
+
 'use strict';
 
-/** @type {import('sequelize-cli').Migration} */
+/** @type {Object} */
 module.exports = {
+  /**
+   * Applies this migration by creating all eleven ML-pipeline tables and
+   * their indexes inside a single transaction.
+   *
+   * @async
+   * @param {Object} queryInterface - Sequelize QueryInterface used to run schema changes.
+   * @param {Object} Sequelize - Sequelize library, exposing data types used in column definitions.
+   * @returns {Promise<void>} Resolves once every table and index has been created.
+   * @throws {Error} Re-throws after rolling back if any table or index creation fails.
+   */
   async up(queryInterface, Sequelize) {
     const transaction = await queryInterface.sequelize.transaction();
     try {
-      
+
 
     // 1. species
 
@@ -1268,11 +1297,21 @@ module.exports = {
     }
   },
 
+  /**
+   * Reverts this migration by dropping all eleven ML-pipeline tables in
+   * reverse dependency order (dependents before the tables they
+   * reference).
+   *
+   * @async
+   * @param {Object} queryInterface - Sequelize QueryInterface used to run schema changes.
+   * @returns {Promise<void>} Resolves once every table has been dropped.
+   * @throws {Error} Re-throws after rolling back if any drop fails.
+   */
   async down(queryInterface) {
     const transaction = await queryInterface.sequelize.transaction();
     try {
-      
-      // Here's where you drop tables
+
+      // Drop tables in reverse dependency order
       await queryInterface.dropTable('dataset_observations', { transaction });
       await queryInterface.dropTable('hyperparameters', { transaction });
       await queryInterface.dropTable('artifacts', { transaction });

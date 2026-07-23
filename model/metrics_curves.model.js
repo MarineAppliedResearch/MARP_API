@@ -44,6 +44,11 @@ const { Model } = require('sequelize');
  *           type: integer
  *           nullable: true
  *           description: Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.
+ *         species:
+ *           allOf:
+ *             - $ref: '#/components/schemas/Species'
+ *           nullable: true
+ *           description: Optional associated species record when this curve point is scoped to one species.
  *         confidence_threshold:
  *           type: number
  *           format: float
@@ -117,6 +122,14 @@ module.exports = (sequelize, DataTypes) => {
         as: 'metrics_summary',
         foreignKey: 'metrics_summary_id',
         onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+
+      // A curve point may optionally describe one specific species.
+      this.belongsTo(models.species, {
+        as: 'species',
+        foreignKey: 'species_id',
+        onDelete: 'SET NULL',
         onUpdate: 'CASCADE',
       });
     }

@@ -54,16 +54,29 @@ class KeyframeService {
     }
 
     /**
-     * Update an existing keyframe record.
+     * Fetch a single keyframe record by its keyframe_id.
      *
      * @async
-     * @param {Object} keyframe - Keyframe fields to update.
-     * @returns {Promise<Object>} Always resolves to an empty object; the
-     * underlying repository method is currently a no-op (its update logic
-     * is commented out).
+     * @param {number|string} keyframeId - keyframe_id of the keyframe to fetch.
+     * @returns {Promise<Object|null>} The matching keyframe record, or null
+     * if not found. Rejects if the underlying query fails.
      */
-    async updateKeyframe(keyframe) {
-        return await keyframeRepository.updateKeyframe(keyframe);
+    async getKeyframeById(keyframeId) {
+        return await keyframeRepository.getKeyframeById(keyframeId);
+    }
+
+    /**
+     * Update an existing keyframe record by id.
+     *
+     * @async
+     * @param {number|string} keyframeId - keyframe_id of the keyframe to update.
+     * @param {Object} newData - Keyframe fields to update.
+     * @returns {Promise<Object|null>} The updated keyframe record, or null
+     * if no row matched the given id. Rejects on a database failure rather
+     * than resolving to an error value.
+     */
+    async updateKeyframe(keyframeId, newData) {
+        return await keyframeRepository.updateKeyframe(keyframeId, newData);
     }
 
     /**

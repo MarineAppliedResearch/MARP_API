@@ -1,433 +1,870 @@
-# MARP API
-
-Marine Analysis and Reporting Platform (MARP) backend and static frontend workspace.
-
-MARP connects ecological data, expert interpretation, video workflows, machine-learning support, processing pipelines, and reporting into one platform.
+# Marine Analysis and Reporting Platform
 
 <p align="center">
-	<img src="frontend/shared/assets/images/marp-logo.png" alt="MARP Logo" width="420" />
+  <strong>MARP</strong> is a self-hosted platform for ecological data, expert interpretation, video workflows, machine-learning assistance, processing pipelines, and reporting.
 </p>
 
 <p align="center">
-	<img src="frontend/shared/assets/images/hero-diver.webp" alt="MARP Hero" width="860" />
+  <img alt="Project status" src="https://img.shields.io/badge/status-internal%20production%20%7C%20active%20development-0b7285">
+  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-runtime-339933?logo=nodedotjs&logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white">
+  <img alt="Express" src="https://img.shields.io/badge/Express-API-000000?logo=express&logoColor=white">
+  <img alt="Sequelize" src="https://img.shields.io/badge/Sequelize-ORM-52B0E7?logo=sequelize&logoColor=white">
+  <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-a7e735">
 </p>
 
-<p align="center">
-	<img src="frontend/shared/assets/images/marp-mark.png" alt="MARP Mark" width="72" />
-</p>
 
-## 🌊 Platform Snapshot
+
+<table width="100%">
+  <tr>
+    <td align="center" bgcolor="#03101f">
+      <br>
+      <img src="frontend/shared/assets/images/marp-logo.png" alt="MARP logo" width="430">
+      <br><br>
+    </td>
+  </tr>
+</table>
+
+> **From observation to understanding.**  
+> MARP connects ecological observations, expert judgment, video, data processing, machine learning, and reporting through one shared platform.
+
+MARP is currently an internal production platform under active development. The long-term goal is a system-wide API and application ecosystem that organizations can host for their own ecological data workflows.
+
+---
+
+## Open source
+
+MARP source code and documentation are released under the [Apache License 2.0](LICENSE).
+
+- Individuals and organizations may use, study, modify, host, fork, and redistribute MARP subject to the license.
+- Commercial, nonprofit, academic, government, and personal use are all permitted.
+- Contributions are encouraged but are not required.
+- The open-source model is intended to support high adoption and long-term technical continuity.
+- Organizations are expected to host and configure their own deployments.
+
+Related documents:
+
+- [Apache License 2.0](LICENSE)
+- [Contributing to MARP](CONTRIBUTING.md)
+- [Project governance](GOVERNANCE.md)
+
+### License scope
+
+The Apache License 2.0 applies to:
+
+- MARP source code
+- MARP project documentation
+
+The following are **not** automatically licensed under Apache 2.0:
+
+- MARP logos
+- official MARP branding
+- ecological datasets
+- survey data
+- video and imagery
+- model weights
+- third-party assets
+- partner-owned content
+- confidential or restricted materials
+
+Unless explicitly stated otherwise, these materials remain subject to their own ownership, permissions, or license terms.
+
+### Branding
+
+The MARP logo and official branding are excluded from the Apache 2.0 software license. Use of official MARP branding requires written permission. Truthful descriptive statements such as "Built with MARP" or "Based on MARP" are permitted when they do not imply endorsement, certification, or official status. Independent forks must not present themselves as official MARP releases without authorization.
+
+---
+
+## Contents
+
+- [Open source](#open-source)
+- [Why MARP](#why-marp)
+- [Platform workflow](#platform-workflow)
+- [What this repository contains](#what-this-repository-contains)
+- [Architecture](#architecture)
+- [Frontend applications](#frontend-applications)
+- [Routes](#routes)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Database migrations and seeds](#database-migrations-and-seeds)
+- [Documentation](#documentation)
+- [Hosting](#hosting)
+- [Contributing](#contributing)
+- [Current constraints](#current-constraints)
+- [Roadmap](#roadmap)
+- [SQL and maintenance notes](#sql-and-maintenance-notes)
+- [License](#license)
+
+---
+
+## Why MARP
+
+Ecological analysis is not one task. It is a connected workflow involving field collection, video review, expert interpretation, data cleaning, machine-learning support, reporting, and long-term stewardship.
+
+MARP brings those activities together behind a shared API, common data model, and reusable service layer.
+
+The platform is designed around a simple principle:
+
+> **Biologists lead. MARP amplifies.**
+
+Machine learning and automation reduce repetitive work, but biological interpretation, validation, and scientific judgment remain with experts.
+
+### Platform workflow
 
 | Collect | Review | Process | Assist | Deliver |
-|---|---|---|---|---|
-| Ecological data | Expert interpretation | Data processing | Machine learning | Reports and products |
+|:--|:--|:--|:--|:--|
+| Ecological observations, ROV surveys, sensors, imagery, and video | Expert interpretation, annotation, and validation | Cleaning, transformation, measurement, and analysis | Machine-learning inference, tracking, classification, and training | Reports, maps, visualizations, exports, and partner-ready data products |
 
-## 🧭 Application Imagery
+### Core platform capabilities
 
-<p>
-	<img src="frontend/shared/assets/images/app-video-annotation.webp" alt="Video Annotation" width="19%" />
-	<img src="frontend/shared/assets/images/app-mosaic-reviewer.webp" alt="Mosaic Reviewer" width="19%" />
-	<img src="frontend/shared/assets/images/app-data-processing.webp" alt="Data Processing" width="19%" />
-	<img src="frontend/shared/assets/images/app-machine-learning.webp" alt="Machine Learning" width="19%" />
-	<img src="frontend/shared/assets/images/app-reporting.webp" alt="Reporting" width="19%" />
+- **Ecological data** — projects, surveys, sessions, observations, species, and associated records
+- **Video and imagery** — source media, exact frames, keyframes, evidence, and review workflows
+- **Expert review** — biologist-led interpretation and quality assurance
+- **Data processing** — validation, transformation, spatial processing, and reproducible workflows
+- **Machine learning** — dataset generation, inference, training, model management, and distributed workers
+- **Reporting** — verified outputs, automated report generation, visualizations, and exports
+
+---
+
+## What this repository contains
+
+This repository combines the MARP API and the static frontend applications currently served by the same Node.js process.
+
+- Express API for MARP data, sessions, observations, users, projects, species, keyframes, tasks, and machine-learning dataset workflows
+- Static frontend applications served by the Node server
+- OpenAPI generation and Swagger UI for API consumers
+- Developer documentation generated with JSDoc
+- Sequelize models, migrations, and seeders for PostgreSQL
+- Reporting routes, report views, and data-product support
+- Shared frontend assets, partials, and application-specific interfaces
+
+---
+
+## Architecture
+
+MARP uses a layered backend with static frontend applications served by Express.
+
+```text
+Browser / MARP application
+            │
+            ▼
+       Express server
+            │
+   ┌────────┼─────────┐
+   │        │         │
+Frontend   API    Documentation
+ routes   routes       routes
+            │
+            ▼
+      Controllers
+            │
+            ▼
+   Services / domain logic
+            │
+            ▼
+       Repositories
+            │
+            ▼
+   Sequelize models
+            │
+            ▼
+       PostgreSQL
+```
+
+### Runtime layers
+
+1. **HTTP server** — `server.js` initializes Express, middleware, static serving, API routes, and documentation routes.
+2. **Controllers** — request handling and endpoint orchestration.
+3. **Services and repositories** — business logic and data-access boundaries.
+4. **Models** — Sequelize model registry and associations.
+5. **PostgreSQL** — primary persistence layer.
+6. **Frontend applications** — static applications served directly by Express.
+
+### Primary directories
+
+| Directory | Purpose |
+|:--|:--|
+| `controller` | HTTP-level API handlers |
+| `service` | Business and domain orchestration |
+| `repository` | Data access |
+| `model` | Sequelize models and database wiring |
+| `migrations` | Versioned schema changes |
+| `seeders` | Baseline and sample data |
+| `reporting` | Report-specific API routes |
+| `frontend` | Static MARP applications and shared assets |
+| `docs` | Generated OpenAPI and developer documentation |
+
+---
+
+## Frontend applications
+
+The frontend is organized as static applications with shared assets.
+
+```text
+frontend/
+├── apps/
+│   ├── entry/
+│   └── dashboard/
+└── shared/
+    ├── partials/
+    └── assets/
+```
+
+### Entry application
+
+`frontend/apps/entry`
+
+The public-facing MARP entry experience communicates the platform narrative:
+
+- One shared platform backed by a common API and data model
+- Workflow stages: Collect, Review, Process, Assist, Deliver
+- Capability areas: ecological data, video and imagery, expert review, processing, machine learning, and reporting
+- Responsive navigation and landing-page sections
+- Accessible prototype login dialog
+- Animated interface accents and section transitions
+
+The current login interface is an interaction prototype. It does not perform production authentication.
+
+### Dashboard application
+
+`frontend/apps/dashboard`
+
+The dashboard currently includes:
+
+- Overview page with KPI cards, charts, maps, filters, and recent-transect tables
+- User activity report at `/apps/dashboard/user-activity.html`
+- User hours report at `/apps/dashboard/user-hours.html`
+- Demo-oriented visualization scaffolding alongside production-like API calls
+
+### Shared frontend shell
+
+`frontend/shared`
+
+Shared resources include:
+
+- Header and footer partials
+- Shared CSS and JavaScript
+- Partial injection through `frontend/shared/assets/js/partials.js`
+- Shared image and icon assets
+
+---
+
+## Application concepts
+
+These interfaces show the major application categories MARP is intended to support.
+
+<p align="center">
+  <img src="frontend/shared/assets/images/app-video-annotation.webp" alt="Video Annotation Tool" width="19%">
+  <img src="frontend/shared/assets/images/app-mosaic-reviewer.webp" alt="Picture Mosaic Reviewer" width="19%">
+  <img src="frontend/shared/assets/images/app-data-processing.webp" alt="Data Processing Workspace" width="19%">
+  <img src="frontend/shared/assets/images/app-machine-learning.webp" alt="Machine Learning Dashboard" width="19%">
+  <img src="frontend/shared/assets/images/app-reporting.webp" alt="Automated Report Generation" width="19%">
 </p>
 
-## 🧱 What This Repository Contains
+| Application | Purpose |
+|:--|:--|
+| **Video Annotation Tool** | Frame-accurate ecological annotation with expert and machine-learning-assisted review |
+| **Picture Mosaic Reviewer** | Rapid high-volume review of detections and imagery |
+| **Data Processing Workspace** | Cleaning, validation, transformation, visualization, and reproducible processing |
+| **Machine Learning Dashboard** | Models, jobs, inference, training, workers, metrics, and operational visibility |
+| **Automated Report Generation** | Expert-reviewed reports and data products assembled from verified MARP data |
 
-- Express API for MARP data, sessions, observations, users, projects, species, keyframes, tasks, and ML dataset workflows.
-- Static frontend applications served by the same Node server.
-- OpenAPI generation and Swagger UI for API consumers.
-- Developer documentation generated with JSDoc.
-- Sequelize models, migrations, and seeders for PostgreSQL.
+---
 
-## 🎛️ Frontend Context
+## Routes
 
-The frontend is organized as static apps with shared shell assets:
+### Frontend routes
 
-- frontend/apps/entry: Public-facing MARP landing and entry experience.
-- frontend/apps/dashboard: Dashboard prototypes and reporting views.
-- frontend/shared: Shared header/footer partials and shared CSS/JS.
+| Route | Purpose |
+|:--|:--|
+| `/` | Serves `frontend/apps/entry/index.html` |
+| `/apps/:appName` | Serves `frontend/apps/:appName/index.html` when present |
+| `/apps/*` | Static assets under `frontend/apps` |
+| `/shared/*` | Shared assets and partials |
+| `/assets/*` | Compatibility alias to `frontend/shared/assets` |
 
-The entry experience communicates the current MARP product narrative:
+### Compatibility redirects
 
-- One shared platform hub with Shared API + Data Model.
-- Workflow stages: Collect, Review, Process, Assist, Deliver.
-- Capability pillars: ecological data, video/imagery, expert review, processing, machine learning, reporting.
-- Prototype login UI exists for interaction design and accessibility, but it does not perform production authentication yet.
+| Legacy route | Current route |
+|:--|:--|
+| `/dashboard1.html` | `/apps/dashboard/` |
+| `/userActivity.html` | `/apps/dashboard/user-activity.html` |
+| `/userHours.html` | `/apps/dashboard/user-hours.html` |
 
-## 🗺️ Runtime Route Map
+### Documentation routes
 
-Frontend routes:
+| Route | Purpose |
+|:--|:--|
+| `/api-docs` | Swagger UI |
+| `/api/openapi.json` | Generated OpenAPI JSON |
+| `/openapi.json` | Compatibility route for generated OpenAPI JSON |
+| `/developer-docs` | Generated JSDoc developer documentation |
 
-- / -> serves frontend/apps/entry/index.html
-- /apps/:appName -> serves frontend/apps/:appName/index.html when present
-- /apps/* -> static assets under frontend/apps
-- /shared/* -> shared assets and partials
-- /assets/* -> compatibility alias to frontend/shared/assets
+### API namespace
 
-Frontend compatibility redirects:
+All backend endpoints are served under:
 
-- /dashboard1.html -> /apps/dashboard/
-- /userActivity.html -> /apps/dashboard/user-activity.html
-- /userHours.html -> /apps/dashboard/user-hours.html
+```text
+/api/*
+```
 
-Documentation routes:
+Unknown API routes should return a JSON `404`. Unknown non-API routes should return the normal application `404`.
 
-- /api-docs -> Swagger UI
-- /api/openapi.json and /openapi.json -> generated OpenAPI JSON
-- /developer-docs -> generated internal developer docs
+---
 
-API base path:
+## Getting started
 
-- /api/*
+### Prerequisites
 
-## 🧩 Frontend Applications Included
-
-Entry app:
-
-- Public MARP landing page with platform overview, workflow narrative, capability map, and product/application concepts.
-- Responsive navigation, section reveal effects, and accessible modal login interactions.
-
-Dashboard app:
-
-- Dashboard overview page with KPI cards, charts, map view, filters, and recent-transect table (demo-oriented UI scaffolding).
-- User activity report at /apps/dashboard/user-activity.html using /api/dashboardData.
-- User hours report at /apps/dashboard/user-hours.html using /api/getProjectTimeByDateAndUser.
-
-Shared shell:
-
-- Shared header/footer loaded via data-include and frontend/shared/assets/js/partials.js.
-
-## 🏗️ Architecture Overview
-
-1. HTTP server: server.js initializes Express, middleware, static serving, API routes, and docs routes.
-2. Controllers: request handling and endpoint orchestration.
-3. Services and repositories: business and data-access layers.
-4. Models: Sequelize model registry and associations.
-5. PostgreSQL: primary persistence layer.
-6. Frontend static apps: served directly by Express.
-
-## 🚀 Quick Start
-
-Prerequisites:
-
-- Node.js and npm
+- Node.js
+- npm
 - PostgreSQL
-- Environment variables configured (typically via .env)
+- A configured environment file
 
-Install:
+### Install dependencies
 
-1. npm install
+```bash
+npm install
+```
 
-Run in development:
+### Start development mode
 
-1. npm run dev
+```bash
+npm run dev
+```
 
-Run in production mode:
+### Start normally
 
-1. npm start
+```bash
+npm start
+```
 
-Optional process manager:
+The server uses `PORT` when provided and otherwise falls back to port `3000`.
 
-1. pm2 start server.js
+After startup, the main local routes are typically:
 
-Default port behavior:
+```text
+http://localhost:3000/
+http://localhost:3000/api-docs
+http://localhost:3000/developer-docs
+```
 
-- Uses PORT if set.
-- Falls back to 3000 when PORT is not set.
+---
 
-## 🗃️ Database Migrations and Seeds
+## Configuration
 
-Run all migrations:
+Keep local credentials in `.env` and never commit that file.
 
-1. npx sequelize-cli db:migrate
+A typical development configuration uses standard database variables such as:
 
-Run a specific migration:
+```dotenv
+NODE_ENV=development
+PORT=3000
 
-1. npx sequelize-cli db:migrate --name 20241111192533-create-keyframes-table.js
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=mare_development
+DB_USER=mare_user
+DB_PASS=replace-with-a-local-password
+DB_DIALECT=postgres
+```
 
-Undo all migrations:
+Additional variables may be required by optional integrations or deployment environments. Confirm the exact names against the project configuration modules before deploying.
 
-1. npx sequelize-cli db:migrate:undo:all
+Recommended repository files:
 
-Undo one migration:
+```text
+.env          Local secrets; ignored by Git
+.env.example  Safe variable names and example values
+```
 
-1. npx sequelize-cli db:migrate:undo --name 20241111192533-create-keyframes-table.js
+Do not place production passwords, API keys, session secrets, or external-service credentials in the README.
 
-Create a migration:
+---
 
-1. npx sequelize-cli migration:create --name create-keyframes-table
+## Database migrations and seeds
 
-Generate a seed file:
+MARP uses Sequelize CLI for schema migrations and seed data.
 
-1. npx sequelize-cli seed:generate --name seed_observation_pobsid
+### Run all migrations
 
-Run all seeds:
+```bash
+npx sequelize-cli db:migrate
+```
 
-1. npx sequelize-cli db:seed:all
+### Run a specific migration
 
-Run one seed:
+```bash
+npx sequelize-cli db:migrate --name 20241111192533-create-keyframes-table.js
+```
 
-1. npx sequelize-cli db:seed --seed 20231106192725-seed_observation_pobsid
+### Undo all migrations
 
-Undo recent seed:
+```bash
+npx sequelize-cli db:migrate:undo:all
+```
 
-1. npx sequelize-cli db:seed:undo
+### Undo one migration
 
-## 📘 Documentation Build Commands
+```bash
+npx sequelize-cli db:migrate:undo --name 20241111192533-create-keyframes-table.js
+```
 
-Build OpenAPI only:
+### Create a migration
 
-1. npm run docs:api:build
+```bash
+npx sequelize-cli migration:create --name create-keyframes-table
+```
 
-Build developer docs only:
+### Generate a seed file
 
-1. npm run docs:dev:build
+```bash
+npx sequelize-cli seed:generate --name seed_observation_pobsid
+```
 
-Build both:
+### Run all seeds
 
-1. npm run docs:build
+```bash
+npx sequelize-cli db:seed:all
+```
 
-## ⚠️ Notes and Current Constraints
+### Run one seed
 
-- Frontend entry login is prototype-only and intentionally not connected to authentication services.
-- Dashboard pages mix production-like endpoints and demo visualization scaffolding.
-- Legacy HTML pages under html are compatibility-era artifacts; active served frontend is under frontend/apps.
+```bash
+npx sequelize-cli db:seed --seed 20231106192725-seed_observation_pobsid
+```
 
-## 📂 Primary Directories
+### Undo the most recent seed
 
-- controller: HTTP-level API handlers
-- service: business/domain orchestration
-- repository: data access
-- model: Sequelize models and DB wiring
-- migrations: schema evolution
-- seeders: baseline/sample data
-- reporting: report-specific API routes
-- frontend: static MARP web applications and shared assets
-- docs: generated OpenAPI and developer documentation
+```bash
+npx sequelize-cli db:seed:undo
+```
 
-## 🛠️ Suggested Next Improvements
+---
 
-1. Add environment variable documentation with required keys and example values.
-2. Promote dashboard prototype pages to a formally versioned frontend package with tests.
-3. Move report SQL view definitions into versioned migration scripts and dedicated docs.
+## Documentation
 
-## 🧾 Errata (Working SQL Notes)
+MARP generates API documentation from source annotations and developer documentation from JSDoc.
 
-This section is intentionally retained for ad hoc SQL notes, query drafts, and table references.
+Canonical API documentation sources:
 
-### Related Tables
+1. Runtime Swagger UI: `/api-docs`
+2. Runtime OpenAPI JSON: `/api/openapi.json`
+3. Generated artifact: `docs/openapi.generated.json`
 
-- observations
-- sessions
-- projects
-- users
-- keyframes
+Legacy Swagger 2 artifacts have been removed from this repository to avoid contract drift.
 
-### Report/View Tables
+### Build OpenAPI documentation
 
-- observations_report: observations, sessions, projects, users
-- habitat_report: observations, sessions, projects, users
-- MarineDebris_report: observations, sessions, projects, users
-- Substrate60Second_report: observations, sessions, projects, users
+```bash
+npm run docs:api:build
+```
 
-### View: observations_report
+### Infer a response schema from real JSON samples
+
+For custom report endpoints that return unique joined shapes, infer a draft OpenAPI schema from one or more response samples:
+
+```bash
+npm run docs:schema:infer -- --name VideoSummaryReport --out docs/tmp/video-summary.schema.json samples/video-summary-1.json samples/video-summary-2.json
+```
+
+This workflow avoids route refactors and keeps contracts route-specific. See `docs/openapi-response-schema-workflow.md` for the full process.
+
+### Build developer documentation
+
+```bash
+npm run docs:dev:build
+```
+
+### Build all documentation
+
+```bash
+npm run docs:build
+```
+
+When changing an endpoint:
+
+1. Keep the OpenAPI annotation consistent with actual behavior.
+2. Update JSDoc where the public or developer contract changes.
+3. Ensure non-2xx responses use the standardized error contract (`ErrorEnvelope`) rather than ad hoc error shapes.
+4. Add or update automated tests for the endpoint change (new endpoints must ship with tests).
+5. Rebuild the documentation.
+6. Verify `/api-docs`, `/api/openapi.json`, and `/developer-docs`.
+
+### Schema field note template
+
+For every OpenAPI schema property, include notes that make the field usable without reading backend code.
+
+Required property metadata:
+
+1. `description` - What the field means in domain terms.
+2. `example` - A realistic sample value.
+3. `nullable` - Present when `null` is allowed.
+4. `format` - Present when type semantics matter (`date-time`, `float`, etc.).
+
+Use additional constraints when known:
+
+- `enum` for controlled values.
+- `minimum` and `maximum` for numeric ranges.
+- `readOnly` for response-only fields (for example IDs generated by the database).
+
+If a field has context-dependent semantics, document that caveat directly in the field description rather than leaving it implicit.
+
+### Error contract
+
+MARP uses a standardized API error envelope for non-2xx responses.
+
+```json
+{
+  "error": {
+    "code": "RESOURCE_NOT_FOUND",
+    "message": "Requested session was not found.",
+    "status": 404,
+    "requestId": "req_mdxv3u_4f7k2q",
+    "details": [
+      { "field": "session_id", "issue": "must be an integer" }
+    ]
+  }
+}
+```
+
+See `docs/error-contract.md` for the full contract, code catalog, and migration guidance.
+
+---
+
+## Hosting
+
+MARP is intended to be self-hosted by organizations that operate their own ecological data infrastructure.
+
+A deployment requires:
+
+- A supported Node.js runtime
+- PostgreSQL
+- Environment variables and credentials
+- Persistent database storage
+- Access to any configured media, processing, or external services
+
+The application can be started directly with Node.js or managed by a process manager.
+
+```bash
+npm start
+```
+
+Optional PM2 example:
+
+```bash
+pm2 start server.js --name marp
+```
+
+A reverse proxy may be used when required by an organization's networking, TLS, or routing environment, but it is not a MARP application requirement.
+
+Production deployments should also define:
+
+- Backup and recovery procedures
+- Log retention
+- Database migration procedures
+- Credential rotation
+- Network-access controls
+- Monitoring and restart behavior
+- HTTPS termination where the application is exposed beyond a trusted network
+
+---
+
+## Contributing
+
+MARP development should remain modular, documented, and reviewable.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete contribution process, and [GOVERNANCE.md](GOVERNANCE.md) for project roles and technical decision-making.
+
+### Recommended workflow
+
+1. Create a focused branch from the appropriate development branch.
+2. Keep each change limited to one feature, fix, or architectural concern.
+3. Follow the existing controller, service, repository, and model boundaries.
+4. Use relative `/api/...` paths from frontend code.
+5. Do not introduce hard-coded hosts, credentials, or machine-specific paths.
+6. Update OpenAPI and JSDoc when behavior changes.
+7. Add or update migrations for schema changes.
+8. Verify affected frontend routes and API endpoints.
+9. Run available tests, linting, and documentation builds.
+10. Open a pull request describing what changed, why it changed, how it was verified, and any migration or deployment impact.
+
+### Code expectations
+
+- Prefer clear, maintainable code over clever shortcuts.
+- Comment architectural intent and non-obvious behavior.
+- Keep request handling, business logic, and persistence concerns separated.
+- Preserve API compatibility unless a versioned change is intentional.
+- Do not commit `.env`, credentials, generated secrets, database exports, or private ecological data.
+
+### Documentation expectations
+
+A change is not complete when the code works but the public contract is inaccurate. Update the relevant documentation whenever routes, schemas, setup, or operational behavior changes.
+
+---
+
+## Current constraints
+
+- The entry-page login is prototype-only and is intentionally not connected to authentication services.
+- Dashboard pages currently mix production-like endpoints with demo visualization scaffolding.
+- Legacy HTML pages under `html` are compatibility-era artifacts.
+- The active served frontend is under `frontend/apps`.
+- MARP is an internal production platform that is still being expanded into a system-wide API and application platform.
+- There is not yet one public, centrally hosted MARP service; organizations are expected to host their own deployments.
+
+---
+
+## Roadmap
+
+Current high-value improvements include:
+
+1. Add a definitive `.env.example` with every required variable.
+2. Add environment-specific deployment documentation without coupling the project to one server stack.
+3. Promote dashboard prototypes into formally versioned frontend applications with tests.
+4. Move report SQL view definitions into versioned migration scripts.
+5. Expand automated testing for API contracts, data access, and frontend behavior.
+6. Connect the entry-page login interface to production authentication and authorization.
+7. Continue evolving MARP into a stable shared API for applications, workers, reports, and partner integrations.
+
+---
+
+## SQL and maintenance notes
+
+The following material is retained as a working reference for report views, maintenance operations, and training-data queries. These notes should gradually be converted into versioned migrations, scripts, or dedicated technical documentation.
+
+<details>
+<summary><strong>Related tables and report views</strong></summary>
+
+### Related tables
+
+- `observations`
+- `sessions`
+- `projects`
+- `users`
+- `keyframes`
+
+### Report and view tables
+
+- `observations_report`: observations, sessions, projects, users
+- `habitat_report`: observations, sessions, projects, users
+- `MarineDebris_report`: observations, sessions, projects, users
+- `Substrate60Second_report`: observations, sessions, projects, users
+
+</details>
+
+<details>
+<summary><strong>View: observations_report</strong></summary>
 
 ```sql
 SELECT
-	projects.name AS "Project Name",
-	users.name AS "Processor Name",
-	sessions.type AS "Session Type",
-	observations.observation_id,
-	observations."obsID",
-	sessions.session_id AS "Session Number",
-	observations."taxReview",
-	observations.taxserial,
-	observations.comname,
-	observations.count,
-	observations.coarsesize,
-	observations.sex,
-	observations.tc,
-	observations.etc,
-	sessions.dive,
-	sessions.line,
-	sessions."lineId",
-	observations.note,
-	observations."updatedAt",
-	observations.video_source,
-	observations."videoLocation",
-	observations."mediaPosition",
-	observations."actualPosition"
+    projects.name AS "Project Name",
+    users.name AS "Processor Name",
+    sessions.type AS "Session Type",
+    observations.observation_id,
+    observations."obsID",
+    sessions.session_id AS "Session Number",
+    observations."taxReview",
+    observations.taxserial,
+    observations.comname,
+    observations.count,
+    observations.coarsesize,
+    observations.sex,
+    observations.tc,
+    observations.etc,
+    sessions.dive,
+    sessions.line,
+    sessions."lineId",
+    observations.note,
+    observations."updatedAt",
+    observations.video_source,
+    observations."videoLocation",
+    observations."mediaPosition",
+    observations."actualPosition"
 FROM observations, projects, sessions, users
 WHERE sessions.user_id = users.user_id
-	AND sessions.session_id = observations.session_id
-	AND sessions.project_id = projects.project_id
+    AND sessions.session_id = observations.session_id
+    AND sessions.project_id = projects.project_id
 ORDER BY sessions.session_id, observations."obsID";
 ```
 
-### View: habitat_report
+</details>
+
+<details>
+<summary><strong>View: habitat_report</strong></summary>
 
 ```sql
 DROP VIEW habitat_report;
 
 CREATE VIEW habitat_report AS
 SELECT
-	projects.name AS "Project Name",
-	users.name AS "Processor Name",
-	sessions.type AS "Session Type",
-	observations.observation_id,
-	observations."obsID",
-	observations."PobsID",
-	sessions.session_id AS "Session Number",
-	observations.comname AS "Substrate",
-	observations.coarsesize AS "PCTcover",
-	observations.tc,
-	observations.etc,
-	sessions.dive,
-	sessions.line,
-	sessions."lineId",
-	observations.note,
-	observations."updatedAt",
-	observations.video_source,
-	observations."videoLocation",
-	observations."mediaPosition",
-	observations."actualPosition"
+    projects.name AS "Project Name",
+    users.name AS "Processor Name",
+    sessions.type AS "Session Type",
+    observations.observation_id,
+    observations."obsID",
+    observations."PobsID",
+    sessions.session_id AS "Session Number",
+    observations.comname AS "Substrate",
+    observations.coarsesize AS "PCTcover",
+    observations.tc,
+    observations.etc,
+    sessions.dive,
+    sessions.line,
+    sessions."lineId",
+    observations.note,
+    observations."updatedAt",
+    observations.video_source,
+    observations."videoLocation",
+    observations."mediaPosition",
+    observations."actualPosition"
 FROM observations, projects, sessions, users
 WHERE sessions.user_id = users.user_id
-	AND sessions.session_id = observations.session_id
-	AND sessions.project_id = projects.project_id
-	AND sessions.type::text = 'Habitat'::text
+    AND sessions.session_id = observations.session_id
+    AND sessions.project_id = projects.project_id
+    AND sessions.type::text = 'Habitat'::text
 ORDER BY sessions.session_id, observations."obsID";
 ```
 
-### View: MarineDebris_report
+</details>
+
+<details>
+<summary><strong>View: MarineDebris_report</strong></summary>
 
 ```sql
 DROP VIEW MarineDebris_report;
 
 CREATE VIEW MarineDebris_report AS
 SELECT
-	projects.name AS "Project Name",
-	users.name AS "Processor Name",
-	sessions.type AS "Session Type",
-	observations.observation_id,
-	observations."obsID",
-	observations."PobsID",
-	sessions.session_id AS "Session Number",
-	observations.tc,
-	observations.etc,
-	observations.frame,
-	observations.comname,
-	observations.taxserial,
-	observations.count,
-	observations."taxReview",
-	observations.note
+    projects.name AS "Project Name",
+    users.name AS "Processor Name",
+    sessions.type AS "Session Type",
+    observations.observation_id,
+    observations."obsID",
+    observations."PobsID",
+    sessions.session_id AS "Session Number",
+    observations.tc,
+    observations.etc,
+    observations.frame,
+    observations.comname,
+    observations.taxserial,
+    observations.count,
+    observations."taxReview",
+    observations.note
 FROM observations, projects, sessions, users
 WHERE sessions.user_id = users.user_id
-	AND sessions.session_id = observations.session_id
-	AND sessions.project_id = projects.project_id
-	AND sessions.type::text = 'MarineDebris'::text
+    AND sessions.session_id = observations.session_id
+    AND sessions.project_id = projects.project_id
+    AND sessions.type::text = 'MarineDebris'::text
 ORDER BY sessions.session_id, observations."obsID";
 ```
 
-### View: Substrate60Second_report
+</details>
+
+<details>
+<summary><strong>View: Substrate60Second_report</strong></summary>
 
 ```sql
 DROP VIEW Substrate60Second_report;
 
 CREATE VIEW Substrate60Second_report AS
 SELECT
-	projects.name AS "Project Name",
-	users.name AS "Processor Name",
-	sessions.type AS "Session Type",
-	observations.observation_id,
-	observations."obsID",
-	observations."PobsID",
-	sessions.session_id AS "Session Number",
-	observations.tc,
-	observations.comname AS "Substrate",
-	observations.substrate_bedrock AS "Bedrock",
-	observations.substrate_megaclast AS "Megaclast",
-	observations.substrate_cobble AS "Cobble",
-	observations.substrate_boulder AS "Boulder",
-	observations.substrate_pebble AS "Pebble",
-	observations.substrate_granule AS "Granule",
-	observations.substrate_sand AS "Sand",
-	observations.substrate_mud AS "Mud",
-	observations.substrate_coral_reef AS "Coral Reef",
-	observations.substrate_coral_rubble AS "Coral Rubble",
-	observations.substrate_shell_hash AS "Shell Hash",
-	observations.substrate_shell_rubble AS "Shell Rubble",
-	observations.substrate_algal AS "Algal",
-	sessions.dive,
-	sessions.line,
-	sessions."lineId",
-	observations.note,
-	observations."updatedAt",
-	observations.video_source,
-	observations."videoLocation",
-	observations."mediaPosition",
-	observations."actualPosition"
+    projects.name AS "Project Name",
+    users.name AS "Processor Name",
+    sessions.type AS "Session Type",
+    observations.observation_id,
+    observations."obsID",
+    observations."PobsID",
+    sessions.session_id AS "Session Number",
+    observations.tc,
+    observations.comname AS "Substrate",
+    observations.substrate_bedrock AS "Bedrock",
+    observations.substrate_megaclast AS "Megaclast",
+    observations.substrate_cobble AS "Cobble",
+    observations.substrate_boulder AS "Boulder",
+    observations.substrate_pebble AS "Pebble",
+    observations.substrate_granule AS "Granule",
+    observations.substrate_sand AS "Sand",
+    observations.substrate_mud AS "Mud",
+    observations.substrate_coral_reef AS "Coral Reef",
+    observations.substrate_coral_rubble AS "Coral Rubble",
+    observations.substrate_shell_hash AS "Shell Hash",
+    observations.substrate_shell_rubble AS "Shell Rubble",
+    observations.substrate_algal AS "Algal",
+    sessions.dive,
+    sessions.line,
+    sessions."lineId",
+    observations.note,
+    observations."updatedAt",
+    observations.video_source,
+    observations."videoLocation",
+    observations."mediaPosition",
+    observations."actualPosition"
 FROM observations, projects, sessions, users
 WHERE sessions.user_id = users.user_id
-	AND sessions.session_id = observations.session_id
-	AND sessions.project_id = projects.project_id
-	AND sessions.type::text = 'Substrate60Second'::text
+    AND sessions.session_id = observations.session_id
+    AND sessions.project_id = projects.project_id
+    AND sessions.type::text = 'Substrate60Second'::text
 ORDER BY sessions.session_id, observations."obsID";
 ```
 
-### View Maintenance: observations_report (drop/create)
+</details>
+
+<details>
+<summary><strong>View maintenance: observations_report</strong></summary>
 
 ```sql
 DROP VIEW public.observations_report;
 
 CREATE OR REPLACE VIEW public.observations_report AS
 SELECT
-	projects.name AS "Project Name",
-	users.name AS "Processor Name",
-	sessions.type AS "Session Type",
-	observations.observation_id,
-	observations."obsID",
-	observations."PobsID",
-	sessions.session_id AS "Session Number",
-	observations."taxReview",
-	observations.taxserial,
-	observations.comname,
-	observations.count,
-	observations.coarsesize,
-	observations.sex,
-	observations.tc,
-	observations.etc,
-	sessions.dive,
-	sessions.line,
-	sessions."lineId",
-	observations.note,
-	observations."updatedAt",
-	observations.video_source,
-	observations."videoLocation",
-	observations."mediaPosition",
-	observations."actualPosition"
+    projects.name AS "Project Name",
+    users.name AS "Processor Name",
+    sessions.type AS "Session Type",
+    observations.observation_id,
+    observations."obsID",
+    observations."PobsID",
+    sessions.session_id AS "Session Number",
+    observations."taxReview",
+    observations.taxserial,
+    observations.comname,
+    observations.count,
+    observations.coarsesize,
+    observations.sex,
+    observations.tc,
+    observations.etc,
+    sessions.dive,
+    sessions.line,
+    sessions."lineId",
+    observations.note,
+    observations."updatedAt",
+    observations.video_source,
+    observations."videoLocation",
+    observations."mediaPosition",
+    observations."actualPosition"
 FROM observations, projects, sessions, users
 WHERE sessions.user_id = users.user_id
-	AND sessions.session_id = observations.session_id
-	AND sessions.project_id = projects.project_id
+    AND sessions.session_id = observations.session_id
+    AND sessions.project_id = projects.project_id
 ORDER BY sessions.session_id, observations."obsID";
 ```
 
-### Query: Rebuild PobsID per project order
+</details>
+
+<details>
+<summary><strong>Query: rebuild PobsID per project order</strong></summary>
 
 ```sql
 WITH ranked_observations AS (
-	SELECT
-		observations.observation_id,
-		sessions.project_id,
-		ROW_NUMBER() OVER (
-			PARTITION BY sessions.project_id
-			ORDER BY sessions.project_id, sessions.session_id, observations.observation_id
-		) AS row_num
-	FROM observations
-	JOIN sessions ON observations.session_id = sessions.session_id
-	JOIN projects ON sessions.project_id = projects.project_id
+    SELECT
+        observations.observation_id,
+        sessions.project_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY sessions.project_id
+            ORDER BY sessions.project_id, sessions.session_id, observations.observation_id
+        ) AS row_num
+    FROM observations
+    JOIN sessions ON observations.session_id = sessions.session_id
+    JOIN projects ON sessions.project_id = projects.project_id
 )
 UPDATE observations
 SET "PobsID" = ranked_observations.row_num
@@ -435,22 +872,25 @@ FROM ranked_observations
 WHERE observations.observation_id = ranked_observations.observation_id;
 ```
 
-### Query: Training-data species frame summary
+</details>
+
+<details>
+<summary><strong>Query: training-data species frame summary</strong></summary>
 
 ```sql
 SELECT
-	o."comname",
-	COUNT(DISTINCT o."observation_id") AS observation_count,
-	COUNT(DISTINCT o."video_source") AS video_count,
-	SUM(k_end."framenum" - k_start."framenum") AS total_frames,
-	AVG(k_end."framenum" - k_start."framenum") AS avg_frames_per_observation
+    o."comname",
+    COUNT(DISTINCT o."observation_id") AS observation_count,
+    COUNT(DISTINCT o."video_source") AS video_count,
+    SUM(k_end."framenum" - k_start."framenum") AS total_frames,
+    AVG(k_end."framenum" - k_start."framenum") AS avg_frames_per_observation
 FROM public."observations" AS o
 JOIN public."keyframes" AS k_start
-	ON k_start."observation_id" = o."observation_id"
-	AND k_start."type" = 'start'
+    ON k_start."observation_id" = o."observation_id"
+    AND k_start."type" = 'start'
 JOIN public."keyframes" AS k_end
-	ON k_end."observation_id" = o."observation_id"
-	AND k_end."type" = 'end'
+    ON k_end."observation_id" = o."observation_id"
+    AND k_end."type" = 'end'
 WHERE o."note" = 'R'
 GROUP BY o."comname"
 ORDER BY total_frames DESC;
@@ -480,12 +920,45 @@ UI sea star               | 2                 | 1           | 104          | 52.
 Thorny sea star           | 1                 | 1           | 35           | 35.0000000000000000
 ```
 
-### Scratch Notes
+</details>
 
-- psql connection pattern used previously: psql -d mare_development -U mare_user
-- PobsID reset sequence used previously:
+<details>
+<summary><strong>Scratch notes</strong></summary>
+
+Previous PostgreSQL connection pattern:
+
+```bash
+psql -d mare_development -U mare_user
+```
+
+Previous `PobsID` reset sequence:
 
 ```sql
 ALTER TABLE observations DROP COLUMN "PobsID";
 ALTER TABLE observations ADD COLUMN "PobsID" integer;
 ```
+
+</details>
+
+---
+
+## License
+
+MARP source code and project documentation are licensed under the
+[Apache License, Version 2.0](LICENSE).
+
+Copyright 2026 Marine Applied Research and Exploration.
+
+The MARP name, logo, official branding, ecological data, video, imagery,
+model weights, partner materials, and third-party assets are not automatically
+included under the Apache 2.0 license.
+
+---
+
+<p align="center">
+  <img src="frontend/shared/assets/images/marp-mark.png" alt="MARP mark" width="72">
+</p>
+
+<p align="center">
+  <strong>Explore. Inform. Protect.</strong>
+</p>

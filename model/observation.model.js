@@ -7,7 +7,8 @@
  * Observation records connect project, session, user, taxonomy, video,
  * annotation, habitat, review, and machine-learning information. Related
  * keyframes describe frame-specific annotation data belonging to an
- * observation.
+ * observation, and curated machine-learning datasets can include
+ * observations through the dataset_observations join table.
  *
  * The OpenAPI schemas in this file describe observation objects returned by
  * API endpoints. The base `Observation` schema contains fields stored directly
@@ -248,6 +249,27 @@ const { Model } = require('sequelize');
  *               description: Keyframes associated with the observation.
  *               items:
  *                 $ref: '#/components/schemas/Keyframe'
+ *
+ *     ObservationWithSessionAndKeyframes:
+ *       allOf:
+ *         - $ref: '#/components/schemas/ObservationWithKeyframes'
+ *         - type: object
+ *           description: Observation response containing both its owning session and associated keyframes.
+ *           properties:
+ *             session:
+ *               $ref: '#/components/schemas/Session'
+ *
+ *     ObservationWithDatasets:
+ *       allOf:
+ *         - $ref: '#/components/schemas/Observation'
+ *         - type: object
+ *           description: Observation response containing associated curated datasets.
+ *           properties:
+ *             datasets:
+ *               type: array
+ *               description: Datasets that include this observation through the dataset_observations join table.
+ *               items:
+ *                 $ref: '#/components/schemas/Dataset'
  */
 
 
@@ -313,6 +335,15 @@ module.exports = (sequelize, DataTypes) => {
 
                 // Delete dependent keyframes when their observation is deleted.
                 onDelete: 'CASCADE',
+            });
+
+            // Curated datasets can include many observations, and one
+            // observation can appear in many datasets.
+            this.belongsToMany(models.datasets, {
+                through: models.dataset_observations,
+                as: 'datasets',
+                foreignKey: 'observation_id',
+                otherKey: 'dataset_id',
             });
         }
     }

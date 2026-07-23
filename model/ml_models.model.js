@@ -34,18 +34,24 @@ const { Model } = require('sequelize');
  *         id:
  *           type: integer
  *           example: 7
+ *           readOnly: true
  *           description: Unique numeric identifier for this ML model record.
  *         name:
  *           type: string
  *           example: yolov8-marine-fish-2025
+ *           minLength: 1
+ *           maxLength: 255
  *           description: Human-readable name of the model (e.g., "yolov8-marine-fish-2025").
  *         parent_model_id:
  *           type: integer
  *           nullable: true
+ *           example: 3
  *           description: If this model was derived or fine-tuned from another, references that parent model's ID.
  *         model_type:
  *           type: string
  *           example: yolov8
+ *           minLength: 1
+ *           maxLength: 255
  *           description: Model architecture family (e.g., "yolov8", "resnet", "deepsort").
  *         architecture_version:
  *           type: string
@@ -55,22 +61,29 @@ const { Model } = require('sequelize');
  *         storage_path:
  *           type: string
  *           nullable: true
+ *           example: /models/yolov8-marine-fish-2025/
  *           description: Filesystem or URI path to the stored model weights and artifacts.
  *         status:
  *           type: string
+ *           enum: [draft, training, trained, archived]
  *           example: draft
  *           description: Lifecycle state of the model ("draft", "training", "trained", or "archived").
  *         notes:
  *           type: string
  *           nullable: true
+ *           example: Fine-tuned from 2025 baseline using added invertebrate labels.
  *           description: Freeform notes providing experiment details, context, or remarks.
  *         created_at:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-22T15:33:10.000Z"
  *           description: Timestamp when this model entry was created.
  *         updated_at:
  *           type: string
  *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-23T09:12:01.000Z"
  *           description: Timestamp when this model record was last updated.
  */
 

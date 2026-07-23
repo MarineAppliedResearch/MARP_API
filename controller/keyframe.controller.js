@@ -57,18 +57,31 @@ class KeyframeController {
     }
 
     /**
-     * Update an existing keyframe record.
+     * Fetch a single keyframe record by its keyframe_id.
      *
      * @async
-     * @param {Object} keyframe - Keyframe fields to update.
-     * @returns {Promise<Object>} Always resolves to an empty object; the
-     * underlying repository method's update logic is commented out, so
-     * this is currently a no-op that does not touch the database. Not
-     * currently wired to any route in server.js.
+     * @param {number|string} keyframeId - keyframe_id of the keyframe to fetch, taken from `req.params.keyframe_id` by the caller in app.js.
+     * @returns {Promise<Object|null>} The matching keyframe record, or null
+     * if not found. Rejects if the underlying query fails.
      */
-    async updateKeyframe(keyframe) {
-        logger.info('Controller: updateKeyframe', keyframe);
-        return await keyframeService.updateKeyframe(keyframe);
+    async getKeyframeById(keyframeId) {
+        logger.info('Controller: getKeyframeById', keyframeId);
+        return await keyframeService.getKeyframeById(keyframeId);
+    }
+
+    /**
+     * Update an existing keyframe record by id.
+     *
+     * @async
+     * @param {number|string} keyframeId - keyframe_id of the keyframe to update, taken from `req.params.keyframe_id` by the caller in app.js.
+     * @param {Object} newData - Keyframe fields to update, taken from `req.body.keyframe` by the caller in app.js.
+     * @returns {Promise<Object|null>} The updated keyframe record, or null
+     * if no row matched the given id. Rejects on a database failure rather
+     * than resolving to an error value.
+     */
+    async updateKeyframe(keyframeId, newData) {
+        logger.info('Controller: updateKeyframe', keyframeId);
+        return await keyframeService.updateKeyframe(keyframeId, newData);
     }
 
     /**

@@ -20,8 +20,8 @@ const { Model } = require('sequelize');
  *     User:
  *       type: object
  *       description: >
- *         Individual who records or owns sessions and observations
- *         throughout MARP.
+ *         Individual identity record used to attribute sessions,
+ *         observations, and related reporting outputs throughout MARP.
  *       required:
  *         - user_id
  *         - name
@@ -29,11 +29,26 @@ const { Model } = require('sequelize');
  *         user_id:
  *           type: integer
  *           example: 12
- *           description: Unique numeric identifier for this user.
+ *           readOnly: true
+ *           description: Unique numeric identifier for this user record.
  *         name:
  *           type: string
  *           example: Jane Diver
- *           description: Unique display name for the user.
+ *           minLength: 1
+ *           maxLength: 255
+ *           description: Unique display name used by API and reporting views.
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-22T15:33:10.000Z"
+ *           description: Timestamp when this user record was created.
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-23T09:12:01.000Z"
+ *           description: Timestamp when this user record was last updated.
  */
 
 /**

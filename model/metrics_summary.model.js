@@ -47,6 +47,11 @@ const { Model } = require('sequelize');
  *           type: integer
  *           nullable: true
  *           description: Foreign key referencing the species this summary applies to. NULL means it represents an aggregate across all species.
+ *         species:
+ *           allOf:
+ *             - $ref: '#/components/schemas/Species'
+ *           nullable: true
+ *           description: Optional associated species record when this summary is scoped to one species.
  *         dataset_split:
  *           type: string
  *           enum: [train, val, test]
@@ -172,6 +177,14 @@ module.exports = (sequelize, DataTypes) => {
         as: 'training_run',
         foreignKey: 'training_run_id',
         onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+
+      // A summary may optionally describe metrics for one specific species.
+      this.belongsTo(models.species, {
+        as: 'species',
+        foreignKey: 'species_id',
+        onDelete: 'SET NULL',
         onUpdate: 'CASCADE',
       });
 

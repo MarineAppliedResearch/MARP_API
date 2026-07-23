@@ -1,16 +1,40 @@
 /**
- * add_60SecondSubstrateData.js migration
- * This is a database migrations that adds new data columns to the observations model.
- * 
- * This will add the following substrate options,
- * substrate_bedrock, substrate_megaclast, substrate_boulder, substrate_cobble, substrate_peddle, substrate_granule,
- * substrate_sand, substrate_mud, substrate_coral_reef, substrate_coral_rubble, substrate_shell_hash, substrate_shell_rubble, substrate_algal
+ * Adds thirteen nullable boolean substrate-composition columns to
+ * `observations`, one per substrate category recorded during 60-second
+ * substrate transects: `substrate_bedrock`, `substrate_megaclast`,
+ * `substrate_boulder`, `substrate_cobble`, `substrate_peddle` (a typo kept
+ * intentionally — later renamed to `substrate_pebble` by
+ * `rename_peddle_to_pebble`), `substrate_granule`, `substrate_sand`,
+ * `substrate_mud`, `substrate_coral_reef`, `substrate_coral_rubble`,
+ * `substrate_shell_hash`, `substrate_shell_rubble`, and `substrate_algal`.
+ *
+ * These back the `Substrate60Second_report` view documented in the
+ * project `README.md`.
+ *
+ * @fileoverview Migration that adds 60-second substrate columns to `observations`.
+ * @author Isaac Travers
+ * @module migrations/add-60-second-substrate-data
  */
 
 'use strict';
 
-/** @type {import('sequelize-cli').Migration} */
+/** @type {Object} */
 module.exports = {
+  /**
+   * Applies this migration by adding all thirteen substrate columns to
+   * `observations`.
+   *
+   * Note: none of the `queryInterface.addColumn` calls below are
+   * `await`ed, so the transaction can commit before the column adds have
+   * actually completed on the connection — a pre-existing bug carried
+   * over unchanged rather than fixed as part of a documentation pass.
+   *
+   * @async
+   * @param {Object} queryInterface - Sequelize QueryInterface used to run schema changes.
+   * @param {Object} Sequelize - Sequelize library, exposing data types used in column definitions.
+   * @returns {Promise<void>} Resolves once the transaction has been committed.
+   * @throws {Error} Re-throws after rolling back if any column add fails.
+   */
   async up (queryInterface, Sequelize) {
      // Use a transaction to make sure everything saves or everything reverts
      const transaction = await queryInterface.sequelize.transaction();
@@ -66,7 +90,7 @@ module.exports = {
         }
       )
 
-      // Add the substrate_peddle column
+      // Add the substrate_granule column
       queryInterface.addColumn(
         'observations',
         'substrate_granule',
@@ -76,7 +100,7 @@ module.exports = {
         }
       )
 
-      // Add the substrate_peddle column
+      // Add the substrate_sand column
       queryInterface.addColumn(
         'observations',
         'substrate_sand',
@@ -136,7 +160,7 @@ module.exports = {
         }
       )
 
-      
+
       // Add the substrate_algal column
       queryInterface.addColumn(
         'observations',
@@ -156,6 +180,16 @@ module.exports = {
     }
   },
 
+  /**
+   * Reverts this migration by dropping all thirteen substrate columns
+   * from `observations`.
+   *
+   * @async
+   * @param {Object} queryInterface - Sequelize QueryInterface used to run schema changes.
+   * @param {Object} Sequelize - Sequelize library, exposing data types used in column definitions.
+   * @returns {Promise<void>} Resolves once the transaction has been committed.
+   * @throws {Error} Re-throws after rolling back if any column drop fails.
+   */
   async down (queryInterface, Sequelize) {
      // Use a transaction to make sure everything saves or everything reverts
      const transaction = await queryInterface.sequelize.transaction();

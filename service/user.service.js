@@ -79,15 +79,12 @@ class UserService {
      *
      * @async
      * @param {Object} user - Fields to update, including `user_id` identifying which row to update.
-     * @returns {Promise<Object>} Intended to resolve with the update result.
-     * CAUTION: this method calls `userRepository.updateUser`, which does
-     * not exist on UserRepository — that class only defines the plural
-     * `updateUsers`. As written, this line throws a `TypeError`
-     * (`userRepository.updateUser is not a function`), so this promise
-     * rejects rather than resolving, and the intended update never runs.
+     * @returns {Promise<Object>} Sequelize's update result (typically
+     * `[affectedCount]`), or `{}` if the update failed. A failed update
+     * resolves rather than throwing.
      */
     async updateUser(user) {
-        return await userRepository.updateUser(user);
+        return await userRepository.updateUsers(user);
     }
 
     /**
@@ -95,15 +92,23 @@ class UserService {
      *
      * @async
      * @param {string|number} userId - Identifier of the user to delete.
-     * @returns {Promise<Object>} Intended to resolve with the deletion
-     * result. CAUTION: this method calls `userRepository.deleteUsers`,
-     * which does not exist on UserRepository — that class only defines the
-     * singular `deleteUser`. As written, this line throws a `TypeError`
-     * (`userRepository.deleteUsers is not a function`), so this promise
-     * rejects rather than resolving, and the intended delete never runs.
+     * @returns {Promise<Object>} The number of rows deleted, or `{}` if the
+     * delete failed. A failed delete resolves rather than throwing.
      */
     async deleteUser(userId) {
-        return await userRepository.deleteUsers(userId);
+        return await userRepository.deleteUser(userId);
+    }
+
+    /**
+     * Fetch a single user record by id.
+     *
+     * @async
+     * @param {number|string} userId - ID of the user to fetch.
+     * @returns {Promise<Object|null>} The matching user record, or null if
+     * not found. Rejects if the underlying query fails.
+     */
+    async getUserById(userId) {
+        return await userRepository.getUserById(userId);
     }
 
     /**

@@ -530,6 +530,29 @@ class ObservationRepository {
      * (with its keyframes, if supplied), or an empty object if the insert
      * failed.
      */
+    /**
+     * Fetch a single observation record by its observation_id.
+     *
+     * Unlike most methods on this class, a database failure here is logged
+     * and re-thrown rather than swallowed to a fallback value, so callers
+     * must catch/handle a rejected promise. A "not found" result, by
+     * contrast, resolves to `null` rather than throwing.
+     *
+     * @async
+     * @param {number|string} observationId - observation_id of the observation to fetch.
+     * @returns {Promise<Object|null>} The matching observation record, or
+     * null if not found. Rejects if the underlying query fails.
+     */
+    async getObservationById(observationId) {
+        try {
+            const observation = await this.db.observations.findByPk(observationId);
+            return observation || null;
+        } catch (err) {
+            logger.error('Error::' + err);
+            throw err;
+        }
+    }
+
     async createObservation(observation) {
         let data = {};
         let max_obs = {};

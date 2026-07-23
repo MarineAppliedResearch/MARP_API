@@ -20,8 +20,8 @@ const { Model } = require('sequelize');
  *     Project:
  *       type: object
  *       description: >
- *         Named project grouping used to organize sessions and observations
- *         recorded throughout MARP.
+ *         Named organizational unit used to group sessions and observations
+ *         for a survey effort, campaign, or reporting scope.
  *       required:
  *         - project_id
  *         - name
@@ -29,11 +29,26 @@ const { Model } = require('sequelize');
  *         project_id:
  *           type: integer
  *           example: 24
- *           description: Unique numeric identifier for this project.
+ *           readOnly: true
+ *           description: Unique numeric identifier for this project record.
  *         name:
  *           type: string
  *           example: Channel Islands 2024
- *           description: Unique display name for the project.
+ *           minLength: 1
+ *           maxLength: 255
+ *           description: Unique display name used across UI filters and API queries.
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-22T15:33:10.000Z"
+ *           description: Timestamp when this project record was created.
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *           readOnly: true
+ *           example: "2026-07-23T09:12:01.000Z"
+ *           description: Timestamp when this project record was last updated.
  */
 
 /**

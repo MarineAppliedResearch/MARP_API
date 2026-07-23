@@ -63,6 +63,33 @@ class DatasetService {
     }
 
     /**
+     * Update an existing dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetID - ID of the dataset to update.
+     * @param {Object} newData - Dataset fields to update.
+     * @returns {Promise<Object|null>} The updated Dataset record, or null if
+     * no dataset matched the given ID. Rejects on a database failure rather
+     * than resolving to an error value.
+     */
+    async updateDataset(datasetID, newData){
+        return await datasetRepository.updateDataset(datasetID, newData);
+    }
+
+    /**
+     * Delete a dataset record by ID.
+     *
+     * @async
+     * @param {number|string} datasetID - ID of the dataset to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteDataset(datasetID){
+        return await datasetRepository.deleteDataset(datasetID);
+    }
+
+    /**
      * Create a new dataset_observation join record linking a dataset to an
      * observation.
      *
@@ -87,6 +114,46 @@ class DatasetService {
      */
     async bulkCreateDatasetObservations(dataset_observation){
         return await datasetRepository.bulkCreateDatasetObservations(dataset_observation);
+    }
+
+    /**
+     * Fetch a single dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to fetch.
+     * @returns {Promise<Object|null>} The matching DatasetObservation
+     * record, or null if not found. Rejects on a database failure rather
+     * than resolving to a fallback value.
+     */
+    async getDatasetObservationById(id){
+        return await datasetRepository.getDatasetObservationById(id);
+    }
+
+    /**
+     * Update an existing dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to update.
+     * @param {Object} newData - DatasetObservation fields to update.
+     * @returns {Promise<Object|null>} The updated DatasetObservation
+     * record, or null if no row matched the given ID. Rejects on a
+     * database failure rather than resolving to an error value.
+     */
+    async updateDatasetObservation(id, newData){
+        return await datasetRepository.updateDatasetObservation(id, newData);
+    }
+
+    /**
+     * Delete a dataset_observation record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the dataset_observation to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteDatasetObservation(id){
+        return await datasetRepository.deleteDatasetObservation(id);
     }
 
     /**
@@ -128,6 +195,32 @@ class DatasetService {
     }
 
     /**
+     * Fetch a single ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to fetch.
+     * @returns {Promise<Object|null>} The matching MlModel record, or null
+     * if not found. Rejects on a database failure rather than resolving to
+     * a fallback value.
+     */
+    async getModelById(mlID){
+        return await datasetRepository.getModelById(mlID);
+    }
+
+    /**
+     * Delete an ML model record by ID.
+     *
+     * @async
+     * @param {number|string} mlID - ID of the ML model to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteModel(mlID){
+        return await datasetRepository.deleteModel(mlID);
+    }
+
+    /**
      * Create a new training run record.
      *
      * @async
@@ -151,6 +244,32 @@ class DatasetService {
      */
     async updateTrainingRun(id, training_run){
         return await datasetRepository.updateTrainingRun(id, training_run);
+    }
+
+    /**
+     * Fetch a single training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to fetch.
+     * @returns {Promise<Object|null>} The matching TrainingRun record, or
+     * null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getTrainingRunById(runID){
+        return await datasetRepository.getTrainingRunById(runID);
+    }
+
+    /**
+     * Delete a training run record by ID.
+     *
+     * @async
+     * @param {number|string} runID - ID of the training run to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteTrainingRun(runID){
+        return await datasetRepository.deleteTrainingRun(runID);
     }
 
     /**
@@ -180,6 +299,32 @@ class DatasetService {
     }
 
     /**
+     * Fetch a single epoch record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the epoch to fetch.
+     * @returns {Promise<Object|null>} The matching Epoch record, or null
+     * if not found. Rejects on a database failure rather than resolving
+     * to a fallback value.
+     */
+    async getEpochById(id){
+        return await datasetRepository.getEpochById(id);
+    }
+
+    /**
+     * Delete an epoch record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the epoch to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteEpoch(id){
+        return await datasetRepository.deleteEpoch(id);
+    }
+
+    /**
      * Create a new metrics_summary record for a training run and dataset
      * split.
      *
@@ -193,6 +338,46 @@ class DatasetService {
     }
 
     /**
+     * Fetch a single metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to fetch.
+     * @returns {Promise<Object|null>} The matching MetricsSummary record,
+     * or null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getMetricsSummaryById(id){
+        return await datasetRepository.getMetricsSummaryById(id);
+    }
+
+    /**
+     * Update an existing metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to update.
+     * @param {Object} newData - MetricsSummary fields to update.
+     * @returns {Promise<Object|null>} The updated MetricsSummary record,
+     * or null if no row matched the given ID. Rejects on a database
+     * failure rather than resolving to an error value.
+     */
+    async updateMetricsSummary(id, newData){
+        return await datasetRepository.updateMetricsSummary(id, newData);
+    }
+
+    /**
+     * Delete a metrics_summary record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_summary to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteMetricsSummary(id){
+        return await datasetRepository.deleteMetricsSummary(id);
+    }
+
+    /**
      * Create a single metrics_curve point tied to a metrics_summary record.
      *
      * @async
@@ -202,6 +387,46 @@ class DatasetService {
      */
     async createMetricsCurve(metrics_curve){
         return await datasetRepository.createMetricsCurve(metrics_curve);
+    }
+
+    /**
+     * Fetch a single metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to fetch.
+     * @returns {Promise<Object|null>} The matching MetricsCurve record, or
+     * null if not found. Rejects on a database failure rather than
+     * resolving to a fallback value.
+     */
+    async getMetricsCurveById(id){
+        return await datasetRepository.getMetricsCurveById(id);
+    }
+
+    /**
+     * Update an existing metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to update.
+     * @param {Object} newData - MetricsCurve fields to update.
+     * @returns {Promise<Object|null>} The updated MetricsCurve record, or
+     * null if no row matched the given ID. Rejects on a database failure
+     * rather than resolving to an error value.
+     */
+    async updateMetricsCurve(id, newData){
+        return await datasetRepository.updateMetricsCurve(id, newData);
+    }
+
+    /**
+     * Delete a metrics_curve record by ID.
+     *
+     * @async
+     * @param {number|string} id - ID of the metrics_curve to delete.
+     * @returns {Promise<number>} The number of rows destroyed (0 or 1).
+     * Rejects on a database failure rather than resolving to an error
+     * value.
+     */
+    async deleteMetricsCurve(id){
+        return await datasetRepository.deleteMetricsCurve(id);
     }
 
     /**
