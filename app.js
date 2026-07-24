@@ -72,15 +72,6 @@ require('dotenv').config();
 
 
 /**
- * Controller responsible for task-related API operations.
- *
- * @constant
- * @type {Object}
- */
-const taskController = require('./controller/task.controller');
-
-
-/**
  * Controller responsible for observation queries, updates, dashboard data,
  * and observation-related operations.
  *
@@ -152,6 +143,7 @@ const speciesController = require('./controller/species.controller');
  */
 const datasetController = require('./controller/dataset.controller');
 const schemaController = require('./controller/schema.controller');
+const registerTaskRoutes = require('./routes/task.routes');
 
 
 /**
@@ -323,6 +315,13 @@ const app = express();
 // Allow browser applications from other origins to access the API.
 app.use(cors());
 
+// Parse incoming JSON request bodies. Must run before any route (including
+// code-first registries like registerTaskRoutes) that reads req.body.
+app.use(bodyParser.json());
+
+// Attach or generate an API request correlation id.
+app.use(requestIdMiddleware);
+
 
 /**
  * Swagger UI middleware used to render the generated OpenAPI specification.
@@ -342,6 +341,8 @@ const swaggerUi = require('swagger-ui-express');
  * @constant
  * @type {Object}
  */
+registerTaskRoutes(app);
+
 const generatedSwaggerDocument = buildOpenApiSpec();
 
 
@@ -355,13 +356,6 @@ const customCss = fs.readFileSync(
     path.join(__dirname, 'swagger.css'),
     'utf8'
 );
-
-
-// Parse incoming JSON request bodies.
-app.use(bodyParser.json());
-
-// Attach or generate an API request correlation id.
-app.use(requestIdMiddleware);
 
 
 // Serve the interactive Swagger UI documentation site.
@@ -879,28 +873,6 @@ app.get('/api/dashboardData', asyncHandler(async (req, res) => {
  */
 app.get('/api/getProjectTimeByDateAndUser', asyncHandler(async (req, res) => {
     const data = await observationController.getProjectTimeByDateAndUser(req.query.start, req.query.end);
-    res.json(data);
-}));
-
-/**
- * @openapi
- * /tasks:
- *   get:
- *     summary: Fetch all tasks
- *     description: Returns every task row currently available in storage.
- *     tags: [Tasks]
- *     responses:
- *       200:
- *         description: Task list returned successfully.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Task'
- */
-app.get('/api/tasks', asyncHandler(async (req, res) => {
-    const data = await taskController.getTasks();
     res.json(data);
 }));
 
@@ -3185,43 +3157,6 @@ app.post('/api/dataset_observations/bulk', asyncHandler(async (req, res) => {
 
 /**
  * @openapi
- * /task:
- *   post:
- *     summary: Create a new task
- *     description: >
- *       Creates a new task record. Stamps createdate before insert.
- *       Database failures are logged and swallowed, resolving to an empty
- *       object `{}` rather than throwing or exposing error details.
- *     tags: [Tasks]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - task
- *             properties:
- *               task:
- *                 $ref: '#/components/schemas/Task'
- *     responses:
- *       200:
- *         description: >
- *           The created Task record, or an empty object `{}` if the insert
- *           failed (see description).
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Task'
- */
-app.post('/api/task', asyncHandler(async (req, res) => {
-    console.log(req.body);
-    const data = await taskController.createTask(req.body.task);
-    res.json(data);
-}));
-
-/**
- * @openapi
  * /observation:
  *   post:
  *     summary: Create a new observation
@@ -3523,43 +3458,6 @@ app.post('/api/session/createNewSession/:processorName/:projectName/:line/:dive/
     res.json(data);
 }));
 
-//PUT HERE
-
-/**
- * @openapi
- * /task:
- *   put:
- *     summary: Update an existing task
- *     description: >
- *       Updates an existing task record by its id field. Stamps
- *       updateddate before update. Database failures are logged and
- *       swallowed, resolving to an empty object `{}` rather than throwing
- *       or exposing error details.
- *     tags: [Tasks]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - task
- *             properties:
- *               task:
- *                 $ref: '#/components/schemas/Task'
- *     responses:
- *       200:
- *         description: >
- *           The Sequelize update result, or an empty object `{}` if the
- *           update failed (see description).
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
- */
-app.put('/api/task', asyncHandler(async (req, res) => {
-    const data = await taskController.updateTask(req.body.task);
-    res.json(data);
-}));
-
 /**
  * @openapi
  * /observation:
@@ -3683,80 +3581,6 @@ app.put('/api/project', asyncHandler(async (req, res) => {
  */
 app.put('/api/session', asyncHandler(async (req, res) => {
     const data = await sessionController.updateSession(req.body.session);
-    res.json(data);
-}));
-
-//DELETE HERE
-
-/**
- * @openapi
- * /task/{id}:
- *   get:
- *     summary: Fetch a task by id
- *     description: >
- *       Returns a single task record, or null if not found. Database
- *       failures reject the returned promise, so the route's .catch()
- *       responds with HTTP 500 in that case.
- *     tags: [Tasks]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID of the task to fetch.
- *     responses:
- *       200:
- *         description: The matching task record.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Task'
- *       404:
- *         $ref: '#/components/responses/NotFoundError'
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
- */
-app.get('/api/task/:id', asyncHandler(async (req, res) => {
-    const data = await taskController.getTaskById(req.params.id);
-
-    if (!data) {
-        throw new ApiError(
-            404,
-            ERROR_CODES.RESOURCE_NOT_FOUND,
-            `Task ${req.params.id} was not found.`
-        );
-    }
-
-    res.json(data);
-}));
-
-/**
- * @openapi
- * /task/{id}:
- *   delete:
- *     summary: Delete a task
- *     description: >
- *       Deletes a task record by id. Database failures are logged and
- *       swallowed, resolving to an empty object `{}` rather than throwing.
- *     tags: [Tasks]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID of the task to delete.
- *     responses:
- *       200:
- *         description: >
- *           The number of rows destroyed (as returned by Sequelize), or an
- *           empty object `{}` if the delete failed.
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
- */
-app.delete('/api/task/:id', asyncHandler(async (req, res) => {
-    const data = await taskController.deleteTask(req.params.id);
     res.json(data);
 }));
 

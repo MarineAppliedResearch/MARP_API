@@ -6,6 +6,9 @@
 
 const path = require('path');
 const swaggerJSDoc = require('swagger-jsdoc');
+const { SchemaManager, OpenApiStrategy } = require('@techntools/sequelize-to-openapi');
+const db = require('../model');
+const { getRegisteredOpenApiRoutes } = require('./openapi-route-registry');
 
 
 // PROJECT_ROOT anchors annotation paths to the repository instead of process.cwd().
@@ -21,6 +24,61 @@ const normalizeGlobPath = (filePath) => {
 
     return filePath.replace(/\\/g, '/');
 };
+
+const schemaManager = new SchemaManager();
+const openApiStrategy = new OpenApiStrategy();
+
+/**
+ * @techntools/sequelize-to-openapi requires model `jsonSchema.examples` to be
+ * an array (it throws otherwise), then copies that array verbatim into the
+ * OpenAPI `example` keyword, which is documented as a single scalar value.
+ * Left alone, every generated property ends up as `example: [value]` instead
+ * of `example: value`. This unwraps that mismatch after generation so the
+ * spec's example values match what the API actually returns.
+ */
+function unwrapArrayExamples(schema) {
+    for (const property of Object.values(schema.properties || {})) {
+        if (Array.isArray(property.example)) {
+            property.example = property.example[0];
+        }
+    }
+
+    return schema;
+}
+
+function buildGeneratedComponentSchemas() {
+    const schemas = {};
+
+    if (db.tasks) {
+        schemas.Task = unwrapArrayExamples(schemaManager.generate(db.tasks, openApiStrategy));
+        schemas.Task.description =
+            'A discrete work item tracked in MARP, including descriptive text and audit fields showing who created and last updated it.';
+
+        if (schemas.Task.properties?.id) {
+            schemas.Task.properties.id.description = 'Primary database identifier for the task.';
+        }
+
+        if (schemas.Task.properties?.createdAt) {
+            schemas.Task.properties.createdAt.description = 'Timestamp when the task record was created.';
+        }
+
+        if (schemas.Task.properties?.updatedAt) {
+            schemas.Task.properties.updatedAt.description = 'Timestamp when the task record was last updated.';
+        }
+    }
+
+    return schemas;
+}
+
+function mergeRegisteredRoutes(spec) {
+    for (const { method, path: routePath, operation } of getRegisteredOpenApiRoutes()) {
+        if (!spec.paths[routePath]) {
+            spec.paths[routePath] = {};
+        }
+
+        spec.paths[routePath][method] = operation;
+    }
+}
 
 
 /**
@@ -158,6 +216,88 @@ const buildOpenApiSpec = () => {
                             { $ref: '#/components/schemas/ErrorEnvelope' },
                         ],
                         description: 'Backward-compatible alias for the standardized error envelope.',
+                    },
+                    TaskCreateRequest: {
+                        type: 'object',
+                        required: ['task'],
+                        properties: {
+                            task: {
+                                type: 'object',
+                                required: ['name', 'createdby'],
+                                additionalProperties: true,
+                                properties: {
+                                    name: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Review kelp transect annotations',
+                                        description: 'Human-readable title of the task.',
+                                    },
+                                    description: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'Validate species labels for line A before report export.',
+                                        description: 'Optional freeform details describing scope or next actions.',
+                                    },
+                                    createdby: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'i.travers',
+                                        description: 'Identifier or username of the person who created the task.',
+                                    },
+                                    updatedby: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'j.diver',
+                                        description: 'Identifier or username of the person who last modified the task.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    TaskUpdateRequest: {
+                        type: 'object',
+                        required: ['task'],
+                        properties: {
+                            task: {
+                                type: 'object',
+                                required: ['id'],
+                                additionalProperties: true,
+                                properties: {
+                                    id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the task to update.',
+                                    },
+                                    name: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Review kelp transect annotations',
+                                        description: 'Human-readable title of the task.',
+                                    },
+                                    description: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'Validate species labels for line A before report export.',
+                                        description: 'Optional freeform details describing scope or next actions.',
+                                    },
+                                    createdby: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'i.travers',
+                                        description: 'Identifier or username of the person who created the task.',
+                                    },
+                                    updatedby: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'j.diver',
+                                        description: 'Identifier or username of the person who last modified the task.',
+                                    },
+                                },
+                            },
+                        },
                     },
 
                     // The schemas below document custom report/aggregate routes whose
@@ -518,7 +658,18 @@ const buildOpenApiSpec = () => {
         apis: annotationFiles,
     };
 
-    return swaggerJSDoc(options);
+    const spec = swaggerJSDoc(options);
+
+    spec.components = spec.components || {};
+    spec.components.schemas = {
+        ...(spec.components.schemas || {}),
+        ...buildGeneratedComponentSchemas(),
+    };
+
+    spec.paths = spec.paths || {};
+    mergeRegisteredRoutes(spec);
+
+    return spec;
 };
 
 

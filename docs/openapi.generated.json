@@ -106,6 +106,97 @@
         ],
         "description": "Backward-compatible alias for the standardized error envelope."
       },
+      "TaskCreateRequest": {
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "object",
+            "required": [
+              "name",
+              "createdby"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "example": "Review kelp transect annotations",
+                "description": "Human-readable title of the task."
+              },
+              "description": {
+                "type": "string",
+                "nullable": true,
+                "example": "Validate species labels for line A before report export.",
+                "description": "Optional freeform details describing scope or next actions."
+              },
+              "createdby": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "example": "i.travers",
+                "description": "Identifier or username of the person who created the task."
+              },
+              "updatedby": {
+                "type": "string",
+                "nullable": true,
+                "example": "j.diver",
+                "description": "Identifier or username of the person who last modified the task."
+              }
+            }
+          }
+        }
+      },
+      "TaskUpdateRequest": {
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "description": "Primary database identifier for the task to update."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "example": "Review kelp transect annotations",
+                "description": "Human-readable title of the task."
+              },
+              "description": {
+                "type": "string",
+                "nullable": true,
+                "example": "Validate species labels for line A before report export.",
+                "description": "Optional freeform details describing scope or next actions."
+              },
+              "createdby": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "example": "i.travers",
+                "description": "Identifier or username of the person who created the task."
+              },
+              "updatedby": {
+                "type": "string",
+                "nullable": true,
+                "example": "j.diver",
+                "description": "Identifier or username of the person who last modified the task."
+              }
+            }
+          }
+        }
+      },
       "VideoSummaryReport": {
         "type": "array",
         "description": "One aggregated row per distinct video_source/videoLocation combination within a project, produced by observationRepository.getVideoSummariesByProject and served by GET /getVideoSummaries/{project_id}.",
@@ -2074,56 +2165,6 @@
           }
         }
       },
-      "Task": {
-        "type": "object",
-        "description": "A discrete work item tracked in MARP, including descriptive text and basic audit fields showing who created and last updated it.\n",
-        "required": [
-          "name",
-          "createdby"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 255,
-            "example": "Review kelp transect annotations",
-            "description": "Human-readable title of the task."
-          },
-          "description": {
-            "type": "string",
-            "nullable": true,
-            "example": "Validate species labels for line A before report export.",
-            "description": "Optional freeform details describing scope or next actions."
-          },
-          "createdate": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "example": "2026-07-23T14:05:00.000Z",
-            "description": "Timestamp when this task was first recorded."
-          },
-          "updateddate": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true,
-            "example": "2026-07-23T15:12:41.000Z",
-            "description": "Timestamp when this task was last updated."
-          },
-          "createdby": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 255,
-            "example": "i.travers",
-            "description": "Identifier or username of the person who created the task."
-          },
-          "updatedby": {
-            "type": "string",
-            "nullable": true,
-            "example": "j.diver",
-            "description": "Identifier or username of the person who last modified the task."
-          }
-        }
-      },
       "TrainingRun": {
         "type": "object",
         "description": "A single training or retraining event of an ML model, linking the model, the dataset used, and the resulting epochs, metrics, and artifacts produced during that run.\n",
@@ -2271,6 +2312,70 @@
             "description": "Timestamp when this user record was last updated."
           }
         }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Primary database identifier for the task."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable title of the task.",
+            "example": "Review kelp transect annotations"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional freeform details describing scope or next actions.",
+            "example": "Validate species labels for line A before report export."
+          },
+          "createdate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when this task was first recorded.",
+            "example": "2026-07-23T14:05:00.000Z"
+          },
+          "updateddate": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp when this task was last updated.",
+            "example": "2026-07-23T15:12:41.000Z"
+          },
+          "createdby": {
+            "type": "string",
+            "description": "Identifier or username of the person who created the task.",
+            "example": "i.travers"
+          },
+          "updatedby": {
+            "type": "string",
+            "nullable": true,
+            "description": "Identifier or username of the person who last modified the task.",
+            "example": "j.diver"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the task record was created."
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the task record was last updated."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "createdby",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "A discrete work item tracked in MARP, including descriptive text and audit fields showing who created and last updated it."
       }
     },
     "responses": {
@@ -2793,30 +2898,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectTimeByDateAndUser"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/tasks": {
-      "get": {
-        "summary": "Fetch all tasks",
-        "description": "Returns every task row currently available in storage.",
-        "tags": [
-          "Tasks"
-        ],
-        "responses": {
-          "200": {
-            "description": "Task list returned successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Task"
-                  }
                 }
               }
             }
@@ -5175,78 +5256,6 @@
         }
       }
     },
-    "/task": {
-      "post": {
-        "summary": "Create a new task",
-        "description": "Creates a new task record. Stamps createdate before insert. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details.\n",
-        "tags": [
-          "Tasks"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "task"
-                ],
-                "properties": {
-                  "task": {
-                    "$ref": "#/components/schemas/Task"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The created Task record, or an empty object `{}` if the insert failed (see description).\n",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Task"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Update an existing task",
-        "description": "Updates an existing task record by its id field. Stamps updateddate before update. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details.\n",
-        "tags": [
-          "Tasks"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "task"
-                ],
-                "properties": {
-                  "task": {
-                    "$ref": "#/components/schemas/Task"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The Sequelize update result, or an empty object `{}` if the update failed (see description).\n"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
     "/observation": {
       "post": {
         "summary": "Create a new observation",
@@ -5713,70 +5722,6 @@
         }
       }
     },
-    "/task/{id}": {
-      "get": {
-        "summary": "Fetch a task by id",
-        "description": "Returns a single task record, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.\n",
-        "tags": [
-          "Tasks"
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            },
-            "description": "ID of the task to fetch."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The matching task record.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Task"
-                }
-              }
-            }
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFoundError"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Delete a task",
-        "description": "Deletes a task record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.\n",
-        "tags": [
-          "Tasks"
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            },
-            "description": "ID of the task to delete."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed.\n"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalServerError"
-          }
-        }
-      }
-    },
     "/observation/{id}": {
       "get": {
         "summary": "Fetch an observation by id",
@@ -6048,6 +5993,181 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed, as returned by Sequelize."
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "summary": "Fetch all tasks",
+        "description": "Returns every task row currently available in storage.",
+        "tags": [
+          "Tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "Task list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/task": {
+      "post": {
+        "summary": "Create a new task",
+        "description": "Creates a new task record and returns the inserted row.",
+        "tags": [
+          "Tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Task record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing task",
+        "description": "Updates an existing task record by its id field.",
+        "tags": [
+          "Tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result, or an empty object if the update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/task/{id}": {
+      "get": {
+        "summary": "Fetch a task by id",
+        "description": "Returns a single task record, or null if not found.",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching task record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a task",
+        "description": "Deletes a task record by id.",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }

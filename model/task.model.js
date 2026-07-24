@@ -12,55 +12,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     Task:
- *       type: object
- *       description: >
- *         A discrete work item tracked in MARP, including descriptive text
- *         and basic audit fields showing who created and last updated it.
- *       required:
- *         - name
- *         - createdby
- *       properties:
- *         name:
- *           type: string
- *           minLength: 1
- *           maxLength: 255
- *           example: Review kelp transect annotations
- *           description: Human-readable title of the task.
- *         description:
- *           type: string
- *           nullable: true
- *           example: Validate species labels for line A before report export.
- *           description: Optional freeform details describing scope or next actions.
- *         createdate:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           example: "2026-07-23T14:05:00.000Z"
- *           description: Timestamp when this task was first recorded.
- *         updateddate:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           example: "2026-07-23T15:12:41.000Z"
- *           description: Timestamp when this task was last updated.
- *         createdby:
- *           type: string
- *           minLength: 1
- *           maxLength: 255
- *           example: i.travers
- *           description: Identifier or username of the person who created the task.
- *         updatedby:
- *           type: string
- *           nullable: true
- *           example: j.diver
- *           description: Identifier or username of the person who last modified the task.
- */
-
-/**
  * Create and initialize the tasks Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -81,37 +32,64 @@ module.exports = (sequelize, DataTypes) => {
      */
     class Tasks extends Model {}
 
-    Tasks.init({
-        // Model attributes are defined here
-        name: {
-          type: DataTypes.STRING,
-          allowNull: false
+    Tasks.init(
+        {
+            // Model attributes are defined here
+            name: {
+                type: DataTypes.STRING,
+                allowNull: false,
+                jsonSchema: {
+                    description: 'Human-readable title of the task.',
+                    examples: ['Review kelp transect annotations'],
+                },
+            },
+            description: {
+                type: DataTypes.STRING,
+                jsonSchema: {
+                    description: 'Optional freeform details describing scope or next actions.',
+                    examples: ['Validate species labels for line A before report export.'],
+                },
+                // allowNull defaults to true
+            },
+            createdate: {
+                type: DataTypes.DATE,
+                jsonSchema: {
+                    description: 'Timestamp when this task was first recorded.',
+                    examples: ['2026-07-23T14:05:00.000Z'],
+                },
+                // allowNull defaults to true
+            },
+            updateddate: {
+                type: DataTypes.DATE,
+                jsonSchema: {
+                    description: 'Timestamp when this task was last updated.',
+                    examples: ['2026-07-23T15:12:41.000Z'],
+                },
+                // allowNull defaults to true
+            },
+            createdby: {
+                type: DataTypes.STRING,
+                allowNull: false,
+                jsonSchema: {
+                    description: 'Identifier or username of the person who created the task.',
+                    examples: ['i.travers'],
+                },
+            },
+            updatedby: {
+                type: DataTypes.STRING,
+                jsonSchema: {
+                    description: 'Identifier or username of the person who last modified the task.',
+                    examples: ['j.diver'],
+                },
+                // allowNull defaults to true
+            },
         },
-        description: {
-          type: DataTypes.STRING
-          // allowNull defaults to true
-        },
-        createdate: {
-          type: DataTypes.DATE
-          // allowNull defaults to true
-        },
-        updateddate: {
-            type: DataTypes.DATE
-            // allowNull defaults to true
-        },
-        createdby: {
-            type: DataTypes.STRING,
-            allowNull: false
-        },
-        updatedby: {
-            type: DataTypes.STRING
-            // allowNull defaults to true
-        },
-      }, {
-        // Other model options go here
-        sequelize,           // We need to pass the connection instance
-        modelName: 'tasks'   // We need to choose the model name
-      });
+        {
+            // Other model options go here
+            sequelize, // We need to pass the connection instance
+            modelName: 'tasks', // We need to choose the model name
+        }
+    );
 
       return Tasks;
 }
