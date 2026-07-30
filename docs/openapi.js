@@ -280,6 +280,11 @@ const buildOpenApiSpec = () => {
                     name: 'Schema',
                     description:
                         'Database schema introspection endpoints for tables, views, columns, constraints, indexes, and relationships in the public schema.'
+                },
+                {
+                    name: 'Jellyfin',
+                    description:
+                        'V2 endpoints proxying the Jellyfin media server: library/folder browsing, search-by-name, and playback resolution. Jellyfin itself is never exposed to API consumers -- MARP holds the Jellyfin credentials and session, and the stream endpoint returns a short-lived redirect rather than requiring callers to know Jellyfin exists.'
                 }
             ],
 
@@ -1345,6 +1350,61 @@ const buildOpenApiSpec = () => {
                             on_delete: { type: 'string', example: 'CASCADE', description: 'ON DELETE action.' },
                         },
                     },
+                    JellyfinItem: {
+                        type: 'object',
+                        description:
+                            'A Jellyfin library, folder, or video item, normalized down to the fields MARP exposes. DRAFT schema: field examples are real (captured against the live Jellyfin dev server), but this has not yet gone through the full sample-capture-and-infer workflow (docs/openapi-response-schema-workflow.md) used for other custom-shape endpoints. Jellyfin also reports a raw server filesystem `Path` for each item; it is intentionally omitted here pending a decision on whether it is safe to expose to API consumers.',
+                        properties: {
+                            id: {
+                                type: 'string',
+                                example: '0da5ea1af7f4f116c19ebaa95ba82fc6',
+                                description: 'Stable Jellyfin item identifier.',
+                            },
+                            name: {
+                                type: 'string',
+                                example: '20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP',
+                                description: 'Human-readable item name.',
+                            },
+                            type: {
+                                type: 'string',
+                                example: 'Video',
+                                description: 'Jellyfin item type, e.g. CollectionFolder (a top-level library), Folder, or Video.',
+                            },
+                            isFolder: {
+                                type: 'boolean',
+                                example: false,
+                                description: 'Whether this item is a folder-like container browsable via GET /api/v2/jellyfin/items/{id}/children.',
+                            },
+                            mediaType: {
+                                type: 'string',
+                                example: 'Video',
+                                description: 'Jellyfin media type classification (often "Unknown" for folders/libraries).',
+                            },
+                            runtimeTicks: {
+                                type: 'integer',
+                                nullable: true,
+                                example: 795729999,
+                                description: 'Runtime in Jellyfin ticks (100-nanosecond units). Null for folders and other non-playable items.',
+                            },
+                            childCount: {
+                                type: 'integer',
+                                nullable: true,
+                                example: 9,
+                                description: 'Number of child items. Present only on folder-like items; null for playable video items.',
+                            },
+                        },
+                    },
+                    JellyfinItemList: {
+                        type: 'object',
+                        description: 'A list of Jellyfin items returned by browsing, searching, or listing libraries.',
+                        properties: {
+                            items: {
+                                type: 'array',
+                                items: { $ref: '#/components/schemas/JellyfinItem' },
+                                description: 'Matching or child items, in the order Jellyfin returned them.',
+                            },
+                        },
+                    },
                 },
                 responses: {
                     BadRequestError: {
@@ -1409,6 +1469,16 @@ const buildOpenApiSpec = () => {
                     },
                     InternalServerError: {
                         description: 'Unexpected server-side failure.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    UpstreamError: {
+                        description: 'A dependency this endpoint relies on (e.g. the Jellyfin media server) was unreachable or returned a failure.',
                         content: {
                             'application/json': {
                                 schema: {

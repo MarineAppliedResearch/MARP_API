@@ -94,6 +94,12 @@ const registerSessionRoutes = require('./routes/session.routes');
 const registerSpeciesRoutes = require('./routes/species.routes');
 const registerDatasetRoutes = require('./routes/dataset.routes');
 
+// Jellyfin (V2) has no Sequelize model or DB repository, so it has no
+// dependency on session.controller.js/observation.controller.js -- none of
+// the circular-require ordering constraints above apply to it, and its
+// require position here is unconstrained.
+const registerJellyfinRoutes = require('./routes/jellyfin.routes');
+
 
 /**
  * Builds the OpenAPI specification from annotations in the API source files.
@@ -300,6 +306,7 @@ registerSessionRoutes(app);
 registerSpeciesRoutes(app);
 registerDatasetRoutes(app);
 registerObservationRoutes(app);
+registerJellyfinRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 

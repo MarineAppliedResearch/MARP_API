@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c service/jellyfin.service.js)",
+      "Bash(node -c controller/jellyfin.controller.js)",
+      "Bash(node -c routes/jellyfin.routes.js)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/api/openapi.json)",
+      "Bash(curl -s http://localhost:3000/api/v2/jellyfin/libraries)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\(0\\)\\);console.log\\('items:', d.items.length\\); console.log\\(d.items[0]\\)\")",
+      "Bash(curl -s \"http://localhost:3000/api/v2/jellyfin/items/search?q=a&limit=3\")",
+      "Bash(sed -E 's/api_key=[^&]+/api_key=REDACTED/')",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:3000/api/v2/jellyfin/items/00000000-0000-0000-0000-000000000000/stream\")",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:3000/api/v2/jellyfin/items/search\")",
+      "Bash(node -c /home/mare/workspace/MARE_API/repository/jellyfin.repository.js)"
+    ]
+  }
+}
