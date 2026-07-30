@@ -17,75 +17,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     Session:
- *       type: object
- *       description: >
- *         Dive or survey session grouping the observations recorded during a
- *         single dive/line, along with its owning project and user.
- *       required:
- *         - session_id
- *         - dive
- *         - line
- *         - lineId
- *         - type
- *       properties:
- *         session_id:
- *           type: integer
- *           example: 501
- *           readOnly: true
- *           description: Unique numeric identifier for this session record.
- *         project_id:
- *           type: integer
- *           nullable: true
- *           example: 24
- *           description: Identifier of the project this session was conducted under.
- *         user_id:
- *           type: integer
- *           nullable: true
- *           example: 8
- *           description: Identifier of the user who recorded or owns this session.
- *         dive:
- *           type: string
- *           minLength: 1
- *           maxLength: 255
- *           example: Dive 12
- *           description: Dive identifier or name associated with this session.
- *         line:
- *           type: string
- *           minLength: 1
- *           maxLength: 255
- *           example: Line A
- *           description: Transect line identifier associated with this session.
- *         lineId:
- *           type: string
- *           minLength: 1
- *           maxLength: 255
- *           example: L-2024-012A
- *           description: Identifier of the specific survey line tied to this session.
- *         type:
- *           type: string
- *           minLength: 1
- *           maxLength: 255
- *           example: ROV
- *           description: Type or category of this session (e.g., survey platform or method).
- *         createdAt:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-22T15:33:10.000Z"
- *           description: Timestamp when this session record was created.
- *         updatedAt:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-23T09:12:01.000Z"
- *           description: Timestamp when this session record was last updated.
- */
-
-/**
  * Create and initialize the sessions Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -145,6 +76,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         primaryKey: true,
         autoIncrement: true,
+        jsonSchema: {
+            readOnly: true,
+            description: 'Unique numeric identifier for this session record.',
+            examples: [501],
+        },
       },
       project_id: {
         type: DataTypes.INTEGER,
@@ -152,6 +88,10 @@ module.exports = (sequelize, DataTypes) => {
         references: {
           model: 'projects',
           key: 'project_id',
+        },
+        jsonSchema: {
+            description: 'Identifier of the project this session was conducted under.',
+            examples: [24],
         },
       },
       user_id: {
@@ -161,22 +101,46 @@ module.exports = (sequelize, DataTypes) => {
           model: 'users',
           key: 'user_id',
         },
+        jsonSchema: {
+            description: 'Identifier of the user who recorded or owns this session.',
+            examples: [8],
+        },
       },
       dive: {
         type: DataTypes.STRING(255),
         allowNull: false,
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Dive identifier or name associated with this session.',
+            examples: ['Dive 12'],
+        },
       },
       line: {
         type: DataTypes.STRING(255),
         allowNull: false,
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Transect line identifier associated with this session.',
+            examples: ['Line A'],
+        },
       },
       lineId: {
         type: DataTypes.STRING(255),
         allowNull: false,
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Identifier of the specific survey line tied to this session.',
+            examples: ['L-2024-012A'],
+        },
       },
       type: {
         type: DataTypes.STRING(255),
         allowNull: false,
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Type or category of this session (e.g., survey platform or method).',
+            examples: ['ROV'],
+        },
       },
     },
     {

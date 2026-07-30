@@ -11,108 +11,6 @@
  * @module model/keyframe
  */
 
-/**
- * @openapi
- * components:
- *   schemas:
- *     Keyframe:
- *       type: object
- *       description: >
- *         Frame-level annotation associated with a single observation.
- *         One observation can contain multiple tracked subsets (for example,
- *         two boxed organisms tracked in parallel) distinguished by the
- *         `subset` field.
- *       required:
- *         - keyframe_id
- *         - observation_id
- *         - subset
- *         - comname
- *         - type
- *         - framenum
- *         - x
- *         - y
- *         - width
- *         - height
- *       properties:
- *         keyframe_id:
- *           type: integer
- *           example: 48291
- *           readOnly: true
- *           description: Unique identifier for this keyframe record.
- *         observation_id:
- *           type: integer
- *           example: 12045
- *           description: Foreign key to the parent observation record.
- *         subset:
- *           type: string
- *           example: "0"
- *           description: >
- *             Tracker/group label used to separate multiple boxed items within
- *             the same observation (for example, subset "0" and subset "1"
- *             for two independently tracked items).
- *         comname:
- *           type: string
- *           example: Bat star
- *           description: Common-name label assigned to this keyframe annotation.
- *         type:
- *           type: string
- *           enum: [start, middle, end]
- *           example: start
- *           description: Position marker in the tracked sequence for this subset.
- *         framenum:
- *           type: integer
- *           example: 18520
- *           description: >
- *             Frame-position value captured by the current keyframe workflow.
- *             See `frame` for an alternate frame-position label used by some
- *             contexts.
- *         frame:
- *           type: integer
- *           nullable: true
- *           example: 20
- *           description: >
- *             Optional alternate frame-position label used by some contexts.
- *             Semantics can vary by capture/export source and may represent a
- *             local frame index rather than the absolute video frame.
- *         x:
- *           type: number
- *           format: double
- *           minimum: 0
- *           maximum: 1
- *           example: 0.423
- *           description: Normalized left coordinate of the annotation box (0..1).
- *         y:
- *           type: number
- *           format: double
- *           minimum: 0
- *           maximum: 1
- *           example: 0.318
- *           description: Normalized top coordinate of the annotation box (0..1).
- *         width:
- *           type: number
- *           format: double
- *           minimum: 0
- *           maximum: 1
- *           example: 0.112
- *           description: Normalized annotation-box width (0..1).
- *         height:
- *           type: number
- *           format: double
- *           minimum: 0
- *           maximum: 1
- *           example: 0.169
- *           description: Normalized annotation-box height (0..1).
- *         confidence:
- *           type: number
- *           format: double
- *           minimum: 0
- *           maximum: 1
- *           nullable: true
- *           example: 0.91
- *           description: Optional model confidence score for this annotation.
- */
-
-
 const { Model } = require('sequelize');
 
 /**
@@ -168,7 +66,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
         primaryKey: true,
-        autoIncrement: true
+        autoIncrement: true,
+        jsonSchema: {
+            readOnly: true,
+            description: 'Unique identifier for this keyframe record.',
+            examples: [48291],
+        },
       },
       // Foreign key to link the keyframe to an observation
       observation_id: {
@@ -177,51 +80,103 @@ module.exports = (sequelize, DataTypes) => {
         references: {
           model: 'observations',
           key: 'observation_id'
-        }
+        },
+        jsonSchema: {
+            description: 'Foreign key to the parent observation record.',
+            examples: [12045],
+        },
       },
       // Subset identifier to group keyframes by annotation within an observation
       subset: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            description:
+                'Tracker/group label used to separate multiple boxed items within the same observation (for example, subset "0" and subset "1" for two independently tracked items).',
+            examples: ['0'],
+        },
       },
       comname: {
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            description: 'Common-name label assigned to this keyframe annotation.',
+            examples: ['Bat star'],
+        },
       },
-      // Type of the keyframe (start, middle, end)
+      // Type of the keyframe (start, middle, end). Stored as a plain STRING
+      // rather than a DB-level ENUM (see commented-out line below), so this
+      // enum constraint is documentation-only, not database-enforced.
       type: {
         //type: DataTypes.ENUM('start', 'middle', 'end'),
         type: DataTypes.STRING,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            schema: { type: 'string', enum: ['start', 'middle', 'end'] },
+            description: 'Position marker in the tracked sequence for this subset.',
+            examples: ['start'],
+        },
       },
+      // The hand-written OpenAPI schema this migrated from also documented a
+      // `frame` property, but no such attribute was ever defined here -- it
+      // never actually appeared in a real API response. Not carried forward.
       framenum: {
         type: DataTypes.INTEGER,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            description: 'Frame-position value captured by the current keyframe workflow.',
+            examples: [18520],
+        },
       },
       // X-coordinate of the annotation rectangle
       x: {
         type: DataTypes.DOUBLE,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
+            description: 'Normalized left coordinate of the annotation box (0..1).',
+            examples: [0.423],
+        },
       },
       // Y-coordinate of the annotation rectangle
       y: {
         type: DataTypes.DOUBLE,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
+            description: 'Normalized top coordinate of the annotation box (0..1).',
+            examples: [0.318],
+        },
       },
       // Height of the annotation rectangle
       height: {
         type: DataTypes.DOUBLE,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
+            description: 'Normalized annotation-box height (0..1).',
+            examples: [0.169],
+        },
       },
       // Width of the annotation rectangle
       width: {
         type: DataTypes.DOUBLE,
-        allowNull: false
+        allowNull: false,
+        jsonSchema: {
+            schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
+            description: 'Normalized annotation-box width (0..1).',
+            examples: [0.112],
+        },
       },
       confidence: {
         type: DataTypes.DOUBLE,
         allowNull: true,
         comment: 'Confidence score (0.0–1.0)',
+        jsonSchema: {
+            schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
+            description: 'Optional model confidence score for this annotation.',
+            examples: [0.91],
+        },
       }
     }, {
       sequelize,                    // shared Sequelize connection instance

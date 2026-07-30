@@ -16,78 +16,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     MlModel:
- *       type: object
- *       description: >
- *         Metadata record for a distinct machine learning model identity
- *         used within MARP (e.g., "yolov8-marine-fish-2025"). Represents the
- *         conceptual model itself, not any individual training run; runs,
- *         metrics, and artifacts are linked through the training_runs table.
- *       required:
- *         - id
- *         - name
- *         - model_type
- *       properties:
- *         id:
- *           type: integer
- *           example: 7
- *           readOnly: true
- *           description: Unique numeric identifier for this ML model record.
- *         name:
- *           type: string
- *           example: yolov8-marine-fish-2025
- *           minLength: 1
- *           maxLength: 255
- *           description: Human-readable name of the model (e.g., "yolov8-marine-fish-2025").
- *         parent_model_id:
- *           type: integer
- *           nullable: true
- *           example: 3
- *           description: If this model was derived or fine-tuned from another, references that parent model's ID.
- *         model_type:
- *           type: string
- *           example: yolov8
- *           minLength: 1
- *           maxLength: 255
- *           description: Model architecture family (e.g., "yolov8", "resnet", "deepsort").
- *         architecture_version:
- *           type: string
- *           nullable: true
- *           example: v8n
- *           description: Specific version or variant of the architecture (e.g., "v8n", "custom-2025a").
- *         storage_path:
- *           type: string
- *           nullable: true
- *           example: /models/yolov8-marine-fish-2025/
- *           description: Filesystem or URI path to the stored model weights and artifacts.
- *         status:
- *           type: string
- *           enum: [draft, training, trained, archived]
- *           example: draft
- *           description: Lifecycle state of the model ("draft", "training", "trained", or "archived").
- *         notes:
- *           type: string
- *           nullable: true
- *           example: Fine-tuned from 2025 baseline using added invertebrate labels.
- *           description: Freeform notes providing experiment details, context, or remarks.
- *         created_at:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-22T15:33:10.000Z"
- *           description: Timestamp when this model entry was created.
- *         updated_at:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-23T09:12:01.000Z"
- *           description: Timestamp when this model record was last updated.
- */
-
-/**
  * Create and initialize the ml_models Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -158,6 +86,11 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
         comment:
           'Unique numeric identifier for this ML model record.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Unique numeric identifier for this ML model record.',
+            examples: [7],
+        },
       },
 
       name: {
@@ -165,6 +98,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Human-readable name of the model (e.g., "yolov8-marine-fish-2025").',
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Human-readable name of the model (e.g., "yolov8-marine-fish-2025").',
+            examples: ['yolov8-marine-fish-2025'],
+        },
       },
 
       parent_model_id: {
@@ -176,6 +114,10 @@ module.exports = (sequelize, DataTypes) => {
         },
         comment:
           'If this model was derived or fine-tuned from another, reference that parent model ID here.',
+        jsonSchema: {
+            description: "If this model was derived or fine-tuned from another, references that parent model's ID.",
+            examples: [3],
+        },
       },
 
       model_type: {
@@ -183,6 +125,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Model architecture family (e.g., "yolov8", "resnet", "deepsort").',
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Model architecture family (e.g., "yolov8", "resnet", "deepsort").',
+            examples: ['yolov8'],
+        },
       },
 
       architecture_version: {
@@ -190,6 +137,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Specific version or variant of the architecture (e.g., "v8n", "custom-2025a").',
+        jsonSchema: {
+            description: 'Specific version or variant of the architecture (e.g., "v8n", "custom-2025a").',
+            examples: ['v8n'],
+        },
       },
 
       storage_path: {
@@ -197,6 +148,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Filesystem or URI path to the stored model weights and artifacts.',
+        jsonSchema: {
+            description: 'Filesystem or URI path to the stored model weights and artifacts.',
+            examples: ['/models/yolov8-marine-fish-2025/'],
+        },
       },
 
       status: {
@@ -205,6 +160,11 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 'draft',
         comment:
           'Lifecycle state of the model: "draft", "training", "trained", or "archived".',
+        jsonSchema: {
+            schema: { type: 'string', enum: ['draft', 'training', 'trained', 'archived'] },
+            description: 'Lifecycle state of the model ("draft", "training", "trained", or "archived").',
+            examples: ['draft'],
+        },
       },
 
       notes: {
@@ -212,6 +172,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Freeform notes providing experiment details, context, or remarks.',
+        jsonSchema: {
+            description: 'Freeform notes providing experiment details, context, or remarks.',
+            examples: ['Fine-tuned from 2025 baseline using added invertebrate labels.'],
+        },
       },
 
       created_at: {
@@ -220,6 +184,10 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this model entry was created.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Timestamp when this model entry was created.',
+        },
       },
 
       updated_at: {
@@ -228,6 +196,10 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this model record was last updated.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Timestamp when this model record was last updated.',
+        },
       },
     },
     {

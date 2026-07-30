@@ -19,124 +19,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     Species:
- *       type: object
- *       description: >
- *         Taxonomic and GUI display entry used to classify observations,
- *         datasets, and ML model training labels throughout MARP.
- *       required:
- *         - id
- *         - taxserial
- *       properties:
- *         id:
- *           type: integer
- *           example: 42
- *           readOnly: true
- *           description: Unique numeric identifier for this species record.
- *         taxserial:
- *           type: integer
- *           example: 1054
- *           description: Internal MARP taxonomy serial number used as a unique ID across systems.
- *         gui_home_order:
- *           type: string
- *           nullable: true
- *           example: "010"
- *           description: Ordering key used by the MARP GUI to position this item on the home screen.
- *         gui_maintab:
- *           type: string
- *           nullable: true
- *           example: Fish
- *           description: Main tab category where this item appears in the GUI.
- *         gui_subtab:
- *           type: string
- *           nullable: true
- *           example: Sea Stars
- *           description: Sub-tab within the main tab where this item is displayed.
- *         gui_main_tab_order:
- *           type: integer
- *           nullable: true
- *           example: 2
- *           description: Order number for the main tab this item belongs to.
- *         gui_sub_tab_order:
- *           type: integer
- *           nullable: true
- *           example: 5
- *           description: Order number for the sub-tab this item belongs to.
- *         gui_item_order:
- *           type: integer
- *           nullable: true
- *           example: 12
- *           description: Position of this species within its GUI sub-tab group.
- *         gui_display_name:
- *           type: string
- *           nullable: true
- *           example: Bat Star
- *           description: Display name for this item shown in MARP GUI interfaces, may differ from comname.
- *         comname:
- *           type: string
- *           nullable: true
- *           example: Bat star
- *           description: Common name used for this species.
- *         species:
- *           type: string
- *           nullable: true
- *           example: Patiria miniata
- *           description: Scientific or Latin name of the species.
- *         observation_type:
- *           type: string
- *           nullable: true
- *           example: Invertebrate
- *           description: Category describing what type of organism this is.
- *         taxonomic_level:
- *           type: string
- *           nullable: true
- *           example: Species
- *           description: Taxonomic rank.
- *         report_group:
- *           type: string
- *           nullable: true
- *           example: Sea Stars
- *           description: Report grouping used for rollups or reports.
- *         depth_min:
- *           type: number
- *           format: float
- *           nullable: true
- *           example: 5.5
- *           description: Minimum depth in meters where this species is typically observed (range semantics are dataset-dependent).
- *         depth_max:
- *           type: number
- *           format: float
- *           nullable: true
- *           example: 45
- *           description: Maximum depth in meters where this species is typically observed (range semantics are dataset-dependent).
- *         habitat_preference:
- *           type: string
- *           nullable: true
- *           example: Rocky
- *           description: Habitat preference or substrate association.
- *         notes:
- *           type: string
- *           nullable: true
- *           example: Legacy synonym handled in reporting mapper.
- *           description: Freeform notes about this species, its classification, or GUI behavior.
- *         created_at:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-22T15:33:10.000Z"
- *           description: Timestamp when this species record was created.
- *         updated_at:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-23T09:12:01.000Z"
- *           description: Timestamp when this species record was last updated.
- */
-
-/**
  * Create and initialize the species Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -202,6 +84,11 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         primaryKey: true,
         comment: 'Unique numeric identifier for this species record.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Unique numeric identifier for this species record.',
+            examples: [42],
+        },
       },
 
       taxserial: {
@@ -210,6 +97,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Internal MARP taxonomy serial number used as a unique ID across systems.',
+        jsonSchema: {
+            description: 'Internal MARP taxonomy serial number used as a unique ID across systems.',
+            examples: [1054],
+        },
       },
 
       // -----------------------------------------------------------
@@ -222,6 +113,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Ordering key used by MARP GUI to position this item on the home screen.',
+        jsonSchema: {
+            description: 'Ordering key used by the MARP GUI to position this item on the home screen.',
+            examples: ['010'],
+        },
       },
 
       gui_maintab: {
@@ -230,6 +125,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Main tab category where this item appears in the GUI (e.g., "Fish", "Invertebrates").',
+        jsonSchema: {
+            description: 'Main tab category where this item appears in the GUI.',
+            examples: ['Fish'],
+        },
       },
 
       gui_subtab: {
@@ -238,6 +137,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Sub-tab within the main tab where this item is displayed (e.g., "Sea Stars", "Crabs").',
+        jsonSchema: {
+            description: 'Sub-tab within the main tab where this item is displayed.',
+            examples: ['Sea Stars'],
+        },
       },
 
       gui_main_tab_order: {
@@ -246,6 +149,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Order number for the main tab this item belongs to (controls tab sequencing).',
+        jsonSchema: {
+            description: 'Order number for the main tab this item belongs to.',
+            examples: [2],
+        },
       },
 
       gui_sub_tab_order: {
@@ -254,6 +161,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Order number for the sub-tab this item belongs to (controls layout within a tab).',
+        jsonSchema: {
+            description: 'Order number for the sub-tab this item belongs to.',
+            examples: [5],
+        },
       },
 
       gui_item_order: {
@@ -262,6 +173,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Position of this species within its GUI sub-tab group.',
+        jsonSchema: {
+            description: 'Position of this species within its GUI sub-tab group.',
+            examples: [12],
+        },
       },
 
       gui_display_name: {
@@ -270,6 +185,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Display name for this item as shown in MARP GUI interfaces.',
+        jsonSchema: {
+            description: 'Display name for this item shown in MARP GUI interfaces, may differ from comname.',
+            examples: ['Bat Star'],
+        },
       },
 
       // -----------------------------------------------------------
@@ -282,6 +201,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Common name used for this species (e.g., "Rockfish", "Sea Star").',
+        jsonSchema: {
+            description: 'Common name used for this species.',
+            examples: ['Bat star'],
+        },
       },
 
       species: {
@@ -290,6 +213,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Scientific or Latin name of the species (e.g., "Sebastes ruberrimus").',
+        jsonSchema: {
+            description: 'Scientific or Latin name of the species.',
+            examples: ['Patiria miniata'],
+        },
       },
 
       observation_type: {
@@ -298,6 +225,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Category describing what type of organism this is (e.g., "Fish", "Invertebrate").',
+        jsonSchema: {
+            description: 'Category describing what type of organism this is.',
+            examples: ['Invertebrate'],
+        },
       },
 
       taxonomic_level: {
@@ -306,6 +237,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Taxonomic rank (e.g., "Species", "Genus", "Phylum", "Class").',
+        jsonSchema: {
+            description: 'Taxonomic rank.',
+            examples: ['Species'],
+        },
       },
 
       report_group: {
@@ -314,6 +249,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Report grouping (e.g., "Sea Stars", "Corals - Gorgonians", "Anemones").',
+        jsonSchema: {
+            description: 'Report grouping used for rollups or reports.',
+            examples: ['Sea Stars'],
+        },
       },
 
       depth_min: {
@@ -322,6 +261,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Minimum depth (in meters) where this species is typically observed.',
+        jsonSchema: {
+            description: 'Minimum depth in meters where this species is typically observed (range semantics are dataset-dependent).',
+            examples: [5.5],
+        },
       },
 
       depth_max: {
@@ -330,6 +273,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Maximum depth (in meters) where this species is typically observed.',
+        jsonSchema: {
+            description: 'Maximum depth in meters where this species is typically observed (range semantics are dataset-dependent).',
+            examples: [45],
+        },
       },
 
       habitat_preference: {
@@ -338,6 +285,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Habitat preference or substrate association (e.g., "Rocky", "Mud/Sand", "Mixed Hard/Soft").',
+        jsonSchema: {
+            description: 'Habitat preference or substrate association.',
+            examples: ['Rocky'],
+        },
       },
 
       notes: {
@@ -346,6 +297,11 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Freeform notes about this species, its classification, or GUI behavior.',
+        jsonSchema: {
+            schema: { type: 'string' },
+            description: 'Freeform notes about this species, its classification, or GUI behavior.',
+            examples: ['Legacy synonym handled in reporting mapper.'],
+        },
       },
 
       created_at: {
@@ -355,6 +311,11 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this species record was created.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Timestamp when this species record was created.',
+            examples: ['2026-07-22T15:33:10.000Z'],
+        },
       },
 
       updated_at: {
@@ -364,6 +325,11 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this species record was last updated.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Timestamp when this species record was last updated.',
+            examples: ['2026-07-23T09:12:01.000Z'],
+        },
       },
     },
     {

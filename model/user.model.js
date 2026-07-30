@@ -14,44 +14,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     User:
- *       type: object
- *       description: >
- *         Individual identity record used to attribute sessions,
- *         observations, and related reporting outputs throughout MARP.
- *       required:
- *         - user_id
- *         - name
- *       properties:
- *         user_id:
- *           type: integer
- *           example: 12
- *           readOnly: true
- *           description: Unique numeric identifier for this user record.
- *         name:
- *           type: string
- *           example: Jane Diver
- *           minLength: 1
- *           maxLength: 255
- *           description: Unique display name used by API and reporting views.
- *         createdAt:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-22T15:33:10.000Z"
- *           description: Timestamp when this user record was created.
- *         updatedAt:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-23T09:12:01.000Z"
- *           description: Timestamp when this user record was last updated.
- */
-
-/**
  * Create and initialize the Users Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -106,11 +68,21 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         primaryKey: true,
         autoIncrement: true,
+        jsonSchema: {
+            readOnly: true,
+            description: 'Unique numeric identifier for this user record.',
+            examples: [12],
+        },
       },
       name: {
         type: DataTypes.STRING(255),       // match existing column exactly
         allowNull: false,
         unique: 'users_name_key',          // keep same constraint name
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Unique display name used by API and reporting views.',
+            examples: ['Jane Diver'],
+        },
       },
     },
     {

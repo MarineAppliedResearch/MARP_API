@@ -14,44 +14,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     Project:
- *       type: object
- *       description: >
- *         Named organizational unit used to group sessions and observations
- *         for a survey effort, campaign, or reporting scope.
- *       required:
- *         - project_id
- *         - name
- *       properties:
- *         project_id:
- *           type: integer
- *           example: 24
- *           readOnly: true
- *           description: Unique numeric identifier for this project record.
- *         name:
- *           type: string
- *           example: Channel Islands 2024
- *           minLength: 1
- *           maxLength: 255
- *           description: Unique display name used across UI filters and API queries.
- *         createdAt:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-22T15:33:10.000Z"
- *           description: Timestamp when this project record was created.
- *         updatedAt:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-23T09:12:01.000Z"
- *           description: Timestamp when this project record was last updated.
- */
-
-/**
  * Create and initialize the Projects Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -106,11 +68,21 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         primaryKey: true,
         autoIncrement: true,
+        jsonSchema: {
+            readOnly: true,
+            description: 'Unique numeric identifier for this project record.',
+            examples: [24],
+        },
       },
       name: {
         type: DataTypes.STRING(255),            // match DB exactly
         allowNull: false,
         unique: 'projects_name_key',            // use same constraint name
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 255 },
+            description: 'Unique display name used across UI filters and API queries.',
+            examples: ['Channel Islands 2024'],
+        },
       },
     },
     {

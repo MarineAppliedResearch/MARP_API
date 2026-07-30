@@ -12,32 +12,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     MetaInfo:
- *       type: object
- *       description: >
- *         A small reference metadata record used for lightweight
- *         application-level values (for example labels or environment
- *         metadata) that do not belong to a larger domain table.
- *       required:
- *         - id
- *       properties:
- *         id:
- *           type: integer
- *           readOnly: true
- *           example: 3
- *           description: Unique numeric identifier for this metadata record.
- *         name:
- *           type: string
- *           nullable: true
- *           maxLength: 255
- *           example: MARE_PRODUCTION
- *           description: Optional metadata value or label stored in this record.
- */
-
-/**
  * Create and initialize the metaInfo Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -65,10 +39,19 @@ module.exports = (sequelize, DataTypes) => {
           type: DataTypes.INTEGER,
           allowNull: false,
           primaryKey: true,
-          autoIncrement: true
+          autoIncrement: true,
+          jsonSchema: {
+              readOnly: true,
+              description: 'Unique numeric identifier for this metadata record.',
+              examples: [3],
+          },
         },
         name: {
-          type: DataTypes.STRING
+          type: DataTypes.STRING,
+          jsonSchema: {
+              description: 'Optional metadata value or label stored in this record.',
+              examples: ['MARE_PRODUCTION'],
+          },
         }
       }, {
         // Other model options go here

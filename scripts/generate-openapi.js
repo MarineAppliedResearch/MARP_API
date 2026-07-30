@@ -5,6 +5,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+require('../app');
 const { buildOpenApiSpec } = require('../docs/openapi');
 
 // Build spec in-memory first so file writes happen only after successful generation.

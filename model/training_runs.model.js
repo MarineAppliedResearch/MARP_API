@@ -19,109 +19,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     TrainingRun:
- *       type: object
- *       description: >
- *         A single training or retraining event of an ML model, linking the
- *         model, the dataset used, and the resulting epochs, metrics, and
- *         artifacts produced during that run.
- *       required:
- *         - id
- *         - model_id
- *       properties:
- *         id:
- *           type: integer
- *           example: 12
- *           readOnly: true
- *           description: Unique identifier for this training run.
- *         model_id:
- *           type: integer
- *           example: 7
- *           description: Foreign key referencing the parent ML model (ml_models.id).
- *         dataset_id:
- *           type: integer
- *           nullable: true
- *           example: 3
- *           description: Foreign key referencing the dataset used for training (datasets.id).
- *         start_time:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           description: Timestamp when training began.
- *         end_time:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           description: Timestamp when training completed.
- *         total_epochs:
- *           type: integer
- *           nullable: true
- *           minimum: 1
- *           example: 120
- *           description: Total number of epochs configured for this run.
- *         batch_size:
- *           type: integer
- *           nullable: true
- *           minimum: 1
- *           example: 16
- *           description: Training batch size used during this run.
- *         learning_rate:
- *           type: number
- *           format: float
- *           nullable: true
- *           minimum: 0
- *           example: 0.001
- *           description: Base learning rate used during training.
- *         optimizer:
- *           type: string
- *           nullable: true
- *           example: Adam
- *           description: Optimization algorithm (e.g., "Adam", "SGD").
- *         loss_function:
- *           type: string
- *           nullable: true
- *           example: FocalLoss
- *           description: Loss function used (e.g., "CrossEntropy", "FocalLoss").
- *         augmentation:
- *           type: object
- *           additionalProperties: true
- *           nullable: true
- *           description: >
- *             JSON blob containing data augmentation parameters and settings
- *             applied during this run. Keys vary by training pipeline.
- *         compute_device:
- *           type: string
- *           nullable: true
- *           example: RTX 6000 Ada
- *           description: Hardware used for training (e.g., "RTX 6000 Ada", "A100 GPU").
- *         train_script_commit:
- *           type: string
- *           nullable: true
- *           example: 3d9a0a91e7fa3b9f4c1f8f46cb2fda32729d8f1a
- *           description: Git commit hash or version identifier of the training script used.
- *         notes:
- *           type: string
- *           nullable: true
- *           example: Best mAP50 observed around epoch 98; monitor overfitting after 110.
- *           description: Freeform notes describing experiment purpose or results context.
- *         created_at:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-22T15:33:10.000Z"
- *           description: Timestamp when this record was created.
- *         updated_at:
- *           type: string
- *           format: date-time
- *           readOnly: true
- *           example: "2026-07-23T09:12:01.000Z"
- *           description: Timestamp when this record was last modified.
- */
-
-/**
  * Create and initialize the training_runs Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -206,84 +103,142 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         primaryKey: true,
         comment: 'Unique identifier for this training run.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Unique identifier for this training run.',
+            examples: [12],
+        },
       },
 
       model_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
         comment: 'Foreign key referencing the parent ML model (ml_models.id).',
+        jsonSchema: {
+            description: 'Foreign key referencing the parent ML model (ml_models.id).',
+            examples: [7],
+        },
       },
 
       dataset_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
         comment: 'Foreign key referencing the dataset used for training (datasets.id).',
+        jsonSchema: {
+            description: 'Foreign key referencing the dataset used for training (datasets.id).',
+            examples: [3],
+        },
       },
 
       start_time: {
         type: DataTypes.DATE,
         allowNull: true,
         comment: 'Timestamp when training began.',
+        jsonSchema: {
+            description: 'Timestamp when training began.',
+        },
       },
 
       end_time: {
         type: DataTypes.DATE,
         allowNull: true,
         comment: 'Timestamp when training completed.',
+        jsonSchema: {
+            description: 'Timestamp when training completed.',
+        },
       },
 
       total_epochs: {
         type: DataTypes.INTEGER,
         allowNull: true,
         comment: 'Total number of epochs configured for this run.',
+        jsonSchema: {
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Total number of epochs configured for this run.',
+            examples: [120],
+        },
       },
 
       batch_size: {
         type: DataTypes.INTEGER,
         allowNull: true,
         comment: 'Training batch size used during this run.',
+        jsonSchema: {
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Training batch size used during this run.',
+            examples: [16],
+        },
       },
 
       learning_rate: {
         type: DataTypes.FLOAT,
         allowNull: true,
         comment: 'Base learning rate used during training.',
+        jsonSchema: {
+            schema: { type: 'number', format: 'float', minimum: 0 },
+            description: 'Base learning rate used during training.',
+            examples: [0.001],
+        },
       },
 
       optimizer: {
         type: DataTypes.STRING,
         allowNull: true,
         comment: 'Optimization algorithm (e.g., "Adam", "SGD").',
+        jsonSchema: {
+            description: 'Optimization algorithm (e.g., "Adam", "SGD").',
+            examples: ['Adam'],
+        },
       },
 
       loss_function: {
         type: DataTypes.STRING,
         allowNull: true,
         comment: 'Loss function used (e.g., "CrossEntropy", "FocalLoss").',
+        jsonSchema: {
+            description: 'Loss function used (e.g., "CrossEntropy", "FocalLoss").',
+            examples: ['FocalLoss'],
+        },
       },
 
       augmentation: {
         type: DataTypes.JSONB,
         allowNull: true,
         comment: 'JSON object containing data augmentation parameters and settings.',
+        jsonSchema: {
+            schema: { type: 'object', additionalProperties: true },
+            description: 'JSON blob containing data augmentation parameters and settings applied during this run. Keys vary by training pipeline.',
+        },
       },
 
       compute_device: {
         type: DataTypes.STRING,
         allowNull: true,
         comment: 'Hardware used for training (e.g., "RTX 6000 Ada", "A100 GPU").',
+        jsonSchema: {
+            description: 'Hardware used for training (e.g., "RTX 6000 Ada", "A100 GPU").',
+            examples: ['RTX 6000 Ada'],
+        },
       },
 
       train_script_commit: {
         type: DataTypes.STRING,
         allowNull: true,
         comment: 'Git commit hash or version identifier of the training script used.',
+        jsonSchema: {
+            description: 'Git commit hash or version identifier of the training script used.',
+            examples: ['3d9a0a91e7fa3b9f4c1f8f46cb2fda32729d8f1a'],
+        },
       },
 
       notes: {
         type: DataTypes.TEXT,
         allowNull: true,
         comment: 'Freeform notes describing experiment purpose or results context.',
+        jsonSchema: {
+            description: 'Freeform notes describing experiment purpose or results context.',
+            examples: ['Best mAP50 observed around epoch 98; monitor overfitting after 110.'],
+        },
       },
 
       created_at: {
@@ -291,6 +246,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: DataTypes.NOW,
         comment: 'Timestamp when this record was created.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Timestamp when this record was created.',
+        },
       },
 
       updated_at: {
@@ -298,6 +257,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: DataTypes.NOW,
         comment: 'Timestamp when this record was last modified.',
+        jsonSchema: {
+            readOnly: true,
+            description: 'Timestamp when this record was last modified.',
+        },
       },
     },
     {
