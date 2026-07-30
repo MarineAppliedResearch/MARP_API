@@ -19,98 +19,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     Epoch:
- *       type: object
- *       description: >
- *         Per-epoch performance and timing data captured during a single
- *         training run, including loss values and precision/recall/mAP
- *         metrics recorded at the end of that epoch.
- *       required:
- *         - id
- *         - training_run_id
- *         - epoch_number
- *       properties:
- *         id:
- *           type: integer
- *           example: 501
- *           description: Unique identifier for this epoch record.
- *         training_run_id:
- *           type: integer
- *           example: 12
- *           description: Foreign key linking this epoch to its parent training run (training_runs.id).
- *         epoch_number:
- *           type: integer
- *           example: 3
- *           description: The ordinal number of this epoch in the training sequence.
- *         start_time:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           description: Timestamp marking when this epoch began processing.
- *         end_time:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           description: Timestamp marking when this epoch completed.
- *         duration_seconds:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Total elapsed time of this epoch, in seconds (end_time - start_time).
- *         precision:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Precision metric value recorded at the end of this epoch.
- *         recall:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Recall metric value recorded at the end of this epoch.
- *         map50:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch.
- *         map5095:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch.
- *         box_loss:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Loss associated with bounding box coordinate regression during this epoch.
- *         cls_loss:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Loss associated with class label predictions during this epoch.
- *         dfl_loss:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Distribution Focal Loss (DFL) for this epoch, if applicable to the model type.
- *         timestamp:
- *           type: string
- *           format: date-time
- *           nullable: true
- *           description: Timestamp when this epoch record was inserted into the database.
- *         created_at:
- *           type: string
- *           format: date-time
- *           description: Timestamp when this epoch record was created.
- *         updated_at:
- *           type: string
- *           format: date-time
- *           description: Timestamp when this epoch record was last updated.
- */
-
-/**
  * Create and initialize the epochs Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -161,6 +69,10 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         primaryKey: true,
         comment: 'Unique identifier for this epoch record.',
+        jsonSchema: {
+            description: 'Unique identifier for this epoch record.',
+            examples: [501],
+        },
       },
 
       training_run_id: {
@@ -169,6 +81,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Foreign key linking this epoch to its parent training run (training_runs.id).',
+        jsonSchema: {
+            description: 'Foreign key linking this epoch to its parent training run (training_runs.id).',
+            examples: [12],
+        },
       },
 
       epoch_number: {
@@ -177,6 +93,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'The ordinal number of this epoch in the training sequence.',
+        jsonSchema: {
+            description: 'The ordinal number of this epoch in the training sequence.',
+            examples: [3],
+        },
       },
 
       // -------------------------------
@@ -189,6 +109,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Timestamp marking when this epoch began processing.',
+        jsonSchema: {
+            description: 'Timestamp marking when this epoch began processing.',
+        },
       },
 
       end_time: {
@@ -197,6 +120,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Timestamp marking when this epoch completed.',
+        jsonSchema: {
+            description: 'Timestamp marking when this epoch completed.',
+        },
       },
 
       duration_seconds: {
@@ -205,6 +131,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Total elapsed time of this epoch, in seconds (end_time - start_time).',
+        jsonSchema: {
+            description: 'Total elapsed time of this epoch, in seconds (end_time - start_time).',
+        },
       },
 
       // -------------------------------
@@ -217,6 +146,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Precision metric value recorded at the end of this epoch.',
+        jsonSchema: {
+            description: 'Precision metric value recorded at the end of this epoch.',
+        },
       },
 
       recall: {
@@ -225,6 +157,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Recall metric value recorded at the end of this epoch.',
+        jsonSchema: {
+            description: 'Recall metric value recorded at the end of this epoch.',
+        },
       },
 
       map50: {
@@ -233,6 +168,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch.',
+        jsonSchema: {
+            description: 'Mean Average Precision (mAP) at 0.5 IoU threshold for this epoch.',
+        },
       },
 
       map5095: {
@@ -241,6 +179,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch.',
+        jsonSchema: {
+            description: 'Mean Average Precision (mAP) averaged across IoU thresholds 0.5–0.95 for this epoch.',
+        },
       },
 
       // -------------------------------
@@ -253,6 +194,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Loss associated with bounding box coordinate regression during this epoch.',
+        jsonSchema: {
+            description: 'Loss associated with bounding box coordinate regression during this epoch.',
+        },
       },
 
       cls_loss: {
@@ -261,6 +205,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Loss associated with class label predictions during this epoch.',
+        jsonSchema: {
+            description: 'Loss associated with class label predictions during this epoch.',
+        },
       },
 
       dfl_loss: {
@@ -269,6 +216,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Distribution Focal Loss (DFL) for this epoch, if applicable to the model type.',
+        jsonSchema: {
+            description: 'Distribution Focal Loss (DFL) for this epoch, if applicable to the model type.',
+        },
       },
 
       timestamp: {
@@ -278,6 +228,9 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this epoch record was inserted into the database.',
+        jsonSchema: {
+            description: 'Timestamp when this epoch record was inserted into the database.',
+        },
       },
 
       created_at: {
@@ -287,6 +240,9 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this epoch record was created.',
+        jsonSchema: {
+            description: 'Timestamp when this epoch record was created.',
+        },
       },
 
       updated_at: {
@@ -296,6 +252,9 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this epoch record was last updated.',
+        jsonSchema: {
+            description: 'Timestamp when this epoch record was last updated.',
+        },
       },
     },
     {

@@ -20,63 +20,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     DatasetObservation:
- *       type: object
- *       description: >
- *         Join record linking a dataset to one observation it includes,
- *         with metadata describing how and why that observation was
- *         selected for the dataset (train/val/test split, selection
- *         method, and sampling weight).
- *       required:
- *         - id
- *         - dataset_id
- *         - observation_id
- *       properties:
- *         id:
- *           type: integer
- *           example: 512
- *           description: Unique identifier for this dataset-observation record.
- *         dataset_id:
- *           type: integer
- *           example: 3
- *           description: Foreign key referencing the dataset that includes this observation (datasets.id).
- *         observation_id:
- *           type: integer
- *           example: 918
- *           description: Foreign key referencing the observation included in this dataset (observations.observation_id).
- *         inclusion_type:
- *           type: string
- *           nullable: true
- *           example: train
- *           description: Indicates how this observation is used in the dataset ("train", "val", or "test").
- *         selection_method:
- *           type: string
- *           nullable: true
- *           example: manual
- *           description: Describes how this observation was chosen for inclusion (e.g., "manual", "auto", "random_sample", "legacy_import").
- *         weight:
- *           type: number
- *           format: float
- *           nullable: true
- *           description: Optional weighting factor applied to this observation within the dataset for class balancing or sampling probability.
- *         notes:
- *           type: string
- *           nullable: true
- *           description: Freeform notes about this dataset-observation inclusion (e.g., reasons for inclusion/exclusion, data quality remarks).
- *         created_at:
- *           type: string
- *           format: date-time
- *           description: Timestamp when this dataset-observation record was created.
- *         updated_at:
- *           type: string
- *           format: date-time
- *           description: Timestamp when this dataset-observation record was last updated.
- */
-
-/**
  * Create and initialize the dataset_observations Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -136,6 +79,10 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         primaryKey: true,
         comment: 'Unique identifier for this dataset-observation record.',
+        jsonSchema: {
+            description: 'Unique identifier for this dataset-observation record.',
+            examples: [512],
+        },
       },
 
       dataset_id: {
@@ -143,6 +90,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Foreign key referencing the dataset that includes this observation (datasets.id).',
+        jsonSchema: {
+            description: 'Foreign key referencing the dataset that includes this observation (datasets.id).',
+            examples: [3],
+        },
       },
 
       observation_id: {
@@ -150,6 +101,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         comment:
           'Foreign key referencing the observation included in this dataset (observations.observation_id).',
+        jsonSchema: {
+            description: 'Foreign key referencing the observation included in this dataset (observations.observation_id).',
+            examples: [918],
+        },
       },
 
       inclusion_type: {
@@ -157,6 +112,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Indicates how this observation is used in the dataset: "train", "val", or "test".',
+        jsonSchema: {
+            description: 'Indicates how this observation is used in the dataset ("train", "val", or "test").',
+            examples: ['train'],
+        },
       },
 
       selection_method: {
@@ -164,6 +123,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Describes how this observation was chosen for inclusion (e.g., "manual", "auto", "random_sample", "legacy_import").',
+        jsonSchema: {
+            description: 'Describes how this observation was chosen for inclusion (e.g., "manual", "auto", "random_sample", "legacy_import").',
+            examples: ['manual'],
+        },
       },
 
       weight: {
@@ -171,6 +134,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Optional weighting factor applied to this observation within the dataset for class balancing or sampling probability.',
+        jsonSchema: {
+            description: 'Optional weighting factor applied to this observation within the dataset for class balancing or sampling probability.',
+        },
       },
 
       notes: {
@@ -178,6 +144,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Freeform notes about this dataset-observation inclusion (e.g., reasons for inclusion/exclusion, data quality remarks).',
+        jsonSchema: {
+            description: 'Freeform notes about this dataset-observation inclusion (e.g., reasons for inclusion/exclusion, data quality remarks).',
+        },
       },
 
       created_at: {
@@ -186,6 +155,9 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this dataset-observation record was created.',
+        jsonSchema: {
+            description: 'Timestamp when this dataset-observation record was created.',
+        },
       },
 
       updated_at: {
@@ -194,6 +166,9 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: DataTypes.NOW,
         comment:
           'Timestamp when this dataset-observation record was last updated.',
+        jsonSchema: {
+            description: 'Timestamp when this dataset-observation record was last updated.',
+        },
       },
     },
     {

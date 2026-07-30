@@ -10,267 +10,20 @@
  * observation, and curated machine-learning datasets can include
  * observations through the dataset_observations join table.
  *
- * The OpenAPI schemas in this file describe observation objects returned by
- * API endpoints. The base `Observation` schema contains fields stored directly
- * on the observation record. `ObservationWithKeyframes` extends that schema
- * with the optional keyframe association returned by applicable queries.
+ * The `Observation` OpenAPI schema (generated from this model's Sequelize
+ * attributes, see docs/openapi.js) covers fields stored directly on the
+ * observation record. The composite `ObservationWithKeyframes`,
+ * `ObservationWithSessionAndKeyframes`, and `ObservationWithDatasets` schemas
+ * that extend it with association data live in docs/openapi.js instead of
+ * here, since they aren't derivable from a single Sequelize model.
  *
- * @fileoverview Sequelize model and OpenAPI response schemas for observations.
+ * @fileoverview Sequelize model and OpenAPI response schema for observations.
  * @author Isaac Travers
  * @module model/observations
  */
 
 
 const { Model } = require('sequelize');
-
-
-/**
- * @openapi
- * components:
- *   schemas:
- *     Observation:
- *       type: object
- *       description: >
- *         Biological or habitat observation recorded during a MARP session.
- *         The fields available in a response may depend on the query and any
- *         Sequelize associations included by that endpoint.
- *       required:
- *         - observation_id
- *         - obsID
- *       properties:
- *         observation_id:
- *           type: integer
- *           example: 12045
- *           description: Primary database identifier for the observation.
- *         obsID:
- *           type: integer
- *           example: 42
- *           description: Observation identifier used within the source workflow.
- *         PobsID:
- *           type: integer
- *           nullable: true
- *           example: 17
- *           description: Optional parent observation identifier.
- *         project_id:
- *           type: integer
- *           nullable: true
- *           example: 24
- *           description: Identifier of the project associated with the observation.
- *         session_id:
- *           type: integer
- *           nullable: true
- *           example: 718
- *           description: Identifier of the session associated with the observation.
- *         user_id:
- *           type: integer
- *           nullable: true
- *           example: 12
- *           description: Identifier of the user associated with the observation.
- *         tc:
- *           type: string
- *           nullable: true
- *           example: "00:12:21.520"
- *           description: Starting time code for the observation.
- *         frame:
- *           type: string
- *           nullable: true
- *           example: "18322"
- *           description: Stored source-frame value associated with the observation.
- *         taxserial:
- *           type: integer
- *           nullable: true
- *           example: 1054
- *           description: Taxonomic serial identifier associated with the observation.
- *         comname:
- *           type: string
- *           nullable: true
- *           example: Bat star
- *           description: Common name assigned to the observed taxon.
- *         count:
- *           type: integer
- *           nullable: true
- *           example: 1
- *           description: Number of individuals represented by the observation.
- *         sex:
- *           type: string
- *           nullable: true
- *           example: Unknown
- *           description: Recorded sex classification when available.
- *         coarsesize:
- *           type: integer
- *           nullable: true
- *           example: 3
- *           description: Coarse size classification assigned to the observation.
- *         sizereview:
- *           type: integer
- *           nullable: true
- *           example: 1
- *           description: Stored size-review state or classification.
- *         quadrant:
- *           type: integer
- *           nullable: true
- *           example: 2
- *           description: Quadrant value associated with the observation.
- *         etc:
- *           type: string
- *           nullable: true
- *           example: "00:12:29.840"
- *           description: Ending time code for the observation.
- *         taxReview:
- *           type: string
- *           nullable: true
- *           example: R
- *           description: Taxonomic review status or code.
- *         note:
- *           type: string
- *           nullable: true
- *           example: Partially obscured behind rock.
- *           description: Free-text note associated with the observation.
- *         downcamera:
- *           type: string
- *           nullable: true
- *           example: "false"
- *           description: Stored down-camera value associated with the observation.
- *         timelog:
- *           type: string
- *           nullable: true
- *           example: "2024-07-30 19:21:14"
- *           description: Stored observation time-log value.
- *         video_source:
- *           type: string
- *           nullable: true
- *           example: 20240730_190910 Fwd.mp4
- *           description: Video source associated with the observation.
- *         videoLocation:
- *           type: string
- *           nullable: true
- *           example: /CAMPA2024/Dive12/FWD
- *           description: Stored location of the associated video.
- *         mediaPosition:
- *           type: string
- *           nullable: true
- *           example: "741.520"
- *           description: Stored position of the observation within the source media.
- *         actualPosition:
- *           type: string
- *           nullable: true
- *           example: "741.520"
- *           description: Stored actual-position value associated with the observation.
- *         substrate_bedrock:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether bedrock substrate was recorded.
- *         substrate_megaclast:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether megaclast substrate was recorded.
- *         substrate_boulder:
- *           type: boolean
- *           nullable: true
- *           example: true
- *           description: Indicates whether boulder substrate was recorded.
- *         substrate_cobble:
- *           type: boolean
- *           nullable: true
- *           example: true
- *           description: Indicates whether cobble substrate was recorded.
- *         substrate_pebble:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether pebble substrate was recorded.
- *         substrate_granule:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether granule substrate was recorded.
- *         substrate_sand:
- *           type: boolean
- *           nullable: true
- *           example: true
- *           description: Indicates whether sand substrate was recorded.
- *         substrate_mud:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether mud substrate was recorded.
- *         substrate_coral_reef:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether coral-reef substrate was recorded.
- *         substrate_coral_rubble:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether coral-rubble substrate was recorded.
- *         substrate_shell_hash:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether shell-hash substrate was recorded.
- *         substrate_shell_rubble:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether shell-rubble substrate was recorded.
- *         substrate_algal:
- *           type: boolean
- *           nullable: true
- *           example: false
- *           description: Indicates whether algal substrate was recorded.
- *         confidence:
- *           type: number
- *           format: double
- *           nullable: true
- *           minimum: 0
- *           maximum: 1
- *           example: 0.93
- *           description: Machine-learning confidence score between zero and one.
- *         createdAt:
- *           type: string
- *           format: date-time
- *           description: Timestamp when the observation record was created.
- *         updatedAt:
- *           type: string
- *           format: date-time
- *           description: Timestamp when the observation record was last updated.
- *
- *     ObservationWithKeyframes:
- *       allOf:
- *         - $ref: '#/components/schemas/Observation'
- *         - type: object
- *           description: Observation response containing associated keyframes.
- *           properties:
- *             keyframes:
- *               type: array
- *               description: Keyframes associated with the observation.
- *               items:
- *                 $ref: '#/components/schemas/Keyframe'
- *
- *     ObservationWithSessionAndKeyframes:
- *       allOf:
- *         - $ref: '#/components/schemas/ObservationWithKeyframes'
- *         - type: object
- *           description: Observation response containing both its owning session and associated keyframes.
- *           properties:
- *             session:
- *               $ref: '#/components/schemas/Session'
- *
- *     ObservationWithDatasets:
- *       allOf:
- *         - $ref: '#/components/schemas/Observation'
- *         - type: object
- *           description: Observation response containing associated curated datasets.
- *           properties:
- *             datasets:
- *               type: array
- *               description: Datasets that include this observation through the dataset_observations join table.
- *               items:
- *                 $ref: '#/components/schemas/Dataset'
- */
 
 
 /**
@@ -358,12 +111,20 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: false,
                 primaryKey: true,
                 autoIncrement: true,
+                jsonSchema: {
+                    description: 'Primary database identifier for the observation.',
+                    examples: [12045],
+                },
             },
 
             // Observation identifier used by the source observation workflow.
             obsID: {
                 type: DataTypes.INTEGER,
                 allowNull: false,
+                jsonSchema: {
+                    description: 'Observation identifier used within the source workflow.',
+                    examples: [42],
+                },
             },
 
             // Optional identifier of a parent observation.
@@ -371,6 +132,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.INTEGER,
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Optional parent observation identifier.',
+                    examples: [17],
+                },
             },
 
             // Optional project directly associated with the observation.
@@ -380,6 +145,10 @@ module.exports = (sequelize, DataTypes) => {
                 references: {
                     model: 'projects',
                     key: 'project_id',
+                },
+                jsonSchema: {
+                    description: 'Identifier of the project associated with the observation.',
+                    examples: [24],
                 },
             },
 
@@ -391,6 +160,10 @@ module.exports = (sequelize, DataTypes) => {
                     model: 'sessions',
                     key: 'session_id',
                 },
+                jsonSchema: {
+                    description: 'Identifier of the session associated with the observation.',
+                    examples: [718],
+                },
             },
 
             // Optional user associated with the observation record.
@@ -401,6 +174,10 @@ module.exports = (sequelize, DataTypes) => {
                     model: 'users',
                     key: 'user_id',
                 },
+                jsonSchema: {
+                    description: 'Identifier of the user associated with the observation.',
+                    examples: [12],
+                },
             },
 
             // Starting time code of the observation in the source media.
@@ -408,6 +185,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Starting time code for the observation.',
+                    examples: ['00:12:21.520'],
+                },
             },
 
             // Stored source-frame value associated with the observation.
@@ -415,12 +196,20 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Stored source-frame value associated with the observation.',
+                    examples: ['18322'],
+                },
             },
 
             // Taxonomic serial identifier associated with the observation.
             taxserial: {
                 type: DataTypes.INTEGER,
                 allowNull: true,
+                jsonSchema: {
+                    description: 'Taxonomic serial identifier associated with the observation.',
+                    examples: [1054],
+                },
             },
 
             // Common name assigned to the observed biological taxon.
@@ -428,12 +217,20 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Common name assigned to the observed taxon.',
+                    examples: ['Bat star'],
+                },
             },
 
             // Number of individuals represented by the observation.
             count: {
                 type: DataTypes.INTEGER,
                 allowNull: true,
+                jsonSchema: {
+                    description: 'Number of individuals represented by the observation.',
+                    examples: [1],
+                },
             },
 
             // Recorded sex classification when available.
@@ -441,24 +238,40 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Recorded sex classification when available.',
+                    examples: ['Unknown'],
+                },
             },
 
             // Coarse size category assigned to the observation.
             coarsesize: {
                 type: DataTypes.INTEGER,
                 allowNull: true,
+                jsonSchema: {
+                    description: 'Coarse size classification assigned to the observation.',
+                    examples: [3],
+                },
             },
 
             // Stored size-review state or classification.
             sizereview: {
                 type: DataTypes.INTEGER,
                 allowNull: true,
+                jsonSchema: {
+                    description: 'Stored size-review state or classification.',
+                    examples: [1],
+                },
             },
 
             // Quadrant associated with the observation.
             quadrant: {
                 type: DataTypes.INTEGER,
                 allowNull: true,
+                jsonSchema: {
+                    description: 'Quadrant value associated with the observation.',
+                    examples: [2],
+                },
             },
 
             // Ending time code of the observation in the source media.
@@ -466,6 +279,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Ending time code for the observation.',
+                    examples: ['00:12:29.840'],
+                },
             },
 
             // Taxonomic review status or code.
@@ -473,6 +290,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Taxonomic review status or code.',
+                    examples: ['R'],
+                },
             },
 
             // Free-text note describing the observation.
@@ -480,6 +301,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Free-text note associated with the observation.',
+                    examples: ['Partially obscured behind rock.'],
+                },
             },
 
             // Stored down-camera value associated with the observation.
@@ -487,6 +312,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Stored down-camera value associated with the observation.',
+                    examples: ['false'],
+                },
             },
 
             // Stored time-log value associated with the observation.
@@ -494,6 +323,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Stored observation time-log value.',
+                    examples: ['2024-07-30 19:21:14'],
+                },
             },
 
             // Name or identifier of the source video.
@@ -501,6 +334,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Video source associated with the observation.',
+                    examples: ['20240730_190910 Fwd.mp4'],
+                },
             },
 
             // Stored filesystem, server, or logical location of the source video.
@@ -508,6 +345,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Stored location of the associated video.',
+                    examples: ['/CAMPA2024/Dive12/FWD'],
+                },
             },
 
             // Stored position of the observation within the source media.
@@ -515,6 +356,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Stored position of the observation within the source media.',
+                    examples: ['741.520'],
+                },
             },
 
             // Stored actual-position value associated with the observation.
@@ -522,6 +367,10 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(255),
                 allowNull: true,
                 defaultValue: null,
+                jsonSchema: {
+                    description: 'Stored actual-position value associated with the observation.',
+                    examples: ['741.520'],
+                },
             },
 
             // Substrate classification flags allow multiple substrate types to
@@ -530,78 +379,130 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether bedrock substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_megaclast: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether megaclast substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_boulder: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether boulder substrate was recorded.',
+                    examples: [true],
+                },
             },
 
             substrate_cobble: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether cobble substrate was recorded.',
+                    examples: [true],
+                },
             },
 
             substrate_pebble: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether pebble substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_granule: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether granule substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_sand: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether sand substrate was recorded.',
+                    examples: [true],
+                },
             },
 
             substrate_mud: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether mud substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_coral_reef: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether coral-reef substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_coral_rubble: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether coral-rubble substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_shell_hash: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether shell-hash substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_shell_rubble: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether shell-rubble substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             substrate_algal: {
                 type: DataTypes.BOOLEAN,
                 allowNull: true,
                 defaultValue: false,
+                jsonSchema: {
+                    description: 'Indicates whether algal substrate was recorded.',
+                    examples: [false],
+                },
             },
 
             // Optional model confidence score represented on a zero-to-one scale.
@@ -609,6 +510,11 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.DOUBLE,
                 allowNull: true,
                 comment: 'Confidence score (0.0–1.0)',
+                jsonSchema: {
+                    schema: { type: 'number', format: 'double', minimum: 0, maximum: 1 },
+                    description: 'Machine-learning confidence score between zero and one.',
+                    examples: [0.93],
+                },
             },
         },
         {

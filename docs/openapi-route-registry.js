@@ -57,7 +57,11 @@ function normalizeOpenApiPath(expressPath) {
  *
  * @param {Object} app - Express application instance to register the route on.
  * @param {Object} definition - Route + OpenAPI operation definition.
- * @param {string} definition.method - HTTP method, e.g. `'get'`.
+ * @param {string} definition.method - Documented HTTP method, e.g. `'get'`.
+ * @param {string} [definition.expressMethod] - Actual Express method to
+ *   register with, if it differs from `method` (e.g. a route mounted with
+ *   `app.use()` so it responds to any HTTP verb, but is documented as `get`
+ *   since that's its intended/only meaningful usage). Defaults to `method`.
  * @param {string} definition.path - Express route path, e.g. `/api/task/:id`.
  * @param {Function} definition.handler - Express request handler.
  * @returns {void}
@@ -66,6 +70,7 @@ function normalizeOpenApiPath(expressPath) {
  */
 function registerOpenApiRoute(app, definition) {
     const method = String(definition.method || '').toLowerCase();
+    const expressMethod = String(definition.expressMethod || definition.method || '').toLowerCase();
     const routePath = definition.path;
     const handler = definition.handler;
 
@@ -89,9 +94,9 @@ function registerOpenApiRoute(app, definition) {
 
     registeredRouteKeys.add(routeKey);
 
-    app[method](routePath, handler);
+    app[expressMethod](routePath, handler);
 
-    const { handler: ignoredHandler, method: ignoredMethod, path: ignoredPath, ...operation } = definition;
+    const { handler: ignoredHandler, method: ignoredMethod, expressMethod: ignoredExpressMethod, path: ignoredPath, ...operation } = definition;
 
     documentedRoutes.push({
         method,

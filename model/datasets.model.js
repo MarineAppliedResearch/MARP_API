@@ -24,63 +24,6 @@
 const { Model } = require('sequelize');
 
 /**
- * @openapi
- * components:
- *   schemas:
- *     Dataset:
- *       type: object
- *       description: >
- *         Curated collection of observations used for machine learning
- *         training, validation, or testing. Linked to individual
- *         observations through the dataset_observations join table.
- *       required:
- *         - id
- *         - name
- *       properties:
- *         id:
- *           type: integer
- *           example: 3
- *           description: Unique identifier for this dataset record.
- *         name:
- *           type: string
- *           example: Fish_2024_Training_Set_v1
- *           description: Descriptive name of this dataset.
- *         description:
- *           type: string
- *           nullable: true
- *           description: Detailed description or notes about the dataset's purpose and composition.
- *         location:
- *           type: string
- *           nullable: true
- *           description: Filesystem or network location of the dataset resources.
- *         num_samples:
- *           type: integer
- *           nullable: true
- *           description: Total number of samples (images, frames, or observations) included in this dataset.
- *         num_classes:
- *           type: integer
- *           nullable: true
- *           description: Approximate number of unique classes (species) represented in this dataset (derived from observation comnames).
- *         source:
- *           type: string
- *           nullable: true
- *           example: auto-compiled
- *           description: Source or method of dataset creation (e.g., "auto-compiled", "manual curation", "legacy import").
- *         notes:
- *           type: string
- *           nullable: true
- *           description: General notes about dataset preparation, inclusion criteria, or issues.
- *         created_at:
- *           type: string
- *           format: date-time
- *           description: Timestamp when this dataset record was created.
- *         updated_at:
- *           type: string
- *           format: date-time
- *           description: Timestamp when this dataset record was last updated.
- */
-
-/**
  * Create and initialize the datasets Sequelize model.
  *
  * Sequelize calls this factory with the shared database connection and
@@ -140,6 +83,10 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         primaryKey: true,
         comment: 'Unique identifier for this dataset record.',
+        jsonSchema: {
+            description: 'Unique identifier for this dataset record.',
+            examples: [3],
+        },
       },
 
       name: {
@@ -147,6 +94,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
         comment: 'Descriptive name of this dataset.',
+        jsonSchema: {
+            description: 'Descriptive name of this dataset.',
+            examples: ['Fish_2024_Training_Set_v1'],
+        },
       },
 
       description: {
@@ -154,6 +105,9 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
         comment: 'Detailed description or notes about the dataset’s purpose and composition.',
+        jsonSchema: {
+            description: "Detailed description or notes about the dataset's purpose and composition.",
+        },
       },
 
       location: {
@@ -161,6 +115,9 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: true,
         comment: 'Filesystem or network location of the dataset resources.',
+        jsonSchema: {
+            description: 'Filesystem or network location of the dataset resources.',
+        },
       },
 
       num_samples: {
@@ -168,6 +125,9 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true,
         comment: 'Total number of samples (images, frames, or observations) included in this dataset.',
+        jsonSchema: {
+            description: 'Total number of samples (images, frames, or observations) included in this dataset.',
+        },
       },
 
       num_classes: {
@@ -176,6 +136,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Approximate number of unique classes (species) represented in this dataset (derived from observation comnames).',
+        jsonSchema: {
+            description: 'Approximate number of unique classes (species) represented in this dataset (derived from observation comnames).',
+        },
       },
 
       source: {
@@ -184,6 +147,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         comment:
           'Source or method of dataset creation (e.g., "auto-compiled", "manual curation", "legacy import").',
+        jsonSchema: {
+            description: 'Source or method of dataset creation (e.g., "auto-compiled", "manual curation", "legacy import").',
+            examples: ['auto-compiled'],
+        },
       },
 
       notes: {
@@ -191,6 +158,9 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
         comment: 'General notes about dataset preparation, inclusion criteria, or issues.',
+        jsonSchema: {
+            description: 'General notes about dataset preparation, inclusion criteria, or issues.',
+        },
       },
 
       created_at: {
@@ -199,6 +169,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: DataTypes.NOW,
         comment: 'Timestamp when this dataset record was created.',
+        jsonSchema: {
+            description: 'Timestamp when this dataset record was created.',
+        },
       },
 
       updated_at: {
@@ -207,6 +180,9 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: DataTypes.NOW,
         comment: 'Timestamp when this dataset record was last updated.',
+        jsonSchema: {
+            description: 'Timestamp when this dataset record was last updated.',
+        },
       },
     },
     {

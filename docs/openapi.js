@@ -46,25 +46,157 @@ function unwrapArrayExamples(schema) {
     return schema;
 }
 
+/**
+ * JSONB attributes map to a generic `anyOf: [object, array, boolean, ...]`
+ * schema by default. A `jsonSchema.schema` override narrowing the type (e.g.
+ * to a plain object) adds its own `type` key alongside that `anyOf` rather
+ * than replacing it, leaving both present and redundant. This drops the
+ * leftover `anyOf` whenever an explicit `type` narrowed it down.
+ */
+function dropRedundantAnyOf(schema) {
+    for (const property of Object.values(schema.properties || {})) {
+        if (property.type && property.anyOf) {
+            delete property.anyOf;
+        }
+    }
+
+    return schema;
+}
+
+/**
+ * One entry per Sequelize model whose OpenAPI component schema is generated
+ * from the model instead of hand-written. `propertyDescriptions` fills in
+ * descriptions for properties `@techntools/sequelize-to-openapi` derives
+ * itself (e.g. Sequelize's automatic `id`/`createdAt`/`updatedAt`), which
+ * have no attribute definition on the model to attach `jsonSchema` to.
+ *
+ * @constant
+ * @type {Array<Object>}
+ */
+const GENERATED_SCHEMAS = [
+    {
+        modelKey: 'tasks',
+        schemaName: 'Task',
+        description:
+            'A discrete work item tracked in MARP, including descriptive text and audit fields showing who created and last updated it.',
+        propertyDescriptions: {
+            id: 'Primary database identifier for the task.',
+            createdAt: 'Timestamp when the task record was created.',
+            updatedAt: 'Timestamp when the task record was last updated.',
+        },
+    },
+    {
+        modelKey: 'metaInfo',
+        schemaName: 'MetaInfo',
+        description:
+            'A small reference metadata record used for lightweight application-level values (for example labels or environment metadata) that do not belong to a larger domain table.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'keyframes',
+        schemaName: 'Keyframe',
+        description:
+            'Frame-level annotation associated with a single observation. One observation can contain multiple tracked subsets (for example, two boxed organisms tracked in parallel) distinguished by the `subset` field.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'users',
+        schemaName: 'User',
+        description:
+            'Individual identity record used to attribute sessions, observations, and related reporting outputs throughout MARP.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'projects',
+        schemaName: 'Project',
+        description:
+            'Named organizational unit used to group sessions and observations for a survey effort, campaign, or reporting scope.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'sessions',
+        schemaName: 'Session',
+        description:
+            'Dive or survey session grouping the observations recorded during a single dive/line, along with its owning project and user.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'species',
+        schemaName: 'Species',
+        description:
+            'Taxonomic and GUI display entry used to classify observations, datasets, and ML model training labels throughout MARP.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'model_species',
+        schemaName: 'ModelSpecies',
+        description:
+            'Join record linking an ML model to a species it was trained to detect or classify, including per-species dataset size, training weight, and evaluation metrics.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'datasets',
+        schemaName: 'Dataset',
+        description:
+            'Curated collection of observations used for machine learning training, validation, or testing. Linked to individual observations through the dataset_observations join table.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'dataset_observations',
+        schemaName: 'DatasetObservation',
+        description:
+            'Join record linking a dataset to one observation it includes, with metadata describing how and why that observation was selected for the dataset (train/val/test split, selection method, and sampling weight).',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'ml_models',
+        schemaName: 'MlModel',
+        description:
+            'Metadata record for a distinct machine learning model identity used within MARP (e.g., "yolov8-marine-fish-2025"). Represents the conceptual model itself, not any individual training run; runs, metrics, and artifacts are linked through the training_runs table.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'training_runs',
+        schemaName: 'TrainingRun',
+        description:
+            'A single training or retraining event of an ML model, linking the model, the dataset used, and the resulting epochs, metrics, and artifacts produced during that run.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'epochs',
+        schemaName: 'Epoch',
+        description:
+            'Per-epoch performance and timing data captured during a single training run, including loss values and precision/recall/mAP metrics recorded at the end of that epoch.',
+        propertyDescriptions: {},
+    },
+    {
+        modelKey: 'observations',
+        schemaName: 'Observation',
+        description:
+            'Biological or habitat observation recorded during a MARP session. The fields available in a response may depend on the query and any Sequelize associations included by that endpoint.',
+        propertyDescriptions: {},
+    },
+];
+
 function buildGeneratedComponentSchemas() {
     const schemas = {};
 
-    if (db.tasks) {
-        schemas.Task = unwrapArrayExamples(schemaManager.generate(db.tasks, openApiStrategy));
-        schemas.Task.description =
-            'A discrete work item tracked in MARP, including descriptive text and audit fields showing who created and last updated it.';
-
-        if (schemas.Task.properties?.id) {
-            schemas.Task.properties.id.description = 'Primary database identifier for the task.';
+    for (const { modelKey, schemaName, description, propertyDescriptions } of GENERATED_SCHEMAS) {
+        const model = db[modelKey];
+        if (!model) {
+            continue;
         }
 
-        if (schemas.Task.properties?.createdAt) {
-            schemas.Task.properties.createdAt.description = 'Timestamp when the task record was created.';
+        const schema = dropRedundantAnyOf(unwrapArrayExamples(schemaManager.generate(model, openApiStrategy)));
+        schema.description = description;
+
+        for (const [property, propertyDescription] of Object.entries(propertyDescriptions)) {
+            if (schema.properties?.[property]) {
+                schema.properties[property].description = propertyDescription;
+            }
         }
 
-        if (schemas.Task.properties?.updatedAt) {
-            schemas.Task.properties.updatedAt.description = 'Timestamp when the task record was last updated.';
-        }
+        schemas[schemaName] = schema;
     }
 
     return schemas;
@@ -298,6 +430,640 @@ const buildOpenApiSpec = () => {
                                 },
                             },
                         },
+                    },
+                    UserCreateRequest: {
+                        type: 'object',
+                        required: ['user'],
+                        properties: {
+                            user: {
+                                type: 'object',
+                                required: ['name'],
+                                additionalProperties: true,
+                                properties: {
+                                    name: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Jane Diver',
+                                        description: 'Unique display name used by API and reporting views.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    UserUpdateRequest: {
+                        type: 'object',
+                        required: ['user'],
+                        properties: {
+                            user: {
+                                type: 'object',
+                                required: ['user_id'],
+                                additionalProperties: true,
+                                properties: {
+                                    user_id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the user to update.',
+                                    },
+                                    name: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Jane Diver',
+                                        description: 'Unique display name used by API and reporting views.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    ProjectCreateRequest: {
+                        type: 'object',
+                        required: ['project'],
+                        properties: {
+                            project: {
+                                type: 'object',
+                                required: ['name'],
+                                additionalProperties: true,
+                                properties: {
+                                    name: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Channel Islands 2024',
+                                        description: 'Unique display name used across UI filters and API queries.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    ProjectUpdateRequest: {
+                        type: 'object',
+                        required: ['project'],
+                        properties: {
+                            project: {
+                                type: 'object',
+                                required: ['project_id'],
+                                additionalProperties: true,
+                                properties: {
+                                    project_id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the project to update.',
+                                    },
+                                    name: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Channel Islands 2024',
+                                        description: 'Unique display name used across UI filters and API queries.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    SessionCreateRequest: {
+                        type: 'object',
+                        required: ['session'],
+                        properties: {
+                            session: {
+                                type: 'object',
+                                required: ['dive', 'line', 'lineId', 'type'],
+                                additionalProperties: true,
+                                properties: {
+                                    project_id: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        example: 24,
+                                        description: 'Identifier of the project this session was conducted under.',
+                                    },
+                                    user_id: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        example: 8,
+                                        description: 'Identifier of the user who recorded or owns this session.',
+                                    },
+                                    dive: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Dive 12',
+                                        description: 'Dive identifier or name associated with this session.',
+                                    },
+                                    line: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Line A',
+                                        description: 'Transect line identifier associated with this session.',
+                                    },
+                                    lineId: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'L-2024-012A',
+                                        description: 'Identifier of the specific survey line tied to this session.',
+                                    },
+                                    type: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'ROV',
+                                        description: 'Type or category of this session (e.g., survey platform or method).',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    SpeciesCreateRequest: {
+                        type: 'object',
+                        required: ['species'],
+                        properties: {
+                            species: {
+                                type: 'object',
+                                required: ['taxserial'],
+                                additionalProperties: true,
+                                properties: {
+                                    taxserial: {
+                                        type: 'integer',
+                                        example: 1054,
+                                        description: 'Internal MARP taxonomy serial number used as a unique ID across systems.',
+                                    },
+                                    comname: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'Bat star',
+                                        description: 'Common name used for this species.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    SpeciesUpdateRequest: {
+                        type: 'object',
+                        required: ['species'],
+                        properties: {
+                            species: {
+                                type: 'object',
+                                additionalProperties: true,
+                                properties: {
+                                    taxserial: {
+                                        type: 'integer',
+                                        example: 1054,
+                                        description: 'Internal MARP taxonomy serial number used as a unique ID across systems.',
+                                    },
+                                    comname: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'Bat star',
+                                        description: 'Common name used for this species.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    DatasetCreateRequest: {
+                        type: 'object',
+                        required: ['dataset'],
+                        properties: {
+                            dataset: {
+                                type: 'object',
+                                required: ['name'],
+                                additionalProperties: true,
+                                properties: {
+                                    name: {
+                                        type: 'string',
+                                        example: 'Fish_2024_Training_Set_v1',
+                                        description: 'Descriptive name of this dataset.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    DatasetUpdateRequest: {
+                        type: 'object',
+                        required: ['dataset'],
+                        properties: {
+                            dataset: {
+                                type: 'object',
+                                required: ['id'],
+                                additionalProperties: true,
+                                properties: {
+                                    id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the dataset to update.',
+                                    },
+                                    name: {
+                                        type: 'string',
+                                        example: 'Fish_2024_Training_Set_v1',
+                                        description: 'Descriptive name of this dataset.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    MlModelCreateRequest: {
+                        type: 'object',
+                        required: ['model'],
+                        properties: {
+                            model: {
+                                type: 'object',
+                                required: ['name', 'model_type'],
+                                additionalProperties: true,
+                                properties: {
+                                    name: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'yolov8-marine-fish-2025',
+                                        description: 'Human-readable name of the model (e.g., "yolov8-marine-fish-2025").',
+                                    },
+                                    model_type: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'yolov8',
+                                        description: 'Model architecture family (e.g., "yolov8", "resnet", "deepsort").',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    MlModelUpdateRequest: {
+                        type: 'object',
+                        required: ['model'],
+                        properties: {
+                            model: {
+                                type: 'object',
+                                additionalProperties: true,
+                                properties: {
+                                    storage_path: {
+                                        type: 'string',
+                                        example: '/models/yolov8-marine-fish-2025/',
+                                        description: 'Filesystem or URI path to the stored model weights and artifacts.',
+                                    },
+                                    status: {
+                                        type: 'string',
+                                        enum: ['draft', 'training', 'trained', 'archived'],
+                                        example: 'trained',
+                                        description: 'Lifecycle state of the model ("draft", "training", "trained", or "archived").',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    TrainingRunCreateRequest: {
+                        type: 'object',
+                        required: ['training_run'],
+                        properties: {
+                            training_run: {
+                                type: 'object',
+                                required: ['model_id'],
+                                additionalProperties: true,
+                                properties: {
+                                    model_id: {
+                                        type: 'integer',
+                                        example: 7,
+                                        description: 'Foreign key referencing the parent ML model (ml_models.id).',
+                                    },
+                                    dataset_id: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        example: 3,
+                                        description: 'Foreign key referencing the dataset used for training (datasets.id).',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    TrainingRunUpdateRequest: {
+                        type: 'object',
+                        required: ['training_run'],
+                        properties: {
+                            training_run: {
+                                type: 'object',
+                                required: ['id'],
+                                additionalProperties: true,
+                                properties: {
+                                    id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the training run to update.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    MetricsSummaryCreateRequest: {
+                        type: 'object',
+                        required: ['metrics_summary'],
+                        properties: {
+                            metrics_summary: {
+                                type: 'object',
+                                required: ['training_run_id', 'dataset_split'],
+                                additionalProperties: true,
+                                properties: {
+                                    training_run_id: {
+                                        type: 'integer',
+                                        example: 12,
+                                        description: 'Foreign key referencing the training run this metrics summary belongs to (training_runs.id).',
+                                    },
+                                    dataset_split: {
+                                        type: 'string',
+                                        enum: ['train', 'val', 'test'],
+                                        description: 'Specifies which dataset split these metrics apply to - "train", "val", or "test".',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    MetricsSummaryUpdateRequest: {
+                        type: 'object',
+                        required: ['metrics_summary'],
+                        properties: {
+                            metrics_summary: {
+                                type: 'object',
+                                required: ['id'],
+                                additionalProperties: true,
+                                properties: {
+                                    id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the metrics_summary to update.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    MetricsCurveCreateRequest: {
+                        type: 'object',
+                        required: ['metrics_curve'],
+                        properties: {
+                            metrics_curve: {
+                                type: 'object',
+                                required: ['metrics_summary_id', 'confidence_threshold'],
+                                additionalProperties: true,
+                                properties: {
+                                    metrics_summary_id: {
+                                        type: 'integer',
+                                        example: 501,
+                                        description: 'Foreign key referencing the metrics summary record (metrics_summary.id) this curve point belongs to.',
+                                    },
+                                    confidence_threshold: {
+                                        type: 'number',
+                                        format: 'float',
+                                        example: 0.25,
+                                        description: 'Confidence threshold (between 0.0 and 1.0) at which these metrics were measured.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    MetricsCurveUpdateRequest: {
+                        type: 'object',
+                        required: ['metrics_curve'],
+                        properties: {
+                            metrics_curve: {
+                                type: 'object',
+                                required: ['id'],
+                                additionalProperties: true,
+                                properties: {
+                                    id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the metrics_curve to update.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    EpochCreateRequest: {
+                        type: 'object',
+                        required: ['epoch'],
+                        properties: {
+                            epoch: {
+                                type: 'object',
+                                required: ['training_run_id', 'epoch_number'],
+                                additionalProperties: true,
+                                properties: {
+                                    training_run_id: {
+                                        type: 'integer',
+                                        example: 12,
+                                        description: 'Foreign key linking this epoch to its parent training run (training_runs.id).',
+                                    },
+                                    epoch_number: {
+                                        type: 'integer',
+                                        example: 3,
+                                        description: 'The ordinal number of this epoch in the training sequence.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    EpochUpdateRequest: {
+                        type: 'object',
+                        required: ['epoch'],
+                        properties: {
+                            epoch: {
+                                type: 'object',
+                                required: ['id'],
+                                additionalProperties: true,
+                                properties: {
+                                    id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the epoch to update.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    DatasetObservationCreateRequest: {
+                        type: 'object',
+                        required: ['dataset_observation'],
+                        properties: {
+                            dataset_observation: {
+                                type: 'object',
+                                required: ['dataset_id', 'observation_id'],
+                                additionalProperties: true,
+                                properties: {
+                                    dataset_id: {
+                                        type: 'integer',
+                                        example: 3,
+                                        description: 'Foreign key referencing the dataset that includes this observation (datasets.id).',
+                                    },
+                                    observation_id: {
+                                        type: 'integer',
+                                        example: 918,
+                                        description: 'Foreign key referencing the observation included in this dataset (observations.observation_id).',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    DatasetObservationUpdateRequest: {
+                        type: 'object',
+                        required: ['dataset_observation'],
+                        properties: {
+                            dataset_observation: {
+                                type: 'object',
+                                required: ['id'],
+                                additionalProperties: true,
+                                properties: {
+                                    id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the dataset_observation to update.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    ObservationCreateRequest: {
+                        type: 'object',
+                        required: ['observation'],
+                        properties: {
+                            observation: {
+                                type: 'object',
+                                required: ['obsID'],
+                                additionalProperties: true,
+                                properties: {
+                                    obsID: {
+                                        type: 'integer',
+                                        example: 42,
+                                        description: 'Observation identifier used within the source workflow.',
+                                    },
+                                    comname: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'Bat star',
+                                        description: 'Common name assigned to the observed taxon.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    ObservationUpdateRequest: {
+                        type: 'object',
+                        required: ['observation'],
+                        properties: {
+                            observation: {
+                                type: 'object',
+                                required: ['observation_id'],
+                                additionalProperties: true,
+                                properties: {
+                                    observation_id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the observation to update.',
+                                    },
+                                    comname: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'Bat star',
+                                        description: 'Common name assigned to the observed taxon.',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    SessionUpdateRequest: {
+                        type: 'object',
+                        required: ['session'],
+                        properties: {
+                            session: {
+                                type: 'object',
+                                required: ['session_id'],
+                                additionalProperties: true,
+                                properties: {
+                                    session_id: {
+                                        type: 'integer',
+                                        description: 'Primary database identifier for the session to update.',
+                                    },
+                                    project_id: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        example: 24,
+                                        description: 'Identifier of the project this session was conducted under.',
+                                    },
+                                    user_id: {
+                                        type: 'integer',
+                                        nullable: true,
+                                        example: 8,
+                                        description: 'Identifier of the user who recorded or owns this session.',
+                                    },
+                                    dive: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Dive 12',
+                                        description: 'Dive identifier or name associated with this session.',
+                                    },
+                                    line: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'Line A',
+                                        description: 'Transect line identifier associated with this session.',
+                                    },
+                                    lineId: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'L-2024-012A',
+                                        description: 'Identifier of the specific survey line tied to this session.',
+                                    },
+                                    type: {
+                                        type: 'string',
+                                        minLength: 1,
+                                        maxLength: 255,
+                                        example: 'ROV',
+                                        description: 'Type or category of this session (e.g., survey platform or method).',
+                                    },
+                                },
+                            },
+                        },
+                    },
+
+                    // The three schemas below extend the generated `Observation` schema
+                    // with association data (keyframes, session, datasets) that Sequelize
+                    // attaches only when a query's `include` asks for it. They aren't
+                    // derivable from the Observation model alone, so they're hand-written
+                    // here rather than generated (see model/observation.model.js).
+                    ObservationWithKeyframes: {
+                        allOf: [
+                            { $ref: '#/components/schemas/Observation' },
+                            {
+                                type: 'object',
+                                description: 'Observation response containing associated keyframes.',
+                                properties: {
+                                    keyframes: {
+                                        type: 'array',
+                                        description: 'Keyframes associated with the observation.',
+                                        items: { $ref: '#/components/schemas/Keyframe' },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    ObservationWithSessionAndKeyframes: {
+                        allOf: [
+                            { $ref: '#/components/schemas/ObservationWithKeyframes' },
+                            {
+                                type: 'object',
+                                description: 'Observation response containing both its owning session and associated keyframes.',
+                                properties: {
+                                    session: { $ref: '#/components/schemas/Session' },
+                                },
+                            },
+                        ],
+                    },
+                    ObservationWithDatasets: {
+                        allOf: [
+                            { $ref: '#/components/schemas/Observation' },
+                            {
+                                type: 'object',
+                                description: 'Observation response containing associated curated datasets.',
+                                properties: {
+                                    datasets: {
+                                        type: 'array',
+                                        description: 'Datasets that include this observation through the dataset_observations join table.',
+                                        items: { $ref: '#/components/schemas/Dataset' },
+                                    },
+                                },
+                            },
+                        ],
                     },
 
                     // The schemas below document custom report/aggregate routes whose

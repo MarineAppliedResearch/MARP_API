@@ -47,6 +47,9 @@ function registerTaskRoutes(app) {
             },
         },
         handler: asyncHandler(async (req, res) => {
+            // getTasks() swallows database errors to [] rather than
+            // throwing, so an empty array here doesn't distinguish
+            // "no tasks" from "query failed" -- see repository/task.repository.js.
             const data = await taskController.getTasks();
             res.json(data);
         }),
@@ -85,6 +88,8 @@ function registerTaskRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             console.log(req.body);
+            // Insert failure is logged and swallowed to {} rather than
+            // thrown, same swallow-to-fallback pattern as getTasks() above.
             const data = await taskController.createTask(req.body.task);
             res.json(data);
         }),
@@ -133,6 +138,10 @@ function registerTaskRoutes(app) {
             },
         },
         handler: asyncHandler(async (req, res) => {
+            // Success resolves to Sequelize's raw update result (an array
+            // whose first element is the affected-row count); a failure is
+            // logged and swallowed to {} rather than thrown -- hence the
+            // oneOf(array, object) response schema above.
             const data = await taskController.updateTask(req.body.task);
             res.json(data);
         }),
@@ -176,6 +185,9 @@ function registerTaskRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const data = await taskController.getTaskById(req.params.id);
 
+            // getTaskById resolves null for "no such task" -- only that
+            // case becomes this explicit 404, not a repository failure
+            // (which would reject and be caught by asyncHandler instead).
             if (!data) {
                 throw new ApiError(
                     404,
@@ -221,6 +233,10 @@ function registerTaskRoutes(app) {
             },
         },
         handler: asyncHandler(async (req, res) => {
+            // Delete failure is logged and swallowed to {} rather than
+            // thrown -- see repository/task.repository.js#deleteTask (which
+            // also has an unreachable dead-code line after its real return,
+            // left as-is since it never executes).
             const data = await taskController.deleteTask(req.params.id);
             res.json(data);
         }),
