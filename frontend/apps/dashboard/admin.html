@@ -86,6 +86,60 @@
       </div>
     </div>
 
+    <div class="card p-3 mt-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="card-title mb-0"><i class="bi bi-window"></i> Applications</div>
+        <button class="btn btn-primary btn-sm" id="addAppBtn"><i class="bi bi-plus-lg"></i> Add application</button>
+      </div>
+
+      <p class="text-danger small mb-3" id="appsError" hidden></p>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Status</th>
+              <th>Tokens</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="appsTableBody">
+            <tr><td colspan="6" class="text-center text-muted py-4">Loading applications…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card p-3 mt-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="card-title mb-0"><i class="bi bi-key"></i> Tokens</div>
+        <button class="btn btn-primary btn-sm" id="issueTokenBtn"><i class="bi bi-plus-lg"></i> Issue token</button>
+      </div>
+
+      <p class="text-danger small mb-3" id="tokensError" hidden></p>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Application</th>
+              <th>Token</th>
+              <th>Status</th>
+              <th>Permissions</th>
+              <th>Last used</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tokensTableBody">
+            <tr><td colspan="6" class="text-center text-muted py-4">Loading tokens…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="footer text-center pt-4 pb-2">MARP admin · user management</div>
   </main>
 
@@ -174,6 +228,92 @@
             <button type="submit" class="btn btn-primary">Save permissions</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit application modal -->
+  <div class="modal fade" id="appModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="appModalTitle">Add application</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="appForm">
+          <div class="modal-body">
+            <p class="text-danger small" id="appFormError" hidden></p>
+            <div class="mb-3">
+              <label class="form-label" for="appFormName">Name</label>
+              <input type="text" class="form-control" id="appFormName" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="appFormDescription">Description</label>
+              <textarea class="form-control" id="appFormDescription" rows="2"></textarea>
+            </div>
+            <div class="mb-3" id="appFormStatusGroup" hidden>
+              <label class="form-label" for="appFormStatus">Status</label>
+              <select class="form-select" id="appFormStatus">
+                <option value="active">active</option>
+                <option value="disabled">disabled</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Issue token modal -->
+  <div class="modal fade" id="issueTokenModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Issue token</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="issueTokenForm">
+          <div class="modal-body">
+            <p class="text-danger small" id="issueTokenFormError" hidden></p>
+            <div class="mb-3">
+              <label class="form-label" for="issueTokenApp">Application</label>
+              <select class="form-select" id="issueTokenApp" required></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="issueTokenExpiresAt">Expires at (optional)</label>
+              <input type="date" class="form-control" id="issueTokenExpiresAt">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Issue token</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- One-time raw token display modal -->
+  <div class="modal fade" id="rawTokenModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Copy this token now</h5>
+        </div>
+        <div class="modal-body">
+          <p class="text-danger small">This is the only time this token will ever be shown. It cannot be retrieved again -- if lost, issue a new one (regenerate).</p>
+          <div class="input-group">
+            <input type="text" class="form-control font-monospace" id="rawTokenValue" readonly>
+            <button class="btn btn-outline-secondary" type="button" id="rawTokenCopyBtn"><i class="bi bi-clipboard"></i> Copy</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+        </div>
       </div>
     </div>
   </div>
@@ -365,20 +505,25 @@
     const permissionsFormError = document.getElementById('permissionsFormError');
     const permissionsFormList = document.getElementById('permissionsFormList');
 
-    // Set while the permissions modal is open, so its submit handler knows the target user.
-    let permissionsTargetUserId = null;
+    // Set while the permissions modal is open, so its submit handler knows
+    // which resource ('users' or 'tokens') and id it's editing.
+    let permissionsTargetKind = null;
+    let permissionsTargetId = null;
 
     /**
-     * Opens the permissions modal for `user`, showing every permission in
-     * the catalog as a checkbox, pre-checked for whatever the user
-     * currently has. Saving replaces the user's entire permission set with
-     * exactly the checked keys (add or remove any permission, not just
-     * admin).
+     * Opens the permissions modal for either a user or a token (`kind` is
+     * `'users'` or `'tokens'`), showing every permission in the catalog as
+     * a checkbox, pre-checked for whatever `currentPermissions` already
+     * holds. Saving replaces the entire permission set with exactly the
+     * checked keys (add or remove any permission, not just admin) via
+     * `PUT /api/v2/<kind>/<id>/permissions` -- the same endpoint shape for
+     * both resources.
      */
-    async function openPermissionsModal(user) {
-      permissionsTargetUserId = user.user_id;
+    async function openPermissionsModal(kind, id, name, currentPermissions) {
+      permissionsTargetKind = kind;
+      permissionsTargetId = id;
       permissionsFormError.hidden = true;
-      document.getElementById('permissionsModalTitle').textContent = `Permissions for ${user.name}`;
+      document.getElementById('permissionsModalTitle').textContent = `Permissions for ${name}`;
 
       try {
         const response = await fetch('/api/v2/users/permissions', { credentials: 'same-origin' });
@@ -393,7 +538,7 @@
           ? catalog.map((permission) => `
               <div class="form-check mb-2">
                 <input class="form-check-input" type="checkbox" value="${permission.key}"
-                  id="permissionCheck-${permission.key}" ${user.permissions.includes(permission.key) ? 'checked' : ''}>
+                  id="permissionCheck-${permission.key}" ${currentPermissions.includes(permission.key) ? 'checked' : ''}>
                 <label class="form-check-label" for="permissionCheck-${permission.key}">
                   <strong>${permission.key}</strong>
                   ${permission.description ? `<div class="text-muted small">${permission.description}</div>` : ''}
@@ -417,7 +562,7 @@
         .map((checkbox) => checkbox.value);
 
       try {
-        const response = await fetch(`/api/v2/users/${permissionsTargetUserId}/permissions`, {
+        const response = await fetch(`/api/v2/${permissionsTargetKind}/${permissionsTargetId}/permissions`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'same-origin',
@@ -429,7 +574,7 @@
         }
 
         permissionsModal.hide();
-        await loadUsers();
+        await (permissionsTargetKind === 'tokens' ? loadTokens() : loadUsers());
       } catch (error) {
         permissionsFormError.hidden = false;
         permissionsFormError.textContent = error.message;
@@ -485,7 +630,7 @@
           openPasswordModal(user.user_id);
           break;
         case 'permissions':
-          await openPermissionsModal(user);
+          await openPermissionsModal('users', user.user_id, user.name, user.permissions);
           break;
         case 'delete':
           await softDeleteUser(user);
@@ -499,7 +644,399 @@
         .finally(() => { window.location.href = '/'; });
     });
 
+    // ---------------- Applications ----------------
+
+    const appsTableBody = document.getElementById('appsTableBody');
+    const appsError = document.getElementById('appsError');
+
+    const appModalEl = document.getElementById('appModal');
+    const appModal = new bootstrap.Modal(appModalEl);
+    const appForm = document.getElementById('appForm');
+    const appFormError = document.getElementById('appFormError');
+
+    let editingAppId = null;
+    let cachedApps = [];
+
+    function appStatusBadgeClass(status) {
+      return `badge badge-status-${status || 'active'}`;
+    }
+
+    function renderAppsTable(appsList) {
+      if (appsList.length === 0) {
+        appsTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No applications yet.</td></tr>';
+        return;
+      }
+
+      appsTableBody.innerHTML = appsList.map((application) => `
+        <tr data-app-id="${application.service_client_id}">
+          <td>${application.service_client_id}</td>
+          <td>${application.name}</td>
+          <td>${application.description ? application.description : '<span class="text-muted">—</span>'}</td>
+          <td><span class="${appStatusBadgeClass(application.status)}">${application.status}</span></td>
+          <td>${application.tokenCount}</td>
+          <td class="d-flex flex-wrap gap-1">
+            <button class="btn btn-outline-secondary btn-sm" data-action="edit"><i class="bi bi-pencil"></i></button>
+            <button class="btn ${application.status === 'active' ? 'btn-outline-warning' : 'btn-outline-success'} btn-sm" data-action="toggle-status">
+              ${application.status === 'active' ? 'Disable' : 'Enable'}
+            </button>
+            <button class="btn btn-outline-danger btn-sm" data-action="delete"><i class="bi bi-trash"></i></button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadApps() {
+      appsError.hidden = true;
+
+      try {
+        const response = await fetch('/api/v2/apps', { credentials: 'same-origin' });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        cachedApps = await response.json();
+        renderAppsTable(cachedApps);
+        populateIssueTokenAppOptions();
+      } catch (error) {
+        appsError.hidden = false;
+        appsError.textContent = error.message;
+        appsTableBody.innerHTML = '';
+      }
+    }
+
+    function openAddAppModal() {
+      editingAppId = null;
+      appForm.reset();
+      document.getElementById('appModalTitle').textContent = 'Add application';
+      document.getElementById('appFormStatusGroup').hidden = true;
+      appFormError.hidden = true;
+      appModal.show();
+    }
+
+    function openEditAppModal(application) {
+      editingAppId = application.service_client_id;
+      document.getElementById('appModalTitle').textContent = `Edit ${application.name}`;
+      document.getElementById('appFormName').value = application.name;
+      document.getElementById('appFormDescription').value = application.description || '';
+      document.getElementById('appFormStatus').value = application.status;
+      document.getElementById('appFormStatusGroup').hidden = false;
+      appFormError.hidden = true;
+      appModal.show();
+    }
+
+    appForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      appFormError.hidden = true;
+
+      const name = document.getElementById('appFormName').value;
+      const description = document.getElementById('appFormDescription').value;
+      const status = document.getElementById('appFormStatus').value;
+
+      try {
+        const response = editingAppId
+          ? await fetch(`/api/v2/apps/${editingAppId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ name, description, status }),
+            })
+          : await fetch('/api/v2/apps', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ name, description }),
+            });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        appModal.hide();
+        await loadApps();
+      } catch (error) {
+        appFormError.hidden = false;
+        appFormError.textContent = error.message;
+      }
+    });
+
+    async function toggleAppStatus(application) {
+      const nextStatus = application.status === 'active' ? 'disabled' : 'active';
+
+      try {
+        const response = await fetch(`/api/v2/apps/${application.service_client_id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ status: nextStatus }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        await loadApps();
+      } catch (error) {
+        appsError.hidden = false;
+        appsError.textContent = error.message;
+      }
+    }
+
+    async function deleteApp(application) {
+      if (!window.confirm(`Permanently delete "${application.name}" and all ${application.tokenCount} of its tokens? This cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/v2/apps/${application.service_client_id}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        await loadApps();
+        await loadTokens();
+      } catch (error) {
+        appsError.hidden = false;
+        appsError.textContent = error.message;
+      }
+    }
+
+    document.getElementById('addAppBtn').addEventListener('click', openAddAppModal);
+
+    appsTableBody.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) {
+        return;
+      }
+
+      const row = button.closest('tr');
+      const appId = Number(row.dataset.appId);
+      const application = cachedApps.find((a) => a.service_client_id === appId);
+      if (!application) {
+        return;
+      }
+
+      switch (button.dataset.action) {
+        case 'edit':
+          openEditAppModal(application);
+          break;
+        case 'toggle-status':
+          await toggleAppStatus(application);
+          break;
+        case 'delete':
+          await deleteApp(application);
+          break;
+      }
+    });
+
+    // ---------------- Tokens ----------------
+
+    const tokensTableBody = document.getElementById('tokensTableBody');
+    const tokensError = document.getElementById('tokensError');
+
+    const issueTokenModalEl = document.getElementById('issueTokenModal');
+    const issueTokenModal = new bootstrap.Modal(issueTokenModalEl);
+    const issueTokenForm = document.getElementById('issueTokenForm');
+    const issueTokenFormError = document.getElementById('issueTokenFormError');
+
+    const rawTokenModalEl = document.getElementById('rawTokenModal');
+    const rawTokenModal = new bootstrap.Modal(rawTokenModalEl);
+
+    let cachedTokens = [];
+
+    function tokenStatusBadgeClass(status) {
+      if (status === 'revoked') return 'badge badge-status-deleted';
+      if (status === 'expired') return 'badge badge-status-disabled';
+      return 'badge badge-status-active';
+    }
+
+    function renderTokensTable(tokensList) {
+      if (tokensList.length === 0) {
+        tokensTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No tokens issued yet.</td></tr>';
+        return;
+      }
+
+      tokensTableBody.innerHTML = tokensList.map((token) => {
+        const permissionBadges = token.permissions.length
+          ? token.permissions.map((key) => `<span class="badge badge-soft me-1">${key}</span>`).join('')
+          : '<span class="text-muted small">none</span>';
+        const isActive = token.status === 'active';
+
+        return `
+          <tr data-token-id="${token.service_token_id}">
+            <td>${token.appName || '<span class="text-muted">—</span>'}</td>
+            <td class="font-monospace">${token.token_prefix}…</td>
+            <td><span class="${tokenStatusBadgeClass(token.status)}">${token.status}</span></td>
+            <td>${permissionBadges}</td>
+            <td>${token.last_used_at ? new Date(token.last_used_at).toLocaleString() : '<span class="text-muted">never</span>'}</td>
+            <td class="d-flex flex-wrap gap-1">
+              <button class="btn btn-outline-secondary btn-sm" data-action="permissions"><i class="bi bi-shield-lock"></i> Permissions</button>
+              <button class="btn btn-outline-secondary btn-sm" data-action="regenerate"><i class="bi bi-arrow-repeat"></i> Regenerate</button>
+              <button class="btn btn-outline-danger btn-sm" data-action="revoke" ${isActive ? '' : 'disabled'}><i class="bi bi-x-circle"></i> Revoke</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function loadTokens() {
+      tokensError.hidden = true;
+
+      try {
+        const response = await fetch('/api/v2/tokens', { credentials: 'same-origin' });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        cachedTokens = await response.json();
+        renderTokensTable(cachedTokens);
+      } catch (error) {
+        tokensError.hidden = false;
+        tokensError.textContent = error.message;
+        tokensTableBody.innerHTML = '';
+      }
+    }
+
+    function populateIssueTokenAppOptions() {
+      const select = document.getElementById('issueTokenApp');
+      const activeApps = cachedApps.filter((a) => a.status === 'active');
+
+      select.innerHTML = activeApps.length
+        ? activeApps.map((a) => `<option value="${a.service_client_id}">${a.name}</option>`).join('')
+        : '<option value="" disabled>No active applications -- add one first</option>';
+    }
+
+    function openIssueTokenModal() {
+      issueTokenForm.reset();
+      issueTokenFormError.hidden = true;
+      populateIssueTokenAppOptions();
+      issueTokenModal.show();
+    }
+
+    function showRawToken(rawToken) {
+      document.getElementById('rawTokenValue').value = rawToken;
+      rawTokenModal.show();
+    }
+
+    document.getElementById('rawTokenCopyBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(document.getElementById('rawTokenValue').value);
+    });
+
+    document.getElementById('issueTokenBtn').addEventListener('click', openIssueTokenModal);
+
+    issueTokenForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      issueTokenFormError.hidden = true;
+
+      const serviceClientId = Number(document.getElementById('issueTokenApp').value);
+      const expiresAtValue = document.getElementById('issueTokenExpiresAt').value;
+
+      try {
+        const response = await fetch('/api/v2/tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            serviceClientId,
+            expiresAt: expiresAtValue ? new Date(expiresAtValue).toISOString() : null,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const token = await response.json();
+        issueTokenModal.hide();
+        await loadTokens();
+        await loadApps();
+        showRawToken(token.rawToken);
+      } catch (error) {
+        issueTokenFormError.hidden = false;
+        issueTokenFormError.textContent = error.message;
+      }
+    });
+
+    async function regenerateToken(token) {
+      if (!window.confirm(`Regenerate the token for ${token.appName}? The current token will stop working immediately.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/v2/tokens/${token.service_token_id}/regenerate`, {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const newToken = await response.json();
+        await loadTokens();
+        showRawToken(newToken.rawToken);
+      } catch (error) {
+        tokensError.hidden = false;
+        tokensError.textContent = error.message;
+      }
+    }
+
+    async function revokeToken(token) {
+      if (!window.confirm(`Revoke this token for ${token.appName}? This cannot be undone.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/v2/tokens/${token.service_token_id}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        await loadTokens();
+      } catch (error) {
+        tokensError.hidden = false;
+        tokensError.textContent = error.message;
+      }
+    }
+
+    tokensTableBody.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) {
+        return;
+      }
+
+      const row = button.closest('tr');
+      const tokenId = Number(row.dataset.tokenId);
+      const token = cachedTokens.find((t) => t.service_token_id === tokenId);
+      if (!token) {
+        return;
+      }
+
+      switch (button.dataset.action) {
+        case 'permissions':
+          await openPermissionsModal('tokens', token.service_token_id, `${token.appName} (${token.token_prefix}…)`, token.permissions);
+          break;
+        case 'regenerate':
+          await regenerateToken(token);
+          break;
+        case 'revoke':
+          await revokeToken(token);
+          break;
+      }
+    });
+
     loadUsers();
+    loadApps();
+    loadTokens();
   </script>
 </body>
 </html>

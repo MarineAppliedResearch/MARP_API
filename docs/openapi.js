@@ -425,6 +425,11 @@ const buildOpenApiSpec = () => {
                     name: 'V2 · Users',
                     description:
                         'V2 user-management endpoints: create/update/soft-delete users, view the permission catalog, and grant/revoke or change a user\'s local password. Every endpoint requires the `admin` permission.'
+                },
+                {
+                    name: 'V2 · Tokens',
+                    description:
+                        'V2 service-application endpoints: register applications, issue/revoke/regenerate their bearer tokens, and grant/revoke token permissions from the same catalog used for users. A bearer token satisfies the `admin` permission the same way an admin user session does. Every endpoint requires the `admin` permission.'
                 }
             ],
 
@@ -835,6 +840,198 @@ const buildOpenApiSpec = () => {
                                 minLength: 1,
                                 example: 'correct horse battery staple',
                                 description: 'New plaintext password. Hashed with Argon2 before storage, with no old-password check.',
+                            },
+                        },
+                    },
+
+                    /**
+                     * V2 service-application/token schemas (routes/v2_tokens.routes.js).
+                     * ServiceToken never includes the token secret or hash;
+                     * ServiceTokenIssued is the one place the raw secret
+                     * ever appears, at issue/regenerate time only.
+                     */
+                    ServiceClient: {
+                        type: 'object',
+                        required: ['service_client_id', 'name', 'status', 'tokenCount'],
+                        properties: {
+                            service_client_id: {
+                                type: 'integer',
+                                example: 1,
+                                description: 'Unique identifier for this application.',
+                            },
+                            name: {
+                                type: 'string',
+                                example: 'Reporting Worker',
+                                description: 'Human-readable name identifying this application.',
+                            },
+                            description: {
+                                type: 'string',
+                                nullable: true,
+                                example: 'Nightly job that pulls dashboard metrics.',
+                                description: 'Optional freeform notes about what this application does or who owns it.',
+                            },
+                            status: {
+                                type: 'string',
+                                enum: ['active', 'disabled'],
+                                example: 'active',
+                                description: 'Lifecycle state of this application. A disabled application\'s tokens are all rejected regardless of their own state.',
+                            },
+                            created_by_user_id: {
+                                type: 'integer',
+                                nullable: true,
+                                example: 19,
+                                description: 'Audit-only reference to the admin who registered this application.',
+                            },
+                            last_used_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                                example: '2026-07-31T12:34:56.000Z',
+                                description: 'Timestamp of the most recent successful bearer-token authentication for any token under this application.',
+                            },
+                            tokenCount: {
+                                type: 'integer',
+                                example: 2,
+                                description: 'Number of tokens (of any status) issued under this application.',
+                            },
+                        },
+                    },
+                    ServiceToken: {
+                        type: 'object',
+                        required: ['service_token_id', 'service_client_id', 'token_prefix', 'status', 'permissions'],
+                        properties: {
+                            service_token_id: {
+                                type: 'integer',
+                                example: 1,
+                                description: 'Unique identifier for this token.',
+                            },
+                            service_client_id: {
+                                type: 'integer',
+                                example: 1,
+                                description: 'Foreign key referencing the owning application (service_clients.service_client_id).',
+                            },
+                            appName: {
+                                type: 'string',
+                                nullable: true,
+                                example: 'Reporting Worker',
+                                description: 'Display name of the owning application.',
+                            },
+                            token_prefix: {
+                                type: 'string',
+                                example: 'svc_a1b2c3d4',
+                                description: 'Non-secret leading slice of the raw token, for identification only. Never the full secret.',
+                            },
+                            status: {
+                                type: 'string',
+                                enum: ['active', 'revoked', 'expired'],
+                                example: 'active',
+                                description: 'Derived status: "revoked" if explicitly revoked, "expired" if past expires_at, otherwise "active".',
+                            },
+                            expires_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                                example: '2027-07-31T00:00:00.000Z',
+                                description: 'Optional expiration timestamp; null means the token does not expire on its own.',
+                            },
+                            revoked_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                                example: null,
+                                description: 'Timestamp this token was revoked, if it has been.',
+                            },
+                            last_used_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                                example: '2026-07-31T12:34:56.000Z',
+                                description: 'Timestamp of the most recent successful authentication with this specific token.',
+                            },
+                            permissions: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                example: ['admin'],
+                                description: 'Permission keys currently granted to this token.',
+                            },
+                        },
+                    },
+                    ServiceTokenIssued: {
+                        allOf: [
+                            { $ref: '#/components/schemas/ServiceToken' },
+                            {
+                                type: 'object',
+                                required: ['rawToken'],
+                                properties: {
+                                    rawToken: {
+                                        type: 'string',
+                                        example: 'svc_5f0m2q8k3z1x7v9w4t6y8u2r0p1n3l5j7h9g',
+                                        description: 'The raw bearer token. Shown exactly once, in this response only -- it cannot be retrieved again afterward, only regenerated as a new token.',
+                                    },
+                                },
+                            },
+                        ],
+                        description: 'A token record together with its one-time raw secret, returned only by issue and regenerate.',
+                    },
+                    ServiceClientCreateRequest: {
+                        type: 'object',
+                        required: ['name'],
+                        properties: {
+                            name: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 120,
+                                example: 'Reporting Worker',
+                                description: 'Human-readable name identifying this application.',
+                            },
+                            description: {
+                                type: 'string',
+                                nullable: true,
+                                example: 'Nightly job that pulls dashboard metrics.',
+                                description: 'Optional freeform notes about what this application does or who owns it.',
+                            },
+                        },
+                    },
+                    ServiceClientUpdateRequest: {
+                        type: 'object',
+                        description: 'All fields are optional; only the fields provided are updated.',
+                        properties: {
+                            name: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 120,
+                                example: 'Reporting Worker',
+                                description: 'New application name.',
+                            },
+                            description: {
+                                type: 'string',
+                                nullable: true,
+                                example: 'Nightly job that pulls dashboard metrics.',
+                                description: 'New description.',
+                            },
+                            status: {
+                                type: 'string',
+                                enum: ['active', 'disabled'],
+                                example: 'active',
+                                description: 'New status.',
+                            },
+                        },
+                    },
+                    ServiceTokenCreateRequest: {
+                        type: 'object',
+                        required: ['serviceClientId'],
+                        properties: {
+                            serviceClientId: {
+                                type: 'integer',
+                                example: 1,
+                                description: 'Application this token authenticates as (service_clients.service_client_id).',
+                            },
+                            expiresAt: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                                example: '2027-07-31T00:00:00.000Z',
+                                description: 'Optional expiration timestamp; omit or null for a token that does not expire on its own.',
                             },
                         },
                     },

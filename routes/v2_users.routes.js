@@ -325,7 +325,12 @@ function registerUsersRoutes(app) {
                     throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `User ${req.params.id} was not found.`);
                 }
 
-                await usersController.setUserPermissions(req.params.id, permissionKeys, req.user.user_id);
+                // Audit column is a real FK to users.user_id -- a service
+                // token's principal id isn't one, so only attribute the
+                // grant when a human user session performed it.
+                const grantedByUserId = req.principal.type === 'user' ? req.principal.id : null;
+
+                await usersController.setUserPermissions(req.params.id, permissionKeys, grantedByUserId);
 
                 res.json(await usersController.getUserById(req.params.id));
             }),

@@ -85,7 +85,15 @@
       "Bash(curl -s -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt http://localhost:3000/apps/dashboard/admin.html)",
       "Bash(curl -s -X PUT http://localhost:3000/api/v2/users/131 -H 'Content-Type: application/json' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -d '{\"name\":\"Edit Check User \\(Renamed\\)\",\"username\":\"edit-check-renamed-__CMDSUB_OUTPUT__\"}')",
       "Bash(curl -s -X PUT http://localhost:3000/api/v2/users/131/permissions -H 'Content-Type: application/json' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -d '{\"permissionKeys\":[\"admin\"]}')",
-      "Bash(curl -s -X PUT http://localhost:3000/api/v2/users/131/permissions -H 'Content-Type: application/json' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -d '{\"permissionKeys\":[]}')"
+      "Bash(curl -s -X PUT http://localhost:3000/api/v2/users/131/permissions -H 'Content-Type: application/json' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -d '{\"permissionKeys\":[]}')",
+      "Bash(node -c repository/v2_tokens.repository.js)",
+      "Bash(node -c middleware/require-permission.middleware.js)",
+      "Bash(node -c tests/v2_tokens.test.js)",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code}\\\\n' -c /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-tokens-cookies.txt -X POST http://localhost:3000/api/v2/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"isaac\",\"password\":\"L8s0S3rKaTXt\"}')",
+      "Bash(curl -s -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-tokens-cookies.txt http://localhost:3000/apps/dashboard/admin.html)",
+      "Bash(curl -s -X DELETE http://localhost:3000/api/v2/tokens/5 -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/curl-tok-admin-cookies.txt)",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code}\\\\n' -H 'Authorization: Bearer svc__oH_nZGonSkKJv9AydsTJm0QxlVfZacrZWY_1HrT67w' http://localhost:3000/api/v2/users)",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code}\\\\n' -X DELETE http://localhost:3000/api/v2/apps/4 -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/curl-tok-admin-cookies.txt)"
     ]
   }
 }

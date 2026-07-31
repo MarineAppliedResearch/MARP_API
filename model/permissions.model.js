@@ -41,6 +41,14 @@ module.exports = (sequelize, DataTypes) => {
           as: 'grants',
         });
       }
+
+      // Every grant of this permission to a service token.
+      if (models.service_token_permissions) {
+        this.hasMany(models.service_token_permissions, {
+          foreignKey: 'permission_id',
+          as: 'tokenGrants',
+        });
+      }
     }
   }
 
