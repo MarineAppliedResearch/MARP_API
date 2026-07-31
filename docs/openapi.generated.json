@@ -1567,7 +1567,7 @@
       },
       "JellyfinItem": {
         "type": "object",
-        "description": "A Jellyfin library, folder, or video item, normalized down to the fields MARP exposes. DRAFT schema: field examples are real (captured against the live Jellyfin dev server), but this has not yet gone through the full sample-capture-and-infer workflow (docs/openapi-response-schema-workflow.md) used for other custom-shape endpoints. Jellyfin also reports a raw server filesystem `Path` for each item; it is intentionally omitted here pending a decision on whether it is safe to expose to API consumers.",
+        "description": "A Jellyfin library, folder, or video item, normalized down to the fields MARP exposes. DRAFT schema: field examples are real (captured against the live Jellyfin dev server), but this has not yet gone through the full sample-capture-and-infer workflow (docs/openapi-response-schema-workflow.md) used for other custom-shape endpoints.",
         "properties": {
           "id": {
             "type": "string",
@@ -1578,6 +1578,11 @@
             "type": "string",
             "example": "20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP",
             "description": "Human-readable item name."
+          },
+          "path": {
+            "type": "string",
+            "example": "/mnt/rov-video-new/CAMPA2021/Dive 165/20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP.mp4",
+            "description": "Raw server-side filesystem path Jellyfin stores this item at. Exposed deliberately -- useful for confirming a /resolve fuzzy-match result or feeding tooling that needs the original file location -- at the cost of revealing Jellyfin server storage layout to API consumers."
           },
           "type": {
             "type": "string",
@@ -1618,6 +1623,171 @@
               "$ref": "#/components/schemas/JellyfinItem"
             },
             "description": "Matching or child items, in the order Jellyfin returned them."
+          }
+        }
+      },
+      "JellyfinPlaybackOption": {
+        "type": "object",
+        "description": "One playback quality choice, derived from the item's actual source capabilities (bitrate/resolution) -- a transcode tier is only present if it is genuinely below source quality.",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "example": "720p, 4 Mbps",
+            "description": "Human-readable label for this option."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "Auto",
+              "Original",
+              "Transcode"
+            ],
+            "example": "Transcode",
+            "description": "Mode to pass to GET /items/{id}/stream to select this option."
+          },
+          "maxStreamingBitrate": {
+            "type": "integer",
+            "nullable": true,
+            "example": 4000000,
+            "description": "Bitrate ceiling for this option, in bits/sec. Null for Auto/Original."
+          },
+          "maxWidth": {
+            "type": "integer",
+            "nullable": true,
+            "example": 1280,
+            "description": "Width ceiling for this option. Null for Auto."
+          },
+          "maxHeight": {
+            "type": "integer",
+            "nullable": true,
+            "example": 720,
+            "description": "Height ceiling for this option. Null for Auto."
+          },
+          "isAuto": {
+            "type": "boolean",
+            "example": false,
+            "description": "True for the Auto placeholder option."
+          },
+          "isOriginal": {
+            "type": "boolean",
+            "example": false,
+            "description": "True for the Original/Direct option."
+          },
+          "requiresTranscoding": {
+            "type": "boolean",
+            "example": true,
+            "description": "True for a Transcode tier option."
+          }
+        }
+      },
+      "JellyfinPlaybackOptionList": {
+        "type": "object",
+        "description": "The quality menu for one Jellyfin item.",
+        "properties": {
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JellyfinPlaybackOption"
+            },
+            "description": "Available playback options, most capable first."
+          }
+        }
+      },
+      "JellyfinResolveResult": {
+        "type": "object",
+        "description": "Best Jellyfin item match found for a saved database video_source value, via multi-term search and filename/timestamp scoring.",
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/JellyfinItem"
+          },
+          "score": {
+            "type": "integer",
+            "example": 100,
+            "description": "Match confidence, 0-100. Below the requested minScore is rejected with a 404 rather than returned here."
+          },
+          "searchTerm": {
+            "type": "string",
+            "example": "20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP",
+            "description": "The specific search-term variant that produced this match."
+          }
+        }
+      },
+      "JellyfinPlaybackReportRequest": {
+        "type": "object",
+        "description": "Playback state relayed to Jellyfin's session-tracking endpoints. mediaSourceId/playSessionId should be carried forward from the earlier GET /items/{id}/stream or /items/{id}/playback-options response -- MARP does not store playback session state itself.",
+        "properties": {
+          "mediaSourceId": {
+            "type": "string",
+            "nullable": true,
+            "example": "0da5ea1af7f4f116c19ebaa95ba82fc6",
+            "description": "MediaSource id from the earlier stream/playback-options response."
+          },
+          "playSessionId": {
+            "type": "string",
+            "nullable": true,
+            "example": "08bf40f6fa5b474a9899e69983a07a84",
+            "description": "PlaySessionId from the earlier stream/playback-options response."
+          },
+          "positionTicks": {
+            "type": "integer",
+            "example": 50000000,
+            "description": "Current playback position, in Jellyfin ticks (100ns units)."
+          },
+          "isPaused": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether playback is currently paused. Ignored (always true) for the stopped report."
+          },
+          "playMethod": {
+            "type": "string",
+            "enum": [
+              "DirectStream",
+              "Transcode"
+            ],
+            "example": "Transcode",
+            "description": "Which stream mode is active for this session."
+          }
+        }
+      },
+      "JellyfinTrickplayInfo": {
+        "type": "object",
+        "description": "Parsed scrubbing-preview tile metadata for one item. Each tile image URL already embeds its own short-lived access token, the same signed-URL pattern used for stream/image URLs, and is directly fetchable by a caller.",
+        "properties": {
+          "thumbnailWidth": {
+            "type": "integer",
+            "example": 320,
+            "description": "Width of one thumbnail cell, in pixels."
+          },
+          "thumbnailHeight": {
+            "type": "integer",
+            "example": 180,
+            "description": "Height of one thumbnail cell, in pixels."
+          },
+          "columns": {
+            "type": "integer",
+            "example": 10,
+            "description": "Thumbnail columns per tile sheet image."
+          },
+          "rows": {
+            "type": "integer",
+            "example": 10,
+            "description": "Thumbnail rows per tile sheet image."
+          },
+          "thumbnailDurationSeconds": {
+            "type": "number",
+            "example": 10,
+            "description": "Seconds of video represented by each thumbnail cell."
+          },
+          "tileImageUrls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "example": [
+              "http://jellyfin.example/Videos/{id}/Trickplay/320/0.jpg?MediaSourceId={mediaSourceId}&ApiKey=EXAMPLE_TOKEN"
+            ],
+            "description": "Tile sheet image URLs, in order. Each sheet packs columns*rows thumbnails; mapping a scrub time to a specific tile/row/column is left to the caller, since it is pure arithmetic once this metadata is known."
           }
         }
       },
@@ -6859,6 +7029,26 @@
         "tags": [
           "Jellyfin"
         ],
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Libraries returned successfully.",
@@ -6892,6 +7082,24 @@
               "type": "string"
             },
             "description": "Jellyfin id of the parent folder or library."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
           }
         ],
         "responses": {
@@ -6940,6 +7148,24 @@
               "default": 20
             },
             "description": "Maximum number of matches to return."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
           }
         ],
         "responses": {
@@ -6962,10 +7188,66 @@
         }
       }
     },
+    "/v2/jellyfin/items/{id}/playback-options": {
+      "get": {
+        "summary": "Get the playback quality menu for a Jellyfin item",
+        "description": "Capability-probes the item via PlaybackInfo and derives a quality menu (Auto, Original/Direct, and transcode tiers) from its actual source bitrate/resolution -- a tier only appears if it is genuinely below source quality. Pass a returned option's mode (and maxBitrate/maxWidth/maxHeight for a Transcode tier) to GET /items/{id}/stream to play it.",
+        "tags": [
+          "Jellyfin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Jellyfin id of the video item."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Playback options returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinPlaybackOptionList"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
     "/v2/jellyfin/items/{id}/stream": {
       "get": {
         "summary": "Resolve and redirect to a playable Jellyfin stream URL",
-        "description": "Negotiates playback for the given item via Jellyfin's PlaybackInfo endpoint (which also confirms the item exists and is playable) and responds with an HTTP redirect straight to Jellyfin's direct-stream URL. MARP never proxies the video bytes itself -- the caller's HTTP client follows the redirect and connects to Jellyfin directly for the actual stream.",
+        "description": "Negotiates playback for the given item via Jellyfin's PlaybackInfo endpoint (which also confirms the item exists and is playable) and responds with an HTTP redirect straight to Jellyfin's stream URL. MARP never proxies the video bytes itself -- the caller's HTTP client follows the redirect and connects to Jellyfin directly. mode=Original (default) and mode=Auto redirect to Jellyfin's direct-stream URL (Auto currently behaves identically to Original -- there is no adaptive-quality decision procedure yet). mode=Transcode negotiates a real constrained transcode via a DeviceProfile and redirects to Jellyfin's own negotiated transcodingUrl (an HLS master.m3u8, not the static direct-stream URL) -- use maxBitrate/maxWidth/maxHeight from a playback-options Transcode tier to pick a specific quality. The response also carries the negotiated mediaSourceId/playSessionId/playMethod as headers -- confirmed against Jellyfin's own live session state that reporting playback/progress or playback/stopped with anything other than the exact playSessionId this call issued is silently ignored (Jellyfin never updates its PlayState), so a caller MUST capture these headers to use those endpoints correctly.",
         "tags": [
           "Jellyfin"
         ],
@@ -6978,20 +7260,512 @@
               "type": "string"
             },
             "description": "Jellyfin id of the video item to stream."
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Original",
+                "Auto",
+                "Transcode"
+              ],
+              "default": "Original"
+            },
+            "description": "Playback mode."
+          },
+          {
+            "in": "query",
+            "name": "maxBitrate",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Bitrate ceiling for mode=Transcode."
+          },
+          {
+            "in": "query",
+            "name": "maxWidth",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Width ceiling for mode=Transcode."
+          },
+          {
+            "in": "query",
+            "name": "maxHeight",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Height ceiling for mode=Transcode."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
           }
         ],
         "responses": {
           "302": {
-            "description": "Redirect to a direct Jellyfin stream URL for this item.",
+            "description": "Redirect to a Jellyfin stream URL for this item -- a direct-stream URL for Original/Auto, or a negotiated transcodingUrl for Transcode.",
             "headers": {
               "Location": {
                 "schema": {
                   "type": "string",
                   "format": "uri"
                 },
-                "description": "Absolute Jellyfin stream URL, including a short-lived access token as the api_key query parameter."
+                "description": "Absolute Jellyfin stream URL, including a short-lived access token."
+              },
+              "X-Jellyfin-Media-Source-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "MediaSource id negotiated for this stream -- pass through to the playback/started, /progress, and /stopped endpoints."
+              },
+              "X-Jellyfin-Play-Session-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "PlaySessionId Jellyfin issued for this negotiation -- required by the playback report endpoints; reporting with any other value is silently ignored by Jellyfin."
+              },
+              "X-Jellyfin-Play-Method": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "DirectStream",
+                    "Transcode"
+                  ]
+                },
+                "description": "Which playback method this negotiation used -- pass through as playMethod on playback reports."
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/v2/jellyfin/resolve": {
+      "get": {
+        "summary": "Resolve a saved video_source value to a Jellyfin item",
+        "description": "Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARE timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.",
+        "tags": [
+          "Jellyfin"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoSource",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Saved filename, path, or other free-text video reference to resolve."
+          },
+          {
+            "in": "query",
+            "name": "minScore",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 60
+            },
+            "description": "Minimum acceptable match score (0-100)."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A sufficiently confident match was found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinResolveResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/v2/jellyfin/items/{id}/playback/started": {
+      "post": {
+        "summary": "Report that playback has started or resumed",
+        "description": "Relays a playback-started report to Jellyfin so its session/transcode lifecycle and \"Now Playing\" state stay accurate. MARP stores no playback session state itself -- carry mediaSourceId/playSessionId forward from the earlier stream/playback-options response.",
+        "tags": [
+          "Jellyfin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Jellyfin id of the item being played."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JellyfinPlaybackReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report relayed successfully."
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/v2/jellyfin/items/{id}/playback/progress": {
+      "post": {
+        "summary": "Report current playback position/pause state",
+        "description": "Relays a playback-progress report to Jellyfin. Should be called periodically during playback so Jellyfin's transcode-session lifecycle and resume position stay accurate. MARP stores no playback session state itself.",
+        "tags": [
+          "Jellyfin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Jellyfin id of the item being played."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JellyfinPlaybackReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report relayed successfully."
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/v2/jellyfin/items/{id}/playback/stopped": {
+      "post": {
+        "summary": "Report that playback has stopped",
+        "description": "Relays a playback-stopped report to Jellyfin so it can clean up any active transcode session. MARP stores no playback session state itself -- carry mediaSourceId/playSessionId forward from the earlier stream/playback-options response.",
+        "tags": [
+          "Jellyfin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Jellyfin id of the item that was being played."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JellyfinPlaybackReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Report relayed successfully."
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/v2/jellyfin/items/{id}/images/{imageType}": {
+      "get": {
+        "summary": "Resolve and redirect to a Jellyfin item image",
+        "description": "Builds a Jellyfin image URL (e.g. Primary poster, Thumb) for the item and responds with an HTTP redirect to it, following the same signed-redirect pattern as /stream -- MARP never proxies the image bytes itself.",
+        "tags": [
+          "Jellyfin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Jellyfin item id."
+          },
+          {
+            "in": "path",
+            "name": "imageType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Jellyfin image type, e.g. Primary, Thumb, Backdrop."
+          },
+          {
+            "in": "query",
+            "name": "maxWidth",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 320
+            },
+            "description": "Maximum image width Jellyfin should return."
+          },
+          {
+            "in": "query",
+            "name": "quality",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 85
+            },
+            "description": "JPEG quality (1-100)."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Redirect to a direct Jellyfin image URL.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "description": "Absolute Jellyfin image URL, including a short-lived access token."
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "502": {
+            "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/v2/jellyfin/items/{id}/trickplay": {
+      "get": {
+        "summary": "Get scrubbing-preview tile metadata for a Jellyfin item",
+        "description": "Fetches and parses Jellyfin's trickplay tile playlist for the item and returns structured metadata plus tile image URLs, so callers can build a scrubbing preview without knowing Jellyfin's playlist format. Each tile URL already embeds its own access token and is directly fetchable. Supplying runTimeTicks lets MARP probe for additional tile sheets some Jellyfin servers omit from the playlist itself.",
+        "tags": [
+          "Jellyfin"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Jellyfin item id."
+          },
+          {
+            "in": "query",
+            "name": "width",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Requested tile-sheet width -- must match a width Jellyfin actually generated trickplay data for."
+          },
+          {
+            "in": "query",
+            "name": "mediaSourceId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Specific media source, if the item has more than one."
+          },
+          {
+            "in": "query",
+            "name": "runTimeTicks",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Item runtime in Jellyfin ticks, to probe for additional tile sheets."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the real downstream client (e.g. a web frontend or mobile app), folded into the Jellyfin device identity MARP authenticates with so Jellyfin can distinguish real callers. Omitting this falls back to one shared \"unknown\" Jellyfin session."
+          },
+          {
+            "in": "header",
+            "name": "X-Client-Version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Version of the real downstream client, paired with X-Client-Name."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trickplay metadata returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinTrickplayInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"

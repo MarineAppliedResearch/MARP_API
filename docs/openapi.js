@@ -1353,7 +1353,7 @@ const buildOpenApiSpec = () => {
                     JellyfinItem: {
                         type: 'object',
                         description:
-                            'A Jellyfin library, folder, or video item, normalized down to the fields MARP exposes. DRAFT schema: field examples are real (captured against the live Jellyfin dev server), but this has not yet gone through the full sample-capture-and-infer workflow (docs/openapi-response-schema-workflow.md) used for other custom-shape endpoints. Jellyfin also reports a raw server filesystem `Path` for each item; it is intentionally omitted here pending a decision on whether it is safe to expose to API consumers.',
+                            'A Jellyfin library, folder, or video item, normalized down to the fields MARP exposes. DRAFT schema: field examples are real (captured against the live Jellyfin dev server), but this has not yet gone through the full sample-capture-and-infer workflow (docs/openapi-response-schema-workflow.md) used for other custom-shape endpoints.',
                         properties: {
                             id: {
                                 type: 'string',
@@ -1364,6 +1364,11 @@ const buildOpenApiSpec = () => {
                                 type: 'string',
                                 example: '20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP',
                                 description: 'Human-readable item name.',
+                            },
+                            path: {
+                                type: 'string',
+                                example: '/mnt/rov-video-new/CAMPA2021/Dive 165/20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP.mp4',
+                                description: 'Raw server-side filesystem path Jellyfin stores this item at. Exposed deliberately -- useful for confirming a /resolve fuzzy-match result or feeding tooling that needs the original file location -- at the cost of revealing Jellyfin server storage layout to API consumers.',
                             },
                             type: {
                                 type: 'string',
@@ -1402,6 +1407,68 @@ const buildOpenApiSpec = () => {
                                 type: 'array',
                                 items: { $ref: '#/components/schemas/JellyfinItem' },
                                 description: 'Matching or child items, in the order Jellyfin returned them.',
+                            },
+                        },
+                    },
+                    JellyfinPlaybackOption: {
+                        type: 'object',
+                        description: 'One playback quality choice, derived from the item\'s actual source capabilities (bitrate/resolution) -- a transcode tier is only present if it is genuinely below source quality.',
+                        properties: {
+                            displayName: { type: 'string', example: '720p, 4 Mbps', description: 'Human-readable label for this option.' },
+                            mode: { type: 'string', enum: ['Auto', 'Original', 'Transcode'], example: 'Transcode', description: 'Mode to pass to GET /items/{id}/stream to select this option.' },
+                            maxStreamingBitrate: { type: 'integer', nullable: true, example: 4000000, description: 'Bitrate ceiling for this option, in bits/sec. Null for Auto/Original.' },
+                            maxWidth: { type: 'integer', nullable: true, example: 1280, description: 'Width ceiling for this option. Null for Auto.' },
+                            maxHeight: { type: 'integer', nullable: true, example: 720, description: 'Height ceiling for this option. Null for Auto.' },
+                            isAuto: { type: 'boolean', example: false, description: 'True for the Auto placeholder option.' },
+                            isOriginal: { type: 'boolean', example: false, description: 'True for the Original/Direct option.' },
+                            requiresTranscoding: { type: 'boolean', example: true, description: 'True for a Transcode tier option.' },
+                        },
+                    },
+                    JellyfinPlaybackOptionList: {
+                        type: 'object',
+                        description: 'The quality menu for one Jellyfin item.',
+                        properties: {
+                            options: {
+                                type: 'array',
+                                items: { $ref: '#/components/schemas/JellyfinPlaybackOption' },
+                                description: 'Available playback options, most capable first.',
+                            },
+                        },
+                    },
+                    JellyfinResolveResult: {
+                        type: 'object',
+                        description: 'Best Jellyfin item match found for a saved database video_source value, via multi-term search and filename/timestamp scoring.',
+                        properties: {
+                            item: { $ref: '#/components/schemas/JellyfinItem' },
+                            score: { type: 'integer', example: 100, description: 'Match confidence, 0-100. Below the requested minScore is rejected with a 404 rather than returned here.' },
+                            searchTerm: { type: 'string', example: '20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP', description: 'The specific search-term variant that produced this match.' },
+                        },
+                    },
+                    JellyfinPlaybackReportRequest: {
+                        type: 'object',
+                        description: 'Playback state relayed to Jellyfin\'s session-tracking endpoints. mediaSourceId/playSessionId should be carried forward from the earlier GET /items/{id}/stream or /items/{id}/playback-options response -- MARP does not store playback session state itself.',
+                        properties: {
+                            mediaSourceId: { type: 'string', nullable: true, example: '0da5ea1af7f4f116c19ebaa95ba82fc6', description: 'MediaSource id from the earlier stream/playback-options response.' },
+                            playSessionId: { type: 'string', nullable: true, example: '08bf40f6fa5b474a9899e69983a07a84', description: 'PlaySessionId from the earlier stream/playback-options response.' },
+                            positionTicks: { type: 'integer', example: 50000000, description: 'Current playback position, in Jellyfin ticks (100ns units).' },
+                            isPaused: { type: 'boolean', example: false, description: 'Whether playback is currently paused. Ignored (always true) for the stopped report.' },
+                            playMethod: { type: 'string', enum: ['DirectStream', 'Transcode'], example: 'Transcode', description: 'Which stream mode is active for this session.' },
+                        },
+                    },
+                    JellyfinTrickplayInfo: {
+                        type: 'object',
+                        description: 'Parsed scrubbing-preview tile metadata for one item. Each tile image URL already embeds its own short-lived access token, the same signed-URL pattern used for stream/image URLs, and is directly fetchable by a caller.',
+                        properties: {
+                            thumbnailWidth: { type: 'integer', example: 320, description: 'Width of one thumbnail cell, in pixels.' },
+                            thumbnailHeight: { type: 'integer', example: 180, description: 'Height of one thumbnail cell, in pixels.' },
+                            columns: { type: 'integer', example: 10, description: 'Thumbnail columns per tile sheet image.' },
+                            rows: { type: 'integer', example: 10, description: 'Thumbnail rows per tile sheet image.' },
+                            thumbnailDurationSeconds: { type: 'number', example: 10, description: 'Seconds of video represented by each thumbnail cell.' },
+                            tileImageUrls: {
+                                type: 'array',
+                                items: { type: 'string', format: 'uri' },
+                                example: ['http://jellyfin.example/Videos/{id}/Trickplay/320/0.jpg?MediaSourceId={mediaSourceId}&ApiKey=EXAMPLE_TOKEN'],
+                                description: 'Tile sheet image URLs, in order. Each sheet packs columns*rows thumbnails; mapping a scrub time to a specific tile/row/column is left to the caller, since it is pure arithmetic once this metadata is known.',
                             },
                         },
                     },
