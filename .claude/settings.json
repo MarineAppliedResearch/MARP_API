@@ -49,7 +49,21 @@
       "Bash(kill 155064)",
       "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" --max-time 2 http://localhost:3000/api/openapi.json)",
       "Bash(node -c model/auth_identities.model.js)",
-      "Bash(node -c migrations/20260731101000-create-auth-identities-table.js)"
+      "Bash(node -c migrations/20260731101000-create-auth-identities-table.js)",
+      "Bash(node -c middleware/require-authenticated-session.middleware.js)",
+      "Bash(node -c frontend/shared/assets/js/landing.js)",
+      "Bash(curl -s -i http://localhost:3000/apps/dashboard/index.html)",
+      "Bash(curl -s -i http://localhost:3000/apps/dashboard/user-activity.html)",
+      "Bash(curl -s -i http://localhost:3000/apps/dashboard/user-hours.html)",
+      "Bash(curl -s -i http://localhost:3000/apps/dashboard)",
+      "Bash(kill -9 156284 156285)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(chromium-cli --help)",
+      "Bash(curl -s -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/cookies2.txt http://localhost:3000/apps/dashboard/index.html)",
+      "Bash(curl -s -i -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/cookies2.txt -X POST http://localhost:3000/api/v2/auth/logout)",
+      "Bash(curl -s -i -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/cookies2.txt http://localhost:3000/apps/dashboard/index.html)",
+      "Bash(lsof -ti:3000 -sTCP:LISTEN)",
+      "Bash(xargs -r kill -9)"
     ]
   }
 }

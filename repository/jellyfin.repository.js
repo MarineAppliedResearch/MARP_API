@@ -1230,7 +1230,7 @@ class JellyfinRepository {
      * `TryLoadPlaybackStateByVideoNameAsync`/`ScoreJellyfinVideoMatch` from
      * jellyfin_client.cs. Tries several search-term variants (raw value,
      * filename, filename stem, underscore/space variants, an extracted
-     * MARE timestamp), scores every candidate returned across all of them,
+     * MARP timestamp), scores every candidate returned across all of them,
      * and rejects a weak best match rather than silently resolving to the
      * wrong video.
      *
@@ -1311,7 +1311,7 @@ class JellyfinRepository {
         this._addUniqueSearchTerm(searchTerms, underscoreStem);
         this._addUniqueSearchTerm(searchTerms, spaceStem);
 
-        // MARE video names commonly contain a date-and-time identifier such
+        // MARP video names commonly contain a date-and-time identifier such
         // as 20240730_190910 -- useful as a broader final search term.
         const timestampMatch = fileNameStem.match(/\d{8}[_ -]\d{6}/);
 
@@ -1394,7 +1394,7 @@ class JellyfinRepository {
     }
 
     /**
-     * Extracts the common MARE date-and-time identifier (e.g.
+     * Extracts the common MARP date-and-time identifier (e.g.
      * `20240730_190910`) from a video name -- ports `ExtractVideoTimestampKey`.
      *
      * @param {string} value - Filename, path basename, or combined Jellyfin item text.

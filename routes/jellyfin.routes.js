@@ -263,7 +263,7 @@ function registerJellyfinRoutes(app) {
         path: '/api/v2/jellyfin/resolve',
         summary: 'Resolve a saved video_source value to a Jellyfin item',
         description:
-            'Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARE timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.',
+            'Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARP timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.',
         tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'query', name: 'videoSource', required: true, schema: { type: 'string' }, description: 'Saved filename, path, or other free-text video reference to resolve.' },

@@ -118,6 +118,7 @@ const {
     errorHandler,
     requestIdMiddleware,
 } = require('./middleware/error-contract.middleware');
+const { requireAuthenticatedSession } = require('./middleware/require-authenticated-session.middleware');
 
 
 //---------------------------------------------------------
@@ -446,6 +447,12 @@ const frontendSharedDirectory = path.join(frontendDirectory, 'shared');
 app.use('/assets', express.static(path.join(frontendSharedDirectory, 'assets'), { index: false }));
 
 app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
+
+// Gate every page under the dashboard app behind a real session, before the
+// static mount below (or the /apps/:appName route further down) can serve
+// any of its files to an unauthenticated request.
+app.use('/apps/dashboard', requireAuthenticatedSession);
+
 app.use('/apps', express.static(frontendAppsDirectory, { index: false }));
 
 /**

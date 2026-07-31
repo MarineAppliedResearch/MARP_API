@@ -3,12 +3,11 @@
  *
  * Responsibilities:
  * 1. Manage the responsive navigation menu.
- * 2. Open and close the login prototype dialog accessibly.
+ * 2. Open and close the login dialog accessibly.
  * 3. Provide the password visibility control.
- * 4. Add subtle scroll-based header and reveal behavior.
- *
- * The file deliberately contains no API or authentication logic. Production
- * authentication can be connected later without changing the page components.
+ * 4. Submit the login form to POST /api/v2/auth/login and, on success,
+ *    redirect to the dashboard app.
+ * 5. Add subtle scroll-based header and reveal behavior.
  */
 
 "use strict";
@@ -91,9 +90,11 @@ function initializeMobileNavigation() {
 
 
 /**
- * Configures the login dialog and its prototype form behavior.
+ * Configures the login dialog, including submitting credentials to the
+ * real session-login endpoint.
  * Inputs: all elements carrying the login dialog data attributes.
- * Output: dialog open/close state and an explanatory form status message.
+ * Output: dialog open/close state, a login-status message, and (on success)
+ * a redirect to the dashboard app.
  * Usage: called once during page initialization.
  */
 function initializeLoginDialog() {
@@ -115,8 +116,8 @@ function initializeLoginDialog() {
       dialog.showModal();
       document.body.classList.add("dialog-open");
 
-      const emailInput = dialog.querySelector("input[type='email']");
-      window.setTimeout(() => emailInput?.focus(), 40);
+      const usernameInput = dialog.querySelector("input[name='username']");
+      window.setTimeout(() => usernameInput?.focus(), 40);
     }
   };
 
@@ -173,9 +174,45 @@ function initializeLoginDialog() {
       return;
     }
 
+    const submitButton = loginForm.querySelector("button[type='submit']");
+    const username = loginForm.elements.username.value;
+    const password = loginForm.elements.password.value;
+
     if (statusMessage) {
-      statusMessage.textContent = "Demo complete — production authentication is not connected yet.";
+      statusMessage.textContent = "Signing in…";
     }
+
+    submitButton?.setAttribute("disabled", "true");
+
+    fetch("/api/v2/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ username, password }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          // The API returns a standardized { error: { message, ... } }
+          // envelope on every non-2xx response (see
+          // middleware/error-contract.middleware.js) -- covers wrong
+          // password, unknown username, and rate-limited attempts alike.
+          const body = await response.json().catch(() => null);
+          throw new Error(body?.error?.message || "Sign in failed. Please try again.");
+        }
+
+        if (statusMessage) {
+          statusMessage.textContent = "Signed in — redirecting…";
+        }
+
+        window.location.href = "/apps/dashboard/index.html";
+      })
+      .catch((error) => {
+        if (statusMessage) {
+          statusMessage.textContent = error.message;
+        }
+
+        submitButton?.removeAttribute("disabled");
+      });
   });
 }
 

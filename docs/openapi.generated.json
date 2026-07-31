@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "MARE API",
+    "title": "MARP API",
     "version": "1.0.0",
-    "description": "Generated OpenAPI specification for MARE API V1 routes."
+    "description": "Generated OpenAPI specification for MARP API V1 routes."
   },
   "servers": [
     {
@@ -7530,7 +7530,7 @@
     "/v2/jellyfin/resolve": {
       "get": {
         "summary": "Resolve a saved video_source value to a Jellyfin item",
-        "description": "Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARE timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.",
+        "description": "Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARP timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.",
         "tags": [
           "V2 · Jellyfin"
         ],

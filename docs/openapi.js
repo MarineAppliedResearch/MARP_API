@@ -332,9 +332,9 @@ const buildOpenApiSpec = () => {
             openapi: '3.0.3',
 
             info: {
-                title: 'MARE API',
+                title: 'MARP API',
                 version: '1.0.0',
-                description: 'Generated OpenAPI specification for MARE API V1 routes.',
+                description: 'Generated OpenAPI specification for MARP API V1 routes.',
             },
 
             servers: [
