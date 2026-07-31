@@ -93,12 +93,14 @@ const registerProjectRoutes = require('./routes/project.routes');
 const registerSessionRoutes = require('./routes/session.routes');
 const registerSpeciesRoutes = require('./routes/species.routes');
 const registerDatasetRoutes = require('./routes/dataset.routes');
+const registerAuthRoutes = require('./routes/auth.routes');
 
 // Jellyfin (V2) has no Sequelize model or DB repository, so it has no
 // dependency on session.controller.js/observation.controller.js -- none of
 // the circular-require ordering constraints above apply to it, and its
 // require position here is unconstrained.
 const registerJellyfinRoutes = require('./routes/jellyfin.routes');
+const { configureAuthentication } = require('./auth/auth.setup');
 
 
 /**
@@ -277,6 +279,10 @@ app.use(bodyParser.json());
 // Attach or generate an API request correlation id.
 app.use(requestIdMiddleware);
 
+// Configure session-backed authentication before API route registration so
+// downstream handlers can rely on req.user/req.isAuthenticated.
+configureAuthentication(app);
+
 
 /**
  * Swagger UI middleware used to render the generated OpenAPI specification.
@@ -307,6 +313,7 @@ registerSpeciesRoutes(app);
 registerDatasetRoutes(app);
 registerObservationRoutes(app);
 registerJellyfinRoutes(app);
+registerAuthRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 

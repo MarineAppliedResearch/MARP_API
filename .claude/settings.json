@@ -34,7 +34,22 @@
       "Bash(git check-ignore *)",
       "Bash(curl -s http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/trickplay)",
       "Bash(xargs -r kill)",
-      "Bash(curl -s http://localhost:3000/api/openapi.json)"
+      "Bash(curl -s http://localhost:3000/api/openapi.json)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npx sequelize-cli *)",
+      "Bash(node -c auth/auth.setup.js)",
+      "Bash(npm view *)",
+      "Bash(npm install *)",
+      "Bash(npm ls *)",
+      "Bash(npm audit *)",
+      "Bash(node -c routes/auth.routes.js)",
+      "Bash(node -e \"require\\('./package.json'\\); console.log\\('valid JSON'\\)\")",
+      "Bash(node -c service/auth.service.js)",
+      "Bash(curl -s -o /dev/null -w \"server after kill, status=%{http_code}\\\\n\" --max-time 2 http://localhost:3000/api/openapi.json)",
+      "Bash(kill 155064)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" --max-time 2 http://localhost:3000/api/openapi.json)",
+      "Bash(node -c model/auth_identities.model.js)",
+      "Bash(node -c migrations/20260731101000-create-auth-identities-table.js)"
     ]
   }
 }
