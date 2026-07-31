@@ -63,16 +63,19 @@ function normalizeOpenApiPath(expressPath) {
  *   `app.use()` so it responds to any HTTP verb, but is documented as `get`
  *   since that's its intended/only meaningful usage). Defaults to `method`.
  * @param {string} definition.path - Express route path, e.g. `/api/task/:id`.
- * @param {Function} definition.handler - Express request handler.
+ * @param {Function|Array<Function>} definition.handler - Express request
+ *   handler, or an ordered array of middleware/handler functions (e.g.
+ *   `[requirePermission('admin'), asyncHandler(realHandler)]`) -- the same
+ *   chaining `app.get(path, mw1, mw2)` supports natively.
  * @returns {void}
- * @throws {Error} If method, path, or handler is missing, or if this
+ * @throws {Error} If method, path, or handler is missing/invalid, or if this
  *   method+path combination was already registered.
  */
 function registerOpenApiRoute(app, definition) {
     const method = String(definition.method || '').toLowerCase();
     const expressMethod = String(definition.expressMethod || definition.method || '').toLowerCase();
     const routePath = definition.path;
-    const handler = definition.handler;
+    const handlerChain = Array.isArray(definition.handler) ? definition.handler : [definition.handler];
 
     if (!method) {
         throw new Error('registerOpenApiRoute requires a method.');
@@ -82,8 +85,8 @@ function registerOpenApiRoute(app, definition) {
         throw new Error('registerOpenApiRoute requires a path.');
     }
 
-    if (typeof handler !== 'function') {
-        throw new Error('registerOpenApiRoute requires a handler function.');
+    if (handlerChain.length === 0 || handlerChain.some((fn) => typeof fn !== 'function')) {
+        throw new Error('registerOpenApiRoute requires a handler function or a non-empty array of handler functions.');
     }
 
     const routeKey = `${method} ${routePath}`;
@@ -94,7 +97,7 @@ function registerOpenApiRoute(app, definition) {
 
     registeredRouteKeys.add(routeKey);
 
-    app[expressMethod](routePath, handler);
+    app[expressMethod](routePath, ...handlerChain);
 
     const { handler: ignoredHandler, method: ignoredMethod, expressMethod: ignoredExpressMethod, path: ignoredPath, ...operation } = definition;
 

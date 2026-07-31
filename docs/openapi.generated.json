@@ -67,6 +67,14 @@
     {
       "name": "V2 · Auth",
       "description": "V2 authentication endpoints for MARP-owned local sign-in, session lifecycle management, and authenticated-user session context."
+    },
+    {
+      "name": "V2 · Users",
+      "description": "V2 user-management endpoints: create/update/soft-delete users, view the permission catalog, and grant/revoke or change a user's local password. Every endpoint requires the `admin` permission."
+    },
+    {
+      "name": "V2 · Tokens",
+      "description": "V2 service-application endpoints: register applications, issue/revoke/regenerate their bearer tokens, and grant/revoke token permissions from the same catalog used for users. A bearer token satisfies the `admin` permission the same way an admin user session does. Every endpoint requires the `admin` permission."
     }
   ],
   "components": {
@@ -317,7 +325,8 @@
           "user_id",
           "name",
           "username",
-          "status"
+          "status",
+          "permissions"
         ],
         "properties": {
           "user_id": {
@@ -342,10 +351,21 @@
             "enum": [
               "active",
               "disabled",
-              "pending"
+              "pending",
+              "deleted"
             ],
             "example": "active",
             "description": "Authentication status for this user account."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "admin"
+            ],
+            "description": "Permission keys currently granted to this user, e.g. for client-side admin-UI visibility checks."
           }
         }
       },
@@ -360,6 +380,379 @@
           }
         },
         "description": "Authenticated session response containing the current MARP user profile."
+      },
+      "Permission": {
+        "type": "object",
+        "required": [
+          "permission_id",
+          "key"
+        ],
+        "properties": {
+          "permission_id": {
+            "type": "integer",
+            "example": 1,
+            "description": "Unique identifier for this permission definition."
+          },
+          "key": {
+            "type": "string",
+            "example": "admin",
+            "description": "Stable machine-readable permission identifier (e.g. \"admin\"), referenced by requirePermission() checks."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Full administrative access: create, update, and soft-delete users; view and change user permissions; set user passwords.",
+            "description": "Human-readable explanation of what this permission grants, shown in admin UI."
+          }
+        }
+      },
+      "UserWithPermissions": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/User"
+          },
+          {
+            "type": "object",
+            "required": [
+              "permissions"
+            ],
+            "properties": {
+              "permissions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "example": [
+                  "admin"
+                ],
+                "description": "Permission keys currently granted to this user."
+              }
+            }
+          }
+        ],
+        "description": "A user record together with their currently granted permission keys."
+      },
+      "UserCreateRequestV2": {
+        "type": "object",
+        "required": [
+          "name",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Jane Diver",
+            "description": "Display name used by API and reporting views."
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "jane.diver",
+            "description": "Local sign-in username."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "example": "correct horse battery staple",
+            "description": "Initial plaintext password. Hashed with Argon2 before storage -- never stored or logged in plaintext."
+          },
+          "status": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "active",
+              "disabled",
+              "pending",
+              "deleted"
+            ],
+            "example": "active",
+            "description": "Initial account status; defaults to \"active\" when omitted."
+          }
+        }
+      },
+      "UserUpdateRequestV2": {
+        "type": "object",
+        "description": "All fields are optional; only the fields provided are updated.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Jane Diver",
+            "description": "New display name."
+          },
+          "username": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "jane.diver",
+            "description": "New local sign-in username."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "pending",
+              "deleted"
+            ],
+            "example": "active",
+            "description": "New account status."
+          }
+        }
+      },
+      "SetPermissionsRequest": {
+        "type": "object",
+        "required": [
+          "permissionKeys"
+        ],
+        "properties": {
+          "permissionKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "admin"
+            ],
+            "description": "Full desired set of permission keys for this user. Any currently-granted permission not in this list is revoked."
+          }
+        }
+      },
+      "SetPasswordRequest": {
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "example": "correct horse battery staple",
+            "description": "New plaintext password. Hashed with Argon2 before storage, with no old-password check."
+          }
+        }
+      },
+      "ServiceClient": {
+        "type": "object",
+        "required": [
+          "service_client_id",
+          "name",
+          "status",
+          "tokenCount"
+        ],
+        "properties": {
+          "service_client_id": {
+            "type": "integer",
+            "example": 1,
+            "description": "Unique identifier for this application."
+          },
+          "name": {
+            "type": "string",
+            "example": "Reporting Worker",
+            "description": "Human-readable name identifying this application."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Nightly job that pulls dashboard metrics.",
+            "description": "Optional freeform notes about what this application does or who owns it."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "example": "active",
+            "description": "Lifecycle state of this application. A disabled application's tokens are all rejected regardless of their own state."
+          },
+          "created_by_user_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 19,
+            "description": "Audit-only reference to the admin who registered this application."
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2026-07-31T12:34:56.000Z",
+            "description": "Timestamp of the most recent successful bearer-token authentication for any token under this application."
+          },
+          "tokenCount": {
+            "type": "integer",
+            "example": 2,
+            "description": "Number of tokens (of any status) issued under this application."
+          }
+        }
+      },
+      "ServiceToken": {
+        "type": "object",
+        "required": [
+          "service_token_id",
+          "service_client_id",
+          "token_prefix",
+          "status",
+          "permissions"
+        ],
+        "properties": {
+          "service_token_id": {
+            "type": "integer",
+            "example": 1,
+            "description": "Unique identifier for this token."
+          },
+          "service_client_id": {
+            "type": "integer",
+            "example": 1,
+            "description": "Foreign key referencing the owning application (service_clients.service_client_id)."
+          },
+          "appName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Reporting Worker",
+            "description": "Display name of the owning application."
+          },
+          "token_prefix": {
+            "type": "string",
+            "example": "svc_a1b2c3d4",
+            "description": "Non-secret leading slice of the raw token, for identification only. Never the full secret."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ],
+            "example": "active",
+            "description": "Derived status: \"revoked\" if explicitly revoked, \"expired\" if past expires_at, otherwise \"active\"."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2027-07-31T00:00:00.000Z",
+            "description": "Optional expiration timestamp; null means the token does not expire on its own."
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": null,
+            "description": "Timestamp this token was revoked, if it has been."
+          },
+          "last_used_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2026-07-31T12:34:56.000Z",
+            "description": "Timestamp of the most recent successful authentication with this specific token."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "admin"
+            ],
+            "description": "Permission keys currently granted to this token."
+          }
+        }
+      },
+      "ServiceTokenIssued": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ServiceToken"
+          },
+          {
+            "type": "object",
+            "required": [
+              "rawToken"
+            ],
+            "properties": {
+              "rawToken": {
+                "type": "string",
+                "example": "svc_5f0m2q8k3z1x7v9w4t6y8u2r0p1n3l5j7h9g",
+                "description": "The raw bearer token. Shown exactly once, in this response only -- it cannot be retrieved again afterward, only regenerated as a new token."
+              }
+            }
+          }
+        ],
+        "description": "A token record together with its one-time raw secret, returned only by issue and regenerate."
+      },
+      "ServiceClientCreateRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "example": "Reporting Worker",
+            "description": "Human-readable name identifying this application."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Nightly job that pulls dashboard metrics.",
+            "description": "Optional freeform notes about what this application does or who owns it."
+          }
+        }
+      },
+      "ServiceClientUpdateRequest": {
+        "type": "object",
+        "description": "All fields are optional; only the fields provided are updated.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "example": "Reporting Worker",
+            "description": "New application name."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "example": "Nightly job that pulls dashboard metrics.",
+            "description": "New description."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "example": "active",
+            "description": "New status."
+          }
+        }
+      },
+      "ServiceTokenCreateRequest": {
+        "type": "object",
+        "required": [
+          "serviceClientId"
+        ],
+        "properties": {
+          "serviceClientId": {
+            "type": "integer",
+            "example": 1,
+            "description": "Application this token authenticates as (service_clients.service_client_id)."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2027-07-31T00:00:00.000Z",
+            "description": "Optional expiration timestamp; omit or null for a token that does not expire on its own."
+          }
+        }
       },
       "ProjectCreateRequest": {
         "type": "object",
@@ -2457,9 +2850,10 @@
             "enum": [
               "active",
               "disabled",
-              "pending"
+              "pending",
+              "deleted"
             ],
-            "description": "Authentication status for this user account.",
+            "description": "Authentication status for this user account. \"deleted\" is a soft delete -- the row is kept, but login and session resumption are rejected exactly like \"disabled\".",
             "example": "active"
           },
           "last_login_at": {
@@ -8101,6 +8495,682 @@
           },
           "401": {
             "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/users/permissions": {
+      "get": {
+        "summary": "List the permission catalog",
+        "description": "Returns every named permission that can be granted to a user. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "responses": {
+          "200": {
+            "description": "Permission catalog returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Permission"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/users": {
+      "post": {
+        "summary": "Create a user",
+        "description": "Creates a new user with a local username/password credential. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreateRequestV2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWithPermissions"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List all users",
+        "description": "Returns every user, each with their currently granted permission keys. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "responses": {
+          "200": {
+            "description": "Users returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserWithPermissions"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/users/{id}": {
+      "get": {
+        "summary": "Get a user by id",
+        "description": "Returns one user, with their currently granted permission keys. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "responses": {
+          "200": {
+            "description": "User returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWithPermissions"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a user",
+        "description": "Updates a user's name, username, and/or status. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdateRequestV2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWithPermissions"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Soft-delete a user",
+        "description": "Sets the user's status to \"deleted\". The row and every record the user created (sessions, observations, etc.) are preserved -- only login and session resumption are rejected, the same way \"disabled\" already works. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "responses": {
+          "200": {
+            "description": "User soft-deleted successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWithPermissions"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/users/{id}/permissions": {
+      "put": {
+        "summary": "Set a user's permissions",
+        "description": "Replaces the user's entire permission set with exactly the given keys -- any currently-granted permission not in the list is revoked. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permissions updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWithPermissions"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/users/{id}/password": {
+      "put": {
+        "summary": "Set a user's password",
+        "description": "Sets a new local login password for the user directly, with no old-password check. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Users"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Password updated successfully."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/apps": {
+      "post": {
+        "summary": "Register an application",
+        "description": "Registers a new application that can be issued bearer tokens. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceClientCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Application registered successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClient"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List applications",
+        "description": "Returns every registered application, each with its token count. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "responses": {
+          "200": {
+            "description": "Applications returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceClient"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/apps/{id}": {
+      "get": {
+        "summary": "Get an application by id",
+        "description": "Returns one registered application. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "responses": {
+          "200": {
+            "description": "Application returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClient"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an application",
+        "description": "Updates an application's name, description, and/or status. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceClientUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Application updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceClient"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an application",
+        "description": "Permanently deletes an application and every bearer token issued under it (cascading). Unlike a user soft-delete, this is a real, irreversible removal. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "responses": {
+          "204": {
+            "description": "Application deleted successfully."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/tokens": {
+      "post": {
+        "summary": "Issue a bearer token",
+        "description": "Issues a new bearer token for an application. The raw token is returned exactly once, in this response -- it cannot be retrieved again afterward, only regenerated as a new token. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceTokenCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token issued successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTokenIssued"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List all tokens",
+        "description": "Returns every issued token across every application (never the raw secret), with its owning application, status, and granted permissions. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "responses": {
+          "200": {
+            "description": "Tokens returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceToken"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/tokens/{id}": {
+      "delete": {
+        "summary": "Revoke a token",
+        "description": "Revokes a token immediately. The token record is kept for history, but is rejected by any future authentication attempt. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "responses": {
+          "200": {
+            "description": "Token revoked successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceToken"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/tokens/{id}/regenerate": {
+      "post": {
+        "summary": "Regenerate a token",
+        "description": "Revokes the existing token and issues a brand-new one under the same application. The new raw token is returned exactly once, the same as when a token is first issued. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "responses": {
+          "201": {
+            "description": "Token regenerated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceTokenIssued"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/tokens/{id}/permissions": {
+      "put": {
+        "summary": "Set a token's permissions",
+        "description": "Replaces the token's entire permission set with exactly the given keys -- any currently-granted permission not in the list is revoked. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Tokens"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPermissionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permissions updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

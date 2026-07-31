@@ -76,6 +76,10 @@
       <a class="btn btn-outline-primary btn-sm" href="/apps/dashboard/user-hours.html">User Hours</a>
       <a class="btn btn-outline-primary btn-sm" href="/api-docs">API Docs</a>
       <a class="btn btn-outline-primary btn-sm" href="/developer-docs/">Developer Docs</a>
+      <!-- Hidden by default; shown only if the current session has the admin permission (see script below). -->
+      <a class="btn btn-outline-primary btn-sm" href="/apps/dashboard/admin.html" id="adminLink" hidden>
+        <i class="bi bi-shield-lock"></i> Admin
+      </a>
     </div>
 
     <!-- KPI cards -->
@@ -283,6 +287,18 @@
       fetch('/api/v2/auth/logout', { method: 'POST', credentials: 'same-origin' })
         .finally(() => { window.location.href = '/'; });
     });
+
+    // Reveal the Admin link only for sessions holding the admin permission.
+    // The link is purely a convenience shortcut -- admin.html is protected
+    // server-side regardless of whether this link is ever shown.
+    fetch('/api/v2/auth/me', { credentials: 'same-origin' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (body && body.user && body.user.permissions.includes('admin')) {
+          document.getElementById('adminLink').hidden = false;
+        }
+      })
+      .catch(() => {});
 
     // Init
     setKpis(); buildCharts(); buildMap(); fillTransects();
