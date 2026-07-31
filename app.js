@@ -94,6 +94,7 @@ const registerSessionRoutes = require('./routes/session.routes');
 const registerSpeciesRoutes = require('./routes/species.routes');
 const registerDatasetRoutes = require('./routes/dataset.routes');
 const registerAuthRoutes = require('./routes/auth.routes');
+const registerUsersRoutes = require('./routes/v2_users.routes');
 
 // Jellyfin (V2) has no Sequelize model or DB repository, so it has no
 // dependency on session.controller.js/observation.controller.js -- none of
@@ -118,7 +119,7 @@ const {
     errorHandler,
     requestIdMiddleware,
 } = require('./middleware/error-contract.middleware');
-const { requireAuthenticatedSession } = require('./middleware/require-authenticated-session.middleware');
+const { requireAuthenticatedSession, requirePermissionSession } = require('./middleware/require-authenticated-session.middleware');
 
 
 //---------------------------------------------------------
@@ -315,6 +316,7 @@ registerDatasetRoutes(app);
 registerObservationRoutes(app);
 registerJellyfinRoutes(app);
 registerAuthRoutes(app);
+registerUsersRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 
@@ -447,6 +449,10 @@ const frontendSharedDirectory = path.join(frontendDirectory, 'shared');
 app.use('/assets', express.static(path.join(frontendSharedDirectory, 'assets'), { index: false }));
 
 app.use('/shared', express.static(frontendSharedDirectory, { index: false }));
+
+// The admin page needs the stricter admin-only check, registered before
+// the broader dashboard guard below so it runs first for this one file.
+app.use('/apps/dashboard/admin.html', requirePermissionSession('admin'));
 
 // Gate every page under the dashboard app behind a real session, before the
 // static mount below (or the /apps/:appName route further down) can serve

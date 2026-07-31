@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MARP Admin</title>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --muted: #64748b;
+      --text: #1e293b;
+      --accent: #0ea5e9;
+      --accent-2: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    body { background: var(--bg); color: var(--text); }
+    .navbar, .offcanvas { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .navbar .navbar-brand, .navbar .nav-link, .navbar .btn { color: #fff !important; }
+    .brand-gradient { color: #fff; font-weight: bold; }
+    .card { background: var(--panel); border: 1px solid rgba(0,0,0,0.05); box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+    .card-title { color: var(--text); font-weight: 600; }
+    .badge-soft { background: rgba(14,165,233,0.1); color: var(--accent); border: 1px solid rgba(14,165,233,0.2); }
+    .badge-status-active { background: rgba(16,185,129,0.12); color: #0f766e; border: 1px solid rgba(16,185,129,0.25); }
+    .badge-status-disabled { background: rgba(245,158,11,0.12); color: #92400e; border: 1px solid rgba(245,158,11,0.25); }
+    .badge-status-pending { background: rgba(100,116,139,0.12); color: var(--muted); border: 1px solid rgba(100,116,139,0.25); }
+    .badge-status-deleted { background: rgba(239,68,68,0.12); color: #991b1b; border: 1px solid rgba(239,68,68,0.25); }
+    .form-select, .form-control { background-color: #fff; border-color: #cbd5e1; color: var(--text); }
+    .btn-outline-light { color: var(--text); border-color: #cbd5e1; }
+    .btn-outline-light:hover { background-color: #f1f5f9; }
+    .table { color: var(--text); }
+    .table thead { color: var(--text); }
+    .footer { color: var(--muted); font-size: .9rem; }
+    .loading { opacity: .5; filter: blur(.3px); }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg sticky-top">
+    <div class="container-fluid">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="/apps/dashboard/index.html">
+        <i class="bi bi-shield-lock"></i>
+        <span class="brand-gradient">MARP Admin</span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navContent">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navContent">
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-3">
+          <li class="nav-item"><a class="btn btn-outline-light btn-sm" href="/apps/dashboard/index.html"><i class="bi bi-arrow-left"></i> Dashboard</a></li>
+          <li class="nav-item"><button id="logoutBtn" class="btn btn-outline-light btn-sm"><i class="bi bi-box-arrow-right"></i> Logout</button></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container-fluid py-4">
+    <div class="card p-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="card-title mb-0"><i class="bi bi-people"></i> Users</div>
+        <button class="btn btn-primary btn-sm" id="addUserBtn"><i class="bi bi-person-plus"></i> Add user</button>
+      </div>
+
+      <p class="text-danger small mb-3" id="usersError" hidden></p>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Username</th>
+              <th>Status</th>
+              <th>Permissions</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody">
+            <tr><td colspan="6" class="text-center text-muted py-4">Loading users…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer text-center pt-4 pb-2">MARP admin · user management</div>
+  </main>
+
+  <!-- Add/Edit user modal -->
+  <div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="userModalTitle">Add user</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="userForm">
+          <div class="modal-body">
+            <p class="text-danger small" id="userFormError" hidden></p>
+            <div class="mb-3">
+              <label class="form-label" for="userFormName">Name</label>
+              <input type="text" class="form-control" id="userFormName" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="userFormUsername">Username</label>
+              <input type="text" class="form-control" id="userFormUsername" required>
+            </div>
+            <div class="mb-3" id="userFormPasswordGroup">
+              <label class="form-label" for="userFormPassword">Password</label>
+              <input type="password" class="form-control" id="userFormPassword">
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="userFormStatus">Status</label>
+              <select class="form-select" id="userFormStatus">
+                <option value="active">active</option>
+                <option value="disabled">disabled</option>
+                <option value="pending">pending</option>
+                <option value="deleted">deleted</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="userFormSubmit">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Set password modal -->
+  <div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Set password</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="passwordForm">
+          <div class="modal-body">
+            <p class="text-danger small" id="passwordFormError" hidden></p>
+            <div class="mb-3">
+              <label class="form-label" for="passwordFormValue">New password</label>
+              <input type="password" class="form-control" id="passwordFormValue" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Set password</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage permissions modal -->
+  <div class="modal fade" id="permissionsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="permissionsModalTitle">Permissions</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="permissionsForm">
+          <div class="modal-body">
+            <p class="text-danger small" id="permissionsFormError" hidden></p>
+            <div id="permissionsFormList"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save permissions</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    const usersTableBody = document.getElementById('usersTableBody');
+    const usersError = document.getElementById('usersError');
+
+    const userModalEl = document.getElementById('userModal');
+    const userModal = new bootstrap.Modal(userModalEl);
+    const userForm = document.getElementById('userForm');
+    const userFormError = document.getElementById('userFormError');
+    const userFormPasswordGroup = document.getElementById('userFormPasswordGroup');
+
+    const passwordModalEl = document.getElementById('passwordModal');
+    const passwordModal = new bootstrap.Modal(passwordModalEl);
+    const passwordForm = document.getElementById('passwordForm');
+    const passwordFormError = document.getElementById('passwordFormError');
+
+    // Set while an edit modal is open; null means the modal is in "add" mode.
+    let editingUserId = null;
+    // Set while the password modal is open, so its submit handler knows the target user.
+    let passwordTargetUserId = null;
+
+    /**
+     * Parses the API's standardized error envelope from a fetch Response,
+     * falling back to a generic message if the body isn't JSON.
+     */
+    async function readErrorMessage(response) {
+      try {
+        const body = await response.json();
+        return (body && body.error && body.error.message) || `Request failed (${response.status}).`;
+      } catch (parseError) {
+        return `Request failed (${response.status}).`;
+      }
+    }
+
+    function statusBadgeClass(status) {
+      return `badge badge-status-${status || 'pending'}`;
+    }
+
+    function renderUsersTable(users) {
+      if (users.length === 0) {
+        usersTableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No users yet.</td></tr>';
+        return;
+      }
+
+      usersTableBody.innerHTML = users.map((user) => {
+        const permissionBadges = user.permissions.length
+          ? user.permissions.map((key) => `<span class="badge badge-soft me-1">${key}</span>`).join('')
+          : '<span class="text-muted small">none</span>';
+
+        return `
+          <tr data-user-id="${user.user_id}">
+            <td>${user.user_id}</td>
+            <td>${user.name}</td>
+            <td>${user.username || '<span class="text-muted">—</span>'}</td>
+            <td><span class="${statusBadgeClass(user.status)}">${user.status}</span></td>
+            <td>${permissionBadges}</td>
+            <td class="d-flex flex-wrap gap-1">
+              <button class="btn btn-outline-secondary btn-sm" data-action="edit"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-outline-secondary btn-sm" data-action="password"><i class="bi bi-key"></i></button>
+              <button class="btn btn-outline-warning btn-sm" data-action="permissions"><i class="bi bi-shield-lock"></i> Permissions</button>
+              <button class="btn btn-outline-danger btn-sm" data-action="delete"><i class="bi bi-trash"></i></button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function loadUsers() {
+      usersError.hidden = true;
+
+      try {
+        const response = await fetch('/api/v2/users', { credentials: 'same-origin' });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const users = await response.json();
+        renderUsersTable(users);
+      } catch (error) {
+        usersError.hidden = false;
+        usersError.textContent = error.message;
+        usersTableBody.innerHTML = '';
+      }
+    }
+
+    function openAddUserModal() {
+      editingUserId = null;
+      userForm.reset();
+      document.getElementById('userModalTitle').textContent = 'Add user';
+      document.getElementById('userFormUsername').disabled = false;
+      userFormPasswordGroup.hidden = false;
+      document.getElementById('userFormPassword').required = true;
+      userFormError.hidden = true;
+      userModal.show();
+    }
+
+    function openEditUserModal(user) {
+      editingUserId = user.user_id;
+      document.getElementById('userModalTitle').textContent = `Edit ${user.name}`;
+      document.getElementById('userFormName').value = user.name;
+      document.getElementById('userFormUsername').value = user.username || '';
+      document.getElementById('userFormUsername').disabled = false;
+      document.getElementById('userFormStatus').value = user.status;
+      // Editing never changes the password -- that's the dedicated "Set password" action.
+      userFormPasswordGroup.hidden = true;
+      document.getElementById('userFormPassword').required = false;
+      userFormError.hidden = true;
+      userModal.show();
+    }
+
+    userForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      userFormError.hidden = true;
+
+      const name = document.getElementById('userFormName').value;
+      const username = document.getElementById('userFormUsername').value;
+      const password = document.getElementById('userFormPassword').value;
+      const status = document.getElementById('userFormStatus').value;
+
+      try {
+        const response = editingUserId
+          ? await fetch(`/api/v2/users/${editingUserId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ name, username, status }),
+            })
+          : await fetch('/api/v2/users', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'same-origin',
+              body: JSON.stringify({ name, username, password, status }),
+            });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        userModal.hide();
+        await loadUsers();
+      } catch (error) {
+        userFormError.hidden = false;
+        userFormError.textContent = error.message;
+      }
+    });
+
+    function openPasswordModal(userId) {
+      passwordTargetUserId = userId;
+      passwordForm.reset();
+      passwordFormError.hidden = true;
+      passwordModal.show();
+    }
+
+    passwordForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      passwordFormError.hidden = true;
+
+      const password = document.getElementById('passwordFormValue').value;
+
+      try {
+        const response = await fetch(`/api/v2/users/${passwordTargetUserId}/password`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ password }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        passwordModal.hide();
+      } catch (error) {
+        passwordFormError.hidden = false;
+        passwordFormError.textContent = error.message;
+      }
+    });
+
+    const permissionsModalEl = document.getElementById('permissionsModal');
+    const permissionsModal = new bootstrap.Modal(permissionsModalEl);
+    const permissionsForm = document.getElementById('permissionsForm');
+    const permissionsFormError = document.getElementById('permissionsFormError');
+    const permissionsFormList = document.getElementById('permissionsFormList');
+
+    // Set while the permissions modal is open, so its submit handler knows the target user.
+    let permissionsTargetUserId = null;
+
+    /**
+     * Opens the permissions modal for `user`, showing every permission in
+     * the catalog as a checkbox, pre-checked for whatever the user
+     * currently has. Saving replaces the user's entire permission set with
+     * exactly the checked keys (add or remove any permission, not just
+     * admin).
+     */
+    async function openPermissionsModal(user) {
+      permissionsTargetUserId = user.user_id;
+      permissionsFormError.hidden = true;
+      document.getElementById('permissionsModalTitle').textContent = `Permissions for ${user.name}`;
+
+      try {
+        const response = await fetch('/api/v2/users/permissions', { credentials: 'same-origin' });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const catalog = await response.json();
+
+        permissionsFormList.innerHTML = catalog.length
+          ? catalog.map((permission) => `
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" value="${permission.key}"
+                  id="permissionCheck-${permission.key}" ${user.permissions.includes(permission.key) ? 'checked' : ''}>
+                <label class="form-check-label" for="permissionCheck-${permission.key}">
+                  <strong>${permission.key}</strong>
+                  ${permission.description ? `<div class="text-muted small">${permission.description}</div>` : ''}
+                </label>
+              </div>
+            `).join('')
+          : '<p class="text-muted small mb-0">No permissions exist in the catalog yet.</p>';
+
+        permissionsModal.show();
+      } catch (error) {
+        usersError.hidden = false;
+        usersError.textContent = error.message;
+      }
+    }
+
+    permissionsForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      permissionsFormError.hidden = true;
+
+      const permissionKeys = Array.from(permissionsFormList.querySelectorAll('input[type="checkbox"]:checked'))
+        .map((checkbox) => checkbox.value);
+
+      try {
+        const response = await fetch(`/api/v2/users/${permissionsTargetUserId}/permissions`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ permissionKeys }),
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        permissionsModal.hide();
+        await loadUsers();
+      } catch (error) {
+        permissionsFormError.hidden = false;
+        permissionsFormError.textContent = error.message;
+      }
+    });
+
+    async function softDeleteUser(user) {
+      if (!window.confirm(`Delete ${user.name}? Their records are kept, but they will no longer be able to sign in.`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/v2/users/${user.user_id}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        await loadUsers();
+      } catch (error) {
+        usersError.hidden = false;
+        usersError.textContent = error.message;
+      }
+    }
+
+    document.getElementById('addUserBtn').addEventListener('click', openAddUserModal);
+
+    usersTableBody.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) {
+        return;
+      }
+
+      const row = button.closest('tr');
+      const userId = Number(row.dataset.userId);
+
+      const response = await fetch(`/api/v2/users/${userId}`, { credentials: 'same-origin' });
+      if (!response.ok) {
+        usersError.hidden = false;
+        usersError.textContent = await readErrorMessage(response);
+        return;
+      }
+      const user = await response.json();
+
+      switch (button.dataset.action) {
+        case 'edit':
+          openEditUserModal(user);
+          break;
+        case 'password':
+          openPasswordModal(user.user_id);
+          break;
+        case 'permissions':
+          await openPermissionsModal(user);
+          break;
+        case 'delete':
+          await softDeleteUser(user);
+          break;
+      }
+    });
+
+    // Logout: clear the session server-side, then return to the entry page.
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      fetch('/api/v2/auth/logout', { method: 'POST', credentials: 'same-origin' })
+        .finally(() => { window.location.href = '/'; });
+    });
+
+    loadUsers();
+  </script>
+</body>
+</html>

@@ -12,34 +12,40 @@
 <!-- users -->
 <g id="node1" class="node">
 <title>users</title>
-<polygon fill="#add8e6" stroke="transparent" points="808,-561 808,-583 895,-583 895,-561 808,-561"/>
-<polygon fill="none" stroke="#000000" points="808,-561 808,-583 895,-583 895,-561 808,-561"/>
-<text text-anchor="start" x="841.227" y="-570" font-family="Times,serif" font-weight="bold" font-size="10.00" fill="#000000">users</text>
-<polygon fill="none" stroke="#000000" points="808,-539 808,-561 895,-561 895,-539 808,-539"/>
-<text text-anchor="start" x="812.7555" y="-548" font-family="Times,serif" text-decoration="underline" font-size="10.00" fill="#000000">user_id</text>
-<text text-anchor="start" x="842.1915" y="-548" font-family="Times,serif" font-size="10.00" fill="#000000">: NUMBER</text>
-<polygon fill="none" stroke="#000000" points="808,-517 808,-539 895,-539 895,-517 808,-517"/>
-<text text-anchor="start" x="813" y="-525" font-family="Times,serif" font-size="10.00" fill="#000000">name: STRING</text>
-<polygon fill="none" stroke="#000000" points="808,-495 808,-517 895,-517 895,-495 808,-495"/>
-<text text-anchor="start" x="813" y="-503" font-family="Times,serif" font-size="10.00" fill="#000000">createdAt: DATE</text>
-<polygon fill="none" stroke="#000000" points="808,-473 808,-495 895,-495 895,-473 808,-473"/>
-<text text-anchor="start" x="813" y="-481" font-family="Times,serif" font-size="10.00" fill="#000000">updatedAt: DATE</text>
+<polygon fill="#add8e6" stroke="transparent" points="805,-644 805,-666 898,-666 898,-644 805,-644"/>
+<polygon fill="none" stroke="#000000" points="805,-644 805,-666 898,-666 898,-644 805,-644"/>
+<text text-anchor="start" x="841.227" y="-653" font-family="Times,serif" font-weight="bold" font-size="10.00" fill="#000000">users</text>
+<polygon fill="none" stroke="#000000" points="805,-622 805,-644 898,-644 898,-622 805,-622"/>
+<text text-anchor="start" x="810" y="-631" font-family="Times,serif" text-decoration="underline" font-size="10.00" fill="#000000">user_id</text>
+<text text-anchor="start" x="839.436" y="-631" font-family="Times,serif" font-size="10.00" fill="#000000">: NUMBER</text>
+<polygon fill="none" stroke="#000000" points="805,-600 805,-622 898,-622 898,-600 805,-600"/>
+<text text-anchor="start" x="810" y="-608" font-family="Times,serif" font-size="10.00" fill="#000000">name: STRING</text>
+<polygon fill="none" stroke="#000000" points="805,-578 805,-600 898,-600 898,-578 805,-578"/>
+<text text-anchor="start" x="810" y="-586" font-family="Times,serif" font-size="10.00" fill="#000000">username: STRING</text>
+<polygon fill="none" stroke="#000000" points="805,-556 805,-578 898,-578 898,-556 805,-556"/>
+<text text-anchor="start" x="810" y="-564" font-family="Times,serif" font-size="10.00" fill="#000000">status: STRING</text>
+<polygon fill="none" stroke="#000000" points="805,-534 805,-556 898,-556 898,-534 805,-534"/>
+<text text-anchor="start" x="809.7015" y="-542" font-family="Times,serif" font-size="10.00" fill="#000000">last_login_at: DATE</text>
+<polygon fill="none" stroke="#000000" points="805,-512 805,-534 898,-534 898,-512 805,-512"/>
+<text text-anchor="start" x="810" y="-520" font-family="Times,serif" font-size="10.00" fill="#000000">createdAt: DATE</text>
+<polygon fill="none" stroke="#000000" points="805,-490 805,-512 898,-512 898,-490 805,-490"/>
+<text text-anchor="start" x="810" y="-498" font-family="Times,serif" font-size="10.00" fill="#000000">updatedAt: DATE</text>
 </g>
 <!-- projects -->
 <g id="node2" class="node">
 <title>projects</title>
-<polygon fill="#add8e6" stroke="transparent" points="802,-406 802,-428 900,-428 900,-406 802,-406"/>
-<polygon fill="none" stroke="#000000" points="802,-406 802,-428 900,-428 900,-406 802,-406"/>
-<text text-anchor="start" x="835.173" y="-415" font-family="Times,serif" font-weight="bold" font-size="10.00" fill="#000000">projects</text>
-<polygon fill="none" stroke="#000000" points="802,-384 802,-406 900,-406 900,-384 802,-384"/>
-<text text-anchor="start" x="806.7015" y="-393" font-family="Times,serif" text-decoration="underline" font-size="10.00" fill="#000000">project_id</text>
-<text text-anchor="start" x="847.2455" y="-393" font-family="Times,serif" font-size="10.00" fill="#000000">: NUMBER</text>
-<polygon fill="none" stroke="#000000" points="802,-362 802,-384 900,-384 900,-362 802,-362"/>
-<text text-anchor="start" x="807" y="-370" font-family="Times,serif" font-size="10.00" fill="#000000">name: STRING</text>
-<polygon fill="none" stroke="#000000" points="802,-340 802,-362 900,-362 900,-340 802,-340"/>
-<text text-anchor="start" x="807" y="-348" font-family="Times,serif" font-size="10.00" fill="#000000">createdAt: DATE</text>
-<polygon fill="none" stroke="#000000" points="802,-318 802,-340 900,-340 900,-318 802,-318"/>
-<text text-anchor="start" x="807" y="-326" font-family="Times,serif" font-size="10.00" fill="#000000">updatedAt: DATE</text>
+<polygon fill="#add8e6" stroke="transparent" points="802,-394 802,-416 900,-416 900,-394 802,-394"/>
+<polygon fill="none" stroke="#000000" points="802,-394 802,-416 900,-416 900,-394 802,-394"/>
+<text text-anchor="start" x="835.173" y="-403" font-family="Times,serif" font-weight="bold" font-size="10.00" fill="#000000">projects</text>
+<polygon fill="none" stroke="#000000" points="802,-372 802,-394 900,-394 900,-372 802,-372"/>
+<text text-anchor="start" x="806.7015" y="-381" font-family="Times,serif" text-decoration="underline" font-size="10.00" fill="#000000">project_id</text>
+<text text-anchor="start" x="847.2455" y="-381" font-family="Times,serif" font-size="10.00" fill="#000000">: NUMBER</text>
+<polygon fill="none" stroke="#000000" points="802,-350 802,-372 900,-372 900,-350 802,-350"/>
+<text text-anchor="start" x="807" y="-358" font-family="Times,serif" font-size="10.00" fill="#000000">name: STRING</text>
+<polygon fill="none" stroke="#000000" points="802,-328 802,-350 900,-350 900,-328 802,-328"/>
+<text text-anchor="start" x="807" y="-336" font-family="Times,serif" font-size="10.00" fill="#000000">createdAt: DATE</text>
+<polygon fill="none" stroke="#000000" points="802,-306 802,-328 900,-328 900,-306 802,-306"/>
+<text text-anchor="start" x="807" y="-314" font-family="Times,serif" font-size="10.00" fill="#000000">updatedAt: DATE</text>
 </g>
 <!-- sessions -->
 <g id="node3" class="node">
@@ -72,18 +78,18 @@
 <!-- sessions&#45;&gt;users -->
 <g id="edge1" class="edge">
 <title>sessions&#45;&gt;users</title>
-<path fill="none" stroke="#696969" d="M675.4093,-472.2454C714.1314,-484.5407 762.1762,-499.7962 798.216,-511.2397"/>
-<polygon fill="#696969" stroke="#696969" points="675.3146,-472.2154 660.61,-459.0477 666.7366,-469.4917 658.1587,-466.7679 658.1587,-466.7679 658.1587,-466.7679 666.7366,-469.4917 655.7073,-474.4881 675.3146,-472.2154 675.3146,-472.2154"/>
-<polygon fill="#696969" stroke="#696969" points="808.1152,-504.9401 802.6677,-522.0961 799.2365,-521.0065 804.684,-503.8506 808.1152,-504.9401"/>
-<polyline fill="none" stroke="#696969" points="807.107,-514.0629 798.5291,-511.3391 "/>
+<path fill="none" stroke="#696969" d="M674.1885,-485.4018C712.4321,-505.4304 760.0849,-530.3867 796.2805,-549.3428"/>
+<polygon fill="#696969" stroke="#696969" points="674.1043,-485.3578 661.9166,-469.8313 666.1315,-481.1823 658.1587,-477.0068 658.1587,-477.0068 658.1587,-477.0068 666.1315,-481.1823 654.4007,-484.1823 674.1043,-485.3578 674.1043,-485.3578"/>
+<polygon fill="#696969" stroke="#696969" points="806.8683,-544.7281 798.5172,-560.6738 795.3281,-559.0036 803.6791,-543.0579 806.8683,-544.7281"/>
+<polyline fill="none" stroke="#696969" points="804.2873,-553.536 796.3145,-549.3605 "/>
 </g>
 <!-- sessions&#45;&gt;projects -->
 <g id="edge2" class="edge">
 <title>sessions&#45;&gt;projects</title>
-<path fill="none" stroke="#696969" d="M675.4778,-429.4566C712.3688,-417.5907 757.7053,-403.0082 793.0604,-391.6363"/>
-<polygon fill="#696969" stroke="#696969" points="675.2941,-429.5157 655.6784,-427.3164 666.7264,-432.2715 658.1587,-435.0273 658.1587,-435.0273 658.1587,-435.0273 666.7264,-432.2715 660.6389,-442.7383 675.2941,-429.5157 675.2941,-429.5157"/>
-<polygon fill="#696969" stroke="#696969" points="797.3533,-380.8013 802.865,-397.9367 799.4379,-399.0391 793.9262,-381.9037 797.3533,-380.8013"/>
-<polyline fill="none" stroke="#696969" points="801.8227,-388.8179 793.255,-391.5737 "/>
+<path fill="none" stroke="#696969" d="M675.2082,-426.2423C712.1407,-412.5354 757.6019,-395.6632 793.0402,-382.5109"/>
+<polygon fill="#696969" stroke="#696969" points="675.0339,-426.3069 655.3403,-424.9761 666.5963,-429.4385 658.1587,-432.57 658.1587,-432.57 658.1587,-432.57 666.5963,-429.4385 660.977,-440.1639 675.0339,-426.3069 675.0339,-426.3069"/>
+<polygon fill="#696969" stroke="#696969" points="797.0036,-371.44 803.2667,-388.3153 799.8916,-389.568 793.6285,-372.6927 797.0036,-371.44"/>
+<polyline fill="none" stroke="#696969" points="801.8227,-379.2514 793.385,-382.3829 "/>
 </g>
 <!-- observations -->
 <g id="node4" class="node">
@@ -179,18 +185,18 @@
 <!-- observations&#45;&gt;users -->
 <g id="edge4" class="edge">
 <title>observations&#45;&gt;users</title>
-<path fill="none" stroke="#696969" d="M430.293,-518.988C468.188,-542.9043 513.744,-566.8403 559,-579 641.6598,-601.2096 740.1652,-573.0337 799.0364,-550.5675"/>
+<path fill="none" stroke="#696969" d="M430.293,-518.988C468.188,-542.9043 513.744,-566.8403 559,-579 638.8159,-600.4455 735.3947,-594.1712 795.0167,-586.7854"/>
 <polygon fill="#696969" stroke="#696969" points="430.1928,-518.9231 419.4918,-502.337 422.6399,-514.0289 415.0869,-509.1346 415.0869,-509.1346 415.0869,-509.1346 422.6399,-514.0289 410.6821,-515.9323 430.1928,-518.9231 430.1928,-518.9231"/>
-<polygon fill="#696969" stroke="#696969" points="802.486,-539.5669 809.0156,-556.3408 805.6608,-557.6468 799.1312,-540.8728 802.486,-539.5669"/>
-<polyline fill="none" stroke="#696969" points="807.4282,-547.3009 799.0412,-550.5657 "/>
+<polygon fill="#696969" stroke="#696969" points="801.3248,-576.8983 803.6249,-594.7508 800.0544,-595.2108 797.7543,-577.3584 801.3248,-576.8983"/>
+<polyline fill="none" stroke="#696969" points="804.2601,-585.5945 795.3339,-586.7446 "/>
 </g>
 <!-- observations&#45;&gt;projects -->
 <g id="edge3" class="edge">
 <title>observations&#45;&gt;projects</title>
-<path fill="none" stroke="#696969" d="M430.293,-383.012C468.188,-359.0957 513.744,-335.1597 559,-323 639.0085,-301.5028 733.9373,-326.8535 793.3345,-348.6086"/>
+<path fill="none" stroke="#696969" d="M430.293,-383.012C468.188,-359.0957 513.744,-335.1597 559,-323 638.4801,-301.6448 733.4704,-322.1753 793.0329,-340.3568"/>
 <polygon fill="#696969" stroke="#696969" points="430.1928,-383.0769 410.6821,-386.0677 422.6399,-387.9711 415.0869,-392.8654 415.0869,-392.8654 415.0869,-392.8654 422.6399,-387.9711 419.4918,-399.663 430.1928,-383.0769 430.1928,-383.0769"/>
-<polygon fill="#696969" stroke="#696969" points="803.2998,-342.7258 796.9964,-359.586 793.6243,-358.3253 799.9278,-341.4651 803.2998,-342.7258"/>
-<polyline fill="none" stroke="#696969" points="801.8341,-351.7862 793.404,-348.6345 "/>
+<polygon fill="#696969" stroke="#696969" points="802.884,-334.0049 797.5174,-351.1863 794.0811,-350.1129 799.4477,-332.9315 802.884,-334.0049"/>
+<polyline fill="none" stroke="#696969" points="801.9188,-343.1322 793.3281,-340.4489 "/>
 </g>
 <!-- observations&#45;&gt;sessions -->
 <g id="edge5" class="edge">

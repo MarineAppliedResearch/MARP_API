@@ -66,6 +66,14 @@ module.exports = (sequelize, DataTypes) => {
           as: 'authIdentities',
         });
       }
+
+      if (models.user_permissions) {
+        this.hasMany(models.user_permissions, {
+          sourceKey: 'user_id',
+          foreignKey: 'user_id',
+          as: 'userPermissions',
+        });
+      }
     }
   }
 
@@ -107,8 +115,8 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 'active',
         jsonSchema: {
-            schema: { type: 'string', enum: ['active', 'disabled', 'pending'] },
-            description: 'Authentication status for this user account.',
+            schema: { type: 'string', enum: ['active', 'disabled', 'pending', 'deleted'] },
+            description: 'Authentication status for this user account. "deleted" is a soft delete -- the row is kept, but login and session resumption are rejected exactly like "disabled".',
             examples: ['active'],
         },
       },

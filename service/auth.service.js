@@ -11,6 +11,7 @@
 
 const argon2 = require('argon2');
 const authRepository = require('../repository/auth.repository');
+const usersRepository = require('../repository/v2_users.repository');
 
 /**
  * Service for authentication operations.
@@ -74,7 +75,7 @@ class AuthService {
     await authRepository.updateLastLogin(identity.user.user_id);
 
     // Return the safe session payload, never credential fields.
-    return this.toSafeUser(identity.user);
+    return await this.toSafeUser(identity.user);
   }
 
   /**
@@ -99,24 +100,32 @@ class AuthService {
     }
 
     // Return response-safe identity fields only.
-    return this.toSafeUser(user);
+    return await this.toSafeUser(user);
   }
 
   /**
-   * Convert a user model instance to a response-safe shape.
+   * Convert a user model instance to a response-safe shape, including the
+   * user's current granted permissions -- callers (login, `/me`) need this
+   * to decide client-side whether to show admin-only UI, without a second
+   * round trip.
    *
+   * @async
    * @param {Object} user - Sequelize user instance or plain object.
-   * @returns {Object} Safe user projection: `user_id` (number), `name`
-   * (string), `username` (string), `status` (string or null).
+   * @returns {Promise<Object>} Safe user projection: `user_id` (number),
+   * `name` (string), `username` (string), `status` (string or null),
+   * `permissions` (string[]).
    */
-  toSafeUser(user) {
+  async toSafeUser(user) {
     // Keep this payload intentionally small: it is stored in session and
     // echoed through auth endpoints.
+    const permissions = await usersRepository.getUserPermissions(user.user_id);
+
     return {
       user_id: user.user_id,
       name: user.name,
       username: user.username || null,
       status: user.status || null,
+      permissions,
     };
   }
 }

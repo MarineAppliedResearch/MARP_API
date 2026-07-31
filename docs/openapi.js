@@ -420,6 +420,11 @@ const buildOpenApiSpec = () => {
                     name: 'V2 · Auth',
                     description:
                         'V2 authentication endpoints for MARP-owned local sign-in, session lifecycle management, and authenticated-user session context.'
+                },
+                {
+                    name: 'V2 · Users',
+                    description:
+                        'V2 user-management endpoints: create/update/soft-delete users, view the permission catalog, and grant/revoke or change a user\'s local password. Every endpoint requires the `admin` permission.'
                 }
             ],
 
@@ -652,7 +657,7 @@ const buildOpenApiSpec = () => {
                      */
                     AuthUser: {
                         type: 'object',
-                        required: ['user_id', 'name', 'username', 'status'],
+                        required: ['user_id', 'name', 'username', 'status', 'permissions'],
                         properties: {
                             user_id: {
                                 type: 'integer',
@@ -673,9 +678,15 @@ const buildOpenApiSpec = () => {
                             status: {
                                 type: 'string',
                                 nullable: true,
-                                enum: ['active', 'disabled', 'pending'],
+                                enum: ['active', 'disabled', 'pending', 'deleted'],
                                 example: 'active',
                                 description: 'Authentication status for this user account.',
+                            },
+                            permissions: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                example: ['admin'],
+                                description: 'Permission keys currently granted to this user, e.g. for client-side admin-UI visibility checks.',
                             },
                         },
                     },
@@ -697,6 +708,137 @@ const buildOpenApiSpec = () => {
                         },
                         description: 'Authenticated session response containing the current MARP user profile.',
                     },
+
+                    /**
+                     * V2 user-management schemas (routes/v2_users.routes.js).
+                     * UserWithPermissions extends the generated `User` schema
+                     * (see GENERATED_SCHEMAS) rather than duplicating its
+                     * fields, the same allOf pattern already used for
+                     * Observation's association-bearing variants.
+                     */
+                    Permission: {
+                        type: 'object',
+                        required: ['permission_id', 'key'],
+                        properties: {
+                            permission_id: {
+                                type: 'integer',
+                                example: 1,
+                                description: 'Unique identifier for this permission definition.',
+                            },
+                            key: {
+                                type: 'string',
+                                example: 'admin',
+                                description: 'Stable machine-readable permission identifier (e.g. "admin"), referenced by requirePermission() checks.',
+                            },
+                            description: {
+                                type: 'string',
+                                nullable: true,
+                                example: 'Full administrative access: create, update, and soft-delete users; view and change user permissions; set user passwords.',
+                                description: 'Human-readable explanation of what this permission grants, shown in admin UI.',
+                            },
+                        },
+                    },
+                    UserWithPermissions: {
+                        allOf: [
+                            { $ref: '#/components/schemas/User' },
+                            {
+                                type: 'object',
+                                required: ['permissions'],
+                                properties: {
+                                    permissions: {
+                                        type: 'array',
+                                        items: { type: 'string' },
+                                        example: ['admin'],
+                                        description: 'Permission keys currently granted to this user.',
+                                    },
+                                },
+                            },
+                        ],
+                        description: 'A user record together with their currently granted permission keys.',
+                    },
+                    UserCreateRequestV2: {
+                        type: 'object',
+                        required: ['name', 'username', 'password'],
+                        properties: {
+                            name: {
+                                type: 'string',
+                                minLength: 1,
+                                example: 'Jane Diver',
+                                description: 'Display name used by API and reporting views.',
+                            },
+                            username: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 64,
+                                example: 'jane.diver',
+                                description: 'Local sign-in username.',
+                            },
+                            password: {
+                                type: 'string',
+                                minLength: 1,
+                                example: 'correct horse battery staple',
+                                description: 'Initial plaintext password. Hashed with Argon2 before storage -- never stored or logged in plaintext.',
+                            },
+                            status: {
+                                type: 'string',
+                                nullable: true,
+                                enum: ['active', 'disabled', 'pending', 'deleted'],
+                                example: 'active',
+                                description: 'Initial account status; defaults to "active" when omitted.',
+                            },
+                        },
+                    },
+                    UserUpdateRequestV2: {
+                        type: 'object',
+                        description: 'All fields are optional; only the fields provided are updated.',
+                        properties: {
+                            name: {
+                                type: 'string',
+                                minLength: 1,
+                                example: 'Jane Diver',
+                                description: 'New display name.',
+                            },
+                            username: {
+                                type: 'string',
+                                nullable: true,
+                                minLength: 1,
+                                maxLength: 64,
+                                example: 'jane.diver',
+                                description: 'New local sign-in username.',
+                            },
+                            status: {
+                                type: 'string',
+                                enum: ['active', 'disabled', 'pending', 'deleted'],
+                                example: 'active',
+                                description: 'New account status.',
+                            },
+                        },
+                    },
+                    SetPermissionsRequest: {
+                        type: 'object',
+                        required: ['permissionKeys'],
+                        properties: {
+                            permissionKeys: {
+                                type: 'array',
+                                items: { type: 'string' },
+                                example: ['admin'],
+                                description: 'Full desired set of permission keys for this user. Any currently-granted permission not in this list is revoked.',
+                            },
+                        },
+                    },
+                    SetPasswordRequest: {
+                        type: 'object',
+                        required: ['password'],
+                        properties: {
+                            password: {
+                                type: 'string',
+                                minLength: 1,
+                                example: 'correct horse battery staple',
+                                description: 'New plaintext password. Hashed with Argon2 before storage, with no old-password check.',
+                            },
+                        },
+                    },
+
                     ProjectCreateRequest: {
                         type: 'object',
                         required: ['project'],

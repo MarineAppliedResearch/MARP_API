@@ -167,6 +167,7 @@ describe('Local authentication', () => {
       name: username,
       username,
       status: 'active',
+      permissions: [],
     });
 
     const meRes = await agent.get('/api/v2/auth/me');
@@ -177,6 +178,7 @@ describe('Local authentication', () => {
       name: username,
       username,
       status: 'active',
+      permissions: [],
     });
 
     const logoutRes = await agent.post('/api/v2/auth/logout');

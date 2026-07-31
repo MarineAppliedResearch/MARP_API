@@ -63,7 +63,29 @@
       "Bash(curl -s -i -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/cookies2.txt -X POST http://localhost:3000/api/v2/auth/logout)",
       "Bash(curl -s -i -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/cookies2.txt http://localhost:3000/apps/dashboard/index.html)",
       "Bash(lsof -ti:3000 -sTCP:LISTEN)",
-      "Bash(xargs -r kill -9)"
+      "Bash(xargs -r kill -9)",
+      "Bash(node -c routes/users.routes.js)",
+      "Bash(node -c tests/auth.test.js)",
+      "Bash(node -c tests/users-v2.test.js)",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code}\\\\n' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies.txt http://localhost:3000/apps/dashboard/admin.html)",
+      "Bash(sed -i \"s#require\\('./routes/users.routes'\\)#require\\('./routes/v2_users.routes'\\)#\" app.js)",
+      "Bash(sed -i \"s#require\\('../controller/users.controller'\\)#require\\('../controller/v2_users.controller'\\)#\" routes/v2_users.routes.js)",
+      "Bash(sed -i \"s#require\\('../service/users.service'\\)#require\\('../service/v2_users.service'\\)#\" controller/v2_users.controller.js)",
+      "Bash(sed -i \"s#require\\('../repository/users.repository'\\)#require\\('../repository/v2_users.repository'\\)#\" service/v2_users.service.js)",
+      "Bash(sed -i \"s#require\\('../repository/users.repository'\\)#require\\('../repository/v2_users.repository'\\)#\" middleware/require-permission.middleware.js)",
+      "Bash(sed -i \"s#@module repository/users#@module repository/v2_users#\" repository/v2_users.repository.js)",
+      "Bash(sed -i \"s#@module service/users#@module service/v2_users#\" service/v2_users.service.js)",
+      "Bash(sed -i \"s#repository/users\\\\.repository\\\\.js#repository/v2_users.repository.js#\" service/v2_users.service.js)",
+      "Bash(sed -i \"s#@module controller/users#@module controller/v2_users#\" controller/v2_users.controller.js)",
+      "Bash(sed -i \"s#@module routes/users\\\\.routes#@module routes/v2_users.routes#\" routes/v2_users.routes.js)",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code}\\\\n' -c /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -X POST http://localhost:3000/api/v2/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"isaac\",\"password\":\"L8s0S3rKaTXt\"}')",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code}\\\\n' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt http://localhost:3000/apps/dashboard/admin.html)",
+      "Bash(curl -s -o /dev/null -w 'status=%{http_code}\\\\n' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt http://localhost:3000/api/v2/users/permissions)",
+      "Bash(curl -s -o /dev/null -w \"server status=%{http_code}\\\\n\" --max-time 2 http://localhost:3000/)",
+      "Bash(curl -s -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt http://localhost:3000/apps/dashboard/admin.html)",
+      "Bash(curl -s -X PUT http://localhost:3000/api/v2/users/131 -H 'Content-Type: application/json' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -d '{\"name\":\"Edit Check User \\(Renamed\\)\",\"username\":\"edit-check-renamed-__CMDSUB_OUTPUT__\"}')",
+      "Bash(curl -s -X PUT http://localhost:3000/api/v2/users/131/permissions -H 'Content-Type: application/json' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -d '{\"permissionKeys\":[\"admin\"]}')",
+      "Bash(curl -s -X PUT http://localhost:3000/api/v2/users/131/permissions -H 'Content-Type: application/json' -b /tmp/claude-1000/-home-mare-workspace-MARE-API/c3a46af3-a714-4e88-9dc7-e2fbb41e0ca2/scratchpad/isaac-cookies2.txt -d '{\"permissionKeys\":[]}')"
     ]
   }
 }
