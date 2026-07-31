@@ -1709,6 +1709,17 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'VALIDATION_ERROR',
+                                        message: 'Request body is required.',
+                                        status: 400,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                        details: [
+                                            { field: 'username', issue: 'Username is required.' },
+                                        ],
+                                    },
+                                },
                             },
                         },
                     },
@@ -1718,6 +1729,14 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'UNAUTHORIZED',
+                                        message: 'Authentication is required.',
+                                        status: 401,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
                                 },
                             },
                         },
@@ -1729,6 +1748,14 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'RATE_LIMITED',
+                                        message: 'Too many login attempts. Please try again later.',
+                                        status: 429,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
+                                },
                             },
                         },
                     },
@@ -1738,6 +1765,14 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'FORBIDDEN',
+                                        message: 'You do not have permission to perform this action.',
+                                        status: 403,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
                                 },
                             },
                         },
@@ -1749,6 +1784,14 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'RESOURCE_NOT_FOUND',
+                                        message: 'Requested route or resource was not found.',
+                                        status: 404,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
+                                },
                             },
                         },
                     },
@@ -1758,6 +1801,14 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'CONFLICT',
+                                        message: 'A unique constraint was violated.',
+                                        status: 409,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
                                 },
                             },
                         },
@@ -1769,6 +1820,17 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'VALIDATION_ERROR',
+                                        message: 'Request validation failed.',
+                                        status: 422,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                        details: [
+                                            { field: 'password', issue: 'Password must be at least 8 characters.' },
+                                        ],
+                                    },
+                                },
                             },
                         },
                     },
@@ -1779,6 +1841,14 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'INTERNAL_ERROR',
+                                        message: 'An unexpected server error occurred.',
+                                        status: 500,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
+                                },
                             },
                         },
                     },
@@ -1788,6 +1858,14 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'UPSTREAM_ERROR',
+                                        message: 'The upstream service was unavailable.',
+                                        status: 502,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
                                 },
                             },
                         },
