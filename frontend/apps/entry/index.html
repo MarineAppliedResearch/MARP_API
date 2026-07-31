@@ -538,10 +538,9 @@
   </footer>
 
   <!--
-    Login prototype dialog.
-    The form intentionally does not send credentials because authentication is
-    outside this static prototype. It provides the interaction and layout that
-    can later be connected to the production authentication endpoint.
+    Login dialog. Submits to POST /api/v2/auth/login (see
+    ../../shared/assets/js/landing.js) and, on success, redirects to the
+    dashboard app.
   -->
   <dialog class="login-dialog" data-login-dialog aria-labelledby="login-dialog-title">
     <div class="login-dialog__layout">
@@ -561,8 +560,8 @@
 
         <form class="login-form" data-login-form novalidate>
           <label>
-            <span>Email address</span>
-            <input type="email" name="email" autocomplete="username" required placeholder="name@example.org">
+            <span>Username</span>
+            <input type="text" name="username" autocomplete="username" required placeholder="jane.diver">
           </label>
 
           <label>
@@ -582,7 +581,6 @@
 
           <button class="button button--primary button--full" type="submit">Sign in</button>
           <p class="login-form__status" role="status" aria-live="polite" data-login-status></p>
-          <p class="login-form__prototype-note">Prototype interface — authentication is not connected yet.</p>
         </form>
       </div>
     </div>

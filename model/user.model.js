@@ -58,6 +58,14 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'user_id',
         as: 'observation',
       });
+
+      if (models.auth_identities) {
+        this.hasMany(models.auth_identities, {
+          sourceKey: 'user_id',
+          foreignKey: 'user_id',
+          as: 'authIdentities',
+        });
+      }
     }
   }
 
@@ -84,6 +92,35 @@ module.exports = (sequelize, DataTypes) => {
             examples: ['Jane Diver'],
         },
       },
+      username: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        jsonSchema: {
+            schema: { type: 'string', minLength: 1, maxLength: 64 },
+            nullable: true,
+            description: 'Unique local sign-in username used for authentication.',
+            examples: ['jane.diver'],
+        },
+      },
+      status: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'active',
+        jsonSchema: {
+            schema: { type: 'string', enum: ['active', 'disabled', 'pending'] },
+            description: 'Authentication status for this user account.',
+            examples: ['active'],
+        },
+      },
+      last_login_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        jsonSchema: {
+            nullable: true,
+            description: 'Timestamp of the most recent successful local login.',
+            examples: ['2026-07-31T12:34:56.000Z'],
+        },
+      },
     },
     {
       sequelize,                            // shared Sequelize connection instance
@@ -96,6 +133,11 @@ module.exports = (sequelize, DataTypes) => {
           name: 'users_name_key',           // enforces unique user names
           unique: true,
           fields: ['name'],
+        },
+        {
+          name: 'users_username_unique_not_null',
+          unique: true,
+          fields: ['username'],
         },
         {
           name: 'users_pkey',               // primary key index

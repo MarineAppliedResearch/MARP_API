@@ -64,6 +64,7 @@
         <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-3">
           <li class="nav-item"><span class="badge badge-soft rounded-pill" id="lastUpdated">Updated just now</span></li>
           <li class="nav-item"><button id="refreshBtn" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-clockwise"></i> Refresh</button></li>
+          <li class="nav-item"><button id="logoutBtn" class="btn btn-outline-light btn-sm"><i class="bi bi-box-arrow-right"></i> Logout</button></li>
         </ul>
       </div>
     </div>
@@ -145,7 +146,7 @@
       </div>
     </div>
 
-    <div class="footer text-center pb-4">MARE dashboard mockup • Demo data only</div>
+    <div class="footer text-center pb-4">MARP dashboard mockup • Demo data only</div>
   </main>
 
   <!-- Bootstrap JS -->
@@ -274,6 +275,13 @@
     });
     document.getElementById('refreshBtn').addEventListener('click', () => {
       document.getElementById('applyFilters').click();
+    });
+
+    // Logout: clear the session server-side, then return to the entry page
+    // (which also gates re-entry into this dashboard via the same session).
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      fetch('/api/v2/auth/logout', { method: 'POST', credentials: 'same-origin' })
+        .finally(() => { window.location.href = '/'; });
     });
 
     // Init

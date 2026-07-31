@@ -1,7 +1,17 @@
 /**
- * File: docs/openapi.js
- * Purpose: Build the OpenAPI specification from annotations in API source files.
- * Context: Used by the runtime Swagger endpoint and the CLI generation script.
+ * Builds the OpenAPI specification consumed by the runtime Swagger UI
+ * endpoint and the `docs:api:build` CLI generation script.
+ *
+ * Combines three sources into one document: hand-written `@openapi`
+ * comment-block annotations scanned from source files (via
+ * `swagger-jsdoc`), component schemas generated directly from Sequelize
+ * models (via `@techntools/sequelize-to-openapi`), and operations
+ * registered by the code-first route registry
+ * ({@link module:docs/openapi-route-registry}).
+ *
+ * @fileoverview OpenAPI specification builder.
+ * @author Isaac Travers
+ * @module docs/openapi
  */
 
 const path = require('path');
@@ -11,30 +21,62 @@ const db = require('../model');
 const { getRegisteredOpenApiRoutes } = require('./openapi-route-registry');
 
 
-// PROJECT_ROOT anchors annotation paths to the repository instead of process.cwd().
+/**
+ * Absolute repository root, used to anchor annotation file globs instead of
+ * `process.cwd()` so scanning behaves the same regardless of the directory
+ * a script or the server happens to be run from.
+ *
+ * @constant
+ * @type {string}
+ */
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 
 /**
  * Convert a filesystem path to forward slashes for glob compatibility.
- * Input: Absolute or relative filesystem path.
- * Output: Normalized path suitable for swagger-jsdoc glob matching.
+ *
+ * `swagger-jsdoc`'s glob matching expects forward slashes; on Windows,
+ * `path.join` produces backslashes, which would otherwise silently fail to
+ * match any file.
+ *
+ * @param {string} filePath - Absolute or relative filesystem path.
+ * @returns {string} Path with backslashes normalized to forward slashes.
  */
 const normalizeGlobPath = (filePath) => {
 
     return filePath.replace(/\\/g, '/');
 };
 
+/**
+ * Shared `@techntools/sequelize-to-openapi` schema manager instance used by
+ * {@link buildGeneratedComponentSchemas} to derive component schemas from
+ * Sequelize models.
+ *
+ * @constant
+ * @type {SchemaManager}
+ */
 const schemaManager = new SchemaManager();
+
+/**
+ * OpenAPI generation strategy passed to `schemaManager.generate()`.
+ *
+ * @constant
+ * @type {OpenApiStrategy}
+ */
 const openApiStrategy = new OpenApiStrategy();
 
 /**
- * @techntools/sequelize-to-openapi requires model `jsonSchema.examples` to be
- * an array (it throws otherwise), then copies that array verbatim into the
- * OpenAPI `example` keyword, which is documented as a single scalar value.
- * Left alone, every generated property ends up as `example: [value]` instead
- * of `example: value`. This unwraps that mismatch after generation so the
- * spec's example values match what the API actually returns.
+ * Unwrap array-wrapped `example` values left by `sequelize-to-openapi`.
+ *
+ * `@techntools/sequelize-to-openapi` requires model `jsonSchema.examples` to
+ * be an array (it throws otherwise), then copies that array verbatim into
+ * the OpenAPI `example` keyword, which is documented as a single scalar
+ * value. Left alone, every generated property ends up as `example: [value]`
+ * instead of `example: value`. This unwraps that mismatch after generation
+ * so the spec's example values match what the API actually returns.
+ *
+ * @param {Object} schema - Generated OpenAPI schema object, mutated in place.
+ * @returns {Object} The same schema object, returned for chaining.
  */
 function unwrapArrayExamples(schema) {
     for (const property of Object.values(schema.properties || {})) {
@@ -47,11 +89,16 @@ function unwrapArrayExamples(schema) {
 }
 
 /**
+ * Drop a redundant `anyOf` left over from narrowing a JSONB attribute's type.
+ *
  * JSONB attributes map to a generic `anyOf: [object, array, boolean, ...]`
  * schema by default. A `jsonSchema.schema` override narrowing the type (e.g.
  * to a plain object) adds its own `type` key alongside that `anyOf` rather
  * than replacing it, leaving both present and redundant. This drops the
  * leftover `anyOf` whenever an explicit `type` narrowed it down.
+ *
+ * @param {Object} schema - Generated OpenAPI schema object, mutated in place.
+ * @returns {Object} The same schema object, returned for chaining.
  */
 function dropRedundantAnyOf(schema) {
     for (const property of Object.values(schema.properties || {})) {
@@ -178,6 +225,19 @@ const GENERATED_SCHEMAS = [
     },
 ];
 
+/**
+ * Build OpenAPI component schemas for every entry in {@link GENERATED_SCHEMAS}.
+ *
+ * For each entry, generates a schema from the named Sequelize model (via
+ * `schemaManager.generate()`), post-processes it with
+ * {@link unwrapArrayExamples} and {@link dropRedundantAnyOf}, then applies
+ * the entry's top-level `description` and any `propertyDescriptions` for
+ * properties `sequelize-to-openapi` derives itself (e.g. `id`, `createdAt`)
+ * that have no model attribute to attach `jsonSchema` to. Entries whose
+ * `modelKey` is not present on `db` (a model not yet loaded) are skipped.
+ *
+ * @returns {Object<string, Object>} Map of schema name to generated OpenAPI schema.
+ */
 function buildGeneratedComponentSchemas() {
     const schemas = {};
 
@@ -202,6 +262,19 @@ function buildGeneratedComponentSchemas() {
     return schemas;
 }
 
+/**
+ * Merge code-first route registry operations into a generated spec's paths.
+ *
+ * Reads every `{ method, path, operation }` entry accumulated by
+ * {@link module:docs/openapi-route-registry.getRegisteredOpenApiRoutes} and
+ * writes it onto `spec.paths[path][method]`, creating the path entry if it
+ * does not already exist. Mutates `spec` in place; routes documented this
+ * way never appear in `swagger-jsdoc`'s own annotation-scanned output, since
+ * they have no `@openapi` comment block.
+ *
+ * @param {Object} spec - Generated OpenAPI specification object, mutated in place.
+ * @returns {void}
+ */
 function mergeRegisteredRoutes(spec) {
     for (const { method, path: routePath, operation } of getRegisteredOpenApiRoutes()) {
         if (!spec.paths[routePath]) {
@@ -214,10 +287,19 @@ function mergeRegisteredRoutes(spec) {
 
 
 /**
- * Build the OpenAPI document from in-code @openapi annotations.
- * Input: None.
- * Output: Generated OpenAPI specification object.
- * Throws: Annotation parsing errors when failOnErrors is enabled.
+ * Build the complete OpenAPI specification for the MARP API.
+ *
+ * Scans `@openapi` comment blocks from the files listed in
+ * `annotationFiles` via `swagger-jsdoc`, then layers on top of that result:
+ * component schemas generated from Sequelize models
+ * ({@link buildGeneratedComponentSchemas}) and paths/operations registered
+ * through the code-first route registry ({@link mergeRegisteredRoutes}).
+ * Called by both the runtime Swagger UI endpoint and the `docs:api:build`
+ * CLI script, so every consumer sees the same merged document.
+ *
+ * @returns {Object} Complete OpenAPI 3.0.3 specification object.
+ * @throws {Error} When `swagger-jsdoc` fails to parse an `@openapi` comment
+ * block in one of the scanned files (`failOnErrors: true` below).
  */
 const buildOpenApiSpec = () => {
 
@@ -250,9 +332,9 @@ const buildOpenApiSpec = () => {
             openapi: '3.0.3',
 
             info: {
-                title: 'MARE API',
+                title: 'MARP API',
                 version: '1.0.0',
-                description: 'Generated OpenAPI specification for MARE API V1 routes.',
+                description: 'Generated OpenAPI specification for MARP API V1 routes.',
             },
 
             servers: [
@@ -262,20 +344,24 @@ const buildOpenApiSpec = () => {
                 },
             ],
 
-            // Tags are named "V1 · <Domain>"/"V2 · <Domain>" specifically so
-            // Swagger UI's grouping (which follows this array's order)
-            // visually clusters all V1 domains together, separate from all
-            // V2 domains -- every V1 route file's tags: [...] literals were
-            // updated to match. V1 · tags are inherently transitional: as a
-            // domain is migrated to a V2 equivalent, its V1 · tag simply
-            // stops being used rather than needing a cleanup pass here.
+            /**
+             * Tags are named "V1 · <Domain>"/"V2 · <Domain>" specifically so
+             * Swagger UI's grouping (which follows this array's order)
+             * visually clusters all V1 domains together, separate from all
+             * V2 domains -- every V1 route file's tags: [...] literals were
+             * updated to match. V1 · tags are inherently transitional: as a
+             * domain is migrated to a V2 equivalent, its V1 · tag simply
+             * stops being used rather than needing a cleanup pass here.
+             */
             tags: [
                 {
-                    // Deliberately not "V1 ·"/"V2 ·" prefixed: these routes
-                    // (defined directly in app.js, not through the
-                    // code-first registry) serve the API documentation
-                    // itself, not a versioned resource domain -- they apply
-                    // equally regardless of which API version is being read.
+                    /**
+                     * Deliberately not "V1 ·"/"V2 ·" prefixed: these routes
+                     * (defined directly in app.js, not through the
+                     * code-first registry) serve the API documentation
+                     * itself, not a versioned resource domain -- they apply
+                     * equally regardless of which API version is being read.
+                     */
                     name: 'Documentation',
                     description: 'Retrieve the generated OpenAPI specification (as JSON) or open the internal developer (JSDoc) documentation site.',
                 },
@@ -329,6 +415,11 @@ const buildOpenApiSpec = () => {
                     name: 'V2 · Jellyfin',
                     description:
                         'V2 endpoints proxying the Jellyfin media server: library/folder browsing, search-by-name, and playback resolution. Jellyfin itself is never exposed to API consumers -- MARP holds the Jellyfin credentials and session, and the stream endpoint returns a short-lived redirect rather than requiring callers to know Jellyfin exists.'
+                },
+                {
+                    name: 'V2 · Auth',
+                    description:
+                        'V2 authentication endpoints for MARP-owned local sign-in, session lifecycle management, and authenticated-user session context.'
                 }
             ],
 
@@ -523,6 +614,88 @@ const buildOpenApiSpec = () => {
                                 },
                             },
                         },
+                    },
+
+                    /**
+                     * Request body schema for local username/password login.
+                     *
+                     * Used by POST /api/v2/auth/login.
+                     */
+                    AuthLoginRequest: {
+                        type: 'object',
+                        required: ['username', 'password'],
+                        properties: {
+                            username: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 64,
+                                example: 'jane.diver',
+                                description: 'Local username used to sign in to MARP.',
+                            },
+                            password: {
+                                type: 'string',
+                                minLength: 1,
+                                example: 'correct horse battery staple',
+                                description: 'Plaintext password used for local authentication.',
+                            },
+                        },
+                    },
+
+                    /**
+                     * Safe session-user projection returned by auth endpoints.
+                     *
+                     * Deliberately narrower than the full `User` schema --
+                     * matches authService#toSafeUser() (service/auth.service.js)
+                     * exactly, which is the only shape these endpoints ever
+                     * actually return. Never includes password_hash or any
+                     * other auth_identities credential field.
+                     */
+                    AuthUser: {
+                        type: 'object',
+                        required: ['user_id', 'name', 'username', 'status'],
+                        properties: {
+                            user_id: {
+                                type: 'integer',
+                                example: 42,
+                                description: 'Primary database identifier for the user.',
+                            },
+                            name: {
+                                type: 'string',
+                                example: 'Jane Diver',
+                                description: 'Display name used by API and reporting views.',
+                            },
+                            username: {
+                                type: 'string',
+                                nullable: true,
+                                example: 'jane.diver',
+                                description: 'Local sign-in username, or null if this user has no local username set.',
+                            },
+                            status: {
+                                type: 'string',
+                                nullable: true,
+                                enum: ['active', 'disabled', 'pending'],
+                                example: 'active',
+                                description: 'Authentication status for this user account.',
+                            },
+                        },
+                    },
+
+                    /**
+                     * Shared authenticated-user response envelope.
+                     *
+                     * Used by POST /api/v2/auth/login and GET /api/v2/auth/me
+                     * to return the current session user as a standardized
+                     * contract reference.
+                     */
+                    AuthSessionUserResponse: {
+                        type: 'object',
+                        required: ['user'],
+                        properties: {
+                            user: {
+                                $ref: '#/components/schemas/AuthUser',
+                            },
+                        },
+                        description: 'Authenticated session response containing the current MARP user profile.',
                     },
                     ProjectCreateRequest: {
                         type: 'object',
@@ -1065,11 +1238,13 @@ const buildOpenApiSpec = () => {
                         },
                     },
 
-                    // The three schemas below extend the generated `Observation` schema
-                    // with association data (keyframes, session, datasets) that Sequelize
-                    // attaches only when a query's `include` asks for it. They aren't
-                    // derivable from the Observation model alone, so they're hand-written
-                    // here rather than generated (see model/observation.model.js).
+                    /**
+                     * The three schemas below extend the generated `Observation` schema
+                     * with association data (keyframes, session, datasets) that Sequelize
+                     * attaches only when a query's `include` asks for it. They aren't
+                     * derivable from the Observation model alone, so they're hand-written
+                     * here rather than generated (see model/observation.model.js).
+                     */
                     ObservationWithKeyframes: {
                         allOf: [
                             { $ref: '#/components/schemas/Observation' },
@@ -1115,12 +1290,14 @@ const buildOpenApiSpec = () => {
                         ],
                     },
 
-                    // The schemas below document custom report/aggregate routes whose
-                    // response shape does not match any single Sequelize model. Each
-                    // was derived from real response samples captured against the dev
-                    // database (see docs/openapi-response-schema-workflow.md and the
-                    // samples under samples/openapi-response/) rather than guessed from
-                    // the route name or query code alone.
+                    /**
+                     * The schemas below document custom report/aggregate routes whose
+                     * response shape does not match any single Sequelize model. Each
+                     * was derived from real response samples captured against the dev
+                     * database (see docs/openapi-response-schema-workflow.md and the
+                     * samples under samples/openapi-response/) rather than guessed from
+                     * the route name or query code alone.
+                     */
                     VideoSummaryReport: {
                         type: 'array',
                         description:
@@ -1532,6 +1709,17 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'VALIDATION_ERROR',
+                                        message: 'Request body is required.',
+                                        status: 400,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                        details: [
+                                            { field: 'username', issue: 'Username is required.' },
+                                        ],
+                                    },
+                                },
                             },
                         },
                     },
@@ -1541,6 +1729,32 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'UNAUTHORIZED',
+                                        message: 'Authentication is required.',
+                                        status: 401,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    TooManyRequestsError: {
+                        description: 'Too many requests from this client in the current rate-limit window.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'RATE_LIMITED',
+                                        message: 'Too many login attempts. Please try again later.',
+                                        status: 429,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
                                 },
                             },
                         },
@@ -1552,6 +1766,14 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'FORBIDDEN',
+                                        message: 'You do not have permission to perform this action.',
+                                        status: 403,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
+                                },
                             },
                         },
                     },
@@ -1561,6 +1783,14 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'RESOURCE_NOT_FOUND',
+                                        message: 'Requested route or resource was not found.',
+                                        status: 404,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
                                 },
                             },
                         },
@@ -1572,6 +1802,14 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'CONFLICT',
+                                        message: 'A unique constraint was violated.',
+                                        status: 409,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
+                                },
                             },
                         },
                     },
@@ -1581,6 +1819,17 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'VALIDATION_ERROR',
+                                        message: 'Request validation failed.',
+                                        status: 422,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                        details: [
+                                            { field: 'password', issue: 'Password must be at least 8 characters.' },
+                                        ],
+                                    },
                                 },
                             },
                         },
@@ -1592,6 +1841,14 @@ const buildOpenApiSpec = () => {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
                                 },
+                                example: {
+                                    error: {
+                                        code: 'INTERNAL_ERROR',
+                                        message: 'An unexpected server error occurred.',
+                                        status: 500,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
+                                },
                             },
                         },
                     },
@@ -1601,6 +1858,14 @@ const buildOpenApiSpec = () => {
                             'application/json': {
                                 schema: {
                                     $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                                example: {
+                                    error: {
+                                        code: 'UPSTREAM_ERROR',
+                                        message: 'The upstream service was unavailable.',
+                                        status: 502,
+                                        requestId: 'req_mdxv3u_4f7k2q',
+                                    },
                                 },
                             },
                         },

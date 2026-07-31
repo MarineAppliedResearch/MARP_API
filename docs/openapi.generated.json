@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "MARE API",
+    "title": "MARP API",
     "version": "1.0.0",
-    "description": "Generated OpenAPI specification for MARE API V1 routes."
+    "description": "Generated OpenAPI specification for MARP API V1 routes."
   },
   "servers": [
     {
@@ -63,6 +63,10 @@
     {
       "name": "V2 · Jellyfin",
       "description": "V2 endpoints proxying the Jellyfin media server: library/folder browsing, search-by-name, and playback resolution. Jellyfin itself is never exposed to API consumers -- MARP holds the Jellyfin credentials and session, and the stream endpoint returns a short-lived redirect rather than requiring callers to know Jellyfin exists."
+    },
+    {
+      "name": "V2 · Auth",
+      "description": "V2 authentication endpoints for MARP-owned local sign-in, session lifecycle management, and authenticated-user session context."
     }
   ],
   "components": {
@@ -284,6 +288,78 @@
             }
           }
         }
+      },
+      "AuthLoginRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "jane.diver",
+            "description": "Local username used to sign in to MARP."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "example": "correct horse battery staple",
+            "description": "Plaintext password used for local authentication."
+          }
+        }
+      },
+      "AuthUser": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "name",
+          "username",
+          "status"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "example": 42,
+            "description": "Primary database identifier for the user."
+          },
+          "name": {
+            "type": "string",
+            "example": "Jane Diver",
+            "description": "Display name used by API and reporting views."
+          },
+          "username": {
+            "type": "string",
+            "nullable": true,
+            "example": "jane.diver",
+            "description": "Local sign-in username, or null if this user has no local username set."
+          },
+          "status": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "active",
+              "disabled",
+              "pending"
+            ],
+            "example": "active",
+            "description": "Authentication status for this user account."
+          }
+        }
+      },
+      "AuthSessionUserResponse": {
+        "type": "object",
+        "required": [
+          "user"
+        ],
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/AuthUser"
+          }
+        },
+        "description": "Authenticated session response containing the current MARP user profile."
       },
       "ProjectCreateRequest": {
         "type": "object",
@@ -2366,6 +2442,33 @@
             "description": "Unique display name used by API and reporting views.",
             "example": "Jane Diver"
           },
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true,
+            "minLength": 1,
+            "description": "Unique local sign-in username used for authentication.",
+            "example": "jane.diver"
+          },
+          "status": {
+            "type": "string",
+            "maxLength": 20,
+            "default": "active",
+            "enum": [
+              "active",
+              "disabled",
+              "pending"
+            ],
+            "description": "Authentication status for this user account.",
+            "example": "active"
+          },
+          "last_login_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp of the most recent successful local login.",
+            "example": "2026-07-31T12:34:56.000Z"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -2379,6 +2482,7 @@
         "required": [
           "user_id",
           "name",
+          "status",
           "createdAt",
           "updatedAt"
         ],
@@ -3464,6 +3568,20 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request body is required.",
+                "status": 400,
+                "requestId": "req_mdxv3u_4f7k2q",
+                "details": [
+                  {
+                    "field": "username",
+                    "issue": "Username is required."
+                  }
+                ]
+              }
             }
           }
         }
@@ -3474,6 +3592,32 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "UNAUTHORIZED",
+                "message": "Authentication is required.",
+                "status": 401,
+                "requestId": "req_mdxv3u_4f7k2q"
+              }
+            }
+          }
+        }
+      },
+      "TooManyRequestsError": {
+        "description": "Too many requests from this client in the current rate-limit window.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "RATE_LIMITED",
+                "message": "Too many login attempts. Please try again later.",
+                "status": 429,
+                "requestId": "req_mdxv3u_4f7k2q"
+              }
             }
           }
         }
@@ -3484,6 +3628,14 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "FORBIDDEN",
+                "message": "You do not have permission to perform this action.",
+                "status": 403,
+                "requestId": "req_mdxv3u_4f7k2q"
+              }
             }
           }
         }
@@ -3494,6 +3646,14 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "RESOURCE_NOT_FOUND",
+                "message": "Requested route or resource was not found.",
+                "status": 404,
+                "requestId": "req_mdxv3u_4f7k2q"
+              }
             }
           }
         }
@@ -3504,6 +3664,14 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "CONFLICT",
+                "message": "A unique constraint was violated.",
+                "status": 409,
+                "requestId": "req_mdxv3u_4f7k2q"
+              }
             }
           }
         }
@@ -3514,6 +3682,20 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed.",
+                "status": 422,
+                "requestId": "req_mdxv3u_4f7k2q",
+                "details": [
+                  {
+                    "field": "password",
+                    "issue": "Password must be at least 8 characters."
+                  }
+                ]
+              }
             }
           }
         }
@@ -3524,6 +3706,14 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "An unexpected server error occurred.",
+                "status": 500,
+                "requestId": "req_mdxv3u_4f7k2q"
+              }
             }
           }
         }
@@ -3534,6 +3724,14 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "error": {
+                "code": "UPSTREAM_ERROR",
+                "message": "The upstream service was unavailable.",
+                "status": 502,
+                "requestId": "req_mdxv3u_4f7k2q"
+              }
             }
           }
         }
@@ -7416,7 +7614,7 @@
     "/v2/jellyfin/resolve": {
       "get": {
         "summary": "Resolve a saved video_source value to a Jellyfin item",
-        "description": "Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARE timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.",
+        "description": "Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARP timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.",
         "tags": [
           "V2 · Jellyfin"
         ],
@@ -7819,6 +8017,93 @@
           },
           "502": {
             "$ref": "#/components/responses/UpstreamError"
+          }
+        }
+      }
+    },
+    "/v2/auth/login": {
+      "post": {
+        "summary": "Sign in with local username and password",
+        "description": "Authenticates a local MARP user using username and password, then establishes a server-side session backed by PostgreSQL. On success, returns the authenticated user profile used in the session.",
+        "tags": [
+          "V2 · Auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User authenticated and session established successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionUserResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequestsError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/auth/logout": {
+      "post": {
+        "summary": "Sign out the current authenticated session",
+        "description": "Clears the current server-side authentication session. Logout is idempotent and always returns 204 even when no authenticated session exists.",
+        "tags": [
+          "V2 · Auth"
+        ],
+        "responses": {
+          "204": {
+            "description": "Session cleared successfully (or no session was active)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/auth/me": {
+      "get": {
+        "summary": "Get the currently authenticated session user",
+        "description": "Returns the currently authenticated MARP user associated with the request session. Returns 401 when the request has no valid authenticated session.",
+        "tags": [
+          "V2 · Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Authenticated session user returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionUserResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }

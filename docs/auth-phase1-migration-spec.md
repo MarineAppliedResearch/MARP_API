@@ -1,247 +1,171 @@
-# MARP Auth Phase 1 Migration Spec
+# MARP Auth Phase 1-2 Migration Spec
 
-This document defines the concrete Phase 1 schema rollout for MARP-owned authentication.
+This document defines the schema and behavior actually implemented for MARP-owned
+local authentication: `users` credential columns, `auth_identities`, and
+`auth_sessions`, plus the `/api/v2/auth/*` login/logout/session-check routes built
+on top of them.
 
-Scope covered:
-- Local username/password for human users
-- Session-backed login state in PostgreSQL
-- Bearer-token auth for service applications
-- Password reset token flow
+Broader phases from the original rollout plan (service/bearer-token auth,
+authorization/roles, Google account linking, self-service password reset) are
+intentionally deferred — see [Deferred — Not Started](#deferred--not-started)
+at the end of this document. None of that schema or code ships as part of this
+spec.
 
-Out of scope for Phase 1:
-6. Add and use dedicated authentication testing scripts in `package.json`:
-   - `test:auth` runs the auth test suite
-   - `test:auth:watch` runs auth tests in watch mode for development
-   - `test:auth:ci` runs auth tests with CI-friendly flags and coverage
-7. Run auth smoke tests:
-- Fine-grained row-level policy tables
+## Scope covered
 
-## Decisions Locked
+- Local username/password login for human users (`users` + `auth_identities`)
+- Session-backed login state in PostgreSQL (`auth_sessions`, via
+  `express-session` + `connect-session-sequelize`)
+- `POST /api/v2/auth/login`, `POST /api/v2/auth/logout`, `GET /api/v2/auth/me`
 
-1. Keep `users` as the canonical person/profile table.
-8. Run automated auth endpoint tests from the new scripts.
+## Decisions locked
 
-Required automated coverage included in Phase 6:
-- Human auth endpoints
-  - login success and login failure
-  - logout success and idempotent logout behavior
-  - current-user/whoami success with active session
-  - current-user/whoami unauthorized without session
-- User credential management endpoints
-  - create user (admin path) success
-  - set password success and validation failure
-  - change username success, duplicate conflict, and validation failure
-  - reset password request success for existing user and safe response for unknown user
-  - reset password token consume success, expired token, reused token, and invalid token
-- Service auth endpoints
-  - create service client success and authorization failure
-  - issue token success
-  - rotate token success and old token invalidation
-  - revoke token success and revoked-token rejection
-- Auth middleware behavior on protected endpoints
-  - session-authenticated human request accepted
-  - bearer-authenticated service request accepted
-  - invalid bearer token rejected
-  - missing auth rejected
-  - disabled user/service rejected
+1. Keep `users` as the canonical person/profile table — it does not become a
+   credential table. `username`, `status`, and `last_login_at` are added to it,
+   but password material lives only in `auth_identities`.
+2. Credentials live in a separate `auth_identities` table, keyed by
+   `(provider, provider_subject)`, so future external-identity linking (e.g.
+   Google) doesn't require redesigning `users`.
+3. Sessions are stored server-side in PostgreSQL (`auth_sessions`), not in a
+   signed client-side cookie, so sessions can be invalidated server-side.
+4. Passwords are hashed with Argon2 (`argon2` package); plaintext passwords are
+   never persisted or logged.
+5. No self-service password reset in this phase — see
+   [Deferred — Not Started](#deferred--not-started).
 
-Error-contract assertions for all non-2xx auth responses:
-- `error.code` present and correct
-- `error.status` matches HTTP status
-- `error.requestId` present
+## Migration 1: Add auth columns to users
 
-Operational assertions:
-- successful login creates/updates auth session state
-- service token checks update `last_used_at`
-- password reset consumption marks token as used
+Filename:
+- `migrations/20260731100000-add-auth-columns-to-users.js`
 
-Phase 6 completion criteria:
-1. Auth endpoint tests are committed under the existing test suite structure.
-2. `test:auth` and `test:auth:ci` pass in CI.
-3. Critical auth paths and failure modes are covered.
-4. No new auth endpoint ships without a corresponding automated test.
-- Remove added columns.
+Columns added to `users`:
+- `username` VARCHAR(64) NULL
+- `status` VARCHAR(20) NOT NULL DEFAULT `'active'`
+- `last_login_at` DATE NULL
 
-## Migration 2: Create Auth Identities
+Constraints and indexes:
+- Unique index `users_username_unique_not_null` on `username` where
+  `username IS NOT NULL` (multiple `NULL` usernames are allowed; Postgres
+  unique indexes don't treat `NULL` as a duplicate)
+- Check constraint `users_status_allowed_values`: `status IN ('active',
+  'disabled', 'pending')`
+
+Down migration:
+- Remove the check constraint and unique index, then drop all three columns.
+
+## Migration 2: Create auth identities
 
 Filename:
 - `migrations/20260731101000-create-auth-identities-table.js`
 
-New table:
-- `auth_identities`
+New table: `auth_identities`
 
 Columns:
 - `auth_identity_id` INTEGER PK auto-increment
-- `user_id` INTEGER NOT NULL FK -> `users.user_id`
+- `user_id` INTEGER NOT NULL FK -> `users.user_id` (`ON DELETE CASCADE`)
 - `provider` VARCHAR(30) NOT NULL
 - `provider_subject` VARCHAR(255) NULL
 - `password_hash` TEXT NULL
 - `password_changed_at` DATE NULL
-- `createdAt` DATE NOT NULL DEFAULT NOW
-- `updatedAt` DATE NOT NULL DEFAULT NOW
+- `createdAt` / `updatedAt` DATE NOT NULL DEFAULT NOW
 
 Rules:
-- For local identities: `provider='local'`, `provider_subject` NULL, `password_hash` required
-- For external identities later: `provider='google'` (or other), `provider_subject` required, `password_hash` NULL allowed
+- Local identities: `provider='local'`, `provider_subject` NULL,
+  `password_hash` required
+- External identities (future): `provider='google'` (or other),
+  `provider_subject` required, `password_hash` NULL
 
 Constraints and indexes:
-- Unique index on (`provider`, `provider_subject`) where `provider_subject IS NOT NULL`
-- Unique index on `user_id` where `provider='local'` to enforce one local credential set per user
-- Index on `user_id`
-- Optional check: `provider IN ('local', 'google')` (or omit and keep provider open-ended)
+- Index on `user_id` (`auth_identities_user_id_idx`)
+- Unique index `auth_identities_provider_subject_unique_not_null` on
+  (`provider`, `provider_subject`) where `provider_subject IS NOT NULL` —
+  prevents linking the same external account twice
+- Unique index `auth_identities_one_local_per_user` on `user_id` where
+  `provider='local'` — enforces exactly one local credential set per user
+  (a plain unique index on `(provider, provider_subject)` would *not* catch
+  this, since Postgres treats every `NULL` `provider_subject` as distinct)
+- Check constraint `auth_identities_provider_allowed_values`:
+  `provider IN ('local', 'google')`
+- Check constraint `auth_identities_local_password_required`:
+  `provider <> 'local' OR password_hash IS NOT NULL`
 
 Down migration:
 - Drop `auth_identities`.
 
-## Migration 3: Create Auth Sessions
+## Migration 3: Create auth sessions
 
 Filename:
 - `migrations/20260731102000-create-auth-sessions-table.js`
 
-New table:
-- `auth_sessions`
+New table: `auth_sessions` (session store backing `express-session` via
+`connect-session-sequelize`)
 
-Columns (compatible with Sequelize session store usage):
+Columns:
 - `sid` VARCHAR(128) PK
 - `expires` DATE NOT NULL
-- `data` TEXT (or JSON/JSONB based on store expectations) NOT NULL
-- `createdAt` DATE NOT NULL DEFAULT NOW
-- `updatedAt` DATE NOT NULL DEFAULT NOW
+- `data` TEXT NOT NULL
+- `createdAt` / `updatedAt` DATE NOT NULL DEFAULT NOW
 
 Constraints and indexes:
-- Index on `expires` for cleanup and lookup
+- Index `auth_sessions_expires_idx` on `expires`, for store cleanup/lookup
 
 Integration note:
-- This table is for `express-session` + Sequelize session store.
-- Keep distinct from the existing MARP domain table named `sessions`.
+- Deliberately named `auth_sessions`, distinct from the existing MARP domain
+  table named `sessions` (dive/survey sessions) — the two are unrelated.
 
 Down migration:
 - Drop `auth_sessions`.
 
-## Migration 4: Create Service Clients
-
-Filename:
-- `migrations/20260731103000-create-service-clients-table.js`
-
-New table:
-- `service_clients`
-
-Columns:
-- `service_client_id` INTEGER PK auto-increment
-- `name` VARCHAR(120) NOT NULL
-- `description` TEXT NULL
-- `status` VARCHAR(20) NOT NULL DEFAULT 'active'
-- `created_by_user_id` INTEGER NULL FK -> `users.user_id`
-- `last_used_at` DATE NULL
-- `createdAt` DATE NOT NULL DEFAULT NOW
-- `updatedAt` DATE NOT NULL DEFAULT NOW
-
-Constraints and indexes:
-- Unique index on `name`
-- Index on `status`
-- Optional check: `status IN ('active', 'disabled')`
-
-Down migration:
-- Drop `service_clients`.
-
-## Migration 5: Create Service Tokens
-
-Filename:
-- `migrations/20260731104000-create-service-tokens-table.js`
-
-New table:
-- `service_tokens`
-
-Columns:
-- `service_token_id` INTEGER PK auto-increment
-- `service_client_id` INTEGER NOT NULL FK -> `service_clients.service_client_id`
-- `token_prefix` VARCHAR(16) NOT NULL
-- `token_hash` TEXT NOT NULL
-- `expires_at` DATE NULL
-- `revoked_at` DATE NULL
-- `last_used_at` DATE NULL
-- `createdAt` DATE NOT NULL DEFAULT NOW
-- `updatedAt` DATE NOT NULL DEFAULT NOW
-
-Constraints and indexes:
-- Unique index on `token_hash`
-- Index on `service_client_id`
-- Index on (`service_client_id`, `revoked_at`)
-- Index on `expires_at`
-
-Token handling requirements:
-- Return raw token only once at creation.
-- Persist only `token_hash`, never raw token.
-- Use `token_prefix` for operational identification without exposing secret material.
-
-Down migration:
-- Drop `service_tokens`.
-
-## Migration 6: Create Password Reset Tokens
-
-Filename:
-- `migrations/20260731105000-create-password-reset-tokens-table.js`
-
-New table:
-- `password_reset_tokens`
-
-Columns:
-- `password_reset_token_id` INTEGER PK auto-increment
-- `user_id` INTEGER NOT NULL FK -> `users.user_id`
-- `token_hash` TEXT NOT NULL
-- `expires_at` DATE NOT NULL
-- `used_at` DATE NULL
-- `requested_at` DATE NOT NULL DEFAULT NOW
-- `createdAt` DATE NOT NULL DEFAULT NOW
-- `updatedAt` DATE NOT NULL DEFAULT NOW
-
-Constraints and indexes:
-- Unique index on `token_hash`
-- Index on (`user_id`, `used_at`)
-- Index on `expires_at`
-
-Behavior requirements:
-- One-time use: set `used_at` when consumed.
-- Reject token if expired or already used.
-
-Down migration:
-- Drop `password_reset_tokens`.
-
-## Data Migration Strategy
-
-1. Deploy schema with backward-compatible nullable fields first.
-2. Backfill `users.username` for existing rows.
-3. Create local identity rows in `auth_identities` for existing users that should be able to log in.
-4. After cutover, optionally enforce stronger NOT NULL and stricter checks in a hardening migration.
-
-## Runtime Contract After Phase 1
+## Runtime contract
 
 Human authentication:
-- Username/password verified against `auth_identities` local rows.
-- Session persisted in `auth_sessions`.
+- Username/password verified against the `auth_identities` row where
+  `provider='local'`, joined to `users` by `user_id`.
+- Only `users.status='active'` accounts may authenticate or resume a session.
+- On success, a session is created/refreshed in `auth_sessions`; on
+  `POST /logout`, the session is destroyed.
+- Every auth response returns a safe user projection
+  (`user_id`, `name`, `username`, `status`) — never `password_hash`.
 
-Service authentication:
-- Bearer token hashed and checked against `service_tokens`.
-- Service principal resolved from `service_clients`.
-
-## Test Checklist For Migration PR
+## Test checklist for this migration set
 
 1. Run migrations up on a fresh DB.
-2. Run migrations up on a copy of current dev schema.
-3. Verify down migrations reverse cleanly in local test DB.
-4. Validate indexes and FKs exist as specified.
-5. Validate no conflict with existing `sessions` domain table.
+2. Run migrations up against the current dev schema.
+3. Verify down migrations reverse cleanly (`db:migrate:undo:all --to
+   20260731100000-add-auth-columns-to-users.js`, followed by `db:migrate`).
+4. Validate indexes/constraints exist as specified (`\d users`, `\d
+   auth_identities`, `\d auth_sessions` in `psql`).
+5. Validate no conflict with the existing `sessions` domain table.
 
-## Deployment Checklist
+## Deployment checklist
 
 1. Backup database.
-2. Stop API write traffic.
-3. Apply migrations.
-4. Deploy code that uses new schema.
-5. Restart app.
-6. Run auth smoke tests:
-   - user login/logout
-   - authenticated whoami
-   - service token auth
-   - denied invalid token
-   - password reset flow
+2. Apply migrations (`npx sequelize-cli db:migrate`).
+3. Deploy code that uses the new schema.
+4. Restart app.
+5. Run auth smoke tests: login, authenticated `/me`, logout, `/me` after
+   logout returns 401.
+
+## Deferred — Not Started
+
+The following were part of the original multi-phase rollout plan but are
+**not implemented, not migrated, and not scheduled** as part of this spec.
+They're recorded here only so a future phase doesn't have to re-derive the
+design from scratch.
+
+- **Service/bearer-token auth** — `service_clients` (machine identities) and
+  `service_tokens` (hashed bearer tokens, with prefix/rotation/revocation/
+  `last_used_at` tracking) for worker/application callers. Needs its own
+  migrations, repository/service/controller layers, and bearer-auth
+  middleware.
+- **Authorization/roles** — coarse roles (admin/user/service) and
+  request-level policy/ownership checks. Nothing in the current schema or
+  middleware enforces authorization beyond "is there a valid session."
+- **Google account linking** — an external Passport strategy writing into
+  `auth_identities` with `provider='google'`. The schema already supports
+  this (see Migration 2); no strategy code exists yet.
+- **Password reset** — explicitly scoped as an admin-only operation, not
+  self-service, and blocked on the authorization phase above: there's no way
+  to safely gate a "reset another user's password" endpoint without role
+  checks. No `password_reset_tokens` table, endpoint, or email/SMTP
+  integration exists in this codebase.
