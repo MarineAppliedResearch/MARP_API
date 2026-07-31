@@ -262,27 +262,71 @@ const buildOpenApiSpec = () => {
                 },
             ],
 
+            // Tags are named "V1 · <Domain>"/"V2 · <Domain>" specifically so
+            // Swagger UI's grouping (which follows this array's order)
+            // visually clusters all V1 domains together, separate from all
+            // V2 domains -- every V1 route file's tags: [...] literals were
+            // updated to match. V1 · tags are inherently transitional: as a
+            // domain is migrated to a V2 equivalent, its V1 · tag simply
+            // stops being used rather than needing a cleanup pass here.
             tags: [
                 {
-                    name: 'Health',
-                    description: 'Service status and diagnostics',
+                    // Deliberately not "V1 ·"/"V2 ·" prefixed: these routes
+                    // (defined directly in app.js, not through the
+                    // code-first registry) serve the API documentation
+                    // itself, not a versioned resource domain -- they apply
+                    // equally regardless of which API version is being read.
+                    name: 'Documentation',
+                    description: 'Retrieve the generated OpenAPI specification (as JSON) or open the internal developer (JSDoc) documentation site.',
                 },
                 {
-                    name: 'Tasks',
-                    description: 'Task read operations',
+                    name: 'V1 · Health',
+                    description: 'Service status and diagnostics.',
                 },
                 {
-                    name: 'Observations',
+                    name: 'V1 · Users',
+                    description: 'Create, update, and look up user accounts by id or name.',
+                },
+                {
+                    name: 'V1 · Projects',
+                    description: 'Create, update, and look up MARP projects by id or name, including projects a given user belongs to.',
+                },
+                {
+                    name: 'V1 · Sessions',
+                    description: 'Create, update, and look up dive/survey sessions, including sessions scoped to a user within a project.',
+                },
+                {
+                    name: 'V1 · Species',
+                    description: 'Create, update, and look up species records and their model_species linkage records used for ML model training/evaluation.',
+                },
+                {
+                    name: 'V1 · Tasks',
+                    description: 'Create, update, look up, and delete tasks.',
+                },
+                {
+                    name: 'V1 · Keyframes',
+                    description: 'Bulk-create, look up, update, and delete keyframe records associated with observations.',
+                },
+                {
+                    name: 'V1 · Observations',
                     description:
                         'Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates.'
                 },
                 {
-                    name: 'Schema',
+                    name: 'V1 · Videos',
+                    description: 'Observation queries scoped to a specific video_source, including cross-project video summaries and per-video observation listings.',
+                },
+                {
+                    name: 'V1 · MachineLearning',
+                    description: 'ML pipeline resources: datasets, dataset-observation links, ML models, training runs, epochs, and metrics (summary and curve) records.',
+                },
+                {
+                    name: 'V1 · Schema',
                     description:
                         'Database schema introspection endpoints for tables, views, columns, constraints, indexes, and relationships in the public schema.'
                 },
                 {
-                    name: 'Jellyfin',
+                    name: 'V2 · Jellyfin',
                     description:
                         'V2 endpoints proxying the Jellyfin media server: library/folder browsing, search-by-name, and playback resolution. Jellyfin itself is never exposed to API consumers -- MARP holds the Jellyfin credentials and session, and the stream endpoint returns a short-lived redirect rather than requiring callers to know Jellyfin exists.'
                 }
@@ -1459,6 +1503,13 @@ const buildOpenApiSpec = () => {
                         type: 'object',
                         description: 'Parsed scrubbing-preview tile metadata for one item. Each tile image URL already embeds its own short-lived access token, the same signed-URL pattern used for stream/image URLs, and is directly fetchable by a caller.',
                         properties: {
+                            width: { type: 'integer', example: 320, description: 'Tile-sheet generation width actually used -- either the width requested, or the auto-selected largest available width when none was requested.' },
+                            availableWidths: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                                example: [320],
+                                description: 'Every tile-sheet width Jellyfin has actually generated for this item. Pass one of these as the width query parameter on a future request to pick a specific one deliberately.',
+                            },
                             thumbnailWidth: { type: 'integer', example: 320, description: 'Width of one thumbnail cell, in pixels.' },
                             thumbnailHeight: { type: 'integer', example: 180, description: 'Height of one thumbnail cell, in pixels.' },
                             columns: { type: 'integer', example: 10, description: 'Thumbnail columns per tile sheet image.' },

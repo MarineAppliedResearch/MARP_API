@@ -61,6 +61,19 @@ const CLIENT_IDENTITY_PARAMETERS = [
 ];
 
 /**
+ * OpenAPI tag for every Jellyfin route -- follows the "V2 · <Domain>"
+ * convention every V2 route file should use, so Swagger UI's grouping
+ * clusters all V2 domains together, separate from every "V1 · <Domain>"
+ * tag. Declared once here rather than repeated as a literal on each
+ * registerOpenApiRoute call, both to avoid ~11 copies of the same string
+ * and to give the next V2 domain an obvious pattern to copy.
+ *
+ * @constant
+ * @type {string}
+ */
+const JELLYFIN_TAG = 'V2 · Jellyfin';
+
+/**
  * Extracts the downstream client identity from request headers.
  *
  * @param {Object} req - Express request.
@@ -86,7 +99,7 @@ function registerJellyfinRoutes(app) {
         summary: 'List top-level Jellyfin libraries',
         description:
             'Returns the top-level library/folder roots visible to MARP\'s shared Jellyfin service account. This is the entry point for browsing -- pass any returned item\'s id to GET /api/v2/jellyfin/items/{id}/children to go one level deeper.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [...CLIENT_IDENTITY_PARAMETERS],
         responses: {
             200: {
@@ -109,7 +122,7 @@ function registerJellyfinRoutes(app) {
         summary: 'List child items under a Jellyfin folder/library',
         description:
             'Returns one folder level of children under the given Jellyfin item id -- not recursive. Both libraries (from GET /api/v2/jellyfin/libraries) and folders returned here can be passed back in as the parent id to browse further.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin id of the parent folder or library.' },
             ...CLIENT_IDENTITY_PARAMETERS,
@@ -136,7 +149,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Search Jellyfin video items by name',
         description:
             'Searches recursively across the whole Jellyfin library for video items matching the given text -- this is the resolve-by-name path for turning a database video_source value (or any free-text title/filename fragment) into a playable Jellyfin item.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'query', name: 'q', required: true, schema: { type: 'string' }, description: 'Filename or title search term.' },
             { in: 'query', name: 'limit', required: false, schema: { type: 'integer', default: 20 }, description: 'Maximum number of matches to return.' },
@@ -165,7 +178,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Get the playback quality menu for a Jellyfin item',
         description:
             'Capability-probes the item via PlaybackInfo and derives a quality menu (Auto, Original/Direct, and transcode tiers) from its actual source bitrate/resolution -- a tier only appears if it is genuinely below source quality. Pass a returned option\'s mode (and maxBitrate/maxWidth/maxHeight for a Transcode tier) to GET /items/{id}/stream to play it.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin id of the video item.' },
             ...CLIENT_IDENTITY_PARAMETERS,
@@ -192,7 +205,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Resolve and redirect to a playable Jellyfin stream URL',
         description:
             'Negotiates playback for the given item via Jellyfin\'s PlaybackInfo endpoint (which also confirms the item exists and is playable) and responds with an HTTP redirect straight to Jellyfin\'s stream URL. MARP never proxies the video bytes itself -- the caller\'s HTTP client follows the redirect and connects to Jellyfin directly. mode=Original (default) and mode=Auto redirect to Jellyfin\'s direct-stream URL (Auto currently behaves identically to Original -- there is no adaptive-quality decision procedure yet). mode=Transcode negotiates a real constrained transcode via a DeviceProfile and redirects to Jellyfin\'s own negotiated transcodingUrl (an HLS master.m3u8, not the static direct-stream URL) -- use maxBitrate/maxWidth/maxHeight from a playback-options Transcode tier to pick a specific quality. The response also carries the negotiated mediaSourceId/playSessionId/playMethod as headers -- confirmed against Jellyfin\'s own live session state that reporting playback/progress or playback/stopped with anything other than the exact playSessionId this call issued is silently ignored (Jellyfin never updates its PlayState), so a caller MUST capture these headers to use those endpoints correctly.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin id of the video item to stream.' },
             { in: 'query', name: 'mode', required: false, schema: { type: 'string', enum: ['Original', 'Auto', 'Transcode'], default: 'Original' }, description: 'Playback mode.' },
@@ -251,7 +264,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Resolve a saved video_source value to a Jellyfin item',
         description:
             'Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARE timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'query', name: 'videoSource', required: true, schema: { type: 'string' }, description: 'Saved filename, path, or other free-text video reference to resolve.' },
             { in: 'query', name: 'minScore', required: false, schema: { type: 'integer', default: 60 }, description: 'Minimum acceptable match score (0-100).' },
@@ -281,7 +294,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Report that playback has started or resumed',
         description:
             'Relays a playback-started report to Jellyfin so its session/transcode lifecycle and "Now Playing" state stay accurate. MARP stores no playback session state itself -- carry mediaSourceId/playSessionId forward from the earlier stream/playback-options response.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin id of the item being played.' },
             ...CLIENT_IDENTITY_PARAMETERS,
@@ -306,7 +319,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Report current playback position/pause state',
         description:
             'Relays a playback-progress report to Jellyfin. Should be called periodically during playback so Jellyfin\'s transcode-session lifecycle and resume position stay accurate. MARP stores no playback session state itself.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin id of the item being played.' },
             ...CLIENT_IDENTITY_PARAMETERS,
@@ -331,7 +344,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Report that playback has stopped',
         description:
             'Relays a playback-stopped report to Jellyfin so it can clean up any active transcode session. MARP stores no playback session state itself -- carry mediaSourceId/playSessionId forward from the earlier stream/playback-options response.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin id of the item that was being played.' },
             ...CLIENT_IDENTITY_PARAMETERS,
@@ -356,7 +369,7 @@ function registerJellyfinRoutes(app) {
         summary: 'Resolve and redirect to a Jellyfin item image',
         description:
             'Builds a Jellyfin image URL (e.g. Primary poster, Thumb) for the item and responds with an HTTP redirect to it, following the same signed-redirect pattern as /stream -- MARP never proxies the image bytes itself.',
-        tags: ['Jellyfin'],
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin item id.' },
             { in: 'path', name: 'imageType', required: true, schema: { type: 'string' }, description: 'Jellyfin image type, e.g. Primary, Thumb, Backdrop.' },
@@ -396,11 +409,11 @@ function registerJellyfinRoutes(app) {
         path: '/api/v2/jellyfin/items/:id/trickplay',
         summary: 'Get scrubbing-preview tile metadata for a Jellyfin item',
         description:
-            'Fetches and parses Jellyfin\'s trickplay tile playlist for the item and returns structured metadata plus tile image URLs, so callers can build a scrubbing preview without knowing Jellyfin\'s playlist format. Each tile URL already embeds its own access token and is directly fetchable. Supplying runTimeTicks lets MARP probe for additional tile sheets some Jellyfin servers omit from the playlist itself.',
-        tags: ['Jellyfin'],
+            'Fetches and parses Jellyfin\'s trickplay tile playlist for the item and returns structured metadata plus tile image URLs, so callers can build a scrubbing preview without knowing Jellyfin\'s playlist format. width is Jellyfin\'s tile-generation width, not a resize hint -- Jellyfin only has data for whichever width(s) it pre-generated, so this endpoint always looks up the item\'s actually-available widths first: omit width to auto-select the largest one (both the resolved width and the full availableWidths list are returned either way), or supply a specific one from a prior response\'s availableWidths -- an unavailable width returns 400 naming what IS available, rather than Jellyfin\'s own generic not-found. Each tile URL already embeds its own access token and is directly fetchable. Supplying runTimeTicks lets MARP probe for additional tile sheets some Jellyfin servers omit from the playlist itself.',
+        tags: [JELLYFIN_TAG],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' }, description: 'Jellyfin item id.' },
-            { in: 'query', name: 'width', required: true, schema: { type: 'integer' }, description: 'Requested tile-sheet width -- must match a width Jellyfin actually generated trickplay data for.' },
+            { in: 'query', name: 'width', required: false, schema: { type: 'integer' }, description: 'Requested tile-sheet width. Omit to auto-select the largest width Jellyfin actually generated for this item.' },
             { in: 'query', name: 'mediaSourceId', required: false, schema: { type: 'string' }, description: 'Specific media source, if the item has more than one.' },
             { in: 'query', name: 'runTimeTicks', required: false, schema: { type: 'integer' }, description: 'Item runtime in Jellyfin ticks, to probe for additional tile sheets.' },
             ...CLIENT_IDENTITY_PARAMETERS,
@@ -419,7 +432,7 @@ function registerJellyfinRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const trickplay = await jellyfinController.getTrickplayInfo(
                 req.params.id,
-                Number(req.query.width),
+                req.query.width !== undefined ? Number(req.query.width) : undefined,
                 {
                     mediaSourceId: req.query.mediaSourceId,
                     runTimeTicks: req.query.runTimeTicks !== undefined ? Number(req.query.runTimeTicks) : undefined,

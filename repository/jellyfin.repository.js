@@ -859,37 +859,124 @@ class JellyfinRepository {
      * the returned tile URLs are directly fetchable by a caller without
      * MARP proxying the image bytes.
      *
+     * `width` is Jellyfin's tile-*generation* width, not a resize hint --
+     * Jellyfin only has data for whichever width(s) it pre-generated for
+     * this item, so a caller cannot safely guess one. This method always
+     * looks up the item's actually-available widths first ({@link
+     * JellyfinRepository#_getTrickplayWidths}) and: validates an explicitly
+     * supplied width against that list (a mismatch throws a specific 400
+     * naming what IS available, rather than surfacing Jellyfin's own
+     * generic playlist 404); or, when width is omitted, auto-selects the
+     * largest available width. Either way, the resolved `width` and the
+     * full `availableWidths` list are both included in the return value,
+     * so a caller that omitted `width` still learns what was actually used.
+     *
      * @async
      * @param {string} itemId - Jellyfin item id to load trickplay tiles for.
-     * @param {number} width - Requested tile-sheet width (must match a width Jellyfin actually generated).
+     * @param {number} [width] - Requested tile-sheet width. Omit to auto-select the largest available width.
      * @param {Object} [options] - Additional options.
      * @param {string} [options.mediaSourceId] - Specific media source, if the item has more than one.
      * @param {number} [options.runTimeTicks] - Item runtime in Jellyfin ticks; when supplied, probes for extra tile sheets beyond what the playlist lists.
      * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
-     * @returns {Promise<Object>} `{ thumbnailWidth, thumbnailHeight, columns, rows, thumbnailDurationSeconds, tileImageUrls }`.
-     * @throws {ApiError} 400/VALIDATION_ERROR when itemId/width are missing or invalid; 404/RESOURCE_NOT_FOUND when Jellyfin has no trickplay data for this item/width.
+     * @returns {Promise<Object>} `{ width, availableWidths, thumbnailWidth, thumbnailHeight, columns, rows, thumbnailDurationSeconds, tileImageUrls }`.
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing, width is invalid, or an explicitly supplied width has no matching Jellyfin data; 404/RESOURCE_NOT_FOUND when the item does not exist or has no trickplay data at all.
      */
     async getTrickplayInfo(itemId, width, options = {}, clientIdentity = {}) {
         if (!itemId) {
             throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
         }
 
-        if (!width || width <= 0) {
-            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A positive trickplay width is required.');
+        if (width !== undefined && width !== null && (!Number.isInteger(width) || width <= 0)) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'Trickplay width must be a positive integer when supplied.');
         }
 
         const session = await this._ensureAuthenticated(clientIdentity);
 
-        const playlistUrl = this._buildTrickplayPlaylistUrl(itemId, width, options.mediaSourceId);
+        const availableWidths = await this._getTrickplayWidths(itemId, options.mediaSourceId, session);
+
+        if (availableWidths.length === 0) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, 'Jellyfin has not generated trickplay data for this item.');
+        }
+
+        let resolvedWidth;
+
+        if (width !== undefined && width !== null) {
+            if (!availableWidths.includes(width)) {
+                throw new ApiError(
+                    400,
+                    ERROR_CODES.VALIDATION_ERROR,
+                    `Jellyfin has no trickplay data at width ${width} for this item. Available widths: ${availableWidths.join(', ')}.`
+                );
+            }
+            resolvedWidth = width;
+        } else {
+            // No width requested -- default to the largest available for
+            // the best-quality scrubbing preview.
+            resolvedWidth = availableWidths[availableWidths.length - 1];
+        }
+
+        const playlistUrl = this._buildTrickplayPlaylistUrl(itemId, resolvedWidth, options.mediaSourceId);
         const playlistText = await this._authenticatedTextRequest(session, playlistUrl);
 
         const trickplayInfo = this._parseTrickplayPlaylist(playlistUrl, playlistText);
+        trickplayInfo.width = resolvedWidth;
+        trickplayInfo.availableWidths = availableWidths;
 
         if (options.runTimeTicks) {
             await this._expandTrickplayTileUrlsFromRuntime(trickplayInfo, options.runTimeTicks, session);
         }
 
         return trickplayInfo;
+    }
+
+    /**
+     * Looks up which trickplay tile-sheet widths Jellyfin has actually
+     * generated for an item, via `GET /Users/{userId}/Items/{itemId}?Fields=Trickplay`
+     * (confirmed live: this is where Jellyfin reports it -- there is no
+     * separate dedicated widths endpoint). Jellyfin's `Trickplay` field is
+     * keyed by mediaSourceId, then by width, e.g.
+     * `{ "<mediaSourceId>": { "320": { Width, Height, TileWidth, ... } } }`.
+     *
+     * This same lookup endpoint has a real, non-obvious failure mode
+     * confirmed live: given an unrecognized item id, Jellyfin does **not**
+     * 404 -- it silently returns HTTP 200 with its root "Media Folders"
+     * item instead. Relying on the response status alone would therefore
+     * silently report "no trickplay data" for a bogus id rather than "item
+     * not found", so the returned item's own `Id` is checked against what
+     * was requested and treated as not-found if it doesn't match.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to look up.
+     * @param {string} [mediaSourceId] - When supplied, only widths for this specific media source are returned; otherwise widths across all of the item's media sources are combined.
+     * @param {Object} session - Authenticated session to use.
+     * @returns {Promise<Array<number>>} Available widths, ascending, deduplicated. Empty if Jellyfin has generated none.
+     * @throws {ApiError} 404/RESOURCE_NOT_FOUND when the item does not exist.
+     */
+    async _getTrickplayWidths(itemId, mediaSourceId, session) {
+        const url = `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}?Fields=Trickplay`;
+        const data = await this._authenticatedRequest(session, 'GET', url);
+
+        if (String(data && data.Id) !== String(itemId)) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, 'The requested Jellyfin item was not found.');
+        }
+
+        const trickplayByMediaSource = (data && data.Trickplay) || {};
+        const widthMapsToScan = mediaSourceId
+            ? [trickplayByMediaSource[mediaSourceId] || {}]
+            : Object.values(trickplayByMediaSource);
+
+        const widths = new Set();
+
+        for (const widthMap of widthMapsToScan) {
+            for (const widthKey of Object.keys(widthMap || {})) {
+                const parsedWidth = Number(widthKey);
+                if (Number.isInteger(parsedWidth) && parsedWidth > 0) {
+                    widths.add(parsedWidth);
+                }
+            }
+        }
+
+        return [...widths].sort((a, b) => a - b);
     }
 
     /**

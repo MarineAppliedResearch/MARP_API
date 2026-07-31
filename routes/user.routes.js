@@ -27,7 +27,7 @@ function registerUserRoutes(app) {
         path: '/api/users',
         summary: 'Fetch all users',
         description: 'Returns every user record.',
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         responses: {
             200: {
                 description: 'User list returned successfully.',
@@ -50,7 +50,7 @@ function registerUserRoutes(app) {
         summary: 'Fetch a user by id',
         description:
             "Returns a single user record by user_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Registered under the plural /users path (rather than /user/:id) to avoid colliding with the existing name-based lookup at /user/{name}.",
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         parameters: [
             {
                 in: 'path',
@@ -94,7 +94,7 @@ function registerUserRoutes(app) {
         summary: 'Fetch a user by name',
         description:
             'Returns the user record(s) matching an exact display name. Resolves to an empty array both when no user has that name and when the underlying database query fails.',
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         parameters: [
             {
                 in: 'path',
@@ -126,7 +126,7 @@ function registerUserRoutes(app) {
         summary: "Fetch a user's display name by id",
         description:
             "Returns the display name of the user matching the given id. CRITICAL: if no user matches the given ID, this can throw / return an unhandled error (HTTP 500 via the framework's default error handling, or an unhandled rejection since the route has no .catch()), because the repository accesses a property on the query result without checking whether it's null first.",
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         parameters: [
             {
                 in: 'path',
@@ -156,7 +156,7 @@ function registerUserRoutes(app) {
         path: '/api/user',
         summary: 'Create a new user',
         description: 'Creates a new user record.',
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         requestBody: {
             required: true,
             content: {
@@ -181,7 +181,7 @@ function registerUserRoutes(app) {
         path: '/api/user/createUserByName/:userName',
         summary: 'Create a new user by name only',
         description: 'Creates a new user record from a name alone, without a request body.',
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         parameters: [
             {
                 in: 'path',
@@ -212,7 +212,7 @@ function registerUserRoutes(app) {
         path: '/api/user',
         summary: 'Update an existing user',
         description: 'Updates an existing user record by its user_id field.',
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         requestBody: {
             required: true,
             content: {
@@ -237,7 +237,7 @@ function registerUserRoutes(app) {
         summary: 'Delete a user',
         description:
             'Deletes a user record by user_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.',
-        tags: ['Users'],
+        tags: ['V1 · Users'],
         parameters: [
             {
                 in: 'path',

@@ -240,7 +240,7 @@ class JellyfinService {
      *
      * @async
      * @param {string} itemId - Jellyfin item id.
-     * @param {number} width - Requested tile-sheet width.
+     * @param {number} [width] - Requested tile-sheet width. Omit to auto-select the largest width Jellyfin actually generated for this item.
      * @param {Object} [options] - Additional options.
      * @param {string} [options.mediaSourceId] - Specific media source, if the item has more than one.
      * @param {number} [options.runTimeTicks] - Item runtime in Jellyfin ticks, to probe for additional tiles.

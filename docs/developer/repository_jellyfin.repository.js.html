@@ -1,0 +1,1637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    
+    <meta charset="utf-8">
+    <title>repository/jellyfin.repository.js - Documentation</title>
+    
+    
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+    <script src="scripts/nav.js" defer></script>
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav >
+    
+    <input type="text" id="nav-search" placeholder="Search" />
+    
+    
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="logger_api.module_logger-APILogger.html">APILogger</a><ul class='methods'><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#error">error</a></li><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#info">info</a></li><li data-type='method' style='display: none;'><a href="logger_api.module_logger-APILogger.html#info">info</a></li></ul></li><li><a href="module-controller_dataset-DatasetController.html">DatasetController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#deleteDataset">deleteDataset</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#deleteDatasetObservation">deleteDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#deleteEpoch">deleteEpoch</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#deleteMetricsCurve">deleteMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#deleteMetricsSummary">deleteMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#deleteModel">deleteModel</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#deleteTrainingRun">deleteTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getDatasetObservationById">getDatasetObservationById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getEpochById">getEpochById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getMetricsCurveById">getMetricsCurveById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getMetricsSummaryById">getMetricsSummaryById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getModelById">getModelById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#getTrainingRunById">getTrainingRunById</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateDataset">updateDataset</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateDatasetObservation">updateDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateMetricsCurve">updateMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateMetricsSummary">updateMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-controller_dataset-DatasetController.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-controller_jellyfin-JellyfinController.html">JellyfinController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#getChildItems">getChildItems</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#getImageRedirectUrl">getImageRedirectUrl</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#getLibraries">getLibraries</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#getPlaybackOptions">getPlaybackOptions</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#getStreamRedirectUrl">getStreamRedirectUrl</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#getTrickplayInfo">getTrickplayInfo</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#reportPlaybackProgress">reportPlaybackProgress</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#reportPlaybackStarted">reportPlaybackStarted</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#reportPlaybackStopped">reportPlaybackStopped</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#resolveVideoSource">resolveVideoSource</a></li><li data-type='method' style='display: none;'><a href="module-controller_jellyfin-JellyfinController.html#searchItems">searchItems</a></li></ul></li><li><a href="module-controller_keyframe-KeyframeController.html">KeyframeController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#getKeyframeById">getKeyframeById</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_keyframe-KeyframeController.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-controller_metaInfo-MetaInfoController.html">MetaInfoController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_metaInfo-MetaInfoController.html#getDBName">getDBName</a></li><li data-type='method' style='display: none;'><a href="module-controller_metaInfo-MetaInfoController.html#setDBName">setDBName</a></li></ul></li><li><a href="module-controller_observation-ObservationController.html">ObservationController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#createObservation">createObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#deleteObservation">deleteObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getDistinctComnamesWithKeyframes">getDistinctComnamesWithKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getLastVideoInfo">getLastVideoInfo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getMaxObservationFromVideo">getMaxObservationFromVideo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getMaxPobsID">getMaxPobsID</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationById">getObservationById</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservations">getObservations</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsBySessionID">getObservationsBySessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideo">getObservationsByVideo</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideoAndComnames">getObservationsByVideoAndComnames</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsByVideoAndProject">getObservationsByVideoAndProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsGroupedByUserAndDate">getObservationsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getObservationsWithKeyframesByComnames">getObservationsWithKeyframesByComnames</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getProjectTimeByDateAndUser">getProjectTimeByDateAndUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getUserDashboardData">getUserDashboardData</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#getVideoSummariesByProject">getVideoSummariesByProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservation">updateObservation</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservationWithCount">updateObservationWithCount</a></li><li data-type='method' style='display: none;'><a href="module-controller_observation-ObservationController.html#updateObservationWithSize">updateObservationWithSize</a></li></ul></li><li><a href="module-controller_project-ProjectController.html">ProjectController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjectById">getProjectById</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-controller_project-ProjectController.html#updateProject">updateProject</a></li></ul></li><li><a href="module-controller_schema-SchemaController.html">SchemaController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_schema-SchemaController.html#getPublicRelationships">getPublicRelationships</a></li><li data-type='method' style='display: none;'><a href="module-controller_schema-SchemaController.html#getPublicTables">getPublicTables</a></li><li data-type='method' style='display: none;'><a href="module-controller_schema-SchemaController.html#getPublicViews">getPublicViews</a></li></ul></li><li><a href="module-controller_session-SessionController.html">SessionController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionById">getSessionById</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-controller_session-SessionController.html#updateSession">updateSession</a></li></ul></li><li><a href="module-controller_species-SpeciesController.html">SpeciesController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#createSpecies">createSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#deleteModelSpecies">deleteModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#deleteSpecies">deleteSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getModelSpeciesById">getModelSpeciesById</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getSpeciesByComname">getSpeciesByComname</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#getSpeciesById">getSpeciesById</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#updateModelSpecies">updateModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-controller_species-SpeciesController.html#updateSpecies">updateSpecies</a></li></ul></li><li><a href="module-controller_task-TodoController.html">TodoController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#getTaskById">getTaskById</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-controller_task-TodoController.html#updateTask">updateTask</a></li></ul></li><li><a href="module-controller_user-UserController.html">UserController</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUserById">getUserById</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-controller_user-UserController.html#updateUser">updateUser</a></li></ul></li><li><a href="module-middleware_error-contract-ApiError.html">ApiError</a></li><li><a href="module-model_artifacts-artifacts.html">artifacts</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_artifacts-artifacts.html#.associate">associate</a></li></ul></li><li><a href="module-model_dataset_observations-dataset_observations.html">dataset_observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_dataset_observations-dataset_observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_datasets-datasets.html">datasets</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_datasets-datasets.html#.associate">associate</a></li></ul></li><li><a href="module-model_epochs-epochs.html">epochs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_epochs-epochs.html#.associate">associate</a></li></ul></li><li><a href="module-model_hyperparameters-hyperparameters.html">hyperparameters</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_hyperparameters-hyperparameters.html#.associate">associate</a></li></ul></li><li><a href="module-model_keyframe-Keyframes.html">Keyframes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_keyframe-Keyframes.html#.associate">associate</a></li></ul></li><li><a href="module-model_metaInfo-MetaInfo.html">MetaInfo</a></li><li><a href="module-model_metrics_curves-metrics_curves.html">metrics_curves</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_metrics_curves-metrics_curves.html#.associate">associate</a></li></ul></li><li><a href="module-model_metrics_summary-metrics_summary.html">metrics_summary</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_metrics_summary-metrics_summary.html#.associate">associate</a></li></ul></li><li><a href="module-model_ml_models-ml_models.html">ml_models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_ml_models-ml_models.html#.associate">associate</a></li></ul></li><li><a href="module-model_model_species-model_species.html">model_species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_model_species-model_species.html#.associate">associate</a></li></ul></li><li><a href="module-model_observations-Observations.html">Observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_observations-Observations.html#.associate">associate</a></li></ul></li><li><a href="module-model_project-Projects.html">Projects</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_project-Projects.html#.associate">associate</a></li></ul></li><li><a href="module-model_session-Sessions.html">Sessions</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_session-Sessions.html#.associate">associate</a></li></ul></li><li><a href="module-model_species-species.html">species</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_species-species.html#.associate">associate</a></li></ul></li><li><a href="module-model_task-Tasks.html">Tasks</a></li><li><a href="module-model_training_runs-training_runs.html">training_runs</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_training_runs-training_runs.html#.associate">associate</a></li></ul></li><li><a href="module-model_user-Users.html">Users</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_user-Users.html#.associate">associate</a></li></ul></li><li><a href="module-repository_dataset-DatasetRepository.html">DatasetRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#deleteDataset">deleteDataset</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#deleteDatasetObservation">deleteDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#deleteEpoch">deleteEpoch</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#deleteMetricsCurve">deleteMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#deleteMetricsSummary">deleteMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#deleteModel">deleteModel</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#deleteTrainingRun">deleteTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getDatasetObservationById">getDatasetObservationById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getEpochById">getEpochById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getMetricsCurveById">getMetricsCurveById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getMetricsSummaryById">getMetricsSummaryById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getModelById">getModelById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#getTrainingRunById">getTrainingRunById</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateDataset">updateDataset</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateDatasetObservation">updateDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateMetricsCurve">updateMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateMetricsSummary">updateMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-repository_dataset-DatasetRepository.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-repository_jellyfin-JellyfinRepository.html">JellyfinRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_addTranscodeOptionIfUseful">_addTranscodeOptionIfUseful</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_addUniqueSearchTerm">_addUniqueSearchTerm</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_authenticatedRequest">_authenticatedRequest</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_authenticatedTextRequest">_authenticatedTextRequest</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_buildClientKey">_buildClientKey</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_buildMediaBrowserAuthorizationHeader">_buildMediaBrowserAuthorizationHeader</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_buildPlaybackOptions">_buildPlaybackOptions</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_buildTrickplayPlaylistUrl">_buildTrickplayPlaylistUrl</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_buildTrickplayTileUrlFromFirstTileUrl">_buildTrickplayTileUrlFromFirstTileUrl</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_buildVideoSearchTerms">_buildVideoSearchTerms</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_ensureAuthenticated">_ensureAuthenticated</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_escapeHeaderValue">_escapeHeaderValue</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_expandTrickplayTileUrlsFromRuntime">_expandTrickplayTileUrlsFromRuntime</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_extractVideoTimestampKey">_extractVideoTimestampKey</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_formatItemIdForVideoEndpoint">_formatItemIdForVideoEndpoint</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_getFileNameFromPath">_getFileNameFromPath</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_getFileNameStem">_getFileNameStem</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_getOrCreateSession">_getOrCreateSession</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_getTrickplayWidths">_getTrickplayWidths</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_isSessionAuthenticated">_isSessionAuthenticated</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_normalizeBaseUrl">_normalizeBaseUrl</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_normalizeVideoMatchKey">_normalizeVideoMatchKey</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_parseItem">_parseItem</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_parseItemsResponse">_parseItemsResponse</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_parseMediaSource">_parseMediaSource</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_parsePlaybackInfo">_parsePlaybackInfo</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_parseTrickplayPlaylist">_parseTrickplayPlaylist</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_parseTrickplayTileMetadata">_parseTrickplayTileMetadata</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_reportPlayback">_reportPlayback</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_resolveUrlRelativeTo">_resolveUrlRelativeTo</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_scoreVideoMatch">_scoreVideoMatch</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#_urlExists">_urlExists</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#authenticate">authenticate</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#buildAbsoluteUrl">buildAbsoluteUrl</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#buildDirectStreamUrl">buildDirectStreamUrl</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#buildImageUrl">buildImageUrl</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#getChildItems">getChildItems</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#getLibraries">getLibraries</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#getPlaybackInfo">getPlaybackInfo</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#getPlaybackOptions">getPlaybackOptions</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#getTranscodePlaybackInfo">getTranscodePlaybackInfo</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#getTrickplayInfo">getTrickplayInfo</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#reportPlaybackProgress">reportPlaybackProgress</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#reportPlaybackStarted">reportPlaybackStarted</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#reportPlaybackStopped">reportPlaybackStopped</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#resolveVideoSource">resolveVideoSource</a></li><li data-type='method' style='display: none;'><a href="module-repository_jellyfin-JellyfinRepository.html#searchVideoItems">searchVideoItems</a></li></ul></li><li><a href="module-repository_keyframe-KeyframeRepository.html">KeyframeRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#getKeyframeById">getKeyframeById</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-repository_keyframe-KeyframeRepository.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-repository_metaInfo-MetaInfoRepository.html">MetaInfoRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_metaInfo-MetaInfoRepository.html#getDBName">getDBName</a></li><li data-type='method' style='display: none;'><a href="module-repository_metaInfo-MetaInfoRepository.html#setDBName">setDBName</a></li></ul></li><li><a href="module-repository_project-ProjectRepository.html">ProjectRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjectById">getProjectById</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-repository_project-ProjectRepository.html#updateProject">updateProject</a></li></ul></li><li><a href="module-repository_schema-SchemaRepository.html">SchemaRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_schema-SchemaRepository.html#getPublicRelationships">getPublicRelationships</a></li><li data-type='method' style='display: none;'><a href="module-repository_schema-SchemaRepository.html#getPublicTables">getPublicTables</a></li><li data-type='method' style='display: none;'><a href="module-repository_schema-SchemaRepository.html#getPublicViews">getPublicViews</a></li></ul></li><li><a href="module-repository_session-SessionRepository.html">SessionRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionById">getSessionById</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-repository_session-SessionRepository.html#updateSession">updateSession</a></li></ul></li><li><a href="module-repository_species-SpeciesRepository.html">SpeciesRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#createSpecies">createSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#deleteModelSpecies">deleteModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#deleteSpecies">deleteSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getModelSpeciesById">getModelSpeciesById</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getSpeciesByComname">getSpeciesByComname</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#getSpeciesById">getSpeciesById</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#updateModelSpecies">updateModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-repository_species-SpeciesRepository.html#updateSpecies">updateSpecies</a></li></ul></li><li><a href="module-repository_task-TaskRepository.html">TaskRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#getTaskById">getTaskById</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-repository_task-TaskRepository.html#updateTask">updateTask</a></li></ul></li><li><a href="module-repository_user-UserRepository.html">UserRepository</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUserById">getUserById</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-repository_user-UserRepository.html#updateUsers">updateUsers</a></li></ul></li><li><a href="module-service_dataset-DatasetService.html">DatasetService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#bulkCreateDatasetObservations">bulkCreateDatasetObservations</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#bulkCreateMetricsCurves">bulkCreateMetricsCurves</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createDataset">createDataset</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createDatasetObservation">createDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createEpoch">createEpoch</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createMetricsCurve">createMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createMetricsSummary">createMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createModel">createModel</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#createTrainingRun">createTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#deleteDataset">deleteDataset</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#deleteDatasetObservation">deleteDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#deleteEpoch">deleteEpoch</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#deleteMetricsCurve">deleteMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#deleteMetricsSummary">deleteMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#deleteModel">deleteModel</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#deleteTrainingRun">deleteTrainingRun</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getDatasetById">getDatasetById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getDatasetObservationById">getDatasetObservationById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getDatasets">getDatasets</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getEpochById">getEpochById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getMetricsCurveById">getMetricsCurveById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getMetricsSummaryById">getMetricsSummaryById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getMl_models">getMl_models</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getModelById">getModelById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#getTrainingRunById">getTrainingRunById</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateDataset">updateDataset</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateDatasetObservation">updateDatasetObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateEpoch">updateEpoch</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateMetricsCurve">updateMetricsCurve</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateMetricsSummary">updateMetricsSummary</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateModel">updateModel</a></li><li data-type='method' style='display: none;'><a href="module-service_dataset-DatasetService.html#updateTrainingRun">updateTrainingRun</a></li></ul></li><li><a href="module-service_jellyfin-JellyfinService.html">JellyfinService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#getChildItems">getChildItems</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#getImageRedirectUrl">getImageRedirectUrl</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#getLibraries">getLibraries</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#getPlaybackOptions">getPlaybackOptions</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#getStreamRedirectUrl">getStreamRedirectUrl</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#getTrickplayInfo">getTrickplayInfo</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#reportPlaybackProgress">reportPlaybackProgress</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#reportPlaybackStarted">reportPlaybackStarted</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#reportPlaybackStopped">reportPlaybackStopped</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#resolveVideoSource">resolveVideoSource</a></li><li data-type='method' style='display: none;'><a href="module-service_jellyfin-JellyfinService.html#searchItems">searchItems</a></li></ul></li><li><a href="module-service_keyframe-KeyframeService.html">KeyframeService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#createKeyframes">createKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#deleteKeyframe">deleteKeyframe</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#getKeyframeById">getKeyframeById</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#getKeyframes">getKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_keyframe-KeyframeService.html#updateKeyframe">updateKeyframe</a></li></ul></li><li><a href="module-service_metaInfo-MetaInfoService.html">MetaInfoService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_metaInfo-MetaInfoService.html#getDBName">getDBName</a></li><li data-type='method' style='display: none;'><a href="module-service_metaInfo-MetaInfoService.html#setDBName">setDBName</a></li></ul></li><li><a href="module-service_observation-ObservationService.html">ObservationService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#createObservation">createObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#deleteObservation">deleteObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getDistinctComnamesWithKeyframes">getDistinctComnamesWithKeyframes</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getLastVideoInfo">getLastVideoInfo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getMaxObservationFromVideo">getMaxObservationFromVideo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getMaxPobsID">getMaxPobsID</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationById">getObservationById</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservations">getObservations</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsBySessionID">getObservationsBySessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideo">getObservationsByVideo</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideoAndComnames">getObservationsByVideoAndComnames</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsByVideoAndProject">getObservationsByVideoAndProject</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsGroupedByUserAndDate">getObservationsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getObservationsWithKeyframesByComnames">getObservationsWithKeyframesByComnames</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getProjectTimeByDateAndUser">getProjectTimeByDateAndUser</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getUserDashboardData">getUserDashboardData</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#getVideoSummariesByProject">getVideoSummariesByProject</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservation">updateObservation</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservationWithCount">updateObservationWithCount</a></li><li data-type='method' style='display: none;'><a href="module-service_observation-ObservationService.html#updateObservationWithSize">updateObservationWithSize</a></li></ul></li><li><a href="module-service_project-ProjectService.html">ProjectService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#createProject">createProject</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#createProjectByName">createProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#deleteProject">deleteProject</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjectById">getProjectById</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjectByName">getProjectByName</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjects">getProjects</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#getProjectsByUserID">getProjectsByUserID</a></li><li data-type='method' style='display: none;'><a href="module-service_project-ProjectService.html#updateProject">updateProject</a></li></ul></li><li><a href="module-service_schema-SchemaService.html">SchemaService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_schema-SchemaService.html#getPublicRelationships">getPublicRelationships</a></li><li data-type='method' style='display: none;'><a href="module-service_schema-SchemaService.html#getPublicTables">getPublicTables</a></li><li data-type='method' style='display: none;'><a href="module-service_schema-SchemaService.html#getPublicViews">getPublicViews</a></li></ul></li><li><a href="module-service_session-SessionService.html">SessionService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#createSession">createSession</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#createSessionAndProjectandProcessor">createSessionAndProjectandProcessor</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#deleteSession">deleteSession</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getProjectIDFromSessionID">getProjectIDFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionById">getSessionById</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionIDsWithProjectAndType">getSessionIDsWithProjectAndType</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessions">getSessions</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsByProjectID">getSessionsByProjectID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsByUserIdAndProjectId">getSessionsByUserIdAndProjectId</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getSessionsGroupedByUserAndDate">getSessionsGroupedByUserAndDate</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#getTypeFromSessionID">getTypeFromSessionID</a></li><li data-type='method' style='display: none;'><a href="module-service_session-SessionService.html#updateSession">updateSession</a></li></ul></li><li><a href="module-service_species-SpeciesService.html">SpeciesService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#createModelSpecies">createModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#createSpecies">createSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#deleteModelSpecies">deleteModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#deleteSpecies">deleteSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getModelSpeciesById">getModelSpeciesById</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getSpecies">getSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getSpeciesByComname">getSpeciesByComname</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#getSpeciesById">getSpeciesById</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#updateModelSpecies">updateModelSpecies</a></li><li data-type='method' style='display: none;'><a href="module-service_species-SpeciesService.html#updateSpecies">updateSpecies</a></li></ul></li><li><a href="module-service_task-TaskService.html">TaskService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#createTask">createTask</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#deleteTask">deleteTask</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#getTaskById">getTaskById</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#getTasks">getTasks</a></li><li data-type='method' style='display: none;'><a href="module-service_task-TaskService.html#updateTask">updateTask</a></li></ul></li><li><a href="module-service_user-UserService.html">UserService</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#createUser">createUser</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#createUserByName">createUserByName</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#deleteUser">deleteUser</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUserById">getUserById</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUserByName">getUserByName</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUserNameByID">getUserNameByID</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#getUsers">getUsers</a></li><li data-type='method' style='display: none;'><a href="module-service_user-UserService.html#updateUser">updateUser</a></li></ul></li><li><a href="module-tests_reporters_summary-reporter-SummaryReporter.html">SummaryReporter</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-tests_reporters_summary-reporter-SummaryReporter.html#onRunComplete">onRunComplete</a></li><li data-type='method' style='display: none;'><a href="module-tests_reporters_summary-reporter-SummaryReporter.html#onRunStart">onRunStart</a></li><li data-type='method' style='display: none;'><a href="module-tests_reporters_summary-reporter-SummaryReporter.html#onTestCaseResult">onTestCaseResult</a></li><li data-type='method' style='display: none;'><a href="module-tests_reporters_summary-reporter-SummaryReporter.html#print">print</a></li></ul></li><li></li></ul><h3>Modules</h3><ul><li><a href="jest.module_config.html">jest.config</a><ul class='members'><li data-type='member' style='display: none;'><a href="jest.module_config.html#.moduleNameMapper">moduleNameMapper</a></li><li data-type='member' style='display: none;'><a href="jest.module_config.html#.reporters">reporters</a></li><li data-type='member' style='display: none;'><a href="jest.module_config.html#.setupFilesAfterEnv">setupFilesAfterEnv</a></li><li data-type='member' style='display: none;'><a href="jest.module_config.html#.silent">silent</a></li><li data-type='member' style='display: none;'><a href="jest.module_config.html#.testEnvironment">testEnvironment</a></li><li data-type='member' style='display: none;'><a href="jest.module_config.html#.testTimeout">testTimeout</a></li></ul></li><li><a href="logger_api.module_logger.html">logger/api.logger</a></li><li><a href="module-app.html">app</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-app.html#~GET/">GET /</a></li><li data-type='method' style='display: none;'><a href="module-app.html#~GET/apps/:appName">GET /apps/:appName</a></li><li data-type='method' style='display: none;'><a href="module-app.html#~validateSharedSequelizeConnection">validateSharedSequelizeConnection</a></li></ul></li><li><a href="module-config_config.html">config/config</a></li><li><a href="module-controller_dataset.html">controller/dataset</a></li><li><a href="module-controller_jellyfin.html">controller/jellyfin</a></li><li><a href="module-controller_keyframe.html">controller/keyframe</a></li><li><a href="module-controller_metaInfo.html">controller/metaInfo</a></li><li><a href="module-controller_observation.html">controller/observation</a></li><li><a href="module-controller_project.html">controller/project</a></li><li><a href="module-controller_schema.html">controller/schema</a></li><li><a href="module-controller_session.html">controller/session</a></li><li><a href="module-controller_species.html">controller/species</a></li><li><a href="module-controller_task.html">controller/task</a></li><li><a href="module-controller_user.html">controller/user</a></li><li><a href="module-middleware_error-contract.html">middleware/error-contract</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-middleware_error-contract.html#~apiNotFoundHandler">apiNotFoundHandler</a></li><li data-type='method' style='display: none;'><a href="module-middleware_error-contract.html#~asyncHandler">asyncHandler</a></li><li data-type='method' style='display: none;'><a href="module-middleware_error-contract.html#~errorHandler">errorHandler</a></li><li data-type='method' style='display: none;'><a href="module-middleware_error-contract.html#~generateRequestId">generateRequestId</a></li><li data-type='method' style='display: none;'><a href="module-middleware_error-contract.html#~normalizeError">normalizeError</a></li><li data-type='method' style='display: none;'><a href="module-middleware_error-contract.html#~requestIdMiddleware">requestIdMiddleware</a></li><li data-type='method' style='display: none;'><a href="module-middleware_error-contract.html#~sendError">sendError</a></li></ul></li><li><a href="module-migrations_add-60-second-substrate-data.html">migrations/add-60-second-substrate-data</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_add-60-second-substrate-data.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_add-60-second-substrate-data.html#.up">up</a></li></ul></li><li><a href="module-migrations_add-confidence-to-observations-and-keyframes.html">migrations/add-confidence-to-observations-and-keyframes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_add-confidence-to-observations-and-keyframes.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_add-confidence-to-observations-and-keyframes.html#.up">up</a></li></ul></li><li><a href="module-migrations_add-pobsid-record-to-observations.html">migrations/add-pobsid-record-to-observations</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_add-pobsid-record-to-observations.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_add-pobsid-record-to-observations.html#.up">up</a></li></ul></li><li><a href="module-migrations_create-keyframes-table.html">migrations/create-keyframes-table</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_create-keyframes-table.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_create-keyframes-table.html#.up">up</a></li></ul></li><li><a href="module-migrations_create-metaInfo-table.html">migrations/create-metaInfo-table</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_create-metaInfo-table.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_create-metaInfo-table.html#.up">up</a></li></ul></li><li><a href="module-migrations_create-ml-models-tables.html">migrations/create-ml-models-tables</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_create-ml-models-tables.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_create-ml-models-tables.html#.up">up</a></li></ul></li><li><a href="module-migrations_create-schemas.html">migrations/create-schemas</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_create-schemas.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_create-schemas.html#.up">up</a></li></ul></li><li><a href="module-migrations_remove-capital-table-from-metainfo.html">migrations/remove-capital-table-from-metainfo</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_remove-capital-table-from-metainfo.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_remove-capital-table-from-metainfo.html#.up">up</a></li></ul></li><li><a href="module-migrations_rename-peddle-to-pebble.html">migrations/rename-peddle-to-pebble</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-migrations_rename-peddle-to-pebble.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-migrations_rename-peddle-to-pebble.html#.up">up</a></li></ul></li><li><a href="module-model_SequelizeMeta.html">model/SequelizeMeta</a></li><li><a href="module-model_artifacts.html">model/artifacts</a></li><li><a href="module-model_dataset_observations.html">model/dataset_observations</a></li><li><a href="module-model_datasets.html">model/datasets</a></li><li><a href="module-model_epochs.html">model/epochs</a></li><li><a href="module-model_hyperparameters.html">model/hyperparameters</a></li><li><a href="module-model_index.html">model/index</a></li><li><a href="module-model_init-models.html">model/init-models</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-model_init-models.html#~initModels">initModels</a></li></ul></li><li><a href="module-model_keyframe.html">model/keyframe</a></li><li><a href="module-model_metaInfo.html">model/metaInfo</a></li><li><a href="module-model_metrics_curves.html">model/metrics_curves</a></li><li><a href="module-model_metrics_summary.html">model/metrics_summary</a></li><li><a href="module-model_ml_models.html">model/ml_models</a></li><li><a href="module-model_model_species.html">model/model_species</a></li><li><a href="module-model_observations.html">model/observations</a></li><li><a href="module-model_project.html">model/project</a></li><li><a href="module-model_session.html">model/session</a></li><li><a href="module-model_species.html">model/species</a></li><li><a href="module-model_task.html">model/task</a></li><li><a href="module-model_training_runs.html">model/training_runs</a></li><li><a href="module-model_user.html">model/user</a></li><li><a href="module-repository_dataset.html">repository/dataset</a></li><li><a href="module-repository_jellyfin.html">repository/jellyfin</a></li><li><a href="module-repository_keyframe.html">repository/keyframe</a></li><li><a href="module-repository_metaInfo.html">repository/metaInfo</a></li><li><a href="module-repository_observation.html">repository/observation</a></li><li><a href="module-repository_project.html">repository/project</a></li><li><a href="module-repository_schema.html">repository/schema</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-repository_schema.html#~normalizePgArray">normalizePgArray</a></li></ul></li><li><a href="module-repository_session.html">repository/session</a></li><li><a href="module-repository_species.html">repository/species</a></li><li><a href="module-repository_task.html">repository/task</a></li><li><a href="module-repository_user.html">repository/user</a></li><li><a href="module-seeders_seed-meta-info.html">seeders/seed-meta-info</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-seeders_seed-meta-info.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-seeders_seed-meta-info.html#.up">up</a></li></ul></li><li><a href="module-seeders_seed-observations-table.html">seeders/seed-observations-table</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-seeders_seed-observations-table.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-seeders_seed-observations-table.html#.up">up</a></li></ul></li><li><a href="module-seeders_seed-projects-table.html">seeders/seed-projects-table</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-seeders_seed-projects-table.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-seeders_seed-projects-table.html#.up">up</a></li></ul></li><li><a href="module-seeders_seed-sessions-table.html">seeders/seed-sessions-table</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-seeders_seed-sessions-table.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-seeders_seed-sessions-table.html#.up">up</a></li></ul></li><li><a href="module-seeders_seed-users-table.html">seeders/seed-users-table</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-seeders_seed-users-table.html#.down">down</a></li><li data-type='method' style='display: none;'><a href="module-seeders_seed-users-table.html#.up">up</a></li></ul></li><li><a href="module-server.html">server</a></li><li><a href="module-service_dataset.html">service/dataset</a></li><li><a href="module-service_jellyfin.html">service/jellyfin</a></li><li><a href="module-service_keyframe.html">service/keyframe</a></li><li><a href="module-service_metaInfo.html">service/metaInfo</a></li><li><a href="module-service_observation.html">service/observation</a></li><li><a href="module-service_project.html">service/project</a></li><li><a href="module-service_schema.html">service/schema</a></li><li><a href="module-service_session.html">service/session</a></li><li><a href="module-service_species.html">service/species</a></li><li><a href="module-service_task.html">service/task</a></li><li><a href="module-service_user.html">service/user</a></li><li><a href="module-tests_dataset_observations.html">tests/dataset_observations</a></li><li><a href="module-tests_datasets.html">tests/datasets</a></li><li><a href="module-tests_epochs.html">tests/epochs</a></li><li><a href="module-tests_jellyfin.html">tests/jellyfin</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-tests_jellyfin.html#~buildJellyfinFetchMock">buildJellyfinFetchMock</a></li><li data-type='method' style='display: none;'><a href="module-tests_jellyfin.html#~jsonResponse">jsonResponse</a></li><li data-type='method' style='display: none;'><a href="module-tests_jellyfin.html#~textResponse">textResponse</a></li></ul></li><li><a href="module-tests_keyframes.html">tests/keyframes</a></li><li><a href="module-tests_metrics_curves.html">tests/metrics_curves</a></li><li><a href="module-tests_metrics_summary.html">tests/metrics_summary</a></li><li><a href="module-tests_ml_models.html">tests/ml_models</a></li><li><a href="module-tests_mocks_silent-logger.html">tests/mocks/silent-logger</a></li><li><a href="module-tests_model_species.html">tests/model_species</a></li><li><a href="module-tests_observations.html">tests/observations</a></li><li><a href="module-tests_observations-readonly.html">tests/observations-readonly</a></li><li><a href="module-tests_project.html">tests/project</a></li><li><a href="module-tests_readonly-endpoints.html">tests/readonly-endpoints</a></li><li><a href="module-tests_reporters_summary-reporter.html">tests/reporters/summary-reporter</a><ul class='methods'><li data-type='method' style='display: none;'><a href="module-tests_reporters_summary-reporter.html#~formatLabel">formatLabel</a></li><li data-type='method' style='display: none;'><a href="module-tests_reporters_summary-reporter.html#~stripAnsi">stripAnsi</a></li></ul></li><li><a href="module-tests_schema.html">tests/schema</a></li><li><a href="module-tests_sessions.html">tests/sessions</a></li><li><a href="module-tests_setup_console-error-passthrough.html">tests/setup/console-error-passthrough</a></li><li><a href="module-tests_species.html">tests/species</a></li><li><a href="module-tests_tasks.html">tests/tasks</a></li><li><a href="module-tests_training_runs.html">tests/training_runs</a></li><li><a href="module-tests_users.html">tests/users</a></li><li><a href="routes_dataset.module_routes.html">routes/dataset.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_dataset.module_routes.html#~registerDatasetRoutes">registerDatasetRoutes</a></li></ul></li><li><a href="routes_jellyfin.module_routes.html">routes/jellyfin.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_jellyfin.module_routes.html#~extractClientIdentity">extractClientIdentity</a></li><li data-type='method' style='display: none;'><a href="routes_jellyfin.module_routes.html#~registerJellyfinRoutes">registerJellyfinRoutes</a></li></ul></li><li><a href="routes_keyframe.module_routes.html">routes/keyframe.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_keyframe.module_routes.html#~registerKeyframeRoutes">registerKeyframeRoutes</a></li></ul></li><li><a href="routes_metaInfo.module_routes.html">routes/metaInfo.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_metaInfo.module_routes.html#~registerMetaInfoRoutes">registerMetaInfoRoutes</a></li></ul></li><li><a href="routes_observation.module_routes.html">routes/observation.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_observation.module_routes.html#~registerObservationRoutes">registerObservationRoutes</a></li></ul></li><li><a href="routes_project.module_routes.html">routes/project.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_project.module_routes.html#~registerProjectRoutes">registerProjectRoutes</a></li></ul></li><li><a href="routes_schema.module_routes.html">routes/schema.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_schema.module_routes.html#~registerSchemaRoutes">registerSchemaRoutes</a></li></ul></li><li><a href="routes_session.module_routes.html">routes/session.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_session.module_routes.html#~registerSessionRoutes">registerSessionRoutes</a></li></ul></li><li><a href="routes_species.module_routes.html">routes/species.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_species.module_routes.html#~registerSpeciesRoutes">registerSpeciesRoutes</a></li></ul></li><li><a href="routes_task.module_routes.html">routes/task.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_task.module_routes.html#~registerTaskRoutes">registerTaskRoutes</a></li></ul></li><li><a href="routes_user.module_routes.html">routes/user.routes</a><ul class='methods'><li data-type='method' style='display: none;'><a href="routes_user.module_routes.html#~registerUserRoutes">registerUserRoutes</a></li></ul></li></ul><h3>Global</h3><ul><li><a href="global.html#fs">fs</a></li><li><a href="global.html#initializeCurrentYear">initializeCurrentYear</a></li><li><a href="global.html#initializeLandingPage">initializeLandingPage</a></li><li><a href="global.html#initializeLoginDialog">initializeLoginDialog</a></li><li><a href="global.html#initializeMobileNavigation">initializeMobileNavigation</a></li><li><a href="global.html#initializeScrollEffects">initializeScrollEffects</a></li></ul>
+    
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">repository/jellyfin.repository.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Repository-layer HTTP client for the Jellyfin media server.
+ *
+ * There is no Sequelize model backing this domain -- Jellyfin is an
+ * external service, not our own database -- so this file plays the role
+ * a repository normally plays (the only layer that knows how to fetch the
+ * underlying data) but does it over HTTP instead of SQL. It started as a
+ * direct Node port of docs/old_scripts_for_reference/jellyfin_client.py
+ * (auth, browsing, search, direct-play streaming), then absorbed the more
+ * complete playback behavior from jellyfin_client.cs -- a production WPF
+ * desktop client for the same Jellyfin server -- which additionally covers
+ * capability-probed quality menus, real transcode negotiation, playback
+ * -session reporting, a fuzzy video-name resolver, image URLs, and
+ * trickplay scrubbing tiles. Both are ported as HTTP/data behavior only;
+ * neither source file's UI/window code is relevant here. Uses the
+ * platform `fetch` global rather than Python's httpx or C#'s HttpClient.
+ *
+ * Session handling: ONE Jellyfin login/session per distinct downstream
+ * client identity, not one shared session for the whole process. This was
+ * confirmed necessary against the live server, not assumed: sending a
+ * different Device/Client/Version header on an individual request while
+ * reusing an existing token has no effect on what Jellyfin's own
+ * session/dashboard view reports -- Jellyfin binds device identity to the
+ * token at the moment it is issued (login), not to headers sent on later
+ * calls. So a caller-supplied client identity (see `clientIdentity`
+ * parameters throughout) must map to its own login, or Jellyfin has no way
+ * to distinguish real downstream clients from each other; every session
+ * otherwise appears as one undifferentiated "MARP API" device. Sessions
+ * are cached in `this.sessions` (a Map keyed by `_buildClientKey()`) for
+ * the lifetime of the process -- same cache-forever model as before, just
+ * multiplied per identity instead of global. A cached token that Jellyfin
+ * has expired surfaces as an HTTP 401 for that specific session, handled
+ * by re-authenticating that one session and retrying -- see
+ * `_authenticatedRequest`.
+ *
+ * Error contract: every failure path here throws `ApiError` with a specific
+ * status/code (404/RESOURCE_NOT_FOUND for a missing item, 502/UPSTREAM_ERROR
+ * for a Jellyfin/network failure) rather than swallowing to `null`/`[]`.
+ * This is a deliberate choice, not an accident -- this codebase already has
+ * several existing repositories that swallow errors inconsistently (some to
+ * `[]`, some to `null`, some to `{}`), and that inconsistency was flagged as
+ * a standing cleanup item. New code should not add another shape to that
+ * list.
+ *
+ * @fileoverview Jellyfin HTTP client used by the jellyfin service/controller.
+ * @author Isaac Travers
+ * @module repository/jellyfin
+ */
+
+const logger = require('../logger/api.logger');
+const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
+
+/**
+ * Repository for Jellyfin HTTP operations.
+ *
+ * @class JellyfinRepository
+ */
+class JellyfinRepository {
+
+    constructor() {
+        // Base URL, username, and password come from the environment only --
+        // MARP always authenticates to Jellyfin as the same service account
+        // ("who"), but as a distinct device session per downstream client
+        // identity ("what is asking on whose behalf right now"), so Jellyfin
+        // can tell real callers apart in its own session/dashboard view.
+        this.baseUrl = this._normalizeBaseUrl(process.env.JELLYFIN_BASE_URL || '');
+        this.username = process.env.JELLYFIN_USERNAME || '';
+        this.password = process.env.JELLYFIN_PASSWORD || '';
+
+        // One session ({ clientKey, clientIdentity, accessToken, userId })
+        // per distinct downstream client identity, keyed by _buildClientKey().
+        this.sessions = new Map();
+    }
+
+    /**
+     * Strips trailing slashes from a configured Jellyfin base URL so
+     * endpoint paths can be appended predictably.
+     *
+     * @param {string} baseUrl - Raw base URL from configuration.
+     * @returns {string} Base URL with no trailing slash.
+     */
+    _normalizeBaseUrl(baseUrl) {
+        return baseUrl.trim().replace(/\/+$/, '');
+    }
+
+    /**
+     * Builds a stable, DeviceId-safe key for a downstream client identity.
+     * Callers with no recognizable name collapse onto a single shared
+     * 'unknown' session -- deliberately not a distinct session per
+     * anonymous caller, since there would be nothing to distinguish it by.
+     *
+     * @param {Object} [clientIdentity] - Downstream client identity.
+     * @param {string} [clientIdentity.name] - Client name, e.g. from an X-Client-Name header.
+     * @param {string} [clientIdentity.version] - Client version, e.g. from an X-Client-Version header.
+     * @returns {string} Sanitized key, safe to embed in a Jellyfin DeviceId.
+     */
+    _buildClientKey(clientIdentity) {
+        const name = clientIdentity &amp;&amp; clientIdentity.name ? String(clientIdentity.name).trim() : '';
+
+        if (!name) {
+            return 'unknown';
+        }
+
+        const version = clientIdentity &amp;&amp; clientIdentity.version ? String(clientIdentity.version).trim() : '';
+        const sanitize = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+        return version ? `${sanitize(name)}-${sanitize(version)}` : sanitize(name);
+    }
+
+    /**
+     * Gets the cached session for a client identity, creating a blank
+     * (not-yet-authenticated) one on first use.
+     *
+     * @param {Object} [clientIdentity] - Downstream client identity (see {@link JellyfinRepository#_buildClientKey}).
+     * @returns {Object} Session object `{ clientKey, clientIdentity, accessToken, userId }`.
+     */
+    _getOrCreateSession(clientIdentity) {
+        const clientKey = this._buildClientKey(clientIdentity);
+        let session = this.sessions.get(clientKey);
+
+        if (!session) {
+            session = { clientKey, clientIdentity: clientIdentity || {}, accessToken: '', userId: '' };
+            this.sessions.set(clientKey, session);
+        }
+
+        return session;
+    }
+
+    /**
+     * Reports whether a session currently holds usable Jellyfin credentials.
+     *
+     * @param {Object} session - Session object.
+     * @returns {boolean} True when base URL, access token, and user id are all present.
+     */
+    _isSessionAuthenticated(session) {
+        return Boolean(this.baseUrl &amp;&amp; session.accessToken &amp;&amp; session.userId);
+    }
+
+    /**
+     * Escapes a value placed inside a quoted MediaBrowser header field.
+     * Client identity now comes from caller-supplied request headers, not
+     * only hardcoded strings, so this prevents a crafted name/version from
+     * breaking out of its quoted field.
+     *
+     * @param {string} value - Header field value.
+     * @returns {string} Safely escaped value.
+     */
+    _escapeHeaderValue(value) {
+        return String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    }
+
+    /**
+     * Builds the `MediaBrowser` authorization header Jellyfin expects on
+     * the login request, concatenating MARP's own identity with the real
+     * downstream client's (e.g. `Client="MARP API/WebFrontend"`) so
+     * Jellyfin's session/dashboard view can tell which actual client is
+     * streaming through MARP, rather than seeing every request as one
+     * undifferentiated "MARP API" session. Falls back to a plain "MARP
+     * API" identity when no client identity is supplied.
+     *
+     * @param {Object} [clientIdentity] - Downstream client identity.
+     * @returns {string} Header value.
+     */
+    _buildMediaBrowserAuthorizationHeader(clientIdentity) {
+        const name = clientIdentity &amp;&amp; clientIdentity.name ? String(clientIdentity.name).trim() : '';
+        const version = clientIdentity &amp;&amp; clientIdentity.version ? String(clientIdentity.version).trim() : '1.0.0';
+
+        const clientName = name ? `MARP API/${name}` : 'MARP API';
+        const deviceName = name || (process.env.HOSTNAME || 'marp-api');
+        const deviceId = `marp-api-${this._buildClientKey(clientIdentity)}`;
+
+        return (
+            'MediaBrowser ' +
+            `Client="${this._escapeHeaderValue(clientName)}", ` +
+            `Device="${this._escapeHeaderValue(deviceName)}", ` +
+            `DeviceId="${this._escapeHeaderValue(deviceId)}", ` +
+            `Version="${this._escapeHeaderValue(version)}"`
+        );
+    }
+
+    /**
+     * Authenticates to Jellyfin with the configured service-account
+     * username/password, using the session's client identity to build the
+     * login header, and caches the resulting access token and user id on
+     * that session object.
+     *
+     * @async
+     * @param {Object} session - Session object to authenticate (mutated in place).
+     * @returns {Promise&lt;void>}
+     * @throws {ApiError} 500/INTERNAL_ERROR if JELLYFIN_* env vars are missing;
+     * 502/UPSTREAM_ERROR if Jellyfin is unreachable or rejects the login.
+     */
+    async authenticate(session) {
+        if (!this.baseUrl) {
+            throw new ApiError(500, ERROR_CODES.INTERNAL_ERROR, 'JELLYFIN_BASE_URL is not configured.');
+        }
+
+        if (!this.username || !this.password) {
+            throw new ApiError(500, ERROR_CODES.INTERNAL_ERROR, 'Jellyfin credentials are not configured.');
+        }
+
+        let response;
+        try {
+            response = await fetch(`${this.baseUrl}/Users/AuthenticateByName`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: this._buildMediaBrowserAuthorizationHeader(session.clientIdentity),
+                },
+                body: JSON.stringify({ Username: this.username, Pw: this.password }),
+            });
+        } catch (err) {
+            logger.error('Error in jellyfin authenticate (network)::' + err);
+            throw new ApiError(502, ERROR_CODES.UPSTREAM_ERROR, 'Could not reach the Jellyfin server.');
+        }
+
+        if (!response.ok) {
+            logger.error(`Error in jellyfin authenticate: HTTP ${response.status}`);
+            throw new ApiError(502, ERROR_CODES.UPSTREAM_ERROR, 'Jellyfin authentication failed.');
+        }
+
+        const data = await response.json();
+
+        session.accessToken = String(data.AccessToken || '');
+        session.userId = String((data.User || {}).Id || '');
+
+        if (!session.accessToken || !session.userId) {
+            throw new ApiError(502, ERROR_CODES.UPSTREAM_ERROR, 'Jellyfin did not return a usable access token.');
+        }
+    }
+
+    /**
+     * Gets (creating and authenticating if needed) the session for a
+     * client identity. Called at the top of every authenticated method so
+     * callers never have to manage login state themselves.
+     *
+     * @async
+     * @param {Object} [clientIdentity] - Downstream client identity.
+     * @returns {Promise&lt;Object>} Authenticated session object.
+     */
+    async _ensureAuthenticated(clientIdentity) {
+        const session = this._getOrCreateSession(clientIdentity);
+
+        if (!this._isSessionAuthenticated(session)) {
+            await this.authenticate(session);
+        }
+
+        return session;
+    }
+
+    /**
+     * Sends one authenticated Jellyfin request on a given session, retrying
+     * exactly once after a fresh login if the session's cached token has
+     * expired (surfaced as an HTTP 401).
+     *
+     * @async
+     * @param {Object} session - Authenticated session to use.
+     * @param {string} method - HTTP method, e.g. 'GET' or 'POST'.
+     * @param {string} url - Full request URL, already built by the caller.
+     * @param {Object} [body] - JSON-serializable request body for POST requests.
+     * @param {Object} [options] - Per-call request options.
+     * @param {Array&lt;number>} [options.notFoundStatuses=[404]] - HTTP statuses
+     * that should be treated as "item not found" for this call. Confirmed
+     * against the live server that `POST /Items/{id}/PlaybackInfo` reports
+     * an unknown item id as HTTP 400, not 404 -- callers of that endpoint
+     * pass `[400, 404]` here rather than relying on the general-purpose default.
+     * @returns {Promise&lt;Object|null>} Parsed JSON body, or null for a 204 response.
+     * @throws {ApiError} 404/RESOURCE_NOT_FOUND when Jellyfin reports no such
+     * item; 502/UPSTREAM_ERROR for any other network or non-2xx failure.
+     */
+    async _authenticatedRequest(session, method, url, body, options = {}) {
+        const notFoundStatuses = options.notFoundStatuses || [404];
+        const send = async () => {
+            try {
+                return await fetch(url, {
+                    method,
+                    headers: {
+                        'X-Emby-Token': session.accessToken,
+                        ...(body ? { 'Content-Type': 'application/json' } : {}),
+                    },
+                    body: body ? JSON.stringify(body) : undefined,
+                });
+            } catch (err) {
+                logger.error(`Error in jellyfin ${method} ${url} (network)::` + err);
+                throw new ApiError(502, ERROR_CODES.UPSTREAM_ERROR, 'Could not reach the Jellyfin server.');
+            }
+        };
+
+        let response = await send();
+
+        // A 401 here means this session's cached token has expired
+        // server-side (Jellyfin sessions are not indefinite) rather than
+        // that the request itself is malformed -- re-authenticate this one
+        // session and retry before giving up.
+        if (response.status === 401) {
+            session.accessToken = '';
+            session.userId = '';
+            await this.authenticate(session);
+            response = await send();
+        }
+
+        if (notFoundStatuses.includes(response.status)) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, 'The requested Jellyfin item was not found.');
+        }
+
+        if (!response.ok) {
+            logger.error(`Error in jellyfin ${method} ${url}: HTTP ${response.status}`);
+            throw new ApiError(
+                502,
+                ERROR_CODES.UPSTREAM_ERROR,
+                `Jellyfin request failed with status ${response.status}.`
+            );
+        }
+
+        return response.status === 204 ? null : await response.json();
+    }
+
+    /**
+     * Loads the top-level libraries visible to the authenticated user.
+     *
+     * @async
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Array&lt;Object>>} Parsed Jellyfin items (see {@link JellyfinRepository#_parseItem}).
+     */
+    async getLibraries(clientIdentity = {}) {
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const url = `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Views?Fields=Path`;
+        const data = await this._authenticatedRequest(session, 'GET', url);
+
+        return this._parseItemsResponse(data);
+    }
+
+    /**
+     * Loads one folder level of child items under a Jellyfin parent item.
+     * Non-recursive by design -- callers browse one level at a time.
+     *
+     * @async
+     * @param {string} parentItemId - Jellyfin id of the parent folder/library.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Array&lt;Object>>} Parsed Jellyfin items (see {@link JellyfinRepository#_parseItem}).
+     * @throws {ApiError} 400/VALIDATION_ERROR when parentItemId is missing.
+     */
+    async getChildItems(parentItemId, clientIdentity = {}) {
+        if (!parentItemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin parent item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const fields = 'Path,MediaSources,RunTimeTicks,ChildCount';
+        const url =
+            `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items` +
+            `?ParentId=${encodeURIComponent(parentItemId)}` +
+            `&amp;Recursive=false` +
+            `&amp;Fields=${encodeURIComponent(fields)}`;
+
+        const data = await this._authenticatedRequest(session, 'GET', url);
+
+        return this._parseItemsResponse(data);
+    }
+
+    /**
+     * Searches Jellyfin video items by text, recursively across the whole
+     * library. This is the resolve-by-name path a database `video_source`
+     * value gets matched against.
+     *
+     * @async
+     * @param {string} query - Filename or title search term.
+     * @param {number} [limit=20] - Maximum number of matches to return.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Array&lt;Object>>} Parsed Jellyfin items (see {@link JellyfinRepository#_parseItem}).
+     * @throws {ApiError} 400/VALIDATION_ERROR when query is missing.
+     */
+    async searchVideoItems(query, limit = 20, clientIdentity = {}) {
+        if (!query) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin search query is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const fields = 'Path,MediaSources,RunTimeTicks';
+        const url =
+            `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items` +
+            `?Recursive=true` +
+            `&amp;IncludeItemTypes=Video` +
+            `&amp;SearchTerm=${encodeURIComponent(query)}` +
+            `&amp;Limit=${encodeURIComponent(limit)}` +
+            `&amp;Fields=${encodeURIComponent(fields)}`;
+
+        const data = await this._authenticatedRequest(session, 'GET', url);
+
+        return this._parseItemsResponse(data);
+    }
+
+    /**
+     * Negotiates playback for one item via Jellyfin's PlaybackInfo endpoint.
+     * This both validates that the item exists/is playable and returns the
+     * media source capability flags a caller would need to decide between
+     * direct play and transcoding.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to negotiate playback for.
+     * @param {Object} [options] - Playback negotiation options.
+     * @param {number} [options.maxStreamingBitrate=8000000] - Bitrate ceiling reported to Jellyfin.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Object>} Parsed playback info (see {@link JellyfinRepository#_parsePlaybackInfo}).
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing; 404/RESOURCE_NOT_FOUND when the item does not exist.
+     */
+    async getPlaybackInfo(itemId, options = {}, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const maxStreamingBitrate = options.maxStreamingBitrate || 8_000_000;
+        const url = `${this.baseUrl}/Items/${encodeURIComponent(itemId)}/PlaybackInfo?UserId=${encodeURIComponent(session.userId)}`;
+        const body = {
+            UserId: session.userId,
+            MaxStreamingBitrate: maxStreamingBitrate,
+            EnableDirectPlay: true,
+            EnableDirectStream: true,
+            EnableTranscoding: true,
+        };
+
+        // PlaybackInfo reports an unknown item id as HTTP 400, not 404 --
+        // confirmed against the live server -- so 400 is treated as
+        // not-found here specifically, rather than in the general default.
+        const data = await this._authenticatedRequest(session, 'POST', url, body, { notFoundStatuses: [400, 404] });
+
+        return this._parsePlaybackInfo(data);
+    }
+
+    /**
+     * Builds the quality menu for one item: capability-probes it via
+     * {@link JellyfinRepository#getPlaybackInfo}, then derives Auto/
+     * Original/transcode-tier options from the source's actual bitrate and
+     * resolution -- ports `BuildPlaybackOptions`/`AddTranscodeOptionIfUseful`
+     * from jellyfin_client.cs. A tier is only offered if it is genuinely
+     * below the source quality; there is no point offering "1080p" for a
+     * source that is already 720p.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to build a quality menu for.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Array&lt;Object>>} Playback options, each `{ displayName, mode, maxStreamingBitrate, maxWidth, maxHeight, isAuto, isOriginal, requiresTranscoding }`.
+     */
+    async getPlaybackOptions(itemId, clientIdentity = {}) {
+        const playbackInfo = await this.getPlaybackInfo(itemId, {}, clientIdentity);
+
+        return this._buildPlaybackOptions(playbackInfo);
+    }
+
+    /**
+     * Pure derivation of quality options from a parsed PlaybackInfo result.
+     *
+     * @param {Object} playbackInfo - Parsed playback info (see {@link JellyfinRepository#_parsePlaybackInfo}).
+     * @returns {Array&lt;Object>} Playback options.
+     */
+    _buildPlaybackOptions(playbackInfo) {
+        const options = [];
+        const mediaSource = playbackInfo &amp;&amp; playbackInfo.mediaSources &amp;&amp; playbackInfo.mediaSources[0];
+
+        if (!mediaSource) {
+            return options;
+        }
+
+        const sourceBitrate = mediaSource.bitrate || 0;
+        const sourceHeight = mediaSource.height || 0;
+
+        // Auto is a placeholder for a future adaptive-quality decision, not a
+        // concrete stream target -- same simplification jellyfin_client.cs
+        // itself ships today ("For now, do not route Auto through the old
+        // manual transcode URL builder").
+        if (mediaSource.supportsTranscoding || mediaSource.supportsDirectStream) {
+            options.push({
+                displayName: 'Auto',
+                mode: 'Auto',
+                maxStreamingBitrate: null,
+                maxWidth: null,
+                maxHeight: null,
+                isAuto: true,
+                isOriginal: false,
+                requiresTranscoding: false,
+            });
+        }
+
+        if (mediaSource.supportsDirectPlay || mediaSource.supportsDirectStream) {
+            const bitrateSuffix = sourceBitrate > 0 ? ` (${(sourceBitrate / 1_000_000).toFixed(2)} Mbps)` : '';
+
+            options.push({
+                displayName: `Original / Direct${bitrateSuffix}`,
+                mode: 'Original',
+                maxStreamingBitrate: null,
+                maxWidth: mediaSource.width || null,
+                maxHeight: mediaSource.height || null,
+                isAuto: false,
+                isOriginal: true,
+                requiresTranscoding: false,
+            });
+        }
+
+        if (mediaSource.supportsTranscoding) {
+            this._addTranscodeOptionIfUseful(options, '1080p, 8 Mbps', 8_000_000, 1920, 1080, sourceBitrate, sourceHeight);
+            this._addTranscodeOptionIfUseful(options, '720p, 4 Mbps', 4_000_000, 1280, 720, sourceBitrate, sourceHeight);
+            this._addTranscodeOptionIfUseful(options, '480p, 1 Mbps', 1_000_000, 854, 480, sourceBitrate, sourceHeight);
+        }
+
+        return options;
+    }
+
+    /**
+     * Adds one transcode-tier option only if it is actually lower quality
+     * than the source -- prevents offering e.g. "1080p" for a 720p source.
+     *
+     * @param {Array&lt;Object>} options - Destination options array, mutated in place.
+     * @param {string} displayName - Human-readable option label.
+     * @param {number} maxStreamingBitrate - Bitrate ceiling for this tier.
+     * @param {number} maxWidth - Width ceiling for this tier.
+     * @param {number} maxHeight - Height ceiling for this tier.
+     * @param {number} sourceBitrate - Source media bitrate (0 if unknown).
+     * @param {number} sourceHeight - Source media height (0 if unknown).
+     * @returns {void}
+     */
+    _addTranscodeOptionIfUseful(options, displayName, maxStreamingBitrate, maxWidth, maxHeight, sourceBitrate, sourceHeight) {
+        const bitrateIsUseful = sourceBitrate &lt;= 0 || maxStreamingBitrate &lt; sourceBitrate;
+        const heightIsUseful = sourceHeight &lt;= 0 || maxHeight &lt;= sourceHeight;
+
+        if (!bitrateIsUseful || !heightIsUseful) {
+            return;
+        }
+
+        options.push({
+            displayName,
+            mode: 'Transcode',
+            maxStreamingBitrate,
+            maxWidth,
+            maxHeight,
+            isAuto: false,
+            isOriginal: false,
+            requiresTranscoding: true,
+        });
+    }
+
+    /**
+     * Negotiates a constrained transcode target via Jellyfin's PlaybackInfo
+     * endpoint, using a DeviceProfile so Jellyfin picks and returns a real
+     * session-associated `transcodingUrl` -- ports `GetTranscodePlaybackInfoAsync`
+     * from jellyfin_client.cs. This is the "proper" negotiated path; it
+     * deliberately does not manually assemble a `/Videos/{id}/stream?...`
+     * query string the way the older `BuildTranscodeStreamUrl` did (that
+     * method is explicitly marked deprecated in jellyfin_client.cs in favor
+     * of this PlaybackInfo + DeviceProfile flow).
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to negotiate a transcode for.
+     * @param {Object} [option] - Playback option selected from {@link JellyfinRepository#getPlaybackOptions}.
+     * @param {number} [option.maxStreamingBitrate=4000000] - Bitrate ceiling.
+     * @param {number} [option.maxWidth=1280] - Width ceiling.
+     * @param {number} [option.maxHeight=720] - Height ceiling.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Object>} Parsed playback info, with `mediaSources[].transcodingUrl` populated.
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing; 404/RESOURCE_NOT_FOUND when the item does not exist.
+     */
+    async getTranscodePlaybackInfo(itemId, option = {}, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const maxStreamingBitrate = option.maxStreamingBitrate || 4_000_000;
+        const maxWidth = option.maxWidth || 1280;
+        const maxHeight = option.maxHeight || 720;
+
+        const url = `${this.baseUrl}/Items/${encodeURIComponent(itemId)}/PlaybackInfo?UserId=${encodeURIComponent(session.userId)}`;
+        const body = {
+            UserId: session.userId,
+            // This request intentionally asks Jellyfin for a transcode-only
+            // result -- direct/original playback stays on getPlaybackInfo +
+            // buildDirectStreamUrl.
+            EnableDirectPlay: false,
+            EnableDirectStream: false,
+            EnableTranscoding: true,
+            MaxStreamingBitrate: maxStreamingBitrate,
+            MaxWidth: maxWidth,
+            MaxHeight: maxHeight,
+            AllowVideoStreamCopy: false,
+            AllowAudioStreamCopy: true,
+            DeviceProfile: {
+                Name: 'MARP API',
+                MaxStreamingBitrate: maxStreamingBitrate,
+                TranscodingProfiles: [
+                    {
+                        Container: 'ts',
+                        Type: 'Video',
+                        VideoCodec: 'h264',
+                        AudioCodec: 'aac',
+                        Protocol: 'hls',
+                    },
+                ],
+            },
+        };
+
+        const data = await this._authenticatedRequest(session, 'POST', url, body, { notFoundStatuses: [400, 404] });
+
+        return this._parsePlaybackInfo(data);
+    }
+
+    /**
+     * Resolves a possibly-relative Jellyfin URL (PlaybackInfo can return
+     * `transcodingUrl`/`directStreamUrl` as server-root-relative paths) to
+     * an absolute URL -- ports `BuildAbsoluteJellyfinUrl`.
+     *
+     * @param {string} jellyfinUrl - Absolute or relative Jellyfin URL.
+     * @returns {string} Absolute URL, or '' if the input was blank.
+     */
+    buildAbsoluteUrl(jellyfinUrl) {
+        if (!jellyfinUrl) {
+            return '';
+        }
+
+        if (/^https?:\/\//i.test(jellyfinUrl)) {
+            return jellyfinUrl;
+        }
+
+        return jellyfinUrl.startsWith('/') ? `${this.baseUrl}${jellyfinUrl}` : `${this.baseUrl}/${jellyfinUrl}`;
+    }
+
+    /**
+     * Builds the direct (non-transcoded) Jellyfin stream URL for an item,
+     * with the session's access token embedded as the `api_key` query
+     * parameter -- required because this URL is handed to things that
+     * cannot set a custom header (e.g. a video element's `src`, or the
+     * redirect target this repository's caller returns to API clients).
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to build a stream URL for.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;string>} Absolute Jellyfin stream URL.
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing.
+     */
+    async buildDirectStreamUrl(itemId, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        return `${this.baseUrl}/Videos/${encodeURIComponent(itemId)}/stream?static=true&amp;api_key=${encodeURIComponent(session.accessToken)}`;
+    }
+
+    /**
+     * Relays a playback report to one of Jellyfin's `/Sessions/Playing*`
+     * endpoints -- ports `BuildPlaybackReportBody` + the three
+     * `Report*Async` methods from jellyfin_client.cs. MARP holds no
+     * server-side *playback* session state (see the module-level note on
+     * statelessness), so every playback-position field the report needs
+     * comes from the caller rather than from anything cached here -- the
+     * `clientIdentity`-keyed Jellyfin login session is a separate concern
+     * from playback position tracking.
+     *
+     * @async
+     * @param {string} path - Jellyfin session endpoint suffix, e.g. '/Sessions/Playing'.
+     * @param {string} itemId - Jellyfin item id being played.
+     * @param {Object} report - Report fields.
+     * @param {string} [report.mediaSourceId] - MediaSource id from the earlier PlaybackInfo/stream response.
+     * @param {string} [report.playSessionId] - PlaySessionId from the earlier PlaybackInfo/stream response.
+     * @param {number} [report.positionTicks=0] - Current playback position, in Jellyfin ticks (100ns units).
+     * @param {boolean} [report.isPaused=false] - Whether playback is currently paused.
+     * @param {string} [report.playMethod='DirectStream'] - 'DirectStream' or 'Transcode'.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;void>}
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing.
+     */
+    async _reportPlayback(path, itemId, report = {}, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const positionTicks = report.positionTicks &amp;&amp; report.positionTicks > 0 ? report.positionTicks : 0;
+
+        const body = {
+            ItemId: itemId,
+            MediaSourceId: report.mediaSourceId || '',
+            PlaySessionId: report.playSessionId || '',
+            PositionTicks: positionTicks,
+            IsPaused: Boolean(report.isPaused),
+            IsMuted: false,
+            PlayMethod: report.playMethod || 'DirectStream',
+            RepeatMode: 'RepeatNone',
+            PlaybackRate: 1.0,
+        };
+
+        await this._authenticatedRequest(session, 'POST', `${this.baseUrl}${path}`, body);
+    }
+
+    /**
+     * Reports that playback has started or resumed for an item.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id being played.
+     * @param {Object} [report] - Report fields (see {@link JellyfinRepository#_reportPlayback}).
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;void>}
+     */
+    async reportPlaybackStarted(itemId, report, clientIdentity) {
+        await this._reportPlayback('/Sessions/Playing', itemId, report, clientIdentity);
+    }
+
+    /**
+     * Reports current playback position/pause state for an item. Should be
+     * called periodically during playback so Jellyfin's transcode-session
+     * lifecycle and resume position stay accurate.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id being played.
+     * @param {Object} [report] - Report fields (see {@link JellyfinRepository#_reportPlayback}).
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;void>}
+     */
+    async reportPlaybackProgress(itemId, report, clientIdentity) {
+        await this._reportPlayback('/Sessions/Playing/Progress', itemId, report, clientIdentity);
+    }
+
+    /**
+     * Reports final playback position before the item/session changes or
+     * closes, so Jellyfin can clean up any active transcode session.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id that was being played.
+     * @param {Object} [report] - Report fields (see {@link JellyfinRepository#_reportPlayback}).
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;void>}
+     */
+    async reportPlaybackStopped(itemId, report, clientIdentity) {
+        await this._reportPlayback('/Sessions/Playing/Stopped', itemId, { ...report, isPaused: true }, clientIdentity);
+    }
+
+    /**
+     * Builds a Jellyfin item image URL (poster/thumbnail/etc.) with the
+     * session's token -- ports `BuildItemImageUrl` from jellyfin_client.cs.
+     * Pure URL construction beyond ensuring authentication, no data request
+     * is sent.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to build an image URL for.
+     * @param {string} imageType - Jellyfin image type, e.g. 'Primary', 'Thumb', 'Backdrop'.
+     * @param {number} [maxWidth=320] - Maximum image width Jellyfin should return.
+     * @param {number} [quality=85] - JPEG quality (1-100).
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;string>} Absolute Jellyfin image URL.
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId or imageType is missing.
+     */
+    async buildImageUrl(itemId, imageType, maxWidth = 320, quality = 85, clientIdentity = {}) {
+        if (!itemId || !imageType) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id and image type are required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const safeMaxWidth = maxWidth > 0 ? maxWidth : 320;
+        const safeQuality = quality > 0 &amp;&amp; quality &lt;= 100 ? quality : 85;
+
+        return (
+            `${this.baseUrl}/Items/${encodeURIComponent(itemId)}/Images/${encodeURIComponent(imageType)}` +
+            `?maxWidth=${safeMaxWidth}&amp;quality=${safeQuality}&amp;api_key=${encodeURIComponent(session.accessToken)}`
+        );
+    }
+
+    /**
+     * Sends an authenticated Jellyfin GET request and returns the raw text
+     * body, for non-JSON endpoints such as the trickplay `.m3u8`-shaped
+     * tile playlist -- ports `GetJellyfinTextAsync`.
+     *
+     * @async
+     * @param {Object} session - Authenticated session to use.
+     * @param {string} url - Full request URL.
+     * @returns {Promise&lt;string>} Raw response text.
+     * @throws {ApiError} 404/RESOURCE_NOT_FOUND or 502/UPSTREAM_ERROR on failure.
+     */
+    async _authenticatedTextRequest(session, url) {
+        const send = async () => {
+            try {
+                return await fetch(url, { headers: { 'X-Emby-Token': session.accessToken } });
+            } catch (err) {
+                logger.error(`Error in jellyfin GET ${url} (network)::` + err);
+                throw new ApiError(502, ERROR_CODES.UPSTREAM_ERROR, 'Could not reach the Jellyfin server.');
+            }
+        };
+
+        let response = await send();
+
+        if (response.status === 401) {
+            session.accessToken = '';
+            session.userId = '';
+            await this.authenticate(session);
+            response = await send();
+        }
+
+        if (response.status === 404) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, 'The requested Jellyfin resource was not found.');
+        }
+
+        if (!response.ok) {
+            logger.error(`Error in jellyfin GET ${url}: HTTP ${response.status}`);
+            throw new ApiError(502, ERROR_CODES.UPSTREAM_ERROR, `Jellyfin request failed with status ${response.status}.`);
+        }
+
+        return await response.text();
+    }
+
+    /**
+     * Checks whether an authenticated Jellyfin URL exists, preferring HEAD
+     * (only existence is needed, not bytes) and falling back to GET if the
+     * server rejects HEAD for this endpoint -- ports `JellyfinUrlExistsAsync`.
+     *
+     * Deliberately swallows failures to `false` rather than throwing: this
+     * is the one legitimate exception to this file's no-swallow rule,
+     * because it's used only to probe for an *optional* extra trickplay
+     * tile that may or may not exist -- "can't tell if it exists" and
+     * "confirmed absent" should both just mean "don't add it," not fail
+     * the whole trickplay request.
+     *
+     * @async
+     * @param {Object} session - Authenticated session to use.
+     * @param {string} url - URL to probe.
+     * @returns {Promise&lt;boolean>} True if the URL responds successfully.
+     */
+    async _urlExists(session, url) {
+        try {
+            const headResponse = await fetch(url, { method: 'HEAD', headers: { 'X-Emby-Token': session.accessToken } });
+            if (headResponse.ok) {
+                return true;
+            }
+            if (headResponse.status !== 405 &amp;&amp; headResponse.status !== 501) {
+                return false;
+            }
+        } catch (err) {
+            return false;
+        }
+
+        try {
+            const getResponse = await fetch(url, { headers: { 'X-Emby-Token': session.accessToken } });
+            return getResponse.ok;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    /**
+     * Loads and parses Jellyfin's trickplay scrubbing-preview tile
+     * playlist for one item -- ports `GetTrickplayInfoAsync`. Each tile
+     * image URL Jellyfin lists already embeds its own access token (the
+     * same signed-URL pattern already used for `stream`/image URLs), so
+     * the returned tile URLs are directly fetchable by a caller without
+     * MARP proxying the image bytes.
+     *
+     * `width` is Jellyfin's tile-*generation* width, not a resize hint --
+     * Jellyfin only has data for whichever width(s) it pre-generated for
+     * this item, so a caller cannot safely guess one. This method always
+     * looks up the item's actually-available widths first ({@link
+     * JellyfinRepository#_getTrickplayWidths}) and: validates an explicitly
+     * supplied width against that list (a mismatch throws a specific 400
+     * naming what IS available, rather than surfacing Jellyfin's own
+     * generic playlist 404); or, when width is omitted, auto-selects the
+     * largest available width. Either way, the resolved `width` and the
+     * full `availableWidths` list are both included in the return value,
+     * so a caller that omitted `width` still learns what was actually used.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to load trickplay tiles for.
+     * @param {number} [width] - Requested tile-sheet width. Omit to auto-select the largest available width.
+     * @param {Object} [options] - Additional options.
+     * @param {string} [options.mediaSourceId] - Specific media source, if the item has more than one.
+     * @param {number} [options.runTimeTicks] - Item runtime in Jellyfin ticks; when supplied, probes for extra tile sheets beyond what the playlist lists.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Object>} `{ width, availableWidths, thumbnailWidth, thumbnailHeight, columns, rows, thumbnailDurationSeconds, tileImageUrls }`.
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing, width is invalid, or an explicitly supplied width has no matching Jellyfin data; 404/RESOURCE_NOT_FOUND when the item does not exist or has no trickplay data at all.
+     */
+    async getTrickplayInfo(itemId, width, options = {}, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        if (width !== undefined &amp;&amp; width !== null &amp;&amp; (!Number.isInteger(width) || width &lt;= 0)) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'Trickplay width must be a positive integer when supplied.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const availableWidths = await this._getTrickplayWidths(itemId, options.mediaSourceId, session);
+
+        if (availableWidths.length === 0) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, 'Jellyfin has not generated trickplay data for this item.');
+        }
+
+        let resolvedWidth;
+
+        if (width !== undefined &amp;&amp; width !== null) {
+            if (!availableWidths.includes(width)) {
+                throw new ApiError(
+                    400,
+                    ERROR_CODES.VALIDATION_ERROR,
+                    `Jellyfin has no trickplay data at width ${width} for this item. Available widths: ${availableWidths.join(', ')}.`
+                );
+            }
+            resolvedWidth = width;
+        } else {
+            // No width requested -- default to the largest available for
+            // the best-quality scrubbing preview.
+            resolvedWidth = availableWidths[availableWidths.length - 1];
+        }
+
+        const playlistUrl = this._buildTrickplayPlaylistUrl(itemId, resolvedWidth, options.mediaSourceId);
+        const playlistText = await this._authenticatedTextRequest(session, playlistUrl);
+
+        const trickplayInfo = this._parseTrickplayPlaylist(playlistUrl, playlistText);
+        trickplayInfo.width = resolvedWidth;
+        trickplayInfo.availableWidths = availableWidths;
+
+        if (options.runTimeTicks) {
+            await this._expandTrickplayTileUrlsFromRuntime(trickplayInfo, options.runTimeTicks, session);
+        }
+
+        return trickplayInfo;
+    }
+
+    /**
+     * Looks up which trickplay tile-sheet widths Jellyfin has actually
+     * generated for an item, via `GET /Users/{userId}/Items/{itemId}?Fields=Trickplay`
+     * (confirmed live: this is where Jellyfin reports it -- there is no
+     * separate dedicated widths endpoint). Jellyfin's `Trickplay` field is
+     * keyed by mediaSourceId, then by width, e.g.
+     * `{ "&lt;mediaSourceId>": { "320": { Width, Height, TileWidth, ... } } }`.
+     *
+     * This same lookup endpoint has a real, non-obvious failure mode
+     * confirmed live: given an unrecognized item id, Jellyfin does **not**
+     * 404 -- it silently returns HTTP 200 with its root "Media Folders"
+     * item instead. Relying on the response status alone would therefore
+     * silently report "no trickplay data" for a bogus id rather than "item
+     * not found", so the returned item's own `Id` is checked against what
+     * was requested and treated as not-found if it doesn't match.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id to look up.
+     * @param {string} [mediaSourceId] - When supplied, only widths for this specific media source are returned; otherwise widths across all of the item's media sources are combined.
+     * @param {Object} session - Authenticated session to use.
+     * @returns {Promise&lt;Array&lt;number>>} Available widths, ascending, deduplicated. Empty if Jellyfin has generated none.
+     * @throws {ApiError} 404/RESOURCE_NOT_FOUND when the item does not exist.
+     */
+    async _getTrickplayWidths(itemId, mediaSourceId, session) {
+        const url = `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}?Fields=Trickplay`;
+        const data = await this._authenticatedRequest(session, 'GET', url);
+
+        if (String(data &amp;&amp; data.Id) !== String(itemId)) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, 'The requested Jellyfin item was not found.');
+        }
+
+        const trickplayByMediaSource = (data &amp;&amp; data.Trickplay) || {};
+        const widthMapsToScan = mediaSourceId
+            ? [trickplayByMediaSource[mediaSourceId] || {}]
+            : Object.values(trickplayByMediaSource);
+
+        const widths = new Set();
+
+        for (const widthMap of widthMapsToScan) {
+            for (const widthKey of Object.keys(widthMap || {})) {
+                const parsedWidth = Number(widthKey);
+                if (Number.isInteger(parsedWidth) &amp;&amp; parsedWidth > 0) {
+                    widths.add(parsedWidth);
+                }
+            }
+        }
+
+        return [...widths].sort((a, b) => a - b);
+    }
+
+    /**
+     * Builds the trickplay tile playlist URL for one item.
+     *
+     * @param {string} itemId - Jellyfin item id.
+     * @param {number} width - Requested tile-sheet width.
+     * @param {string} [mediaSourceId] - Specific media source id, if any.
+     * @returns {string} Trickplay playlist URL.
+     */
+    _buildTrickplayPlaylistUrl(itemId, width, mediaSourceId) {
+        const endpointItemId = this._formatItemIdForVideoEndpoint(itemId);
+        let url = `${this.baseUrl}/Videos/${encodeURIComponent(endpointItemId)}/Trickplay/${width}/tiles.m3u8`;
+
+        if (mediaSourceId) {
+            url += `?MediaSourceId=${encodeURIComponent(mediaSourceId)}`;
+        }
+
+        return url;
+    }
+
+    /**
+     * Some Jellyfin video endpoints expect the item id in hyphenated GUID
+     * form even though item DTOs expose the same id as 32 hex characters
+     * -- ports `FormatJellyfinItemIdForVideoEndpoint`. Non-GUID-shaped ids
+     * are returned unchanged.
+     *
+     * @param {string} itemId - Jellyfin item id, compact or hyphenated.
+     * @returns {string} Hyphenated GUID form when itemId is a bare 32-hex-digit id, otherwise itemId unchanged.
+     */
+    _formatItemIdForVideoEndpoint(itemId) {
+        const trimmed = (itemId || '').trim();
+
+        if (trimmed.length !== 32 || !/^[0-9a-fA-F]{32}$/.test(trimmed)) {
+            return trimmed;
+        }
+
+        return `${trimmed.slice(0, 8)}-${trimmed.slice(8, 12)}-${trimmed.slice(12, 16)}-${trimmed.slice(16, 20)}-${trimmed.slice(20, 32)}`;
+    }
+
+    /**
+     * Parses Jellyfin's image-only trickplay playlist -- ports
+     * `ParseTrickplayPlaylist`. Expected tile metadata example:
+     * `#EXT-X-TILES:RESOLUTION=320x180,LAYOUT=10x10,DURATION=10`. Expected
+     * tile image line example: `0.jpg?MediaSourceId=...&amp;ApiKey=...`.
+     *
+     * @param {string} playlistUrl - URL the playlist was fetched from (tile lines are relative to this).
+     * @param {string} playlistText - Raw playlist body.
+     * @returns {Object} `{ thumbnailWidth, thumbnailHeight, columns, rows, thumbnailDurationSeconds, tileImageUrls }`.
+     */
+    _parseTrickplayPlaylist(playlistUrl, playlistText) {
+        const trickplayInfo = {
+            thumbnailWidth: 0,
+            thumbnailHeight: 0,
+            columns: 0,
+            rows: 0,
+            thumbnailDurationSeconds: 0,
+            tileImageUrls: [],
+        };
+
+        if (!playlistText) {
+            return trickplayInfo;
+        }
+
+        const lines = playlistText.split(/\r\n|\n/);
+
+        for (const rawLine of lines) {
+            const line = rawLine.trim();
+
+            if (!line) {
+                continue;
+            }
+
+            if (line.toUpperCase().startsWith('#EXT-X-TILES:')) {
+                this._parseTrickplayTileMetadata(line, trickplayInfo);
+                continue;
+            }
+
+            // Non-comment playlist entries are tile sheet image references,
+            // relative to the playlist URL, not the server root.
+            if (!line.startsWith('#')) {
+                trickplayInfo.tileImageUrls.push(this._resolveUrlRelativeTo(playlistUrl, line));
+            }
+        }
+
+        return trickplayInfo;
+    }
+
+    /**
+     * Reads RESOLUTION, LAYOUT, and DURATION fields from one `#EXT-X-TILES` line.
+     *
+     * @param {string} tilesLine - Full `#EXT-X-TILES:...` line.
+     * @param {Object} trickplayInfo - Destination object, mutated in place.
+     * @returns {void}
+     */
+    _parseTrickplayTileMetadata(tilesLine, trickplayInfo) {
+        const metadata = tilesLine.substring(tilesLine.indexOf(':') + 1);
+        const parts = metadata.split(',');
+
+        for (const rawPart of parts) {
+            const part = rawPart.trim();
+            const equalsIndex = part.indexOf('=');
+
+            if (equalsIndex &lt;= 0 || equalsIndex >= part.length - 1) {
+                continue;
+            }
+
+            const key = part.substring(0, equalsIndex).trim().toUpperCase();
+            const value = part.substring(equalsIndex + 1).trim();
+
+            if (key === 'RESOLUTION') {
+                const [w, h] = value.split('x').map(Number);
+                if (Number.isInteger(w) &amp;&amp; Number.isInteger(h)) {
+                    trickplayInfo.thumbnailWidth = w;
+                    trickplayInfo.thumbnailHeight = h;
+                }
+            } else if (key === 'LAYOUT') {
+                const [columns, rows] = value.split('x').map(Number);
+                if (Number.isInteger(columns) &amp;&amp; Number.isInteger(rows)) {
+                    trickplayInfo.columns = columns;
+                    trickplayInfo.rows = rows;
+                }
+            } else if (key === 'DURATION') {
+                const duration = Number(value);
+                if (!Number.isNaN(duration)) {
+                    trickplayInfo.thumbnailDurationSeconds = duration;
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolves one playlist line into an absolute URL, relative to the
+     * playlist's own URL -- ports `BuildAbsoluteUrlRelativeToPlaylist`.
+     *
+     * @param {string} playlistUrl - URL the playlist was fetched from.
+     * @param {string} playlistLine - Raw (possibly relative) line from the playlist.
+     * @returns {string} Absolute URL, or '' if playlistLine was blank.
+     */
+    _resolveUrlRelativeTo(playlistUrl, playlistLine) {
+        if (!playlistLine) {
+            return '';
+        }
+
+        if (/^https?:\/\//i.test(playlistLine)) {
+            return playlistLine;
+        }
+
+        return new URL(playlistLine, playlistUrl).toString();
+    }
+
+    /**
+     * Probes for additional numbered tile sheets beyond what the playlist
+     * listed, when the item's runtime implies more should exist -- ports
+     * `ExpandTrickplayTileUrlsFromRuntimeAsync`. Some Jellyfin servers
+     * return a playlist containing only the first tile sheet even when
+     * later numbered tiles exist on disk; this fills in the gap only for
+     * tiles a live probe confirms are actually present.
+     *
+     * @async
+     * @param {Object} trickplayInfo - Parsed trickplay info, mutated in place (tileImageUrls extended).
+     * @param {number} runTimeTicks - Item runtime in Jellyfin ticks.
+     * @param {Object} session - Authenticated session to use for the existence probes.
+     * @returns {Promise&lt;void>}
+     */
+    async _expandTrickplayTileUrlsFromRuntime(trickplayInfo, runTimeTicks, session) {
+        const thumbnailsPerTile = trickplayInfo.columns * trickplayInfo.rows;
+
+        if (
+            !runTimeTicks ||
+            runTimeTicks &lt;= 0 ||
+            trickplayInfo.tileImageUrls.length === 0 ||
+            thumbnailsPerTile &lt;= 0 ||
+            trickplayInfo.thumbnailDurationSeconds &lt;= 0
+        ) {
+            return;
+        }
+
+        const runtimeSeconds = runTimeTicks / 10_000_000;
+        const secondsPerTileImage = thumbnailsPerTile * trickplayInfo.thumbnailDurationSeconds;
+
+        if (secondsPerTileImage &lt;= 0) {
+            return;
+        }
+
+        const expectedTileImageCount = Math.ceil(runtimeSeconds / secondsPerTileImage);
+
+        if (expectedTileImageCount &lt;= trickplayInfo.tileImageUrls.length) {
+            return;
+        }
+
+        const firstTileUrl = trickplayInfo.tileImageUrls[0];
+
+        for (let tileIndex = trickplayInfo.tileImageUrls.length; tileIndex &lt; expectedTileImageCount; tileIndex++) {
+            const candidateTileUrl = this._buildTrickplayTileUrlFromFirstTileUrl(firstTileUrl, tileIndex);
+
+            if (!candidateTileUrl) {
+                break;
+            }
+
+            const exists = await this._urlExists(session, candidateTileUrl);
+
+            if (!exists) {
+                break;
+            }
+
+            trickplayInfo.tileImageUrls.push(candidateTileUrl);
+        }
+    }
+
+    /**
+     * Builds a numbered tile image URL from the first tile URL Jellyfin's
+     * playlist returned -- ports `BuildTrickplayTileUrlFromFirstTileUrl`.
+     * Example: `.../0.jpg?MediaSourceId=...&amp;ApiKey=...` becomes
+     * `.../1.jpg?MediaSourceId=...&amp;ApiKey=...`.
+     *
+     * @param {string} firstTileUrl - The playlist's first tile image URL.
+     * @param {number} tileIndex - Numbered tile index to build a URL for.
+     * @returns {string} Candidate tile URL, or '' if firstTileUrl isn't in the expected `N.jpg` shape.
+     */
+    _buildTrickplayTileUrlFromFirstTileUrl(firstTileUrl, tileIndex) {
+        if (!firstTileUrl) {
+            return '';
+        }
+
+        const questionIndex = firstTileUrl.indexOf('?');
+        const pathPart = questionIndex >= 0 ? firstTileUrl.substring(0, questionIndex) : firstTileUrl;
+        const queryPart = questionIndex >= 0 ? firstTileUrl.substring(questionIndex) : '';
+
+        const lastSlashIndex = pathPart.lastIndexOf('/');
+
+        if (lastSlashIndex &lt; 0 || lastSlashIndex >= pathPart.length - 1) {
+            return '';
+        }
+
+        const fileName = pathPart.substring(lastSlashIndex + 1);
+
+        if (!fileName.toLowerCase().endsWith('.jpg')) {
+            return '';
+        }
+
+        const newPathPart = `${pathPart.substring(0, lastSlashIndex + 1)}${tileIndex}.jpg`;
+
+        return `${newPathPart}${queryPart}`;
+    }
+
+    /**
+     * Resolves a saved database `video_source` value (often a full old
+     * Windows path from a different computer, not a value Jellyfin stores
+     * verbatim) to the single best-matching Jellyfin video item -- ports
+     * `TryLoadPlaybackStateByVideoNameAsync`/`ScoreJellyfinVideoMatch` from
+     * jellyfin_client.cs. Tries several search-term variants (raw value,
+     * filename, filename stem, underscore/space variants, an extracted
+     * MARE timestamp), scores every candidate returned across all of them,
+     * and rejects a weak best match rather than silently resolving to the
+     * wrong video.
+     *
+     * @async
+     * @param {string} videoSource - Saved filename, path, or other free-text video reference.
+     * @param {number} [minScore=60] - Minimum acceptable match score (0-100); below this, no match is considered reliable.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise&lt;Object>} `{ item, score, searchTerm }` for the best match.
+     * @throws {ApiError} 400/VALIDATION_ERROR when videoSource is missing; 404/RESOURCE_NOT_FOUND when no candidate reaches minScore.
+     */
+    async resolveVideoSource(videoSource, minScore = 60, clientIdentity = {}) {
+        if (!videoSource || !videoSource.trim()) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A video source value is required.');
+        }
+
+        const searchTerms = this._buildVideoSearchTerms(videoSource);
+
+        let bestItem = null;
+        let bestScore = 0;
+        let bestSearchTerm = '';
+
+        for (const searchTerm of searchTerms) {
+            const items = await this.searchVideoItems(searchTerm, 20, clientIdentity);
+
+            for (const item of items) {
+                const score = this._scoreVideoMatch(videoSource, item);
+
+                if (score > bestScore) {
+                    bestItem = item;
+                    bestScore = score;
+                    bestSearchTerm = searchTerm;
+                }
+            }
+
+            // A score at/above 95 is effectively an exact filename/path
+            // match; broader search-term variants are unnecessary once one
+            // is found.
+            if (bestScore >= 95) {
+                break;
+            }
+        }
+
+        if (!bestItem || bestScore &lt; minScore) {
+            throw new ApiError(
+                404,
+                ERROR_CODES.RESOURCE_NOT_FOUND,
+                'No sufficiently confident Jellyfin match was found for this video source.'
+            );
+        }
+
+        return { item: bestItem, score: bestScore, searchTerm: bestSearchTerm };
+    }
+
+    /**
+     * Builds ordered, de-duplicated Jellyfin search-term variants from a
+     * saved database video location -- ports `BuildVideoSearchTerms`. Most
+     * specific forms are tried first.
+     *
+     * @param {string} videoLocation - Saved filename, local path, or database video source.
+     * @returns {Array&lt;string>} Ordered, nonblank, case-insensitively de-duplicated search terms.
+     */
+    _buildVideoSearchTerms(videoLocation) {
+        const searchTerms = [];
+        const rawValue = (videoLocation || '').trim();
+
+        if (!rawValue) {
+            return searchTerms;
+        }
+
+        const fileName = this._getFileNameFromPath(rawValue) || rawValue;
+        const fileNameStem = this._getFileNameStem(fileName);
+        const underscoreStem = fileNameStem.replace(/ /g, '_');
+        const spaceStem = fileNameStem.replace(/_/g, ' ');
+
+        this._addUniqueSearchTerm(searchTerms, rawValue);
+        this._addUniqueSearchTerm(searchTerms, fileName);
+        this._addUniqueSearchTerm(searchTerms, fileNameStem);
+        this._addUniqueSearchTerm(searchTerms, underscoreStem);
+        this._addUniqueSearchTerm(searchTerms, spaceStem);
+
+        // MARE video names commonly contain a date-and-time identifier such
+        // as 20240730_190910 -- useful as a broader final search term.
+        const timestampMatch = fileNameStem.match(/\d{8}[_ -]\d{6}/);
+
+        if (timestampMatch) {
+            const timestampValue = timestampMatch[0];
+            this._addUniqueSearchTerm(searchTerms, timestampValue.replace(/ /g, '_'));
+            this._addUniqueSearchTerm(searchTerms, timestampValue.replace(/_/g, ' '));
+        }
+
+        return searchTerms;
+    }
+
+    /**
+     * Adds one nonblank search term when the same term (case-insensitively)
+     * has not already been added -- ports `AddUniqueVideoSearchTerm`.
+     *
+     * @param {Array&lt;string>} searchTerms - Ordered destination array, mutated in place.
+     * @param {string} candidate - Possible search term.
+     * @returns {void}
+     */
+    _addUniqueSearchTerm(searchTerms, candidate) {
+        if (!candidate || !candidate.trim()) {
+            return;
+        }
+
+        const cleaned = candidate.trim();
+        const alreadyExists = searchTerms.some((existing) => existing.toLowerCase() === cleaned.toLowerCase());
+
+        if (!alreadyExists) {
+            searchTerms.push(cleaned);
+        }
+    }
+
+    /**
+     * Extracts the filename portion of a path, tolerating both `/` and `\`
+     * separators (saved database values may be old Windows paths, while
+     * Jellyfin's own paths use `/`) -- ports the `Path.GetFileName` calls
+     * in jellyfin_client.cs without relying on Node's `path` module, which
+     * only understands the host OS's separator.
+     *
+     * @param {string} value - Path or filename.
+     * @returns {string} Final path segment, or '' if value was blank.
+     */
+    _getFileNameFromPath(value) {
+        if (!value) {
+            return '';
+        }
+
+        const segments = value.replace(/\\/g, '/').split('/');
+        return segments[segments.length - 1] || '';
+    }
+
+    /**
+     * Strips a file extension from a filename -- ports the
+     * `Path.GetFileNameWithoutExtension` calls in jellyfin_client.cs.
+     *
+     * @param {string} fileName - Filename, with or without an extension.
+     * @returns {string} Filename without its extension.
+     */
+    _getFileNameStem(fileName) {
+        const lastDot = fileName.lastIndexOf('.');
+        return lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
+    }
+
+    /**
+     * Converts a video name into a conservative comparison key: strips a
+     * common video extension, treats spaces/underscores/hyphens as
+     * equivalent separators, removes remaining punctuation, and lowercases
+     * -- ports `NormalizeVideoMatchKey`.
+     *
+     * @param {string} value - Filename, filename stem, Jellyfin item name, or path basename.
+     * @returns {string} Lowercase alphanumeric comparison key.
+     */
+    _normalizeVideoMatchKey(value) {
+        let normalized = (value || '').trim().toLowerCase();
+        normalized = normalized.replace(/\.(mp4|mov|mkv|avi|m4v)$/i, '');
+        normalized = normalized.replace(/[\s_-]+/g, '');
+        normalized = normalized.replace(/[^a-z0-9]/g, '');
+        return normalized;
+    }
+
+    /**
+     * Extracts the common MARE date-and-time identifier (e.g.
+     * `20240730_190910`) from a video name -- ports `ExtractVideoTimestampKey`.
+     *
+     * @param {string} value - Filename, path basename, or combined Jellyfin item text.
+     * @returns {string} Fourteen-digit yyyymmddhhmmss key, or '' if absent.
+     */
+    _extractVideoTimestampKey(value) {
+        const match = (value || '').match(/(\d{8})[_ -](\d{6})/);
+        return match ? match[1] + match[2] : '';
+    }
+
+    /**
+     * Scores how closely one Jellyfin video item matches a saved database
+     * video location, checking both the Jellyfin display name and the
+     * basename of its server-side path -- ports `ScoreJellyfinVideoMatch`.
+     *
+     * @param {string} requestedVideoLocation - Filename or path stored in the database.
+     * @param {Object} item - Jellyfin video candidate (see {@link JellyfinRepository#_parseItem}).
+     * @returns {number} Score from 0 through 100.
+     */
+    _scoreVideoMatch(requestedVideoLocation, item) {
+        if (!item) {
+            return 0;
+        }
+
+        const requestedFileName = this._getFileNameFromPath(requestedVideoLocation) || requestedVideoLocation || '';
+        const requestedStem = this._getFileNameStem(requestedFileName);
+
+        const itemName = item.name || '';
+        const itemPathFileName = this._getFileNameFromPath(item.path || '');
+        const itemPathStem = this._getFileNameStem(itemPathFileName);
+
+        const requestedStemKey = this._normalizeVideoMatchKey(requestedStem);
+        const requestedFileKey = this._normalizeVideoMatchKey(requestedFileName);
+        const itemNameKey = this._normalizeVideoMatchKey(itemName);
+        const itemPathStemKey = this._normalizeVideoMatchKey(itemPathStem);
+        const itemPathFileKey = this._normalizeVideoMatchKey(itemPathFileName);
+
+        // Exact Jellyfin display-name match is the strongest, most common case.
+        if (requestedStemKey &amp;&amp; requestedStemKey === itemNameKey) {
+            return 100;
+        }
+
+        // Exact match against the filename represented by Jellyfin's source path.
+        if (requestedStemKey &amp;&amp; requestedStemKey === itemPathStemKey) {
+            return 98;
+        }
+
+        // Exact full filename match is strong when the path contains an extension.
+        if (requestedFileKey &amp;&amp; requestedFileKey === itemPathFileKey) {
+            return 96;
+        }
+
+        // Jellyfin may append additional text to an otherwise exact item title.
+        if (requestedStemKey &amp;&amp; itemNameKey.includes(requestedStemKey)) {
+            return 85;
+        }
+
+        // Containment in the source path filename is slightly weaker.
+        if (requestedStemKey &amp;&amp; itemPathStemKey.includes(requestedStemKey)) {
+            return 82;
+        }
+
+        // The saved database value may contain a suffix absent from Jellyfin.
+        if (itemNameKey &amp;&amp; requestedStemKey.includes(itemNameKey)) {
+            return 75;
+        }
+
+        // Matching only the timestamp is a useful fallback, but weaker than
+        // an exact or contained filename match.
+        const requestedTimestamp = this._extractVideoTimestampKey(requestedStem);
+        const itemTimestamp = this._extractVideoTimestampKey(`${itemName} ${itemPathFileName}`);
+
+        if (requestedTimestamp &amp;&amp; requestedTimestamp === itemTimestamp) {
+            return 70;
+        }
+
+        return 0;
+    }
+
+    /**
+     * Parses a Jellyfin item-list response envelope.
+     *
+     * @param {Object} data - Decoded Jellyfin response body.
+     * @returns {Array&lt;Object>} Parsed items (see {@link JellyfinRepository#_parseItem}).
+     */
+    _parseItemsResponse(data) {
+        const rawItems = (data &amp;&amp; data.Items) || [];
+        return rawItems.map((rawItem) => this._parseItem(rawItem));
+    }
+
+    /**
+     * Normalizes one Jellyfin item DTO into the repository's internal item
+     * shape.
+     *
+     * `path` (Jellyfin's server-side filesystem path) is carried through
+     * here both because internal logic -- e.g. matching a database
+     * `video_source` value against a Jellyfin item, the same job the old
+     * `VideoSourceResolver` did -- needs it, and because it is deliberately
+     * included in the public `JellyfinItem` OpenAPI schema too.
+     *
+     * @param {Object} rawItem - Raw Jellyfin item DTO.
+     * @returns {Object} `{ id, name, type, path, isFolder, mediaType, runtimeTicks, childCount }`.
+     */
+    _parseItem(rawItem) {
+        return {
+            id: String(rawItem.Id || ''),
+            name: String(rawItem.Name || ''),
+            type: String(rawItem.Type || ''),
+            path: String(rawItem.Path || ''),
+            isFolder: Boolean(rawItem.IsFolder),
+            mediaType: String(rawItem.MediaType || ''),
+            runtimeTicks: rawItem.RunTimeTicks ?? null,
+            childCount: rawItem.ChildCount ?? null,
+        };
+    }
+
+    /**
+     * Normalizes a Jellyfin PlaybackInfo response down to the fields MARP
+     * needs to decide how to stream an item, build a quality menu, and
+     * negotiate transcoding.
+     *
+     * @param {Object} data - Decoded Jellyfin PlaybackInfo response body.
+     * @returns {Object} `{ playSessionId, errorCode, mediaSources }`.
+     */
+    _parsePlaybackInfo(data) {
+        const rawMediaSources = (data &amp;&amp; data.MediaSources) || [];
+
+        return {
+            playSessionId: String((data &amp;&amp; data.PlaySessionId) || ''),
+            errorCode: String((data &amp;&amp; data.ErrorCode) || ''),
+            mediaSources: rawMediaSources.map((source) => this._parseMediaSource(source)),
+        };
+    }
+
+    /**
+     * Normalizes one Jellyfin MediaSource DTO, including the bitrate/video
+     * dimensions needed to build a quality menu and the direct/transcode
+     * URLs Jellyfin may return once a specific playback mode is negotiated.
+     *
+     * @param {Object} source - Raw Jellyfin MediaSource DTO.
+     * @returns {Object} Parsed media source.
+     */
+    _parseMediaSource(source) {
+        const rawMediaStreams = (source &amp;&amp; source.MediaStreams) || [];
+        const videoStream = rawMediaStreams.find((stream) => stream.Type === 'Video');
+
+        return {
+            id: String(source.Id || ''),
+            container: String(source.Container || ''),
+            bitrate: source.Bitrate ?? null,
+            width: videoStream ? videoStream.Width ?? null : null,
+            height: videoStream ? videoStream.Height ?? null : null,
+            supportsDirectPlay: Boolean(source.SupportsDirectPlay),
+            supportsDirectStream: Boolean(source.SupportsDirectStream),
+            supportsTranscoding: Boolean(source.SupportsTranscoding),
+            directStreamUrl: String(source.DirectStreamUrl || ''),
+            transcodingUrl: String(source.TranscodingUrl || ''),
+        };
+    }
+}
+
+module.exports = new JellyfinRepository();
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+    
+    
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/polyfill.js"></script>
+<script src="scripts/linenumber.js"></script>
+
+<script src="scripts/search.js" defer></script>
+
+
+<script src="scripts/collapse.js" defer></script>
+
+
+</body>
+</html>

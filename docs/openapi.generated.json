@@ -13,23 +13,55 @@
   ],
   "tags": [
     {
-      "name": "Health",
-      "description": "Service status and diagnostics"
+      "name": "Documentation",
+      "description": "Retrieve the generated OpenAPI specification (as JSON) or open the internal developer (JSDoc) documentation site."
     },
     {
-      "name": "Tasks",
-      "description": "Task read operations"
+      "name": "V1 · Health",
+      "description": "Service status and diagnostics."
     },
     {
-      "name": "Observations",
+      "name": "V1 · Users",
+      "description": "Create, update, and look up user accounts by id or name."
+    },
+    {
+      "name": "V1 · Projects",
+      "description": "Create, update, and look up MARP projects by id or name, including projects a given user belongs to."
+    },
+    {
+      "name": "V1 · Sessions",
+      "description": "Create, update, and look up dive/survey sessions, including sessions scoped to a user within a project."
+    },
+    {
+      "name": "V1 · Species",
+      "description": "Create, update, and look up species records and their model_species linkage records used for ML model training/evaluation."
+    },
+    {
+      "name": "V1 · Tasks",
+      "description": "Create, update, look up, and delete tasks."
+    },
+    {
+      "name": "V1 · Keyframes",
+      "description": "Bulk-create, look up, update, and delete keyframe records associated with observations."
+    },
+    {
+      "name": "V1 · Observations",
       "description": "Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates."
     },
     {
-      "name": "Schema",
+      "name": "V1 · Videos",
+      "description": "Observation queries scoped to a specific video_source, including cross-project video summaries and per-video observation listings."
+    },
+    {
+      "name": "V1 · MachineLearning",
+      "description": "ML pipeline resources: datasets, dataset-observation links, ML models, training runs, epochs, and metrics (summary and curve) records."
+    },
+    {
+      "name": "V1 · Schema",
       "description": "Database schema introspection endpoints for tables, views, columns, constraints, indexes, and relationships in the public schema."
     },
     {
-      "name": "Jellyfin",
+      "name": "V2 · Jellyfin",
       "description": "V2 endpoints proxying the Jellyfin media server: library/folder browsing, search-by-name, and playback resolution. Jellyfin itself is never exposed to API consumers -- MARP holds the Jellyfin credentials and session, and the stream endpoint returns a short-lived redirect rather than requiring callers to know Jellyfin exists."
     }
   ],
@@ -1753,6 +1785,21 @@
         "type": "object",
         "description": "Parsed scrubbing-preview tile metadata for one item. Each tile image URL already embeds its own short-lived access token, the same signed-URL pattern used for stream/image URLs, and is directly fetchable by a caller.",
         "properties": {
+          "width": {
+            "type": "integer",
+            "example": 320,
+            "description": "Tile-sheet generation width actually used -- either the width requested, or the auto-selected largest available width when none was requested."
+          },
+          "availableWidths": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              320
+            ],
+            "description": "Every tile-sheet width Jellyfin has actually generated for this item. Pass one of these as the width query parameter on a future request to pick a specific one deliberately."
+          },
           "thumbnailWidth": {
             "type": "integer",
             "example": 320,
@@ -3562,7 +3609,7 @@
         "summary": "Fetch all tasks",
         "description": "Returns every task row currently available in storage.",
         "tags": [
-          "Tasks"
+          "V1 · Tasks"
         ],
         "responses": {
           "200": {
@@ -3589,7 +3636,7 @@
         "summary": "Create a new task",
         "description": "Creates a new task record and returns the inserted row.",
         "tags": [
-          "Tasks"
+          "V1 · Tasks"
         ],
         "requestBody": {
           "required": true,
@@ -3621,7 +3668,7 @@
         "summary": "Update an existing task",
         "description": "Updates an existing task record by its id field.",
         "tags": [
-          "Tasks"
+          "V1 · Tasks"
         ],
         "requestBody": {
           "required": true,
@@ -3666,7 +3713,7 @@
         "summary": "Fetch a task by id",
         "description": "Returns a single task record, or null if not found.",
         "tags": [
-          "Tasks"
+          "V1 · Tasks"
         ],
         "parameters": [
           {
@@ -3702,7 +3749,7 @@
         "summary": "Delete a task",
         "description": "Deletes a task record by id.",
         "tags": [
-          "Tasks"
+          "V1 · Tasks"
         ],
         "parameters": [
           {
@@ -3737,7 +3784,7 @@
         "summary": "Retrieve active database name",
         "description": "Returns metadata identifying the current configured database as a single-element array containing only a name field (never the full metaInfo row).",
         "tags": [
-          "Health"
+          "V1 · Health"
         ],
         "responses": {
           "200": {
@@ -3756,7 +3803,7 @@
         "summary": "Set the active database name",
         "description": "Sets the configured database name on the singleton metaInfo row. Upserts: if the metaInfo table already has a row, its name column is updated in place; if the table is empty, a new row is created. This affects the single shared configuration record also read by GET /metaInfo/dbName. Unlike the GET, a database failure here is not swallowed to an empty/placeholder result -- it responds with a standard 500 error envelope so callers can tell the write did not happen.",
         "tags": [
-          "Health"
+          "V1 · Health"
         ],
         "requestBody": {
           "required": true,
@@ -3804,7 +3851,7 @@
         "summary": "Bulk-create keyframe records",
         "description": "Creates one or more keyframe records in a single transaction. CRITICAL: unlike most other POST routes, the request body itself must be a JSON array of keyframe objects (not wrapped in a named field) — only the observation_id, x, y, width, height, subset, type, comname, and framenum fields are copied from each input object; any others are ignored. If the bulk insert fails, the transaction is rolled back and the failure is only logged, so the response resolves to an empty array `[]` rather than an error — callers cannot distinguish \"nothing to insert\" from \"insert failed.\"",
         "tags": [
-          "Keyframes"
+          "V1 · Keyframes"
         ],
         "requestBody": {
           "required": true,
@@ -3841,7 +3888,7 @@
         "summary": "Fetch a keyframe by id",
         "description": "Returns a single keyframe record by keyframe_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Keyframes"
+          "V1 · Keyframes"
         ],
         "parameters": [
           {
@@ -3877,7 +3924,7 @@
         "summary": "Update an existing keyframe",
         "description": "Updates an existing keyframe record by keyframe_id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Keyframes"
+          "V1 · Keyframes"
         ],
         "parameters": [
           {
@@ -3935,7 +3982,7 @@
         "summary": "Delete a keyframe",
         "description": "Deletes a keyframe record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.",
         "tags": [
-          "Keyframes"
+          "V1 · Keyframes"
         ],
         "parameters": [
           {
@@ -3963,7 +4010,7 @@
         "summary": "Retrieve public table metadata",
         "description": "Returns one object per base table in the public schema, including table comments, row-estimate metadata, all columns with data types and defaults, primary keys, foreign keys, unique constraints, check constraints, and indexes. Intended for building schema browsers, table grids, query builders, and relationship explorers.",
         "tags": [
-          "Schema"
+          "V1 · Schema"
         ],
         "responses": {
           "200": {
@@ -3990,7 +4037,7 @@
         "summary": "Retrieve public view metadata",
         "description": "Returns one object per public view (including materialized views), including SQL definition text, updatability flag, column metadata, and dependencies on other public tables/views. Intended for building view browsers and dependency visualizations.",
         "tags": [
-          "Schema"
+          "V1 · Schema"
         ],
         "responses": {
           "200": {
@@ -4017,7 +4064,7 @@
         "summary": "Retrieve public foreign-key relationships",
         "description": "Returns normalized foreign-key relationships between public-schema tables, including source/target columns and ON UPDATE / ON DELETE actions. Intended for relationship graphs and join-aware UI tooling.",
         "tags": [
-          "Schema"
+          "V1 · Schema"
         ],
         "responses": {
           "200": {
@@ -4044,7 +4091,7 @@
         "summary": "Fetch all users",
         "description": "Returns every user record.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "responses": {
           "200": {
@@ -4068,7 +4115,7 @@
         "summary": "Fetch a user by id",
         "description": "Returns a single user record by user_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Registered under the plural /users path (rather than /user/:id) to avoid colliding with the existing name-based lookup at /user/{name}.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "parameters": [
           {
@@ -4106,7 +4153,7 @@
         "summary": "Fetch a user by name",
         "description": "Returns the user record(s) matching an exact display name. Resolves to an empty array both when no user has that name and when the underlying database query fails.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "parameters": [
           {
@@ -4141,7 +4188,7 @@
         "summary": "Fetch a user's display name by id",
         "description": "Returns the display name of the user matching the given id. CRITICAL: if no user matches the given ID, this can throw / return an unhandled error (HTTP 500 via the framework's default error handling, or an unhandled rejection since the route has no .catch()), because the repository accesses a property on the query result without checking whether it's null first.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "parameters": [
           {
@@ -4173,7 +4220,7 @@
         "summary": "Create a new user",
         "description": "Creates a new user record.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "requestBody": {
           "required": true,
@@ -4202,7 +4249,7 @@
         "summary": "Update an existing user",
         "description": "Updates an existing user record by its user_id field.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "requestBody": {
           "required": true,
@@ -4229,7 +4276,7 @@
         "summary": "Create a new user by name only",
         "description": "Creates a new user record from a name alone, without a request body.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "parameters": [
           {
@@ -4261,7 +4308,7 @@
         "summary": "Delete a user",
         "description": "Deletes a user record by user_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.",
         "tags": [
-          "Users"
+          "V1 · Users"
         ],
         "parameters": [
           {
@@ -4289,7 +4336,7 @@
         "summary": "Fetch all projects",
         "description": "Returns every project record.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "responses": {
           "200": {
@@ -4313,7 +4360,7 @@
         "summary": "Fetch projects belonging to a user",
         "description": "Returns every project that has at least one session belonging to the given user.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "parameters": [
           {
@@ -4348,7 +4395,7 @@
         "summary": "Fetch a project by name",
         "description": "Returns the project record(s) matching an exact project name. CRITICAL: unlike other repository methods in this codebase, a database failure here resolves with the raw JavaScript Error object itself (not null, not an array, not an ErrorResponse-shaped body) — so a failure response will not match a typical error schema and callers should not rely on a consistent error shape from this endpoint.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "parameters": [
           {
@@ -4383,7 +4430,7 @@
         "summary": "Fetch a project by id",
         "description": "Returns a single project record by project_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "parameters": [
           {
@@ -4419,7 +4466,7 @@
         "summary": "Delete a project",
         "description": "Deletes a project record by id.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "parameters": [
           {
@@ -4444,7 +4491,7 @@
         "summary": "Create a new project",
         "description": "Creates a new project record.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "requestBody": {
           "required": true,
@@ -4473,7 +4520,7 @@
         "summary": "Update an existing project",
         "description": "Updates an existing project record by its project_id field.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "requestBody": {
           "required": true,
@@ -4500,7 +4547,7 @@
         "summary": "Create a new project by name only",
         "description": "Creates a new project record from a name alone, without a request body.",
         "tags": [
-          "Projects"
+          "V1 · Projects"
         ],
         "parameters": [
           {
@@ -4532,7 +4579,7 @@
         "summary": "Fetch all sessions",
         "description": "Returns every session record, each including its associated user.",
         "tags": [
-          "Sessions"
+          "V1 · Sessions"
         ],
         "responses": {
           "200": {
@@ -4556,7 +4603,7 @@
         "summary": "Fetch a session by id",
         "description": "Returns a single session record by session_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Sessions"
+          "V1 · Sessions"
         ],
         "parameters": [
           {
@@ -4592,7 +4639,7 @@
         "summary": "Delete a session",
         "description": "Deletes a session record by id.",
         "tags": [
-          "Sessions"
+          "V1 · Sessions"
         ],
         "parameters": [
           {
@@ -4617,7 +4664,7 @@
         "summary": "Fetch sessions for a user within a project",
         "description": "Returns sessions matching the given user and project, each including its associated user and project.",
         "tags": [
-          "Sessions"
+          "V1 · Sessions"
         ],
         "parameters": [
           {
@@ -4661,7 +4708,7 @@
         "summary": "Create a new session",
         "description": "Creates a new session record.",
         "tags": [
-          "Sessions"
+          "V1 · Sessions"
         ],
         "requestBody": {
           "required": true,
@@ -4690,7 +4737,7 @@
         "summary": "Update an existing session",
         "description": "Updates an existing session record by its session_id field.",
         "tags": [
-          "Sessions"
+          "V1 · Sessions"
         ],
         "requestBody": {
           "required": true,
@@ -4717,7 +4764,7 @@
         "summary": "Create a session, creating its project and processor user if needed",
         "description": "Convenience endpoint that looks up or creates the named processor (user) and project, then creates a new session linking them with the given line, dive, and type. All identifying values are passed as path segments rather than a request body.",
         "tags": [
-          "Sessions"
+          "V1 · Sessions"
         ],
         "parameters": [
           {
@@ -4794,7 +4841,7 @@
         "summary": "Fetch all species",
         "description": "Returns every species record used for taxonomy, GUI display configuration, and ML model training labels. An empty array may indicate either that no records exist or that the database query failed.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "responses": {
           "200": {
@@ -4816,7 +4863,7 @@
         "summary": "Create a new species record",
         "description": "Creates a new species record. The caller must supply a unique taxserial (see the species_taxserial_idx unique index in model/species.model.js). A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "requestBody": {
           "required": true,
@@ -4850,7 +4897,7 @@
         "summary": "Fetch a species by common name",
         "description": "Returns the species record whose comname matches the supplied value, case-insensitively. Returns null both when no species matches and when the database query fails.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "parameters": [
           {
@@ -4889,7 +4936,7 @@
         "summary": "Fetch a species by id",
         "description": "Returns a single species record by id, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "parameters": [
           {
@@ -4929,7 +4976,7 @@
         "summary": "Update an existing species record",
         "description": "Updates an existing species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "parameters": [
           {
@@ -4979,7 +5026,7 @@
         "summary": "Delete a species record",
         "description": "Deletes a species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "parameters": [
           {
@@ -5007,7 +5054,7 @@
         "summary": "Create a model-species linkage record",
         "description": "Creates a model_species join record linking an ML model to a species, using the request body directly as the record to insert. Note that when the insert fails the response body is an ErrorResponse-shaped object, but the endpoint currently still responds with HTTP 200 rather than an error status.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "requestBody": {
           "required": true,
@@ -5083,7 +5130,7 @@
         "summary": "Fetch a model_species record by id",
         "description": "Returns a single model_species join record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "parameters": [
           {
@@ -5119,7 +5166,7 @@
         "summary": "Update an existing model_species record",
         "description": "Updates an existing model_species join record by ID. The request body fields are used directly (unwrapped), matching the POST /model_species convention. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "parameters": [
           {
@@ -5169,7 +5216,7 @@
         "summary": "Delete a model_species record",
         "description": "Deletes a model_species join record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Species"
+          "V1 · Species"
         ],
         "parameters": [
           {
@@ -5197,7 +5244,7 @@
         "summary": "Fetch all ML models",
         "description": "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "responses": {
           "200": {
@@ -5224,7 +5271,7 @@
         "summary": "Fetch all datasets",
         "description": "Returns every dataset record. Database errors are swallowed and resolve to an empty array, so an empty result doesn't distinguish \"no datasets\" from \"query failed.\"",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "responses": {
           "200": {
@@ -5246,7 +5293,7 @@
         "summary": "Create a new dataset",
         "description": "Creates a new dataset record. CRITICAL: a database failure here resolves to null rather than rejecting, so the route's .catch() handler is effectively dead code — a failed insert currently still responds with HTTP 200 and a null body rather than an error status.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -5284,7 +5331,7 @@
         "summary": "Fetch a dataset by id",
         "description": "Returns a single dataset record, or null if not found. Unlike getDatasets, a database error here does actually reject/throw, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5320,7 +5367,7 @@
         "summary": "Update an existing dataset",
         "description": "Updates an existing dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5370,7 +5417,7 @@
         "summary": "Delete a dataset",
         "description": "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5398,7 +5445,7 @@
         "summary": "Create a new ML model",
         "description": "Creates a new ML model record. Has a real .catch() handler that responds with HTTP 500 on failure.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -5432,7 +5479,7 @@
         "summary": "Update an existing ML model",
         "description": "Updates an existing ML model record by id. Returns the updated MlModel, or null if no row matched the given id (logged as a warning rather than an error in that case).",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5482,7 +5529,7 @@
         "summary": "Fetch an ML model by id",
         "description": "Returns a single ML model record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5518,7 +5565,7 @@
         "summary": "Delete an ML model",
         "description": "Deletes an ML model record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a model cascades to delete its training_runs (see model/ml_models.model.js).",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5546,7 +5593,7 @@
         "summary": "Create a new training run",
         "description": "Creates a new training run record.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -5580,7 +5627,7 @@
         "summary": "Update an existing training run",
         "description": "Updates an existing training run record by id. Returns the updated TrainingRun, or null if no row matched.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5630,7 +5677,7 @@
         "summary": "Fetch a training run by id",
         "description": "Returns a single training run record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5666,7 +5713,7 @@
         "summary": "Delete a training run",
         "description": "Deletes a training run record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a training run cascades to delete its epochs, metrics_summary, hyperparameters, and artifacts (see model/training_runs.model.js).",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5694,7 +5741,7 @@
         "summary": "Create a new metrics summary",
         "description": "Creates a new metrics_summary record for a training run and dataset split.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -5728,7 +5775,7 @@
         "summary": "Fetch a metrics_summary by id",
         "description": "Returns a single metrics_summary record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5764,7 +5811,7 @@
         "summary": "Update an existing metrics_summary",
         "description": "Updates an existing metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5814,7 +5861,7 @@
         "summary": "Delete a metrics_summary",
         "description": "Deletes a metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a metrics_summary cascades to delete its metrics_curves (see model/metrics_summary.model.js).",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5842,7 +5889,7 @@
         "summary": "Create a single metrics curve point",
         "description": "Creates a single metrics_curve point tied to a metrics_summary record.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -5876,7 +5923,7 @@
         "summary": "Fetch a metrics_curve by id",
         "description": "Returns a single metrics_curve record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5912,7 +5959,7 @@
         "summary": "Update an existing metrics_curve",
         "description": "Updates an existing metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5962,7 +6009,7 @@
         "summary": "Delete a metrics_curve",
         "description": "Deletes a metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -5990,7 +6037,7 @@
         "summary": "Bulk-create metrics curve records",
         "description": "Bulk-inserts metrics_curve records. CRITICAL: unlike every sibling create/bulk route, this method takes the raw Express req/res directly rather than an already-extracted body field — the request body must be a raw JSON array of MetricsCurve fields (req.body itself is passed straight to Sequelize's bulkCreate). CRITICAL: on a database failure this resolves to { error: err.message } at HTTP 200 rather than rejecting or returning a non-200 status; the route has no .catch() at all.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -6032,7 +6079,7 @@
         "summary": "Create a new epoch record",
         "description": "Creates a new epoch record for a training run.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -6066,7 +6113,7 @@
         "summary": "Update an existing epoch record",
         "description": "Updates an existing epoch record by id. Returns the updated Epoch, or null if no row matched.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -6116,7 +6163,7 @@
         "summary": "Fetch an epoch by id",
         "description": "Returns a single epoch record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -6152,7 +6199,7 @@
         "summary": "Delete an epoch",
         "description": "Deletes an epoch record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -6180,7 +6227,7 @@
         "summary": "Create a new dataset-observation link",
         "description": "Creates a new dataset_observation join record linking a dataset to an observation.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -6214,7 +6261,7 @@
         "summary": "Fetch a dataset_observation by id",
         "description": "Returns a single dataset_observation record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -6250,7 +6297,7 @@
         "summary": "Update an existing dataset_observation",
         "description": "Updates an existing dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -6300,7 +6347,7 @@
         "summary": "Delete a dataset_observation",
         "description": "Deletes a dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "parameters": [
           {
@@ -6328,7 +6375,7 @@
         "summary": "Bulk-create dataset-observation links",
         "description": "Bulk-inserts dataset_observation records. The response (per the route code) is { inserted: <count> }, NOT the created records. Uses ignoreDuplicates: true internally, which may not reliably suppress unique-constraint errors on Postgres depending on Sequelize version, so a 500 is still possible on duplicate observation_id values despite the flag.",
         "tags": [
-          "MachineLearning"
+          "V1 · MachineLearning"
         ],
         "requestBody": {
           "required": true,
@@ -6378,7 +6425,7 @@
         "summary": "Retrieve observations for a video",
         "description": "Returns observations whose video_source exactly matches the supplied videoName. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without keyframes are excluded. An empty array may indicate either that no records matched or that the database query failed.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6413,8 +6460,8 @@
         "summary": "Retrieve video summaries for a project",
         "description": "Returns one summary row for each distinct combination of video_source and videoLocation associated with sessions in the specified project. Each row includes the number of distinct observation common names, the number of distinct sessions, and representative dive, line, and session type values selected using MIN aggregation. Results are ordered by the representative dive and line in ascending order. Videos without a matching session in the project are excluded. An empty array may mean that no matching observations were found or that the database query failed.",
         "tags": [
-          "Observations",
-          "Videos"
+          "V1 · Observations",
+          "V1 · Videos"
         ],
         "parameters": [
           {
@@ -6446,8 +6493,8 @@
         "summary": "Retrieve video observations filtered by common name",
         "description": "Returns observations whose video_source exactly matches videoName and whose comname is included in comnameList. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. The current repository returns an empty array both when no observations match and when the database query fails.",
         "tags": [
-          "Observations",
-          "Videos"
+          "V1 · Observations",
+          "V1 · Videos"
         ],
         "parameters": [
           {
@@ -6496,9 +6543,9 @@
         "summary": "Retrieve observations for a video within a project",
         "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Each observation includes its full associated session object (the session join has no attribute restriction) in addition to keyframes. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.",
         "tags": [
-          "Observations",
-          "Projects",
-          "Videos"
+          "V1 · Observations",
+          "V1 · Projects",
+          "V1 · Videos"
         ],
         "parameters": [
           {
@@ -6542,7 +6589,7 @@
         "summary": "Retrieve observations with keyframes by common name",
         "description": "Returns observations whose comname matches one of the supplied common names. The comnameList query parameter must contain a comma-separated list of URL-encoded common names. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. An empty array may indicate that no observations matched or that the repository query failed.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6581,7 +6628,7 @@
         "summary": "Fetch distinct common names that have keyframes",
         "description": "Returns every distinct comname value found on observations that have at least one associated keyframe. This route is registered with `app.use` rather than `app.get`, so it technically responds to any HTTP method, not just GET.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "responses": {
           "200": {
@@ -6605,7 +6652,7 @@
         "summary": "Fetch per-user dashboard activity data",
         "description": "Returns per-user, per-date observation activity counts for a dashboard view. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. sessions and projects are always 0 in the current implementation; only the observations count is actually populated.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6646,7 +6693,7 @@
         "summary": "Fetch estimated recording time by project, date, and user",
         "description": "Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6687,7 +6734,7 @@
         "summary": "Fetch all observations",
         "description": "Returns all observation records available through the V1 API.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "responses": {
           "200": {
@@ -6711,7 +6758,7 @@
         "summary": "Fetch latest video info for a session",
         "description": "Returns the most recent video metadata associated with a session.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6736,7 +6783,7 @@
         "summary": "Fetch the observation with the highest observation_id for a video",
         "description": "Returns the observation record(s) matching the maximum observation_id for the given video_source. Note that despite the name, the repository implementation returns an array of matching observation records (from a findAll query) rather than a single integer id.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6771,7 +6818,7 @@
         "summary": "Update an observation's count field",
         "description": "Updates the count field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6821,7 +6868,7 @@
         "summary": "Update an observation's size field",
         "description": "Updates the coarsesize field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6872,7 +6919,7 @@
         "summary": "Fetch observations for a session",
         "description": "Returns every observation belonging to a session, including associated keyframes when present.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6907,7 +6954,7 @@
         "summary": "Create a new observation",
         "description": "Creates a new observation record. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "requestBody": {
           "required": true,
@@ -6936,7 +6983,7 @@
         "summary": "Update an existing observation",
         "description": "Updates an existing observation by its observation_id field. If comname changes, the new value is propagated to every keyframe associated with the same observation, all within one transaction. Unlike most write methods in this codebase, this one does NOT swallow errors: if the observation_id doesn't exist or the update fails, the transaction is rolled back and the error is rethrown, resulting in an HTTP 500 by default (there is no explicit .catch() on this route, so Express's default error handling applies).",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "requestBody": {
           "required": true,
@@ -6963,7 +7010,7 @@
         "summary": "Fetch an observation by id",
         "description": "Returns a single observation record by observation_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -6999,7 +7046,7 @@
         "summary": "Delete an observation",
         "description": "Deletes an observation record by its observation_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.",
         "tags": [
-          "Observations"
+          "V1 · Observations"
         ],
         "parameters": [
           {
@@ -7027,7 +7074,7 @@
         "summary": "List top-level Jellyfin libraries",
         "description": "Returns the top-level library/folder roots visible to MARP's shared Jellyfin service account. This is the entry point for browsing -- pass any returned item's id to GET /api/v2/jellyfin/items/{id}/children to go one level deeper.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7071,7 +7118,7 @@
         "summary": "List child items under a Jellyfin folder/library",
         "description": "Returns one folder level of children under the given Jellyfin item id -- not recursive. Both libraries (from GET /api/v2/jellyfin/libraries) and folders returned here can be passed back in as the parent id to browse further.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7127,7 +7174,7 @@
         "summary": "Search Jellyfin video items by name",
         "description": "Searches recursively across the whole Jellyfin library for video items matching the given text -- this is the resolve-by-name path for turning a database video_source value (or any free-text title/filename fragment) into a playable Jellyfin item.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7193,7 +7240,7 @@
         "summary": "Get the playback quality menu for a Jellyfin item",
         "description": "Capability-probes the item via PlaybackInfo and derives a quality menu (Auto, Original/Direct, and transcode tiers) from its actual source bitrate/resolution -- a tier only appears if it is genuinely below source quality. Pass a returned option's mode (and maxBitrate/maxWidth/maxHeight for a Transcode tier) to GET /items/{id}/stream to play it.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7249,7 +7296,7 @@
         "summary": "Resolve and redirect to a playable Jellyfin stream URL",
         "description": "Negotiates playback for the given item via Jellyfin's PlaybackInfo endpoint (which also confirms the item exists and is playable) and responds with an HTTP redirect straight to Jellyfin's stream URL. MARP never proxies the video bytes itself -- the caller's HTTP client follows the redirect and connects to Jellyfin directly. mode=Original (default) and mode=Auto redirect to Jellyfin's direct-stream URL (Auto currently behaves identically to Original -- there is no adaptive-quality decision procedure yet). mode=Transcode negotiates a real constrained transcode via a DeviceProfile and redirects to Jellyfin's own negotiated transcodingUrl (an HLS master.m3u8, not the static direct-stream URL) -- use maxBitrate/maxWidth/maxHeight from a playback-options Transcode tier to pick a specific quality. The response also carries the negotiated mediaSourceId/playSessionId/playMethod as headers -- confirmed against Jellyfin's own live session state that reporting playback/progress or playback/stopped with anything other than the exact playSessionId this call issued is silently ignored (Jellyfin never updates its PlayState), so a caller MUST capture these headers to use those endpoints correctly.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7371,7 +7418,7 @@
         "summary": "Resolve a saved video_source value to a Jellyfin item",
         "description": "Runs the fuzzy resolver: builds several search-term variants from the given value (raw, filename, filename stem, underscore/space variants, an extracted MARE timestamp), searches Jellyfin with each, and scores every candidate by how closely its Jellyfin name or server-side path filename matches. Returns the single best match, or 404 if the best score is below minScore -- this rejects a weak match rather than silently resolving to the wrong video.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7440,7 +7487,7 @@
         "summary": "Report that playback has started or resumed",
         "description": "Relays a playback-started report to Jellyfin so its session/transcode lifecycle and \"Now Playing\" state stay accurate. MARP stores no playback session state itself -- carry mediaSourceId/playSessionId forward from the earlier stream/playback-options response.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7496,7 +7543,7 @@
         "summary": "Report current playback position/pause state",
         "description": "Relays a playback-progress report to Jellyfin. Should be called periodically during playback so Jellyfin's transcode-session lifecycle and resume position stay accurate. MARP stores no playback session state itself.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7552,7 +7599,7 @@
         "summary": "Report that playback has stopped",
         "description": "Relays a playback-stopped report to Jellyfin so it can clean up any active transcode session. MARP stores no playback session state itself -- carry mediaSourceId/playSessionId forward from the earlier stream/playback-options response.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7608,7 +7655,7 @@
         "summary": "Resolve and redirect to a Jellyfin item image",
         "description": "Builds a Jellyfin image URL (e.g. Primary poster, Thumb) for the item and responds with an HTTP redirect to it, following the same signed-redirect pattern as /stream -- MARP never proxies the image bytes itself.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7693,9 +7740,9 @@
     "/v2/jellyfin/items/{id}/trickplay": {
       "get": {
         "summary": "Get scrubbing-preview tile metadata for a Jellyfin item",
-        "description": "Fetches and parses Jellyfin's trickplay tile playlist for the item and returns structured metadata plus tile image URLs, so callers can build a scrubbing preview without knowing Jellyfin's playlist format. Each tile URL already embeds its own access token and is directly fetchable. Supplying runTimeTicks lets MARP probe for additional tile sheets some Jellyfin servers omit from the playlist itself.",
+        "description": "Fetches and parses Jellyfin's trickplay tile playlist for the item and returns structured metadata plus tile image URLs, so callers can build a scrubbing preview without knowing Jellyfin's playlist format. width is Jellyfin's tile-generation width, not a resize hint -- Jellyfin only has data for whichever width(s) it pre-generated, so this endpoint always looks up the item's actually-available widths first: omit width to auto-select the largest one (both the resolved width and the full availableWidths list are returned either way), or supply a specific one from a prior response's availableWidths -- an unavailable width returns 400 naming what IS available, rather than Jellyfin's own generic not-found. Each tile URL already embeds its own access token and is directly fetchable. Supplying runTimeTicks lets MARP probe for additional tile sheets some Jellyfin servers omit from the playlist itself.",
         "tags": [
-          "Jellyfin"
+          "V2 · Jellyfin"
         ],
         "parameters": [
           {
@@ -7710,11 +7757,11 @@
           {
             "in": "query",
             "name": "width",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "integer"
             },
-            "description": "Requested tile-sheet width -- must match a width Jellyfin actually generated trickplay data for."
+            "description": "Requested tile-sheet width. Omit to auto-select the largest width Jellyfin actually generated for this item."
           },
           {
             "in": "query",

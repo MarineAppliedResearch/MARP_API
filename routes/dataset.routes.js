@@ -34,7 +34,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch all ML models',
         description:
             "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         responses: {
             200: {
                 description: 'MlModel list returned successfully.',
@@ -62,7 +62,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch all datasets',
         description:
             'Returns every dataset record. Database errors are swallowed and resolve to an empty array, so an empty result doesn\'t distinguish "no datasets" from "query failed."',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         responses: {
             200: {
                 description: 'Dataset list returned successfully.',
@@ -85,7 +85,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch a dataset by id',
         description:
             "Returns a single dataset record, or null if not found. Unlike getDatasets, a database error here does actually reject/throw, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset to fetch.' },
         ],
@@ -114,7 +114,7 @@ function registerDatasetRoutes(app) {
         summary: 'Update an existing dataset',
         description:
             "Updates an existing dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset to update.' },
         ],
@@ -145,7 +145,7 @@ function registerDatasetRoutes(app) {
         summary: 'Delete a dataset',
         description:
             "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset to delete.' },
         ],
@@ -165,7 +165,7 @@ function registerDatasetRoutes(app) {
         summary: 'Create a new dataset',
         description:
             "Creates a new dataset record. CRITICAL: a database failure here resolves to null rather than rejecting, so the route's .catch() handler is effectively dead code — a failed insert currently still responds with HTTP 200 and a null body rather than an error status.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/DatasetCreateRequest' } } },
@@ -196,7 +196,7 @@ function registerDatasetRoutes(app) {
         path: '/api/model',
         summary: 'Create a new ML model',
         description: 'Creates a new ML model record. Has a real .catch() handler that responds with HTTP 500 on failure.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/MlModelCreateRequest' } } },
@@ -221,7 +221,7 @@ function registerDatasetRoutes(app) {
         summary: 'Update an existing ML model',
         description:
             'Updates an existing ML model record by id. Returns the updated MlModel, or null if no row matched the given id (logged as a warning rather than an error in that case).',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the ML model to update.' },
         ],
@@ -253,7 +253,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch an ML model by id',
         description:
             "Returns a single ML model record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the ML model to fetch.' },
         ],
@@ -282,7 +282,7 @@ function registerDatasetRoutes(app) {
         summary: 'Delete an ML model',
         description:
             "Deletes an ML model record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a model cascades to delete its training_runs (see model/ml_models.model.js).",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the ML model to delete.' },
         ],
@@ -305,7 +305,7 @@ function registerDatasetRoutes(app) {
         path: '/api/training_run',
         summary: 'Create a new training run',
         description: 'Creates a new training run record.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/TrainingRunCreateRequest' } } },
@@ -329,7 +329,7 @@ function registerDatasetRoutes(app) {
         path: '/api/training_run/:id',
         summary: 'Update an existing training run',
         description: 'Updates an existing training run record by id. Returns the updated TrainingRun, or null if no row matched.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run to update.' },
         ],
@@ -361,7 +361,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch a training run by id',
         description:
             "Returns a single training run record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run to fetch.' },
         ],
@@ -390,7 +390,7 @@ function registerDatasetRoutes(app) {
         summary: 'Delete a training run',
         description:
             "Deletes a training run record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a training run cascades to delete its epochs, metrics_summary, hyperparameters, and artifacts (see model/training_runs.model.js).",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the training run to delete.' },
         ],
@@ -413,7 +413,7 @@ function registerDatasetRoutes(app) {
         path: '/api/metrics_summary',
         summary: 'Create a new metrics summary',
         description: 'Creates a new metrics_summary record for a training run and dataset split.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/MetricsSummaryCreateRequest' } } },
@@ -437,7 +437,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch a metrics_summary by id',
         description:
             "Returns a single metrics_summary record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the metrics_summary to fetch.' },
         ],
@@ -466,7 +466,7 @@ function registerDatasetRoutes(app) {
         summary: 'Update an existing metrics_summary',
         description:
             "Updates an existing metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the metrics_summary to update.' },
         ],
@@ -497,7 +497,7 @@ function registerDatasetRoutes(app) {
         summary: 'Delete a metrics_summary',
         description:
             "Deletes a metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a metrics_summary cascades to delete its metrics_curves (see model/metrics_summary.model.js).",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the metrics_summary to delete.' },
         ],
@@ -520,7 +520,7 @@ function registerDatasetRoutes(app) {
         path: '/api/metrics_curve',
         summary: 'Create a single metrics curve point',
         description: 'Creates a single metrics_curve point tied to a metrics_summary record.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/MetricsCurveCreateRequest' } } },
@@ -544,7 +544,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch a metrics_curve by id',
         description:
             "Returns a single metrics_curve record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the metrics_curve to fetch.' },
         ],
@@ -573,7 +573,7 @@ function registerDatasetRoutes(app) {
         summary: 'Update an existing metrics_curve',
         description:
             "Updates an existing metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the metrics_curve to update.' },
         ],
@@ -604,7 +604,7 @@ function registerDatasetRoutes(app) {
         summary: 'Delete a metrics_curve',
         description:
             "Deletes a metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the metrics_curve to delete.' },
         ],
@@ -624,7 +624,7 @@ function registerDatasetRoutes(app) {
         summary: 'Bulk-create metrics curve records',
         description:
             "Bulk-inserts metrics_curve records. CRITICAL: unlike every sibling create/bulk route, this method takes the raw Express req/res directly rather than an already-extracted body field — the request body must be a raw JSON array of MetricsCurve fields (req.body itself is passed straight to Sequelize's bulkCreate). CRITICAL: on a database failure this resolves to { error: err.message } at HTTP 200 rather than rejecting or returning a non-200 status; the route has no .catch() at all.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: {
@@ -662,7 +662,7 @@ function registerDatasetRoutes(app) {
         path: '/api/epoch',
         summary: 'Create a new epoch record',
         description: 'Creates a new epoch record for a training run.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/EpochCreateRequest' } } },
@@ -686,7 +686,7 @@ function registerDatasetRoutes(app) {
         path: '/api/epoch/:id',
         summary: 'Update an existing epoch record',
         description: 'Updates an existing epoch record by id. Returns the updated Epoch, or null if no row matched.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the epoch to update.' },
         ],
@@ -718,7 +718,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch an epoch by id',
         description:
             "Returns a single epoch record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the epoch to fetch.' },
         ],
@@ -747,7 +747,7 @@ function registerDatasetRoutes(app) {
         summary: 'Delete an epoch',
         description:
             "Deletes an epoch record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the epoch to delete.' },
         ],
@@ -770,7 +770,7 @@ function registerDatasetRoutes(app) {
         path: '/api/dataset_observation',
         summary: 'Create a new dataset-observation link',
         description: 'Creates a new dataset_observation join record linking a dataset to an observation.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/DatasetObservationCreateRequest' } } },
@@ -795,7 +795,7 @@ function registerDatasetRoutes(app) {
         summary: 'Fetch a dataset_observation by id',
         description:
             "Returns a single dataset_observation record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset_observation to fetch.' },
         ],
@@ -824,7 +824,7 @@ function registerDatasetRoutes(app) {
         summary: 'Update an existing dataset_observation',
         description:
             "Updates an existing dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset_observation to update.' },
         ],
@@ -855,7 +855,7 @@ function registerDatasetRoutes(app) {
         summary: 'Delete a dataset_observation',
         description:
             "Deletes a dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the dataset_observation to delete.' },
         ],
@@ -875,7 +875,7 @@ function registerDatasetRoutes(app) {
         summary: 'Bulk-create dataset-observation links',
         description:
             'Bulk-inserts dataset_observation records. The response (per the route code) is { inserted: <count> }, NOT the created records. Uses ignoreDuplicates: true internally, which may not reliably suppress unique-constraint errors on Postgres depending on Sequelize version, so a 500 is still possible on duplicate observation_id values despite the flag.',
-        tags: ['MachineLearning'],
+        tags: ['V1 · MachineLearning'],
         requestBody: {
             required: true,
             content: {

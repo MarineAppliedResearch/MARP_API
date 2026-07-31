@@ -26,7 +26,7 @@ function registerSessionRoutes(app) {
         path: '/api/sessions',
         summary: 'Fetch all sessions',
         description: 'Returns every session record, each including its associated user.',
-        tags: ['Sessions'],
+        tags: ['V1 · Sessions'],
         responses: {
             200: {
                 description: 'Session list returned successfully.',
@@ -49,7 +49,7 @@ function registerSessionRoutes(app) {
         summary: 'Fetch a session by id',
         description:
             "Returns a single session record by session_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Sessions'],
+        tags: ['V1 · Sessions'],
         parameters: [
             {
                 in: 'path',
@@ -87,7 +87,7 @@ function registerSessionRoutes(app) {
         path: '/api/sessions/user/:userID/project/:projectID',
         summary: 'Fetch sessions for a user within a project',
         description: 'Returns sessions matching the given user and project, each including its associated user and project.',
-        tags: ['Sessions'],
+        tags: ['V1 · Sessions'],
         parameters: [
             {
                 in: 'path',
@@ -125,7 +125,7 @@ function registerSessionRoutes(app) {
         path: '/api/session',
         summary: 'Create a new session',
         description: 'Creates a new session record.',
-        tags: ['Sessions'],
+        tags: ['V1 · Sessions'],
         requestBody: {
             required: true,
             content: {
@@ -151,7 +151,7 @@ function registerSessionRoutes(app) {
         summary: 'Create a session, creating its project and processor user if needed',
         description:
             'Convenience endpoint that looks up or creates the named processor (user) and project, then creates a new session linking them with the given line, dive, and type. All identifying values are passed as path segments rather than a request body.',
-        tags: ['Sessions'],
+        tags: ['V1 · Sessions'],
         parameters: [
             {
                 in: 'path',
@@ -224,7 +224,7 @@ function registerSessionRoutes(app) {
         path: '/api/session',
         summary: 'Update an existing session',
         description: 'Updates an existing session record by its session_id field.',
-        tags: ['Sessions'],
+        tags: ['V1 · Sessions'],
         requestBody: {
             required: true,
             content: {
@@ -246,7 +246,7 @@ function registerSessionRoutes(app) {
         path: '/api/session/:id',
         summary: 'Delete a session',
         description: 'Deletes a session record by id.',
-        tags: ['Sessions'],
+        tags: ['V1 · Sessions'],
         parameters: [
             {
                 in: 'path',

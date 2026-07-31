@@ -139,6 +139,20 @@ function buildJellyfinFetchMock() {
             return textResponse(204, '');
         }
 
+        if (/\/Users\/[^/]+\/Items\/[^/]+$/.test(path) && method === 'GET') {
+            const requestedId = path.substring(path.lastIndexOf('/') + 1);
+
+            // Mirrors a real, confirmed-live Jellyfin quirk: this endpoint
+            // does not 404 for an unrecognized item id -- it returns the
+            // server's root item instead, with a different Id. The
+            // repository is expected to detect that mismatch itself.
+            if (requestedId !== 'video1') {
+                return jsonResponse(200, { Id: 'root-fallback-id', Name: 'Media Folders' });
+            }
+
+            return jsonResponse(200, { Id: 'video1', Trickplay: { video1: { 320: { Width: 320, Height: 180 } } } });
+        }
+
         if (/\/Videos\/[^/]+\/Trickplay\/\d+\/tiles\.m3u8$/.test(path)) {
             return textResponse(
                 200,
@@ -278,19 +292,35 @@ describe('Jellyfin (V2) routes', () => {
         expect(res.headers.location).toContain('/Items/video1/Images/Primary');
     });
 
-    it('GET /items/:id/trickplay returns parsed tile metadata', async () => {
+    it('GET /items/:id/trickplay with an explicit valid width returns parsed tile metadata', async () => {
         const res = await request(app).get('/api/v2/jellyfin/items/video1/trickplay').query({ width: 320 });
 
         expect(res.status).toBe(200);
-        expect(res.body).toMatchObject({ columns: 10, rows: 10, thumbnailDurationSeconds: 10 });
+        expect(res.body).toMatchObject({ width: 320, availableWidths: [320], columns: 10, rows: 10, thumbnailDurationSeconds: 10 });
         expect(res.body.tileImageUrls).toHaveLength(1);
     });
 
-    it('GET /items/:id/trickplay without width returns 400', async () => {
+    it('GET /items/:id/trickplay without width auto-selects the largest available width', async () => {
         const res = await request(app).get('/api/v2/jellyfin/items/video1/trickplay');
+
+        expect(res.status).toBe(200);
+        expect(res.body.width).toBe(320);
+        expect(res.body.availableWidths).toEqual([320]);
+    });
+
+    it('GET /items/:id/trickplay with an unavailable width returns 400 naming what IS available', async () => {
+        const res = await request(app).get('/api/v2/jellyfin/items/video1/trickplay').query({ width: 999 });
 
         expect(res.status).toBe(400);
         expect(res.body.error.code).toBe('VALIDATION_ERROR');
+        expect(res.body.error.message).toContain('320');
+    });
+
+    it('GET /items/:id/trickplay for an unrecognized item id returns 404, not Jellyfin\'s root-item fallback', async () => {
+        const res = await request(app).get('/api/v2/jellyfin/items/does-not-exist/trickplay');
+
+        expect(res.status).toBe(404);
+        expect(res.body.error.code).toBe('RESOURCE_NOT_FOUND');
     });
 
     it('uses a distinct Jellyfin session per downstream client identity', async () => {

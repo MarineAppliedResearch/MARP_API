@@ -170,7 +170,7 @@ class JellyfinController {
      *
      * @async
      * @param {string} itemId - Jellyfin item id.
-     * @param {number} width - Requested tile-sheet width.
+     * @param {number} [width] - Requested tile-sheet width. Omit to auto-select the largest available width.
      * @param {Object} [options] - Additional options (mediaSourceId, runTimeTicks).
      * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
      * @returns {Promise<Object>} Trickplay metadata.

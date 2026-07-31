@@ -28,7 +28,7 @@ function registerSchemaRoutes(app) {
         summary: 'Retrieve public table metadata',
         description:
             'Returns one object per base table in the public schema, including table comments, row-estimate metadata, all columns with data types and defaults, primary keys, foreign keys, unique constraints, check constraints, and indexes. Intended for building schema browsers, table grids, query builders, and relationship explorers.',
-        tags: ['Schema'],
+        tags: ['V1 · Schema'],
         responses: {
             200: {
                 description: 'Public table metadata returned successfully.',
@@ -59,7 +59,7 @@ function registerSchemaRoutes(app) {
         summary: 'Retrieve public view metadata',
         description:
             'Returns one object per public view (including materialized views), including SQL definition text, updatability flag, column metadata, and dependencies on other public tables/views. Intended for building view browsers and dependency visualizations.',
-        tags: ['Schema'],
+        tags: ['V1 · Schema'],
         responses: {
             200: {
                 description: 'Public view metadata returned successfully.',
@@ -88,7 +88,7 @@ function registerSchemaRoutes(app) {
         summary: 'Retrieve public foreign-key relationships',
         description:
             'Returns normalized foreign-key relationships between public-schema tables, including source/target columns and ON UPDATE / ON DELETE actions. Intended for relationship graphs and join-aware UI tooling.',
-        tags: ['Schema'],
+        tags: ['V1 · Schema'],
         responses: {
             200: {
                 description: 'Public foreign-key relationships returned successfully.',

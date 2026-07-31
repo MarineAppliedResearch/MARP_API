@@ -30,7 +30,7 @@ function registerObservationRoutes(app) {
         summary: 'Retrieve observations for a video',
         description:
             'Returns observations whose video_source exactly matches the supplied videoName. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without keyframes are excluded. An empty array may indicate either that no records matched or that the database query failed.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'query', name: 'videoName', required: true, schema: { type: 'string' }, description: 'Exact video_source value to match.' },
         ],
@@ -54,7 +54,7 @@ function registerObservationRoutes(app) {
         summary: 'Retrieve video summaries for a project',
         description:
             'Returns one summary row for each distinct combination of video_source and videoLocation associated with sessions in the specified project. Each row includes the number of distinct observation common names, the number of distinct sessions, and representative dive, line, and session type values selected using MIN aggregation. Results are ordered by the representative dive and line in ascending order. Videos without a matching session in the project are excluded. An empty array may mean that no matching observations were found or that the database query failed.',
-        tags: ['Observations', 'Videos'],
+        tags: ['V1 · Observations', 'V1 · Videos'],
         parameters: [
             { in: 'path', name: 'project_id', required: true, schema: { type: 'integer' }, description: 'Database identifier of the project whose videos should be summarized.' },
         ],
@@ -77,7 +77,7 @@ function registerObservationRoutes(app) {
         summary: 'Retrieve video observations filtered by common name',
         description:
             'Returns observations whose video_source exactly matches videoName and whose comname is included in comnameList. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. The current repository returns an empty array both when no observations match and when the database query fails.',
-        tags: ['Observations', 'Videos'],
+        tags: ['V1 · Observations', 'V1 · Videos'],
         parameters: [
             { in: 'query', name: 'videoName', required: true, schema: { type: 'string' }, description: 'Exact value to match against the observation video_source field.' },
             {
@@ -113,7 +113,7 @@ function registerObservationRoutes(app) {
         summary: 'Retrieve observations for a video within a project',
         description:
             'Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Each observation includes its full associated session object (the session join has no attribute restriction) in addition to keyframes. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed.',
-        tags: ['Observations', 'Projects', 'Videos'],
+        tags: ['V1 · Observations', 'V1 · Projects', 'V1 · Videos'],
         parameters: [
             { in: 'path', name: 'videoName', required: true, schema: { type: 'string' }, description: 'Exact value to match against the observation video_source field.' },
             { in: 'path', name: 'projectName', required: true, schema: { type: 'string' }, description: 'Exact project name used to locate the associated project record.' },
@@ -141,7 +141,7 @@ function registerObservationRoutes(app) {
         summary: 'Retrieve observations with keyframes by common name',
         description:
             'Returns observations whose comname matches one of the supplied common names. The comnameList query parameter must contain a comma-separated list of URL-encoded common names. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. An empty array may indicate that no observations matched or that the repository query failed.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             {
                 in: 'query',
@@ -180,7 +180,7 @@ function registerObservationRoutes(app) {
         summary: 'Fetch distinct common names that have keyframes',
         description:
             'Returns every distinct comname value found on observations that have at least one associated keyframe. This route is registered with `app.use` rather than `app.get`, so it technically responds to any HTTP method, not just GET.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         responses: {
             200: {
                 description: 'Distinct common names returned successfully.',
@@ -199,7 +199,7 @@ function registerObservationRoutes(app) {
         summary: 'Fetch per-user dashboard activity data',
         description:
             'Returns per-user, per-date observation activity counts for a dashboard view. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. sessions and projects are always 0 in the current implementation; only the observations count is actually populated.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'query', name: 'start', required: false, schema: { type: 'string' }, description: 'Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.' },
             { in: 'query', name: 'end', required: false, schema: { type: 'string' }, description: 'End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.' },
@@ -222,7 +222,7 @@ function registerObservationRoutes(app) {
         summary: 'Fetch estimated recording time by project, date, and user',
         description:
             'Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'query', name: 'start', required: false, schema: { type: 'string' }, description: 'Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.' },
             { in: 'query', name: 'end', required: false, schema: { type: 'string' }, description: 'End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description.' },
@@ -244,7 +244,7 @@ function registerObservationRoutes(app) {
         path: '/api/observations',
         summary: 'Fetch all observations',
         description: 'Returns all observation records available through the V1 API.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         responses: {
             200: {
                 description: 'Observation list returned successfully.',
@@ -262,7 +262,7 @@ function registerObservationRoutes(app) {
         path: '/api/observation/getLastVideoInfo/:session_id',
         summary: 'Fetch latest video info for a session',
         description: 'Returns the most recent video metadata associated with a session.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'path', name: 'session_id', required: true, schema: { type: 'integer' }, description: 'Session identifier.' },
         ],
@@ -281,7 +281,7 @@ function registerObservationRoutes(app) {
         summary: 'Fetch the observation with the highest observation_id for a video',
         description:
             'Returns the observation record(s) matching the maximum observation_id for the given video_source. Note that despite the name, the repository implementation returns an array of matching observation records (from a findAll query) rather than a single integer id.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'path', name: 'video_source', required: true, schema: { type: 'string' }, description: 'Video source value to match.' },
         ],
@@ -303,7 +303,7 @@ function registerObservationRoutes(app) {
         summary: "Update an observation's count field",
         description:
             'Updates the count field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'path', name: 'session_id', required: true, schema: { type: 'integer' }, description: 'Session identifier used together with obsID to locate the target observation.' },
             { in: 'path', name: 'observation_id', required: true, schema: { type: 'integer' }, description: 'Matched against the obsID column, not the observation_id primary key, despite the parameter name.' },
@@ -329,7 +329,7 @@ function registerObservationRoutes(app) {
         summary: "Update an observation's size field",
         description:
             'Updates the coarsesize field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'path', name: 'session_id', required: true, schema: { type: 'integer' }, description: 'Session identifier used together with obsID to locate the target observation.' },
             { in: 'path', name: 'observation_id', required: true, schema: { type: 'integer' }, description: 'Matched against the obsID column, not the observation_id primary key, despite the parameter name.' },
@@ -352,7 +352,7 @@ function registerObservationRoutes(app) {
         path: '/api/observations/bySessionID/:session_id',
         summary: 'Fetch observations for a session',
         description: 'Returns every observation belonging to a session, including associated keyframes when present.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'path', name: 'session_id', required: true, schema: { type: 'integer' }, description: 'Session identifier to match.' },
         ],
@@ -374,7 +374,7 @@ function registerObservationRoutes(app) {
         summary: 'Create a new observation',
         description:
             'Creates a new observation record. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ObservationCreateRequest' } } },
@@ -398,7 +398,7 @@ function registerObservationRoutes(app) {
         summary: 'Update an existing observation',
         description:
             'Updates an existing observation by its observation_id field. If comname changes, the new value is propagated to every keyframe associated with the same observation, all within one transaction. Unlike most write methods in this codebase, this one does NOT swallow errors: if the observation_id doesn\'t exist or the update fails, the transaction is rolled back and the error is rethrown, resulting in an HTTP 500 by default (there is no explicit .catch() on this route, so Express\'s default error handling applies).',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         requestBody: {
             required: true,
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ObservationUpdateRequest' } } },
@@ -422,7 +422,7 @@ function registerObservationRoutes(app) {
         summary: 'Fetch an observation by id',
         description:
             "Returns a single observation record by observation_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'observation_id of the observation to fetch.' },
         ],
@@ -451,7 +451,7 @@ function registerObservationRoutes(app) {
         summary: 'Delete an observation',
         description:
             'Deletes an observation record by its observation_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.',
-        tags: ['Observations'],
+        tags: ['V1 · Observations'],
         parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'observation_id of the observation to delete.' },
         ],
