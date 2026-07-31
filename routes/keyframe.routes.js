@@ -27,7 +27,7 @@ function registerKeyframeRoutes(app) {
         summary: 'Bulk-create keyframe records',
         description:
             'Creates one or more keyframe records in a single transaction. CRITICAL: unlike most other POST routes, the request body itself must be a JSON array of keyframe objects (not wrapped in a named field) — only the observation_id, x, y, width, height, subset, type, comname, and framenum fields are copied from each input object; any others are ignored. If the bulk insert fails, the transaction is rolled back and the failure is only logged, so the response resolves to an empty array `[]` rather than an error — callers cannot distinguish "nothing to insert" from "insert failed."',
-        tags: ['Keyframes'],
+        tags: ['V1 · Keyframes'],
         requestBody: {
             required: true,
             content: {
@@ -70,7 +70,7 @@ function registerKeyframeRoutes(app) {
         summary: 'Fetch a keyframe by id',
         description:
             "Returns a single keyframe record by keyframe_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Keyframes'],
+        tags: ['V1 · Keyframes'],
         parameters: [
             {
                 in: 'path',
@@ -122,7 +122,7 @@ function registerKeyframeRoutes(app) {
         summary: 'Update an existing keyframe',
         description:
             "Updates an existing keyframe record by keyframe_id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Keyframes'],
+        tags: ['V1 · Keyframes'],
         parameters: [
             {
                 in: 'path',
@@ -178,7 +178,7 @@ function registerKeyframeRoutes(app) {
         summary: 'Delete a keyframe',
         description:
             'Deletes a keyframe record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing.',
-        tags: ['Keyframes'],
+        tags: ['V1 · Keyframes'],
         parameters: [
             {
                 in: 'path',

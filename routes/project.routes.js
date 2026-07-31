@@ -27,7 +27,7 @@ function registerProjectRoutes(app) {
         path: '/api/projects',
         summary: 'Fetch all projects',
         description: 'Returns every project record.',
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         responses: {
             200: {
                 description: 'Project list returned successfully.',
@@ -49,7 +49,7 @@ function registerProjectRoutes(app) {
         path: '/api/projects/user/:userID',
         summary: 'Fetch projects belonging to a user',
         description: 'Returns every project that has at least one session belonging to the given user.',
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         parameters: [
             {
                 in: 'path',
@@ -81,7 +81,7 @@ function registerProjectRoutes(app) {
         summary: 'Fetch a project by name',
         description:
             'Returns the project record(s) matching an exact project name. CRITICAL: unlike other repository methods in this codebase, a database failure here resolves with the raw JavaScript Error object itself (not null, not an array, not an ErrorResponse-shaped body) — so a failure response will not match a typical error schema and callers should not rely on a consistent error shape from this endpoint.',
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         parameters: [
             {
                 in: 'path',
@@ -116,7 +116,7 @@ function registerProjectRoutes(app) {
         summary: 'Fetch a project by id',
         description:
             "Returns a single project record by project_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         parameters: [
             {
                 in: 'path',
@@ -156,7 +156,7 @@ function registerProjectRoutes(app) {
         path: '/api/project',
         summary: 'Create a new project',
         description: 'Creates a new project record.',
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         requestBody: {
             required: true,
             content: {
@@ -181,7 +181,7 @@ function registerProjectRoutes(app) {
         path: '/api/project/createProjectByName/:projectName',
         summary: 'Create a new project by name only',
         description: 'Creates a new project record from a name alone, without a request body.',
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         parameters: [
             {
                 in: 'path',
@@ -209,7 +209,7 @@ function registerProjectRoutes(app) {
         path: '/api/project',
         summary: 'Update an existing project',
         description: 'Updates an existing project record by its project_id field.',
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         requestBody: {
             required: true,
             content: {
@@ -231,7 +231,7 @@ function registerProjectRoutes(app) {
         path: '/api/project/:id',
         summary: 'Delete a project',
         description: 'Deletes a project record by id.',
-        tags: ['Projects'],
+        tags: ['V1 · Projects'],
         parameters: [
             {
                 in: 'path',

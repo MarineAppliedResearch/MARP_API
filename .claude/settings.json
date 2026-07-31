@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c service/jellyfin.service.js)",
+      "Bash(node -c controller/jellyfin.controller.js)",
+      "Bash(node -c routes/jellyfin.routes.js)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/api/openapi.json)",
+      "Bash(curl -s http://localhost:3000/api/v2/jellyfin/libraries)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\(0\\)\\);console.log\\('items:', d.items.length\\); console.log\\(d.items[0]\\)\")",
+      "Bash(curl -s \"http://localhost:3000/api/v2/jellyfin/items/search?q=a&limit=3\")",
+      "Bash(sed -E 's/api_key=[^&]+/api_key=REDACTED/')",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:3000/api/v2/jellyfin/items/00000000-0000-0000-0000-000000000000/stream\")",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:3000/api/v2/jellyfin/items/search\")",
+      "Bash(node -c /home/mare/workspace/MARE_API/repository/jellyfin.repository.js)",
+      "Bash(node -c /home/mare/workspace/MARE_API/service/jellyfin.service.js)",
+      "Bash(node -c /home/mare/workspace/MARE_API/controller/jellyfin.controller.js)",
+      "Bash(node -c /home/mare/workspace/MARE_API/routes/jellyfin.routes.js)",
+      "Bash(set -e)",
+      "Bash(curl -s \"http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/playback-options\")",
+      "Bash(node -e \"console.log\\(JSON.stringify\\(JSON.parse\\(require\\('fs'\\).readFileSync\\(0\\)\\), null, 2\\)\\)\")",
+      "Bash(curl -s -D - -o /dev/null \"http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/stream\")",
+      "Bash(curl -s -D - -o /dev/null \"http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/stream?mode=Transcode&maxBitrate=4000000&maxWidth=1280&maxHeight=720\")",
+      "Bash(kill 133918 133917)",
+      "Bash(curl -s \"http://localhost:3000/api/v2/jellyfin/resolve?videoSource=20211112%20170846%20NOT%20ACTUAL%20LINE-%20OUTREACH%20CLIP.mp4\")",
+      "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:3000/api/v2/jellyfin/resolve?videoSource=totally_unrelated_nonexistent_xyz_987654\")",
+      "Bash(curl -s -D - -o /dev/null \"http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/images/Primary?maxWidth=320&quality=85\")",
+      "Bash(curl -s \"http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/trickplay?width=320&runTimeTicks=795729999\")",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\(0\\)\\); console.log\\(JSON.stringify\\({...d, tileImageUrls: d.tileImageUrls.map\\(u=>u.replace\\(/ApiKey=[^&]+/,'ApiKey=REDACTED'\\)\\)}, null, 2\\)\\)\")",
+      "Bash(curl -s -D - -o /dev/null -H 'X-Client-Name: WebFrontend' -H 'X-Client-Version: 2.3.1' http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/stream)",
+      "Bash(node -e \"console.log\\(typeof Response, typeof fetch\\)\")",
+      "Bash(node -c /home/mare/workspace/MARE_API/tests/jellyfin.test.js)",
+      "Bash(grep -n \"Whether \\\\`path\\\\` is safe\" /home/mare/workspace/MARE_API/repository/jellyfin.repository.js)",
+      "Bash(git check-ignore *)",
+      "Bash(curl -s http://localhost:3000/api/v2/jellyfin/items/0da5ea1af7f4f116c19ebaa95ba82fc6/trickplay)",
+      "Bash(xargs -r kill)",
+      "Bash(curl -s http://localhost:3000/api/openapi.json)"
+    ]
+  }
+}

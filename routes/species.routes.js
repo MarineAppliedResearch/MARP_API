@@ -30,7 +30,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Fetch all species',
         description:
             'Returns every species record used for taxonomy, GUI display configuration, and ML model training labels. An empty array may indicate either that no records exist or that the database query failed.',
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         responses: {
             200: {
                 description: 'Species list returned successfully.',
@@ -53,7 +53,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Fetch a species by common name',
         description:
             'Returns the species record whose comname matches the supplied value, case-insensitively. Returns null both when no species matches and when the database query fails.',
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         parameters: [
             {
                 in: 'path',
@@ -85,7 +85,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Fetch a species by id',
         description:
             "Returns a single species record by id, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         parameters: [
             {
                 in: 'path',
@@ -118,7 +118,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Create a new species record',
         description:
             "Creates a new species record. The caller must supply a unique taxserial (see the species_taxserial_idx unique index in model/species.model.js). A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         requestBody: {
             required: true,
             content: {
@@ -146,7 +146,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Update an existing species record',
         description:
             "Updates an existing species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         parameters: [
             {
                 in: 'path',
@@ -185,7 +185,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Delete a species record',
         description:
             "Deletes a species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         parameters: [
             {
                 in: 'path',
@@ -211,7 +211,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Create a model-species linkage record',
         description:
             'Creates a model_species join record linking an ML model to a species, using the request body directly as the record to insert. Note that when the insert fails the response body is an ErrorResponse-shaped object, but the endpoint currently still responds with HTTP 200 rather than an error status.',
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         requestBody: {
             required: true,
             content: {
@@ -254,7 +254,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Fetch a model_species record by id',
         description:
             "Returns a single model_species join record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         parameters: [
             {
                 in: 'path',
@@ -293,7 +293,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Update an existing model_species record',
         description:
             "Updates an existing model_species join record by ID. The request body fields are used directly (unwrapped), matching the POST /model_species convention. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         parameters: [
             {
                 in: 'path',
@@ -330,7 +330,7 @@ function registerSpeciesRoutes(app) {
         summary: 'Delete a model_species record',
         description:
             "Deletes a model_species join record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case.",
-        tags: ['Species'],
+        tags: ['V1 · Species'],
         parameters: [
             {
                 in: 'path',

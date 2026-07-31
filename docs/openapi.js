@@ -262,24 +262,73 @@ const buildOpenApiSpec = () => {
                 },
             ],
 
+            // Tags are named "V1 · <Domain>"/"V2 · <Domain>" specifically so
+            // Swagger UI's grouping (which follows this array's order)
+            // visually clusters all V1 domains together, separate from all
+            // V2 domains -- every V1 route file's tags: [...] literals were
+            // updated to match. V1 · tags are inherently transitional: as a
+            // domain is migrated to a V2 equivalent, its V1 · tag simply
+            // stops being used rather than needing a cleanup pass here.
             tags: [
                 {
-                    name: 'Health',
-                    description: 'Service status and diagnostics',
+                    // Deliberately not "V1 ·"/"V2 ·" prefixed: these routes
+                    // (defined directly in app.js, not through the
+                    // code-first registry) serve the API documentation
+                    // itself, not a versioned resource domain -- they apply
+                    // equally regardless of which API version is being read.
+                    name: 'Documentation',
+                    description: 'Retrieve the generated OpenAPI specification (as JSON) or open the internal developer (JSDoc) documentation site.',
                 },
                 {
-                    name: 'Tasks',
-                    description: 'Task read operations',
+                    name: 'V1 · Health',
+                    description: 'Service status and diagnostics.',
                 },
                 {
-                    name: 'Observations',
+                    name: 'V1 · Users',
+                    description: 'Create, update, and look up user accounts by id or name.',
+                },
+                {
+                    name: 'V1 · Projects',
+                    description: 'Create, update, and look up MARP projects by id or name, including projects a given user belongs to.',
+                },
+                {
+                    name: 'V1 · Sessions',
+                    description: 'Create, update, and look up dive/survey sessions, including sessions scoped to a user within a project.',
+                },
+                {
+                    name: 'V1 · Species',
+                    description: 'Create, update, and look up species records and their model_species linkage records used for ML model training/evaluation.',
+                },
+                {
+                    name: 'V1 · Tasks',
+                    description: 'Create, update, look up, and delete tasks.',
+                },
+                {
+                    name: 'V1 · Keyframes',
+                    description: 'Bulk-create, look up, update, and delete keyframe records associated with observations.',
+                },
+                {
+                    name: 'V1 · Observations',
                     description:
                         'Access biological observation records and related data. These endpoints support observation retrieval, filtering, aggregation, review workflows, video-based queries, keyframe associations, and observation updates.'
                 },
                 {
-                    name: 'Schema',
+                    name: 'V1 · Videos',
+                    description: 'Observation queries scoped to a specific video_source, including cross-project video summaries and per-video observation listings.',
+                },
+                {
+                    name: 'V1 · MachineLearning',
+                    description: 'ML pipeline resources: datasets, dataset-observation links, ML models, training runs, epochs, and metrics (summary and curve) records.',
+                },
+                {
+                    name: 'V1 · Schema',
                     description:
                         'Database schema introspection endpoints for tables, views, columns, constraints, indexes, and relationships in the public schema.'
+                },
+                {
+                    name: 'V2 · Jellyfin',
+                    description:
+                        'V2 endpoints proxying the Jellyfin media server: library/folder browsing, search-by-name, and playback resolution. Jellyfin itself is never exposed to API consumers -- MARP holds the Jellyfin credentials and session, and the stream endpoint returns a short-lived redirect rather than requiring callers to know Jellyfin exists.'
                 }
             ],
 
@@ -1345,6 +1394,135 @@ const buildOpenApiSpec = () => {
                             on_delete: { type: 'string', example: 'CASCADE', description: 'ON DELETE action.' },
                         },
                     },
+                    JellyfinItem: {
+                        type: 'object',
+                        description:
+                            'A Jellyfin library, folder, or video item, normalized down to the fields MARP exposes. DRAFT schema: field examples are real (captured against the live Jellyfin dev server), but this has not yet gone through the full sample-capture-and-infer workflow (docs/openapi-response-schema-workflow.md) used for other custom-shape endpoints.',
+                        properties: {
+                            id: {
+                                type: 'string',
+                                example: '0da5ea1af7f4f116c19ebaa95ba82fc6',
+                                description: 'Stable Jellyfin item identifier.',
+                            },
+                            name: {
+                                type: 'string',
+                                example: '20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP',
+                                description: 'Human-readable item name.',
+                            },
+                            path: {
+                                type: 'string',
+                                example: '/mnt/rov-video-new/CAMPA2021/Dive 165/20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP.mp4',
+                                description: 'Raw server-side filesystem path Jellyfin stores this item at. Exposed deliberately -- useful for confirming a /resolve fuzzy-match result or feeding tooling that needs the original file location -- at the cost of revealing Jellyfin server storage layout to API consumers.',
+                            },
+                            type: {
+                                type: 'string',
+                                example: 'Video',
+                                description: 'Jellyfin item type, e.g. CollectionFolder (a top-level library), Folder, or Video.',
+                            },
+                            isFolder: {
+                                type: 'boolean',
+                                example: false,
+                                description: 'Whether this item is a folder-like container browsable via GET /api/v2/jellyfin/items/{id}/children.',
+                            },
+                            mediaType: {
+                                type: 'string',
+                                example: 'Video',
+                                description: 'Jellyfin media type classification (often "Unknown" for folders/libraries).',
+                            },
+                            runtimeTicks: {
+                                type: 'integer',
+                                nullable: true,
+                                example: 795729999,
+                                description: 'Runtime in Jellyfin ticks (100-nanosecond units). Null for folders and other non-playable items.',
+                            },
+                            childCount: {
+                                type: 'integer',
+                                nullable: true,
+                                example: 9,
+                                description: 'Number of child items. Present only on folder-like items; null for playable video items.',
+                            },
+                        },
+                    },
+                    JellyfinItemList: {
+                        type: 'object',
+                        description: 'A list of Jellyfin items returned by browsing, searching, or listing libraries.',
+                        properties: {
+                            items: {
+                                type: 'array',
+                                items: { $ref: '#/components/schemas/JellyfinItem' },
+                                description: 'Matching or child items, in the order Jellyfin returned them.',
+                            },
+                        },
+                    },
+                    JellyfinPlaybackOption: {
+                        type: 'object',
+                        description: 'One playback quality choice, derived from the item\'s actual source capabilities (bitrate/resolution) -- a transcode tier is only present if it is genuinely below source quality.',
+                        properties: {
+                            displayName: { type: 'string', example: '720p, 4 Mbps', description: 'Human-readable label for this option.' },
+                            mode: { type: 'string', enum: ['Auto', 'Original', 'Transcode'], example: 'Transcode', description: 'Mode to pass to GET /items/{id}/stream to select this option.' },
+                            maxStreamingBitrate: { type: 'integer', nullable: true, example: 4000000, description: 'Bitrate ceiling for this option, in bits/sec. Null for Auto/Original.' },
+                            maxWidth: { type: 'integer', nullable: true, example: 1280, description: 'Width ceiling for this option. Null for Auto.' },
+                            maxHeight: { type: 'integer', nullable: true, example: 720, description: 'Height ceiling for this option. Null for Auto.' },
+                            isAuto: { type: 'boolean', example: false, description: 'True for the Auto placeholder option.' },
+                            isOriginal: { type: 'boolean', example: false, description: 'True for the Original/Direct option.' },
+                            requiresTranscoding: { type: 'boolean', example: true, description: 'True for a Transcode tier option.' },
+                        },
+                    },
+                    JellyfinPlaybackOptionList: {
+                        type: 'object',
+                        description: 'The quality menu for one Jellyfin item.',
+                        properties: {
+                            options: {
+                                type: 'array',
+                                items: { $ref: '#/components/schemas/JellyfinPlaybackOption' },
+                                description: 'Available playback options, most capable first.',
+                            },
+                        },
+                    },
+                    JellyfinResolveResult: {
+                        type: 'object',
+                        description: 'Best Jellyfin item match found for a saved database video_source value, via multi-term search and filename/timestamp scoring.',
+                        properties: {
+                            item: { $ref: '#/components/schemas/JellyfinItem' },
+                            score: { type: 'integer', example: 100, description: 'Match confidence, 0-100. Below the requested minScore is rejected with a 404 rather than returned here.' },
+                            searchTerm: { type: 'string', example: '20211112_170846_NOT_ACTUAL_LINE-_OUTREACH_CLIP', description: 'The specific search-term variant that produced this match.' },
+                        },
+                    },
+                    JellyfinPlaybackReportRequest: {
+                        type: 'object',
+                        description: 'Playback state relayed to Jellyfin\'s session-tracking endpoints. mediaSourceId/playSessionId should be carried forward from the earlier GET /items/{id}/stream or /items/{id}/playback-options response -- MARP does not store playback session state itself.',
+                        properties: {
+                            mediaSourceId: { type: 'string', nullable: true, example: '0da5ea1af7f4f116c19ebaa95ba82fc6', description: 'MediaSource id from the earlier stream/playback-options response.' },
+                            playSessionId: { type: 'string', nullable: true, example: '08bf40f6fa5b474a9899e69983a07a84', description: 'PlaySessionId from the earlier stream/playback-options response.' },
+                            positionTicks: { type: 'integer', example: 50000000, description: 'Current playback position, in Jellyfin ticks (100ns units).' },
+                            isPaused: { type: 'boolean', example: false, description: 'Whether playback is currently paused. Ignored (always true) for the stopped report.' },
+                            playMethod: { type: 'string', enum: ['DirectStream', 'Transcode'], example: 'Transcode', description: 'Which stream mode is active for this session.' },
+                        },
+                    },
+                    JellyfinTrickplayInfo: {
+                        type: 'object',
+                        description: 'Parsed scrubbing-preview tile metadata for one item. Each tile image URL already embeds its own short-lived access token, the same signed-URL pattern used for stream/image URLs, and is directly fetchable by a caller.',
+                        properties: {
+                            width: { type: 'integer', example: 320, description: 'Tile-sheet generation width actually used -- either the width requested, or the auto-selected largest available width when none was requested.' },
+                            availableWidths: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                                example: [320],
+                                description: 'Every tile-sheet width Jellyfin has actually generated for this item. Pass one of these as the width query parameter on a future request to pick a specific one deliberately.',
+                            },
+                            thumbnailWidth: { type: 'integer', example: 320, description: 'Width of one thumbnail cell, in pixels.' },
+                            thumbnailHeight: { type: 'integer', example: 180, description: 'Height of one thumbnail cell, in pixels.' },
+                            columns: { type: 'integer', example: 10, description: 'Thumbnail columns per tile sheet image.' },
+                            rows: { type: 'integer', example: 10, description: 'Thumbnail rows per tile sheet image.' },
+                            thumbnailDurationSeconds: { type: 'number', example: 10, description: 'Seconds of video represented by each thumbnail cell.' },
+                            tileImageUrls: {
+                                type: 'array',
+                                items: { type: 'string', format: 'uri' },
+                                example: ['http://jellyfin.example/Videos/{id}/Trickplay/320/0.jpg?MediaSourceId={mediaSourceId}&ApiKey=EXAMPLE_TOKEN'],
+                                description: 'Tile sheet image URLs, in order. Each sheet packs columns*rows thumbnails; mapping a scrub time to a specific tile/row/column is left to the caller, since it is pure arithmetic once this metadata is known.',
+                            },
+                        },
+                    },
                 },
                 responses: {
                     BadRequestError: {
@@ -1409,6 +1587,16 @@ const buildOpenApiSpec = () => {
                     },
                     InternalServerError: {
                         description: 'Unexpected server-side failure.',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    $ref: '#/components/schemas/ErrorEnvelope',
+                                },
+                            },
+                        },
+                    },
+                    UpstreamError: {
+                        description: 'A dependency this endpoint relies on (e.g. the Jellyfin media server) was unreachable or returned a failure.',
                         content: {
                             'application/json': {
                                 schema: {

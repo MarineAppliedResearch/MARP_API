@@ -29,7 +29,7 @@ function registerMetaInfoRoutes(app) {
         summary: 'Retrieve active database name',
         description:
             'Returns metadata identifying the current configured database as a single-element array containing only a name field (never the full metaInfo row).',
-        tags: ['Health'],
+        tags: ['V1 · Health'],
         responses: {
             200: {
                 description: 'Database name returned successfully.',
@@ -56,7 +56,7 @@ function registerMetaInfoRoutes(app) {
         summary: 'Set the active database name',
         description:
             'Sets the configured database name on the singleton metaInfo row. Upserts: if the metaInfo table already has a row, its name column is updated in place; if the table is empty, a new row is created. This affects the single shared configuration record also read by GET /metaInfo/dbName. Unlike the GET, a database failure here is not swallowed to an empty/placeholder result -- it responds with a standard 500 error envelope so callers can tell the write did not happen.',
-        tags: ['Health'],
+        tags: ['V1 · Health'],
         requestBody: {
             required: true,
             content: {

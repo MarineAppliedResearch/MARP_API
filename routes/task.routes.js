@@ -27,7 +27,7 @@ function registerTaskRoutes(app) {
         path: '/api/tasks',
         summary: 'Fetch all tasks',
         description: 'Returns every task row currently available in storage.',
-        tags: ['Tasks'],
+        tags: ['V1 · Tasks'],
         responses: {
             200: {
                 description: 'Task list returned successfully.',
@@ -60,7 +60,7 @@ function registerTaskRoutes(app) {
         path: '/api/task',
         summary: 'Create a new task',
         description: 'Creates a new task record and returns the inserted row.',
-        tags: ['Tasks'],
+        tags: ['V1 · Tasks'],
         requestBody: {
             required: true,
             content: {
@@ -100,7 +100,7 @@ function registerTaskRoutes(app) {
         path: '/api/task',
         summary: 'Update an existing task',
         description: 'Updates an existing task record by its id field.',
-        tags: ['Tasks'],
+        tags: ['V1 · Tasks'],
         requestBody: {
             required: true,
             content: {
@@ -152,7 +152,7 @@ function registerTaskRoutes(app) {
         path: '/api/task/:id',
         summary: 'Fetch a task by id',
         description: 'Returns a single task record, or null if not found.',
-        tags: ['Tasks'],
+        tags: ['V1 · Tasks'],
         parameters: [
             {
                 in: 'path',
@@ -205,7 +205,7 @@ function registerTaskRoutes(app) {
         path: '/api/task/:id',
         summary: 'Delete a task',
         description: 'Deletes a task record by id.',
-        tags: ['Tasks'],
+        tags: ['V1 · Tasks'],
         parameters: [
             {
                 in: 'path',
