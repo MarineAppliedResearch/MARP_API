@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>MARE Video Player Engine -- Test Harness</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #111;
+            color: #eee;
+            margin: 0;
+            padding: 16px;
+        }
+
+        h1 {
+            font-size: 18px;
+            font-weight: normal;
+            color: #999;
+        }
+
+        canvas {
+            background: black;
+            max-width: 100%;
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        input[type="text"], input[type="number"] {
+            background: #222;
+            color: #eee;
+            border: 1px solid #444;
+            padding: 4px 6px;
+        }
+
+        button {
+            padding: 4px 10px;
+        }
+
+        #log {
+            background: #000;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 12px;
+            height: 200px;
+            overflow-y: auto;
+            padding: 8px;
+            white-space: pre-wrap;
+            border: 1px solid #333;
+        }
+
+        label {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>MARE Video Player Engine -- Test Harness (not part of the annotation tool; validates the WebCodecs engine before it's copied into the C# project)</h1>
+
+    <div class="controls">
+        <label>Jellyfin item id: <input id="itemIdInput" type="text" size="34" value="0580f9fc5d3e0633998c3b02a236358c"></label>
+        <label>Bearer token: <input id="tokenInput" type="text" size="48" placeholder="svc_... (optional -- Jellyfin V2 routes are unauthenticated today)"></label>
+        <button id="loadButton">Load</button>
+    </div>
+
+    <canvas id="canvas" width="960" height="540"></canvas>
+
+    <div class="controls">
+        <button id="playPauseButton" disabled>Play</button>
+        <button id="stepBackButton" disabled>&laquo; Step</button>
+        <button id="stepForwardButton" disabled>Step &raquo;</button>
+        <label>Speed: <input id="speedInput" type="number" value="1" step="0.1" disabled></label>
+        <span id="timeDisplay">--:-- / --:--</span>
+    </div>
+
+    <div class="controls">
+        <input id="seekBar" type="range" min="0" max="1000" value="0" disabled>
+    </div>
+
+    <div id="log"></div>
+
+    <script src="dist/mare-video-engine.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
