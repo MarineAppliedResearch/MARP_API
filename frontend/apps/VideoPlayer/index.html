@@ -4,10 +4,46 @@
     <meta charset="utf-8">
     <title>Marp Video Player Engine -- Test Harness</title>
     <style>
+        /* Same palette as frontend/shared/assets/css/landing.css's :root --
+           this harness is part of the same product, and this engine is
+           meant to become a standalone player library, so its default look
+           should read as MARP's, not an arbitrary debug-tool gray/blue. */
+        :root {
+            --navy-1000: #01050d;
+            --navy-950: #020814;
+            --navy-900: #03101f;
+            --navy-850: #051828;
+            --navy-800: #07233a;
+
+            --cyan-300: #64f6f2;
+            --cyan-400: #22d7dc;
+            --cyan-500: #05b9c8;
+            --blue-400: #2d9cff;
+            --blue-500: #147ee8;
+            --green-300: #c7ff62;
+            --green-400: #a7ec35;
+            --green-500: #83c91f;
+
+            --white: #f7fbff;
+            --text: #c7d4dd;
+            --muted: #8198a8;
+            --faint: #587181;
+
+            --border: rgba(42, 214, 220, 0.28);
+            --border-strong: rgba(42, 214, 220, 0.52);
+            --glow-cyan: 0 0 24px rgba(34, 215, 220, 0.25);
+            /* Neon-green glow/border, same formula as --glow-cyan/--border
+               above but keyed to --green-400 -- green is the player's
+               primary accent (handle, focus ring, decoded/ready state),
+               cyan is secondary (pinned-segment indicator only). */
+            --glow-green: 0 0 24px rgba(167, 236, 53, 0.35);
+            --border-green: rgba(167, 236, 53, 0.35);
+        }
+
         body {
             font-family: sans-serif;
-            background: #111;
-            color: #eee;
+            background: var(--navy-1000);
+            color: var(--text);
             margin: 0;
             padding: 16px;
         }
@@ -15,14 +51,7 @@
         h1 {
             font-size: 18px;
             font-weight: normal;
-            color: #999;
-        }
-
-        canvas {
-            background: black;
-            max-width: 100%;
-            display: block;
-            margin-bottom: 12px;
+            color: var(--muted);
         }
 
         .controls {
@@ -33,15 +62,10 @@
             margin-bottom: 12px;
         }
 
-        input[type="range"] {
-            flex: 1;
-            min-width: 200px;
-        }
-
         input[type="text"], input[type="number"] {
-            background: #222;
-            color: #eee;
-            border: 1px solid #444;
+            background: var(--navy-900);
+            color: var(--text);
+            border: 1px solid var(--faint);
             padding: 4px 6px;
         }
 
@@ -49,22 +73,233 @@
             padding: 4px 10px;
         }
 
+        label {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        /* --- Player --- */
+
+        /* tabindex makes this focusable, scoping the q..\ speed hotkeys
+           (see app.js) to only fire while the player itself has focus,
+           rather than fighting with the item-id/token text inputs above. */
+        #playerContainer {
+            position: relative;
+            width: 100%;
+            max-width: 960px;
+            aspect-ratio: 16 / 9;
+            background: black;
+            margin-bottom: 12px;
+            outline: none;
+            user-select: none;
+        }
+
+        #playerContainer:focus {
+            box-shadow: 0 0 0 2px var(--green-400), var(--glow-green);
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Shown centered over the canvas until the engine's first frame
+           is actually presented -- see app.js's 'loadedmetadata' handler. */
+        #placeholderLogo {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 25%;
+            max-width: 160px;
+            opacity: 0.85;
+            pointer-events: none;
+        }
+
+        #centerPlayOverlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(1, 5, 13, 0.35);
+            cursor: pointer;
+        }
+
+        #centerPlayOverlay.hidden {
+            display: none;
+        }
+
+        /* Plain oversized glyph, not a circular badge -- easier to hit on
+           a touchscreen (much larger effective tap target than a small
+           button) and reads as "tap anywhere here to play" rather than a
+           precise button. */
+        #centerPlayButton {
+            border: none;
+            background: none;
+            color: var(--white);
+            opacity: 0.75;
+            font-size: 88px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        #centerPlayButton:hover {
+            opacity: 0.95;
+        }
+
+        /* --- Controls bar: fades in/out on idle during playback (see
+           app.js's auto-hide timer), always visible while paused or
+           while the pointer is over the bar itself. --- */
+        #controlsBar {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 6px 10px 8px;
+            background: linear-gradient(to top, rgba(1, 5, 13, 0.8), rgba(1, 5, 13, 0));
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        #controlsBar.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* --- Scrub bar: a custom-built track (not a native <input
+           type=range>) so per-segment fetch/decode/pinned shading can be
+           rendered directly on the track -- native range inputs have no
+           cross-browser way to color arbitrary sub-ranges of their track.
+           Thicker than a typical native slider on purpose -- this bar's
+           whole point is showing per-segment shading at a glance, which
+           needs real visual room, and the whole player is meant to work
+           on a touchscreen (see #scrubTrack's own height, kept close to
+           the ~44px minimum recommended touch-target size even though the
+           visible bar itself is slimmer than that). --- */
+        #scrubTrack {
+            position: relative;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            margin-bottom: 4px;
+        }
+
+        #scrubTrackBg {
+            position: relative;
+            width: 100%;
+            height: 16px;
+            border-radius: 8px;
+            background: rgba(199, 212, 221, 0.15);
+            overflow: hidden;
+        }
+
+        .segment-block {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            /* Priority when a segment is in more than one state: decoded
+               overrides fetched overrides not-fetched (base background).
+               Pinned is layered separately as a border, not a fill, so
+               "pinned + decoded" and "pinned + not-yet-decoded" both stay
+               visually distinguishable from their un-pinned equivalents. */
+            background: transparent;
+        }
+
+        .segment-block.fetched {
+            background: var(--blue-400);
+        }
+
+        .segment-block.decoded {
+            background: var(--green-400);
+        }
+
+        /* Cyan (not green -- green is already decoded's fill color and
+           wouldn't read as a distinct ring against it) marks the pinned,
+           currently-relevant lookahead window. */
+        .segment-block.pinned {
+            box-shadow: inset 0 0 0 3px var(--cyan-400);
+        }
+
+        /* Reserved for Phase 5 (persistent disk cache) -- not populated by
+           getSegmentStates() yet, defined here so wiring in real data
+           later is a one-line addition, not a new visual design. */
+        .segment-block.disk-cached {
+            background: var(--faint);
+        }
+
+        #scrubHandle {
+            position: absolute;
+            top: 50%;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--green-400);
+            box-shadow: var(--glow-green);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        #scrubTooltip {
+            position: absolute;
+            bottom: 34px;
+            transform: translateX(-50%);
+            background: rgba(1, 5, 13, 0.9);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            white-space: nowrap;
+            pointer-events: none;
+            display: none;
+        }
+
+        .controls-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* min-width/height keeps a real >=44px touch target even though
+           the glyph itself doesn't fill the whole button box. */
+        .controls-row button {
+            background: none;
+            border: none;
+            color: var(--text);
+            font-size: 26px;
+            cursor: pointer;
+            padding: 6px 10px;
+            min-width: 44px;
+            min-height: 44px;
+        }
+
+        #timeDisplay, #speedDisplay {
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #speedDisplay {
+            color: var(--green-400);
+        }
+
+        .controls-spacer {
+            flex: 1;
+        }
+
         #log {
-            background: #000;
-            color: #0f0;
+            background: var(--navy-950);
+            color: var(--green-400);
             font-family: monospace;
             font-size: 12px;
             height: 200px;
             overflow-y: auto;
             padding: 8px;
             white-space: pre-wrap;
-            border: 1px solid #333;
-        }
-
-        label {
-            display: flex;
-            gap: 4px;
-            align-items: center;
+            border: 1px solid var(--faint);
         }
     </style>
 </head>
@@ -72,23 +307,46 @@
     <h1>Marp Video Player Engine -- Test Harness (not part of the annotation tool; validates the WebCodecs engine before it's copied into the C# project)</h1>
 
     <div class="controls">
-        <label>Jellyfin item id: <input id="itemIdInput" type="text" size="34" value="0580f9fc5d3e0633998c3b02a236358c"></label>
-        <label>Bearer token: <input id="tokenInput" type="text" size="48" placeholder="svc_... (optional -- Jellyfin V2 routes are unauthenticated today)"></label>
+        <label>Jellyfin item id: <input id="itemIdInput" type="text" size="34" value="d29df7a1ef91ab295654645cee2fbf34"></label>
+        <!-- Dev/test-harness default only -- a real service credential,
+             hardcoded here at the user's explicit request despite the
+             git-history/credential-leak risk being raised first. Rotate
+             this token if this repo's visibility or access ever changes. -->
+        <label>Bearer token: <input id="tokenInput" type="text" size="48" value="svc_OKqD5JBHB3ozJMYpw6MIutGX8Sfl0XT3c1zqI7oz1Mg" placeholder="svc_... (optional -- Jellyfin V2 routes are unauthenticated today)"></label>
         <button id="loadButton">Load</button>
     </div>
 
-    <canvas id="canvas" width="960" height="540"></canvas>
+    <div id="playerContainer" tabindex="0">
+        <canvas id="canvas" width="960" height="540"></canvas>
+        <img id="placeholderLogo" src="dist/assets/marp-mark.png" alt="">
 
-    <div class="controls">
-        <button id="playPauseButton" disabled>Play</button>
-        <button id="stepBackButton" disabled>&laquo; Step</button>
-        <button id="stepForwardButton" disabled>Step &raquo;</button>
-        <label>Speed: <input id="speedInput" type="number" value="1" step="0.1" disabled></label>
-        <span id="timeDisplay">--:-- / --:--</span>
+        <div id="centerPlayOverlay" class="hidden">
+            <button id="centerPlayButton" disabled>&#9654;</button>
+        </div>
+
+        <div id="controlsBar">
+            <div id="scrubTrack">
+                <div id="scrubTrackBg"></div>
+                <div id="scrubHandle"></div>
+                <div id="scrubTooltip"></div>
+            </div>
+
+            <div class="controls-row">
+                <button id="playPauseButton" disabled>&#9654;</button>
+                <span id="timeDisplay">--:-- / --:--</span>
+                <span id="speedDisplay">1x</span>
+                <div class="controls-spacer"></div>
+                <button id="muteButton" disabled>&#128266;</button>
+                <button id="fullscreenButton" disabled>&#9974;</button>
+            </div>
+        </div>
     </div>
 
     <div class="controls">
-        <input id="seekBar" type="range" min="0" max="1000" value="0" disabled>
+        <button id="stepBackButton" disabled>&laquo; Step</button>
+        <button id="stepForwardButton" disabled>Step &raquo;</button>
+        <label>Speed override: <input id="speedOverrideInput" type="number" value="1" step="0.1" disabled></label>
+        <span style="font-size: 12px; color: var(--muted);">Speed hotkeys (player must be focused): q w e r t y | u i o p [ ] \</span>
     </div>
 
     <div id="log"></div>

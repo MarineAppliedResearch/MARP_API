@@ -127,8 +127,10 @@ test.describe('video-engine playback', () => {
 
     test('time moves backward at playbackRate=-1 -- the whole point of this engine', async () => {
         const before = await getPlaybackState(page);
-        await page.fill('#speedInput', '-1');
-        await page.dispatchEvent('#speedInput', 'change');
+        // #speedOverrideInput, not #speedInput -- renamed in the Phase 2
+        // player-chrome rewrite (frontend/apps/VideoPlayer/index.html).
+        await page.fill('#speedOverrideInput', '-1');
+        await page.dispatchEvent('#speedOverrideInput', 'change');
         await page.click('#playPauseButton');
         await page.waitForTimeout(2000);
         const after = await getPlaybackState(page);

@@ -1,9 +1,12 @@
 /**
  * Page glue for the VideoPlayer engine test harness.
  *
- * Not part of the annotation tool -- just enough UI (item id field,
- * paste-in Bearer token, minimal transport controls) to validate the
- * engine itself.
+ * Not part of the annotation tool -- a YouTube-familiar player chrome
+ * (play/pause, scrub bar, time, mute/fullscreen icons) built specifically
+ * so the engine's actual fetch/decode behavior can be watched and
+ * debugged: the scrub bar shades each segment by fetched/decoded/pinned
+ * status (see updateSegmentShading()), and q..\ hotkeys jump between
+ * playback speeds instantly for scrubbing forward/backward from any point.
  *
  * Deliberately assigns the engine instance to window.marpVideo (not a
  * local variable) -- that global name is the actual integration contract
@@ -42,18 +45,59 @@ function formatTime(seconds) {
   return `${m}:${s}`;
 }
 
-let seekBarDragging = false;
+// Playback-rate hotkeys. q..y span -8x..-0.08x (reverse, slowing toward
+// y); u..\ span 0.08x..16x (forward, speeding up toward \). One flat,
+// easily-editable table -- change this object alone, nothing else needs
+// to know the scheme. Pressing any of these also forces playback to
+// start regardless of the current play/pause state (see the keydown
+// handler below) -- these keys are for actively scrubbing through the
+// video, not just arming a rate.
+const SPEED_KEYMAP = {
+  q: -8,
+  w: -3,
+  e: -1,
+  r: -0.5,
+  t: -0.2,
+  y: -0.08,
+  u: 0.08,
+  i: 0.2,
+  o: 0.5,
+  p: 1,
+  "[": 2.5,
+  "]": 6,
+  "\\": 16,
+};
+
+/** How long the controls bar stays visible after the pointer stops moving during playback, in ms. */
+const CONTROLS_IDLE_HIDE_MS = 2500;
+
+/** How often segment-state shading is re-read from the engine and redrawn, in ms -- a plain timer, not tied to frame presentation, since it doesn't need to be that responsive. */
+const SEGMENT_SHADING_INTERVAL_MS = 250;
 
 const loadButton = document.getElementById("loadButton");
 const itemIdInput = document.getElementById("itemIdInput");
 const tokenInput = document.getElementById("tokenInput");
 const canvas = document.getElementById("canvas");
+const playerContainer = document.getElementById("playerContainer");
+const placeholderLogo = document.getElementById("placeholderLogo");
+const centerPlayOverlay = document.getElementById("centerPlayOverlay");
+const centerPlayButton = document.getElementById("centerPlayButton");
+const controlsBar = document.getElementById("controlsBar");
+const scrubTrack = document.getElementById("scrubTrack");
+const scrubTrackBg = document.getElementById("scrubTrackBg");
+const scrubHandle = document.getElementById("scrubHandle");
+const scrubTooltip = document.getElementById("scrubTooltip");
 const playPauseButton = document.getElementById("playPauseButton");
+const timeDisplay = document.getElementById("timeDisplay");
+const speedDisplay = document.getElementById("speedDisplay");
+const muteButton = document.getElementById("muteButton");
+const fullscreenButton = document.getElementById("fullscreenButton");
 const stepBackButton = document.getElementById("stepBackButton");
 const stepForwardButton = document.getElementById("stepForwardButton");
-const speedInput = document.getElementById("speedInput");
-const timeDisplay = document.getElementById("timeDisplay");
-const seekBar = document.getElementById("seekBar");
+const speedOverrideInput = document.getElementById("speedOverrideInput");
+
+let scrubDragging = false;
+let segmentShadingHandle = null;
 
 loadButton.addEventListener("click", async () => {
   const itemId = itemIdInput.value.trim();
@@ -75,10 +119,17 @@ loadButton.addEventListener("click", async () => {
 
     log(`Engine ready. duration=${window.marpVideo.duration.toFixed(3)}s, ${window.marpVideo.videoWidth}x${window.marpVideo.videoHeight}, ${window.marpVideo.fps}fps`);
 
-    seekBar.max = String(Math.floor(window.marpVideo.duration * 1000));
-    [playPauseButton, stepBackButton, stepForwardButton, speedInput, seekBar].forEach((el) => {
+    buildSegmentBlocks(window.marpVideo.getSegmentStates());
+    if (segmentShadingHandle) {
+      clearInterval(segmentShadingHandle);
+    }
+    segmentShadingHandle = setInterval(updateSegmentShading, SEGMENT_SHADING_INTERVAL_MS);
+
+    [playPauseButton, centerPlayButton, stepBackButton, stepForwardButton, speedOverrideInput, muteButton, fullscreenButton].forEach((el) => {
       el.disabled = false;
     });
+
+    playerContainer.focus();
   } catch (err) {
     log("ERROR loading: " + err.message);
     console.error(err);
@@ -87,8 +138,23 @@ loadButton.addEventListener("click", async () => {
 });
 
 /**
+ * Applies the UI state a freshly-loaded (and, today, always-paused-until-
+ * play()) engine should show: hides the placeholder logo, reveals the
+ * center-play overlay, and shows the real initial time/duration instead
+ * of the pre-load "--:--" placeholder text.
+ * Inputs: none (uses window.marpVideo).
+ * Output: none.
+ */
+function applyLoadedUiState() {
+  placeholderLogo.style.display = "none";
+  centerPlayOverlay.classList.remove("hidden");
+  timeDisplay.textContent = `${formatTime(window.marpVideo.currentTime)} / ${formatTime(window.marpVideo.duration)}`;
+  updateScrubHandle(window.marpVideo.currentTime);
+}
+
+/**
  * Wires window.marpVideo's events and frame-callback loop to the log
- * panel and transport-control UI.
+ * panel, transport controls, and scrub bar.
  * Inputs: none (uses window.marpVideo).
  * Output: none.
  * Usage: called once, right after createMarpVideoEngine() resolves.
@@ -96,6 +162,30 @@ loadButton.addEventListener("click", async () => {
 function wireVideoEvents() {
   ["loadedmetadata", "durationchange", "resize", "error", "playing", "pause", "seeking", "seeked"].forEach((type) => {
     window.marpVideo.addEventListener(type, () => log(`event: ${type}`));
+  });
+
+  // NOT solely via addEventListener("loadedmetadata", ...): createMarpVideoEngine()
+  // dispatches loadedmetadata/durationchange/resize internally, before it
+  // ever returns the shim to its caller -- by the time wireVideoEvents()
+  // runs (after that promise resolves) and attaches this listener, the
+  // event has already fired and is gone for good, matching real
+  // EventTarget semantics (no replay for late listeners). Confirmed live:
+  // the placeholder logo and center-play overlay never appeared without
+  // this direct call. The listener stays registered too, for any later
+  // re-fire (e.g. a hypothetical future profile-switch reload) that
+  // happens after listeners are already attached.
+  applyLoadedUiState();
+  window.marpVideo.addEventListener("loadedmetadata", applyLoadedUiState);
+
+  window.marpVideo.addEventListener("playing", () => {
+    playPauseButton.innerHTML = "&#10074;&#10074;";
+    centerPlayOverlay.classList.add("hidden");
+  });
+
+  window.marpVideo.addEventListener("pause", () => {
+    playPauseButton.innerHTML = "&#9654;";
+    centerPlayOverlay.classList.remove("hidden");
+    showControlsBar();
   });
 
   let frameLogCounter = 0;
@@ -106,8 +196,8 @@ function wireVideoEvents() {
       log(`frame #${metadata.presentedFrames} mediaTime=${metadata.mediaTime.toFixed(3)} segment=${metadata.segmentIndex}`);
     }
 
-    if (!seekBarDragging) {
-      seekBar.value = String(Math.floor(metadata.mediaTime * 1000));
+    if (!scrubDragging) {
+      updateScrubHandle(metadata.mediaTime);
     }
     timeDisplay.textContent = `${formatTime(metadata.mediaTime)} / ${formatTime(window.marpVideo.duration)}`;
 
@@ -117,18 +207,131 @@ function wireVideoEvents() {
   window.marpVideo.requestVideoFrameCallback(onFrame);
 }
 
-playPauseButton.addEventListener("click", () => {
+/**
+ * Moves the scrub handle to the given media time.
+ * Inputs: mediaTime (seconds).
+ * Output: none (updates #scrubHandle's position).
+ */
+function updateScrubHandle(mediaTime) {
+  const duration = window.marpVideo.duration;
+  const fraction = duration > 0 ? Math.min(1, Math.max(0, mediaTime / duration)) : 0;
+  scrubHandle.style.left = `${fraction * 100}%`;
+}
+
+/**
+ * Builds one absolutely-positioned div per segment on the scrub track,
+ * sized by each segment's real (non-uniform-safe) duration -- called
+ * once per load, since segment count/durations never change afterward.
+ * Inputs: segmentStates (array from getSegmentStates()).
+ * Output: none (populates #scrubTrackBg).
+ */
+function buildSegmentBlocks(segmentStates) {
+  scrubTrackBg.innerHTML = "";
+  const duration = window.marpVideo.duration;
+
+  for (const segment of segmentStates) {
+    const block = document.createElement("div");
+    block.className = "segment-block";
+    block.dataset.index = String(segment.index);
+    block.style.left = `${(segment.startTime / duration) * 100}%`;
+    block.style.width = `${((segment.endTime - segment.startTime) / duration) * 100}%`;
+    scrubTrackBg.appendChild(block);
+  }
+}
+
+/**
+ * Re-reads segment fetch/decode/pin status from the engine and updates
+ * each segment block's shading -- run on a plain timer (see
+ * SEGMENT_SHADING_INTERVAL_MS), independent of frame presentation.
+ * Inputs: none (uses window.marpVideo).
+ * Output: none (updates .segment-block classes).
+ */
+function updateSegmentShading() {
+  if (!window.marpVideo) {
+    return;
+  }
+
+  for (const segment of window.marpVideo.getSegmentStates()) {
+    const block = scrubTrackBg.querySelector(`[data-index="${segment.index}"]`);
+    if (!block) {
+      continue;
+    }
+    block.classList.toggle("fetched", segment.fetched);
+    block.classList.toggle("decoded", segment.decoded);
+    block.classList.toggle("pinned", segment.pinned);
+  }
+}
+
+/**
+ * Converts a pointer event's x position on the scrub track into a media time.
+ * Inputs: pointer event.
+ * Output: time in seconds, clamped to [0, duration].
+ */
+function scrubEventToTime(event) {
+  const rect = scrubTrackBg.getBoundingClientRect();
+  const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+  return fraction * window.marpVideo.duration;
+}
+
+scrubTrack.addEventListener("pointerdown", (event) => {
+  if (!window.marpVideo) {
+    return;
+  }
+  scrubDragging = true;
+  scrubTrack.setPointerCapture(event.pointerId);
+  const time = scrubEventToTime(event);
+  updateScrubHandle(time);
+  window.marpVideo.currentTime = time;
+});
+
+scrubTrack.addEventListener("pointermove", (event) => {
+  if (!window.marpVideo) {
+    return;
+  }
+  const time = scrubEventToTime(event);
+
+  scrubTooltip.style.display = "block";
+  scrubTooltip.style.left = `${((event.clientX - scrubTrackBg.getBoundingClientRect().left) / scrubTrackBg.getBoundingClientRect().width) * 100}%`;
+  scrubTooltip.textContent = formatTime(time);
+
+  if (scrubDragging) {
+    // Continuous seek-while-dragging (not commit-on-release) --
+    // deliberately, so dragging the scrub bar is itself a live view into
+    // how fast the engine can fetch/decode segments it's never seen.
+    updateScrubHandle(time);
+    window.marpVideo.currentTime = time;
+  }
+});
+
+scrubTrack.addEventListener("pointerleave", () => {
+  scrubTooltip.style.display = "none";
+});
+
+scrubTrack.addEventListener("pointerup", (event) => {
+  scrubDragging = false;
+  scrubTrack.releasePointerCapture(event.pointerId);
+});
+
+/**
+ * Toggles play/pause, matching a YouTube-familiar single control shared
+ * by the small transport button and the big center overlay button.
+ * Inputs: none (uses window.marpVideo).
+ * Output: none.
+ */
+function togglePlayPause() {
   if (!window.marpVideo) {
     return;
   }
   if (window.marpVideo.paused) {
     window.marpVideo.play();
-    playPauseButton.textContent = "Pause";
   } else {
     window.marpVideo.pause();
-    playPauseButton.textContent = "Play";
   }
-});
+}
+
+playPauseButton.addEventListener("click", togglePlayPause);
+centerPlayButton.addEventListener("click", togglePlayPause);
+canvas.addEventListener("click", togglePlayPause);
 
 stepForwardButton.addEventListener("click", () => {
   if (!window.marpVideo) {
@@ -144,29 +347,104 @@ stepBackButton.addEventListener("click", () => {
   window.marpVideo.currentTime = Math.max(0, window.marpVideo.currentTime - 1 / window.marpVideo.fps);
 });
 
-speedInput.addEventListener("change", (event) => {
+/**
+ * Applies a new playbackRate and updates the speed readout -- the one
+ * choke point both the hotkeys and the manual override input go through.
+ * Inputs: rate (number).
+ * Output: none.
+ */
+function setPlaybackRate(rate) {
   if (!window.marpVideo) {
     return;
   }
+  window.marpVideo.playbackRate = rate;
+  speedDisplay.textContent = `${rate}x`;
+  speedOverrideInput.value = String(rate);
+  log(`playbackRate set to ${rate}`);
+}
+
+speedOverrideInput.addEventListener("change", (event) => {
   const rate = parseFloat(event.target.value);
   if (!Number.isNaN(rate)) {
-    window.marpVideo.playbackRate = rate;
-    log(`playbackRate set to ${rate}`);
+    setPlaybackRate(rate);
   }
 });
 
-// Commit-on-release, matching the real annotation tool's confirmed slider
-// behavior (sliProgress_ValueChanged only previews; the real seek commits
-// once in sliProgress_DragCompleted) -- 'change' fires on release, not on
-// every intermediate value like 'input' would.
-seekBar.addEventListener("pointerdown", () => {
-  seekBarDragging = true;
-});
-
-seekBar.addEventListener("change", () => {
-  seekBarDragging = false;
+muteButton.addEventListener("click", () => {
   if (!window.marpVideo) {
     return;
   }
-  window.marpVideo.currentTime = Number(seekBar.value) / 1000;
+  // Inert today (audio decode/playback isn't implemented yet -- see
+  // marp-video-shim.js), but wired through to marpVideo.muted now so
+  // this button needs no changes once audio lands.
+  window.marpVideo.muted = !window.marpVideo.muted;
+  muteButton.innerHTML = window.marpVideo.muted ? "&#128263;" : "&#128266;";
+});
+
+fullscreenButton.addEventListener("click", () => {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    playerContainer.requestFullscreen();
+  }
+});
+
+// --- Controls bar auto-hide: always visible while paused or while the
+// pointer is over the bar itself; fades out after CONTROLS_IDLE_HIDE_MS
+// of no pointer movement during playback. ---
+
+let controlsHideTimer = null;
+let pointerOverControlsBar = false;
+
+/** Shows the controls bar and (re)starts the idle-hide timer if playing. */
+function showControlsBar() {
+  controlsBar.classList.remove("hidden");
+  if (controlsHideTimer) {
+    clearTimeout(controlsHideTimer);
+  }
+  if (window.marpVideo && !window.marpVideo.paused) {
+    controlsHideTimer = setTimeout(() => {
+      if (!pointerOverControlsBar) {
+        controlsBar.classList.add("hidden");
+      }
+    }, CONTROLS_IDLE_HIDE_MS);
+  }
+}
+
+playerContainer.addEventListener("pointermove", showControlsBar);
+controlsBar.addEventListener("pointerenter", () => {
+  pointerOverControlsBar = true;
+  showControlsBar();
+});
+controlsBar.addEventListener("pointerleave", () => {
+  pointerOverControlsBar = false;
+  showControlsBar();
+});
+
+// --- Speed hotkeys: only while the player itself has focus (see
+// #playerContainer's tabindex="0" in index.html), so typing in the
+// item-id/token fields above is never hijacked. ---
+playerContainer.addEventListener("keydown", (event) => {
+  if (!window.marpVideo) {
+    return;
+  }
+
+  if (event.key === " ") {
+    event.preventDefault();
+    togglePlayPause();
+    return;
+  }
+
+  const rate = SPEED_KEYMAP[event.key];
+  if (rate !== undefined) {
+    event.preventDefault();
+    setPlaybackRate(rate);
+    // A speed hotkey always starts playback, regardless of the current
+    // paused state -- these keys are for actively scrubbing through the
+    // video at that rate, not just arming a rate for later. Deliberately
+    // scoped to the hotkeys only, not setPlaybackRate() itself, so the
+    // manual speed-override input's existing behavior (set the rate,
+    // leave play state alone) doesn't change.
+    window.marpVideo.play();
+  }
 });

@@ -69,6 +69,19 @@ export class SegmentFetcher {
     }
 
     /**
+     * Reports whether a segment's raw bytes are already fetched and
+     * cached, without fetching them if not -- used to report per-segment
+     * fetch status (e.g. for a scrub-bar visualization), as distinct from
+     * {@link module:video-engine/frame-store.FrameStore#has}'s decoded status.
+     *
+     * @param {number} segmentIndexNumber - Segment index to check.
+     * @returns {boolean} True if the segment's raw bytes are cached.
+     */
+    hasRawBytes(segmentIndexNumber) {
+        return this._rawSegmentCache.has(segmentIndexNumber);
+    }
+
+    /**
      * Fetches the shared init segment, caching it forever (it's tiny and
      * identical for every media segment in this stream).
      *

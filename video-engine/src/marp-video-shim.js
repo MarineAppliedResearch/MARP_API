@@ -63,6 +63,16 @@ export class MarpVideoShim {
         return this._scheduler.duration;
     }
 
+    /**
+     * Reports every segment's current fetch/decode/pin status, for a
+     * scrub-bar visualization -- not part of the real HTMLVideoElement API.
+     *
+     * @returns {Array<{index: number, startTime: number, endTime: number, fetched: boolean, decoded: boolean, pinned: boolean}>} Per-segment state.
+     */
+    getSegmentStates() {
+        return this._scheduler.getSegmentStates();
+    }
+
     /** @returns {boolean} True if playback is paused. */
     get paused() {
         return !this._scheduler.playing;

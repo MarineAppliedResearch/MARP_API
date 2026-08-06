@@ -95,6 +95,23 @@ export class Scheduler {
     }
 
     /**
+     * Reports every segment's current fetch/decode/pin status, for a
+     * scrub-bar visualization -- one entry per segment, in order.
+     *
+     * @returns {Array<{index: number, startTime: number, endTime: number, fetched: boolean, decoded: boolean, pinned: boolean}>} Per-segment state.
+     */
+    getSegmentStates() {
+        return this.segmentIndex.segments.map((segment) => ({
+            index: segment.index,
+            startTime: segment.startTime,
+            endTime: segment.endTime,
+            fetched: this.frameStore.segmentFetcher.hasRawBytes(segment.index),
+            decoded: this.frameStore.has(segment.index),
+            pinned: this.frameStore.pinned.has(segment.index),
+        }));
+    }
+
+    /**
      * Registers a one-shot callback for the next presented frame,
      * matching the real requestVideoFrameCallback contract (callers must
      * re-register themselves each time to keep receiving frames).

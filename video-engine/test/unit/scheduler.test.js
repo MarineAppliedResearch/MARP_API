@@ -1,13 +1,13 @@
 /**
- * Unit tests for Scheduler#_locateFrameIndex -- the pure frame-lookup
- * math shared by every render-loop tick, step, and seek.
+ * Unit tests for Scheduler's pure/mockable logic: frame-lookup math
+ * (#_locateFrameIndex), lookahead/prefetch orchestration
+ * (#_kickLookahead), and segment-state reporting (#getSegmentStates).
  *
- * Only this one method is covered here: the rest of Scheduler (play/pause
- * pacing, lookahead prefetch, seek races) depends on requestAnimationFrame,
- * performance.now(), and real decoded segments, and is exercised instead
+ * Play/pause pacing and real seek races depend on requestAnimationFrame,
+ * performance.now(), and real decoded segments, and are exercised instead
  * by the E2E suite against the real running engine.
  *
- * @fileoverview Unit tests for Scheduler's frame-locating logic.
+ * @fileoverview Unit tests for Scheduler's frame-locating, lookahead, and segment-state logic.
  * @author Isaac Travers
  * @module video-engine/test/unit/scheduler.test
  */
@@ -170,5 +170,31 @@ describe('Scheduler#_kickLookahead', () => {
         // should have gone through ensureSegment (decode), only prefetchRawBytes.
         expect(frameStore.prefetchedIndices).toEqual(Array.from({ length: 14 }, (_, i) => i + 6));
         expect(frameStore.ensuredIndices).not.toContain(6);
+    });
+});
+
+describe('Scheduler#getSegmentStates', () => {
+    test('reports fetched/decoded/pinned per segment, independently of each other', () => {
+        // Deliberately mixed states -- segment 1 is fetched but not
+        // decoded (still just raw bytes), segment 2 is decoded but not
+        // pinned (already evicted from the lookahead window), matching
+        // real states a scrub-bar visualization needs to tell apart.
+        const frameStore = {
+            segmentFetcher: { hasRawBytes: (index) => index === 1 || index === 2 },
+            has: (index) => index === 2,
+            pinned: new Set([0]),
+        };
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(3, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+
+        expect(scheduler.getSegmentStates()).toEqual([
+            { index: 0, startTime: 0, endTime: 3, fetched: false, decoded: false, pinned: true },
+            { index: 1, startTime: 3, endTime: 6, fetched: true, decoded: false, pinned: false },
+            { index: 2, startTime: 6, endTime: 9, fetched: true, decoded: true, pinned: false },
+        ]);
     });
 });
