@@ -82,6 +82,10 @@ typings/
 .nuxt
 dist
 
+# Playwright test artifacts (traces, screenshots, HTML report) -- regenerated every E2E run
+test-results/
+playwright-report/
+
 # Gatsby files
 .cache/
 # Comment in the public line in if your project uses Gatsby and *not* Next.js

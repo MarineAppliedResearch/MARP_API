@@ -5,7 +5,7 @@
  * paste-in Bearer token, minimal transport controls) to validate the
  * engine itself.
  *
- * Deliberately assigns the engine instance to window.mareVideo (not a
+ * Deliberately assigns the engine instance to window.marpVideo (not a
  * local variable) -- that global name is the actual integration contract
  * MareMediaElement.xaml.cs will eventually depend on, so the test harness
  * should exercise the exact same global surface, not just something
@@ -70,12 +70,12 @@ loadButton.addEventListener("click", async () => {
   log(`Loading ${streamUrl} ...`);
 
   try {
-    window.mareVideo = await MareVideoEngine.createMareVideoEngine(canvas, { streamUrl, fetchOptions });
+    window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, { streamUrl, fetchOptions });
     wireVideoEvents();
 
-    log(`Engine ready. duration=${window.mareVideo.duration.toFixed(3)}s, ${window.mareVideo.videoWidth}x${window.mareVideo.videoHeight}, ${window.mareVideo.fps}fps`);
+    log(`Engine ready. duration=${window.marpVideo.duration.toFixed(3)}s, ${window.marpVideo.videoWidth}x${window.marpVideo.videoHeight}, ${window.marpVideo.fps}fps`);
 
-    seekBar.max = String(Math.floor(window.mareVideo.duration * 1000));
+    seekBar.max = String(Math.floor(window.marpVideo.duration * 1000));
     [playPauseButton, stepBackButton, stepForwardButton, speedInput, seekBar].forEach((el) => {
       el.disabled = false;
     });
@@ -87,15 +87,15 @@ loadButton.addEventListener("click", async () => {
 });
 
 /**
- * Wires window.mareVideo's events and frame-callback loop to the log
+ * Wires window.marpVideo's events and frame-callback loop to the log
  * panel and transport-control UI.
- * Inputs: none (uses window.mareVideo).
+ * Inputs: none (uses window.marpVideo).
  * Output: none.
- * Usage: called once, right after createMareVideoEngine() resolves.
+ * Usage: called once, right after createMarpVideoEngine() resolves.
  */
 function wireVideoEvents() {
   ["loadedmetadata", "durationchange", "resize", "error", "playing", "pause", "seeking", "seeked"].forEach((type) => {
-    window.mareVideo.addEventListener(type, () => log(`event: ${type}`));
+    window.marpVideo.addEventListener(type, () => log(`event: ${type}`));
   });
 
   let frameLogCounter = 0;
@@ -109,48 +109,48 @@ function wireVideoEvents() {
     if (!seekBarDragging) {
       seekBar.value = String(Math.floor(metadata.mediaTime * 1000));
     }
-    timeDisplay.textContent = `${formatTime(metadata.mediaTime)} / ${formatTime(window.mareVideo.duration)}`;
+    timeDisplay.textContent = `${formatTime(metadata.mediaTime)} / ${formatTime(window.marpVideo.duration)}`;
 
-    window.mareVideo.requestVideoFrameCallback(onFrame);
+    window.marpVideo.requestVideoFrameCallback(onFrame);
   }
 
-  window.mareVideo.requestVideoFrameCallback(onFrame);
+  window.marpVideo.requestVideoFrameCallback(onFrame);
 }
 
 playPauseButton.addEventListener("click", () => {
-  if (!window.mareVideo) {
+  if (!window.marpVideo) {
     return;
   }
-  if (window.mareVideo.paused) {
-    window.mareVideo.play();
+  if (window.marpVideo.paused) {
+    window.marpVideo.play();
     playPauseButton.textContent = "Pause";
   } else {
-    window.mareVideo.pause();
+    window.marpVideo.pause();
     playPauseButton.textContent = "Play";
   }
 });
 
 stepForwardButton.addEventListener("click", () => {
-  if (!window.mareVideo) {
+  if (!window.marpVideo) {
     return;
   }
-  window.mareVideo.currentTime = window.mareVideo.currentTime + 1 / window.mareVideo.fps;
+  window.marpVideo.currentTime = window.marpVideo.currentTime + 1 / window.marpVideo.fps;
 });
 
 stepBackButton.addEventListener("click", () => {
-  if (!window.mareVideo) {
+  if (!window.marpVideo) {
     return;
   }
-  window.mareVideo.currentTime = Math.max(0, window.mareVideo.currentTime - 1 / window.mareVideo.fps);
+  window.marpVideo.currentTime = Math.max(0, window.marpVideo.currentTime - 1 / window.marpVideo.fps);
 });
 
 speedInput.addEventListener("change", (event) => {
-  if (!window.mareVideo) {
+  if (!window.marpVideo) {
     return;
   }
   const rate = parseFloat(event.target.value);
   if (!Number.isNaN(rate)) {
-    window.mareVideo.playbackRate = rate;
+    window.marpVideo.playbackRate = rate;
     log(`playbackRate set to ${rate}`);
   }
 });
@@ -165,8 +165,8 @@ seekBar.addEventListener("pointerdown", () => {
 
 seekBar.addEventListener("change", () => {
   seekBarDragging = false;
-  if (!window.mareVideo) {
+  if (!window.marpVideo) {
     return;
   }
-  window.mareVideo.currentTime = Number(seekBar.value) / 1000;
+  window.marpVideo.currentTime = Number(seekBar.value) / 1000;
 });

@@ -1,9 +1,9 @@
 /**
  * Composes the video-engine pipeline (playlist -> segment fetch -> demux
  * -> decode -> frame cache -> scheduler -> canvas render) and returns a
- * window.mareVideo-compatible facade over it.
+ * window.marpVideo-compatible facade over it.
  *
- * @fileoverview Public entry point: createMareVideoEngine().
+ * @fileoverview Public entry point: createMarpVideoEngine().
  * @author Isaac Travers
  * @module video-engine
  */
@@ -15,12 +15,12 @@ import { GopDecoder } from './gop-decoder.js';
 import { FrameStore } from './frame-store.js';
 import { Scheduler } from './scheduler.js';
 import { CanvasRenderer } from './canvas-renderer.js';
-import { MareVideoShim } from './mare-video-shim.js';
+import { MarpVideoShim } from './marp-video-shim.js';
 
 /**
  * Creates a frame-accurate bidirectional playback engine over a Jellyfin
  * HLS/CMAF stream, backed by WebCodecs + a <canvas>, exposing a
- * window.mareVideo-compatible surface.
+ * window.marpVideo-compatible surface.
  *
  * @async
  * @param {HTMLCanvasElement} canvas - Render target.
@@ -28,10 +28,10 @@ import { MareVideoShim } from './mare-video-shim.js';
  * @param {string} options.streamUrl - MARP stream-negotiation URL, e.g. `/api/v2/jellyfin/items/:id/stream?mode=Transcode`.
  * @param {Object} [options.fetchOptions] - Extra fetch() options (e.g. `{headers: {Authorization: 'Bearer ...'}}`) applied to every request this engine makes.
  * @param {number} [options.cacheBudgetBytes] - Decoded-frame LRU cache budget in bytes. Default 1 GiB.
- * @returns {Promise<Object>} A {@link module:video-engine/mare-video-shim.MareVideoShim} instance.
+ * @returns {Promise<Object>} A {@link module:video-engine/marp-video-shim.MarpVideoShim} instance.
  * @throws {Error} When the stream can't be loaded or the first segment decodes zero frames.
  */
-export async function createMareVideoEngine(canvas, options) {
+export async function createMarpVideoEngine(canvas, options) {
     const { streamUrl, fetchOptions, cacheBudgetBytes } = options;
 
     // Logged at each stage (not just on final success/failure) so a stall
@@ -98,7 +98,7 @@ export async function createMareVideoEngine(canvas, options) {
         },
     });
 
-    shim = new MareVideoShim(scheduler, { videoWidth, videoHeight, fps });
+    shim = new MarpVideoShim(scheduler, { videoWidth, videoHeight, fps });
 
     // Prime the first displayed frame and fire the initial metadata
     // events, matching a real <video> element's loadedmetadata/

@@ -1,5 +1,5 @@
 /**
- * The window.mareVideo facade -- implements the exact surface
+ * The window.marpVideo facade -- implements the exact surface
  * MareMediaElement.xaml.cs drives today, verbatim, backed by the
  * Scheduler/CanvasRenderer/FrameStore pipeline instead of a real
  * HTMLVideoElement.
@@ -9,15 +9,15 @@
  * underlying element to inherit real EventTarget/HTMLMediaElement
  * behavior from.
  *
- * @fileoverview window.mareVideo-compatible facade over the Scheduler.
+ * @fileoverview window.marpVideo-compatible facade over the Scheduler.
  * @author Isaac Travers
- * @module video-engine/mare-video-shim
+ * @module video-engine/marp-video-shim
  */
 
 /**
- * @class MareVideoShim
+ * @class MarpVideoShim
  */
-export class MareVideoShim {
+export class MarpVideoShim {
     /**
      * @param {Object} scheduler - {@link module:video-engine/scheduler.Scheduler} instance.
      * @param {Object} streamInfo
@@ -35,9 +35,12 @@ export class MareVideoShim {
         this.volume = 1;
         this.muted = false;
 
-        // Audio is out of scope -- these exist only so C#'s
-        // `window.mareVideo.volume = ...; window.mareVideo.muted = ...;`
-        // calls don't throw. They're otherwise inert.
+        // Audio decode/playback isn't implemented yet (planned as its own
+        // later phase: plain playback at 1x forward, muted at any other
+        // rate, since reverse/time-shifted audio isn't meaningful the way
+        // reverse video is) -- these exist only so C#'s
+        // `window.marpVideo.volume = ...; window.marpVideo.muted = ...;`
+        // calls don't throw in the meantime. Otherwise inert until then.
 
         // Simplified: the shim is only ever constructed once the first
         // segment is already decoded and displayed, so it's always
@@ -104,7 +107,7 @@ export class MareVideoShim {
      * themselves each time to keep receiving frames.
      *
      * @param {function(number, Object): void} callback - Invoked with `(now, metadata)`.
-     * @returns {symbol} Handle usable with {@link MareVideoShim#cancelVideoFrameCallback}.
+     * @returns {symbol} Handle usable with {@link MarpVideoShim#cancelVideoFrameCallback}.
      */
     requestVideoFrameCallback(callback) {
         return this._scheduler.requestVideoFrameCallback(callback);
@@ -163,7 +166,7 @@ export class MareVideoShim {
             try {
                 callback({ type, target: this });
             } catch (err) {
-                console.error(`mareVideo listener for "${type}" threw`, err);
+                console.error(`marpVideo listener for "${type}" threw`, err);
             }
         }
     }
@@ -175,7 +178,7 @@ export class MareVideoShim {
      * @returns {void}
      */
     _dispatchError(err) {
-        console.error('MareVideoShim error', err);
+        console.error('MarpVideoShim error', err);
         this._dispatch('error');
     }
 

@@ -92,7 +92,7 @@ export class Scheduler {
      * @returns {symbol} Handle usable with {@link Scheduler#cancelVideoFrameCallback}.
      */
     requestVideoFrameCallback(callback) {
-        const handle = Symbol('mareVideoFrameCallback');
+        const handle = Symbol('marpVideoFrameCallback');
         this._frameCallbacks.push({ handle, callback });
         return handle;
     }
@@ -133,7 +133,7 @@ export class Scheduler {
             width: this.canvasRenderer.canvas.width,
             height: this.canvasRenderer.canvas.height,
             // Not part of the real requestVideoFrameCallback contract --
-            // an additive extra field (like mareVideo.fps) purely for
+            // an additive extra field (like marpVideo.fps) purely for
             // diagnostics, so callers can tell which segment is currently
             // driving playback without reaching into engine internals.
             segmentIndex: this.currentSegmentIndex,
