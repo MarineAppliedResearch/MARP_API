@@ -109,6 +109,23 @@ export class FrameStore {
     }
 
     /**
+     * Fetches (and caches) a segment's raw bytes only, without demuxing
+     * or decoding it -- used for a wider, network-only prefetch pass
+     * beyond the decode lookahead radius, so a slow network has already
+     * fetched a segment's bytes into SegmentFetcher's raw-bytes cache by
+     * the time decode is ready to consume it, rather than only starting
+     * that fetch once decode catches up and asks for it.
+     *
+     * @async
+     * @param {number} segmentIndexNumber - Segment index to prefetch raw bytes for.
+     * @returns {Promise<void>}
+     */
+    async prefetchRawBytes(segmentIndexNumber) {
+        await this.segmentFetcher.fetchInitSegment();
+        await this.segmentFetcher.fetchSegment(segmentIndexNumber);
+    }
+
+    /**
      * Fetches, demuxes, and decodes one segment, with a defensive
      * keyframe-merge fallback if Jellyfin's keyframe-alignment guarantee
      * is ever violated in practice.

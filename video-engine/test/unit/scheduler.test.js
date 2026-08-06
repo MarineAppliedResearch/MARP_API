@@ -66,3 +66,109 @@ describe('Scheduler#_locateFrameIndex', () => {
         expect(scheduler._locateFrameIndex(gopBuffer, justPastOneSecond, 'atOrAfter')).toBe(1);
     });
 });
+
+/**
+ * Builds a uniform SegmentIndex of `count` segments, each `duration`
+ * seconds long -- enough for _kickLookahead's lookahead/network windows
+ * to span several segments at a high |playbackRate|.
+ *
+ * @param {number} count - Number of segments.
+ * @param {number} duration - Duration of each segment, in seconds.
+ * @returns {Object} A SegmentIndex, matching playlist-manager.js's shape.
+ */
+function makeUniformSegmentIndex(count, duration) {
+    const segments = Array.from({ length: count }, (_, index) => ({
+        index,
+        startTime: index * duration,
+        endTime: (index + 1) * duration,
+        duration,
+    }));
+    return { segments, totalDuration: count * duration };
+}
+
+/**
+ * Builds a fake FrameStore that records every ensureSegment/prefetchRawBytes
+ * call and the most recent setPinned() call, with has() always false so
+ * _kickLookahead always attempts to ensure/prefetch every segment in range.
+ *
+ * @returns {Object} A fake FrameStore.
+ */
+function makeRecordingFrameStore() {
+    return {
+        ensuredIndices: [],
+        prefetchedIndices: [],
+        pinned: null,
+        has: () => false,
+        ensureSegment(index) {
+            this.ensuredIndices.push(index);
+            return Promise.resolve();
+        },
+        prefetchRawBytes(index) {
+            this.prefetchedIndices.push(index);
+            return Promise.resolve();
+        },
+        setPinned(indices) {
+            this.pinned = [...indices];
+        },
+    };
+}
+
+describe('Scheduler#_kickLookahead', () => {
+    test('forward: ensures and pins every segment between current and the lookahead edge, not just the endpoints', () => {
+        // Regression test: at 8x forward, the 2s (at 1x) lookahead window
+        // scales to 16s, spanning segments 0 through 5 at 3s/segment --
+        // the original bug only ensured/pinned segment 0 and segment 5,
+        // leaving 1-4 an unpinned, un-decoded gap.
+        const frameStore = makeRecordingFrameStore();
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(20, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.playbackRate = 8;
+
+        scheduler._kickLookahead(0);
+
+        expect(frameStore.pinned).toEqual([0, 1, 2, 3, 4, 5]);
+        expect(frameStore.ensuredIndices).toEqual([0, 1, 2, 3, 4, 5]);
+    });
+
+    test('reverse: ensures and pins every segment between one before the reverse-margin edge and the current segment', () => {
+        const frameStore = makeRecordingFrameStore();
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(20, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.playbackRate = -8;
+
+        // t=20 is segment 6 ([18, 21)); the 0.5s*8=4s reverse margin lands
+        // at t=16, segment 5 ([15, 18)) -- one segment earlier is 4.
+        scheduler._kickLookahead(20);
+
+        expect(frameStore.pinned).toEqual([4, 5, 6]);
+        expect(frameStore.ensuredIndices).toEqual([4, 5, 6]);
+    });
+
+    test('forward: prefetches raw bytes only (no decode) for the wider network radius beyond the decode range', () => {
+        const frameStore = makeRecordingFrameStore();
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(20, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.playbackRate = 8;
+
+        scheduler._kickLookahead(0);
+
+        // Decode range covers 0-5 (see the forward lookahead test above);
+        // the network-only radius (8s at 1x * 8 = 64s, clamped to the
+        // 60s stream) extends to the last segment, 19 -- none of 6-19
+        // should have gone through ensureSegment (decode), only prefetchRawBytes.
+        expect(frameStore.prefetchedIndices).toEqual(Array.from({ length: 14 }, (_, i) => i + 6));
+        expect(frameStore.ensuredIndices).not.toContain(6);
+    });
+});

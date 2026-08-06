@@ -89,6 +89,25 @@ describe('GopDecoder#decodeSegment', () => {
         gopBuffer.frames.forEach((frame) => expect(originalFrames).not.toContain(frame));
     });
 
+    test('closes every already-detached frame when decode fails partway through a segment', async () => {
+        // Regression test for a real leak: if a segment's decode fails
+        // after some frames were already output and detached to plain
+        // memory (see webcodecs-fakes.js's simulateErrorAfterFrames),
+        // those frames must still be closed before the rejection
+        // propagates -- each is a VideoFrame holding real external memory.
+        FakeVideoDecoder.outputForChunk = (chunk) =>
+            new FakeVideoFrame({ timestamp: chunk.timestamp, duration: 33_333, displayWidth: 16, displayHeight: 16, format: 'I420' });
+        FakeVideoDecoder.simulateErrorAfterFrames = 2;
+
+        const decoder = new GopDecoder();
+        const demuxResult = makeDemuxResult([0, 33_333, 66_666, 100_000]);
+
+        await expect(decoder.decodeSegment(0, demuxResult)).rejects.toThrow(/simulated decode error/);
+
+        expect(FakeVideoFrame.reconstructedFrames).toHaveLength(2);
+        expect(FakeVideoFrame.reconstructedFrames.every((frame) => frame.closed)).toBe(true);
+    });
+
     test('serializes concurrent decodeSegment calls so segments never interleave through the shared decoder', async () => {
         const decoder = new GopDecoder();
         const [first, second] = await Promise.all([

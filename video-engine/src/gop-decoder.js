@@ -17,8 +17,17 @@
  * @module video-engine/gop-decoder
  */
 
-/** Max time to wait for a segment's flush() before treating it as a stalled decoder, in ms. */
-const DECODE_WATCHDOG_MS = 8000;
+// Max time to wait for a segment's flush() before treating it as a
+// stalled decoder, in ms. Originally 8000, raised after being confirmed
+// live to fire during ordinary (not stalled) software decode: a Playwright
+// E2E run under headless Chromium's SwiftShader software decoder hit this
+// watchdog with framesOutputSoFar=43 and decodeQueueSize=29 -- output was
+// actively progressing, just too slowly for the original budget, not
+// actually stuck. That contradicts this file's own prior assumption that
+// software decode never hits this path (only hardware-accelerated decode
+// had been observed to). 20s stays a real ceiling for a genuine stall
+// while giving slow software decode realistic room.
+const DECODE_WATCHDOG_MS = 20000;
 
 /**
  * Copies a decoded VideoFrame's pixel data into a plain, CPU-memory-backed
@@ -171,12 +180,14 @@ export class GopDecoder {
 
         // Belt-and-suspenders watchdog: confirmed live that a platform's
         // WebCodecs decoder can stall on some encoded input with NEITHER a
-        // resolved flush() NOR a fired error callback (observed specifically
-        // with hardware-accelerated decode on at least one real machine,
-        // not reproduced with software/SwiftShader decode) -- there is no
-        // spec-guaranteed signal to wait for in that case, so a timeout is
-        // the only way to turn a silent, permanent hang into a real,
-        // actionable error instead.
+        // resolved flush() NOR a fired error callback (originally observed
+        // with hardware-accelerated decode; also since confirmed firing
+        // under headless Chromium's software/SwiftShader decode, just from
+        // genuinely slow-but-progressing decode rather than a true stall --
+        // see DECODE_WATCHDOG_MS's own comment) -- there is no
+        // spec-guaranteed signal to wait for in the true-stall case, so a
+        // timeout is the only way to turn a silent, permanent hang into a
+        // real, actionable error instead.
         let watchdogHandle;
         const watchdogPromise = new Promise((_, reject) => {
             watchdogHandle = setTimeout(() => {
@@ -200,6 +211,21 @@ export class GopDecoder {
 
         try {
             await Promise.race([flushPromise, errorPromise, watchdogPromise]);
+        } catch (err) {
+            // Some frames may already have been decoded and detached to
+            // plain memory before the error/stall occurred -- each is a
+            // VideoFrame holding real external memory, so leaving them
+            // unclosed here leaks on every failed segment, compounding on
+            // repeated retries. Promise.allSettled (not Promise.all): a
+            // still-pending or separately-rejected detach must not stop
+            // the frames that DID finish from being closed.
+            const settledFrames = await Promise.allSettled(framePromises);
+            for (const result of settledFrames) {
+                if (result.status === 'fulfilled') {
+                    result.value.close();
+                }
+            }
+            throw err;
         } finally {
             clearTimeout(watchdogHandle);
             this._currentSink = null;

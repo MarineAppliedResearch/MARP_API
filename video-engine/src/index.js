@@ -16,6 +16,9 @@ import { FrameStore } from './frame-store.js';
 import { Scheduler } from './scheduler.js';
 import { CanvasRenderer } from './canvas-renderer.js';
 import { MarpVideoShim } from './marp-video-shim.js';
+import { attachWebView2Bridge } from './webview2-bridge.js';
+
+export { attachWebView2Bridge };
 
 /**
  * Creates a frame-accurate bidirectional playback engine over a Jellyfin
@@ -93,7 +96,11 @@ export async function createMarpVideoEngine(canvas, options) {
                 console.error(`Scheduler emitted "${type}" with error`, err);
             }
             if (shim) {
-                shim._dispatch(type);
+                // Forward the real error through to listeners (e.g. the
+                // WebView2 bridge) -- background lookahead/prefetch
+                // failures dispatch 'error' this way too, not just a
+                // direct currentTime-setter rejection.
+                shim._dispatch(type, err ? { error: err } : undefined);
             }
         },
     });

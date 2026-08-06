@@ -155,16 +155,17 @@ export class MarpVideoShim {
      * Dispatches an event to every listener registered for `type`.
      *
      * @param {string} type - Event type to dispatch.
+     * @param {Object} [detail] - Extra fields merged onto the dispatched event object (e.g. `{error}` for the 'error' type) -- additive, not part of the real HTMLMediaElement event contract.
      * @returns {void}
      */
-    _dispatch(type) {
+    _dispatch(type, detail) {
         const set = this._listeners.get(type);
         if (!set) {
             return;
         }
         for (const callback of set) {
             try {
-                callback({ type, target: this });
+                callback({ type, target: this, ...detail });
             } catch (err) {
                 console.error(`marpVideo listener for "${type}" threw`, err);
             }
@@ -172,14 +173,18 @@ export class MarpVideoShim {
     }
 
     /**
-     * Logs an internal error and dispatches the `error` event.
+     * Logs an internal error and dispatches the `error` event, including
+     * the real Error object -- unlike a real HTMLVideoElement's `error`
+     * event (which exposes a MediaError code, not the underlying JS
+     * error), listeners here get the actual error/message, since that's
+     * what's available and useful for a caller like the WebView2 bridge.
      *
      * @param {Error} err - The error that occurred.
      * @returns {void}
      */
     _dispatchError(err) {
         console.error('MarpVideoShim error', err);
-        this._dispatch('error');
+        this._dispatch('error', { error: err });
     }
 
     /**

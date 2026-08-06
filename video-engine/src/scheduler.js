@@ -25,6 +25,17 @@ const LOOKAHEAD_SECONDS = 2.0;
 const REVERSE_PREFETCH_MARGIN_SECONDS = 0.5;
 
 /**
+ * Wider, network-only prefetch window (raw bytes only, no demux/decode),
+ * in seconds at 1x -- scaled by |playbackRate|, deliberately larger than
+ * LOOKAHEAD_SECONDS. A slow network's fetch time is independent of local
+ * decode speed, so once decode catches up to the LOOKAHEAD_SECONDS
+ * radius it would otherwise have to wait on a fetch that hasn't even
+ * started yet -- this radius exists purely to have already-fetched bytes
+ * sitting in SegmentFetcher's raw-bytes cache by the time decode needs them.
+ */
+const NETWORK_PREFETCH_SECONDS = 8.0;
+
+/**
  * Drives forward/reverse pacing, seeking, and lookahead prefetch against
  * a FrameStore, rendering through a CanvasRenderer.
  *
@@ -348,10 +359,12 @@ export class Scheduler {
     }
 
     /**
-     * Kicks off decode for the segment(s) the current playback direction
-     * will need next, and updates FrameStore's eviction-pinned set to
-     * match -- the lookahead window scales with `|playbackRate|` so
-     * high-speed playback doesn't outrun decode.
+     * Kicks off decode for every segment the current playback direction
+     * will need next (not just the near/far edge of the lookahead window
+     * -- at high |playbackRate| the window can span several segments, and
+     * every one of them needs decoding, not only the last one), updates
+     * FrameStore's eviction-pinned set to match, and separately kicks off
+     * a wider, network-only raw-byte prefetch beyond the decode radius.
      *
      * @param {number} targetTime - Current target presentation time, in seconds.
      * @returns {void}
@@ -359,25 +372,63 @@ export class Scheduler {
     _kickLookahead(targetTime) {
         const rateMagnitude = Math.max(1, Math.abs(this.playbackRate));
         const segment = findSegmentForTime(this.segmentIndex, targetTime);
-        const pinned = [segment.index];
+
+        let decodeStartIndex;
+        let decodeEndIndex;
 
         if (this.playbackRate >= 0) {
             const aheadTime = Math.min(this.duration, targetTime + LOOKAHEAD_SECONDS * rateMagnitude);
-            const aheadSegment = findSegmentForTime(this.segmentIndex, aheadTime);
-            pinned.push(aheadSegment.index);
-            if (!this.frameStore.has(aheadSegment.index)) {
-                this.frameStore.ensureSegment(aheadSegment.index).catch((err) => this.emit('error', err));
-            }
+            decodeStartIndex = segment.index;
+            decodeEndIndex = findSegmentForTime(this.segmentIndex, aheadTime).index;
         } else {
             const behindTime = Math.max(0, targetTime - REVERSE_PREFETCH_MARGIN_SECONDS * rateMagnitude);
-            const behindSegment = findSegmentForTime(this.segmentIndex, behindTime);
-            pinned.push(behindSegment.index);
-            if (behindSegment.index > 0 && !this.frameStore.has(behindSegment.index - 1)) {
-                this.frameStore.ensureSegment(behindSegment.index - 1).catch((err) => this.emit('error', err));
-            }
+            // One segment earlier than behindTime's own segment: reverse
+            // playback needs the PRIOR segment decoded before arriving at
+            // its boundary, not after, so decode isn't starting from zero
+            // the instant playback crosses into it.
+            decodeStartIndex = Math.max(0, findSegmentForTime(this.segmentIndex, behindTime).index - 1);
+            decodeEndIndex = segment.index;
         }
 
+        const pinned = [];
+        for (let index = decodeStartIndex; index <= decodeEndIndex; index++) {
+            pinned.push(index);
+            if (!this.frameStore.has(index)) {
+                this.frameStore.ensureSegment(index).catch((err) => this.emit('error', err));
+            }
+        }
         this.frameStore.setPinned(pinned);
+
+        this._kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex);
+    }
+
+    /**
+     * Fetches raw bytes only (no demux/decode) for segments beyond the
+     * decode lookahead radius already handled by _kickLookahead, up to
+     * NETWORK_PREFETCH_SECONDS -- SegmentFetcher's own raw-bytes cache
+     * makes repeat calls for an already-fetched segment a no-op, so this
+     * is safe to call unconditionally on every tick.
+     *
+     * @param {number} targetTime - Current target presentation time, in seconds.
+     * @param {number} rateMagnitude - |playbackRate|, floored at 1.
+     * @param {number} decodeStartIndex - First segment index already covered by the decode radius.
+     * @param {number} decodeEndIndex - Last segment index already covered by the decode radius.
+     * @returns {void}
+     */
+    _kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex) {
+        if (this.playbackRate >= 0) {
+            const networkAheadTime = Math.min(this.duration, targetTime + NETWORK_PREFETCH_SECONDS * rateMagnitude);
+            const networkEndIndex = findSegmentForTime(this.segmentIndex, networkAheadTime).index;
+            for (let index = decodeEndIndex + 1; index <= networkEndIndex; index++) {
+                this.frameStore.prefetchRawBytes(index).catch((err) => this.emit('error', err));
+            }
+        } else {
+            const networkBehindTime = Math.max(0, targetTime - NETWORK_PREFETCH_SECONDS * rateMagnitude);
+            const networkStartIndex = Math.max(0, findSegmentForTime(this.segmentIndex, networkBehindTime).index);
+            for (let index = decodeStartIndex - 1; index >= networkStartIndex; index--) {
+                this.frameStore.prefetchRawBytes(index).catch((err) => this.emit('error', err));
+            }
+        }
     }
 
     /**

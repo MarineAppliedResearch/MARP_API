@@ -33,6 +33,13 @@ class FakeVideoFrame {
             this.timestamp = init.timestamp;
             this.duration = init.duration;
             this.colorSpace = init.colorSpace;
+            // Tracks every reconstructed (plain-memory) frame -- the ones
+            // detachFromHardwareSurface() produces and gop-decoder.js's
+            // framePromises ultimately resolves to -- so a test can assert
+            // on their .closed state without needing to intercept
+            // detachFromHardwareSurface() itself, which is internal to
+            // the module under test.
+            FakeVideoFrame.reconstructedFrames.push(this);
         } else {
             Object.assign(this, bufferOrInit);
         }
@@ -64,6 +71,9 @@ class FakeVideoFrame {
     }
 }
 
+/** Every reconstructed (plain-memory) frame created since the last installWebCodecsFakes() call. */
+FakeVideoFrame.reconstructedFrames = [];
+
 /**
  * Fake EncodedVideoChunk -- just carries through whatever chunk
  * descriptor gop-decoder.js passes in, so a fake VideoDecoder can read
@@ -87,7 +97,7 @@ class FakeVideoDecoder {
     /**
      * @param {Object} callbacks
      * @param {function(Object): void} callbacks.output - Invoked once per decoded frame, matching the real VideoDecoder constructor dict.
-     * @param {function(Error): void} callbacks.error - Invoked on decode error; unused by the fake today (no test currently forces a decoder-reported error), kept for interface parity with the real constructor dict.
+     * @param {function(Error): void} callbacks.error - Invoked on decode error, when a test sets FakeVideoDecoder.simulateErrorAfterFrames.
      */
     constructor({ output, error }) {
         this._output = output;
@@ -128,6 +138,13 @@ class FakeVideoDecoder {
      * what order) comes back for a given chunk, e.g. to simulate decoded
      * output arriving out of presentation order.
      *
+     * If `FakeVideoDecoder.simulateErrorAfterFrames` is set to a number,
+     * fires the `error` callback after that many frames instead of
+     * finishing normally, and never resolves/rejects itself -- matching
+     * gop-decoder.js's own documented real-world observation that a
+     * decode error fires the error callback without ever settling a
+     * pending flush() promise.
+     *
      * @async
      * @returns {Promise<void>}
      */
@@ -135,9 +152,13 @@ class FakeVideoDecoder {
         const chunks = this._queue;
         this._queue = [];
 
-        for (const chunk of chunks) {
+        for (let i = 0; i < chunks.length; i++) {
+            if (FakeVideoDecoder.simulateErrorAfterFrames === i) {
+                this._error(new Error('simulated decode error'));
+                return new Promise(() => {}); // never settles, matching real behavior
+            }
             const outputForChunk = FakeVideoDecoder.outputForChunk || ((c) => new FakeVideoFrame({ timestamp: c.timestamp, duration: c.duration, displayWidth: 16, displayHeight: 16, format: 'I420' }));
-            this._output(outputForChunk(chunk));
+            this._output(outputForChunk(chunks[i]));
         }
     }
 
@@ -160,6 +181,8 @@ FakeVideoDecoder.isConfigSupported = async () => ({ supported: true });
  * @returns {function(): void} Call to remove the fakes and restore whatever globals existed before.
  */
 function installWebCodecsFakes() {
+    FakeVideoFrame.reconstructedFrames = [];
+
     const previous = {
         VideoFrame: global.VideoFrame,
         EncodedVideoChunk: global.EncodedVideoChunk,
@@ -175,6 +198,7 @@ function installWebCodecsFakes() {
         global.EncodedVideoChunk = previous.EncodedVideoChunk;
         global.VideoDecoder = previous.VideoDecoder;
         delete FakeVideoDecoder.outputForChunk;
+        delete FakeVideoDecoder.simulateErrorAfterFrames;
     };
 }
 
