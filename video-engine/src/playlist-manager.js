@@ -13,8 +13,13 @@
  * @module video-engine/playlist-manager
  */
 
+/** Max time to wait for a playlist fetch, in ms -- see segment-fetcher.js's FETCH_TIMEOUT_MS for why this exists at all (a stuck fetch must fail loudly, not hang forever). */
+const FETCH_TIMEOUT_MS = 60000;
+
 /**
- * Fetches a URL as text, following redirects transparently.
+ * Fetches a URL as text, following redirects transparently, with a
+ * timeout so a genuinely stuck request fails with a clear error instead
+ * of hanging forever.
  *
  * `response.url` reflects the final URL reached (e.g. MARP's stream
  * endpoint 302-ing to Jellyfin's own master.m3u8) -- confirmed live, no
@@ -25,10 +30,23 @@
  * @param {string} url - URL to fetch.
  * @param {Object} [fetchOptions] - Extra options passed through to fetch() (e.g. headers).
  * @returns {Promise<{text: string, finalUrl: string}>} Response body and the final URL after redirects.
- * @throws {Error} When the response is not ok.
+ * @throws {Error} When the response is not ok, or the request times out.
  */
 async function fetchText(url, fetchOptions) {
-    const response = await fetch(url, fetchOptions);
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    let response;
+    try {
+        response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error(`Playlist fetch timed out after ${FETCH_TIMEOUT_MS}ms: ${url}`);
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeoutHandle);
+    }
 
     if (!response.ok) {
         throw new Error(`Failed to fetch playlist (${response.status} ${response.statusText}): ${url}`);

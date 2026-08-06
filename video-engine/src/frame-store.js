@@ -119,9 +119,16 @@ export class FrameStore {
      * @throws {Error} When segment 0 itself doesn't start with a keyframe (unrecoverable).
      */
     async _decode(segmentIndexNumber) {
+        // Background lookahead/prefetch decode is otherwise invisible from
+        // the outside -- a real fetch/decode in progress and a genuine
+        // stall both just look like nothing is happening. Logging start
+        // and completion here gives an at-a-glance answer to "is it still
+        // working" without needing to add a debugger or guess.
+        console.log(`[frame-store] segment ${segmentIndexNumber}: fetching...`);
         const initBuffer = await this.segmentFetcher.fetchInitSegment();
         const segmentBuffer = await this.segmentFetcher.fetchSegment(segmentIndexNumber);
 
+        console.log(`[frame-store] segment ${segmentIndexNumber}: demuxing + decoding...`);
         let demuxResult = await demuxSegment(initBuffer, segmentBuffer);
 
         if (demuxResult.chunks.length === 0 || demuxResult.chunks[0].type !== 'key') {
@@ -145,6 +152,7 @@ export class FrameStore {
         }
 
         const gopBuffer = await this.gopDecoder.decodeSegment(segmentIndexNumber, demuxResult);
+        console.log(`[frame-store] segment ${segmentIndexNumber}: ready (${gopBuffer.frames.length} frames)`);
 
         this.buffers.set(segmentIndexNumber, gopBuffer);
         this._touch(segmentIndexNumber);

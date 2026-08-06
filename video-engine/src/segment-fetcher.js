@@ -19,6 +19,34 @@
  * @module video-engine/segment-fetcher
  */
 
+/** Max time to wait for a single segment fetch, in ms -- generous, since a real transcode segment fetch over a slow connection has been observed taking 30s+; the point is only to fail loudly, not to be a strict SLA. */
+const FETCH_TIMEOUT_MS = 60000;
+
+/**
+ * Fetches a URL with a timeout, so a genuinely stuck network request fails
+ * with a clear, actionable error instead of hanging forever with no signal
+ * -- confirmed live that segment fetch time over a slow connection to a
+ * remote Jellyfin server is highly variable (single-digit seconds to 30+),
+ * so this exists purely as a last-resort backstop, not a performance target.
+ *
+ * @param {string} url - URL to fetch.
+ * @returns {Promise<Response>} The fetch response.
+ * @throws {Error} When the request doesn't complete within FETCH_TIMEOUT_MS.
+ */
+function fetchWithTimeout(url) {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    return fetch(url, { signal: controller.signal })
+        .catch((err) => {
+            if (err.name === 'AbortError') {
+                throw new Error(`Fetch timed out after ${FETCH_TIMEOUT_MS}ms: ${url}`);
+            }
+            throw err;
+        })
+        .finally(() => clearTimeout(timeoutHandle));
+}
+
 /**
  * Fetches and caches the raw bytes of a SegmentIndex's segments.
  *
@@ -54,7 +82,7 @@ export class SegmentFetcher {
         }
 
         if (!this._initSegmentPromise) {
-            this._initSegmentPromise = fetch(this.segmentIndex.initSegmentUrl)
+            this._initSegmentPromise = fetchWithTimeout(this.segmentIndex.initSegmentUrl)
                 .then((response) => {
                     if (!response.ok) {
                         throw new Error(`Failed to fetch init segment (${response.status}): ${this.segmentIndex.initSegmentUrl}`);
@@ -91,7 +119,7 @@ export class SegmentFetcher {
             throw new Error(`No segment at index ${segmentIndexNumber}`);
         }
 
-        const response = await fetch(segment.url);
+        const response = await fetchWithTimeout(segment.url);
         if (!response.ok) {
             throw new Error(`Failed to fetch segment ${segmentIndexNumber} (${response.status}): ${segment.url}`);
         }

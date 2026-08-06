@@ -132,6 +132,11 @@ export class Scheduler {
             presentationTime: performance.now(),
             width: this.canvasRenderer.canvas.width,
             height: this.canvasRenderer.canvas.height,
+            // Not part of the real requestVideoFrameCallback contract --
+            // an additive extra field (like mareVideo.fps) purely for
+            // diagnostics, so callers can tell which segment is currently
+            // driving playback without reaching into engine internals.
+            segmentIndex: this.currentSegmentIndex,
         };
 
         const now = performance.now();
@@ -226,8 +231,25 @@ export class Scheduler {
             hitBoundary = true;
         }
 
-        this._renderAtTime(targetTime, this.playbackRate >= 0 ? 'atOrBefore' : 'atOrAfter');
-        this._kickLookahead(targetTime);
+        const rendered = this._renderAtTime(targetTime, this.playbackRate >= 0 ? 'atOrBefore' : 'atOrAfter');
+
+        if (!rendered) {
+            // Stalled: the needed segment isn't decoded yet. Re-anchor to
+            // the last actually-displayed position now, rather than
+            // leaving the anchor where it was -- otherwise elapsed wall-
+            // clock time during the stall keeps inflating targetTime on
+            // every subsequent tick, so by the time decode catches up the
+            // engine believes it should already be several segments
+            // further along than anything it's shown. Confirmed live:
+            // without this, a single stall triggers a burst of lookahead
+            // fetches for far-ahead segments instead of the next one, and
+            // playback skips/stutters trying to catch up to a target that
+            // was never really reachable in real time.
+            this._anchorWallClockMs = now;
+            this._anchorTime = this.currentTime;
+        }
+
+        this._kickLookahead(rendered ? targetTime : this.currentTime);
 
         if (hitBoundary) {
             this.pause();
@@ -249,21 +271,21 @@ export class Scheduler {
      *
      * @param {number} targetTime - Target presentation time, in seconds.
      * @param {('atOrBefore'|'atOrAfter')} direction - Which side of targetTime to prefer when landing between frames.
-     * @returns {void}
+     * @returns {boolean} False if the needed segment isn't decoded yet (a stall); true otherwise, whether or not a new frame was actually presented.
      */
     _renderAtTime(targetTime, direction) {
         const segment = findSegmentForTime(this.segmentIndex, targetTime);
 
         if (!this.frameStore.has(segment.index)) {
             this.frameStore.ensureSegment(segment.index).catch((err) => this.emit('error', err));
-            return;
+            return false;
         }
 
         const gopBuffer = this.frameStore.buffers.get(segment.index);
         const frameIdx = this._locateFrameIndex(gopBuffer, targetTime, direction);
 
         if (segment.index === this.currentSegmentIndex && frameIdx === this.currentFrameIdx) {
-            return;
+            return true;
         }
 
         const frame = gopBuffer.frames[frameIdx];
@@ -273,6 +295,8 @@ export class Scheduler {
             this.currentSegmentIndex = segment.index;
             this.currentFrameIdx = frameIdx;
         }
+
+        return true;
     }
 
     /**

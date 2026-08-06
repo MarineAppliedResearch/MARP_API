@@ -21,7 +21,9 @@
 const { chromium } = require('playwright');
 
 const BASE_URL = process.env.VIDEO_ENGINE_TEST_URL || 'http://localhost:3000/apps/VideoPlayer/';
-const ENGINE_LOAD_TIMEOUT_MS = 30000;
+// Generous: real segment fetch time against the live Jellyfin server over a
+// slow connection has been observed taking 30s+ for a single segment.
+const ENGINE_LOAD_TIMEOUT_MS = 90000;
 
 /**
  * Reads the current mareVideo playback state from the page.
@@ -114,7 +116,7 @@ async function runSmokeTest() {
     await page.evaluate(() => {
         window.mareVideo.currentTime = 20.0;
     });
-    await page.waitForFunction(() => Math.abs(window.mareVideo.currentTime - 20.0) < 0.1, { timeout: 10000 }).catch(() => {});
+    await page.waitForFunction(() => Math.abs(window.mareVideo.currentTime - 20.0) < 0.1, { timeout: 60000 }).catch(() => {});
     let state = await getPlaybackState(page);
     check(`seek forward to a cold segment lands near the target (got ${state.currentTime})`, Math.abs(state.currentTime - 20.0) < 0.1);
 
@@ -122,7 +124,7 @@ async function runSmokeTest() {
     await page.evaluate(() => {
         window.mareVideo.currentTime = 5.0;
     });
-    await page.waitForFunction(() => Math.abs(window.mareVideo.currentTime - 5.0) < 0.1, { timeout: 10000 }).catch(() => {});
+    await page.waitForFunction(() => Math.abs(window.mareVideo.currentTime - 5.0) < 0.1, { timeout: 60000 }).catch(() => {});
     state = await getPlaybackState(page);
     check(`seek backward lands near the target (got ${state.currentTime})`, Math.abs(state.currentTime - 5.0) < 0.1);
 
@@ -131,11 +133,12 @@ async function runSmokeTest() {
         window.mareVideo.currentTime = 30.0; // slow: a cold segment
         window.mareVideo.currentTime = 8.0; // issued immediately after, no await -- must win
     });
-    // Generously long timeout: this scenario requires decoding two
-    // never-before-seen segments back to back through the engine's single
-    // shared VideoDecoder (decode work is deliberately serialized), which
-    // is slower than any realistic single commit-on-release seek.
-    await page.waitForFunction(() => Math.abs(window.mareVideo.currentTime - 8.0) < 0.1, { timeout: 15000 }).catch(() => {});
+    // Generously long timeout: this scenario requires fetching+decoding
+    // two never-before-seen segments back to back through the engine's
+    // single shared VideoDecoder (deliberately serialized), and segment
+    // fetch time against the live server has been observed taking 30s+
+    // on its own -- slower than any realistic single commit-on-release seek.
+    await page.waitForFunction(() => Math.abs(window.mareVideo.currentTime - 8.0) < 0.1, { timeout: 90000 }).catch(() => {});
     state = await getPlaybackState(page);
     check(`final position matches the LAST requested seek, not the superseded one (got ${state.currentTime})`, Math.abs(state.currentTime - 8.0) < 0.1);
 

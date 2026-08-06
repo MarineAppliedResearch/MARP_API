@@ -21,6 +21,55 @@
 const DECODE_WATCHDOG_MS = 8000;
 
 /**
+ * Copies a decoded VideoFrame's pixel data into a plain, CPU-memory-backed
+ * VideoFrame, then closes the original.
+ *
+ * Hardware-accelerated decoders hold a small, fixed pool of GPU decode
+ * surfaces -- each undetached output VideoFrame keeps one occupied until
+ * closed. This engine caches many frames per segment (and multiple
+ * segments) for instant reverse/step access, which holds far more frames
+ * alive at once than that pool can supply -- confirmed live: decoding
+ * stalls partway through a segment with hardware decode enabled (no error,
+ * no more output, decodeQueueSize stuck), while the same stream decodes
+ * fine with software decode, which has no such surface limit. Detaching
+ * every frame from its hardware surface immediately after output, before
+ * it's held onto for caching, keeps the surface pool free for the decoder
+ * to keep producing frames regardless of how many we're buffering.
+ *
+ * @async
+ * @param {VideoFrame} frame - Freshly decoded, hardware-surface-backed frame.
+ * @returns {Promise<VideoFrame>} An equivalent frame backed by plain memory.
+ */
+async function detachFromHardwareSurface(frame) {
+    try {
+        // copyTo()/allocationSize() default to the frame's VISIBLE rect,
+        // not its (possibly macroblock-padded, e.g. 1080p coded as 1088px
+        // tall) codedWidth/codedHeight -- confirmed live: passing the
+        // padded coded dimensions into the reconstructed VideoFrame below
+        // threw "data is not large enough", since the copied buffer only
+        // ever held the smaller visible-rect data. Using the visible
+        // width/height consistently for both the copy and the
+        // reconstruction keeps them in agreement.
+        const width = frame.visibleRect ? frame.visibleRect.width : frame.displayWidth;
+        const height = frame.visibleRect ? frame.visibleRect.height : frame.displayHeight;
+
+        const buffer = new Uint8Array(frame.allocationSize());
+        await frame.copyTo(buffer);
+
+        return new VideoFrame(buffer, {
+            format: frame.format,
+            codedWidth: width,
+            codedHeight: height,
+            timestamp: frame.timestamp,
+            duration: frame.duration ?? undefined,
+            colorSpace: frame.colorSpace,
+        });
+    } finally {
+        frame.close();
+    }
+}
+
+/**
  * Decodes segments into GopBuffers via one shared, serialized
  * VideoDecoder instance.
  *
@@ -33,6 +82,30 @@ export class GopDecoder {
         this._currentSink = null; // (frame) => void, set per active decode call
         this._currentErrorHandler = null; // (err) => void, set per active decode call
         this._queue = Promise.resolve();
+
+        // Serializes detachFromHardwareSurface() calls so at most one
+        // hardware decode surface is ever awaiting its copy at a time --
+        // confirmed live that firing all of a segment's ~75 copies
+        // concurrently (one per output frame, unthrottled) re-creates the
+        // same surface-pool exhaustion the copy step exists to prevent,
+        // just via pending copies instead of held-open cached frames.
+        this._detachQueue = Promise.resolve();
+    }
+
+    /**
+     * Queues one frame's hardware-surface detach behind any already in
+     * progress, so copies never run concurrently.
+     *
+     * @param {VideoFrame} frame - Freshly decoded, hardware-surface-backed frame.
+     * @returns {Promise<VideoFrame>} An equivalent frame backed by plain memory.
+     */
+    _enqueueDetach(frame) {
+        const result = this._detachQueue.then(() => detachFromHardwareSurface(frame));
+        this._detachQueue = result.then(
+            () => undefined,
+            () => undefined
+        );
+        return result;
     }
 
     /**
@@ -80,8 +153,12 @@ export class GopDecoder {
 
         await this._ensureConfigured(codec, description);
 
-        const frames = [];
-        this._currentSink = (frame) => frames.push(frame);
+        // Each pushed entry is a promise -- detachFromHardwareSurface()
+        // copies the frame off its (surface-pool-limited) hardware backing
+        // immediately, rather than waiting until the whole segment is
+        // collected, which is what actually exhausts the pool.
+        const framePromises = [];
+        this._currentSink = (frame) => framePromises.push(this._enqueueDetach(frame));
 
         // A decode error asynchronously closes the decoder without ever
         // settling a pending flush() promise -- confirmed live (flush()
@@ -107,7 +184,7 @@ export class GopDecoder {
                     new Error(
                         `VideoDecoder stalled decoding segment ${segmentIndexNumber}: flush() did not settle within ` +
                             `${DECODE_WATCHDOG_MS}ms (decodeQueueSize=${this._decoder.decodeQueueSize}, ` +
-                            `state=${this._decoder.state}, framesOutputSoFar=${frames.length}). No error callback fired -- ` +
+                            `state=${this._decoder.state}, framesOutputSoFar=${framePromises.length}). No error callback fired -- ` +
                             `this looks like a platform/hardware decoder stall, not a demux/config problem.`
                     )
                 );
@@ -129,6 +206,7 @@ export class GopDecoder {
             this._currentErrorHandler = null;
         }
 
+        const frames = await Promise.all(framePromises);
         frames.sort((a, b) => a.timestamp - b.timestamp);
 
         return { segmentIndex: segmentIndexNumber, frames };

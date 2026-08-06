@@ -103,7 +103,7 @@ function wireVideoEvents() {
   function onFrame(now, metadata) {
     frameLogCounter += 1;
     if (frameLogCounter % 10 === 0) {
-      log(`frame #${metadata.presentedFrames} mediaTime=${metadata.mediaTime.toFixed(3)}`);
+      log(`frame #${metadata.presentedFrames} mediaTime=${metadata.mediaTime.toFixed(3)} segment=${metadata.segmentIndex}`);
     }
 
     if (!seekBarDragging) {
