@@ -160,9 +160,23 @@ function applyLoadedUiState() {
  * Usage: called once, right after createMarpVideoEngine() resolves.
  */
 function wireVideoEvents() {
-  ["loadedmetadata", "durationchange", "resize", "error", "playing", "pause", "seeking", "seeked"].forEach((type) => {
+  ["loadedmetadata", "durationchange", "resize", "playing", "pause", "seeking", "seeked"].forEach((type) => {
     window.marpVideo.addEventListener(type, () => log(`event: ${type}`));
   });
+
+  // Logs the real Error's message, not just "event: error" -- the shim
+  // dispatches the actual error object (see index.js's emit callback), so
+  // discarding it here was hiding exactly the detail needed to tell a
+  // real failure apart from another one.
+  window.marpVideo.addEventListener("error", (event) => {
+    log(`event: error -- ${event.error ? event.error.message : "(no detail)"}`);
+  });
+
+  // Segment fetch/decode progress and failures, straight from
+  // frame-store.js -- see index.js's onDebug wiring. Answers "which
+  // segment is being downloaded/decoded right now" without needing
+  // DevTools open.
+  window.marpVideo.addEventListener("debug", (event) => log(event.message));
 
   // NOT solely via addEventListener("loadedmetadata", ...): createMarpVideoEngine()
   // dispatches loadedmetadata/durationchange/resize internally, before it
@@ -273,15 +287,28 @@ function scrubEventToTime(event) {
   return fraction * window.marpVideo.duration;
 }
 
+// Commit-on-release: dragging only updates the handle/tooltip visually;
+// the real seek fires once, on pointerup, using wherever the pointer
+// ended up. Deliberately NOT a continuous seek-per-pointermove (that was
+// tried first) -- with no trickplay preview built yet (that's a later
+// phase), a mid-drag seek buys no visual benefit at all, only cost: real
+// fetch/decode work kicked off for every position dragged over, and
+// engine-side cancellation logic complex enough to have its own sharp
+// edges (a same-segment reordering bug was found and fixed here, then a
+// second, still-unexplained burst of errors appeared right after
+// pressing play post-drag). Matches the real annotation tool's own
+// established slider UX besides (commits only on drag-release, per
+// VideoPlayer.xaml.cs's sliProgress_DragCompleted).
+let lastScrubTime = 0;
+
 scrubTrack.addEventListener("pointerdown", (event) => {
   if (!window.marpVideo) {
     return;
   }
   scrubDragging = true;
   scrubTrack.setPointerCapture(event.pointerId);
-  const time = scrubEventToTime(event);
-  updateScrubHandle(time);
-  window.marpVideo.currentTime = time;
+  lastScrubTime = scrubEventToTime(event);
+  updateScrubHandle(lastScrubTime);
 });
 
 scrubTrack.addEventListener("pointermove", (event) => {
@@ -295,11 +322,8 @@ scrubTrack.addEventListener("pointermove", (event) => {
   scrubTooltip.textContent = formatTime(time);
 
   if (scrubDragging) {
-    // Continuous seek-while-dragging (not commit-on-release) --
-    // deliberately, so dragging the scrub bar is itself a live view into
-    // how fast the engine can fetch/decode segments it's never seen.
+    lastScrubTime = time;
     updateScrubHandle(time);
-    window.marpVideo.currentTime = time;
   }
 });
 
@@ -310,6 +334,10 @@ scrubTrack.addEventListener("pointerleave", () => {
 scrubTrack.addEventListener("pointerup", (event) => {
   scrubDragging = false;
   scrubTrack.releasePointerCapture(event.pointerId);
+  if (!window.marpVideo) {
+    return;
+  }
+  window.marpVideo.currentTime = lastScrubTime;
 });
 
 /**

@@ -25,6 +25,15 @@ const DEFAULT_CACHE_BUDGET_BYTES = 1024 * 1024 * 1024;
 /** Floor on buffered segments: current + one prefetch each direction. */
 const MIN_SEGMENTS_BUFFERED = 3;
 
+/** Backoff delay before the first automatic retry of a segment that just failed, in ms. */
+const INITIAL_RETRY_BACKOFF_MS = 200;
+
+/** Ceiling on backoff delay, however many consecutive failures a segment has had, in ms. */
+const MAX_RETRY_BACKOFF_MS = 8000;
+
+/** Backoff grows by this factor after each consecutive failure, until MAX_RETRY_BACKOFF_MS. */
+const RETRY_BACKOFF_MULTIPLIER = 2;
+
 /**
  * Caches decoded segments (GopBuffers) with LRU eviction, and knows how
  * to produce one on demand.
@@ -41,10 +50,14 @@ export class FrameStore {
      * @param {number} params.fps - Real negotiated frame rate, used to size the cache budget.
      * @param {number} params.segmentDuration - Nominal segment duration in seconds.
      * @param {number} [params.cacheBudgetBytes] - Decoded-frame cache budget in bytes. Default 1 GiB.
+     * @param {function(string): void} [params.onDebug] - Called with the same fetch/decode progress messages this class already logs to the console -- lets a consumer (e.g. the test harness's on-page log panel) surface them without needing DevTools open.
+     * @param {function(Error): void} [params.onError] - Called exactly once per real (non-cancelled) segment failure, regardless of how many callers (lookahead, network-prefetch, the render loop) share the same in-flight request -- see ensureSegment()'s own doc comment for why per-caller error reporting used to fire many duplicate times for a single failure.
      */
-    constructor({ segmentFetcher, gopDecoder, width, height, fps, segmentDuration, cacheBudgetBytes }) {
+    constructor({ segmentFetcher, gopDecoder, width, height, fps, segmentDuration, cacheBudgetBytes, onDebug, onError }) {
         this.segmentFetcher = segmentFetcher;
         this.gopDecoder = gopDecoder;
+        this.onDebug = onDebug;
+        this.onError = onError;
 
         const bytesPerFrame = width * height * BYTES_PER_PIXEL_420_8BIT;
         const framesPerSegment = Math.ceil(segmentDuration * fps);
@@ -56,7 +69,18 @@ export class FrameStore {
         // segmentIndex -> GopBuffer, insertion order doubles as LRU order.
         this.buffers = new Map();
         this.pinned = new Set();
-        this._inFlight = new Map(); // segmentIndex -> Promise<GopBuffer>
+        this._inFlight = new Map(); // segmentIndex -> {promise, wanterCount, fetchAbortController}
+
+        // segmentIndex -> {nextAttemptAtMs, delayMs} -- tracks a segment
+        // that failed (not merely got cancelled) recently, so the
+        // scheduler's automatic lookahead/prefetch passes (which run
+        // unconditionally on every render-loop tick) can skip retrying it
+        // until the backoff window elapses, rather than hammering a
+        // transient failure (e.g. Jellyfin's transcoder not having
+        // generated that segment yet) dozens of times a second. A
+        // deliberate, explicit seek() to that same segment is NOT gated
+        // by this -- only the passive, automatic retry paths are.
+        this._retryBackoff = new Map();
     }
 
     /**
@@ -81,31 +105,159 @@ export class FrameStore {
     }
 
     /**
+     * Logs a fetch/decode progress or failure message to the console and,
+     * if supplied, to the `onDebug` callback -- the latter lets a
+     * consumer (e.g. the test harness's on-page log panel) see exactly
+     * which segment is being fetched/decoded/failed without needing
+     * DevTools open.
+     *
+     * @param {string} message - Message text, without the "[frame-store]" prefix (added here).
+     * @returns {void}
+     */
+    _logDebug(message) {
+        const prefixed = `[frame-store] ${message}`;
+        console.log(prefixed);
+        if (this.onDebug) {
+            this.onDebug(prefixed);
+        }
+    }
+
+    /**
+     * Reports whether a segment failed recently enough that automatic
+     * retry passes (lookahead/network-prefetch) should skip it until its
+     * backoff window elapses -- an explicit seek() to this same segment
+     * is NOT gated by this, since that's a deliberate request the caller
+     * wants attempted right away regardless of recent failures.
+     *
+     * @param {number} segmentIndexNumber - Segment index to check.
+     * @returns {boolean} True if a recent failure's backoff window hasn't elapsed yet.
+     */
+    isInBackoff(segmentIndexNumber) {
+        const backoff = this._retryBackoff.get(segmentIndexNumber);
+        return !!backoff && Date.now() < backoff.nextAttemptAtMs;
+    }
+
+    /**
+     * Records a segment's fetch/decode outcome for backoff purposes: a
+     * real failure grows that segment's backoff delay (exponentially, up
+     * to MAX_RETRY_BACKOFF_MS); a success clears it entirely. A
+     * cancellation (this segment's fetch was aborted because nothing
+     * wants it anymore) is deliberately NOT treated as a failure -- it
+     * says nothing about whether the segment is actually fetchable.
+     *
+     * @param {number} segmentIndexNumber - Segment index the outcome applies to.
+     * @param {(Error|null)} err - The rejection reason, or null on success.
+     * @returns {void}
+     */
+    _recordOutcome(segmentIndexNumber, err) {
+        if (!err) {
+            this._retryBackoff.delete(segmentIndexNumber);
+            return;
+        }
+        if (err.name === 'AbortError') {
+            return; // cancelled, not a real failure -- leave any existing backoff as-is
+        }
+
+        const previous = this._retryBackoff.get(segmentIndexNumber);
+        const delayMs = previous ? Math.min(MAX_RETRY_BACKOFF_MS, previous.delayMs * RETRY_BACKOFF_MULTIPLIER) : INITIAL_RETRY_BACKOFF_MS;
+        this._retryBackoff.set(segmentIndexNumber, { nextAttemptAtMs: Date.now() + delayMs, delayMs });
+
+        // Reported from here, exactly once per real failure, rather than
+        // by each caller wrapping its own ensureSegment()/prefetchRawBytes()
+        // call in a .catch(). Confirmed live that per-caller reporting
+        // fires once per caller sharing the same in-flight request -- a
+        // 20-second decoder stall, retried by both the render loop and
+        // lookahead on every tick before it finally settled, produced
+        // hundreds of duplicate "error" events for what was really one
+        // failure. _recordOutcome() only ever runs once per entry
+        // (created once per distinct decode attempt), so this is the
+        // correct single point to report from.
+        if (this.onError) {
+            this.onError(err);
+        }
+    }
+
+    /**
      * Ensures a segment's frames are decoded and cached, fetching,
      * demuxing, and decoding it if not already present. Concurrent calls
      * for the same segment share one in-flight promise rather than
      * duplicating work.
      *
+     * Callers that only transiently want a segment (chiefly Scheduler.seek(),
+     * which calls this again for a new target on every drag movement) can
+     * pass `signal` to release their want when it fires -- if no other
+     * caller (e.g. the lookahead prefetcher, which never passes a signal)
+     * still wants this segment, its underlying fetch is cancelled
+     * immediately rather than completing uselessly. Confirmed live this is
+     * the real fix for a "backlog": every segment scrubbed over during a
+     * drag used to kick off a real, uncancellable fetch+decode regardless
+     * of whether the drag had already moved on.
+     *
      * @async
      * @param {number} segmentIndexNumber - Segment index to ensure.
+     * @param {Object} [options]
+     * @param {AbortSignal} [options.signal] - Releases this specific call's "want" when it fires; the underlying fetch is only actually cancelled once every wanter has released.
      * @returns {Promise<Object>} The segment's GopBuffer.
      */
-    async ensureSegment(segmentIndexNumber) {
+    async ensureSegment(segmentIndexNumber, { signal } = {}) {
         if (this.buffers.has(segmentIndexNumber)) {
             this._touch(segmentIndexNumber);
             return this.buffers.get(segmentIndexNumber);
         }
 
-        if (this._inFlight.has(segmentIndexNumber)) {
-            return this._inFlight.get(segmentIndexNumber);
+        let entry = this._inFlight.get(segmentIndexNumber);
+        if (!entry) {
+            const fetchAbortController = new AbortController();
+            const promise = this._decode(segmentIndexNumber, fetchAbortController.signal)
+                .then(
+                    (result) => {
+                        this._recordOutcome(segmentIndexNumber, null);
+                        return result;
+                    },
+                    (err) => {
+                        this._recordOutcome(segmentIndexNumber, err);
+                        if (err.name !== 'AbortError') {
+                            this._logDebug(`segment ${segmentIndexNumber}: FAILED -- ${err.message}`);
+                        }
+                        throw err;
+                    }
+                )
+                .finally(() => {
+                    this._inFlight.delete(segmentIndexNumber);
+                });
+            entry = { promise, wanterCount: 0, fetchAbortController };
+            this._inFlight.set(segmentIndexNumber, entry);
         }
 
-        const promise = this._decode(segmentIndexNumber).finally(() => {
-            this._inFlight.delete(segmentIndexNumber);
-        });
+        entry.wanterCount += 1;
+        if (signal) {
+            const release = () => this._releaseWanter(segmentIndexNumber, entry);
+            if (signal.aborted) {
+                release();
+            } else {
+                signal.addEventListener('abort', release, { once: true });
+            }
+        }
 
-        this._inFlight.set(segmentIndexNumber, promise);
-        return promise;
+        return entry.promise;
+    }
+
+    /**
+     * Releases one caller's "want" on an in-flight segment request,
+     * cancelling its underlying fetch if that was the last remaining
+     * wanter and it hasn't resolved yet -- a no-op otherwise (e.g. if the
+     * lookahead prefetcher still wants the same segment a transient seek
+     * abandoned, or if the request already settled).
+     *
+     * @param {number} segmentIndexNumber - Segment index whose want is being released.
+     * @param {Object} entry - The `_inFlight` entry this release applies to (captured at call time, so a stale release against an already-superseded entry is harmless).
+     * @returns {void}
+     */
+    _releaseWanter(segmentIndexNumber, entry) {
+        entry.wanterCount -= 1;
+        if (entry.wanterCount <= 0 && this._inFlight.get(segmentIndexNumber) === entry) {
+            entry.fetchAbortController.abort();
+        }
     }
 
     /**
@@ -121,8 +273,19 @@ export class FrameStore {
      * @returns {Promise<void>}
      */
     async prefetchRawBytes(segmentIndexNumber) {
-        await this.segmentFetcher.fetchInitSegment();
-        await this.segmentFetcher.fetchSegment(segmentIndexNumber);
+        try {
+            await this.segmentFetcher.fetchInitSegment();
+            await this.segmentFetcher.fetchSegment(segmentIndexNumber);
+            // Shares ensureSegment()'s backoff state (same segmentIndexNumber
+            // key) -- a segment failing to fetch here is the same
+            // underlying failure ensureSegment() would hit, so they should
+            // back off together rather than each independently hammering
+            // the same broken/not-yet-ready segment.
+            this._recordOutcome(segmentIndexNumber, null);
+        } catch (err) {
+            this._recordOutcome(segmentIndexNumber, err);
+            throw err;
+        }
     }
 
     /**
@@ -132,20 +295,21 @@ export class FrameStore {
      *
      * @async
      * @param {number} segmentIndexNumber - Segment index to decode.
+     * @param {AbortSignal} [fetchSignal] - Cancels the raw-bytes fetch if every wanter releases before it resolves (see ensureSegment()); has no effect once the fetch has already completed (decode itself is never aborted here).
      * @returns {Promise<Object>} The segment's GopBuffer.
      * @throws {Error} When segment 0 itself doesn't start with a keyframe (unrecoverable).
      */
-    async _decode(segmentIndexNumber) {
+    async _decode(segmentIndexNumber, fetchSignal) {
         // Background lookahead/prefetch decode is otherwise invisible from
         // the outside -- a real fetch/decode in progress and a genuine
         // stall both just look like nothing is happening. Logging start
         // and completion here gives an at-a-glance answer to "is it still
         // working" without needing to add a debugger or guess.
-        console.log(`[frame-store] segment ${segmentIndexNumber}: fetching...`);
+        this._logDebug(`segment ${segmentIndexNumber}: fetching...`);
         const initBuffer = await this.segmentFetcher.fetchInitSegment();
-        const segmentBuffer = await this.segmentFetcher.fetchSegment(segmentIndexNumber);
+        const segmentBuffer = await this.segmentFetcher.fetchSegment(segmentIndexNumber, { signal: fetchSignal });
 
-        console.log(`[frame-store] segment ${segmentIndexNumber}: demuxing + decoding...`);
+        this._logDebug(`segment ${segmentIndexNumber}: demuxing + decoding...`);
         let demuxResult = await demuxSegment(initBuffer, segmentBuffer);
 
         if (demuxResult.chunks.length === 0 || demuxResult.chunks[0].type !== 'key') {
@@ -169,7 +333,7 @@ export class FrameStore {
         }
 
         const gopBuffer = await this.gopDecoder.decodeSegment(segmentIndexNumber, demuxResult);
-        console.log(`[frame-store] segment ${segmentIndexNumber}: ready (${gopBuffer.frames.length} frames)`);
+        this._logDebug(`segment ${segmentIndexNumber}: ready (${gopBuffer.frames.length} frames)`);
 
         this.buffers.set(segmentIndexNumber, gopBuffer);
         this._touch(segmentIndexNumber);

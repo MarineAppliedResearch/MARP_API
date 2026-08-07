@@ -70,6 +70,7 @@ export async function createMarpVideoEngine(canvas, options) {
     const videoHeight = firstFrame.displayHeight;
     const fps = Math.round(firstGopBuffer.frames.length / segmentIndex.segments[0].duration);
 
+    let shim = null;
     const frameStore = new FrameStore({
         segmentFetcher,
         gopDecoder,
@@ -78,6 +79,25 @@ export async function createMarpVideoEngine(canvas, options) {
         fps,
         segmentDuration: segmentIndex.segments[0].duration,
         cacheBudgetBytes,
+        // Forwards fetch/decode progress/failure messages to a 'debug'
+        // event on the shim, so a consumer can surface them without
+        // needing DevTools open -- deferred `shim` reference since
+        // FrameStore is constructed before the shim exists (same pattern
+        // Scheduler's own `emit` callback already uses below).
+        onDebug: (message) => {
+            if (shim) {
+                shim._dispatch('debug', { message });
+            }
+        },
+        // Reports each real segment failure exactly once (see FrameStore's
+        // own constructor doc comment for why per-caller reporting used to
+        // fire many duplicate times for a single failure).
+        onError: (err) => {
+            console.error('FrameStore reported a segment failure', err);
+            if (shim) {
+                shim._dispatch('error', { error: err });
+            }
+        },
     });
 
     // Seed the cache with the segment already decoded above rather than
@@ -86,7 +106,6 @@ export async function createMarpVideoEngine(canvas, options) {
 
     const canvasRenderer = new CanvasRenderer(canvas);
 
-    let shim = null;
     const scheduler = new Scheduler({
         segmentIndex,
         frameStore,

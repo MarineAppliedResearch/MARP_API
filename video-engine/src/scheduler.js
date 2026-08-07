@@ -47,7 +47,7 @@ export class Scheduler {
      * @param {Object} params.segmentIndex - SegmentIndex from {@link module:video-engine/playlist-manager.loadSegmentIndex}.
      * @param {Object} params.frameStore - {@link module:video-engine/frame-store.FrameStore} instance.
      * @param {Object} params.canvasRenderer - {@link module:video-engine/canvas-renderer.CanvasRenderer} instance.
-     * @param {function(string, Error=): void} params.emit - Callback for shim event dispatch (e.g. `emit('seeking')`, `emit('error', err)`).
+     * @param {function(string, Error=): void} params.emit - Callback for shim event dispatch (e.g. `emit('seeking')`, `emit('playing')`). NOT used for segment fetch/decode failures -- those are reported once each via FrameStore's own `onError` (see its constructor doc comment for why), not through here.
      */
     constructor({ segmentIndex, frameStore, canvasRenderer, emit }) {
         this.segmentIndex = segmentIndex;
@@ -79,6 +79,17 @@ export class Scheduler {
         // fast already-buffered one) can otherwise complete out of order.
         this._seekGeneration = 0;
 
+        // The previous seek()'s own AbortController, aborted the instant a
+        // newer seek() call starts -- releases that seek's "want" on
+        // whatever segment it was fetching (see FrameStore.ensureSegment's
+        // reference-counted wanters), so a segment nothing else still
+        // wants gets its in-flight fetch cancelled immediately instead of
+        // completing uselessly. Confirmed live this is the actual cause
+        // of a scrub-drag "backlog": every intermediate position used to
+        // kick off a real, uncancellable fetch regardless of whether the
+        // drag had already moved past it.
+        this._seekFetchAbort = null;
+
         canvasRenderer.onFramePresented(() => this._dispatchFrameCallbacks());
     }
 
@@ -91,7 +102,40 @@ export class Scheduler {
     get currentTime() {
         const buffer = this.frameStore.buffers.get(this.currentSegmentIndex);
         const frame = buffer && buffer.frames[this.currentFrameIdx];
-        return frame ? frame.timestamp / 1e6 : this._anchorTime;
+        if (!frame) {
+            return this._anchorTime;
+        }
+
+        return this._frameTimestampToMediaTimeSeconds(this.currentSegmentIndex, frame.timestamp);
+    }
+
+    /**
+     * Maps a decoded frame timestamp onto the stream's media timeline for
+     * the segment it belongs to.
+     *
+     * Some streams expose sample timestamps that are offset from HLS
+     * segment start times (for example by one full segment duration), so
+     * comparing raw frame timestamps directly against playlist time can
+     * pin playback to a segment's edge frame after seek. This mapping
+     * aligns each decoded segment's first frame to that segment's own
+     * startTime, preserving within-segment frame spacing while staying in
+     * the playlist timeline the scheduler uses everywhere else.
+     *
+     * @param {number} segmentIndexNumber - Segment index the frame came from.
+     * @param {number} frameTimestampMicros - Decoded frame timestamp, in microseconds.
+     * @returns {number} Frame time in the playlist/media timeline, in seconds.
+     */
+    _frameTimestampToMediaTimeSeconds(segmentIndexNumber, frameTimestampMicros) {
+        const segment = this.segmentIndex.segments[segmentIndexNumber];
+        const buffer = this.frameStore.buffers.get(segmentIndexNumber);
+        const firstFrame = buffer && buffer.frames[0];
+
+        if (!segment || !firstFrame) {
+            return frameTimestampMicros / 1e6;
+        }
+
+        const offsetMicros = frameTimestampMicros - firstFrame.timestamp;
+        return segment.startTime + offsetMicros / 1e6;
     }
 
     /**
@@ -261,6 +305,20 @@ export class Scheduler {
 
         const rendered = this._renderAtTime(targetTime, this.playbackRate >= 0 ? 'atOrBefore' : 'atOrAfter');
 
+        // Debug: log only on a stall/resume TRANSITION (not every tick,
+        // which would flood the console) -- this pinpoints exactly which
+        // segment a stall started/ended on and what's pinned at that
+        // moment, for diagnosing the "stops during decode" report without
+        // guessing.
+        if (rendered !== this._wasRenderedLastTick) {
+            const segment = findSegmentForTime(this.segmentIndex, targetTime);
+            this.frameStore._logDebug(
+                `${rendered ? 'RESUMED' : 'STALLED'} at t=${targetTime.toFixed(2)} segment=${segment.index} ` +
+                    `pinned=[${[...this.frameStore.pinned].join(',')}] hasSegment=${this.frameStore.has(segment.index)}`
+            );
+        }
+        this._wasRenderedLastTick = rendered;
+
         if (!rendered) {
             // Stalled: the needed segment isn't decoded yet. Re-anchor to
             // the last actually-displayed position now, rather than
@@ -305,12 +363,30 @@ export class Scheduler {
         const segment = findSegmentForTime(this.segmentIndex, targetTime);
 
         if (!this.frameStore.has(segment.index)) {
-            this.frameStore.ensureSegment(segment.index).catch((err) => this.emit('error', err));
+            // isInBackoff() check: this is the actual primary render
+            // target, checked on every tick -- confirmed live as the real
+            // dominant cause of a retry storm (57 failures in ~2s for one
+            // persistently-failing segment) when this was the one call
+            // site left un-gated after adding backoff to
+            // _kickLookahead/_kickNetworkPrefetch. A stall here already
+            // degrades gracefully (last frame stays on screen, see the
+            // caller), so skipping a retry while backed off just extends
+            // that same graceful stall instead of hammering the request.
+            if (!this.frameStore.isInBackoff(segment.index)) {
+                // Deliberately NOT .catch((err) => this.emit('error', err))
+                // here -- FrameStore reports each real failure exactly once
+                // itself (via its own onError, see its constructor doc
+                // comment). This call site runs every tick and would
+                // otherwise attach a fresh rejection handler to the same
+                // shared in-flight promise on each one, all firing together
+                // the instant it finally settles.
+                this.frameStore.ensureSegment(segment.index).catch(() => {});
+            }
             return false;
         }
 
         const gopBuffer = this.frameStore.buffers.get(segment.index);
-        const frameIdx = this._locateFrameIndex(gopBuffer, targetTime, direction);
+        const frameIdx = this._locateFrameIndex(gopBuffer, targetTime, direction, segment.startTime);
 
         if (segment.index === this.currentSegmentIndex && frameIdx === this.currentFrameIdx) {
             return true;
@@ -339,7 +415,7 @@ export class Scheduler {
      * @param {('atOrBefore'|'atOrAfter')} direction - Which side of targetTime to prefer.
      * @returns {number} Index into `gopBuffer.frames`.
      */
-    _locateFrameIndex(gopBuffer, targetTimeSeconds, direction) {
+    _locateFrameIndex(gopBuffer, targetTimeSeconds, direction, segmentStartTimeSeconds = 0) {
         // Rounded to the nearest whole microsecond -- frame timestamps are
         // always integers (see demuxer.js), but repeated floating-point
         // arithmetic on targetTimeSeconds (e.g. successive +-1/fps steps)
@@ -349,7 +425,8 @@ export class Scheduler {
         // atOrAfter ('>=') comparison exactly on the target frame,
         // confirmed live: stepping back onto an exact prior frame landed
         // one frame later than intended until this rounding was added.
-        const targetMicros = Math.round(targetTimeSeconds * 1e6);
+        const firstFrameTimestamp = gopBuffer.frames[0] ? gopBuffer.frames[0].timestamp : 0;
+        const targetMicros = firstFrameTimestamp + Math.round((targetTimeSeconds - segmentStartTimeSeconds) * 1e6);
         const frames = gopBuffer.frames;
 
         if (direction === 'atOrBefore') {
@@ -410,8 +487,21 @@ export class Scheduler {
         const pinned = [];
         for (let index = decodeStartIndex; index <= decodeEndIndex; index++) {
             pinned.push(index);
-            if (!this.frameStore.has(index)) {
-                this.frameStore.ensureSegment(index).catch((err) => this.emit('error', err));
+            // isInBackoff() skip: this runs unconditionally on every
+            // render-loop tick (dozens of times a second), so a segment
+            // that just failed (e.g. a transient upstream 500 before
+            // Jellyfin's transcoder finished generating it) would
+            // otherwise get hammered with an identical retry on every
+            // single tick -- confirmed live this turned one transient
+            // failure into 70+ rapid-fire error events. A deliberate
+            // seek() to this same segment is unaffected, since it calls
+            // ensureSegment() directly rather than through here.
+            //
+            // Deliberately NOT .catch((err) => this.emit('error', err))
+            // -- see _renderAtTime()'s identical comment: FrameStore
+            // reports each real failure exactly once itself.
+            if (!this.frameStore.has(index) && !this.frameStore.isInBackoff(index)) {
+                this.frameStore.ensureSegment(index).catch(() => {});
             }
         }
         this.frameStore.setPinned(pinned);
@@ -437,13 +527,23 @@ export class Scheduler {
             const networkAheadTime = Math.min(this.duration, targetTime + NETWORK_PREFETCH_SECONDS * rateMagnitude);
             const networkEndIndex = findSegmentForTime(this.segmentIndex, networkAheadTime).index;
             for (let index = decodeEndIndex + 1; index <= networkEndIndex; index++) {
-                this.frameStore.prefetchRawBytes(index).catch((err) => this.emit('error', err));
+                if (!this.frameStore.isInBackoff(index)) {
+                    // Deliberately NOT .catch((err) => this.emit('error', err))
+                    // -- see _renderAtTime()'s comment: FrameStore reports
+                    // each real failure exactly once itself.
+                    this.frameStore.prefetchRawBytes(index).catch(() => {});
+                }
             }
         } else {
             const networkBehindTime = Math.max(0, targetTime - NETWORK_PREFETCH_SECONDS * rateMagnitude);
             const networkStartIndex = Math.max(0, findSegmentForTime(this.segmentIndex, networkBehindTime).index);
             for (let index = decodeStartIndex - 1; index >= networkStartIndex; index--) {
-                this.frameStore.prefetchRawBytes(index).catch((err) => this.emit('error', err));
+                if (!this.frameStore.isInBackoff(index)) {
+                    // Deliberately NOT .catch((err) => this.emit('error', err))
+                    // -- see _renderAtTime()'s comment: FrameStore reports
+                    // each real failure exactly once itself.
+                    this.frameStore.prefetchRawBytes(index).catch(() => {});
+                }
             }
         }
     }
@@ -466,7 +566,38 @@ export class Scheduler {
         const direction = clamped >= this.currentTime ? 'atOrBefore' : 'atOrAfter';
         const segment = findSegmentForTime(this.segmentIndex, clamped);
 
-        await this.frameStore.ensureSegment(segment.index);
+        // Register THIS seek's want before releasing the PREVIOUS seek's
+        // want -- not the other way around. If both target the same
+        // segment (very likely during a real drag, since many pointermove
+        // events land within the same ~1-3s segment), releasing the old
+        // want first would drop that shared entry's wanter count to zero
+        // and cancel its fetch right as this seek was about to depend on
+        // it -- confirmed live: this caused spurious "error" events during
+        // ordinary drags, since the fetch this seek needed got aborted out
+        // from under it by its own predecessor. ensureSegment() runs its
+        // registration synchronously (no await before it), so calling it
+        // first and aborting the previous controller immediately after,
+        // still in the same synchronous tick, guarantees the new want is
+        // already counted before the old one can zero it out.
+        const seekFetchAbort = new AbortController();
+        const previousSeekFetchAbort = this._seekFetchAbort;
+        this._seekFetchAbort = seekFetchAbort;
+
+        const ensurePromise = this.frameStore.ensureSegment(segment.index, { signal: seekFetchAbort.signal });
+        if (previousSeekFetchAbort) {
+            previousSeekFetchAbort.abort();
+        }
+
+        try {
+            await ensurePromise;
+        } catch (err) {
+            if (seekFetchAbort.signal.aborted) {
+                // Superseded by a newer seek before this one's fetch
+                // finished -- abandon silently, not a real failure.
+                return;
+            }
+            throw err;
+        }
 
         if (seekToken !== this._seekGeneration) {
             // A newer seek was requested while this one was awaiting decode
@@ -476,7 +607,7 @@ export class Scheduler {
         }
 
         const gopBuffer = this.frameStore.buffers.get(segment.index);
-        const frameIdx = this._locateFrameIndex(gopBuffer, clamped, direction);
+        const frameIdx = this._locateFrameIndex(gopBuffer, clamped, direction, segment.startTime);
         const frame = gopBuffer.frames[frameIdx];
 
         this.canvasRenderer.render(frame);
@@ -486,6 +617,8 @@ export class Scheduler {
         // Re-anchor so continued playback (if active) resumes from here.
         this._anchorWallClockMs = performance.now();
         this._anchorTime = this.currentTime;
+
+        this._kickLookahead(this.currentTime);
 
         this.seekingFlag = false;
         this.emit('seeked');

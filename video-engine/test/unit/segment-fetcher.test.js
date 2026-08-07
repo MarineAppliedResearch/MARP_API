@@ -31,6 +31,43 @@ afterEach(() => {
     global.fetch = previousFetch;
 });
 
+describe('SegmentFetcher#fetchSegment abort signal', () => {
+    test('rejects with AbortError when the passed signal fires before the fetch resolves', async () => {
+        // Regression test: fetchSegment() used to accept no way to cancel
+        // a request at all -- FrameStore's reference-counted wanters
+        // (ensureSegment()) depend on this to actually free bandwidth when
+        // a scrub-drag abandons a segment before its fetch finishes.
+        global.fetch = jest.fn(
+            (url, { signal }) =>
+                new Promise((resolve, reject) => {
+                    signal.addEventListener('abort', () => {
+                        const err = new Error('aborted');
+                        err.name = 'AbortError';
+                        reject(err);
+                    });
+                })
+        );
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        const controller = new AbortController();
+
+        const promise = fetcher.fetchSegment(0, { signal: controller.signal });
+        controller.abort();
+
+        await expect(promise).rejects.toThrow(/aborted/i);
+    });
+
+    test('a real (non-aborted) fetch still resolves normally when a signal is passed but never fires', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        const controller = new AbortController();
+
+        const buffer = await fetcher.fetchSegment(0, { signal: controller.signal });
+
+        expect(buffer).toBeInstanceOf(ArrayBuffer);
+        expect(fetcher.hasRawBytes(0)).toBe(true);
+    });
+});
+
 describe('SegmentFetcher#hasRawBytes', () => {
     test('is false before a segment is fetched, true after', async () => {
         const fetcher = new SegmentFetcher(SEGMENT_INDEX);

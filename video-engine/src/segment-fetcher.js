@@ -30,21 +30,43 @@ const FETCH_TIMEOUT_MS = 60000;
  * so this exists purely as a last-resort backstop, not a performance target.
  *
  * @param {string} url - URL to fetch.
+ * @param {AbortSignal} [externalSignal] - Caller-supplied cancellation, e.g. FrameStore releasing a fetch no caller wants anymore.
  * @returns {Promise<Response>} The fetch response.
  * @throws {Error} When the request doesn't complete within FETCH_TIMEOUT_MS.
+ * @throws {DOMException} AbortError, when `externalSignal` fires (distinguished from a timeout by checking `externalSignal.aborted`).
  */
-function fetchWithTimeout(url) {
+function fetchWithTimeout(url, externalSignal) {
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    // Combines our own timeout-driven abort with the caller's cancellation
+    // -- not AbortSignal.any() (would be the cleaner primitive) since this
+    // engine's own target/support baseline isn't confirmed to have it.
+    const onExternalAbort = () => controller.abort();
+    if (externalSignal) {
+        if (externalSignal.aborted) {
+            controller.abort();
+        } else {
+            externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+    }
 
     return fetch(url, { signal: controller.signal })
         .catch((err) => {
             if (err.name === 'AbortError') {
+                if (externalSignal && externalSignal.aborted) {
+                    throw err; // real cancellation, not a timeout -- let callers recognize it via err.name/externalSignal.aborted
+                }
                 throw new Error(`Fetch timed out after ${FETCH_TIMEOUT_MS}ms: ${url}`);
             }
             throw err;
         })
-        .finally(() => clearTimeout(timeoutHandle));
+        .finally(() => {
+            clearTimeout(timeoutHandle);
+            if (externalSignal) {
+                externalSignal.removeEventListener('abort', onExternalAbort);
+            }
+        });
 }
 
 /**
@@ -117,10 +139,13 @@ export class SegmentFetcher {
      *
      * @async
      * @param {number} segmentIndexNumber - Index into `segmentIndex.segments`.
+     * @param {Object} [options]
+     * @param {AbortSignal} [options.signal] - Cancels the underlying fetch if it fires before this resolves -- see FrameStore's reference-counted wanter tracking, which is what actually decides when a fetch no caller wants anymore should be cancelled.
      * @returns {Promise<ArrayBuffer>} Raw segment bytes.
      * @throws {Error} When segmentIndexNumber is out of range or the fetch fails.
+     * @throws {DOMException} AbortError, when `options.signal` fires before the fetch completes.
      */
-    async fetchSegment(segmentIndexNumber) {
+    async fetchSegment(segmentIndexNumber, { signal } = {}) {
         if (this._rawSegmentCache.has(segmentIndexNumber)) {
             const buffer = this._rawSegmentCache.get(segmentIndexNumber);
             this._touch(segmentIndexNumber, buffer);
@@ -132,7 +157,7 @@ export class SegmentFetcher {
             throw new Error(`No segment at index ${segmentIndexNumber}`);
         }
 
-        const response = await fetchWithTimeout(segment.url);
+        const response = await fetchWithTimeout(segment.url, signal);
         if (!response.ok) {
             throw new Error(`Failed to fetch segment ${segmentIndexNumber} (${response.status}): ${segment.url}`);
         }
