@@ -30,12 +30,13 @@ export { attachWebView2Bridge };
  * @param {Object} options
  * @param {string} options.streamUrl - MARP stream-negotiation URL, e.g. `/api/v2/jellyfin/items/:id/stream?mode=Transcode`.
  * @param {Object} [options.fetchOptions] - Extra fetch() options (e.g. `{headers: {Authorization: 'Bearer ...'}}`) applied to every request this engine makes.
- * @param {number} [options.cacheBudgetBytes] - Decoded-frame LRU cache budget in bytes. Default 1 GiB.
+ * @param {number} [options.cacheBudgetBytes] - Decoded-frame LRU cache budget in bytes. Default 3 GiB.
+ * @param {number} [options.rawSegmentCacheBudgetBytes] - Raw-segment cache budget in bytes. Default 3 GiB.
  * @returns {Promise<Object>} A {@link module:video-engine/marp-video-shim.MarpVideoShim} instance.
  * @throws {Error} When the stream can't be loaded or the first segment decodes zero frames.
  */
 export async function createMarpVideoEngine(canvas, options) {
-    const { streamUrl, fetchOptions, cacheBudgetBytes } = options;
+    const { streamUrl, fetchOptions, cacheBudgetBytes, rawSegmentCacheBudgetBytes } = options;
 
     // Logged at each stage (not just on final success/failure) so a stall
     // in any one step -- e.g. a hung fetch() -- is immediately localized
@@ -44,7 +45,9 @@ export async function createMarpVideoEngine(canvas, options) {
     const segmentIndex = await loadSegmentIndex(streamUrl, { fetchOptions });
     console.log(`[video-engine] playlist loaded: ${segmentIndex.segments.length} segments, ${segmentIndex.totalDuration.toFixed(3)}s`);
 
-    const segmentFetcher = new SegmentFetcher(segmentIndex);
+    const segmentFetcher = new SegmentFetcher(segmentIndex, {
+        maxRawCacheBytes: rawSegmentCacheBudgetBytes,
+    });
     const gopDecoder = new GopDecoder();
 
     // Demux+decode the first segment up front, both to display an initial

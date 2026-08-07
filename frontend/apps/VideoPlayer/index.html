@@ -264,6 +264,52 @@
             gap: 10px;
         }
 
+        #playerSettingsAnchor {
+            position: relative;
+        }
+
+        #playerSettingsButton {
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        #playerSettingsMenu {
+            position: absolute;
+            right: 0;
+            bottom: 52px;
+            width: 280px;
+            background: rgba(1, 5, 13, 0.96);
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            box-shadow: var(--glow-cyan);
+            padding: 10px;
+            display: none;
+            z-index: 5;
+        }
+
+        #playerSettingsMenu.open {
+            display: block;
+        }
+
+        #playerSettingsMenu h2 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            font-weight: normal;
+            color: var(--cyan-300);
+        }
+
+        .settings-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 8px;
+        }
+
         /* min-width/height keeps a real >=44px touch target even though
            the glyph itself doesn't fill the whole button box. */
         .controls-row button {
@@ -336,6 +382,25 @@
                 <span id="timeDisplay">--:-- / --:--</span>
                 <span id="speedDisplay">1x</span>
                 <div class="controls-spacer"></div>
+                <div id="playerSettingsAnchor">
+                    <button id="playerSettingsButton" disabled>&#9881;</button>
+                    <div id="playerSettingsMenu">
+                        <h2>Player Settings</h2>
+                        <div class="settings-group">
+                            <label>Raw cache (GiB):
+                                <input id="rawCacheGiBInput" type="number" min="0.25" step="0.25" value="3" disabled>
+                            </label>
+                            <label>Decoded cache (GiB):
+                                <input id="decodedCacheGiBInput" type="number" min="0.25" step="0.25" value="3" disabled>
+                            </label>
+                        </div>
+                        <div class="settings-actions">
+                            <button id="applyCacheSettingsButton" disabled>Apply</button>
+                            <button id="readCacheSettingsButton" disabled>Refresh</button>
+                            <button id="dumpEngineStateButton" disabled>Dump State</button>
+                        </div>
+                    </div>
+                </div>
                 <button id="muteButton" disabled>&#128266;</button>
                 <button id="fullscreenButton" disabled>&#9974;</button>
             </div>

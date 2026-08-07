@@ -22,6 +22,9 @@
 /** Max time to wait for a single segment fetch, in ms -- generous, since a real transcode segment fetch over a slow connection has been observed taking 30s+; the point is only to fail loudly, not to be a strict SLA. */
 const FETCH_TIMEOUT_MS = 60000;
 
+/** Default raw-segment cache budget: 3 GiB. */
+const DEFAULT_RAW_CACHE_BUDGET_BYTES = 3 * 1024 * 1024 * 1024;
+
 /**
  * Fetches a URL with a timeout, so a genuinely stuck network request fails
  * with a clear, actionable error instead of hanging forever with no signal
@@ -78,16 +81,87 @@ export class SegmentFetcher {
     /**
      * @param {Object} segmentIndex - SegmentIndex from {@link module:video-engine/playlist-manager.loadSegmentIndex}.
      * @param {Object} [options]
-     * @param {number} [options.maxRawSegmentsCached=60] - Raw-bytes LRU cap.
+     * @param {number} [options.maxRawCacheBytes=3221225472] - Raw-bytes LRU cap.
      */
-    constructor(segmentIndex, { maxRawSegmentsCached = 60 } = {}) {
+    constructor(segmentIndex, { maxRawCacheBytes = DEFAULT_RAW_CACHE_BUDGET_BYTES } = {}) {
         this.segmentIndex = segmentIndex;
-        this.maxRawSegmentsCached = maxRawSegmentsCached;
+        this.maxRawCacheBytes = Math.floor(maxRawCacheBytes);
 
         // segmentIndex -> ArrayBuffer, insertion order doubles as LRU order.
         this._rawSegmentCache = new Map();
+        this._rawSegmentBytes = 0;
+
+        // The scheduler can mark a local neighborhood as protected.
+        // Protected raw segments should survive ordinary LRU churn.
+        // This matters most while paused and filling aggressively.
+        // Without it, far-away background fetches age out local bytes.
+        this._protectedRawSegments = new Set();
+
+        // The init segment is tiny.
+        // It never changes for this stream.
+        // Once fetched, keep it forever.
         this._initSegmentBuffer = null;
         this._initSegmentPromise = null;
+    }
+
+    /**
+     * Returns current raw-segment cache configuration/state.
+     *
+     * @returns {{maxRawCacheBytes: number, cachedRawBytes: number, cachedRawSegments: number, protectedRawSegments: number}} Cache config/state snapshot.
+     */
+    getRawCacheConfig() {
+        return {
+            maxRawCacheBytes: this.maxRawCacheBytes,
+            cachedRawBytes: this._rawSegmentBytes,
+            cachedRawSegments: this._rawSegmentCache.size,
+            protectedRawSegments: this._protectedRawSegments.size,
+        };
+    }
+
+    /**
+     * Protects a set of segment indices from raw-cache eviction whenever
+     * possible. If every cached entry is protected and eviction is still
+     * required, eviction falls back to oldest-first among protected keys.
+     *
+     * @param {Iterable<number>} indices - Segment indices to protect.
+      * @returns {{maxRawCacheBytes: number, cachedRawBytes: number, cachedRawSegments: number, protectedRawSegments: number}} Updated cache config/state snapshot.
+     */
+    setProtectedRawSegments(indices) {
+        // Each scheduler pass supplies the full protected region.
+        // Replacing atomically keeps the rule simple and predictable.
+        this._protectedRawSegments = new Set(indices);
+
+        // Reconcile immediately.
+        // Do not wait for another fetch to trigger eviction.
+        this._evictIfNeeded();
+        return this.getRawCacheConfig();
+    }
+
+    /**
+     * Updates the raw-segment LRU capacity at runtime and evicts oldest
+     * entries immediately if the new cap is smaller than current usage.
+     *
+     * @param {number} budgetBytes - New raw-segment cache capacity in bytes.
+     * @returns {{maxRawCacheBytes: number, cachedRawBytes: number, cachedRawSegments: number, protectedRawSegments: number}} Updated cache config/state snapshot.
+     */
+    setMaxRawCacheBytes(budgetBytes) {
+        if (!Number.isFinite(budgetBytes) || budgetBytes < 1) {
+            throw new Error(`Invalid raw segment cache size: ${budgetBytes}`);
+        }
+
+        this.maxRawCacheBytes = Math.floor(budgetBytes);
+        this._evictIfNeeded();
+        return this.getRawCacheConfig();
+    }
+
+    /**
+     * Backwards-compatible alias for the raw cache byte budget setter.
+     *
+     * @param {number} budgetBytes - New raw-segment cache capacity in bytes.
+     * @returns {{maxRawCacheBytes: number, cachedRawBytes: number, cachedRawSegments: number, protectedRawSegments: number}} Updated cache config/state snapshot.
+     */
+    setMaxRawSegmentsCached(budgetBytes) {
+        return this.setMaxRawCacheBytes(budgetBytes);
     }
 
     /**
@@ -178,20 +252,46 @@ export class SegmentFetcher {
      * @returns {void}
      */
     _touch(segmentIndexNumber, buffer) {
+        const previousBuffer = this._rawSegmentCache.get(segmentIndexNumber);
+        if (previousBuffer) {
+            this._rawSegmentBytes -= previousBuffer.byteLength;
+        }
         this._rawSegmentCache.delete(segmentIndexNumber);
         this._rawSegmentCache.set(segmentIndexNumber, buffer);
+        this._rawSegmentBytes += buffer.byteLength;
     }
 
     /**
      * Evicts the oldest cache entries until the cache is back within
-     * `maxRawSegmentsCached`.
+     * `maxRawCacheBytes`.
      *
      * @returns {void}
      */
     _evictIfNeeded() {
-        while (this._rawSegmentCache.size > this.maxRawSegmentsCached) {
-            const oldestKey = this._rawSegmentCache.keys().next().value;
-            this._rawSegmentCache.delete(oldestKey);
+        while (this._rawSegmentBytes > this.maxRawCacheBytes) {
+            let evicted = false;
+
+            // Prefer evicting the oldest non-protected segment first.
+            // This keeps the local paused neighborhood resident longer.
+            for (const key of this._rawSegmentCache.keys()) {
+                if (!this._protectedRawSegments.has(key)) {
+                    const buffer = this._rawSegmentCache.get(key);
+                    this._rawSegmentBytes -= buffer.byteLength;
+                    this._rawSegmentCache.delete(key);
+                    evicted = true;
+                    break;
+                }
+            }
+
+            if (!evicted) {
+                // If everything is protected, capacity still has to win.
+                // Fall back to ordinary oldest-first eviction.
+                // This avoids an infinite loop when protection is too large.
+                const oldestKey = this._rawSegmentCache.keys().next().value;
+                const buffer = this._rawSegmentCache.get(oldestKey);
+                this._rawSegmentBytes -= buffer.byteLength;
+                this._rawSegmentCache.delete(oldestKey);
+            }
         }
     }
 }

@@ -59,28 +59,72 @@ export class FrameStore {
         this.onDebug = onDebug;
         this.onError = onError;
 
-        const bytesPerFrame = width * height * BYTES_PER_PIXEL_420_8BIT;
-        const framesPerSegment = Math.ceil(segmentDuration * fps);
-        const bytesPerSegment = bytesPerFrame * framesPerSegment;
-        const budget = cacheBudgetBytes || DEFAULT_CACHE_BUDGET_BYTES;
+        this._width = width;
+        this._height = height;
+        this._fps = fps;
+        this._segmentDuration = segmentDuration;
+        this._cacheBudgetBytes = cacheBudgetBytes || DEFAULT_CACHE_BUDGET_BYTES;
 
-        this.maxSegmentsBuffered = Math.max(MIN_SEGMENTS_BUFFERED, Math.floor(budget / bytesPerSegment));
+        this.maxSegmentsBuffered = this._computeMaxSegmentsBuffered(this._cacheBudgetBytes);
 
         // segmentIndex -> GopBuffer, insertion order doubles as LRU order.
         this.buffers = new Map();
         this.pinned = new Set();
         this._inFlight = new Map(); // segmentIndex -> {promise, wanterCount, fetchAbortController}
 
-        // segmentIndex -> {nextAttemptAtMs, delayMs} -- tracks a segment
-        // that failed (not merely got cancelled) recently, so the
-        // scheduler's automatic lookahead/prefetch passes (which run
-        // unconditionally on every render-loop tick) can skip retrying it
-        // until the backoff window elapses, rather than hammering a
-        // transient failure (e.g. Jellyfin's transcoder not having
-        // generated that segment yet) dozens of times a second. A
-        // deliberate, explicit seek() to that same segment is NOT gated
-        // by this -- only the passive, automatic retry paths are.
+        // Track recent real failures per segment.
+        // Automatic lookahead respects this backoff window.
+        // Explicit seek() still bypasses it on purpose.
         this._retryBackoff = new Map();
+    }
+
+    /**
+     * Computes decoded-segment capacity from a byte budget.
+     *
+     * @param {number} budgetBytes - Decoded-frame budget in bytes.
+     * @returns {number} Max decoded segments retained.
+     */
+    _computeMaxSegmentsBuffered(budgetBytes) {
+        const bytesPerFrame = this._width * this._height * BYTES_PER_PIXEL_420_8BIT;
+        const framesPerSegment = Math.ceil(this._segmentDuration * this._fps);
+        const bytesPerSegment = bytesPerFrame * framesPerSegment;
+        return Math.max(MIN_SEGMENTS_BUFFERED, Math.floor(budgetBytes / bytesPerSegment));
+    }
+
+    /**
+     * Returns current decoded-cache configuration/state.
+     *
+     * @returns {{cacheBudgetBytes: number, maxSegmentsBuffered: number, cachedDecodedSegments: number}} Cache config/state snapshot.
+     */
+    getDecodedCacheConfig() {
+        return {
+            cacheBudgetBytes: this._cacheBudgetBytes,
+            maxSegmentsBuffered: this.maxSegmentsBuffered,
+            cachedDecodedSegments: this.buffers.size,
+        };
+    }
+
+    /**
+     * Updates decoded-frame cache budget at runtime and evicts oldest
+     * unpinned decoded segments immediately when shrinking.
+     *
+     * @param {number} budgetBytes - New decoded-frame budget in bytes.
+     * @returns {{cacheBudgetBytes: number, maxSegmentsBuffered: number, cachedDecodedSegments: number}} Updated cache config/state snapshot.
+     */
+    setDecodedCacheBudgetBytes(budgetBytes) {
+        if (!Number.isFinite(budgetBytes) || budgetBytes <= 0) {
+            throw new Error(`Invalid decoded cache budget: ${budgetBytes}`);
+        }
+
+        // Store the new byte budget first.
+        // Then recompute how many whole decoded segments fit in it.
+        this._cacheBudgetBytes = Math.floor(budgetBytes);
+        this.maxSegmentsBuffered = this._computeMaxSegmentsBuffered(this._cacheBudgetBytes);
+
+        // Shrinks should evict immediately.
+        // Grows simply leave more headroom for future decodes.
+        this._evictIfNeeded();
+        return this.getDecodedCacheConfig();
     }
 
     /**
@@ -313,6 +357,12 @@ export class FrameStore {
         this._logDebug(`segment ${segmentIndexNumber}: demuxing + decoding...`);
         let demuxResult = await demuxSegment(initBuffer, segmentBuffer);
 
+        // Record the current segment's own first timestamp before any
+        // continuity merge happens.
+        // We use this later to trim prepended frames back out.
+        const segmentOwnFirstTimestampMicros =
+            demuxResult.chunks.length > 0 ? demuxResult.chunks[0].timestamp : null;
+
         if (demuxResult.chunks.length === 0 || demuxResult.chunks[0].type !== 'key') {
             // Defensive fallback: this segment's first sample isn't a
             // keyframe, contrary to Jellyfin's BreakOnNonKeyFrames=False
@@ -335,7 +385,29 @@ export class FrameStore {
         }
 
         const gopBuffer = await this.gopDecoder.decodeSegment(segmentIndexNumber, demuxResult);
-        this._logDebug(`segment ${segmentIndexNumber}: ready (${gopBuffer.frames.length} frames)`);
+
+        // The previous segment's chunks may be merged in only to satisfy
+        // decode continuity.
+        // They must not stay cached as part of THIS segment's frame list.
+        // Otherwise scheduler time mapping anchors to the wrong frame.
+        // That can make visible frames disagree with currentTime.
+        if (segmentOwnFirstTimestampMicros !== null) {
+            gopBuffer.frames = gopBuffer.frames.filter((frame) => frame.timestamp >= segmentOwnFirstTimestampMicros);
+        }
+
+        // Log the decoded segment's raw timestamp span next to the
+        // playlist timeline it is supposed to represent.
+        // This makes mapping drift visible without guessing.
+        const segment = this.segmentFetcher.segmentIndex.segments[segmentIndexNumber];
+        const firstFrame = gopBuffer.frames[0];
+        const lastFrame = gopBuffer.frames[gopBuffer.frames.length - 1];
+        this._logDebug(
+            `segment ${segmentIndexNumber}: ready (${gopBuffer.frames.length} frames) ` +
+                `rawFirst=${firstFrame ? (firstFrame.timestamp / 1e6).toFixed(3) : 'na'} ` +
+                `rawLast=${lastFrame ? (lastFrame.timestamp / 1e6).toFixed(3) : 'na'} ` +
+                `timelineStart=${segment ? segment.startTime.toFixed(3) : 'na'} ` +
+                `timelineEnd=${segment ? segment.endTime.toFixed(3) : 'na'}`
+        );
 
         this.buffers.set(segmentIndexNumber, gopBuffer);
         this._touch(segmentIndexNumber);

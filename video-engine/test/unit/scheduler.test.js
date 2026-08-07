@@ -119,6 +119,11 @@ function makeRecordingFrameStore(backoffIndices = new Set()) {
         ensuredIndices: [],
         prefetchedIndices: [],
         pinned: null,
+        segmentFetcher: {
+            maxRawSegmentsCached: 6,
+            hasRawBytes: () => true,
+            setProtectedRawSegments: () => {},
+        },
         has: () => false,
         isInBackoff: (index) => backoffIndices.has(index),
         ensureSegment(index) {
@@ -136,7 +141,7 @@ function makeRecordingFrameStore(backoffIndices = new Set()) {
 }
 
 describe('Scheduler#_kickLookahead', () => {
-    test('forward: ensures and pins every segment between current and the lookahead edge, not just the endpoints', () => {
+    test('forward: ensures the full directional window but pins only the protected playhead neighborhood', () => {
         // Regression test: at 8x forward, the 2s (at 1x) lookahead window
         // scales to 16s, spanning segments 0 through 5 at 3s/segment --
         // the original bug only ensured/pinned segment 0 and segment 5,
@@ -152,11 +157,11 @@ describe('Scheduler#_kickLookahead', () => {
 
         scheduler._kickLookahead(0);
 
-        expect(frameStore.pinned).toEqual([0, 1, 2, 3, 4, 5]);
+        expect(frameStore.pinned).toEqual([0, 1]);
         expect(frameStore.ensuredIndices).toEqual([0, 1, 2, 3, 4, 5]);
     });
 
-    test('reverse: ensures and pins every segment between one before the reverse-margin edge and the current segment', () => {
+    test('reverse: ensures the full directional window but pins only the protected playhead neighborhood', () => {
         const frameStore = makeRecordingFrameStore();
         const scheduler = new Scheduler({
             segmentIndex: makeUniformSegmentIndex(20, 3),
@@ -170,8 +175,8 @@ describe('Scheduler#_kickLookahead', () => {
         // at t=16, segment 5 ([15, 18)) -- one segment earlier is 4.
         scheduler._kickLookahead(20);
 
-        expect(frameStore.pinned).toEqual([4, 5, 6]);
-        expect(frameStore.ensuredIndices).toEqual([4, 5, 6]);
+        expect(frameStore.pinned).toEqual([5, 6, 7]);
+        expect(frameStore.ensuredIndices).toEqual([5, 6, 7, 4]);
     });
 
     test('forward: prefetches raw bytes only (no decode) for the wider network radius beyond the decode range', () => {
@@ -186,11 +191,10 @@ describe('Scheduler#_kickLookahead', () => {
 
         scheduler._kickLookahead(0);
 
-        // Decode range covers 0-5 (see the forward lookahead test above);
-        // the network-only radius (8s at 1x * 8 = 64s, clamped to the
-        // 60s stream) extends to the last segment, 19 -- none of 6-19
-        // should have gone through ensureSegment (decode), only prefetchRawBytes.
-        expect(frameStore.prefetchedIndices).toEqual(Array.from({ length: 14 }, (_, i) => i + 6));
+        // Decode range covers 0-5 (see the forward lookahead test above).
+        // Network prefetch now issues only a small bounded batch per tick,
+        // starting from the first segment beyond decode.
+        expect(frameStore.prefetchedIndices).toEqual([6]);
         expect(frameStore.ensuredIndices).not.toContain(6);
     });
 
@@ -295,6 +299,11 @@ function makeControllableFrameStore() {
     const calls = [];
     const frameStore = {
         buffers: new Map(),
+        segmentFetcher: {
+            maxRawSegmentsCached: 6,
+            hasRawBytes: () => true,
+            setProtectedRawSegments: () => {},
+        },
         // Not exercised by these tests, but seek() now also calls
         // _kickLookahead() on success (see the "kicks off lookahead
         // immediately" describe block below) -- these no-op stubs just
@@ -433,6 +442,11 @@ function makeSeekableRecordingFrameStore(segmentDurationSeconds) {
         pinned: null,
         ensuredIndices,
         prefetchedIndices,
+        segmentFetcher: {
+            maxRawSegmentsCached: 6,
+            hasRawBytes: () => true,
+            setProtectedRawSegments: () => {},
+        },
         has: (index) => buffers.has(index),
         isInBackoff: () => false,
         async ensureSegment(index) {
@@ -481,13 +495,12 @@ describe('Scheduler#seek kicks off lookahead immediately', () => {
 
         await scheduler.seek(0.5); // lands in segment 0 ([0, 1))
 
-        // LOOKAHEAD_SECONDS (2.0) at the default 1x rate reaches to t=2.0
-        // from segment 0's own start (0), i.e. segment 2 -- not just
-        // segment 0, the exact seek target.
+        // The protected core should decode immediately.
         expect(frameStore.ensuredIndices).toContain(0);
         expect(frameStore.ensuredIndices).toContain(1);
-        expect(frameStore.ensuredIndices).toContain(2);
-        expect(frameStore.pinned).toEqual([0, 1, 2]);
+        expect(frameStore.pinned).toEqual([0, 1]);
+        // The outward ring should stay raw-only.
+        expect(frameStore.prefetchedIndices).toContain(3);
     });
 });
 
@@ -553,14 +566,21 @@ describe('Scheduler boundary and pause behavior', () => {
         expect(pauseSpy).toHaveBeenCalledTimes(1);
     });
 
-    test('kickLookahead runs once when user pauses so buffering continues while paused', () => {
+    test('pause warms the paused anchor neighborhood and the outward paused neighborhood around current time', () => {
+        const pinnedSnapshots = [];
+        const ensuredIndices = [];
         const frameStore = {
             buffers: new Map([[0, { frames: [{ timestamp: 1_000_000 }] }]]),
-            has: () => true,
+            has: () => false,
             isInBackoff: () => false,
-            ensureSegment: () => Promise.resolve(),
+            ensureSegment: (index) => {
+                ensuredIndices.push(index);
+                return Promise.resolve();
+            },
             prefetchRawBytes: () => Promise.resolve(),
-            setPinned: () => {},
+            setPinned: (indices) => {
+                pinnedSnapshots.push([...indices]);
+            },
             pinned: new Set(),
         };
         const scheduler = new Scheduler({
@@ -574,12 +594,12 @@ describe('Scheduler boundary and pause behavior', () => {
         scheduler.currentSegmentIndex = 0;
         scheduler.currentFrameIdx = 0;
 
-        const lookaheadSpy = jest.spyOn(scheduler, '_kickLookahead').mockImplementation(() => {});
-
         scheduler.pause();
 
-        expect(lookaheadSpy).toHaveBeenCalledTimes(1);
-        expect(lookaheadSpy).toHaveBeenCalledWith(expect.any(Number));
+        expect(pinnedSnapshots.length).toBeGreaterThan(0);
+        expect(pinnedSnapshots[pinnedSnapshots.length - 1]).toEqual([0, 1]);
+        expect(ensuredIndices).toContain(0);
+        expect(ensuredIndices).toContain(1);
         expect(scheduler.playing).toBe(false);
     });
 });
@@ -620,15 +640,28 @@ describe('Scheduler paused background prefetch', () => {
         }
     });
 
-    test('while paused, worker drives the same lookahead pipeline along a virtual timeline that advances over time', () => {
+    test('while paused, worker expands shared lookahead forward from the paused center', () => {
         jest.useFakeTimers();
         try {
+            const ensuredIndices = [];
+            const prefetchedIndices = [];
             const frameStore = {
                 buffers: new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]),
-                has: () => true,
+                segmentFetcher: {
+                    maxRawSegmentsCached: 6,
+                    hasRawBytes: () => true,
+                    setProtectedRawSegments: () => {},
+                },
+                has: () => false,
                 isInBackoff: () => false,
-                ensureSegment: () => Promise.resolve(),
-                prefetchRawBytes: () => Promise.resolve(),
+                ensureSegment: (index) => {
+                    ensuredIndices.push(index);
+                    return Promise.resolve();
+                },
+                prefetchRawBytes: (index) => {
+                    prefetchedIndices.push(index);
+                    return Promise.resolve();
+                },
                 setPinned: () => {},
                 pinned: new Set(),
             };
@@ -642,25 +675,20 @@ describe('Scheduler paused background prefetch', () => {
             scheduler.playing = true;
             scheduler.currentSegmentIndex = 10;
             scheduler.currentFrameIdx = 0;
+            scheduler._presentedMediaTime = 30;
 
-            const lookaheadTargets = [];
-            scheduler._kickLookahead = (targetTime) => {
-                lookaheadTargets.push(targetTime);
-            };
             scheduler.pause();
 
-            // pause() itself still performs one immediate lookahead at
-            // currentTime; the paused worker adds bidirectional passes
-            // on each interval tick.
-            expect(lookaheadTargets.length).toBe(1);
+            jest.advanceTimersByTime(9000);
 
-            jest.advanceTimersByTime(1000);
-            const firstTickTarget = Math.max(lookaheadTargets[1], lookaheadTargets[2]);
-
-            jest.advanceTimersByTime(1000);
-            const secondTickTarget = Math.max(lookaheadTargets[3], lookaheadTargets[4]);
-
-            expect(secondTickTarget).toBeGreaterThan(firstTickTarget);
+            // Protected core stays decoded.
+            expect(ensuredIndices.some((index) => index >= 9 && index <= 11)).toBe(true);
+            // Decoded expansion must remain symmetric around the paused center.
+            expect(ensuredIndices.some((index) => index <= 8)).toBe(true);
+            expect(ensuredIndices.some((index) => index >= 12)).toBe(true);
+            // Expansion should continue as raw-only downloads on both sides.
+            expect(prefetchedIndices.some((index) => index <= 8)).toBe(true);
+            expect(prefetchedIndices.some((index) => index >= 12)).toBe(true);
         } finally {
             jest.useRealTimers();
         }
@@ -670,8 +698,14 @@ describe('Scheduler paused background prefetch', () => {
         jest.useFakeTimers();
         try {
             const segmentIndex = makeUniformSegmentIndex(80, 3);
+            const pinnedSnapshots = [];
             const frameStore = {
                 buffers: new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]),
+                segmentFetcher: {
+                    maxRawSegmentsCached: 6,
+                    hasRawBytes: () => false,
+                    setProtectedRawSegments: () => {},
+                },
                 has: (index) => frameStore.buffers.has(index),
                 isInBackoff: () => false,
                 ensureSegment: async (index) => {
@@ -684,7 +718,9 @@ describe('Scheduler paused background prefetch', () => {
                     return frameStore.buffers.get(index);
                 },
                 prefetchRawBytes: () => Promise.resolve(),
-                setPinned: () => {},
+                setPinned(indices) {
+                    pinnedSnapshots.push([...indices]);
+                },
                 pinned: new Set(),
             };
             const scheduler = new Scheduler({
@@ -697,22 +733,108 @@ describe('Scheduler paused background prefetch', () => {
             scheduler.playing = true;
             scheduler.currentSegmentIndex = 10;
             scheduler.currentFrameIdx = 0;
+            scheduler._presentedMediaTime = 30;
 
-            const lookaheadTargets = [];
-            scheduler._kickLookahead = (targetTime) => {
-                lookaheadTargets.push(targetTime);
-            };
             scheduler.pause();
-
             jest.advanceTimersByTime(1000);
-            const preSeekTickTarget = Math.max(lookaheadTargets[1], lookaheadTargets[2]);
+            const preSeekPinned = pinnedSnapshots[pinnedSnapshots.length - 1];
 
             await scheduler.seek(150); // segment 50
             jest.advanceTimersByTime(1000);
-            const postSeekTickTarget = lookaheadTargets[lookaheadTargets.length - 1];
+            const postSeekPinned = pinnedSnapshots[pinnedSnapshots.length - 1];
 
-            expect(Math.abs(postSeekTickTarget - 150)).toBeLessThan(3);
-            expect(postSeekTickTarget).toBeGreaterThan(preSeekTickTarget);
+            expect(preSeekPinned).toContain(10);
+            expect(postSeekPinned).toContain(50);
+            expect(postSeekPinned).toContain(49);
+            expect(postSeekPinned).toContain(51);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('while paused, expansion decode waits for raw bytes and only the protected core decodes immediately', () => {
+        jest.useFakeTimers();
+        try {
+            const ensuredIndices = [];
+            const frameStore = {
+                buffers: new Map([[10, { frames: [{ timestamp: 30_000_000 }] }]]),
+                segmentFetcher: {
+                    maxRawSegmentsCached: 6,
+                    hasRawBytes: (index) => index >= 9 && index <= 11,
+                    setProtectedRawSegments: () => {},
+                },
+                has: () => false,
+                isInBackoff: () => false,
+                ensureSegment: (index) => {
+                    ensuredIndices.push(index);
+                    return Promise.resolve();
+                },
+                prefetchRawBytes: () => Promise.resolve(),
+                setPinned: () => {},
+                pinned: new Set(),
+            };
+            const scheduler = new Scheduler({
+                segmentIndex: makeUniformSegmentIndex(40, 3),
+                frameStore,
+                canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+                emit: () => {},
+            });
+
+            scheduler.playing = true;
+            scheduler.currentSegmentIndex = 10;
+            scheduler.currentFrameIdx = 0;
+            scheduler._presentedMediaTime = 30;
+
+            scheduler.pause();
+            jest.advanceTimersByTime(3000);
+
+            expect(ensuredIndices.some((index) => index >= 9 && index <= 11)).toBe(true);
+            expect(ensuredIndices.some((index) => index <= 8)).toBe(false);
+            expect(ensuredIndices.some((index) => index >= 12)).toBe(false);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('while paused, the segment at the paused anchor stays pinned as expansion continues outward', () => {
+        jest.useFakeTimers();
+        try {
+            const pinnedSnapshots = [];
+            const frameStore = {
+                buffers: new Map([[10, { frames: [{ timestamp: 30_000_000 }] }]]),
+                segmentFetcher: {
+                    maxRawSegmentsCached: 6,
+                    hasRawBytes: () => false,
+                    setProtectedRawSegments: () => {},
+                },
+                has: () => true,
+                isInBackoff: () => false,
+                ensureSegment: () => Promise.resolve(),
+                prefetchRawBytes: () => Promise.resolve(),
+                setPinned(indices) {
+                    pinnedSnapshots.push([...indices]);
+                },
+                pinned: new Set(),
+            };
+            const scheduler = new Scheduler({
+                segmentIndex: makeUniformSegmentIndex(40, 3),
+                frameStore,
+                canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+                emit: () => {},
+            });
+
+            scheduler.playing = true;
+            scheduler.currentSegmentIndex = 10;
+            scheduler.currentFrameIdx = 0;
+            scheduler._presentedMediaTime = 30;
+            scheduler.pause();
+
+            jest.advanceTimersByTime(3000);
+
+            expect(pinnedSnapshots.length).toBeGreaterThan(1);
+            for (const snapshot of pinnedSnapshots) {
+                expect(snapshot).toContain(10);
+            }
         } finally {
             jest.useRealTimers();
         }

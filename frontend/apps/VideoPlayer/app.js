@@ -90,14 +90,23 @@ const scrubTooltip = document.getElementById("scrubTooltip");
 const playPauseButton = document.getElementById("playPauseButton");
 const timeDisplay = document.getElementById("timeDisplay");
 const speedDisplay = document.getElementById("speedDisplay");
+const playerSettingsButton = document.getElementById("playerSettingsButton");
+const playerSettingsMenu = document.getElementById("playerSettingsMenu");
 const muteButton = document.getElementById("muteButton");
 const fullscreenButton = document.getElementById("fullscreenButton");
 const stepBackButton = document.getElementById("stepBackButton");
 const stepForwardButton = document.getElementById("stepForwardButton");
 const speedOverrideInput = document.getElementById("speedOverrideInput");
+const rawCacheGiBInput = document.getElementById("rawCacheGiBInput");
+const decodedCacheGiBInput = document.getElementById("decodedCacheGiBInput");
+const applyCacheSettingsButton = document.getElementById("applyCacheSettingsButton");
+const readCacheSettingsButton = document.getElementById("readCacheSettingsButton");
+const dumpEngineStateButton = document.getElementById("dumpEngineStateButton");
 
 let scrubDragging = false;
 let segmentShadingHandle = null;
+let settingsMenuOpen = false;
+let lastFrameMetadata = null;
 
 loadButton.addEventListener("click", async () => {
   const itemId = itemIdInput.value.trim();
@@ -109,12 +118,18 @@ loadButton.addEventListener("click", async () => {
   const token = tokenInput.value.trim();
   const fetchOptions = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
   const streamUrl = `/api/v2/jellyfin/items/${itemId}/stream?mode=Transcode`;
+  const startupRawCacheGiB = parseFloat(rawCacheGiBInput.value);
+  const startupRawCacheBytes = Math.floor(startupRawCacheGiB * 1024 * 1024 * 1024);
 
   loadButton.disabled = true;
   log(`Loading ${streamUrl} ...`);
 
   try {
-    window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, { streamUrl, fetchOptions });
+    window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
+      streamUrl,
+      fetchOptions,
+      rawSegmentCacheBudgetBytes: Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined,
+    });
     wireVideoEvents();
 
     log(`Engine ready. duration=${window.marpVideo.duration.toFixed(3)}s, ${window.marpVideo.videoWidth}x${window.marpVideo.videoHeight}, ${window.marpVideo.fps}fps`);
@@ -125,9 +140,25 @@ loadButton.addEventListener("click", async () => {
     }
     segmentShadingHandle = setInterval(updateSegmentShading, SEGMENT_SHADING_INTERVAL_MS);
 
-    [playPauseButton, centerPlayButton, stepBackButton, stepForwardButton, speedOverrideInput, muteButton, fullscreenButton].forEach((el) => {
+    [
+      playPauseButton,
+      centerPlayButton,
+      stepBackButton,
+      stepForwardButton,
+      speedOverrideInput,
+      playerSettingsButton,
+      muteButton,
+      fullscreenButton,
+      rawCacheGiBInput,
+      decodedCacheGiBInput,
+      applyCacheSettingsButton,
+      readCacheSettingsButton,
+      dumpEngineStateButton,
+    ].forEach((el) => {
       el.disabled = false;
     });
+
+    syncCacheSettingsFromEngine();
 
     playerContainer.focus();
   } catch (err) {
@@ -135,6 +166,213 @@ loadButton.addEventListener("click", async () => {
     console.error(err);
     loadButton.disabled = false;
   }
+});
+
+function syncCacheSettingsFromEngine() {
+  if (!window.marpVideo || typeof window.marpVideo.getCacheConfig !== "function") {
+    return;
+  }
+
+  const cache = window.marpVideo.getCacheConfig();
+  rawCacheGiBInput.value = (cache.raw.maxRawCacheBytes / (1024 * 1024 * 1024)).toFixed(2);
+  decodedCacheGiBInput.value = (cache.decoded.cacheBudgetBytes / (1024 * 1024 * 1024)).toFixed(2);
+  log(
+    `cache config raw=${(cache.raw.cachedRawBytes / (1024 * 1024 * 1024)).toFixed(2)}GiB/${(cache.raw.maxRawCacheBytes / (1024 * 1024 * 1024)).toFixed(2)}GiB ` +
+      `decoded=${cache.decoded.cachedDecodedSegments}/${cache.decoded.maxSegmentsBuffered} ` +
+      `budgetGiB=${(cache.decoded.cacheBudgetBytes / (1024 * 1024 * 1024)).toFixed(2)}`
+  );
+}
+
+applyCacheSettingsButton.addEventListener("click", () => {
+  if (!window.marpVideo) {
+    return;
+  }
+
+  const rawGiB = parseFloat(rawCacheGiBInput.value);
+  const rawBytes = Math.floor(rawGiB * 1024 * 1024 * 1024);
+  const decodedGiB = parseFloat(decodedCacheGiBInput.value);
+  const decodedBytes = Math.floor(decodedGiB * 1024 * 1024 * 1024);
+
+  try {
+    const rawConfig = window.marpVideo.setRawSegmentCacheBudgetBytes(rawBytes);
+    const decodedConfig = window.marpVideo.setDecodedCacheBudgetBytes(decodedBytes);
+    log(
+      `cache settings applied raw=${(rawConfig.cachedRawBytes / (1024 * 1024 * 1024)).toFixed(2)}GiB/${(rawConfig.maxRawCacheBytes / (1024 * 1024 * 1024)).toFixed(2)}GiB ` +
+        `decoded=${decodedConfig.cachedDecodedSegments}/${decodedConfig.maxSegmentsBuffered} ` +
+        `budgetGiB=${(decodedConfig.cacheBudgetBytes / (1024 * 1024 * 1024)).toFixed(2)}`
+    );
+  } catch (err) {
+    log(`ERROR applying cache settings: ${err.message}`);
+  }
+});
+
+readCacheSettingsButton.addEventListener("click", () => {
+  syncCacheSettingsFromEngine();
+});
+
+function listToRanges(indices) {
+  if (!indices || indices.length === 0) {
+    return [];
+  }
+
+  const sorted = [...new Set(indices)].sort((a, b) => a - b);
+  const ranges = [];
+  let start = sorted[0];
+  let end = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i];
+      continue;
+    }
+    ranges.push(start === end ? `${start}` : `${start}-${end}`);
+    start = sorted[i];
+    end = sorted[i];
+  }
+  ranges.push(start === end ? `${start}` : `${start}-${end}`);
+  return ranges;
+}
+
+function getCurrentSegmentNeighborhood(segmentStates, centerSegmentIndex, radius = 4) {
+  if (!Number.isFinite(centerSegmentIndex)) {
+    return [];
+  }
+  return segmentStates
+    .filter((segment) => Math.abs(segment.index - centerSegmentIndex) <= radius)
+    .map((segment) => ({
+      index: segment.index,
+      startTime: segment.startTime,
+      endTime: segment.endTime,
+      fetched: segment.fetched,
+      decoded: segment.decoded,
+      pinned: segment.pinned,
+    }));
+}
+
+function dumpEngineState() {
+  if (!window.marpVideo) {
+    log("dump-state: no active engine");
+    return;
+  }
+
+  const segmentStates = window.marpVideo.getSegmentStates();
+  const fetchedSegments = segmentStates.filter((segment) => segment.fetched).map((segment) => segment.index);
+  const decodedSegments = segmentStates.filter((segment) => segment.decoded).map((segment) => segment.index);
+  const pinnedSegments = segmentStates.filter((segment) => segment.pinned).map((segment) => segment.index);
+
+  // "Demuxed" and "decoded" are the same persistence tier currently.
+  // Demux-only buffers are not retained as a separate cache.
+  const demuxedSegments = [...decodedSegments];
+
+  const cacheConfig =
+    typeof window.marpVideo.getCacheConfig === "function"
+      ? window.marpVideo.getCacheConfig()
+      : { raw: null, decoded: null };
+
+  const debugState =
+    typeof window.marpVideo.getDebugState === "function"
+      ? window.marpVideo.getDebugState()
+      : null;
+
+  const currentSegmentIndex =
+    debugState && Number.isFinite(debugState.currentSegmentIndex)
+      ? debugState.currentSegmentIndex
+      : lastFrameMetadata && Number.isFinite(lastFrameMetadata.segmentIndex)
+      ? lastFrameMetadata.segmentIndex
+      : null;
+
+  const snapshot = {
+    takenAt: new Date().toISOString(),
+    playback: {
+      currentTime: window.marpVideo.currentTime,
+      duration: window.marpVideo.duration,
+      playbackRate: window.marpVideo.playbackRate,
+      paused: window.marpVideo.paused,
+      seeking: window.marpVideo.seeking,
+      currentSegmentIndex,
+      currentFrameIndex:
+        debugState && Number.isFinite(debugState.currentFrameIdx)
+          ? debugState.currentFrameIdx
+          : lastFrameMetadata && Number.isFinite(lastFrameMetadata.frameIndex)
+          ? lastFrameMetadata.frameIndex
+          : null,
+      currentRawFrameTime:
+        debugState && Number.isFinite(debugState.currentRawFrameTime)
+          ? debugState.currentRawFrameTime
+          : lastFrameMetadata && Number.isFinite(lastFrameMetadata.rawFrameTime)
+          ? lastFrameMetadata.rawFrameTime
+          : null,
+    },
+    debugState,
+    cacheConfig,
+    segmentStateCounts: {
+      total: segmentStates.length,
+      fetched: fetchedSegments.length,
+      decoded: decodedSegments.length,
+      demuxed: demuxedSegments.length,
+      pinned: pinnedSegments.length,
+    },
+    fetchedSegments,
+    fetchedRanges: listToRanges(fetchedSegments),
+    decodedSegments,
+    decodedRanges: listToRanges(decodedSegments),
+    demuxedSegments,
+    demuxedRanges: listToRanges(demuxedSegments),
+    pinnedSegments,
+    pinnedRanges: listToRanges(pinnedSegments),
+    neighborhood: getCurrentSegmentNeighborhood(segmentStates, currentSegmentIndex, 5),
+  };
+
+  log("dump-state: BEGIN");
+  log(JSON.stringify(snapshot, null, 2));
+  log("dump-state: END");
+  console.log("dump-state", snapshot);
+}
+
+dumpEngineStateButton.addEventListener("click", () => {
+  dumpEngineState();
+});
+
+function openSettingsMenu() {
+  // Keep the transport visible while the menu is open.
+  settingsMenuOpen = true;
+  playerSettingsMenu.classList.add("open");
+  showControlsBar();
+}
+
+function closeSettingsMenu() {
+  settingsMenuOpen = false;
+  playerSettingsMenu.classList.remove("open");
+}
+
+function toggleSettingsMenu() {
+  if (settingsMenuOpen) {
+    closeSettingsMenu();
+    return;
+  }
+  openSettingsMenu();
+}
+
+playerSettingsButton.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleSettingsMenu();
+});
+
+playerSettingsMenu.addEventListener("click", (event) => {
+  // Keep clicks inside the menu from bubbling up to the player.
+  event.stopPropagation();
+});
+
+document.addEventListener("pointerdown", (event) => {
+  if (!settingsMenuOpen) {
+    return;
+  }
+
+  if (playerSettingsMenu.contains(event.target) || playerSettingsButton.contains(event.target)) {
+    return;
+  }
+
+  closeSettingsMenu();
 });
 
 /**
@@ -205,9 +443,14 @@ function wireVideoEvents() {
   let frameLogCounter = 0;
 
   function onFrame(now, metadata) {
+    lastFrameMetadata = metadata;
     frameLogCounter += 1;
     if (frameLogCounter % 10 === 0) {
-      log(`frame #${metadata.presentedFrames} mediaTime=${metadata.mediaTime.toFixed(3)} segment=${metadata.segmentIndex}`);
+      log(
+        `frame #${metadata.presentedFrames} mediaTime=${metadata.mediaTime.toFixed(3)} ` +
+          `raw=${Number.isFinite(metadata.rawFrameTime) ? metadata.rawFrameTime.toFixed(3) : "na"} ` +
+          `segment=${metadata.segmentIndex} frameIdx=${metadata.frameIndex} rate=${window.marpVideo.playbackRate}`
+      );
     }
 
     if (!scrubDragging) {
@@ -432,7 +675,7 @@ function showControlsBar() {
   }
   if (window.marpVideo && !window.marpVideo.paused) {
     controlsHideTimer = setTimeout(() => {
-      if (!pointerOverControlsBar) {
+      if (!pointerOverControlsBar && !settingsMenuOpen) {
         controlsBar.classList.add("hidden");
       }
     }, CONTROLS_IDLE_HIDE_MS);
@@ -454,6 +697,11 @@ controlsBar.addEventListener("pointerleave", () => {
 // item-id/token fields above is never hijacked. ---
 playerContainer.addEventListener("keydown", (event) => {
   if (!window.marpVideo) {
+    return;
+  }
+
+  if (event.key === "Escape" && settingsMenuOpen) {
+    closeSettingsMenu();
     return;
   }
 

@@ -205,4 +205,56 @@ export class MarpVideoShim {
     close() {
         this._scheduler.close();
     }
+
+    /**
+     * Updates raw-segment cache capacity (cheap, undecoded bytes) at
+     * runtime.
+     *
+     * @param {number} budgetBytes - New raw-segment cache budget in bytes.
+     * @returns {{maxRawCacheBytes: number, cachedRawBytes: number, cachedRawSegments: number, protectedRawSegments: number}} Updated raw-cache config/state.
+     */
+    setRawSegmentCacheBudgetBytes(budgetBytes) {
+        return this._scheduler.frameStore.segmentFetcher.setMaxRawCacheBytes(budgetBytes);
+    }
+
+    /**
+     * Backwards-compatible alias for the raw-segment cache byte budget setter.
+     *
+     * @param {number} budgetBytes - New raw-segment cache budget in bytes.
+     * @returns {{maxRawCacheBytes: number, cachedRawBytes: number, cachedRawSegments: number, protectedRawSegments: number}} Updated raw-cache config/state.
+     */
+    setRawSegmentCacheSize(budgetBytes) {
+        return this.setRawSegmentCacheBudgetBytes(budgetBytes);
+    }
+
+    /**
+     * Updates decoded-frame cache budget at runtime.
+     *
+     * @param {number} budgetBytes - New decoded-frame cache budget in bytes.
+     * @returns {{cacheBudgetBytes: number, maxSegmentsBuffered: number, cachedDecodedSegments: number}} Updated decoded-cache config/state.
+     */
+    setDecodedCacheBudgetBytes(budgetBytes) {
+        return this._scheduler.frameStore.setDecodedCacheBudgetBytes(budgetBytes);
+    }
+
+    /**
+     * Returns both raw and decoded cache configuration/state snapshots.
+     *
+     * @returns {{raw: Object, decoded: Object}} Current cache config/state.
+     */
+    getCacheConfig() {
+        return {
+            raw: this._scheduler.frameStore.segmentFetcher.getRawCacheConfig(),
+            decoded: this._scheduler.frameStore.getDecodedCacheConfig(),
+        };
+    }
+
+    /**
+     * Returns exact internal playback state for debugging.
+     *
+     * @returns {{currentSegmentIndex: number, currentFrameIdx: number, currentRawFrameTime: (number|null), currentTime: number, pausedAnchorTime: number, playing: boolean, seeking: boolean}}
+     */
+    getDebugState() {
+        return this._scheduler.getDebugState();
+    }
 }

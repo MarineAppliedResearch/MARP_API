@@ -35,8 +35,20 @@ const REVERSE_PREFETCH_MARGIN_SECONDS = 0.5;
  */
 const NETWORK_PREFETCH_SECONDS = 8.0;
 
+/** Hard cap for paused network prefetch horizon growth, in seconds. */
+const MAX_PAUSED_NETWORK_PREFETCH_SECONDS = 60.0;
+
+/** Max number of new raw-prefetch requests to launch per scheduler pass. */
+const MAX_NETWORK_PREFETCH_REQUESTS_PER_TICK = 1;
+
 /** Paused-background prefetch cadence, in ms. */
-const PAUSED_PREFETCH_INTERVAL_MS = 1000;
+const PAUSED_PREFETCH_INTERVAL_MS = 500;
+
+/** How far paused decode may expand beyond the protected playhead neighborhood, in segments per side. */
+const PAUSED_DECODE_EXPANSION_RADIUS = 6;
+
+/** Always protect the current segment plus one neighbor on each side. */
+const PROTECTED_PLAYHEAD_SEGMENT_RADIUS = 1;
 
 /**
  * Drives forward/reverse pacing, seeking, and lookahead prefetch against
@@ -70,11 +82,16 @@ export class Scheduler {
 
         this._anchorWallClockMs = 0;
         this._anchorTime = 0;
+        this._presentedMediaTime = 0;
+        this._pausedFreezeTime = null;
         this._rafHandle = null;
         this._pausedPrefetchIntervalHandle = null;
         this._pausedPrefetchAnchorWallClockMs = 0;
         this._pausedPrefetchAnchorTime = 0;
         this._lastReverseShownTime = null;
+        this._lastReversePresentedSegmentIndex = null;
+        this._lastReversePresentedFrameIdx = null;
+        this._reverseHoldTickCount = 0;
         this._frameCallbacks = [];
         this._presentedFrameCount = 0;
 
@@ -107,13 +124,10 @@ export class Scheduler {
 
     /** @returns {number} Presentation time of the currently displayed frame, in seconds. */
     get currentTime() {
-        const buffer = this.frameStore.buffers.get(this.currentSegmentIndex);
-        const frame = buffer && buffer.frames[this.currentFrameIdx];
-        if (!frame) {
-            return this._anchorTime;
+        if (this._pausedFreezeTime !== null && !this.playing && !this.seekingFlag) {
+            return this._pausedFreezeTime;
         }
-
-        return this._frameTimestampToMediaTimeSeconds(this.currentSegmentIndex, frame.timestamp);
+        return this._presentedMediaTime;
     }
 
     /**
@@ -163,6 +177,25 @@ export class Scheduler {
     }
 
     /**
+     * Returns exact scheduler playhead internals for diagnostics.
+     *
+     * @returns {{currentSegmentIndex: number, currentFrameIdx: number, currentRawFrameTime: (number|null), currentTime: number, pausedAnchorTime: number, playing: boolean, seeking: boolean}}
+     */
+    getDebugState() {
+        const buffer = this.frameStore.buffers.get(this.currentSegmentIndex);
+        const frame = buffer && buffer.frames[this.currentFrameIdx];
+        return {
+            currentSegmentIndex: this.currentSegmentIndex,
+            currentFrameIdx: this.currentFrameIdx,
+            currentRawFrameTime: frame ? frame.timestamp / 1e6 : null,
+            currentTime: this.currentTime,
+            pausedAnchorTime: this._pausedPrefetchAnchorTime,
+            playing: this.playing,
+            seeking: this.seekingFlag,
+        };
+    }
+
+    /**
      * Registers a one-shot callback for the next presented frame,
      * matching the real requestVideoFrameCallback contract (callers must
      * re-register themselves each time to keep receiving frames).
@@ -204,6 +237,10 @@ export class Scheduler {
         this._frameCallbacks = [];
         this._presentedFrameCount += 1;
 
+        // Read the currently presented frame directly from scheduler state.
+        const currentBuffer = this.frameStore.buffers.get(this.currentSegmentIndex);
+        const currentFrame = currentBuffer && currentBuffer.frames[this.currentFrameIdx];
+
         const metadata = {
             mediaTime: this.currentTime,
             presentedFrames: this._presentedFrameCount,
@@ -216,6 +253,8 @@ export class Scheduler {
             // diagnostics, so callers can tell which segment is currently
             // driving playback without reaching into engine internals.
             segmentIndex: this.currentSegmentIndex,
+            frameIndex: this.currentFrameIdx,
+            rawFrameTime: currentFrame ? currentFrame.timestamp / 1e6 : NaN,
         };
 
         const now = performance.now();
@@ -237,6 +276,7 @@ export class Scheduler {
         this.playing = true;
         this._anchorWallClockMs = performance.now();
         this._anchorTime = this.currentTime;
+        this._pausedFreezeTime = null;
         this.emit('playing');
         this._scheduleTick();
     }
@@ -256,25 +296,27 @@ export class Scheduler {
             this._rafHandle = null;
         }
 
-        // Keep warming buffers from the paused position so a user who
-        // pauses and waits still has near-future segments ready when
-        // they press play again.
-        this._kickLookahead(this.currentTime);
+        // Freeze paused playhead time immediately.
+        this._pausedFreezeTime = this._presentedMediaTime;
+
+        // Freeze paused lookahead around the frame we actually paused on.
+        this._resetPausedPrefetchAnchor();
+
+        // Run the same lookahead pipeline playback uses.
+        // Start from zero elapsed expansion immediately.
+        // Do not wait for the first interval tick.
+        this._kickPausedNeighborhoodLookahead(0);
         this._startPausedPrefetchWorker();
 
         this.emit('pause');
     }
 
     /**
-     * Starts a low-rate background worker that keeps prefetching forward
-     * while paused, so paused time continues to fill the raw-byte cache
-     * beyond the narrow near-future lookahead window.
+     * Starts paused background prefetch.
      *
      * @returns {void}
      */
     _startPausedPrefetchWorker() {
-        this._resetPausedPrefetchAnchor();
-
         if (this._pausedPrefetchIntervalHandle !== null) {
             return;
         }
@@ -285,19 +327,53 @@ export class Scheduler {
                 return;
             }
 
+            // Expand outward from the paused anchor over wall-clock time.
+            // Use the same shared lookahead logic in both directions.
             const elapsedSeconds = (performance.now() - this._pausedPrefetchAnchorWallClockMs) / 1000;
-            const prefetchDirection = this.playbackRate < 0 ? -1 : 1;
-            const targetPrefetchTime = Math.max(
-                0,
-                Math.min(this.duration, this._pausedPrefetchAnchorTime + elapsedSeconds * prefetchDirection)
-            );
-
-            // Use the exact same lookahead/prefetch behavior as active
-            // playback (just without rendering): paused prefetch should
-            // track a virtual 1x timeline, not run a separate sweep mode.
-            this._kickLookahead(targetPrefetchTime, { virtualPlaybackRate: -1 });
-            this._kickLookahead(targetPrefetchTime, { virtualPlaybackRate: 1 });
+            this._kickPausedNeighborhoodLookahead(elapsedSeconds);
         }, PAUSED_PREFETCH_INTERVAL_MS);
+    }
+
+    /**
+     * Runs paused lookahead through the shared playback pipeline.
+     *
+     * This keeps pause/play behavior aligned.
+     * Pause expands outward from a fixed center over time.
+     *
+     * @param {number} elapsedSeconds - Virtual elapsed time since pause.
+     * @returns {void}
+     */
+    _kickPausedNeighborhoodLookahead(elapsedSeconds) {
+        const centerTime = this._pausedPrefetchAnchorTime;
+        const pausedDecodeSeconds = LOOKAHEAD_SECONDS + elapsedSeconds * 0.5;
+        const pausedNetworkSeconds = Math.min(
+            MAX_PAUSED_NETWORK_PREFETCH_SECONDS,
+            NETWORK_PREFETCH_SECONDS + elapsedSeconds * 2,
+        );
+
+        const reversePinned = this._kickLookahead(centerTime, {
+            virtualPlaybackRate: -1,
+            suppressPinnedUpdate: true,
+            protectedCenterTime: centerTime,
+            decodeSeconds: pausedDecodeSeconds,
+            reverseDecodeSeconds: pausedDecodeSeconds,
+            networkSeconds: pausedNetworkSeconds,
+            requireRawBytesForExpansion: true,
+        }) || [];
+        const forwardPinned = this._kickLookahead(centerTime, {
+            virtualPlaybackRate: 1,
+            suppressPinnedUpdate: true,
+            protectedCenterTime: centerTime,
+            decodeSeconds: pausedDecodeSeconds,
+            networkSeconds: pausedNetworkSeconds,
+            requireRawBytesForExpansion: true,
+        }) || [];
+
+        const pinned = [...new Set([...reversePinned, ...forwardPinned])].sort((a, b) => a - b);
+        this.frameStore.setPinned(pinned);
+        if (this.frameStore.segmentFetcher && typeof this.frameStore.segmentFetcher.setProtectedRawSegments === 'function') {
+            this.frameStore.segmentFetcher.setProtectedRawSegments(pinned);
+        }
     }
 
     /**
@@ -313,10 +389,7 @@ export class Scheduler {
     }
 
     /**
-     * Re-centers paused background prefetch cursors around the current
-     * media position, so a fresh seek while paused immediately pivots
-     * prefetch to adjacent segments at the new location instead of
-     * continuing to sweep an old region.
+    * Re-centers paused lookahead around the current media position.
      *
      * @returns {void}
      */
@@ -381,6 +454,11 @@ export class Scheduler {
         const elapsedSeconds = (now - this._anchorWallClockMs) / 1000;
         let targetTime = this._anchorTime + elapsedSeconds * this.playbackRate;
         let hitBoundary = false;
+
+        // Guard against pause races mid-tick.
+        if (!this.playing) {
+            return;
+        }
 
         if (targetTime >= this.duration) {
             targetTime = this.duration;
@@ -509,15 +587,52 @@ export class Scheduler {
         const frameIdx = this._locateFrameIndex(gopBuffer, targetTime, direction, segment.startTime);
 
         if (segment.index === this.currentSegmentIndex && frameIdx === this.currentFrameIdx) {
+            // Reverse playback naturally reuses a frame for a few rAF ticks.
+            // Log only when the hold lasts long enough to look suspicious.
+            if (direction === 'atOrAfter' && this.playbackRate < 0) {
+                this._reverseHoldTickCount += 1;
+                if (this._reverseHoldTickCount === 6 && typeof this.frameStore._logDebug === 'function') {
+                    this.frameStore._logDebug(
+                        `reverse-hold shown=${this.currentTime.toFixed(3)} expected=${targetTime.toFixed(3)} ` +
+                            `segment=${segment.index} frameIdx=${frameIdx} holdTicks=${this._reverseHoldTickCount}`
+                    );
+                }
+            }
             return true;
         }
+
+        // Any actual frame change clears the same-frame hold counter.
+        this._reverseHoldTickCount = 0;
 
         const frame = gopBuffer.frames[frameIdx];
         const presented = this.canvasRenderer.render(frame);
 
         if (presented) {
+            // Capture the previous presented frame before updating state.
+            const previousSegmentIndex = this.currentSegmentIndex;
+            const previousFrameIdx = this.currentFrameIdx;
+
             this.currentSegmentIndex = segment.index;
             this.currentFrameIdx = frameIdx;
+            this._presentedMediaTime = this._frameTimestampToMediaTimeSeconds(segment.index, frame.timestamp);
+
+            // Reverse should usually step backward by one frame at a time.
+            // Log larger skips so we can see whether the selector is jumping.
+            if (direction === 'atOrAfter' && this.playbackRate < 0 && typeof this.frameStore._logDebug === 'function') {
+                if (previousSegmentIndex === segment.index) {
+                    const frameIdxDelta = frameIdx - previousFrameIdx;
+                    if (frameIdxDelta >= 0 || frameIdxDelta < -3) {
+                        this.frameStore._logDebug(
+                            `reverse-step expected=${targetTime.toFixed(3)} shown=${this.currentTime.toFixed(3)} ` +
+                                `segment=${segment.index} prevFrameIdx=${previousFrameIdx} frameIdx=${frameIdx} ` +
+                                `frameIdxDelta=${frameIdxDelta}`
+                        );
+                    }
+                }
+
+                this._lastReversePresentedSegmentIndex = segment.index;
+                this._lastReversePresentedFrameIdx = frameIdx;
+            }
         }
 
         return true;
@@ -573,6 +688,62 @@ export class Scheduler {
     }
 
     /**
+     * Returns the fixed decoded neighborhood that must remain protected
+     * around a media time's current playhead segment.
+     *
+     * @param {number} centerTime - Media time to protect around.
+     * @returns {number[]} Protected segment indices.
+     */
+    _getProtectedNeighborhoodIndices(centerTime) {
+        const centerSegment = findSegmentForTime(this.segmentIndex, centerTime);
+        const indices = [];
+
+        // Keep the current segment.
+        // Also keep one segment on either side when available.
+        for (
+            let index = Math.max(0, centerSegment.index - PROTECTED_PLAYHEAD_SEGMENT_RADIUS);
+            index <= Math.min(this.segmentIndex.segments.length - 1, centerSegment.index + PROTECTED_PLAYHEAD_SEGMENT_RADIUS);
+            index++
+        ) {
+            indices.push(index);
+        }
+
+        return indices;
+    }
+
+    /**
+     * Computes the directional decode window for one target time/rate.
+     *
+     * @param {number} targetTime - Target presentation time, in seconds.
+     * @param {number} effectivePlaybackRate - Direction/magnitude for this pass.
+     * @returns {{decodeStartIndex: number, decodeEndIndex: number}} Decode window bounds.
+     */
+    _getDecodeWindowBounds(
+        targetTime,
+        effectivePlaybackRate,
+        lookaheadSeconds = LOOKAHEAD_SECONDS,
+        reverseLookaheadSeconds = REVERSE_PREFETCH_MARGIN_SECONDS,
+    ) {
+        const rateMagnitude = Math.max(1, Math.abs(effectivePlaybackRate));
+        const segment = findSegmentForTime(this.segmentIndex, targetTime);
+
+        if (effectivePlaybackRate >= 0) {
+            const aheadTime = Math.min(this.duration, targetTime + lookaheadSeconds * rateMagnitude);
+            return {
+                decodeStartIndex: segment.index,
+                decodeEndIndex: findSegmentForTime(this.segmentIndex, aheadTime).index,
+            };
+        }
+
+        const behindTime = Math.max(0, targetTime - reverseLookaheadSeconds * rateMagnitude);
+        return {
+            // Reverse playback still needs the prior segment ready first.
+            decodeStartIndex: Math.max(0, findSegmentForTime(this.segmentIndex, behindTime).index - 1),
+            decodeEndIndex: segment.index,
+        };
+    }
+
+    /**
      * Kicks off decode for every segment the current playback direction
      * will need next (not just the near/far edge of the lookahead window
      * -- at high |playbackRate| the window can span several segments, and
@@ -583,31 +754,51 @@ export class Scheduler {
      * @param {number} targetTime - Current target presentation time, in seconds.
      * @returns {void}
      */
-    _kickLookahead(targetTime, { virtualPlaybackRate } = {}) {
+    _kickLookahead(
+        targetTime,
+        {
+            virtualPlaybackRate,
+            suppressPinnedUpdate = false,
+            protectedCenterTime,
+            decodeSeconds = LOOKAHEAD_SECONDS,
+            reverseDecodeSeconds = REVERSE_PREFETCH_MARGIN_SECONDS,
+            networkSeconds = NETWORK_PREFETCH_SECONDS,
+            requireRawBytesForExpansion = false,
+        } = {},
+    ) {
         const effectivePlaybackRate = virtualPlaybackRate !== undefined ? virtualPlaybackRate : this.playbackRate;
         const rateMagnitude = Math.max(1, Math.abs(effectivePlaybackRate));
-        const segment = findSegmentForTime(this.segmentIndex, targetTime);
+        const { decodeStartIndex, decodeEndIndex } = this._getDecodeWindowBounds(
+            targetTime,
+            effectivePlaybackRate,
+            decodeSeconds,
+            reverseDecodeSeconds,
+        );
 
-        let decodeStartIndex;
-        let decodeEndIndex;
+        // The protected core stays centered on the current playhead.
+        // Expansion beyond it may use only surplus decoded budget.
+        const protectionCenterTime = Number.isFinite(protectedCenterTime) ? protectedCenterTime : targetTime;
+        const protectedIndices = this._getProtectedNeighborhoodIndices(protectionCenterTime);
+        const protectedIndexSet = new Set(protectedIndices);
 
-        if (effectivePlaybackRate >= 0) {
-            const aheadTime = Math.min(this.duration, targetTime + LOOKAHEAD_SECONDS * rateMagnitude);
-            decodeStartIndex = segment.index;
-            decodeEndIndex = findSegmentForTime(this.segmentIndex, aheadTime).index;
-        } else {
-            const behindTime = Math.max(0, targetTime - REVERSE_PREFETCH_MARGIN_SECONDS * rateMagnitude);
-            // One segment earlier than behindTime's own segment: reverse
-            // playback needs the PRIOR segment decoded before arriving at
-            // its boundary, not after, so decode isn't starting from zero
-            // the instant playback crosses into it.
-            decodeStartIndex = Math.max(0, findSegmentForTime(this.segmentIndex, behindTime).index - 1);
-            decodeEndIndex = segment.index;
+        // Real FrameStore always exposes maxSegmentsBuffered.
+        // Test doubles may omit it, so fall back to "no artificial cap"
+        // for those narrow harnesses.
+        const maxDecodedBudget = Number.isFinite(this.frameStore.maxSegmentsBuffered)
+            ? this.frameStore.maxSegmentsBuffered
+            : Number.MAX_SAFE_INTEGER;
+        const surplusBudget = Math.max(0, maxDecodedBudget - protectedIndices.length);
+
+        const expansionIndices = [];
+        for (let index = decodeStartIndex; index <= decodeEndIndex; index++) {
+            if (protectedIndexSet.has(index)) {
+                continue;
+            }
+            expansionIndices.push(index);
         }
 
-        const pinned = [];
-        for (let index = decodeStartIndex; index <= decodeEndIndex; index++) {
-            pinned.push(index);
+        const ensuredIndices = [...protectedIndices, ...expansionIndices.slice(0, surplusBudget)];
+        for (const index of ensuredIndices) {
             // isInBackoff() skip: this runs unconditionally on every
             // render-loop tick (dozens of times a second), so a segment
             // that just failed (e.g. a transient upstream 500 before
@@ -622,12 +813,32 @@ export class Scheduler {
             // -- see _renderAtTime()'s identical comment: FrameStore
             // reports each real failure exactly once itself.
             if (!this.frameStore.has(index) && !this.frameStore.isInBackoff(index)) {
+                if (requireRawBytesForExpansion && !protectedIndexSet.has(index)) {
+                    const hasRawBytes =
+                        this.frameStore.segmentFetcher &&
+                        typeof this.frameStore.segmentFetcher.hasRawBytes === 'function' &&
+                        this.frameStore.segmentFetcher.hasRawBytes(index);
+                    if (!hasRawBytes) {
+                        continue;
+                    }
+                }
                 this.frameStore.ensureSegment(index).catch(() => {});
             }
         }
-        this.frameStore.setPinned(pinned);
+        if (!suppressPinnedUpdate) {
+            // Pin only the protected core around the playhead.
+            // Expansion segments are opportunistic surplus.
+            this.frameStore.setPinned(protectedIndices);
 
-        this._kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate);
+            // Keep raw protection aligned with the active playback window.
+            // This prevents local bytes from being aged out underneath decode.
+            if (this.frameStore.segmentFetcher && typeof this.frameStore.segmentFetcher.setProtectedRawSegments === 'function') {
+                this.frameStore.segmentFetcher.setProtectedRawSegments(protectedIndices);
+            }
+        }
+
+        this._kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate, networkSeconds);
+        return protectedIndices;
     }
 
     /**
@@ -643,9 +854,10 @@ export class Scheduler {
      * @param {number} decodeEndIndex - Last segment index already covered by the decode radius.
      * @returns {void}
      */
-    _kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate = this.playbackRate) {
+    _kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate = this.playbackRate, networkPrefetchSeconds = NETWORK_PREFETCH_SECONDS) {
+        let issued = 0;
         if (effectivePlaybackRate >= 0) {
-            const networkAheadTime = Math.min(this.duration, targetTime + NETWORK_PREFETCH_SECONDS * rateMagnitude);
+            const networkAheadTime = Math.min(this.duration, targetTime + networkPrefetchSeconds * rateMagnitude);
             const networkEndIndex = findSegmentForTime(this.segmentIndex, networkAheadTime).index;
             for (let index = decodeEndIndex + 1; index <= networkEndIndex; index++) {
                 if (!this.frameStore.isInBackoff(index)) {
@@ -653,10 +865,14 @@ export class Scheduler {
                     // -- see _renderAtTime()'s comment: FrameStore reports
                     // each real failure exactly once itself.
                     this.frameStore.prefetchRawBytes(index).catch(() => {});
+                    issued++;
+                    if (issued >= MAX_NETWORK_PREFETCH_REQUESTS_PER_TICK) {
+                        break;
+                    }
                 }
             }
         } else {
-            const networkBehindTime = Math.max(0, targetTime - NETWORK_PREFETCH_SECONDS * rateMagnitude);
+            const networkBehindTime = Math.max(0, targetTime - networkPrefetchSeconds * rateMagnitude);
             const networkStartIndex = Math.max(0, findSegmentForTime(this.segmentIndex, networkBehindTime).index);
             for (let index = decodeStartIndex - 1; index >= networkStartIndex; index--) {
                 if (!this.frameStore.isInBackoff(index)) {
@@ -664,6 +880,10 @@ export class Scheduler {
                     // -- see _renderAtTime()'s comment: FrameStore reports
                     // each real failure exactly once itself.
                     this.frameStore.prefetchRawBytes(index).catch(() => {});
+                    issued++;
+                    if (issued >= MAX_NETWORK_PREFETCH_REQUESTS_PER_TICK) {
+                        break;
+                    }
                 }
             }
         }
@@ -681,10 +901,8 @@ export class Scheduler {
         const clamped = Math.max(0, Math.min(this.duration, targetTimeSeconds));
         const seekToken = ++this._seekGeneration;
 
-        // Prevent paused background prefetch from continuing to fetch the
-        // previous timeline region while seek() is pivoting to a new
-        // location; it will be restarted (re-anchored) after the seek if
-        // we remain paused.
+        // Stop paused filling while we pivot to a new seek target.
+        // Otherwise it can keep touching the old neighborhood mid-seek.
         this._stopPausedPrefetchWorker();
 
         this.seekingFlag = true;
@@ -740,16 +958,31 @@ export class Scheduler {
         this.canvasRenderer.render(frame);
         this.currentSegmentIndex = segment.index;
         this.currentFrameIdx = frameIdx;
+        this._presentedMediaTime = this._frameTimestampToMediaTimeSeconds(segment.index, frame.timestamp);
+        if (!this.playing) {
+            this._pausedFreezeTime = this._presentedMediaTime;
+        }
 
         // Re-anchor so continued playback (if active) resumes from here.
         this._anchorWallClockMs = performance.now();
         this._anchorTime = this.currentTime;
 
-        this._kickLookaheadWithVirtualRate(this.currentTime, -1);
-        this._kickLookaheadWithVirtualRate(this.currentTime, 1);
+        // After the seek lands, update the paused anchor immediately.
+        this._resetPausedPrefetchAnchor();
 
         if (!this.playing) {
-            this._resetPausedPrefetchAnchor();
+            this._pausedFreezeTime = this._presentedMediaTime;
+            // While paused, keep using the shared lookahead pipeline.
+            // The paused anchor stays fixed while the virtual targets expand.
+            this._kickPausedNeighborhoodLookahead(0);
+        } else {
+            this._pausedFreezeTime = null;
+            // While playing, resume ordinary directional lookahead.
+            // Seek should not switch us into paused-fill behavior.
+            this._kickLookahead(this.currentTime);
+        }
+
+        if (!this.playing) {
             this._startPausedPrefetchWorker();
         }
 
