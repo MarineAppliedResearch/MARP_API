@@ -35,6 +35,9 @@ const REVERSE_PREFETCH_MARGIN_SECONDS = 0.5;
  */
 const NETWORK_PREFETCH_SECONDS = 8.0;
 
+/** Paused-background prefetch cadence, in ms. */
+const PAUSED_PREFETCH_INTERVAL_MS = 1000;
+
 /**
  * Drives forward/reverse pacing, seeking, and lookahead prefetch against
  * a FrameStore, rendering through a CanvasRenderer.
@@ -68,6 +71,10 @@ export class Scheduler {
         this._anchorWallClockMs = 0;
         this._anchorTime = 0;
         this._rafHandle = null;
+        this._pausedPrefetchIntervalHandle = null;
+        this._pausedPrefetchAnchorWallClockMs = 0;
+        this._pausedPrefetchAnchorTime = 0;
+        this._lastReverseShownTime = null;
         this._frameCallbacks = [];
         this._presentedFrameCount = 0;
 
@@ -226,6 +233,7 @@ export class Scheduler {
         if (this.playing) {
             return;
         }
+        this._stopPausedPrefetchWorker();
         this.playing = true;
         this._anchorWallClockMs = performance.now();
         this._anchorTime = this.currentTime;
@@ -247,7 +255,86 @@ export class Scheduler {
             cancelAnimationFrame(this._rafHandle);
             this._rafHandle = null;
         }
+
+        // Keep warming buffers from the paused position so a user who
+        // pauses and waits still has near-future segments ready when
+        // they press play again.
+        this._kickLookahead(this.currentTime);
+        this._startPausedPrefetchWorker();
+
         this.emit('pause');
+    }
+
+    /**
+     * Starts a low-rate background worker that keeps prefetching forward
+     * while paused, so paused time continues to fill the raw-byte cache
+     * beyond the narrow near-future lookahead window.
+     *
+     * @returns {void}
+     */
+    _startPausedPrefetchWorker() {
+        this._resetPausedPrefetchAnchor();
+
+        if (this._pausedPrefetchIntervalHandle !== null) {
+            return;
+        }
+
+        this._pausedPrefetchIntervalHandle = setInterval(() => {
+            if (this.playing) {
+                this._stopPausedPrefetchWorker();
+                return;
+            }
+
+            const elapsedSeconds = (performance.now() - this._pausedPrefetchAnchorWallClockMs) / 1000;
+            const prefetchDirection = this.playbackRate < 0 ? -1 : 1;
+            const targetPrefetchTime = Math.max(
+                0,
+                Math.min(this.duration, this._pausedPrefetchAnchorTime + elapsedSeconds * prefetchDirection)
+            );
+
+            // Use the exact same lookahead/prefetch behavior as active
+            // playback (just without rendering): paused prefetch should
+            // track a virtual 1x timeline, not run a separate sweep mode.
+            this._kickLookahead(targetPrefetchTime, { virtualPlaybackRate: -1 });
+            this._kickLookahead(targetPrefetchTime, { virtualPlaybackRate: 1 });
+        }, PAUSED_PREFETCH_INTERVAL_MS);
+    }
+
+    /**
+     * Runs lookahead with an explicit virtual direction/magnitude,
+     * without mutating live playback state.
+     *
+     * @param {number} targetTime - Target presentation time, in seconds.
+     * @param {number} virtualPlaybackRate - Positive for forward lookahead, negative for reverse lookahead.
+     * @returns {void}
+     */
+    _kickLookaheadWithVirtualRate(targetTime, virtualPlaybackRate) {
+        this._kickLookahead(targetTime, { virtualPlaybackRate });
+    }
+
+    /**
+     * Re-centers paused background prefetch cursors around the current
+     * media position, so a fresh seek while paused immediately pivots
+     * prefetch to adjacent segments at the new location instead of
+     * continuing to sweep an old region.
+     *
+     * @returns {void}
+     */
+    _resetPausedPrefetchAnchor() {
+        this._pausedPrefetchAnchorWallClockMs = performance.now();
+        this._pausedPrefetchAnchorTime = this.currentTime;
+    }
+
+    /**
+     * Stops the paused background prefetch worker, if running.
+     *
+     * @returns {void}
+     */
+    _stopPausedPrefetchWorker() {
+        if (this._pausedPrefetchIntervalHandle !== null) {
+            clearInterval(this._pausedPrefetchIntervalHandle);
+            this._pausedPrefetchIntervalHandle = null;
+        }
     }
 
     /**
@@ -297,10 +384,10 @@ export class Scheduler {
 
         if (targetTime >= this.duration) {
             targetTime = this.duration;
-            hitBoundary = true;
+            hitBoundary = this.playbackRate > 0;
         } else if (targetTime <= 0) {
             targetTime = 0;
-            hitBoundary = true;
+            hitBoundary = this.playbackRate < 0;
         }
 
         const rendered = this._renderAtTime(targetTime, this.playbackRate >= 0 ? 'atOrBefore' : 'atOrAfter');
@@ -336,6 +423,39 @@ export class Scheduler {
         }
 
         this._kickLookahead(rendered ? targetTime : this.currentTime);
+
+        // Reverse anomaly trace: emit only on true discontinuities while
+        // rewinding, so logs stay low-noise during healthy playback.
+        if (this.playbackRate < 0 && rendered) {
+            if (typeof this.frameStore._logDebug === 'function') {
+                const shownTime = this.currentTime;
+                const currentBuffer = this.frameStore.buffers.get(this.currentSegmentIndex);
+                const currentFrame = currentBuffer && currentBuffer.frames[this.currentFrameIdx];
+                const rawFrameTime = currentFrame ? currentFrame.timestamp / 1e6 : NaN;
+                const mapDelta = Number.isFinite(rawFrameTime) ? shownTime - rawFrameTime : NaN;
+
+                if (this._lastReverseShownTime !== null) {
+                    const shownDelta = shownTime - this._lastReverseShownTime;
+
+                    // True reverse anomaly signals:
+                    // 1) shown time moved forward while rewinding, or
+                    // 2) shown time dropped too far in one step.
+                    if (shownDelta > 0.005 || shownDelta < -0.20) {
+                        this.frameStore._logDebug(
+                            `reverse-jump prevShown=${this._lastReverseShownTime.toFixed(3)} ` +
+                                `shown=${shownTime.toFixed(3)} shownDelta=${shownDelta.toFixed(3)} ` +
+                                `expected=${targetTime.toFixed(3)} raw=${Number.isFinite(rawFrameTime) ? rawFrameTime.toFixed(3) : 'na'} ` +
+                                `mapDelta=${Number.isFinite(mapDelta) ? mapDelta.toFixed(3) : 'na'} ` +
+                                `segment=${this.currentSegmentIndex} frameIdx=${this.currentFrameIdx}`
+                        );
+                    }
+                }
+
+                this._lastReverseShownTime = shownTime;
+            }
+        } else if (this.playbackRate >= 0) {
+            this._lastReverseShownTime = null;
+        }
 
         if (hitBoundary) {
             this.pause();
@@ -463,14 +583,15 @@ export class Scheduler {
      * @param {number} targetTime - Current target presentation time, in seconds.
      * @returns {void}
      */
-    _kickLookahead(targetTime) {
-        const rateMagnitude = Math.max(1, Math.abs(this.playbackRate));
+    _kickLookahead(targetTime, { virtualPlaybackRate } = {}) {
+        const effectivePlaybackRate = virtualPlaybackRate !== undefined ? virtualPlaybackRate : this.playbackRate;
+        const rateMagnitude = Math.max(1, Math.abs(effectivePlaybackRate));
         const segment = findSegmentForTime(this.segmentIndex, targetTime);
 
         let decodeStartIndex;
         let decodeEndIndex;
 
-        if (this.playbackRate >= 0) {
+        if (effectivePlaybackRate >= 0) {
             const aheadTime = Math.min(this.duration, targetTime + LOOKAHEAD_SECONDS * rateMagnitude);
             decodeStartIndex = segment.index;
             decodeEndIndex = findSegmentForTime(this.segmentIndex, aheadTime).index;
@@ -506,7 +627,7 @@ export class Scheduler {
         }
         this.frameStore.setPinned(pinned);
 
-        this._kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex);
+        this._kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate);
     }
 
     /**
@@ -522,8 +643,8 @@ export class Scheduler {
      * @param {number} decodeEndIndex - Last segment index already covered by the decode radius.
      * @returns {void}
      */
-    _kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex) {
-        if (this.playbackRate >= 0) {
+    _kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate = this.playbackRate) {
+        if (effectivePlaybackRate >= 0) {
             const networkAheadTime = Math.min(this.duration, targetTime + NETWORK_PREFETCH_SECONDS * rateMagnitude);
             const networkEndIndex = findSegmentForTime(this.segmentIndex, networkAheadTime).index;
             for (let index = decodeEndIndex + 1; index <= networkEndIndex; index++) {
@@ -559,6 +680,12 @@ export class Scheduler {
     async seek(targetTimeSeconds) {
         const clamped = Math.max(0, Math.min(this.duration, targetTimeSeconds));
         const seekToken = ++this._seekGeneration;
+
+        // Prevent paused background prefetch from continuing to fetch the
+        // previous timeline region while seek() is pivoting to a new
+        // location; it will be restarted (re-anchored) after the seek if
+        // we remain paused.
+        this._stopPausedPrefetchWorker();
 
         this.seekingFlag = true;
         this.emit('seeking');
@@ -618,7 +745,13 @@ export class Scheduler {
         this._anchorWallClockMs = performance.now();
         this._anchorTime = this.currentTime;
 
-        this._kickLookahead(this.currentTime);
+        this._kickLookaheadWithVirtualRate(this.currentTime, -1);
+        this._kickLookaheadWithVirtualRate(this.currentTime, 1);
+
+        if (!this.playing) {
+            this._resetPausedPrefetchAnchor();
+            this._startPausedPrefetchWorker();
+        }
 
         this.seekingFlag = false;
         this.emit('seeked');
@@ -630,6 +763,7 @@ export class Scheduler {
      * @returns {void}
      */
     close() {
+        this._stopPausedPrefetchWorker();
         this.pause();
     }
 }

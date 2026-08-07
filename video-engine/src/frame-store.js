@@ -19,8 +19,8 @@ import { demuxSegment } from './demuxer.js';
 /** Uncompressed 8-bit 4:2:0: full-res Y plane plus quarter-res U/V planes. */
 const BYTES_PER_PIXEL_420_8BIT = 1.5;
 
-/** Default decoded-frame cache budget: 1 GiB. */
-const DEFAULT_CACHE_BUDGET_BYTES = 1024 * 1024 * 1024;
+/** Default decoded-frame cache budget: 3 GiB. */
+const DEFAULT_CACHE_BUDGET_BYTES = 3 * 1024 * 1024 * 1024;
 
 /** Floor on buffered segments: current + one prefetch each direction. */
 const MIN_SEGMENTS_BUFFERED = 3;
@@ -145,11 +145,12 @@ export class FrameStore {
      * wants it anymore) is deliberately NOT treated as a failure -- it
      * says nothing about whether the segment is actually fetchable.
      *
-     * @param {number} segmentIndexNumber - Segment index the outcome applies to.
-     * @param {(Error|null)} err - The rejection reason, or null on success.
+    * @param {number} segmentIndexNumber - Segment index the outcome applies to.
+    * @param {(Error|null)} err - The rejection reason, or null on success.
+    * @param {boolean} [reportError=true] - Whether to forward a real failure to `onError` (prefetch-only failures can be kept local to backoff/debug without surfacing a top-level player error event).
      * @returns {void}
      */
-    _recordOutcome(segmentIndexNumber, err) {
+    _recordOutcome(segmentIndexNumber, err, reportError = true) {
         if (!err) {
             this._retryBackoff.delete(segmentIndexNumber);
             return;
@@ -172,7 +173,7 @@ export class FrameStore {
         // failure. _recordOutcome() only ever runs once per entry
         // (created once per distinct decode attempt), so this is the
         // correct single point to report from.
-        if (this.onError) {
+        if (reportError && this.onError) {
             this.onError(err);
         }
     }
@@ -281,9 +282,9 @@ export class FrameStore {
             // underlying failure ensureSegment() would hit, so they should
             // back off together rather than each independently hammering
             // the same broken/not-yet-ready segment.
-            this._recordOutcome(segmentIndexNumber, null);
+            this._recordOutcome(segmentIndexNumber, null, false);
         } catch (err) {
-            this._recordOutcome(segmentIndexNumber, err);
+            this._recordOutcome(segmentIndexNumber, err, false);
             throw err;
         }
     }
@@ -318,6 +319,7 @@ export class FrameStore {
             // guarantee. Merge in the previous segment's chunks so decode
             // has a real keyframe to start from, rather than corrupting
             // output or throwing on a healthy stream.
+            this._logDebug(`segment ${segmentIndexNumber}: non-key start, merging previous segment for decode continuity`);
             if (segmentIndexNumber === 0) {
                 throw new Error('First segment does not start with a keyframe -- cannot recover.');
             }
@@ -376,6 +378,7 @@ export class FrameStore {
                 frame.close();
             }
             this.buffers.delete(index);
+            this._logDebug(`segment ${index}: evicted (cache ${this.buffers.size}/${this.maxSegmentsBuffered})`);
         }
     }
 

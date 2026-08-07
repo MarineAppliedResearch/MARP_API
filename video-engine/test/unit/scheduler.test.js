@@ -490,3 +490,290 @@ describe('Scheduler#seek kicks off lookahead immediately', () => {
         expect(frameStore.pinned).toEqual([0, 1, 2]);
     });
 });
+
+describe('Scheduler boundary and pause behavior', () => {
+    test('does not auto-pause on the first forward tick at t=0', () => {
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(4, 3),
+            frameStore: {
+                buffers: new Map(),
+                has: () => true,
+                isInBackoff: () => false,
+                ensureSegment: () => Promise.resolve(),
+                prefetchRawBytes: () => Promise.resolve(),
+                setPinned: () => {},
+                _logDebug: () => {},
+                pinned: new Set(),
+            },
+            canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+            emit: () => {},
+        });
+        scheduler.playing = true;
+        scheduler.playbackRate = 1;
+        scheduler._anchorTime = 0;
+        scheduler._anchorWallClockMs = 1000;
+        scheduler._renderAtTime = () => true;
+        scheduler._kickLookahead = () => {};
+        scheduler._scheduleTick = () => {};
+        const pauseSpy = jest.spyOn(scheduler, 'pause');
+
+        scheduler._tick(1000);
+
+        expect(pauseSpy).not.toHaveBeenCalled();
+        expect(scheduler.playing).toBe(true);
+    });
+
+    test('pauses at t=0 only when actually playing in reverse', () => {
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(4, 3),
+            frameStore: {
+                buffers: new Map(),
+                has: () => true,
+                isInBackoff: () => false,
+                ensureSegment: () => Promise.resolve(),
+                prefetchRawBytes: () => Promise.resolve(),
+                setPinned: () => {},
+                _logDebug: () => {},
+                pinned: new Set(),
+            },
+            canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+            emit: () => {},
+        });
+        scheduler.playing = true;
+        scheduler.playbackRate = -1;
+        scheduler._anchorTime = 0;
+        scheduler._anchorWallClockMs = 1000;
+        scheduler._renderAtTime = () => true;
+        scheduler._kickLookahead = () => {};
+        scheduler._scheduleTick = () => {};
+        const pauseSpy = jest.spyOn(scheduler, 'pause');
+
+        scheduler._tick(1000);
+
+        expect(pauseSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('kickLookahead runs once when user pauses so buffering continues while paused', () => {
+        const frameStore = {
+            buffers: new Map([[0, { frames: [{ timestamp: 1_000_000 }] }]]),
+            has: () => true,
+            isInBackoff: () => false,
+            ensureSegment: () => Promise.resolve(),
+            prefetchRawBytes: () => Promise.resolve(),
+            setPinned: () => {},
+            pinned: new Set(),
+        };
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(4, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+            emit: () => {},
+        });
+
+        scheduler.playing = true;
+        scheduler.currentSegmentIndex = 0;
+        scheduler.currentFrameIdx = 0;
+
+        const lookaheadSpy = jest.spyOn(scheduler, '_kickLookahead').mockImplementation(() => {});
+
+        scheduler.pause();
+
+        expect(lookaheadSpy).toHaveBeenCalledTimes(1);
+        expect(lookaheadSpy).toHaveBeenCalledWith(expect.any(Number));
+        expect(scheduler.playing).toBe(false);
+    });
+});
+
+describe('Scheduler paused background prefetch', () => {
+    test('starts paused prefetch worker on pause and stops it on play', () => {
+        jest.useFakeTimers();
+        try {
+            const frameStore = {
+                buffers: new Map([[0, { frames: [{ timestamp: 1_000_000 }] }]]),
+                has: () => true,
+                isInBackoff: () => false,
+                ensureSegment: () => Promise.resolve(),
+                prefetchRawBytes: jest.fn(() => Promise.resolve()),
+                setPinned: () => {},
+                pinned: new Set(),
+            };
+            const scheduler = new Scheduler({
+                segmentIndex: makeUniformSegmentIndex(10, 3),
+                frameStore,
+                canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+                emit: () => {},
+            });
+
+            scheduler.playing = true;
+            scheduler.currentSegmentIndex = 0;
+            scheduler.currentFrameIdx = 0;
+            scheduler.pause();
+
+            expect(scheduler._pausedPrefetchIntervalHandle).not.toBeNull();
+
+            scheduler._scheduleTick = () => {};
+            scheduler.play();
+
+            expect(scheduler._pausedPrefetchIntervalHandle).toBeNull();
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('while paused, worker drives the same lookahead pipeline along a virtual timeline that advances over time', () => {
+        jest.useFakeTimers();
+        try {
+            const frameStore = {
+                buffers: new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]),
+                has: () => true,
+                isInBackoff: () => false,
+                ensureSegment: () => Promise.resolve(),
+                prefetchRawBytes: () => Promise.resolve(),
+                setPinned: () => {},
+                pinned: new Set(),
+            };
+            const scheduler = new Scheduler({
+                segmentIndex: makeUniformSegmentIndex(20, 3),
+                frameStore,
+                canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+                emit: () => {},
+            });
+
+            scheduler.playing = true;
+            scheduler.currentSegmentIndex = 10;
+            scheduler.currentFrameIdx = 0;
+
+            const lookaheadTargets = [];
+            scheduler._kickLookahead = (targetTime) => {
+                lookaheadTargets.push(targetTime);
+            };
+            scheduler.pause();
+
+            // pause() itself still performs one immediate lookahead at
+            // currentTime; the paused worker adds bidirectional passes
+            // on each interval tick.
+            expect(lookaheadTargets.length).toBe(1);
+
+            jest.advanceTimersByTime(1000);
+            const firstTickTarget = Math.max(lookaheadTargets[1], lookaheadTargets[2]);
+
+            jest.advanceTimersByTime(1000);
+            const secondTickTarget = Math.max(lookaheadTargets[3], lookaheadTargets[4]);
+
+            expect(secondTickTarget).toBeGreaterThan(firstTickTarget);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('while paused, a seek recenters paused prefetch to segments adjacent to the new position', async () => {
+        jest.useFakeTimers();
+        try {
+            const segmentIndex = makeUniformSegmentIndex(80, 3);
+            const frameStore = {
+                buffers: new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]),
+                has: (index) => frameStore.buffers.has(index),
+                isInBackoff: () => false,
+                ensureSegment: async (index) => {
+                    if (!frameStore.buffers.has(index)) {
+                        const seg = segmentIndex.segments[index];
+                        frameStore.buffers.set(index, {
+                            frames: [{ timestamp: Math.round(seg.startTime * 1e6) }],
+                        });
+                    }
+                    return frameStore.buffers.get(index);
+                },
+                prefetchRawBytes: () => Promise.resolve(),
+                setPinned: () => {},
+                pinned: new Set(),
+            };
+            const scheduler = new Scheduler({
+                segmentIndex,
+                frameStore,
+                canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+                emit: () => {},
+            });
+
+            scheduler.playing = true;
+            scheduler.currentSegmentIndex = 10;
+            scheduler.currentFrameIdx = 0;
+
+            const lookaheadTargets = [];
+            scheduler._kickLookahead = (targetTime) => {
+                lookaheadTargets.push(targetTime);
+            };
+            scheduler.pause();
+
+            jest.advanceTimersByTime(1000);
+            const preSeekTickTarget = Math.max(lookaheadTargets[1], lookaheadTargets[2]);
+
+            await scheduler.seek(150); // segment 50
+            jest.advanceTimersByTime(1000);
+            const postSeekTickTarget = lookaheadTargets[lookaheadTargets.length - 1];
+
+            expect(Math.abs(postSeekTickTarget - 150)).toBeLessThan(3);
+            expect(postSeekTickTarget).toBeGreaterThan(preSeekTickTarget);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+});
+
+describe('Scheduler reverse boundary continuity', () => {
+    function makeSegmentLocalTimestampBuffer(frameCount = 75, frameStepMicros = 40_000) {
+        return {
+            frames: Array.from({ length: frameCount }, (_, index) => ({
+                // Segment-local raw timeline (starts at 80ms), matching
+                // the real stream pattern where raw frame timestamps are
+                // not stream-absolute and need scheduler remapping.
+                timestamp: 80_000 + index * frameStepMicros,
+            })),
+        };
+    }
+
+    test('reverse render progression remains monotonic and does not jump wildly across segment boundary', () => {
+        const segmentIndex = makeUniformSegmentIndex(3, 3);
+        const buffers = new Map([
+            [0, makeSegmentLocalTimestampBuffer()],
+            [1, makeSegmentLocalTimestampBuffer()],
+        ]);
+
+        const scheduler = new Scheduler({
+            segmentIndex,
+            frameStore: {
+                buffers,
+                has: (index) => buffers.has(index),
+                isInBackoff: () => false,
+                ensureSegment: () => Promise.resolve(),
+                prefetchRawBytes: () => Promise.resolve(),
+                setPinned: () => {},
+                _logDebug: () => {},
+                pinned: new Set(),
+            },
+            canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+            emit: () => {},
+        });
+
+        // Start in segment 1 and sweep backward across the boundary into
+        // segment 0 with reverse frame selection.
+        let previousShownTime = Infinity;
+        for (let target = 3.40; target >= 2.60; target -= 0.04) {
+            const rendered = scheduler._renderAtTime(target, 'atOrAfter');
+            expect(rendered).toBe(true);
+
+            const shownTime = scheduler.currentTime;
+            if (Number.isFinite(previousShownTime)) {
+                const shownDelta = shownTime - previousShownTime;
+
+                // Never move forward while rewinding.
+                expect(shownTime).toBeLessThanOrEqual(previousShownTime + 1e-9);
+
+                // A single boundary hop can skip an extra frame, but not a
+                // large chunk of time.
+                expect(shownDelta).toBeGreaterThanOrEqual(-0.20);
+            }
+
+            previousShownTime = shownTime;
+        }
+    });
+});
