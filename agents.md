@@ -52,4 +52,10 @@ For multi-step tasks, state a brief plan:
 3. [Step] → verify: [check]
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+5. Comment Length
+Many short comments over a few long ones.
+
+Average about 2 lines per comment. If a comment runs longer, it's usually explaining too much "what" (the code already shows that) instead of just the non-obvious "why." Although
+having some "what" is encoraged.
+
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

@@ -529,6 +529,13 @@ app.get('/userHours.html', (req, res) => {
     res.redirect('/apps/dashboard/user-hours.html');
 });
 
+// TEMPORARY (#36 local-reproduction work): mock Jellyfin-like transcode
+// endpoints, backed by real ffmpeg, so the browser test harness (which can
+// only reach this dev server's own port) can reproduce the real
+// -noaccurate_seek bug locally. DELETE this line and
+// routes/temp-mock-jellyfin.routes.js once this investigation concludes.
+app.use('/mock-jellyfin-test', require('./routes/temp-mock-jellyfin.routes'));
+
 /**
  * Catch-all for unmatched /api routes. Registered after every real API
  * route above, so it only runs when nothing else matched. Returns a JSON

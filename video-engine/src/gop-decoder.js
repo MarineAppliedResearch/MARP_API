@@ -233,6 +233,27 @@ export class GopDecoder {
         }
 
         const frames = await Promise.all(framePromises);
+
+        // TEMPORARY DIAGNOSTIC (remove once confirmed/fixed): checks that
+        // this decode call's output frame timestamps are EXACTLY the set
+        // of timestamps we fed in as input chunks -- a mismatch here means
+        // a frame from a DIFFERENT decodeSegment() call leaked into this
+        // one's output (or one of this segment's own frames leaked OUT),
+        // which is the leading suspected cause of "correct index, wrong
+        // picture" skips reported after seeking.
+        const expectedTimestamps = new Set(chunks.map((c) => c.timestamp));
+        const actualTimestamps = new Set(frames.map((f) => f.timestamp));
+        const unexpected = [...actualTimestamps].filter((t) => !expectedTimestamps.has(t));
+        const missing = [...expectedTimestamps].filter((t) => !actualTimestamps.has(t));
+        if (unexpected.length > 0 || missing.length > 0) {
+            console.warn(
+                `[gop-decoder] FRAME ATTRIBUTION MISMATCH decoding segment ${segmentIndexNumber}: ` +
+                    `expected ${expectedTimestamps.size} frames, got ${actualTimestamps.size}. ` +
+                    `unexpected timestamps (may belong to a different segment): [${unexpected.join(', ')}]. ` +
+                    `missing timestamps (may have leaked to a different segment): [${missing.join(', ')}].`
+            );
+        }
+
         frames.sort((a, b) => a.timestamp - b.timestamp);
 
         return { segmentIndex: segmentIndexNumber, frames };

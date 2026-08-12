@@ -1,18 +1,30 @@
 /**
- * Unit tests for FrameStore's segment-granularity LRU eviction and
- * pinning logic.
+ * Unit tests for FrameStore's segment-granularity LRU eviction/pinning
+ * logic, and for ensureDecoded()'s decode-only contract: it must decode
+ * from already-fetched raw bytes, never fetch them itself, dedupe
+ * concurrent callers, and back off after a real decode failure.
  *
  * Exercises `buffers`/`pinned`/`_evictIfNeeded`/`_touch` directly with
- * fake GopBuffers rather than going through `ensureSegment()`'s real
- * fetch/demux/decode pipeline (segment-fetcher.js and demuxer.js are
- * network/mp4box-dependent and covered instead by the E2E suite) -- the
- * eviction/pinning bookkeeping under test here is independent of how a
- * GopBuffer was produced.
+ * fake GopBuffers rather than going through `ensureDecoded()`'s real
+ * demux/decode pipeline where the eviction/pinning bookkeeping itself is
+ * under test -- that bookkeeping is independent of how a GopBuffer was
+ * produced. demuxer.js is mocked so ensureDecoded()'s own tests can drive
+ * decode success/failure deterministically without a real mp4 payload.
  *
- * @fileoverview Unit tests for FrameStore's LRU eviction and pinning.
+ * @fileoverview Unit tests for FrameStore's LRU eviction/pinning and decode-only orchestration.
  * @author Isaac Travers
  * @module video-engine/test/unit/frame-store.test
  */
+
+jest.mock('../../src/demuxer.js', () => ({
+    demuxSegment: jest.fn(() =>
+        Promise.resolve({
+            codec: 'avc1.test',
+            description: null,
+            chunks: [{ type: 'key', timestamp: 0, duration: 40_000, data: new Uint8Array([1]) }],
+        })
+    ),
+}));
 
 const { FrameStore } = require('../../src/frame-store.js');
 
@@ -22,11 +34,12 @@ const { FrameStore } = require('../../src/frame-store.js');
  * nominal width/height/fps -- keeps eviction thresholds deterministic
  * without needing to know the module's private budget formula exactly.
  *
+ * @param {Object} [segmentFetcher] - Fake Tier 1 to inject; defaults to an empty stub (unused by the eviction/pinning tests below).
  * @returns {FrameStore} A FrameStore instance with maxSegmentsBuffered pinned to 3.
  */
-function makeFrameStore() {
+function makeFrameStore(segmentFetcher = {}) {
     return new FrameStore({
-        segmentFetcher: {},
+        segmentFetcher,
         gopDecoder: {},
         width: 1920,
         height: 1080,
@@ -101,301 +114,112 @@ describe('FrameStore eviction', () => {
 });
 
 /**
- * Builds a FrameStore whose segmentFetcher.fetchSegment() never resolves
- * on its own -- only rejects if its signal fires -- so tests can inspect
- * whether ensureSegment()'s reference counting actually aborts the
- * underlying fetch, without needing demuxSegment()/gopDecoder to ever run.
+ * Builds a fake Tier 1 (SegmentFetcher) whose raw bytes are always
+ * present for `cachedIndices` and never present otherwise -- enough for
+ * ensureDecoded()'s contract tests, which only need hasRawBytes()/
+ * getCachedRawBytes()/fetchInitSegment(), not a real fetch pipeline.
  *
- * @returns {FrameStore} A FrameStore backed by a fake, never-resolving fetch.
+ * @param {Set<number>} cachedIndices - Segment indices to report as raw-cached.
+ * @returns {Object} A fake SegmentFetcher.
  */
-function makeFrameStoreWithPendingFetch() {
-    return new FrameStore({
-        segmentFetcher: {
-            fetchInitSegment: () => Promise.resolve(new ArrayBuffer(8)),
-            fetchSegment: (index, { signal } = {}) =>
-                new Promise((resolve, reject) => {
-                    const onAbort = () => {
-                        const err = new Error('aborted');
-                        err.name = 'AbortError';
-                        reject(err);
-                    };
-                    if (!signal) {
-                        return;
-                    }
-                    // Matches the real fetchWithTimeout()'s own defensive
-                    // check in segment-fetcher.js: the signal can already
-                    // be aborted by the time this runs (ensureSegment's
-                    // synchronous prefix sets up the AbortController before
-                    // _decode() ever reaches this call, so an abort fired
-                    // in that gap would otherwise never be observed --
-                    // 'abort' is a one-time event, not a retroactive one).
-                    if (signal.aborted) {
-                        onAbort();
-                    } else {
-                        signal.addEventListener('abort', onAbort);
-                    }
-                }),
+function makeFakeSegmentFetcher(cachedIndices) {
+    return {
+        hasRawBytes: (index) => cachedIndices.has(index),
+        getCachedRawBytes: (index) => {
+            if (!cachedIndices.has(index)) {
+                throw new Error(`Segment ${index} raw bytes are not cached`);
+            }
+            return new ArrayBuffer(8);
         },
-        gopDecoder: {},
-        width: 1920,
-        height: 1080,
-        fps: 30,
-        segmentDuration: 3,
-        cacheBudgetBytes: 1,
-    });
+        fetchInitSegment: () => Promise.resolve(new ArrayBuffer(8)),
+        ensureRawBytes: jest.fn(() => Promise.reject(new Error('ensureDecoded must never call ensureRawBytes'))),
+    };
 }
 
-describe('FrameStore.ensureSegment reference-counted cancellation', () => {
-    test('aborts the underlying fetch once the only wanter releases before it resolves', async () => {
-        // Regression test: Scheduler.seek() used to have no way to cancel
-        // a stale segment's fetch, so scrubbing over N segments before
-        // releasing queued real fetch/decode work for every one of them.
-        const frameStore = makeFrameStoreWithPendingFetch();
-        const controller = new AbortController();
-
-        const promise = frameStore.ensureSegment(0, { signal: controller.signal });
-        promise.catch(() => {}); // expected to reject once aborted below
-
-        const entry = frameStore._inFlight.get(0);
-        expect(entry.fetchAbortController.signal.aborted).toBe(false);
-
-        controller.abort();
-
-        expect(entry.fetchAbortController.signal.aborted).toBe(true);
-        await expect(promise).rejects.toThrow();
-    });
-
-    test('does not abort the fetch while another caller (e.g. lookahead, no signal) still wants the same segment', async () => {
-        const frameStore = makeFrameStoreWithPendingFetch();
-        const controller = new AbortController();
-
-        const seekPromise = frameStore.ensureSegment(0, { signal: controller.signal });
-        seekPromise.catch(() => {});
-        // No signal -- matches how _kickLookahead calls ensureSegment(),
-        // a want that lasts as long as the request is in flight.
-        const lookaheadPromise = frameStore.ensureSegment(0);
-
-        const entry = frameStore._inFlight.get(0);
-        controller.abort();
-
-        expect(entry.fetchAbortController.signal.aborted).toBe(false);
-        expect(frameStore._inFlight.get(0)).toBe(entry);
-
-        void lookaheadPromise;
-    });
-
-    test('a later release against an already-superseded entry is harmless', async () => {
-        // If segmentIndexNumber's entry was already replaced (e.g. the
-        // request settled and a fresh one started), a delayed release
-        // from an old signal must not reach into the new entry.
-        const frameStore = makeFrameStoreWithPendingFetch();
-        const controller = new AbortController();
-
-        const promise = frameStore.ensureSegment(0, { signal: controller.signal });
-        promise.catch(() => {});
-        const firstEntry = frameStore._inFlight.get(0);
-
-        // Simulate the entry having already moved on (e.g. removed after
-        // settling) before this stale release fires.
-        frameStore._inFlight.delete(0);
-
-        expect(() => frameStore._releaseWanter(0, firstEntry)).not.toThrow();
-        expect(firstEntry.fetchAbortController.signal.aborted).toBe(false);
-    });
-});
-
-describe('FrameStore retry backoff', () => {
-    beforeEach(() => {
-        jest.useFakeTimers();
-    });
-
-    afterEach(() => {
-        jest.useRealTimers();
-    });
-
-    /**
-     * Builds a FrameStore whose segmentFetcher.fetchSegment() always
-     * rejects with a real (non-abort) error -- for exercising the
-     * failure/backoff bookkeeping without needing a real demux/decode
-     * pipeline to run.
-     *
-     * @returns {FrameStore} A FrameStore backed by an always-failing fetch.
-     */
-    function makeFrameStoreWithFailingFetch() {
-        return new FrameStore({
-            segmentFetcher: {
-                fetchInitSegment: () => Promise.resolve(new ArrayBuffer(8)),
-                fetchSegment: () => Promise.reject(new Error('upstream 500')),
-            },
-            gopDecoder: {},
-            width: 1920,
-            height: 1080,
-            fps: 30,
-            segmentDuration: 3,
-            cacheBudgetBytes: 1,
-        });
-    }
-
-    test('is not in backoff before any attempt', () => {
-        const frameStore = makeFrameStoreWithFailingFetch();
-        expect(frameStore.isInBackoff(0)).toBe(false);
-    });
-
-    test('a real failure enters backoff for INITIAL_RETRY_BACKOFF_MS (200ms)', async () => {
-        // Regression test: the scheduler's lookahead/prefetch passes run
-        // unconditionally on every render-loop tick (dozens of times a
-        // second) -- without backoff, one transient failure (e.g. a
-        // segment Jellyfin's transcoder hadn't finished generating yet)
-        // got retried on every single tick, confirmed live as 70+ rapid
-        // "error" events from what was really one passing condition.
-        const frameStore = makeFrameStoreWithFailingFetch();
-
-        await expect(frameStore.ensureSegment(5)).rejects.toThrow('upstream 500');
-
-        expect(frameStore.isInBackoff(5)).toBe(true);
-        jest.advanceTimersByTime(199);
-        expect(frameStore.isInBackoff(5)).toBe(true);
-        jest.advanceTimersByTime(2);
-        expect(frameStore.isInBackoff(5)).toBe(false);
-    });
-
-    test('consecutive failures grow the backoff delay exponentially, capped at MAX_RETRY_BACKOFF_MS (8000ms)', async () => {
-        const frameStore = makeFrameStoreWithFailingFetch();
-
-        // 1st failure: 200ms. 2nd: 400ms. 3rd: 800ms.
-        await expect(frameStore.ensureSegment(5)).rejects.toThrow();
-        jest.advanceTimersByTime(200);
-        await expect(frameStore.ensureSegment(5)).rejects.toThrow();
-        jest.advanceTimersByTime(400);
-        await expect(frameStore.ensureSegment(5)).rejects.toThrow();
-
-        jest.advanceTimersByTime(799);
-        expect(frameStore.isInBackoff(5)).toBe(true);
-        jest.advanceTimersByTime(2);
-        expect(frameStore.isInBackoff(5)).toBe(false);
-
-        // Keep failing until the delay caps out, instead of growing forever.
-        for (let i = 0; i < 10; i++) {
-            await expect(frameStore.ensureSegment(5)).rejects.toThrow();
-            jest.advanceTimersByTime(8000);
-        }
-        // One more failure right after the cap: still exactly 8000ms, not more.
-        await expect(frameStore.ensureSegment(5)).rejects.toThrow();
-        jest.advanceTimersByTime(7999);
-        expect(frameStore.isInBackoff(5)).toBe(true);
-        jest.advanceTimersByTime(2);
-        expect(frameStore.isInBackoff(5)).toBe(false);
-    });
-
-    test('a success clears any existing backoff', async () => {
-        const frameStore = makeFrameStoreWithFailingFetch();
-        await expect(frameStore.ensureSegment(5)).rejects.toThrow();
-        expect(frameStore.isInBackoff(5)).toBe(true);
-
-        frameStore._recordOutcome(5, null);
-
-        expect(frameStore.isInBackoff(5)).toBe(false);
-    });
-
-    test('a cancellation (AbortError) does not count as a failure', () => {
-        const frameStore = makeFrameStoreWithFailingFetch();
-        const abortErr = new Error('aborted');
-        abortErr.name = 'AbortError';
-
-        frameStore._recordOutcome(5, abortErr);
-
-        expect(frameStore.isInBackoff(5)).toBe(false);
-    });
-});
-
-describe('FrameStore onDebug callback', () => {
-    test('reports the real failure message when a segment fails, not just that something failed', async () => {
-        // Directly addresses wanting more than a bare "event: error" --
-        // the on-page log panel needs the actual reason (e.g. an upstream
-        // 500, which segment, fetch vs decode) to tell one failure apart
-        // from another.
-        const messages = [];
+describe('FrameStore#ensureDecoded decode-only contract', () => {
+    test('throws without ever fetching when the segment\'s raw bytes are not yet cached', async () => {
+        // Tier 2 must never trigger a network fetch itself -- only decode
+        // what Tier 1 already has. A caller (the scheduler's cache pass)
+        // is responsible for checking hasRawBytes() first; this is the
+        // structural backstop.
+        const segmentFetcher = makeFakeSegmentFetcher(new Set());
         const frameStore = new FrameStore({
-            segmentFetcher: {
-                fetchInitSegment: () => Promise.resolve(new ArrayBuffer(8)),
-                fetchSegment: () => Promise.reject(new Error('upstream 500')),
-            },
-            gopDecoder: {},
+            segmentFetcher,
+            gopDecoder: { decodeSegment: jest.fn() },
             width: 1920,
             height: 1080,
             fps: 30,
             segmentDuration: 3,
             cacheBudgetBytes: 1,
-            onDebug: (message) => messages.push(message),
         });
 
-        await expect(frameStore.ensureSegment(9)).rejects.toThrow();
-
-        expect(messages).toContainEqual(expect.stringMatching(/segment 9: fetching/));
-        expect(messages).toContainEqual(expect.stringMatching(/segment 9: FAILED -- upstream 500/));
+        await expect(frameStore.ensureDecoded(5)).rejects.toThrow(/raw bytes not yet fetched/);
+        expect(segmentFetcher.ensureRawBytes).not.toHaveBeenCalled();
     });
 
-    test('does not report a cancelled (superseded) request as a failure', async () => {
-        const messages = [];
+    test('decodes from already-cached raw bytes and caches the result', async () => {
+        const segmentFetcher = makeFakeSegmentFetcher(new Set([3]));
+        const gopBuffer = { segmentIndex: 3, frames: [{ timestamp: 9_000_000 }] };
+        const gopDecoder = { decodeSegment: jest.fn(() => Promise.resolve(gopBuffer)) };
         const frameStore = new FrameStore({
-            segmentFetcher: {
-                fetchInitSegment: () => Promise.resolve(new ArrayBuffer(8)),
-                fetchSegment: (index, { signal } = {}) =>
-                    new Promise((resolve, reject) => {
-                        const onAbort = () => {
-                            const err = new Error('aborted');
-                            err.name = 'AbortError';
-                            reject(err);
-                        };
-                        // Same defensive check as the real fetchWithTimeout()
-                        // in segment-fetcher.js: the signal can already be
-                        // aborted by the time _decode() reaches this call
-                        // (ensureSegment()'s synchronous prefix runs before
-                        // _decode() gets here), and 'abort' never fires
-                        // retroactively for a listener added after the fact.
-                        if (signal.aborted) {
-                            onAbort();
-                        } else {
-                            signal.addEventListener('abort', onAbort);
-                        }
-                    }),
-            },
-            gopDecoder: {},
+            segmentFetcher,
+            gopDecoder,
             width: 1920,
             height: 1080,
             fps: 30,
             segmentDuration: 3,
             cacheBudgetBytes: 1,
-            onDebug: (message) => messages.push(message),
         });
 
-        const controller = new AbortController();
-        const promise = frameStore.ensureSegment(9, { signal: controller.signal });
-        promise.catch(() => {});
-        controller.abort();
-        await promise.catch(() => {});
+        const result = await frameStore.ensureDecoded(3);
 
-        expect(messages.some((m) => m.includes('FAILED'))).toBe(false);
+        expect(result).toBe(gopBuffer);
+        expect(frameStore.has(3)).toBe(true);
+        expect(segmentFetcher.ensureRawBytes).not.toHaveBeenCalled();
     });
-});
 
-describe('FrameStore onError callback', () => {
-    test('fires exactly once per real failure, even when many callers share the same in-flight request', async () => {
-        // Regression test for the actual duplicate-error-burst bug: with
-        // per-caller error reporting, a segment that stayed in flight for
-        // a while (e.g. a 20-second decoder stall) got a fresh
-        // ensureSegment() call -- and, in the old design, a fresh
-        // rejection handler -- from every render-loop tick that ran
-        // before it settled. onError must fire exactly once regardless of
-        // how many times ensureSegment() was called against the same
-        // still-pending entry.
+    test('concurrent calls for the same segment share one in-flight decode', async () => {
+        const segmentFetcher = makeFakeSegmentFetcher(new Set([1]));
+        let resolveDecode;
+        const gopDecoder = {
+            decodeSegment: jest.fn(
+                () =>
+                    new Promise((resolve) => {
+                        resolveDecode = resolve;
+                    })
+            ),
+        };
+        const frameStore = new FrameStore({
+            segmentFetcher,
+            gopDecoder,
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            segmentDuration: 3,
+            cacheBudgetBytes: 1,
+        });
+
+        const first = frameStore.ensureDecoded(1);
+        const second = frameStore.ensureDecoded(1);
+        // Let _decode()'s own awaits (fetchInitSegment(), demuxSegment())
+        // settle before decodeSegment() is actually reached and
+        // resolveDecode gets assigned.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        resolveDecode({ segmentIndex: 1, frames: [{ timestamp: 0 }] });
+
+        await Promise.all([first, second]);
+        expect(gopDecoder.decodeSegment).toHaveBeenCalledTimes(1);
+    });
+
+    test('a real decode failure enters backoff and reports onError exactly once for concurrent callers', async () => {
+        const segmentFetcher = makeFakeSegmentFetcher(new Set([7]));
+        const gopDecoder = { decodeSegment: jest.fn(() => Promise.reject(new Error('decoder stalled'))) };
         const errors = [];
         const frameStore = new FrameStore({
-            segmentFetcher: {
-                fetchInitSegment: () => Promise.resolve(new ArrayBuffer(8)),
-                fetchSegment: () => Promise.reject(new Error('upstream 500')),
-            },
-            gopDecoder: {},
+            segmentFetcher,
+            gopDecoder,
             width: 1920,
             height: 1080,
             fps: 30,
@@ -404,32 +228,34 @@ describe('FrameStore onError callback', () => {
             onError: (err) => errors.push(err),
         });
 
-        // Simulates many ticks all calling ensureSegment() for the same
-        // segment while the first attempt is still pending.
-        const calls = Array.from({ length: 50 }, () => frameStore.ensureSegment(7).catch(() => {}));
+        const calls = Array.from({ length: 5 }, () => frameStore.ensureDecoded(7).catch(() => {}));
         await Promise.all(calls);
 
         expect(errors).toHaveLength(1);
-        expect(errors[0].message).toBe('upstream 500');
+        expect(errors[0].message).toBe('decoder stalled');
+        expect(frameStore.isDecodeInBackoff(7)).toBe(true);
     });
 
-    test('does not call onError for a cancelled (superseded) request', () => {
-        const errors = [];
-        const frameStore = new FrameStore({
-            segmentFetcher: {},
-            gopDecoder: {},
-            width: 1920,
-            height: 1080,
-            fps: 30,
-            segmentDuration: 3,
-            cacheBudgetBytes: 1,
-            onError: (err) => errors.push(err),
-        });
+    test('is not in backoff before any attempt, and a success clears a prior backoff', async () => {
+        const segmentFetcher = makeFakeSegmentFetcher(new Set([2]));
+        const frameStore = makeFrameStore(segmentFetcher);
+
+        expect(frameStore.isDecodeInBackoff(2)).toBe(false);
+
+        frameStore._recordDecodeOutcome(2, new Error('boom'));
+        expect(frameStore.isDecodeInBackoff(2)).toBe(true);
+
+        frameStore._recordDecodeOutcome(2, null);
+        expect(frameStore.isDecodeInBackoff(2)).toBe(false);
+    });
+
+    test('a cancellation (AbortError) does not count as a decode failure', () => {
+        const frameStore = makeFrameStore();
         const abortErr = new Error('aborted');
         abortErr.name = 'AbortError';
 
-        frameStore._recordOutcome(7, abortErr);
+        frameStore._recordDecodeOutcome(5, abortErr);
 
-        expect(errors).toHaveLength(0);
+        expect(frameStore.isDecodeInBackoff(5)).toBe(false);
     });
 });

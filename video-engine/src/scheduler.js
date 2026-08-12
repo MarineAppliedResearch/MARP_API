@@ -3,6 +3,25 @@
  * requestAnimationFrame-paced render loop), plus seek handling shared by
  * every `currentTime` write.
  *
+ * Two-tier cache algorithm (see cache-window.js for the shared math):
+ * - A fixed "protected floor" (segment-count radius around the playhead)
+ *   is always fetched (Tier 1) and decoded (Tier 2), never evicted from
+ *   either tier, regardless of direction, speed, or budget pressure --
+ *   this guarantees an instant reversal or resume always has a ready
+ *   buffer without depending on which way playback moves next.
+ * - Beyond the floor, an opportunistic window extends outward, skewed
+ *   toward the current direction of travel and scaled by |playbackRate|.
+ *   Tier 1 (raw bytes) has no fixed outer edge -- the skew only orders
+ *   fetch priority, and it keeps advancing across the whole timeline
+ *   until its byte budget is full. Tier 2 (decode) only ever decodes
+ *   segments Tier 1 already has, within a bounded window sized by its own
+ *   decode budget.
+ * - While paused, the window is symmetric (no directional skew, no rate
+ *   scaling) instead of directional -- there's no active direction of
+ *   travel or rate while paused. The direction of travel itself persists
+ *   across pause (the last actually-played `playbackRate` sign) and only
+ *   changes on the next play()/setPlaybackRate() call.
+ *
  * A 1-frame key-nudge and a slider-release seek both go through the exact
  * same seek path, resolving near-instantly whenever the target segment is
  * already buffered (always true for a small nudge). Does NOT force a
@@ -11,48 +30,47 @@
  * playing, the render loop simply re-anchors its wall-clock reference to
  * the new position and continues from there.
  *
- * @fileoverview Forward/reverse playback pacing, seeking, and lookahead-prefetch orchestration.
+ * @fileoverview Forward/reverse playback pacing, seeking, and two-tier cache orchestration.
  * @author Isaac Travers
  * @module video-engine/scheduler
  */
 
 import { findSegmentForTime } from './playlist-manager.js';
+import { computeProtectedFloor, computeOpportunisticOrder } from './cache-window.js';
 
-/** Decode-ahead window, in seconds at 1x -- scaled by |playbackRate| at higher speeds. */
-const LOOKAHEAD_SECONDS = 2.0;
+/** Protected-floor radius, in segments on each side of the playhead. */
+const DEFAULT_PROTECTED_FLOOR_RADIUS_SEGMENTS = 3;
 
-/** Reverse-playback prefetch margin, in seconds at 1x -- scaled by |playbackRate|. */
-const REVERSE_PREFETCH_MARGIN_SECONDS = 0.5;
+/** Tier 2 (decode) opportunistic window: base per-side segment count at rest (paused, or 1x on the non-preferred side). */
+const TIER2_OPPORTUNISTIC_BASE_SEGMENTS = 4;
+
+/** Tier 1 (raw fetch) opportunistic pacing: base new-fetch launches per cache pass at rest. */
+const TIER1_BASE_PACING_PER_PASS = 2;
 
 /**
- * Wider, network-only prefetch window (raw bytes only, no demux/decode),
- * in seconds at 1x -- scaled by |playbackRate|, deliberately larger than
- * LOOKAHEAD_SECONDS. A slow network's fetch time is independent of local
- * decode speed, so once decode catches up to the LOOKAHEAD_SECONDS
- * radius it would otherwise have to wait on a fetch that hasn't even
- * started yet -- this radius exists purely to have already-fetched bytes
- * sitting in SegmentFetcher's raw-bytes cache by the time decode needs them.
+ * Ceiling on simultaneously in-flight Tier 1 fetches, across protected
+ * floor and opportunistic candidates combined. Without this, an unbounded
+ * background frontier (see cache-window.js's module doc) can accumulate
+ * far more concurrent `fetch()` calls than the browser's own per-origin
+ * connection limit -- queuing a newly-urgent request (e.g. a seek's own
+ * cold target) behind a pile of older, lower-priority ones instead of
+ * actually racing them.
  */
-const NETWORK_PREFETCH_SECONDS = 8.0;
+const MAX_CONCURRENT_TIER1_FETCHES = 6;
 
-/** Hard cap for paused network prefetch horizon growth, in seconds. */
-const MAX_PAUSED_NETWORK_PREFETCH_SECONDS = 60.0;
+/** Directional skew ratio while playing: preferred-direction candidates considered per one opposite-direction candidate. */
+const DIRECTIONAL_SKEW_RATIO = 2;
 
-/** Max number of new raw-prefetch requests to launch per scheduler pass. */
-const MAX_NETWORK_PREFETCH_REQUESTS_PER_TICK = 1;
+/** Skew ratio while paused: symmetric, no directional preference. */
+const PAUSED_SKEW_RATIO = 1;
 
-/** Paused-background prefetch cadence, in ms. */
-const PAUSED_PREFETCH_INTERVAL_MS = 500;
-
-/** How far paused decode may expand beyond the protected playhead neighborhood, in segments per side. */
-const PAUSED_DECODE_EXPANSION_RADIUS = 6;
-
-/** Always protect the current segment plus one neighbor on each side. */
-const PROTECTED_PLAYHEAD_SEGMENT_RADIUS = 1;
+/** Paused background cache-fill cadence, in ms. */
+const PAUSED_FILL_INTERVAL_MS = 500;
 
 /**
- * Drives forward/reverse pacing, seeking, and lookahead prefetch against
- * a FrameStore, rendering through a CanvasRenderer.
+ * Drives forward/reverse pacing, seeking, and the two-tier cache
+ * algorithm against a FrameStore (Tier 2) and its SegmentFetcher (Tier 1),
+ * rendering through a CanvasRenderer.
  *
  * @class Scheduler
  */
@@ -60,15 +78,17 @@ export class Scheduler {
     /**
      * @param {Object} params
      * @param {Object} params.segmentIndex - SegmentIndex from {@link module:video-engine/playlist-manager.loadSegmentIndex}.
-     * @param {Object} params.frameStore - {@link module:video-engine/frame-store.FrameStore} instance.
+     * @param {Object} params.frameStore - {@link module:video-engine/frame-store.FrameStore} instance (Tier 2).
      * @param {Object} params.canvasRenderer - {@link module:video-engine/canvas-renderer.CanvasRenderer} instance.
-     * @param {function(string, Error=): void} params.emit - Callback for shim event dispatch (e.g. `emit('seeking')`, `emit('playing')`). NOT used for segment fetch/decode failures -- those are reported once each via FrameStore's own `onError` (see its constructor doc comment for why), not through here.
+     * @param {function(string, Object=): void} params.emit - Callback for shim event dispatch, with an optional detail object merged onto the dispatched event (e.g. `emit('seeking', {targetTime})`, `emit('playing')`). NOT used for segment fetch/decode failures -- those are reported once each via FrameStore/SegmentFetcher's own `onError`, not through here.
+     * @param {number} [params.protectedFloorRadius] - Segments protected on each side of the playhead, in both tiers. Default 3.
      */
-    constructor({ segmentIndex, frameStore, canvasRenderer, emit }) {
+    constructor({ segmentIndex, frameStore, canvasRenderer, emit, protectedFloorRadius }) {
         this.segmentIndex = segmentIndex;
         this.frameStore = frameStore;
         this.canvasRenderer = canvasRenderer;
         this.emit = emit;
+        this._protectedFloorRadius = protectedFloorRadius || DEFAULT_PROTECTED_FLOOR_RADIUS_SEGMENTS;
 
         this.playbackRate = 1;
         this.playing = false;
@@ -85,15 +105,15 @@ export class Scheduler {
         this._presentedMediaTime = 0;
         this._pausedFreezeTime = null;
         this._rafHandle = null;
-        this._pausedPrefetchIntervalHandle = null;
-        this._pausedPrefetchAnchorWallClockMs = 0;
-        this._pausedPrefetchAnchorTime = 0;
-        this._lastReverseShownTime = null;
-        this._lastReversePresentedSegmentIndex = null;
-        this._lastReversePresentedFrameIdx = null;
-        this._reverseHoldTickCount = 0;
+        this._pausedIntervalHandle = null;
         this._frameCallbacks = [];
         this._presentedFrameCount = 0;
+
+        // The last direction actually played (playbackRate's sign),
+        // defaulting to forward if no play has happened yet this session.
+        // Persists across pause -- pause does not reset or symmetrize it,
+        // only the cache pass itself becomes symmetric while paused.
+        this._lastDirectionSign = 1;
 
         // Bumped on every seek() call; a seek that's still awaiting decode
         // when a newer one starts checks this after the await to detect
@@ -105,7 +125,7 @@ export class Scheduler {
 
         // The previous seek()'s own AbortController, aborted the instant a
         // newer seek() call starts -- releases that seek's "want" on
-        // whatever segment it was fetching (see FrameStore.ensureSegment's
+        // whatever segment it was fetching (see SegmentFetcher.ensureRawBytes's
         // reference-counted wanters), so a segment nothing else still
         // wants gets its in-flight fetch cancelled immediately instead of
         // completing uselessly. Confirmed live this is the actual cause
@@ -113,6 +133,14 @@ export class Scheduler {
         // kick off a real, uncancellable fetch regardless of whether the
         // drag had already moved past it.
         this._seekFetchAbort = null;
+
+        // Null while nothing is blocking playback/seek; otherwise the
+        // reason the currently-displayed frame is stale -- used to emit
+        // 'waiting'/'playing' transitions a consumer (e.g. a buffering
+        // spinner) can key off of. See _updateBufferState()'s own doc
+        // comment for why this is idempotent-by-value rather than a
+        // plain boolean.
+        this._bufferState = null;
 
         canvasRenderer.onFramePresented(() => this._dispatchFrameCallbacks());
     }
@@ -189,7 +217,7 @@ export class Scheduler {
             currentFrameIdx: this.currentFrameIdx,
             currentRawFrameTime: frame ? frame.timestamp / 1e6 : null,
             currentTime: this.currentTime,
-            pausedAnchorTime: this._pausedPrefetchAnchorTime,
+            pausedAnchorTime: this._pausedFreezeTime,
             playing: this.playing,
             seeking: this.seekingFlag,
         };
@@ -237,7 +265,6 @@ export class Scheduler {
         this._frameCallbacks = [];
         this._presentedFrameCount += 1;
 
-        // Read the currently presented frame directly from scheduler state.
         const currentBuffer = this.frameStore.buffers.get(this.currentSegmentIndex);
         const currentFrame = currentBuffer && currentBuffer.frames[this.currentFrameIdx];
 
@@ -272,7 +299,7 @@ export class Scheduler {
         if (this.playing) {
             return;
         }
-        this._stopPausedPrefetchWorker();
+        this._stopPausedFillWorker();
         this.playing = true;
         this._anchorWallClockMs = performance.now();
         this._anchorTime = this.currentTime;
@@ -296,123 +323,52 @@ export class Scheduler {
             this._rafHandle = null;
         }
 
-        // Freeze paused playhead time immediately.
         this._pausedFreezeTime = this._presentedMediaTime;
 
-        // Freeze paused lookahead around the frame we actually paused on.
-        this._resetPausedPrefetchAnchor();
-
-        // Run the same lookahead pipeline playback uses.
-        // Start from zero elapsed expansion immediately.
-        // Do not wait for the first interval tick.
-        this._kickPausedNeighborhoodLookahead(0);
-        this._startPausedPrefetchWorker();
+        // Run one symmetric cache pass immediately (don't wait for the
+        // first interval tick), then keep the background worker running
+        // so newly-arrived raw bytes/budget headroom keep getting used.
+        this._runCachePass(this.currentTime, { symmetric: true });
+        this._startPausedFillWorker();
 
         this.emit('pause');
     }
 
     /**
-     * Starts paused background prefetch.
+     * Starts the paused background cache-fill worker.
      *
      * @returns {void}
      */
-    _startPausedPrefetchWorker() {
-        if (this._pausedPrefetchIntervalHandle !== null) {
+    _startPausedFillWorker() {
+        if (this._pausedIntervalHandle !== null) {
             return;
         }
 
-        this._pausedPrefetchIntervalHandle = setInterval(() => {
+        this._pausedIntervalHandle = setInterval(() => {
             if (this.playing) {
-                this._stopPausedPrefetchWorker();
+                this._stopPausedFillWorker();
                 return;
             }
-
-            // Expand outward from the paused anchor over wall-clock time.
-            // Use the same shared lookahead logic in both directions.
-            const elapsedSeconds = (performance.now() - this._pausedPrefetchAnchorWallClockMs) / 1000;
-            this._kickPausedNeighborhoodLookahead(elapsedSeconds);
-        }, PAUSED_PREFETCH_INTERVAL_MS);
+            this._runCachePass(this.currentTime, { symmetric: true });
+        }, PAUSED_FILL_INTERVAL_MS);
     }
 
     /**
-     * Runs paused lookahead through the shared playback pipeline.
-     *
-     * This keeps pause/play behavior aligned.
-     * Pause expands outward from a fixed center over time.
-     *
-     * @param {number} elapsedSeconds - Virtual elapsed time since pause.
-     * @returns {void}
-     */
-    _kickPausedNeighborhoodLookahead(elapsedSeconds) {
-        const centerTime = this._pausedPrefetchAnchorTime;
-        const pausedDecodeSeconds = LOOKAHEAD_SECONDS + elapsedSeconds * 0.5;
-        const pausedNetworkSeconds = Math.min(
-            MAX_PAUSED_NETWORK_PREFETCH_SECONDS,
-            NETWORK_PREFETCH_SECONDS + elapsedSeconds * 2,
-        );
-
-        const reversePinned = this._kickLookahead(centerTime, {
-            virtualPlaybackRate: -1,
-            suppressPinnedUpdate: true,
-            protectedCenterTime: centerTime,
-            decodeSeconds: pausedDecodeSeconds,
-            reverseDecodeSeconds: pausedDecodeSeconds,
-            networkSeconds: pausedNetworkSeconds,
-            requireRawBytesForExpansion: true,
-        }) || [];
-        const forwardPinned = this._kickLookahead(centerTime, {
-            virtualPlaybackRate: 1,
-            suppressPinnedUpdate: true,
-            protectedCenterTime: centerTime,
-            decodeSeconds: pausedDecodeSeconds,
-            networkSeconds: pausedNetworkSeconds,
-            requireRawBytesForExpansion: true,
-        }) || [];
-
-        const pinned = [...new Set([...reversePinned, ...forwardPinned])].sort((a, b) => a - b);
-        this.frameStore.setPinned(pinned);
-        if (this.frameStore.segmentFetcher && typeof this.frameStore.segmentFetcher.setProtectedRawSegments === 'function') {
-            this.frameStore.segmentFetcher.setProtectedRawSegments(pinned);
-        }
-    }
-
-    /**
-     * Runs lookahead with an explicit virtual direction/magnitude,
-     * without mutating live playback state.
-     *
-     * @param {number} targetTime - Target presentation time, in seconds.
-     * @param {number} virtualPlaybackRate - Positive for forward lookahead, negative for reverse lookahead.
-     * @returns {void}
-     */
-    _kickLookaheadWithVirtualRate(targetTime, virtualPlaybackRate) {
-        this._kickLookahead(targetTime, { virtualPlaybackRate });
-    }
-
-    /**
-    * Re-centers paused lookahead around the current media position.
+     * Stops the paused background cache-fill worker, if running.
      *
      * @returns {void}
      */
-    _resetPausedPrefetchAnchor() {
-        this._pausedPrefetchAnchorWallClockMs = performance.now();
-        this._pausedPrefetchAnchorTime = this.currentTime;
-    }
-
-    /**
-     * Stops the paused background prefetch worker, if running.
-     *
-     * @returns {void}
-     */
-    _stopPausedPrefetchWorker() {
-        if (this._pausedPrefetchIntervalHandle !== null) {
-            clearInterval(this._pausedPrefetchIntervalHandle);
-            this._pausedPrefetchIntervalHandle = null;
+    _stopPausedFillWorker() {
+        if (this._pausedIntervalHandle !== null) {
+            clearInterval(this._pausedIntervalHandle);
+            this._pausedIntervalHandle = null;
         }
     }
 
     /**
      * Sets the playback rate, accepting negative values for reverse and
-     * small magnitudes for slow motion.
+     * small magnitudes for slow motion. A nonzero rate updates the
+     * persisted direction of travel used by the cache algorithm.
      *
      * Re-anchors the wall-clock reference so the new rate takes effect
      * from "now" rather than from the original anchor point, which would
@@ -427,6 +383,9 @@ export class Scheduler {
             this._anchorTime = this.currentTime;
         }
         this.playbackRate = rate;
+        if (rate !== 0) {
+            this._lastDirectionSign = rate >= 0 ? 1 : -1;
+        }
     }
 
     /**
@@ -441,13 +400,20 @@ export class Scheduler {
     /**
      * One render-loop tick: computes the target presentation time from
      * the wall-clock anchor and playbackRate, renders it if buffered,
-     * kicks off lookahead decode, and reschedules itself.
+     * runs the two-tier cache pass, and reschedules itself.
      *
      * @param {number} now - `performance.now()`-style timestamp from requestAnimationFrame.
      * @returns {void}
      */
     _tick(now) {
         if (!this.playing) {
+            return;
+        }
+
+        if (this.seekingFlag) {
+            // Don't advance from the stale pre-seek anchor while a seek
+            // is still resolving -- seek() re-anchors once it lands.
+            this._scheduleTick();
             return;
         }
 
@@ -470,70 +436,25 @@ export class Scheduler {
 
         const rendered = this._renderAtTime(targetTime, this.playbackRate >= 0 ? 'atOrBefore' : 'atOrAfter');
 
-        // Debug: log only on a stall/resume TRANSITION (not every tick,
-        // which would flood the console) -- this pinpoints exactly which
-        // segment a stall started/ended on and what's pinned at that
-        // moment, for diagnosing the "stops during decode" report without
-        // guessing.
-        if (rendered !== this._wasRenderedLastTick) {
-            const segment = findSegmentForTime(this.segmentIndex, targetTime);
-            this.frameStore._logDebug(
-                `${rendered ? 'RESUMED' : 'STALLED'} at t=${targetTime.toFixed(2)} segment=${segment.index} ` +
-                    `pinned=[${[...this.frameStore.pinned].join(',')}] hasSegment=${this.frameStore.has(segment.index)}`
-            );
-        }
-        this._wasRenderedLastTick = rendered;
-
         if (!rendered) {
-            // Stalled: the needed segment isn't decoded yet. Re-anchor to
-            // the last actually-displayed position now, rather than
-            // leaving the anchor where it was -- otherwise elapsed wall-
-            // clock time during the stall keeps inflating targetTime on
-            // every subsequent tick, so by the time decode catches up the
-            // engine believes it should already be several segments
-            // further along than anything it's shown. Confirmed live:
-            // without this, a single stall triggers a burst of lookahead
-            // fetches for far-ahead segments instead of the next one, and
-            // playback skips/stutters trying to catch up to a target that
-            // was never really reachable in real time.
+            // Stalled: re-anchor to the target we were trying to reach,
+            // not the last-displayed position -- anchoring to the old
+            // position (behind the segment boundary) let the next few
+            // ticks' tiny elapsed increments keep landing back inside the
+            // already-decoded segment, "succeeding" there for one
+            // frame's duration before re-crossing into the stall --
+            // confirmed live as a rapid waiting/playing flicker for the
+            // whole real length of the stall. Anchoring to targetTime
+            // still avoids the original runaway-catch-up concern (a long
+            // stall no longer inflates targetTime once decode catches up).
             this._anchorWallClockMs = now;
-            this._anchorTime = this.currentTime;
+            this._anchorTime = targetTime;
+            this._updateBufferState(this._computeBufferReason(findSegmentForTime(this.segmentIndex, targetTime).index));
+        } else {
+            this._updateBufferState(null);
         }
 
-        this._kickLookahead(rendered ? targetTime : this.currentTime);
-
-        // Reverse anomaly trace: emit only on true discontinuities while
-        // rewinding, so logs stay low-noise during healthy playback.
-        if (this.playbackRate < 0 && rendered) {
-            if (typeof this.frameStore._logDebug === 'function') {
-                const shownTime = this.currentTime;
-                const currentBuffer = this.frameStore.buffers.get(this.currentSegmentIndex);
-                const currentFrame = currentBuffer && currentBuffer.frames[this.currentFrameIdx];
-                const rawFrameTime = currentFrame ? currentFrame.timestamp / 1e6 : NaN;
-                const mapDelta = Number.isFinite(rawFrameTime) ? shownTime - rawFrameTime : NaN;
-
-                if (this._lastReverseShownTime !== null) {
-                    const shownDelta = shownTime - this._lastReverseShownTime;
-
-                    // True reverse anomaly signals:
-                    // 1) shown time moved forward while rewinding, or
-                    // 2) shown time dropped too far in one step.
-                    if (shownDelta > 0.005 || shownDelta < -0.20) {
-                        this.frameStore._logDebug(
-                            `reverse-jump prevShown=${this._lastReverseShownTime.toFixed(3)} ` +
-                                `shown=${shownTime.toFixed(3)} shownDelta=${shownDelta.toFixed(3)} ` +
-                                `expected=${targetTime.toFixed(3)} raw=${Number.isFinite(rawFrameTime) ? rawFrameTime.toFixed(3) : 'na'} ` +
-                                `mapDelta=${Number.isFinite(mapDelta) ? mapDelta.toFixed(3) : 'na'} ` +
-                                `segment=${this.currentSegmentIndex} frameIdx=${this.currentFrameIdx}`
-                        );
-                    }
-                }
-
-                this._lastReverseShownTime = shownTime;
-            }
-        } else if (this.playbackRate >= 0) {
-            this._lastReverseShownTime = null;
-        }
+        this._runCachePass(targetTime, { symmetric: false });
 
         if (hitBoundary) {
             this.pause();
@@ -547,11 +468,12 @@ export class Scheduler {
 
     /**
      * Renders the frame at-or-before (forward) or at-or-after (reverse)
-     * the given time, if its segment is already buffered.
+     * the given time, if its segment is already decoded.
      *
-     * Never blocks the render loop on decode -- if the segment isn't
-     * ready, the last displayed frame stays on screen (a graceful stall)
-     * while lookahead decode catches up in the background.
+     * Never blocks the render loop on fetch/decode -- if the segment
+     * isn't ready, the last displayed frame stays on screen (a graceful
+     * stall) while the cache pass (and this method's own direct unstall
+     * attempt) catch up in the background.
      *
      * @param {number} targetTime - Target presentation time, in seconds.
      * @param {('atOrBefore'|'atOrAfter')} direction - Which side of targetTime to prefer when landing between frames.
@@ -561,25 +483,7 @@ export class Scheduler {
         const segment = findSegmentForTime(this.segmentIndex, targetTime);
 
         if (!this.frameStore.has(segment.index)) {
-            // isInBackoff() check: this is the actual primary render
-            // target, checked on every tick -- confirmed live as the real
-            // dominant cause of a retry storm (57 failures in ~2s for one
-            // persistently-failing segment) when this was the one call
-            // site left un-gated after adding backoff to
-            // _kickLookahead/_kickNetworkPrefetch. A stall here already
-            // degrades gracefully (last frame stays on screen, see the
-            // caller), so skipping a retry while backed off just extends
-            // that same graceful stall instead of hammering the request.
-            if (!this.frameStore.isInBackoff(segment.index)) {
-                // Deliberately NOT .catch((err) => this.emit('error', err))
-                // here -- FrameStore reports each real failure exactly once
-                // itself (via its own onError, see its constructor doc
-                // comment). This call site runs every tick and would
-                // otherwise attach a fresh rejection handler to the same
-                // shared in-flight promise on each one, all firing together
-                // the instant it finally settles.
-                this.frameStore.ensureSegment(segment.index).catch(() => {});
-            }
+            this._tryUnstall(segment.index);
             return false;
         }
 
@@ -587,55 +491,84 @@ export class Scheduler {
         const frameIdx = this._locateFrameIndex(gopBuffer, targetTime, direction, segment.startTime);
 
         if (segment.index === this.currentSegmentIndex && frameIdx === this.currentFrameIdx) {
-            // Reverse playback naturally reuses a frame for a few rAF ticks.
-            // Log only when the hold lasts long enough to look suspicious.
-            if (direction === 'atOrAfter' && this.playbackRate < 0) {
-                this._reverseHoldTickCount += 1;
-                if (this._reverseHoldTickCount === 6 && typeof this.frameStore._logDebug === 'function') {
-                    this.frameStore._logDebug(
-                        `reverse-hold shown=${this.currentTime.toFixed(3)} expected=${targetTime.toFixed(3)} ` +
-                            `segment=${segment.index} frameIdx=${frameIdx} holdTicks=${this._reverseHoldTickCount}`
-                    );
-                }
-            }
+            // Reverse playback naturally reuses the same frame for a few
+            // rAF ticks in a row -- not a stall, just a lower effective
+            // frame rate than the render loop's own tick rate.
             return true;
         }
-
-        // Any actual frame change clears the same-frame hold counter.
-        this._reverseHoldTickCount = 0;
 
         const frame = gopBuffer.frames[frameIdx];
         const presented = this.canvasRenderer.render(frame);
 
         if (presented) {
-            // Capture the previous presented frame before updating state.
-            const previousSegmentIndex = this.currentSegmentIndex;
-            const previousFrameIdx = this.currentFrameIdx;
-
             this.currentSegmentIndex = segment.index;
             this.currentFrameIdx = frameIdx;
             this._presentedMediaTime = this._frameTimestampToMediaTimeSeconds(segment.index, frame.timestamp);
-
-            // Reverse should usually step backward by one frame at a time.
-            // Log larger skips so we can see whether the selector is jumping.
-            if (direction === 'atOrAfter' && this.playbackRate < 0 && typeof this.frameStore._logDebug === 'function') {
-                if (previousSegmentIndex === segment.index) {
-                    const frameIdxDelta = frameIdx - previousFrameIdx;
-                    if (frameIdxDelta >= 0 || frameIdxDelta < -3) {
-                        this.frameStore._logDebug(
-                            `reverse-step expected=${targetTime.toFixed(3)} shown=${this.currentTime.toFixed(3)} ` +
-                                `segment=${segment.index} prevFrameIdx=${previousFrameIdx} frameIdx=${frameIdx} ` +
-                                `frameIdxDelta=${frameIdxDelta}`
-                        );
-                    }
-                }
-
-                this._lastReversePresentedSegmentIndex = segment.index;
-                this._lastReversePresentedFrameIdx = frameIdx;
-            }
         }
 
         return true;
+    }
+
+    /**
+     * Attempts to unstall the render loop's exact target segment: ensures
+     * its raw bytes (Tier 1) and, once available, its decode (Tier 2) --
+     * independently of the opportunistic cache pass, so the one frame the
+     * render loop needs right now isn't left waiting on that pass's own
+     * pacing cap.
+     *
+     * Deliberately swallows rejections at this call site rather than
+     * emitting an 'error' itself: this runs on every tick a stall
+     * persists, so re-reporting here would duplicate the single report
+     * SegmentFetcher/FrameStore already make through their own `onError`.
+     *
+     * @param {number} segmentIndex - Segment index the render loop is stalled on.
+     * @returns {void}
+     */
+    _tryUnstall(segmentIndex) {
+        const fetcher = this.frameStore.segmentFetcher;
+        const hasRaw = fetcher.hasRawBytes(segmentIndex);
+
+        if (!hasRaw) {
+            if (!fetcher.isFetchInBackoff(segmentIndex)) {
+                fetcher.ensureRawBytes(segmentIndex).catch(() => {});
+            }
+            return;
+        }
+
+        if (!this.frameStore.isDecodeInBackoff(segmentIndex)) {
+            this.frameStore.ensureDecoded(segmentIndex).catch(() => {});
+        }
+    }
+
+    /**
+     * Reports which tier a given segment is currently waiting on -- the
+     * one piece of information a buffering indicator needs to show a
+     * different state for "downloading" versus "demuxing/decoding".
+     *
+     * @param {number} segmentIndex - Segment index to check.
+     * @returns {('fetching'|'decoding')} 'fetching' if Tier 1 doesn't have raw bytes yet, 'decoding' if it does but Tier 2 hasn't decoded them yet.
+     */
+    _computeBufferReason(segmentIndex) {
+        return this.frameStore.segmentFetcher.hasRawBytes(segmentIndex) ? 'decoding' : 'fetching';
+    }
+
+    /**
+     * Emits 'waiting'/'playing' on an actual state transition only,
+     * matching the real HTMLMediaElement contract -- not every tick.
+     *
+     * @param {('fetching'|'decoding'|null)} state - The current block, or null to clear it.
+     * @returns {void}
+     */
+    _updateBufferState(state) {
+        if (state === this._bufferState) {
+            return;
+        }
+        this._bufferState = state;
+        if (state) {
+            this.emit('waiting', { reason: state });
+        } else {
+            this.emit('playing');
+        }
     }
 
     /**
@@ -688,204 +621,134 @@ export class Scheduler {
     }
 
     /**
-     * Returns the fixed decoded neighborhood that must remain protected
-     * around a media time's current playhead segment.
+     * Runs one pass of the two-tier cache algorithm centered on a media
+     * time: computes the shared protected floor and direction-weighted
+     * opportunistic order once, then applies each tier's own budget/reach
+     * independently (see cache-window.js's module doc for why the math is
+     * shared but the application is not).
      *
-     * @param {number} centerTime - Media time to protect around.
-     * @returns {number[]} Protected segment indices.
-     */
-    _getProtectedNeighborhoodIndices(centerTime) {
-        const centerSegment = findSegmentForTime(this.segmentIndex, centerTime);
-        const indices = [];
-
-        // Keep the current segment.
-        // Also keep one segment on either side when available.
-        for (
-            let index = Math.max(0, centerSegment.index - PROTECTED_PLAYHEAD_SEGMENT_RADIUS);
-            index <= Math.min(this.segmentIndex.segments.length - 1, centerSegment.index + PROTECTED_PLAYHEAD_SEGMENT_RADIUS);
-            index++
-        ) {
-            indices.push(index);
-        }
-
-        return indices;
-    }
-
-    /**
-     * Computes the directional decode window for one target time/rate.
-     *
-     * @param {number} targetTime - Target presentation time, in seconds.
-     * @param {number} effectivePlaybackRate - Direction/magnitude for this pass.
-     * @returns {{decodeStartIndex: number, decodeEndIndex: number}} Decode window bounds.
-     */
-    _getDecodeWindowBounds(
-        targetTime,
-        effectivePlaybackRate,
-        lookaheadSeconds = LOOKAHEAD_SECONDS,
-        reverseLookaheadSeconds = REVERSE_PREFETCH_MARGIN_SECONDS,
-    ) {
-        const rateMagnitude = Math.max(1, Math.abs(effectivePlaybackRate));
-        const segment = findSegmentForTime(this.segmentIndex, targetTime);
-
-        if (effectivePlaybackRate >= 0) {
-            const aheadTime = Math.min(this.duration, targetTime + lookaheadSeconds * rateMagnitude);
-            return {
-                decodeStartIndex: segment.index,
-                decodeEndIndex: findSegmentForTime(this.segmentIndex, aheadTime).index,
-            };
-        }
-
-        const behindTime = Math.max(0, targetTime - reverseLookaheadSeconds * rateMagnitude);
-        return {
-            // Reverse playback still needs the prior segment ready first.
-            decodeStartIndex: Math.max(0, findSegmentForTime(this.segmentIndex, behindTime).index - 1),
-            decodeEndIndex: segment.index,
-        };
-    }
-
-    /**
-     * Kicks off decode for every segment the current playback direction
-     * will need next (not just the near/far edge of the lookahead window
-     * -- at high |playbackRate| the window can span several segments, and
-     * every one of them needs decoding, not only the last one), updates
-     * FrameStore's eviction-pinned set to match, and separately kicks off
-     * a wider, network-only raw-byte prefetch beyond the decode radius.
-     *
-     * @param {number} targetTime - Current target presentation time, in seconds.
+     * @param {number} centerTime - Media time to center the pass on, in seconds.
+     * @param {Object} options
+     * @param {boolean} options.symmetric - True while paused: no directional skew, no |playbackRate| scaling.
      * @returns {void}
      */
-    _kickLookahead(
-        targetTime,
-        {
-            virtualPlaybackRate,
-            suppressPinnedUpdate = false,
-            protectedCenterTime,
-            decodeSeconds = LOOKAHEAD_SECONDS,
-            reverseDecodeSeconds = REVERSE_PREFETCH_MARGIN_SECONDS,
-            networkSeconds = NETWORK_PREFETCH_SECONDS,
-            requireRawBytesForExpansion = false,
-        } = {},
-    ) {
-        const effectivePlaybackRate = virtualPlaybackRate !== undefined ? virtualPlaybackRate : this.playbackRate;
-        const rateMagnitude = Math.max(1, Math.abs(effectivePlaybackRate));
-        const { decodeStartIndex, decodeEndIndex } = this._getDecodeWindowBounds(
-            targetTime,
-            effectivePlaybackRate,
-            decodeSeconds,
-            reverseDecodeSeconds,
+    _runCachePass(centerTime, { symmetric }) {
+        const totalSegments = this.segmentIndex.segments.length;
+        const centerSegment = findSegmentForTime(this.segmentIndex, centerTime);
+        const directionSign = this._lastDirectionSign;
+        const skewRatio = symmetric ? PAUSED_SKEW_RATIO : DIRECTIONAL_SKEW_RATIO;
+        const scaleFactor = symmetric ? 1 : Math.max(1, Math.abs(this.playbackRate));
+
+        const protectedIndices = computeProtectedFloor(centerSegment.index, totalSegments, this._protectedFloorRadius);
+
+        // Tier 2 (decode): a bounded window, skewed and rate-scaled.
+        const tier2PreferredCount = Math.round(TIER2_OPPORTUNISTIC_BASE_SEGMENTS * skewRatio * scaleFactor);
+        const tier2OtherCount = Math.round(TIER2_OPPORTUNISTIC_BASE_SEGMENTS * scaleFactor);
+        const tier2Order = computeOpportunisticOrder(
+            centerSegment.index,
+            totalSegments,
+            protectedIndices,
+            directionSign,
+            skewRatio,
+            tier2PreferredCount,
+            tier2OtherCount,
         );
+        this._runTier2DecodePass(protectedIndices, tier2Order);
 
-        // The protected core stays centered on the current playhead.
-        // Expansion beyond it may use only surplus decoded budget.
-        const protectionCenterTime = Number.isFinite(protectedCenterTime) ? protectedCenterTime : targetTime;
-        const protectedIndices = this._getProtectedNeighborhoodIndices(protectionCenterTime);
-        const protectedIndexSet = new Set(protectedIndices);
+        // Tier 1 (raw fetch): unbounded reach -- the skew only orders
+        // fetch priority; a per-pass pacing cap (itself rate-scaled)
+        // limits how many NEW fetches this one pass launches.
+        const tier1Order = computeOpportunisticOrder(
+            centerSegment.index,
+            totalSegments,
+            protectedIndices,
+            directionSign,
+            skewRatio,
+            Infinity,
+            Infinity,
+        );
+        const tier1PacingCap = Math.round(TIER1_BASE_PACING_PER_PASS * scaleFactor);
+        this._runTier1FetchPass(protectedIndices, tier1Order, tier1PacingCap);
+    }
 
-        // Real FrameStore always exposes maxSegmentsBuffered.
-        // Test doubles may omit it, so fall back to "no artificial cap"
-        // for those narrow harnesses.
+    /**
+     * Tier 2's half of the cache pass: pins the protected floor against
+     * eviction and ensures it (plus as much of the opportunistic window
+     * as the decode budget allows) is decoded -- but only for segments
+     * Tier 1 already has raw bytes for; this never triggers a fetch.
+     *
+     * @param {number[]} protectedIndices - This pass's protected-floor segment indices.
+     * @param {number[]} opportunisticOrder - This pass's Tier 2 opportunistic candidates, nearest/most-preferred first.
+     * @returns {void}
+     */
+    _runTier2DecodePass(protectedIndices, opportunisticOrder) {
+        this.frameStore.setPinned(protectedIndices);
+
         const maxDecodedBudget = Number.isFinite(this.frameStore.maxSegmentsBuffered)
             ? this.frameStore.maxSegmentsBuffered
             : Number.MAX_SAFE_INTEGER;
         const surplusBudget = Math.max(0, maxDecodedBudget - protectedIndices.length);
 
-        const expansionIndices = [];
-        for (let index = decodeStartIndex; index <= decodeEndIndex; index++) {
-            if (protectedIndexSet.has(index)) {
+        const ensureList = [...protectedIndices, ...opportunisticOrder.slice(0, surplusBudget)];
+        for (const index of ensureList) {
+            if (this.frameStore.has(index) || this.frameStore.isDecodeInBackoff(index)) {
                 continue;
             }
-            expansionIndices.push(index);
-        }
-
-        const ensuredIndices = [...protectedIndices, ...expansionIndices.slice(0, surplusBudget)];
-        for (const index of ensuredIndices) {
-            // isInBackoff() skip: this runs unconditionally on every
-            // render-loop tick (dozens of times a second), so a segment
-            // that just failed (e.g. a transient upstream 500 before
-            // Jellyfin's transcoder finished generating it) would
-            // otherwise get hammered with an identical retry on every
-            // single tick -- confirmed live this turned one transient
-            // failure into 70+ rapid-fire error events. A deliberate
-            // seek() to this same segment is unaffected, since it calls
-            // ensureSegment() directly rather than through here.
-            //
-            // Deliberately NOT .catch((err) => this.emit('error', err))
-            // -- see _renderAtTime()'s identical comment: FrameStore
-            // reports each real failure exactly once itself.
-            if (!this.frameStore.has(index) && !this.frameStore.isInBackoff(index)) {
-                if (requireRawBytesForExpansion && !protectedIndexSet.has(index)) {
-                    const hasRawBytes =
-                        this.frameStore.segmentFetcher &&
-                        typeof this.frameStore.segmentFetcher.hasRawBytes === 'function' &&
-                        this.frameStore.segmentFetcher.hasRawBytes(index);
-                    if (!hasRawBytes) {
-                        continue;
-                    }
-                }
-                this.frameStore.ensureSegment(index).catch(() => {});
+            // A segment can only be decoded once Tier 1 already has its
+            // raw bytes -- applies uniformly here, to protected-floor and
+            // opportunistic candidates alike (see frame-store.js's module doc).
+            if (!this.frameStore.segmentFetcher.hasRawBytes(index)) {
+                continue;
             }
+            this.frameStore.ensureDecoded(index).catch(() => {});
         }
-        if (!suppressPinnedUpdate) {
-            // Pin only the protected core around the playhead.
-            // Expansion segments are opportunistic surplus.
-            this.frameStore.setPinned(protectedIndices);
-
-            // Keep raw protection aligned with the active playback window.
-            // This prevents local bytes from being aged out underneath decode.
-            if (this.frameStore.segmentFetcher && typeof this.frameStore.segmentFetcher.setProtectedRawSegments === 'function') {
-                this.frameStore.segmentFetcher.setProtectedRawSegments(protectedIndices);
-            }
-        }
-
-        this._kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate, networkSeconds);
-        return protectedIndices;
     }
 
     /**
-     * Fetches raw bytes only (no demux/decode) for segments beyond the
-     * decode lookahead radius already handled by _kickLookahead, up to
-     * NETWORK_PREFETCH_SECONDS -- SegmentFetcher's own raw-bytes cache
-     * makes repeat calls for an already-fetched segment a no-op, so this
-     * is safe to call unconditionally on every tick.
+     * Tier 1's half of the cache pass: protects the floor from raw-byte
+     * eviction and fetches it unconditionally, then launches a small,
+     * paced batch of new fetches for the highest-priority opportunistic
+     * candidates -- repeated passes keep advancing this frontier, with no
+     * fixed outer edge, until the raw-byte budget is full or the whole
+     * stream is cached.
      *
-     * @param {number} targetTime - Current target presentation time, in seconds.
-     * @param {number} rateMagnitude - |playbackRate|, floored at 1.
-     * @param {number} decodeStartIndex - First segment index already covered by the decode radius.
-     * @param {number} decodeEndIndex - Last segment index already covered by the decode radius.
+     * @param {number[]} protectedIndices - This pass's protected-floor segment indices.
+     * @param {number[]} opportunisticOrder - Every not-yet-considered segment in priority order (unbounded reach).
+     * @param {number} pacingCap - Max new fetches this pass may launch beyond the protected floor.
      * @returns {void}
      */
-    _kickNetworkPrefetch(targetTime, rateMagnitude, decodeStartIndex, decodeEndIndex, effectivePlaybackRate = this.playbackRate, networkPrefetchSeconds = NETWORK_PREFETCH_SECONDS) {
-        let issued = 0;
-        if (effectivePlaybackRate >= 0) {
-            const networkAheadTime = Math.min(this.duration, targetTime + networkPrefetchSeconds * rateMagnitude);
-            const networkEndIndex = findSegmentForTime(this.segmentIndex, networkAheadTime).index;
-            for (let index = decodeEndIndex + 1; index <= networkEndIndex; index++) {
-                if (!this.frameStore.isInBackoff(index)) {
-                    // Deliberately NOT .catch((err) => this.emit('error', err))
-                    // -- see _renderAtTime()'s comment: FrameStore reports
-                    // each real failure exactly once itself.
-                    this.frameStore.prefetchRawBytes(index).catch(() => {});
-                    issued++;
-                    if (issued >= MAX_NETWORK_PREFETCH_REQUESTS_PER_TICK) {
-                        break;
-                    }
-                }
+    _runTier1FetchPass(protectedIndices, opportunisticOrder, pacingCap) {
+        const fetcher = this.frameStore.segmentFetcher;
+        fetcher.setProtectedRawSegments(protectedIndices);
+
+        for (const index of protectedIndices) {
+            // hasInFlightFetch() skip: this pass runs on every render
+            // tick (dozens of times a second) -- without it, a segment
+            // whose real fetch is still pending gets a harmless-but-
+            // wasteful repeat ensureRawBytes() call on every single tick
+            // until it resolves.
+            if (!fetcher.hasRawBytes(index) && !fetcher.isFetchInBackoff(index) && !fetcher.hasInFlightFetch(index)) {
+                fetcher.ensureRawBytes(index).catch(() => {});
             }
-        } else {
-            const networkBehindTime = Math.max(0, targetTime - networkPrefetchSeconds * rateMagnitude);
-            const networkStartIndex = Math.max(0, findSegmentForTime(this.segmentIndex, networkBehindTime).index);
-            for (let index = decodeStartIndex - 1; index >= networkStartIndex; index--) {
-                if (!this.frameStore.isInBackoff(index)) {
-                    // Deliberately NOT .catch((err) => this.emit('error', err))
-                    // -- see _renderAtTime()'s comment: FrameStore reports
-                    // each real failure exactly once itself.
-                    this.frameStore.prefetchRawBytes(index).catch(() => {});
-                    issued++;
-                    if (issued >= MAX_NETWORK_PREFETCH_REQUESTS_PER_TICK) {
-                        break;
-                    }
-                }
+        }
+
+        let launched = 0;
+        for (const index of opportunisticOrder) {
+            if (launched >= pacingCap) {
+                break;
             }
+            // Concurrency ceiling: an unbounded background frontier must
+            // not accumulate more simultaneously in-flight fetches than
+            // the browser can usefully race at once -- see
+            // MAX_CONCURRENT_TIER1_FETCHES's own doc comment for why.
+            if (fetcher.getInFlightFetchCount() >= MAX_CONCURRENT_TIER1_FETCHES) {
+                break;
+            }
+            if (fetcher.hasRawBytes(index) || fetcher.isFetchInBackoff(index) || fetcher.hasInFlightFetch(index)) {
+                continue;
+            }
+            fetcher.ensureRawBytes(index).catch(() => {});
+            launched++;
         }
     }
 
@@ -903,13 +766,25 @@ export class Scheduler {
 
         // Stop paused filling while we pivot to a new seek target.
         // Otherwise it can keep touching the old neighborhood mid-seek.
-        this._stopPausedPrefetchWorker();
+        this._stopPausedFillWorker();
 
         this.seekingFlag = true;
-        this.emit('seeking');
 
         const direction = clamped >= this.currentTime ? 'atOrBefore' : 'atOrAfter';
         const segment = findSegmentForTime(this.segmentIndex, clamped);
+        const fetcher = this.frameStore.segmentFetcher;
+
+        // Carries the resolved target so a listener (e.g. the test
+        // harness's log panel) can tell where a seek is headed without
+        // waiting for it to land -- useful for telling "still in flight"
+        // apart from "landed somewhere unexpected" during a slow cold fetch.
+        this.emit('seeking', { targetTime: clamped, segmentIndex: segment.index });
+
+        if (!this.frameStore.has(segment.index)) {
+            // A cold seek can be genuinely slow -- signal the same
+            // buffering state a mid-playback stall would.
+            this._updateBufferState(this._computeBufferReason(segment.index));
+        }
 
         // Register THIS seek's want before releasing the PREVIOUS seek's
         // want -- not the other way around. If both target the same
@@ -919,16 +794,33 @@ export class Scheduler {
         // and cancel its fetch right as this seek was about to depend on
         // it -- confirmed live: this caused spurious "error" events during
         // ordinary drags, since the fetch this seek needed got aborted out
-        // from under it by its own predecessor. ensureSegment() runs its
-        // registration synchronously (no await before it), so calling it
-        // first and aborting the previous controller immediately after,
+        // from under it by its own predecessor. The IIFE below calls
+        // ensureRawBytes() synchronously (no await before it), so starting
+        // it first and aborting the previous controller immediately after,
         // still in the same synchronous tick, guarantees the new want is
         // already counted before the old one can zero it out.
+        if (!fetcher.hasRawBytes(segment.index)) {
+            // A cold seek target must not have to race the browser's own
+            // per-origin connection limit against a pile of already-in-
+            // flight, lower-priority background-prefetch fetches that
+            // simply got there first (confirmed live: a seek's own fetch
+            // can otherwise finish LAST in a batch of 6+ concurrent
+            // requests, purely by chance of byte size/network timing).
+            // Preempting them gives this fetch the whole pool to itself;
+            // a later cache pass will naturally re-request whichever of
+            // them are still relevant once things settle.
+            fetcher.preemptInFlightFetches([segment.index]);
+        }
+
         const seekFetchAbort = new AbortController();
         const previousSeekFetchAbort = this._seekFetchAbort;
         this._seekFetchAbort = seekFetchAbort;
 
-        const ensurePromise = this.frameStore.ensureSegment(segment.index, { signal: seekFetchAbort.signal });
+        const ensurePromise = (async () => {
+            await fetcher.ensureRawBytes(segment.index, { signal: seekFetchAbort.signal });
+            return this.frameStore.ensureDecoded(segment.index);
+        })();
+
         if (previousSeekFetchAbort) {
             previousSeekFetchAbort.abort();
         }
@@ -938,9 +830,17 @@ export class Scheduler {
         } catch (err) {
             if (seekFetchAbort.signal.aborted) {
                 // Superseded by a newer seek before this one's fetch
-                // finished -- abandon silently, not a real failure.
+                // finished -- abandon silently (this is not a real
+                // failure), but still surface it on the debug channel so
+                // "the seek I asked for never visibly landed" is
+                // distinguishable from "it's just still fetching."
+                this.emit('debug', { message: `seek to ${clamped.toFixed(3)}s (segment ${segment.index}) superseded before its fetch finished` });
                 return;
             }
+            // A real (non-abort) failure must not leave the buffering
+            // signal stuck on -- the shim's currentTime setter surfaces
+            // this via the 'error' event instead.
+            this._updateBufferState(null);
             throw err;
         }
 
@@ -948,6 +848,7 @@ export class Scheduler {
             // A newer seek was requested while this one was awaiting decode
             // -- abandon this now-stale result rather than overwriting the
             // newer seek's (possibly already-applied) state.
+            this.emit('debug', { message: `seek to ${clamped.toFixed(3)}s (segment ${segment.index}) superseded after decode, before applying` });
             return;
         }
 
@@ -959,35 +860,32 @@ export class Scheduler {
         this.currentSegmentIndex = segment.index;
         this.currentFrameIdx = frameIdx;
         this._presentedMediaTime = this._frameTimestampToMediaTimeSeconds(segment.index, frame.timestamp);
-        if (!this.playing) {
-            this._pausedFreezeTime = this._presentedMediaTime;
-        }
+        this._updateBufferState(null);
 
         // Re-anchor so continued playback (if active) resumes from here.
         this._anchorWallClockMs = performance.now();
         this._anchorTime = this.currentTime;
 
-        // After the seek lands, update the paused anchor immediately.
-        this._resetPausedPrefetchAnchor();
-
         if (!this.playing) {
             this._pausedFreezeTime = this._presentedMediaTime;
-            // While paused, keep using the shared lookahead pipeline.
-            // The paused anchor stays fixed while the virtual targets expand.
-            this._kickPausedNeighborhoodLookahead(0);
+            this._runCachePass(this.currentTime, { symmetric: true });
+            this._startPausedFillWorker();
         } else {
             this._pausedFreezeTime = null;
-            // While playing, resume ordinary directional lookahead.
-            // Seek should not switch us into paused-fill behavior.
-            this._kickLookahead(this.currentTime);
-        }
-
-        if (!this.playing) {
-            this._startPausedPrefetchWorker();
+            this._runCachePass(this.currentTime, { symmetric: false });
         }
 
         this.seekingFlag = false;
-        this.emit('seeked');
+        // Carries exactly where this seek actually landed -- the target
+        // time requested can differ from the presented time (frame
+        // granularity, direction rounding), which is exactly the kind of
+        // mismatch this detail exists to make visible without guessing.
+        this.emit('seeked', {
+            targetTime: clamped,
+            currentTime: this.currentTime,
+            segmentIndex: this.currentSegmentIndex,
+            frameIndex: this.currentFrameIdx,
+        });
     }
 
     /**
@@ -996,7 +894,7 @@ export class Scheduler {
      * @returns {void}
      */
     close() {
-        this._stopPausedPrefetchWorker();
+        this._stopPausedFillWorker();
         this.pause();
     }
 }

@@ -150,6 +150,38 @@
             opacity: 0.95;
         }
 
+        /* Colors match the scrub bar's own fetched=blue/decoded=green
+           convention (see .segment-block.fetched/.decoded below) -- one
+           visual language for "what's the network/decode pipeline doing"
+           across the whole player. */
+        #bufferingSpinner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 56px;
+            height: 56px;
+            margin: -28px 0 0 -28px;
+            border-radius: 50%;
+            border: 5px solid rgba(199, 212, 221, 0.25);
+            border-top-color: var(--blue-400);
+            animation: buffering-spin 0.9s linear infinite;
+            pointer-events: none;
+        }
+
+        #bufferingSpinner.hidden {
+            display: none;
+        }
+
+        #bufferingSpinner.decoding {
+            border-top-color: var(--green-400);
+        }
+
+        @keyframes buffering-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
         /* --- Controls bar: fades in/out on idle during playback (see
            app.js's auto-hide timer), always visible while paused or
            while the pointer is over the bar itself. --- */
@@ -369,6 +401,7 @@
         <div id="centerPlayOverlay" class="hidden">
             <button id="centerPlayButton" disabled>&#9654;</button>
         </div>
+        <div id="bufferingSpinner" class="hidden"></div>
 
         <div id="controlsBar">
             <div id="scrubTrack">

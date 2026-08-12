@@ -45,8 +45,28 @@ export async function createMarpVideoEngine(canvas, options) {
     const segmentIndex = await loadSegmentIndex(streamUrl, { fetchOptions });
     console.log(`[video-engine] playlist loaded: ${segmentIndex.segments.length} segments, ${segmentIndex.totalDuration.toFixed(3)}s`);
 
+    let shim = null;
     const segmentFetcher = new SegmentFetcher(segmentIndex, {
         maxRawCacheBytes: rawSegmentCacheBudgetBytes,
+        // Forwards raw-fetch progress/failure messages to a 'debug' event
+        // on the shim -- a raw fetch (e.g. one a seek is awaiting) can
+        // otherwise be in flight for many seconds with zero visible
+        // signal that anything is happening at all.
+        onDebug: (message) => {
+            if (shim) {
+                shim._dispatch('debug', { message });
+            }
+        },
+        // Reports each real raw-fetch failure exactly once (see
+        // SegmentFetcher's own constructor doc comment) -- deferred `shim`
+        // reference since SegmentFetcher is constructed before the shim
+        // exists (same pattern FrameStore/Scheduler's callbacks use below).
+        onError: (err) => {
+            console.error('SegmentFetcher reported a raw-fetch failure', err);
+            if (shim) {
+                shim._dispatch('error', { error: err });
+            }
+        },
     });
     const gopDecoder = new GopDecoder();
 
@@ -73,7 +93,6 @@ export async function createMarpVideoEngine(canvas, options) {
     const videoHeight = firstFrame.displayHeight;
     const fps = Math.round(firstGopBuffer.frames.length / segmentIndex.segments[0].duration);
 
-    let shim = null;
     const frameStore = new FrameStore({
         segmentFetcher,
         gopDecoder,
@@ -113,16 +132,16 @@ export async function createMarpVideoEngine(canvas, options) {
         segmentIndex,
         frameStore,
         canvasRenderer,
-        emit: (type, err) => {
-            if (err) {
-                console.error(`Scheduler emitted "${type}" with error`, err);
+        emit: (type, detail) => {
+            if (type === 'error') {
+                console.error('Scheduler emitted "error"', detail && detail.error);
             }
             if (shim) {
-                // Forward the real error through to listeners (e.g. the
-                // WebView2 bridge) -- background lookahead/prefetch
-                // failures dispatch 'error' this way too, not just a
-                // direct currentTime-setter rejection.
-                shim._dispatch(type, err ? { error: err } : undefined);
+                // Forwards whatever detail the scheduler attached (e.g.
+                // seeking/seeked's targetTime/segmentIndex, debug's
+                // message) straight through to listeners like the
+                // WebView2 bridge or the test harness's log panel.
+                shim._dispatch(type, detail);
             }
         },
     });

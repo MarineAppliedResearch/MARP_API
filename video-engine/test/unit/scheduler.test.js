@@ -1,19 +1,20 @@
 /**
  * Unit tests for Scheduler's pure/mockable logic: frame-lookup math
- * (#_locateFrameIndex), lookahead/prefetch orchestration
- * (#_kickLookahead), and segment-state reporting (#getSegmentStates).
+ * (#_locateFrameIndex), the two-tier cache pass (#_runCachePass and its
+ * Tier 1/Tier 2 halves), and segment-state reporting (#getSegmentStates).
  *
  * Play/pause pacing and real seek races depend on requestAnimationFrame,
  * performance.now(), and real decoded segments, and are exercised instead
  * by the E2E suite against the real running engine.
  *
- * @fileoverview Unit tests for Scheduler's frame-locating, lookahead, and segment-state logic.
+ * @fileoverview Unit tests for Scheduler's frame-locating, two-tier cache, and segment-state logic.
  * @author Isaac Travers
  * @module video-engine/test/unit/scheduler.test
  */
 
 const { Scheduler } = require('../../src/scheduler.js');
-const { FrameStore } = require('../../src/frame-store.js');
+const { SegmentFetcher } = require('../../src/segment-fetcher.js');
+const { computeProtectedFloor } = require('../../src/cache-window.js');
 
 /**
  * Builds a Scheduler with the minimal fakes its constructor needs, none of
@@ -89,8 +90,7 @@ describe('Scheduler#_locateFrameIndex', () => {
 
 /**
  * Builds a uniform SegmentIndex of `count` segments, each `duration`
- * seconds long -- enough for _kickLookahead's lookahead/network windows
- * to span several segments at a high |playbackRate|.
+ * seconds long.
  *
  * @param {number} count - Number of segments.
  * @param {number} duration - Duration of each segment, in seconds.
@@ -107,141 +107,347 @@ function makeUniformSegmentIndex(count, duration) {
 }
 
 /**
- * Builds a fake FrameStore that records every ensureSegment/prefetchRawBytes
- * call and the most recent setPinned() call, with has() always false so
- * _kickLookahead always attempts to ensure/prefetch every segment in range.
+ * Builds a fake Tier 1 (SegmentFetcher) + Tier 2 (FrameStore) pair that
+ * record every ensureRawBytes()/ensureDecoded()/setPinned()/
+ * setProtectedRawSegments() call, for asserting exactly what the
+ * scheduler's cache pass reaches for.
  *
- * @param {Set<number>} [backoffIndices] - Segment indices isInBackoff() should report true for; empty by default so existing tests are unaffected.
- * @returns {Object} A fake FrameStore.
+ * @param {Object} [opts]
+ * @param {Set<number>} [opts.rawBytesIndices] - Segment indices to report as already raw-cached; if omitted, every index reports true (Tier 2 is never gated in that case).
+ * @param {Set<number>} [opts.fetchBackoffIndices] - Segment indices isFetchInBackoff() should report true for.
+ * @param {Set<number>} [opts.decodeBackoffIndices] - Segment indices isDecodeInBackoff() should report true for.
+ * @param {number} [opts.maxSegmentsBuffered] - Tier 2 decode budget; defaults to effectively unbounded.
+ * @returns {Object} `{frameStore, decodedIndices, fetchedIndices, pinnedSnapshots, protectedRawSnapshots}`.
  */
-function makeRecordingFrameStore(backoffIndices = new Set()) {
-    return {
-        ensuredIndices: [],
-        prefetchedIndices: [],
-        pinned: null,
-        segmentFetcher: {
-            maxRawSegmentsCached: 6,
-            hasRawBytes: () => true,
-            setProtectedRawSegments: () => {},
-        },
-        has: () => false,
-        isInBackoff: (index) => backoffIndices.has(index),
-        ensureSegment(index) {
-            this.ensuredIndices.push(index);
+function makeRecordingTiers({
+    rawBytesIndices = null,
+    fetchBackoffIndices = new Set(),
+    decodeBackoffIndices = new Set(),
+    maxSegmentsBuffered = Number.MAX_SAFE_INTEGER,
+} = {}) {
+    const decodedIndices = [];
+    const decodedSet = new Set();
+    const fetchedIndices = [];
+    const pinnedSnapshots = [];
+    const protectedRawSnapshots = [];
+
+    const segmentFetcher = {
+        hasRawBytes: (index) => (rawBytesIndices ? rawBytesIndices.has(index) : true),
+        isFetchInBackoff: (index) => fetchBackoffIndices.has(index),
+        // This fake's ensureRawBytes() "resolves" synchronously (from the
+        // test's point of view, within one _runCachePass call) rather than
+        // modeling a real pending fetch, so nothing is ever genuinely
+        // in-flight here -- these two exist only so the scheduler's own
+        // in-flight/concurrency checks don't throw on a missing method.
+        hasInFlightFetch: () => false,
+        getInFlightFetchCount: () => 0,
+        preemptInFlightFetches: () => {},
+        ensureRawBytes: (index) => {
+            fetchedIndices.push(index);
             return Promise.resolve();
         },
-        prefetchRawBytes(index) {
-            this.prefetchedIndices.push(index);
-            return Promise.resolve();
-        },
-        setPinned(indices) {
-            this.pinned = [...indices];
+        setProtectedRawSegments: (indices) => {
+            protectedRawSnapshots.push([...indices]);
         },
     };
+
+    const frameStore = {
+        segmentFetcher,
+        maxSegmentsBuffered,
+        // Stateful, like the real cache: once decoded, later passes see
+        // has()===true and skip re-decoding the same index.
+        has: (index) => decodedSet.has(index),
+        isDecodeInBackoff: (index) => decodeBackoffIndices.has(index),
+        ensureDecoded: (index) => {
+            decodedIndices.push(index);
+            decodedSet.add(index);
+            return Promise.resolve();
+        },
+        setPinned: (indices) => {
+            pinnedSnapshots.push([...indices]);
+        },
+    };
+
+    return { frameStore, decodedIndices, fetchedIndices, pinnedSnapshots, protectedRawSnapshots };
 }
 
-describe('Scheduler#_kickLookahead', () => {
-    test('forward: ensures the full directional window but pins only the protected playhead neighborhood', () => {
-        // Regression test: at 8x forward, the 2s (at 1x) lookahead window
-        // scales to 16s, spanning segments 0 through 5 at 3s/segment --
-        // the original bug only ensured/pinned segment 0 and segment 5,
-        // leaving 1-4 an unpinned, un-decoded gap.
-        const frameStore = makeRecordingFrameStore();
+describe('Scheduler#_runCachePass', () => {
+    test('forward: pins and decodes the protected floor, skewed 2x toward the direction of travel beyond it', () => {
+        // A large stream (200 segments) keeps both sides of the
+        // opportunistic window far from the stream's own edges, so the
+        // 2:1 skew ratio is observable rather than saturated by
+        // running out of segments on one side.
+        const { frameStore, decodedIndices, pinnedSnapshots } = makeRecordingTiers();
         const scheduler = new Scheduler({
-            segmentIndex: makeUniformSegmentIndex(20, 3),
+            segmentIndex: makeUniformSegmentIndex(200, 3),
             frameStore,
             canvasRenderer: { onFramePresented: () => {} },
             emit: () => {},
         });
         scheduler.playbackRate = 8;
+        scheduler._lastDirectionSign = 1;
 
-        scheduler._kickLookahead(0);
+        scheduler._runCachePass(300, { symmetric: false }); // segment 100
 
-        expect(frameStore.pinned).toEqual([0, 1]);
-        expect(frameStore.ensuredIndices).toEqual([0, 1, 2, 3, 4, 5]);
+        const expectedProtected = computeProtectedFloor(100, 200, 3);
+        expect(pinnedSnapshots[pinnedSnapshots.length - 1]).toEqual(expectedProtected);
+        expect(decodedIndices).toEqual(expect.arrayContaining(expectedProtected));
+
+        const floorMax = Math.max(...expectedProtected);
+        const floorMin = Math.min(...expectedProtected);
+        const beyondForward = decodedIndices.filter((index) => index > floorMax);
+        const beyondBackward = decodedIndices.filter((index) => index < floorMin);
+
+        expect(beyondForward.length).toBeGreaterThan(0);
+        expect(beyondForward.length).toBe(beyondBackward.length * 2);
     });
 
-    test('reverse: ensures the full directional window but pins only the protected playhead neighborhood', () => {
-        const frameStore = makeRecordingFrameStore();
+    test('reverse: skew flips to favor lower segment indices', () => {
+        const { frameStore, decodedIndices } = makeRecordingTiers();
         const scheduler = new Scheduler({
-            segmentIndex: makeUniformSegmentIndex(20, 3),
+            segmentIndex: makeUniformSegmentIndex(200, 3),
             frameStore,
             canvasRenderer: { onFramePresented: () => {} },
             emit: () => {},
         });
         scheduler.playbackRate = -8;
+        scheduler._lastDirectionSign = -1;
 
-        // t=20 is segment 6 ([18, 21)); the 0.5s*8=4s reverse margin lands
-        // at t=16, segment 5 ([15, 18)) -- one segment earlier is 4.
-        scheduler._kickLookahead(20);
+        scheduler._runCachePass(300, { symmetric: false }); // segment 100
 
-        expect(frameStore.pinned).toEqual([5, 6, 7]);
-        expect(frameStore.ensuredIndices).toEqual([5, 6, 7, 4]);
+        const expectedProtected = computeProtectedFloor(100, 200, 3);
+        const floorMax = Math.max(...expectedProtected);
+        const floorMin = Math.min(...expectedProtected);
+        const beyondForward = decodedIndices.filter((index) => index > floorMax);
+        const beyondBackward = decodedIndices.filter((index) => index < floorMin);
+
+        expect(beyondBackward.length).toBeGreaterThan(0);
+        expect(beyondBackward.length).toBe(beyondForward.length * 2);
     });
 
-    test('forward: prefetches raw bytes only (no decode) for the wider network radius beyond the decode range', () => {
-        const frameStore = makeRecordingFrameStore();
+    test('paused/symmetric: the opportunistic window is equal-width on both sides, with no rate scaling', () => {
+        const { frameStore, decodedIndices } = makeRecordingTiers();
         const scheduler = new Scheduler({
-            segmentIndex: makeUniformSegmentIndex(20, 3),
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        // A high stored playbackRate must NOT affect a symmetric pass --
+        // pause forces base (1x), unscaled width regardless of rate.
+        scheduler.playbackRate = 8;
+        scheduler._lastDirectionSign = 1;
+
+        scheduler._runCachePass(300, { symmetric: true }); // segment 100
+
+        const expectedProtected = computeProtectedFloor(100, 200, 3);
+        const floorMax = Math.max(...expectedProtected);
+        const floorMin = Math.min(...expectedProtected);
+        const beyondForward = decodedIndices.filter((index) => index > floorMax);
+        const beyondBackward = decodedIndices.filter((index) => index < floorMin);
+
+        expect(beyondForward.length).toBeGreaterThan(0);
+        expect(beyondForward.length).toBe(beyondBackward.length);
+    });
+
+    test('Tier 2 never decodes a segment Tier 1 has not fetched, even inside the protected floor -- but Tier 1 still fetches it unconditionally', () => {
+        const { frameStore, decodedIndices, fetchedIndices } = makeRecordingTiers({ rawBytesIndices: new Set([100]) });
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.playbackRate = 1;
+
+        scheduler._runCachePass(300, { symmetric: false }); // segment 100
+
+        const expectedProtected = computeProtectedFloor(100, 200, 3);
+        expect(decodedIndices).toEqual([100]);
+        for (const index of expectedProtected) {
+            if (index !== 100) {
+                expect(fetchedIndices).toContain(index);
+            }
+        }
+    });
+
+    test('skips ensureDecoded for a segment currently in decode backoff, even though its raw bytes are available', () => {
+        const { frameStore, decodedIndices } = makeRecordingTiers({ decodeBackoffIndices: new Set([101]) });
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
             frameStore,
             canvasRenderer: { onFramePresented: () => {} },
             emit: () => {},
         });
         scheduler.playbackRate = 8;
 
-        scheduler._kickLookahead(0);
+        scheduler._runCachePass(300, { symmetric: false });
 
-        // Decode range covers 0-5 (see the forward lookahead test above).
-        // Network prefetch now issues only a small bounded batch per tick,
-        // starting from the first segment beyond decode.
-        expect(frameStore.prefetchedIndices).toEqual([6]);
-        expect(frameStore.ensuredIndices).not.toContain(6);
+        expect(decodedIndices).not.toContain(101);
+        // Sanity: without backoff this segment would otherwise have decoded.
+        expect(decodedIndices).toContain(102);
     });
 
-    test('skips ensureSegment/prefetchRawBytes for segments currently in backoff', () => {
-        // Regression test: _kickLookahead/_kickNetworkPrefetch run
-        // unconditionally on every render-loop tick, so without this
-        // check a segment that just failed would get an identical retry
-        // attempt on every tick -- dozens of times a second -- instead of
-        // waiting out FrameStore's backoff window.
-        const frameStore = makeRecordingFrameStore(new Set([2, 8]));
+    test('skips ensureRawBytes for a segment currently in fetch backoff', () => {
+        const { frameStore, fetchedIndices } = makeRecordingTiers({
+            rawBytesIndices: new Set(),
+            fetchBackoffIndices: new Set([120]),
+        });
         const scheduler = new Scheduler({
-            segmentIndex: makeUniformSegmentIndex(20, 3),
+            segmentIndex: makeUniformSegmentIndex(200, 3),
             frameStore,
             canvasRenderer: { onFramePresented: () => {} },
             emit: () => {},
         });
         scheduler.playbackRate = 8;
 
-        scheduler._kickLookahead(0);
+        scheduler._runCachePass(300, { symmetric: false });
 
-        // Decode range is 0-5, network-prefetch range is 6-19 (see the
-        // tests above) -- segment 2 (in the decode range) and segment 8
-        // (in the network range) are both in backoff and must be skipped.
-        expect(frameStore.ensuredIndices).not.toContain(2);
-        expect(frameStore.ensuredIndices).toEqual([0, 1, 3, 4, 5]);
-        expect(frameStore.prefetchedIndices).not.toContain(8);
+        expect(fetchedIndices).not.toContain(120);
+        // Sanity: this pass does fetch some opportunistic segments beyond
+        // the protected floor, just not the backed-off one.
+        expect(fetchedIndices.length).toBeGreaterThan(0);
     });
 
-    test('does not call emit("error", ...) itself when ensureSegment/prefetchRawBytes reject -- FrameStore reports failures, not the per-call site', async () => {
+    test('Tier 1 launches more new fetches per pass at a higher |playbackRate|', () => {
+        const rate1 = makeRecordingTiers({ rawBytesIndices: new Set() });
+        const schedulerAt1x = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore: rate1.frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        schedulerAt1x.playbackRate = 1;
+        schedulerAt1x._runCachePass(300, { symmetric: false });
+
+        const rate8 = makeRecordingTiers({ rawBytesIndices: new Set() });
+        const schedulerAt8x = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore: rate8.frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        schedulerAt8x.playbackRate = 8;
+        schedulerAt8x._runCachePass(300, { symmetric: false });
+
+        const protectedIndices = computeProtectedFloor(100, 200, 3);
+        const newAt1x = rate1.fetchedIndices.filter((index) => !protectedIndices.includes(index)).length;
+        const newAt8x = rate8.fetchedIndices.filter((index) => !protectedIndices.includes(index)).length;
+
+        expect(newAt8x).toBeGreaterThan(newAt1x);
+    });
+
+    /**
+     * Builds a fake Tier 1 whose ensureRawBytes() never resolves on its
+     * own, genuinely tracking which segments are "in flight" -- unlike
+     * makeRecordingTiers()'s fetcher (which resolves synchronously and so
+     * never reports anything as in-flight), this lets a test exercise the
+     * in-flight-skip and concurrency-ceiling logic in _runTier1FetchPass.
+     *
+     * @returns {{frameStore: Object, launchedIndices: number[]}}
+     */
+    function makePendingFetchTiers() {
+        const launchedIndices = [];
+        const pending = new Set();
+        const segmentFetcher = {
+            hasRawBytes: () => false,
+            isFetchInBackoff: () => false,
+            hasInFlightFetch: (index) => pending.has(index),
+            getInFlightFetchCount: () => pending.size,
+            ensureRawBytes: (index) => {
+                launchedIndices.push(index);
+                pending.add(index);
+                return new Promise(() => {}); // never resolves -- stays "in flight"
+            },
+            setProtectedRawSegments: () => {},
+        };
+        const frameStore = {
+            segmentFetcher,
+            maxSegmentsBuffered: Number.MAX_SAFE_INTEGER,
+            has: () => false,
+            isDecodeInBackoff: () => false,
+            ensureDecoded: () => Promise.resolve(),
+            setPinned: () => {},
+        };
+        return { frameStore, launchedIndices };
+    }
+
+    test('does not re-launch a fetch already in flight from a previous pass, even though it is not yet cached', () => {
+        // Regression test: this pass runs on every render tick (dozens of
+        // times a second), and a real fetch takes far longer than one
+        // tick -- without an in-flight check, the same still-pending
+        // segments get a harmless-but-wasteful repeat ensureRawBytes()
+        // call every single tick until they resolve, burning the pacing
+        // budget on no-ops instead of letting the frontier advance.
+        const { frameStore, launchedIndices } = makePendingFetchTiers();
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.playbackRate = 1;
+
+        scheduler._runCachePass(300, { symmetric: false });
+        const launchedAfterFirstPass = [...launchedIndices];
+
+        scheduler._runCachePass(300, { symmetric: false });
+        scheduler._runCachePass(300, { symmetric: false });
+
+        expect(launchedIndices).toEqual(launchedAfterFirstPass);
+    });
+
+    test('stops launching new opportunistic fetches once the concurrency ceiling is reached', () => {
+        // Regression test: an unbounded opportunistic reach combined with
+        // a rate-scaled pacing cap can ask for a very large batch of new
+        // fetches in one pass (e.g. 100 at a high rate) -- without a
+        // ceiling on total simultaneous in-flight fetches, that overruns
+        // the browser's own per-origin connection limit, queuing a
+        // newly-urgent fetch (e.g. a seek's own cold target) behind a
+        // pile of low-priority ones instead of racing them.
+        const { frameStore, launchedIndices } = makePendingFetchTiers();
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.playbackRate = 50; // pacing cap would otherwise be ~100
+
+        scheduler._runCachePass(300, { symmetric: false });
+
+        const protectedIndices = computeProtectedFloor(100, 200, 3);
+        const opportunisticLaunches = launchedIndices.filter((index) => !protectedIndices.includes(index));
+
+        // The protected floor (7 segments) alone already meets the
+        // ceiling (6), so no opportunistic fetch should launch at all --
+        // demonstrating the ceiling engages well short of the ~100 a bare
+        // pacing cap would otherwise allow.
+        expect(opportunisticLaunches).toHaveLength(0);
+    });
+
+    test('does not call emit("error", ...) itself when ensureRawBytes/ensureDecoded reject -- SegmentFetcher/FrameStore report failures, not the per-call site', async () => {
         // Regression test for a real duplicate-error-burst bug: this
-        // method runs on every render-loop tick, so wrapping its
-        // ensureSegment()/prefetchRawBytes() calls in their own
-        // .catch((err) => emit('error', err)) meant every tick that ran
-        // while a segment was still in flight attached ANOTHER rejection
-        // handler to the same shared promise -- confirmed live as
-        // hundreds of duplicate "error" events firing together the
-        // instant one real 20-second decoder stall finally settled. Error
-        // reporting now happens exactly once, from inside FrameStore
-        // itself (see its onError), so this call site must swallow
-        // rejections silently instead of re-reporting them.
+        // pass runs on every render-loop tick, so wrapping its own calls
+        // in `.catch((err) => emit('error', err))` would re-report a
+        // failure every tick that ran while a segment was still in
+        // flight. Error reporting happens exactly once, from inside
+        // SegmentFetcher/FrameStore's own onError, so this call site must
+        // swallow rejections silently instead of re-reporting them.
         const emitSpy = jest.fn();
         const frameStore = {
-            ensuredIndices: [],
+            segmentFetcher: {
+                hasRawBytes: () => false,
+                isFetchInBackoff: () => false,
+                hasInFlightFetch: () => false,
+                getInFlightFetchCount: () => 0,
+                ensureRawBytes: () => Promise.reject(new Error('fetch failed')),
+                setProtectedRawSegments: () => {},
+            },
+            maxSegmentsBuffered: 100,
             has: () => false,
-            isInBackoff: () => false,
-            ensureSegment: (index) => Promise.reject(new Error(`segment ${index} failed`)),
-            prefetchRawBytes: (index) => Promise.reject(new Error(`segment ${index} failed`)),
+            isDecodeInBackoff: () => false,
+            ensureDecoded: () => Promise.reject(new Error('decode failed')),
             setPinned: () => {},
         };
         const scheduler = new Scheduler({
@@ -252,8 +458,7 @@ describe('Scheduler#_kickLookahead', () => {
         });
         scheduler.playbackRate = 8;
 
-        scheduler._kickLookahead(0);
-        // Let every rejected promise's microtask settle.
+        scheduler._runCachePass(0, { symmetric: false });
         await new Promise((resolve) => setImmediate(resolve));
 
         expect(emitSpy).not.toHaveBeenCalledWith('error', expect.anything());
@@ -287,33 +492,27 @@ describe('Scheduler#getSegmentStates', () => {
 });
 
 /**
- * Builds a fake FrameStore whose ensureSegment() never resolves on its
- * own -- it only settles when the test explicitly resolves/rejects a
- * captured call, or when the passed AbortSignal fires -- so a test can
- * assert exactly when Scheduler.seek() aborts a still-pending call
- * without needing a real fetch/demux/decode pipeline.
+ * Builds a fake Tier 1 whose ensureRawBytes() never resolves on its own --
+ * it only settles when the test explicitly resolves/rejects a captured
+ * call, or when the passed AbortSignal fires -- so a test can assert
+ * exactly when Scheduler.seek() aborts a still-pending call without
+ * needing a real fetch/demux/decode pipeline. Tier 2's ensureDecoded()
+ * just reads back whatever the test has already placed in `buffers`
+ * (mirroring how a real decode populates it) once Tier 1 resolves.
  *
- * @returns {{frameStore: Object, calls: Array<{index: number, signal: (AbortSignal|undefined), resolve: Function, reject: Function}>}} The fake FrameStore and the list of ensureSegment() calls it's received, in order, each with its own resolve/reject.
+ * @returns {{frameStore: Object, calls: Array<{index: number, signal: (AbortSignal|undefined), resolve: Function, reject: Function}>}} The fake FrameStore/SegmentFetcher pair and the list of ensureRawBytes() calls it's received, in order, each with its own resolve/reject.
  */
 function makeControllableFrameStore() {
     const calls = [];
-    const frameStore = {
-        buffers: new Map(),
-        segmentFetcher: {
-            maxRawSegmentsCached: 6,
-            hasRawBytes: () => true,
-            setProtectedRawSegments: () => {},
-        },
-        // Not exercised by these tests, but seek() now also calls
-        // _kickLookahead() on success (see the "kicks off lookahead
-        // immediately" describe block below) -- these no-op stubs just
-        // keep that call from throwing here, since this suite's own
-        // assertions only care about calls[]/the seek's own outcome.
-        has: () => true,
-        isInBackoff: () => false,
-        setPinned: () => {},
-        prefetchRawBytes: () => Promise.resolve(),
-        ensureSegment(index, { signal } = {}) {
+    const buffers = new Map();
+    const segmentFetcher = {
+        hasRawBytes: (index) => buffers.has(index),
+        isFetchInBackoff: () => false,
+        hasInFlightFetch: () => false,
+        getInFlightFetchCount: () => 0,
+        setProtectedRawSegments: () => {},
+        preemptInFlightFetches: () => {},
+        ensureRawBytes(index, { signal } = {}) {
             return new Promise((resolve, reject) => {
                 calls.push({ index, signal, resolve, reject });
                 if (signal) {
@@ -326,14 +525,25 @@ function makeControllableFrameStore() {
             });
         },
     };
+    const frameStore = {
+        buffers,
+        segmentFetcher,
+        maxSegmentsBuffered: Number.MAX_SAFE_INTEGER,
+        has: (index) => buffers.has(index),
+        isDecodeInBackoff: () => false,
+        setPinned: () => {},
+        async ensureDecoded(index) {
+            return buffers.get(index);
+        },
+    };
     return { frameStore, calls };
 }
 
 describe('Scheduler#seek supersession', () => {
-    test('a new seek() aborts the previous one\'s still-pending ensureSegment(), which abandons silently instead of throwing', async () => {
+    test("a new seek() aborts the previous one's still-pending ensureRawBytes(), which abandons silently instead of throwing", async () => {
         // Regression test for the real "scrub-drag backlog" bug: every
-        // seek() used to kick off an uncancellable ensureSegment() call,
-        // so dragging over many segments before releasing queued real
+        // seek() used to kick off an uncancellable raw-byte fetch, so
+        // dragging over many segments before releasing queued real
         // fetch/decode work for every one of them. seek() must now cancel
         // its own previous call's want the instant a newer one starts.
         const { frameStore, calls } = makeControllableFrameStore();
@@ -345,7 +555,7 @@ describe('Scheduler#seek supersession', () => {
         });
 
         const firstSeekPromise = scheduler.seek(10); // segment 3 ([9, 12))
-        await Promise.resolve(); // let seek()'s microtasks run up to its ensureSegment() call
+        await Promise.resolve(); // let seek()'s microtasks run up to its ensureRawBytes() call
         expect(calls).toHaveLength(1);
         expect(calls[0].signal.aborted).toBe(false);
 
@@ -354,16 +564,15 @@ describe('Scheduler#seek supersession', () => {
 
         expect(calls[0].signal.aborted).toBe(true);
         // The superseded seek must resolve quietly, not reject/throw --
-        // its own ensureSegment() rejected internally, but seek() catches
+        // its own ensureRawBytes() rejected internally, but seek() catches
         // that specific (aborted) case and abandons rather than
         // propagating it as a real error.
         await expect(firstSeekPromise).resolves.toBeUndefined();
 
-        // Let the second (real, current) seek's ensureSegment resolve
+        // Let the second (real, current) seek's ensureRawBytes resolve
         // normally, and confirm it completes and applies its result.
-        const gopBuffer = { frames: [{ timestamp: 50_000_000 }] };
-        frameStore.buffers.set(calls[1].index, gopBuffer);
-        calls[1].resolve(gopBuffer);
+        frameStore.buffers.set(calls[1].index, { frames: [{ timestamp: 50_000_000 }] });
+        calls[1].resolve();
         await secondSeekPromise;
 
         expect(scheduler.currentSegmentIndex).toBe(calls[1].index);
@@ -376,115 +585,116 @@ describe('Scheduler#seek supersession', () => {
         // mid-drag, since many pointermove events land within one ~1-3s
         // segment), that ordering let the shared entry's wanter count
         // touch zero in between, aborting the fetch the new seek was
-        // about to depend on -- confirmed live as a burst of spurious
-        // "error" events during ordinary dragging. seek() must register
-        // its own want first, so the shared entry's count never drops to
-        // zero while still genuinely wanted.
+        // about to depend on. This test exercises the REAL SegmentFetcher
+        // (Tier 1 now owns the wanter-refcounted cancellation this
+        // regression guards), with global.fetch mocked to hang.
         let capturedSignal = null;
-        const frameStore = new FrameStore({
-            segmentFetcher: {
-                fetchInitSegment: () => Promise.resolve(new ArrayBuffer(8)),
-                fetchSegment: (index, { signal } = {}) => {
-                    capturedSignal = signal;
-                    return new Promise(() => {}); // never resolves -- only test whether it gets aborted
-                },
-            },
-            gopDecoder: {},
-            width: 1920,
-            height: 1080,
-            fps: 30,
-            segmentDuration: 3,
-            cacheBudgetBytes: 1,
-        });
-        const scheduler = new Scheduler({
-            segmentIndex: makeUniformSegmentIndex(20, 3),
-            frameStore,
-            canvasRenderer: { onFramePresented: () => {}, render: () => true },
-            emit: () => {},
+        const previousFetch = global.fetch;
+        global.fetch = jest.fn((url, { signal } = {}) => {
+            capturedSignal = signal;
+            return new Promise(() => {}); // never resolves -- only test whether it gets aborted
         });
 
-        scheduler.seek(10.0); // segment 3
-        await Promise.resolve();
-        await Promise.resolve();
-        const entry = frameStore._inFlight.get(3);
-        expect(entry).toBeDefined();
-        expect(capturedSignal.aborted).toBe(false);
+        try {
+            const segmentIndex = makeUniformSegmentIndex(20, 3);
+            const realSegmentFetcher = new SegmentFetcher({
+                initSegmentUrl: 'https://example.invalid/init.mp4',
+                segments: segmentIndex.segments.map((segment) => ({ ...segment, url: `https://example.invalid/${segment.index}.m4s` })),
+            });
+            const frameStore = {
+                segmentFetcher: realSegmentFetcher,
+                has: () => false,
+                ensureDecoded: () => Promise.resolve(),
+            };
+            const scheduler = new Scheduler({
+                segmentIndex,
+                frameStore,
+                canvasRenderer: { onFramePresented: () => {}, render: () => true },
+                emit: () => {},
+            });
 
-        scheduler.seek(10.5); // still segment 3 ([9, 12)) -- same underlying fetch
-        await Promise.resolve();
-        await Promise.resolve();
+            scheduler.seek(10.0); // segment 3
+            await Promise.resolve();
+            await Promise.resolve();
+            const entry = realSegmentFetcher._inFlightFetches.get(3);
+            expect(entry).toBeDefined();
+            expect(capturedSignal.aborted).toBe(false);
 
-        // The shared entry's fetch must still be alive -- both seeks want
-        // segment 3, so releasing the first one's want must not have
-        // dropped the count to zero.
-        expect(capturedSignal.aborted).toBe(false);
-        expect(frameStore._inFlight.get(3)).toBe(entry);
+            scheduler.seek(10.5); // still segment 3 ([9, 12)) -- same underlying fetch
+            await Promise.resolve();
+            await Promise.resolve();
+
+            // The shared entry's fetch must still be alive -- both seeks want
+            // segment 3, so releasing the first one's want must not have
+            // dropped the count to zero.
+            expect(capturedSignal.aborted).toBe(false);
+            expect(realSegmentFetcher._inFlightFetches.get(3)).toBe(entry);
+        } finally {
+            global.fetch = previousFetch;
+        }
     });
 });
 
 /**
- * Builds a fake FrameStore whose ensureSegment() actually "succeeds" --
- * populating `buffers` with a minimal one-frame GopBuffer keyed by
- * segment index -- so a real Scheduler#seek() call can complete
- * end-to-end (render a frame, update currentSegmentIndex/currentFrameIdx),
- * while also recording every ensureSegment()/prefetchRawBytes() call so a
- * test can confirm which segments _kickLookahead() actually reached for.
+ * Builds a fake Tier 1/Tier 2 pair whose ensureRawBytes()/ensureDecoded()
+ * actually "succeed" -- populating `buffers` with a minimal one-frame
+ * GopBuffer keyed by segment index -- so a real Scheduler#seek() call can
+ * complete end-to-end, while also recording every call so a test can
+ * confirm which segments the cache pass actually reached for.
  *
  * @param {number} segmentDurationSeconds - Nominal segment duration, used to synthesize each fake GopBuffer's single frame timestamp.
  * @returns {Object} A fake FrameStore usable with a real Scheduler#seek() call.
  */
 function makeSeekableRecordingFrameStore(segmentDurationSeconds) {
     const buffers = new Map();
-    const ensuredIndices = [];
-    const prefetchedIndices = [];
-    return {
-        buffers,
-        pinned: null,
-        ensuredIndices,
-        prefetchedIndices,
-        segmentFetcher: {
-            maxRawSegmentsCached: 6,
-            hasRawBytes: () => true,
-            setProtectedRawSegments: () => {},
+    const fetchedIndices = [];
+    const decodedIndices = [];
+    let pinned = null;
+    const segmentFetcher = {
+        hasRawBytes: (index) => buffers.has(index) || fetchedIndices.includes(index),
+        isFetchInBackoff: () => false,
+        hasInFlightFetch: () => false,
+        getInFlightFetchCount: () => 0,
+        setProtectedRawSegments: () => {},
+        preemptInFlightFetches: () => {},
+        ensureRawBytes(index) {
+            fetchedIndices.push(index);
+            return Promise.resolve();
         },
+    };
+    const frameStore = {
+        buffers,
+        segmentFetcher,
+        maxSegmentsBuffered: Number.MAX_SAFE_INTEGER,
         has: (index) => buffers.has(index),
-        isInBackoff: () => false,
-        async ensureSegment(index) {
-            ensuredIndices.push(index);
+        isDecodeInBackoff: () => false,
+        async ensureDecoded(index) {
+            decodedIndices.push(index);
             if (!buffers.has(index)) {
                 buffers.set(index, { frames: [{ timestamp: Math.round(index * segmentDurationSeconds * 1e6) }] });
             }
             return buffers.get(index);
         },
-        prefetchRawBytes(index) {
-            prefetchedIndices.push(index);
-            return Promise.resolve();
-        },
         setPinned(indices) {
-            this.pinned = [...indices];
+            pinned = [...indices];
+        },
+        get pinnedSnapshot() {
+            return pinned;
         },
     };
+    return { frameStore, fetchedIndices, decodedIndices };
 }
 
-describe('Scheduler#seek kicks off lookahead immediately', () => {
-    test('fetches the lookahead window right away, even while paused, not only once playback starts', async () => {
-        // Regression test for a real, confirmed-live bug: _kickLookahead()
-        // was only ever called from _tick(), which only runs while
+describe('Scheduler#seek kicks off the cache pass immediately', () => {
+    test('fetches/decodes the protected floor right away, even while paused, not only once playback starts', async () => {
+        // Regression test for a real, confirmed-live bug: the cache pass
+        // was only ever run from _tick(), which only runs while
         // scheduler.playing is true. Landing a seek while paused (a
         // completely ordinary workflow -- drag the scrub bar, release,
         // look at the frame, then decide to play) used to fetch only the
         // exact target segment and leave everything ahead of it
-        // completely cold, causing a multi-second freeze the moment Play
-        // was finally pressed, since the next segment's real network
-        // fetch only started at that point instead of during however long
-        // the player had already been sitting paused on the new position.
-        // 1-second segments: the fake's synthesized frame timestamp is
-        // always exactly the segment's own start (it has no way to know
-        // where within the segment the real seek target landed), so a
-        // segment duration comfortably smaller than LOOKAHEAD_SECONDS
-        // (2.0) is needed to reliably span multiple segments regardless
-        // of that simplification.
-        const frameStore = makeSeekableRecordingFrameStore(1);
+        // completely cold.
+        const { frameStore, fetchedIndices } = makeSeekableRecordingFrameStore(1);
         const scheduler = new Scheduler({
             segmentIndex: makeUniformSegmentIndex(20, 1),
             frameStore,
@@ -495,12 +705,224 @@ describe('Scheduler#seek kicks off lookahead immediately', () => {
 
         await scheduler.seek(0.5); // lands in segment 0 ([0, 1))
 
-        // The protected core should decode immediately.
-        expect(frameStore.ensuredIndices).toContain(0);
-        expect(frameStore.ensuredIndices).toContain(1);
-        expect(frameStore.pinned).toEqual([0, 1]);
-        // The outward ring should stay raw-only.
-        expect(frameStore.prefetchedIndices).toContain(3);
+        const expectedProtected = computeProtectedFloor(0, 20, 3);
+        expect(frameStore.pinnedSnapshot).toEqual(expectedProtected);
+        // Something beyond the protected floor should already be queued
+        // for raw-byte fetch (Tier 1's unbounded, paced reach).
+        expect(fetchedIndices.some((index) => !expectedProtected.includes(index))).toBe(true);
+    });
+});
+
+describe('Scheduler#seek preempts lower-priority in-flight fetches', () => {
+    /**
+     * Builds a fake Tier 1/Tier 2 pair whose ensureRawBytes()/
+     * ensureDecoded() succeed synchronously (populating `buffers`), while
+     * recording every preemptInFlightFetches() call -- enough to confirm
+     * seek() asks Tier 1 to preempt lower-priority fetches exactly when,
+     * and only when, its own target actually needs a new fetch.
+     *
+     * @param {Map<number, Object>} initialBuffers - Segments to seed as already-cached raw bytes AND decoded frames.
+     * @returns {{frameStore: Object, preemptCalls: number[][]}}
+     */
+    function makeSeekPreemptionFrameStore(initialBuffers) {
+        const buffers = new Map(initialBuffers);
+        const preemptCalls = [];
+        const segmentFetcher = {
+            hasRawBytes: (index) => buffers.has(index),
+            isFetchInBackoff: () => false,
+            hasInFlightFetch: () => false,
+            getInFlightFetchCount: () => 0,
+            setProtectedRawSegments: () => {},
+            preemptInFlightFetches: (keepIndices) => preemptCalls.push([...keepIndices]),
+            ensureRawBytes: (index) => {
+                if (!buffers.has(index)) {
+                    buffers.set(index, { frames: [{ timestamp: Math.round(index * 3 * 1e6) }] });
+                }
+                return Promise.resolve(buffers.get(index));
+            },
+        };
+        const frameStore = {
+            buffers,
+            segmentFetcher,
+            maxSegmentsBuffered: Number.MAX_SAFE_INTEGER,
+            has: (index) => buffers.has(index),
+            isDecodeInBackoff: () => false,
+            setPinned: () => {},
+            async ensureDecoded(index) {
+                return buffers.get(index);
+            },
+        };
+        return { frameStore, preemptCalls };
+    }
+
+    test('preempts other in-flight fetches when the seek target is not yet cached', async () => {
+        // Regression test: a seek's own fetch used to just join the
+        // browser's connection queue alongside already-in-flight
+        // background-prefetch fetches, sometimes finishing LAST purely by
+        // chance of byte size/network timing -- confirmed live with a
+        // seek landing after 6 unrelated lower-priority fetches.
+        const { frameStore, preemptCalls } = makeSeekPreemptionFrameStore(new Map());
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(20, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {}, render: () => true },
+            emit: () => {},
+        });
+
+        await scheduler.seek(30); // segment 10, cold
+
+        expect(preemptCalls).toEqual([[10]]);
+    });
+
+    test('does not preempt anything when the seek target is already cached', async () => {
+        const { frameStore, preemptCalls } = makeSeekPreemptionFrameStore(
+            new Map([[10, { frames: [{ timestamp: 30_000_000 }] }]])
+        );
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(20, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {}, render: () => true },
+            emit: () => {},
+        });
+
+        await scheduler.seek(30); // segment 10, already cached -- no new fetch needed
+
+        expect(preemptCalls).toHaveLength(0);
+    });
+});
+
+describe('Scheduler#_tick stall anchoring', () => {
+    test('re-anchors to the target time, not the last-displayed position, so a stall does not oscillate back into the last decoded segment', () => {
+        // Regression test: anchoring to currentTime (behind the segment
+        // boundary) let the next tick's tiny elapsed increment land back
+        // inside the already-decoded segment, "succeeding" there for
+        // ~one frame's duration before re-crossing into the stall --
+        // confirmed live as a rapid waiting/playing flicker for the
+        // whole real length of the stall.
+        const frameStore = {
+            buffers: new Map([[0, { frames: [{ timestamp: 2_960_000 }] }]]),
+            has: (index) => index === 0,
+            isDecodeInBackoff: () => false,
+            ensureDecoded: () => Promise.resolve(),
+            setPinned: () => {},
+            pinned: new Set(),
+            segmentFetcher: {
+                hasRawBytes: () => false,
+                isFetchInBackoff: () => false,
+                hasInFlightFetch: () => false,
+                getInFlightFetchCount: () => 0,
+                ensureRawBytes: () => Promise.resolve(),
+                setProtectedRawSegments: () => {},
+            },
+        };
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(4, 3), // segment 0: [0,3), segment 1: [3,6)
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+            emit: () => {},
+        });
+        scheduler.playing = true;
+        scheduler.playbackRate = 1;
+        scheduler.currentSegmentIndex = 0;
+        scheduler.currentFrameIdx = 0;
+        scheduler._presentedMediaTime = 2.96;
+        scheduler._anchorTime = 2.96;
+        scheduler._anchorWallClockMs = 1000;
+        scheduler._scheduleTick = () => {};
+
+        scheduler._tick(1050); // targetTime = 2.96 + 0.05 = 3.01 -- crosses into segment 1, stalls
+        expect(scheduler._anchorTime).toBeCloseTo(3.01, 5);
+
+        const renderSpy = jest.spyOn(scheduler, '_renderAtTime');
+        scheduler._tick(1066); // only 16ms later -- must still target segment 1, not fall back to segment 0
+        expect(renderSpy.mock.calls[0][0]).toBeGreaterThanOrEqual(3.0);
+    });
+});
+
+describe('Scheduler#_tick pauses advancement while a seek is in flight', () => {
+    test('does not render or touch the anchor while seekingFlag is true', () => {
+        // Regression test: play() called right after a slow seek used to
+        // just keep advancing from the stale pre-seek anchor, making a
+        // real, still-in-flight seek look like it had silently failed.
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(4, 3),
+            frameStore: { buffers: new Map(), has: () => true, setPinned: () => {}, pinned: new Set() },
+            canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+            emit: () => {},
+        });
+        scheduler.playing = true;
+        scheduler.seekingFlag = true;
+        scheduler._anchorTime = 0;
+        scheduler._anchorWallClockMs = 1000;
+        const renderSpy = jest.spyOn(scheduler, '_renderAtTime');
+        scheduler._scheduleTick = () => {};
+
+        scheduler._tick(5000);
+
+        expect(renderSpy).not.toHaveBeenCalled();
+        expect(scheduler._anchorWallClockMs).toBe(1000);
+    });
+});
+
+describe('Scheduler buffering-state signal', () => {
+    test('_updateBufferState emits waiting/playing only on an actual transition', () => {
+        const emitSpy = jest.fn();
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(4, 3),
+            frameStore: { buffers: new Map() },
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: emitSpy,
+        });
+
+        scheduler._updateBufferState('fetching');
+        scheduler._updateBufferState('fetching'); // same state -- no-op
+        scheduler._updateBufferState('decoding'); // reason changed
+        scheduler._updateBufferState(null);
+
+        expect(emitSpy.mock.calls).toEqual([
+            ['waiting', { reason: 'fetching' }],
+            ['waiting', { reason: 'decoding' }],
+            ['playing'],
+        ]);
+    });
+
+    test('a tick stall emits "fetching" before raw bytes arrive, "decoding" once they do', () => {
+        const emitSpy = jest.fn();
+        const rawBytesIndices = new Set();
+        const frameStore = {
+            buffers: new Map(),
+            has: () => false,
+            isDecodeInBackoff: () => false,
+            ensureDecoded: () => Promise.resolve(),
+            setPinned: () => {},
+            pinned: new Set(),
+            segmentFetcher: {
+                hasRawBytes: (index) => rawBytesIndices.has(index),
+                isFetchInBackoff: () => false,
+                hasInFlightFetch: () => false,
+                getInFlightFetchCount: () => 0,
+                ensureRawBytes: () => Promise.resolve(),
+                setProtectedRawSegments: () => {},
+            },
+        };
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(4, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+            emit: emitSpy,
+        });
+        scheduler.playing = true;
+        scheduler.playbackRate = 1;
+        scheduler._anchorTime = 0;
+        scheduler._anchorWallClockMs = 1000;
+        scheduler._scheduleTick = () => {};
+
+        scheduler._tick(1000);
+        expect(emitSpy).toHaveBeenCalledWith('waiting', { reason: 'fetching' });
+
+        rawBytesIndices.add(0); // raw bytes now present, decode still pending
+        scheduler._tick(1000);
+        expect(emitSpy).toHaveBeenCalledWith('waiting', { reason: 'decoding' });
     });
 });
 
@@ -511,11 +933,8 @@ describe('Scheduler boundary and pause behavior', () => {
             frameStore: {
                 buffers: new Map(),
                 has: () => true,
-                isInBackoff: () => false,
-                ensureSegment: () => Promise.resolve(),
-                prefetchRawBytes: () => Promise.resolve(),
+                ensureDecoded: () => Promise.resolve(),
                 setPinned: () => {},
-                _logDebug: () => {},
                 pinned: new Set(),
             },
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
@@ -526,7 +945,7 @@ describe('Scheduler boundary and pause behavior', () => {
         scheduler._anchorTime = 0;
         scheduler._anchorWallClockMs = 1000;
         scheduler._renderAtTime = () => true;
-        scheduler._kickLookahead = () => {};
+        scheduler._runCachePass = () => {};
         scheduler._scheduleTick = () => {};
         const pauseSpy = jest.spyOn(scheduler, 'pause');
 
@@ -542,11 +961,8 @@ describe('Scheduler boundary and pause behavior', () => {
             frameStore: {
                 buffers: new Map(),
                 has: () => true,
-                isInBackoff: () => false,
-                ensureSegment: () => Promise.resolve(),
-                prefetchRawBytes: () => Promise.resolve(),
+                ensureDecoded: () => Promise.resolve(),
                 setPinned: () => {},
-                _logDebug: () => {},
                 pinned: new Set(),
             },
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
@@ -557,7 +973,7 @@ describe('Scheduler boundary and pause behavior', () => {
         scheduler._anchorTime = 0;
         scheduler._anchorWallClockMs = 1000;
         scheduler._renderAtTime = () => true;
-        scheduler._kickLookahead = () => {};
+        scheduler._runCachePass = () => {};
         scheduler._scheduleTick = () => {};
         const pauseSpy = jest.spyOn(scheduler, 'pause');
 
@@ -566,57 +982,34 @@ describe('Scheduler boundary and pause behavior', () => {
         expect(pauseSpy).toHaveBeenCalledTimes(1);
     });
 
-    test('pause warms the paused anchor neighborhood and the outward paused neighborhood around current time', () => {
-        const pinnedSnapshots = [];
-        const ensuredIndices = [];
-        const frameStore = {
-            buffers: new Map([[0, { frames: [{ timestamp: 1_000_000 }] }]]),
-            has: () => false,
-            isInBackoff: () => false,
-            ensureSegment: (index) => {
-                ensuredIndices.push(index);
-                return Promise.resolve();
-            },
-            prefetchRawBytes: () => Promise.resolve(),
-            setPinned: (indices) => {
-                pinnedSnapshots.push([...indices]);
-            },
-            pinned: new Set(),
-        };
+    test('pause runs an immediate symmetric cache pass warming the protected floor', () => {
+        const { frameStore, decodedIndices, pinnedSnapshots } = makeRecordingTiers();
         const scheduler = new Scheduler({
-            segmentIndex: makeUniformSegmentIndex(4, 3),
+            segmentIndex: makeUniformSegmentIndex(20, 3),
             frameStore,
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
             emit: () => {},
         });
 
         scheduler.playing = true;
-        scheduler.currentSegmentIndex = 0;
+        scheduler.currentSegmentIndex = 10;
         scheduler.currentFrameIdx = 0;
+        scheduler._presentedMediaTime = 30;
 
         scheduler.pause();
 
-        expect(pinnedSnapshots.length).toBeGreaterThan(0);
-        expect(pinnedSnapshots[pinnedSnapshots.length - 1]).toEqual([0, 1]);
-        expect(ensuredIndices).toContain(0);
-        expect(ensuredIndices).toContain(1);
+        const expectedProtected = computeProtectedFloor(10, 20, 3);
+        expect(pinnedSnapshots[pinnedSnapshots.length - 1]).toEqual(expectedProtected);
+        expect(decodedIndices).toEqual(expect.arrayContaining(expectedProtected));
         expect(scheduler.playing).toBe(false);
     });
 });
 
-describe('Scheduler paused background prefetch', () => {
-    test('starts paused prefetch worker on pause and stops it on play', () => {
+describe('Scheduler paused background cache-fill worker', () => {
+    test('starts the paused fill worker on pause and stops it on play', () => {
         jest.useFakeTimers();
         try {
-            const frameStore = {
-                buffers: new Map([[0, { frames: [{ timestamp: 1_000_000 }] }]]),
-                has: () => true,
-                isInBackoff: () => false,
-                ensureSegment: () => Promise.resolve(),
-                prefetchRawBytes: jest.fn(() => Promise.resolve()),
-                setPinned: () => {},
-                pinned: new Set(),
-            };
+            const { frameStore } = makeRecordingTiers();
             const scheduler = new Scheduler({
                 segmentIndex: makeUniformSegmentIndex(10, 3),
                 frameStore,
@@ -629,42 +1022,21 @@ describe('Scheduler paused background prefetch', () => {
             scheduler.currentFrameIdx = 0;
             scheduler.pause();
 
-            expect(scheduler._pausedPrefetchIntervalHandle).not.toBeNull();
+            expect(scheduler._pausedIntervalHandle).not.toBeNull();
 
             scheduler._scheduleTick = () => {};
             scheduler.play();
 
-            expect(scheduler._pausedPrefetchIntervalHandle).toBeNull();
+            expect(scheduler._pausedIntervalHandle).toBeNull();
         } finally {
             jest.useRealTimers();
         }
     });
 
-    test('while paused, worker expands shared lookahead forward from the paused center', () => {
+    test('while paused, the worker keeps re-running the SAME fixed-width symmetric window every interval -- no growing-over-time horizon', () => {
         jest.useFakeTimers();
         try {
-            const ensuredIndices = [];
-            const prefetchedIndices = [];
-            const frameStore = {
-                buffers: new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]),
-                segmentFetcher: {
-                    maxRawSegmentsCached: 6,
-                    hasRawBytes: () => true,
-                    setProtectedRawSegments: () => {},
-                },
-                has: () => false,
-                isInBackoff: () => false,
-                ensureSegment: (index) => {
-                    ensuredIndices.push(index);
-                    return Promise.resolve();
-                },
-                prefetchRawBytes: (index) => {
-                    prefetchedIndices.push(index);
-                    return Promise.resolve();
-                },
-                setPinned: () => {},
-                pinned: new Set(),
-            };
+            const { frameStore, decodedIndices } = makeRecordingTiers();
             const scheduler = new Scheduler({
                 segmentIndex: makeUniformSegmentIndex(20, 3),
                 frameStore,
@@ -676,53 +1048,49 @@ describe('Scheduler paused background prefetch', () => {
             scheduler.currentSegmentIndex = 10;
             scheduler.currentFrameIdx = 0;
             scheduler._presentedMediaTime = 30;
-
             scheduler.pause();
 
-            jest.advanceTimersByTime(9000);
+            const afterFirstPass = new Set(decodedIndices);
 
-            // Protected core stays decoded.
-            expect(ensuredIndices.some((index) => index >= 9 && index <= 11)).toBe(true);
-            // Decoded expansion must remain symmetric around the paused center.
-            expect(ensuredIndices.some((index) => index <= 8)).toBe(true);
-            expect(ensuredIndices.some((index) => index >= 12)).toBe(true);
-            // Expansion should continue as raw-only downloads on both sides.
-            expect(prefetchedIndices.some((index) => index <= 8)).toBe(true);
-            expect(prefetchedIndices.some((index) => index >= 12)).toBe(true);
+            jest.advanceTimersByTime(9000); // many more passes
+
+            const afterManyPasses = new Set(decodedIndices);
+
+            // Every index the worker ever reaches for was already reached
+            // for on the very first pass -- passing more wall-clock time
+            // must not widen the window (unlike the old growing-horizon
+            // paused mode this replaces).
+            for (const index of afterManyPasses) {
+                expect(afterFirstPass.has(index)).toBe(true);
+            }
+            // Sanity: it did expand symmetrically beyond the protected
+            // floor on both sides on that very first pass.
+            const expectedProtected = computeProtectedFloor(10, 20, 3);
+            const floorMax = Math.max(...expectedProtected);
+            const floorMin = Math.min(...expectedProtected);
+            expect([...afterFirstPass].some((index) => index > floorMax)).toBe(true);
+            expect([...afterFirstPass].some((index) => index < floorMin)).toBe(true);
         } finally {
             jest.useRealTimers();
         }
     });
 
-    test('while paused, a seek recenters paused prefetch to segments adjacent to the new position', async () => {
+    test('while paused, a seek recenters the protected floor on the new position', async () => {
         jest.useFakeTimers();
         try {
             const segmentIndex = makeUniformSegmentIndex(80, 3);
-            const pinnedSnapshots = [];
-            const frameStore = {
-                buffers: new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]),
-                segmentFetcher: {
-                    maxRawSegmentsCached: 6,
-                    hasRawBytes: () => false,
-                    setProtectedRawSegments: () => {},
-                },
-                has: (index) => frameStore.buffers.has(index),
-                isInBackoff: () => false,
-                ensureSegment: async (index) => {
-                    if (!frameStore.buffers.has(index)) {
-                        const seg = segmentIndex.segments[index];
-                        frameStore.buffers.set(index, {
-                            frames: [{ timestamp: Math.round(seg.startTime * 1e6) }],
-                        });
-                    }
-                    return frameStore.buffers.get(index);
-                },
-                prefetchRawBytes: () => Promise.resolve(),
-                setPinned(indices) {
-                    pinnedSnapshots.push([...indices]);
-                },
-                pinned: new Set(),
+            const { frameStore, pinnedSnapshots } = makeRecordingTiers();
+            frameStore.buffers = new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]);
+            frameStore.has = (index) => frameStore.buffers.has(index);
+            frameStore.segmentFetcher.hasRawBytes = () => true;
+            frameStore.ensureDecoded = async (index) => {
+                if (!frameStore.buffers.has(index)) {
+                    const seg = segmentIndex.segments[index];
+                    frameStore.buffers.set(index, { frames: [{ timestamp: Math.round(seg.startTime * 1e6) }] });
+                }
+                return frameStore.buffers.get(index);
             };
+
             const scheduler = new Scheduler({
                 segmentIndex,
                 frameStore,
@@ -744,9 +1112,7 @@ describe('Scheduler paused background prefetch', () => {
             const postSeekPinned = pinnedSnapshots[pinnedSnapshots.length - 1];
 
             expect(preSeekPinned).toContain(10);
-            expect(postSeekPinned).toContain(50);
-            expect(postSeekPinned).toContain(49);
-            expect(postSeekPinned).toContain(51);
+            expect(postSeekPinned).toEqual(computeProtectedFloor(50, 80, 3));
         } finally {
             jest.useRealTimers();
         }
@@ -755,24 +1121,9 @@ describe('Scheduler paused background prefetch', () => {
     test('while paused, expansion decode waits for raw bytes and only the protected core decodes immediately', () => {
         jest.useFakeTimers();
         try {
-            const ensuredIndices = [];
-            const frameStore = {
-                buffers: new Map([[10, { frames: [{ timestamp: 30_000_000 }] }]]),
-                segmentFetcher: {
-                    maxRawSegmentsCached: 6,
-                    hasRawBytes: (index) => index >= 9 && index <= 11,
-                    setProtectedRawSegments: () => {},
-                },
-                has: () => false,
-                isInBackoff: () => false,
-                ensureSegment: (index) => {
-                    ensuredIndices.push(index);
-                    return Promise.resolve();
-                },
-                prefetchRawBytes: () => Promise.resolve(),
-                setPinned: () => {},
-                pinned: new Set(),
-            };
+            const { frameStore, decodedIndices } = makeRecordingTiers({
+                rawBytesIndices: new Set([7, 8, 9, 10, 11, 12, 13]),
+            });
             const scheduler = new Scheduler({
                 segmentIndex: makeUniformSegmentIndex(40, 3),
                 frameStore,
@@ -788,34 +1139,17 @@ describe('Scheduler paused background prefetch', () => {
             scheduler.pause();
             jest.advanceTimersByTime(3000);
 
-            expect(ensuredIndices.some((index) => index >= 9 && index <= 11)).toBe(true);
-            expect(ensuredIndices.some((index) => index <= 8)).toBe(false);
-            expect(ensuredIndices.some((index) => index >= 12)).toBe(false);
+            const expectedProtected = computeProtectedFloor(10, 40, 3);
+            expect(decodedIndices.sort((a, b) => a - b)).toEqual(expectedProtected);
         } finally {
             jest.useRealTimers();
         }
     });
 
-    test('while paused, the segment at the paused anchor stays pinned as expansion continues outward', () => {
+    test('while paused, the segment at the paused anchor stays pinned across every interval pass', () => {
         jest.useFakeTimers();
         try {
-            const pinnedSnapshots = [];
-            const frameStore = {
-                buffers: new Map([[10, { frames: [{ timestamp: 30_000_000 }] }]]),
-                segmentFetcher: {
-                    maxRawSegmentsCached: 6,
-                    hasRawBytes: () => false,
-                    setProtectedRawSegments: () => {},
-                },
-                has: () => true,
-                isInBackoff: () => false,
-                ensureSegment: () => Promise.resolve(),
-                prefetchRawBytes: () => Promise.resolve(),
-                setPinned(indices) {
-                    pinnedSnapshots.push([...indices]);
-                },
-                pinned: new Set(),
-            };
+            const { frameStore, pinnedSnapshots } = makeRecordingTiers();
             const scheduler = new Scheduler({
                 segmentIndex: makeUniformSegmentIndex(40, 3),
                 frameStore,
@@ -865,11 +1199,7 @@ describe('Scheduler reverse boundary continuity', () => {
             frameStore: {
                 buffers,
                 has: (index) => buffers.has(index),
-                isInBackoff: () => false,
-                ensureSegment: () => Promise.resolve(),
-                prefetchRawBytes: () => Promise.resolve(),
                 setPinned: () => {},
-                _logDebug: () => {},
                 pinned: new Set(),
             },
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },

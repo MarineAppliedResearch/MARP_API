@@ -82,6 +82,7 @@ const playerContainer = document.getElementById("playerContainer");
 const placeholderLogo = document.getElementById("placeholderLogo");
 const centerPlayOverlay = document.getElementById("centerPlayOverlay");
 const centerPlayButton = document.getElementById("centerPlayButton");
+const bufferingSpinner = document.getElementById("bufferingSpinner");
 const controlsBar = document.getElementById("controlsBar");
 const scrubTrack = document.getElementById("scrubTrack");
 const scrubTrackBg = document.getElementById("scrubTrackBg");
@@ -116,8 +117,14 @@ loadButton.addEventListener("click", async () => {
   }
 
   const token = tokenInput.value.trim();
-  const fetchOptions = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-  const streamUrl = `/api/v2/jellyfin/items/${itemId}/stream?mode=Transcode`;
+  // TEMPORARY: paste a full http(s) URL into the item id field to point the
+  // engine at a local mock transcode server instead of MARP/Jellyfin (#36
+  // local reproduction work) -- no Authorization header, since a mock
+  // server (or Jellyfin's own URLs) needs none, matching loadSegmentIndex's
+  // own doc comment on why an unnecessary cross-origin auth header can hang.
+  const isDirectUrl = /^https?:\/\//i.test(itemId);
+  const fetchOptions = !isDirectUrl && token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  const streamUrl = isDirectUrl ? itemId : `/api/v2/jellyfin/items/${itemId}/stream?mode=Transcode`;
   const startupRawCacheGiB = parseFloat(rawCacheGiBInput.value);
   const startupRawCacheBytes = Math.floor(startupRawCacheGiB * 1024 * 1024 * 1024);
 
@@ -398,8 +405,33 @@ function applyLoadedUiState() {
  * Usage: called once, right after createMarpVideoEngine() resolves.
  */
 function wireVideoEvents() {
-  ["loadedmetadata", "durationchange", "resize", "playing", "pause", "seeking", "seeked"].forEach((type) => {
+  ["loadedmetadata", "durationchange", "resize", "playing", "pause"].forEach((type) => {
     window.marpVideo.addEventListener(type, () => log(`event: ${type}`));
+  });
+
+  // seeking/seeked now carry where the seek is headed/landed (target
+  // time, resolved segment, and -- once landed -- the actual presented
+  // frame) -- printed here so "did the seek land somewhere unexpected"
+  // is visible directly in the log instead of needing DevTools.
+  window.marpVideo.addEventListener("seeking", (event) => {
+    log(`event: seeking targetTime=${event.targetTime.toFixed(3)} targetSegment=${event.segmentIndex}`);
+  });
+  window.marpVideo.addEventListener("seeked", (event) => {
+    log(
+      `event: seeked targetTime=${event.targetTime.toFixed(3)} landedTime=${event.currentTime.toFixed(3)} ` +
+        `segment=${event.segmentIndex} frameIndex=${event.frameIndex}`
+    );
+  });
+
+  // Buffering spinner: shown whenever playback/seek is blocked on Tier 1
+  // (network) or Tier 2 (decode), colored to match the scrub bar's own
+  // fetched=blue/decoded=green convention. Hidden again on the next
+  // "playing" (which now also fires on resume-from-waiting, not just on
+  // an explicit play()).
+  window.marpVideo.addEventListener("waiting", (event) => {
+    log(`event: waiting reason=${event.reason}`);
+    bufferingSpinner.classList.remove("hidden");
+    bufferingSpinner.classList.toggle("decoding", event.reason === "decoding");
   });
 
   // Logs the real Error's message, not just "event: error" -- the shim
@@ -432,6 +464,7 @@ function wireVideoEvents() {
   window.marpVideo.addEventListener("playing", () => {
     playPauseButton.innerHTML = "&#10074;&#10074;";
     centerPlayOverlay.classList.add("hidden");
+    bufferingSpinner.classList.add("hidden");
   });
 
   window.marpVideo.addEventListener("pause", () => {

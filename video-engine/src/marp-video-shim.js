@@ -135,7 +135,16 @@ export class MarpVideoShim {
 
     /**
      * Registers an event listener. Supported types: loadedmetadata,
-     * durationchange, resize, error, playing, pause, seeking, seeked.
+     * durationchange, resize, error, playing, pause, seeking, seeked,
+     * waiting, debug.
+     *
+     * `waiting` fires (with `{reason: 'fetching'|'decoding'}`) whenever
+     * playback or an in-flight seek is blocked on Tier 1 (raw fetch) or
+     * Tier 2 (decode); `playing` fires again once unblocked -- matching
+     * the real HTMLMediaElement `waiting`/`playing` contract, so a
+     * buffering-spinner listener doesn't need special-casing beyond that.
+     * `seeking`/`seeked` additionally carry `{targetTime, segmentIndex}`
+     * and (on `seeked`) `{currentTime, frameIndex}`.
      *
      * @param {string} type - Event type.
      * @param {function(Object): void} callback - Listener, invoked with `{type, target}`.
