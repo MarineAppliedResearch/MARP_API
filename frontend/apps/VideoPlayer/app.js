@@ -110,6 +110,18 @@ let settingsMenuOpen = false;
 let lastFrameMetadata = null;
 
 loadButton.addEventListener("click", async () => {
+  // WebCodecs is only exposed in a secure context (https, or http on
+  // localhost/127.0.0.1) -- reaching this dev server over plain http at a
+  // LAN IP/hostname silently removes the global, which otherwise surfaces
+  // as a bare "VideoDecoder is not defined" from deep inside the decoder.
+  if (typeof VideoDecoder === "undefined") {
+    log(
+      `ERROR: WebCodecs (VideoDecoder) is unavailable at ${window.location.origin} ` +
+        `(isSecureContext=${window.isSecureContext}). Open this page over https or via localhost/127.0.0.1.`
+    );
+    return;
+  }
+
   const itemId = itemIdInput.value.trim();
   if (!itemId) {
     log("ERROR: enter a Jellyfin item id first.");
