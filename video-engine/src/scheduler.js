@@ -48,15 +48,27 @@ const TIER2_OPPORTUNISTIC_BASE_SEGMENTS = 4;
 const TIER1_BASE_PACING_PER_PASS = 2;
 
 /**
- * Ceiling on simultaneously in-flight Tier 1 fetches, across protected
- * floor and opportunistic candidates combined. Without this, an unbounded
- * background frontier (see cache-window.js's module doc) can accumulate
- * far more concurrent `fetch()` calls than the browser's own per-origin
- * connection limit -- queuing a newly-urgent request (e.g. a seek's own
- * cold target) behind a pile of older, lower-priority ones instead of
- * actually racing them.
+ * Default ceiling on simultaneously in-flight Tier 1 fetches, across
+ * protected floor and opportunistic candidates combined, for a source that
+ * supports true random access (e.g. a static file server). Without this, an
+ * unbounded background frontier (see cache-window.js's module doc) can
+ * accumulate far more concurrent `fetch()` calls than the browser's own
+ * per-origin connection limit -- queuing a newly-urgent request (e.g. a
+ * seek's own cold target) behind a pile of older, lower-priority ones
+ * instead of actually racing them.
+ *
+ * Overridable per-instance via the constructor's `maxConcurrentTier1Fetches`
+ * option -- a source backed by a single sequential live producer (e.g.
+ * Jellyfin's on-the-fly HLS transcoder, confirmed live against its own
+ * DynamicHlsController: any request for a segment behind its current
+ * transcoding index, or too far ahead of it, kills and restarts that
+ * session's ffmpeg job) needs a much lower ceiling, since concurrent
+ * requests spanning both directions around the playhead can otherwise
+ * race two conflicting restarts against each other under the same
+ * PlaySessionId -- confirmed live as the cause of transient 404/500s that
+ * only self-healed via SegmentFetcher's own retry/backoff.
  */
-const MAX_CONCURRENT_TIER1_FETCHES = 6;
+const DEFAULT_MAX_CONCURRENT_TIER1_FETCHES = 6;
 
 /** Directional skew ratio while playing: preferred-direction candidates considered per one opposite-direction candidate. */
 const DIRECTIONAL_SKEW_RATIO = 2;
@@ -82,13 +94,15 @@ export class Scheduler {
      * @param {Object} params.canvasRenderer - {@link module:video-engine/canvas-renderer.CanvasRenderer} instance.
      * @param {function(string, Object=): void} params.emit - Callback for shim event dispatch, with an optional detail object merged onto the dispatched event (e.g. `emit('seeking', {targetTime})`, `emit('playing')`). NOT used for segment fetch/decode failures -- those are reported once each via FrameStore/SegmentFetcher's own `onError`, not through here.
      * @param {number} [params.protectedFloorRadius] - Segments protected on each side of the playhead, in both tiers. Default 3.
+     * @param {number} [params.maxConcurrentTier1Fetches] - Ceiling on simultaneously in-flight Tier 1 fetches. Default 6 (see DEFAULT_MAX_CONCURRENT_TIER1_FETCHES's own doc comment); a source backed by a single sequential live producer should pass a much lower value.
      */
-    constructor({ segmentIndex, frameStore, canvasRenderer, emit, protectedFloorRadius }) {
+    constructor({ segmentIndex, frameStore, canvasRenderer, emit, protectedFloorRadius, maxConcurrentTier1Fetches }) {
         this.segmentIndex = segmentIndex;
         this.frameStore = frameStore;
         this.canvasRenderer = canvasRenderer;
         this.emit = emit;
         this._protectedFloorRadius = protectedFloorRadius || DEFAULT_PROTECTED_FLOOR_RADIUS_SEGMENTS;
+        this._maxConcurrentTier1Fetches = maxConcurrentTier1Fetches || DEFAULT_MAX_CONCURRENT_TIER1_FETCHES;
 
         this.playbackRate = 1;
         this.playing = false;
@@ -739,9 +753,9 @@ export class Scheduler {
             }
             // Concurrency ceiling: an unbounded background frontier must
             // not accumulate more simultaneously in-flight fetches than
-            // the browser can usefully race at once -- see
-            // MAX_CONCURRENT_TIER1_FETCHES's own doc comment for why.
-            if (fetcher.getInFlightFetchCount() >= MAX_CONCURRENT_TIER1_FETCHES) {
+            // this source can actually tolerate -- see
+            // DEFAULT_MAX_CONCURRENT_TIER1_FETCHES's own doc comment for why.
+            if (fetcher.getInFlightFetchCount() >= this._maxConcurrentTier1Fetches) {
                 break;
             }
             if (fetcher.hasRawBytes(index) || fetcher.isFetchInBackoff(index) || fetcher.hasInFlightFetch(index)) {
@@ -773,6 +787,11 @@ export class Scheduler {
         const direction = clamped >= this.currentTime ? 'atOrBefore' : 'atOrAfter';
         const segment = findSegmentForTime(this.segmentIndex, clamped);
         const fetcher = this.frameStore.segmentFetcher;
+
+        // Moves the dual-session forward/behind boundary to this seek's
+        // target before any fetch (including this seek's own target-segment
+        // fetch below) can be issued -- see SegmentFetcher#setAnchorSegmentIndex.
+        fetcher.setAnchorSegmentIndex(segment.index);
 
         // Carries the resolved target so a listener (e.g. the test
         // harness's log panel) can tell where a seek is headed without
@@ -889,12 +908,30 @@ export class Scheduler {
     }
 
     /**
-     * Stops playback. Called when the engine is torn down.
+     * Stops playback and tears down both cache tiers. Called when the
+     * engine is torn down (including a reload replacing this engine with
+     * a new one) -- without this, the old FrameStore's decoder and the
+     * old SegmentFetcher's in-flight requests keep running in the
+     * background, competing with the new engine for decode throughput
+     * and network/connection-pool capacity.
+     *
+     * Deliberately does not call `pause()` here: `pause()` unconditionally
+     * restarts the paused fill worker after running one more cache pass,
+     * which would immediately undo `_stopPausedFillWorker()` below and
+     * leave that 500ms interval (and its repeated `ensureDecoded`/fetch
+     * calls against an already-closed decoder/aborted fetcher) running
+     * forever, since nothing would ever stop it again.
      *
      * @returns {void}
      */
     close() {
+        this.playing = false;
+        if (this._rafHandle !== null) {
+            cancelAnimationFrame(this._rafHandle);
+            this._rafHandle = null;
+        }
         this._stopPausedFillWorker();
-        this.pause();
+        this.frameStore.segmentFetcher.preemptInFlightFetches([]);
+        this.frameStore.close();
     }
 }

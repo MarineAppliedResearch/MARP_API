@@ -74,9 +74,11 @@ const CONTROLS_IDLE_HIDE_MS = 2500;
 /** How often segment-state shading is re-read from the engine and redrawn, in ms -- a plain timer, not tied to frame presentation, since it doesn't need to be that responsive. */
 const SEGMENT_SHADING_INTERVAL_MS = 250;
 
+/** How far behind a landed seek's target the "behind" session starts its own transcode from, in seconds -- see prepareBehindSession. */
+const BEHIND_SESSION_LOOK_BEHIND_SECONDS = 30;
+
 const loadButton = document.getElementById("loadButton");
 const itemIdInput = document.getElementById("itemIdInput");
-const tokenInput = document.getElementById("tokenInput");
 const canvas = document.getElementById("canvas");
 const playerContainer = document.getElementById("playerContainer");
 const placeholderLogo = document.getElementById("placeholderLogo");
@@ -104,12 +106,45 @@ const applyCacheSettingsButton = document.getElementById("applyCacheSettingsButt
 const readCacheSettingsButton = document.getElementById("readCacheSettingsButton");
 const dumpEngineStateButton = document.getElementById("dumpEngineStateButton");
 
+const jellyfinServerUrlInput = document.getElementById("jellyfinServerUrlInput");
+const jellyfinUsernameInput = document.getElementById("jellyfinUsernameInput");
+const jellyfinPasswordInput = document.getElementById("jellyfinPasswordInput");
+const jellyfinLoginButton = document.getElementById("jellyfinLoginButton");
+const jellyfinLogoutButton = document.getElementById("jellyfinLogoutButton");
+const loginStatus = document.getElementById("loginStatus");
+const qualityOptionsList = document.getElementById("qualityOptionsList");
+
+// Talks directly to Jellyfin -- no MARE_API involvement in playback at all
+// (see agents_history.md's Phase 4 entry, issue #36). jellyfinClient holds
+// its own session in localStorage; mediaSource wraps it for the engine's
+// generic MediaSource seam (see media-source.js -- LocalFileMediaSource is
+// a planned follow-up implementation of the same interface).
+const jellyfinClient = new MarpVideoEngine.JellyfinClient();
+const mediaSource = new MarpVideoEngine.JellyfinMediaSource(jellyfinClient);
+let currentQualityOption = null;
+let currentItemId = null;
+// Bumped on every 'seeked' -- a behind-session renegotiation in flight
+// when a newer seek lands must not apply its (now-stale) result.
+let behindSessionGeneration = 0;
+
 let scrubDragging = false;
 let segmentShadingHandle = null;
 let settingsMenuOpen = false;
+// Which accordion section body is expanded (see applyOpenSettingsSection);
+// null means all collapsed. Defaults to Login since signing in is the
+// first thing a new session needs.
+let openSettingsSectionId = "settingsLoginBody";
 let lastFrameMetadata = null;
 
-loadButton.addEventListener("click", async () => {
+/**
+ * Loads (or reloads, for a quality change) the current item id at a given
+ * quality option, talking directly to Jellyfin via mediaSource -- no
+ * MARE_API involved. Re-creates the engine each time; seamless mid-stream
+ * quality switching (without a reload) is out of scope for this phase.
+ * Inputs: itemId (string), qualityOption (from getQualityOptions, or null for the default/first tier).
+ * Output: none (sets window.marpVideo, updates UI).
+ */
+async function loadItem(itemId, qualityOption) {
   // WebCodecs is only exposed in a secure context (https, or http on
   // localhost/127.0.0.1) -- reaching this dev server over plain http at a
   // LAN IP/hostname silently removes the global, which otherwise surfaces
@@ -122,34 +157,52 @@ loadButton.addEventListener("click", async () => {
     return;
   }
 
-  const itemId = itemIdInput.value.trim();
-  if (!itemId) {
-    log("ERROR: enter a Jellyfin item id first.");
+  if (!jellyfinClient.isAuthenticated()) {
+    log("ERROR: sign in to a Jellyfin server first (Settings > Server / Login).");
     return;
   }
 
-  const token = tokenInput.value.trim();
-  // TEMPORARY: paste a full http(s) URL into the item id field to point the
-  // engine at a local mock transcode server instead of MARP/Jellyfin (#36
-  // local reproduction work) -- no Authorization header, since a mock
-  // server (or Jellyfin's own URLs) needs none, matching loadSegmentIndex's
-  // own doc comment on why an unnecessary cross-origin auth header can hang.
-  const isDirectUrl = /^https?:\/\//i.test(itemId);
-  const fetchOptions = !isDirectUrl && token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-  const streamUrl = isDirectUrl ? itemId : `/api/v2/jellyfin/items/${itemId}/stream?mode=Transcode`;
-  const startupRawCacheGiB = parseFloat(rawCacheGiBInput.value);
-  const startupRawCacheBytes = Math.floor(startupRawCacheGiB * 1024 * 1024 * 1024);
-
   loadButton.disabled = true;
-  log(`Loading ${streamUrl} ...`);
 
   try {
+    // Always re-probe the full tier list, even when reloading for a
+    // specific quality pick -- qualityOption only decides which tier is
+    // selected, not which tiers exist, otherwise the menu collapses down
+    // to just the one tier that was picked on every reload.
+    const options = await mediaSource.probeQualityOptions(itemId);
+    if (options.length === 0) {
+      throw new Error("Jellyfin reports this item cannot be transcoded.");
+    }
+    currentQualityOption = qualityOption || options[0];
+    currentItemId = itemId;
+    buildQualityOptionsMenu(options, currentQualityOption);
+
+    const streamUrl = await mediaSource.resolveStreamUrl(itemId, currentQualityOption);
+    const startupRawCacheGiB = parseFloat(rawCacheGiBInput.value);
+    const startupRawCacheBytes = Math.floor(startupRawCacheGiB * 1024 * 1024 * 1024);
+
+    log(`Loading ${streamUrl} (quality=${currentQualityOption.name}) ...`);
+
+    stopPlaybackReporting();
+
+    // Tear down the previous engine (if any) before replacing it --
+    // without this, switching item/quality left the old scheduler's
+    // render loop and cache-fill passes running in the background
+    // indefinitely, launching its own segment fetches against Jellyfin
+    // concurrently with the new engine's, which was enough to make the
+    // transcoder itself start erroring/timing out on both sessions at once.
+    if (window.marpVideo) {
+      log("Closing previous engine before loading the new one...");
+      window.marpVideo.close();
+    }
+
     window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
       streamUrl,
-      fetchOptions,
       rawSegmentCacheBudgetBytes: Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined,
+      maxConcurrentFetches: mediaSource.maxConcurrentFetches,
     });
     wireVideoEvents();
+    startPlaybackReporting(itemId);
 
     log(`Engine ready. duration=${window.marpVideo.duration.toFixed(3)}s, ${window.marpVideo.videoWidth}x${window.marpVideo.videoHeight}, ${window.marpVideo.fps}fps`);
 
@@ -165,7 +218,6 @@ loadButton.addEventListener("click", async () => {
       stepBackButton,
       stepForwardButton,
       speedOverrideInput,
-      playerSettingsButton,
       muteButton,
       fullscreenButton,
       rawCacheGiBInput,
@@ -183,8 +235,18 @@ loadButton.addEventListener("click", async () => {
   } catch (err) {
     log("ERROR loading: " + err.message);
     console.error(err);
+  } finally {
     loadButton.disabled = false;
   }
+}
+
+loadButton.addEventListener("click", () => {
+  const itemId = itemIdInput.value.trim();
+  if (!itemId) {
+    log("ERROR: enter a Jellyfin item id first.");
+    return;
+  }
+  loadItem(itemId, null);
 });
 
 function syncCacheSettingsFromEngine() {
@@ -352,10 +414,28 @@ dumpEngineStateButton.addEventListener("click", () => {
   dumpEngineState();
 });
 
+/**
+ * Shows the currently-open accordion section's body and hides every other
+ * one -- the gear menu's only navigation model: a flat stack of sections,
+ * each expanded/collapsed in place by clicking its own header. No separate
+ * "back" step exists because nothing ever replaces anything else.
+ * Inputs: none (reads openSettingsSectionId).
+ * Output: none.
+ */
+function applyOpenSettingsSection() {
+  document.querySelectorAll("#playerSettingsMenu .settings-section-body").forEach((body) => {
+    body.classList.toggle("hidden", body.id !== openSettingsSectionId);
+  });
+  document.querySelectorAll("#playerSettingsMenu .settings-section-header").forEach((header) => {
+    header.classList.toggle("expanded", header.dataset.section === openSettingsSectionId);
+  });
+}
+
 function openSettingsMenu() {
   // Keep the transport visible while the menu is open.
   settingsMenuOpen = true;
   playerSettingsMenu.classList.add("open");
+  applyOpenSettingsSection();
   showControlsBar();
 }
 
@@ -394,6 +474,139 @@ document.addEventListener("pointerdown", (event) => {
   closeSettingsMenu();
 });
 
+document.querySelectorAll(".settings-section-header").forEach((header) => {
+  header.addEventListener("click", () => {
+    openSettingsSectionId = header.dataset.section === openSettingsSectionId ? null : header.dataset.section;
+    applyOpenSettingsSection();
+  });
+});
+
+/**
+ * Reflects the client's current Jellyfin session in the login panel.
+ * Inputs: none (reads jellyfinClient).
+ * Output: none (updates #loginStatus and pre-fills the server URL field).
+ */
+function updateLoginStatus() {
+  if (jellyfinClient.isAuthenticated()) {
+    loginStatus.textContent = `Signed in to ${jellyfinClient.serverUrl}`;
+    jellyfinServerUrlInput.value = jellyfinClient.serverUrl;
+  } else {
+    loginStatus.textContent = "Not signed in.";
+  }
+}
+
+updateLoginStatus();
+
+jellyfinLoginButton.addEventListener("click", async () => {
+  const serverUrl = jellyfinServerUrlInput.value.trim();
+  const username = jellyfinUsernameInput.value.trim();
+  const password = jellyfinPasswordInput.value;
+
+  if (!serverUrl || !username || !password) {
+    log("ERROR: server URL, username, and password are all required.");
+    return;
+  }
+
+  try {
+    await jellyfinClient.login(serverUrl, username, password);
+    jellyfinPasswordInput.value = "";
+    updateLoginStatus();
+    log(`Signed in to ${serverUrl} as ${username}.`);
+  } catch (err) {
+    log(`ERROR signing in: ${err.message}`);
+  }
+});
+
+jellyfinLogoutButton.addEventListener("click", () => {
+  jellyfinClient.logout();
+  updateLoginStatus();
+  log("Signed out.");
+});
+
+/**
+ * Renders the quality-tier picker for the item just probed/loaded.
+ * Inputs: options (array from getQualityOptions), selected (the currently active option).
+ * Output: none (populates #qualityOptionsList; clicking a tier reloads the current item at it).
+ */
+function buildQualityOptionsMenu(options, selected) {
+  qualityOptionsList.innerHTML = "";
+
+  for (const option of options) {
+    const button = document.createElement("button");
+    button.className = "quality-option";
+    button.classList.toggle("selected", option.name === (selected && selected.name));
+    button.textContent = option.name;
+    button.addEventListener("click", () => {
+      const itemId = itemIdInput.value.trim();
+      if (itemId) {
+        loadItem(itemId, option);
+      }
+    });
+    qualityOptionsList.appendChild(button);
+  }
+}
+
+// --- Playback reporting: tells Jellyfin this real user's own account is
+// watching, so its native "continue watching"/resume-position features
+// work normally -- matches jellyfin-web's own 10s progress cadence
+// (playbackmanager.js's onPlayerProgressInterval). ---
+
+const PLAYBACK_REPORT_INTERVAL_MS = 10_000;
+const TICKS_PER_SECOND = 10_000_000;
+
+let playbackReportItemId = null;
+let playbackReportHandle = null;
+
+/**
+ * Builds the {positionTicks, isPaused} context every playback-report call needs.
+ * Inputs: none (uses window.marpVideo).
+ * Output: report context object.
+ */
+function currentPlaybackReportContext() {
+  return {
+    positionTicks: Math.round((window.marpVideo ? window.marpVideo.currentTime : 0) * TICKS_PER_SECOND),
+    isPaused: window.marpVideo ? window.marpVideo.paused : true,
+  };
+}
+
+/**
+ * Starts reporting playback state for itemId to Jellyfin -- an immediate
+ * "started" report, then "progress" every PLAYBACK_REPORT_INTERVAL_MS.
+ * Inputs: itemId (string).
+ * Output: none.
+ */
+function startPlaybackReporting(itemId) {
+  playbackReportItemId = itemId;
+  mediaSource.reportPlaybackStarted(itemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback start: ${err.message}`));
+
+  if (playbackReportHandle) {
+    clearInterval(playbackReportHandle);
+  }
+  playbackReportHandle = setInterval(() => {
+    mediaSource.reportPlaybackProgress(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback progress: ${err.message}`));
+  }, PLAYBACK_REPORT_INTERVAL_MS);
+}
+
+/**
+ * Stops the progress-reporting interval and sends a final "stopped" report
+ * for whichever item was being reported on, if any -- called before
+ * loading a new item/quality and on page unload.
+ * Inputs: none.
+ * Output: none.
+ */
+function stopPlaybackReporting() {
+  if (playbackReportHandle) {
+    clearInterval(playbackReportHandle);
+    playbackReportHandle = null;
+  }
+  if (playbackReportItemId) {
+    mediaSource.reportPlaybackStopped(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback stop: ${err.message}`));
+    playbackReportItemId = null;
+  }
+}
+
+window.addEventListener("beforeunload", stopPlaybackReporting);
+
 /**
  * Applies the UI state a freshly-loaded (and, today, always-paused-until-
  * play()) engine should show: hides the placeholder logo, reveals the
@@ -407,6 +620,46 @@ function applyLoadedUiState() {
   centerPlayOverlay.classList.remove("hidden");
   timeDisplay.textContent = `${formatTime(window.marpVideo.currentTime)} / ${formatTime(window.marpVideo.duration)}`;
   updateScrubHandle(window.marpVideo.currentTime);
+}
+
+/**
+ * Negotiates a fresh "behind" session anchored BEHIND_SESSION_LOOK_BEHIND_SECONDS
+ * before a just-landed seek's position, so that region is pre-cached via
+ * one continuous forward transcode sweep instead of ever asking a
+ * session to move backward (see media-source.js's resolveBehindStreamUrl
+ * and index.js's setBehindSession for why). Fire-and-forget from the
+ * seek's own point of view -- rewinding immediately after a seek can
+ * still stall while this negotiation/sweep is in flight, but every seek
+ * kicks it off immediately rather than waiting for the user to actually
+ * start rewinding, maximizing how much of a head start it gets.
+ * Inputs: landedTimeSeconds (where the seek that just fired 'seeked' landed).
+ * Output: none (calls window.marpVideo.setBehindSession once resolved).
+ */
+function prepareBehindSession(landedTimeSeconds) {
+  if (typeof mediaSource.resolveBehindStreamUrl !== "function" || !currentItemId) {
+    return;
+  }
+
+  const generation = ++behindSessionGeneration;
+  const behindStartTimeSeconds = Math.max(0, landedTimeSeconds - BEHIND_SESSION_LOOK_BEHIND_SECONDS);
+
+  mediaSource
+    .resolveBehindStreamUrl(currentItemId, currentQualityOption, behindStartTimeSeconds)
+    .then((behindStreamUrl) => {
+      if (!behindStreamUrl || generation !== behindSessionGeneration || !window.marpVideo) {
+        // Superseded by a newer seek (or this source has no dual-session
+        // support) -- discard silently, matching Scheduler#seek's own
+        // stale-result handling.
+        return;
+      }
+      return window.marpVideo.setBehindSession(behindStreamUrl, behindStartTimeSeconds);
+    })
+    .then(() => {
+      if (generation === behindSessionGeneration) {
+        log(`behind-session ready: sweeping forward from ${behindStartTimeSeconds.toFixed(1)}s`);
+      }
+    })
+    .catch((err) => log(`ERROR preparing behind session: ${err.message}`));
 }
 
 /**
@@ -433,6 +686,7 @@ function wireVideoEvents() {
       `event: seeked targetTime=${event.targetTime.toFixed(3)} landedTime=${event.currentTime.toFixed(3)} ` +
         `segment=${event.segmentIndex} frameIndex=${event.frameIndex}`
     );
+    prepareBehindSession(event.currentTime);
   });
 
   // Buffering spinner: shown whenever playback/seek is blocked on Tier 1
@@ -477,12 +731,18 @@ function wireVideoEvents() {
     playPauseButton.innerHTML = "&#10074;&#10074;";
     centerPlayOverlay.classList.add("hidden");
     bufferingSpinner.classList.add("hidden");
+    if (playbackReportItemId) {
+      mediaSource.reportPlaybackProgress(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback progress: ${err.message}`));
+    }
   });
 
   window.marpVideo.addEventListener("pause", () => {
     playPauseButton.innerHTML = "&#9654;";
     centerPlayOverlay.classList.remove("hidden");
     showControlsBar();
+    if (playbackReportItemId) {
+      mediaSource.reportPlaybackProgress(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback progress: ${err.message}`));
+    }
   });
 
   let frameLogCounter = 0;

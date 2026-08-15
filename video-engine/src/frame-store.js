@@ -382,8 +382,12 @@ export class FrameStore {
     }
 
     /**
-     * Closes every cached VideoFrame and clears the cache. Called when
-     * the engine is torn down.
+     * Closes every cached VideoFrame, releases the shared VideoDecoder,
+     * and clears the cache. Called when the engine is torn down --
+     * without releasing the decoder here, a replaced engine (e.g. a
+     * quality-change reload) leaves the old VideoDecoder instance alive
+     * and still draining its queued decode work, competing with the new
+     * engine's own decoder for the same CPU/GPU decode throughput.
      *
      * @returns {void}
      */
@@ -394,5 +398,6 @@ export class FrameStore {
             }
         }
         this.buffers.clear();
+        this.gopDecoder.close();
     }
 }

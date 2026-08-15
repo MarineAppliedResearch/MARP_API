@@ -45,11 +45,12 @@ const DEFAULT_RAW_CACHE_BUDGET_BYTES = 3 * 1024 * 1024 * 1024;
  *
  * @param {string} url - URL to fetch.
  * @param {AbortSignal} [externalSignal] - Caller-supplied cancellation, e.g. FrameStore releasing a fetch no caller wants anymore.
+ * @param {Object} [extraOptions] - Extra fetch() options merged in (e.g. a Range header for a local-file byte-range read -- see buildRangeHeaderOptions).
  * @returns {Promise<Response>} The fetch response.
  * @throws {Error} When the request doesn't complete within FETCH_TIMEOUT_MS.
  * @throws {DOMException} AbortError, when `externalSignal` fires (distinguished from a timeout by checking `externalSignal.aborted`).
  */
-function fetchWithTimeout(url, externalSignal) {
+function fetchWithTimeout(url, externalSignal, extraOptions) {
     const controller = new AbortController();
     const timeoutHandle = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -65,7 +66,7 @@ function fetchWithTimeout(url, externalSignal) {
         }
     }
 
-    return fetch(url, { signal: controller.signal })
+    return fetch(url, { ...extraOptions, signal: controller.signal })
         .catch((err) => {
             if (err.name === 'AbortError') {
                 if (externalSignal && externalSignal.aborted) {
@@ -81,6 +82,26 @@ function fetchWithTimeout(url, externalSignal) {
                 externalSignal.removeEventListener('abort', onExternalAbort);
             }
         });
+}
+
+/**
+ * Builds fetch() options for a byte-range request, or undefined when no
+ * range is given -- used for a local-file SegmentIndex, where every
+ * segment/the init region are all byte ranges within one shared whole-file
+ * URL (a `blob:` URL in a plain browser, a WebView2 virtual-host-mapped
+ * URL inside the C# host) rather than separate URLs the way Jellyfin's
+ * per-segment HLS URLs are. Confirmed both environments' Chromium-based
+ * fetch() honors Range against these URL kinds.
+ *
+ * @param {number} [byteRangeStart] - Inclusive start offset, in bytes.
+ * @param {number} [byteRangeEnd] - Exclusive end offset, in bytes (JS slice()/Blob.slice() convention, converted to HTTP's inclusive end here).
+ * @returns {Object|undefined} `{headers: {Range: ...}}`, or undefined if either bound is missing.
+ */
+function buildRangeHeaderOptions(byteRangeStart, byteRangeEnd) {
+    if (!Number.isFinite(byteRangeStart) || !Number.isFinite(byteRangeEnd)) {
+        return undefined;
+    }
+    return { headers: { Range: `bytes=${byteRangeStart}-${byteRangeEnd - 1}` } };
 }
 
 /**
@@ -129,6 +150,99 @@ export class SegmentFetcher {
         // Once fetched, keep it forever.
         this._initSegmentBuffer = null;
         this._initSegmentPromise = null;
+
+        // Dual-session routing (see setAnchorSegmentIndex/setBehindSession's
+        // own doc comments): a segment index below the anchor is fetched
+        // from the "behind" session's own segment list (a second,
+        // independent Jellyfin transcode session negotiated with an
+        // earlier StartTimeTicks, so its own ffmpeg process only ever
+        // moves forward -- never restarts -- while sweeping through this
+        // region), translated via `_behindIndexOffset` since that
+        // session's own segment numbering restarts at 0 from its
+        // StartTimeTicks, not from absolute stream time (confirmed live:
+        // segment "0" of a StartTimeTicks-shifted session reports
+        // runtimeTicks=0, i.e. its OWN elapsed time, not the stream's).
+        // Segments at or above the anchor always use their ordinary `url`
+        // (the "forward" session).
+        this._anchorSegmentIndex = 0;
+        this._behindSegments = null;
+        this._behindIndexOffset = 0;
+    }
+
+    /**
+     * Moves the dual-session forward/behind boundary to a newly-landed
+     * seek's target segment. Segments at or above this index are fetched
+     * from their ordinary `url` (the "forward" session); segments below
+     * it from the behind session set via setBehindSession(), if any.
+     * Deliberately only updated here (on seek), never as playback
+     * continues past it, per the two-session design: each session is a
+     * single sequential transcode producer that must only ever be asked
+     * to move in its own one direction relative to the anchor, or it pays
+     * the same restart cost a single shared session already does.
+     *
+     * @param {number} segmentIndexNumber - The just-landed seek's target segment index.
+     * @returns {void}
+     */
+    setAnchorSegmentIndex(segmentIndexNumber) {
+        this._anchorSegmentIndex = segmentIndexNumber;
+    }
+
+    /**
+     * Installs (or replaces) the "behind" session's own segment list,
+     * negotiated with an earlier StartTimeTicks so its ffmpeg process
+     * sweeps forward through the seek anchor's behind-region without ever
+     * restarting. Called once per seek, asynchronously, after the seek's
+     * own negotiation/fetch has already landed -- this only affects
+     * opportunistic background fetches for indices below the anchor, not
+     * the seek's own target-segment fetch.
+     *
+     * @param {Array<Object>|null} segments - The behind session's own SegmentIndex.segments (its own index 0 == its StartTimeTicks), or null to clear (single-session mode/no behind session yet negotiated).
+     * @param {number} indexOffset - `forwardIndex - behindArrayIndex` -- i.e. the forward session's segment index that the behind session's own index 0 corresponds to. Typically `Math.round(behindStartTimeSeconds / segmentDurationSeconds)`.
+     * @returns {void}
+     */
+    setBehindSession(segments, indexOffset) {
+        this._behindSegments = segments;
+        this._behindIndexOffset = indexOffset;
+    }
+
+    /**
+     * Resolves which URL a segment index should be fetched from --
+     * ordinary `url` (forward session) at or above the anchor, or the
+     * behind session's own (offset-translated) URL below it, falling back
+     * to `url` if no behind session is installed or it doesn't (yet)
+     * cover that index.
+     *
+     * @param {number} segmentIndexNumber - Segment index to resolve.
+     * @param {Object} segment - `this.segmentIndex.segments[segmentIndexNumber]`.
+     * @returns {string} The URL to fetch.
+     */
+    _resolveSegmentUrl(segmentIndexNumber, segment) {
+        if (this._behindSegments && segmentIndexNumber < this._anchorSegmentIndex) {
+            const behindSegment = this._behindSegments[segmentIndexNumber - this._behindIndexOffset];
+            if (behindSegment) {
+                return behindSegment.url;
+            }
+        }
+        return segment.url;
+    }
+
+    /**
+     * Reports which session a segment index currently resolves to --
+     * "forward" or "behind" -- purely for debug logging (see
+     * ensureRawBytes's own log lines), so it's visible at a glance which
+     * of the two live transcode sessions a given fetch actually used.
+     *
+     * @param {number} segmentIndexNumber - Segment index to check.
+     * @returns {string} `"forward"` or `"behind"`.
+     */
+    _sessionLabelFor(segmentIndexNumber) {
+        if (this._behindSegments && segmentIndexNumber < this._anchorSegmentIndex) {
+            const behindSegment = this._behindSegments[segmentIndexNumber - this._behindIndexOffset];
+            if (behindSegment) {
+                return 'behind';
+            }
+        }
+        return 'forward';
     }
 
     /**
@@ -298,10 +412,19 @@ export class SegmentFetcher {
         }
 
         if (!this._initSegmentPromise) {
-            this._initSegmentPromise = fetchWithTimeout(this.segmentIndex.initSegmentUrl)
+            const rangeOptions = buildRangeHeaderOptions(this.segmentIndex.initByteRangeStart, this.segmentIndex.initByteRangeEnd);
+            this._initSegmentPromise = fetchWithTimeout(this.segmentIndex.initSegmentUrl, undefined, rangeOptions)
                 .then((response) => {
                     if (!response.ok) {
                         throw new Error(`Failed to fetch init segment (${response.status}): ${this.segmentIndex.initSegmentUrl}`);
+                    }
+                    if (rangeOptions && response.status !== 206) {
+                        // A byte-range request that comes back 200 means the
+                        // server/resource loader ignored the Range header and
+                        // handed back the WHOLE file -- silently treating
+                        // that as "the init segment" would feed mp4box.js
+                        // garbage instead of failing loudly.
+                        throw new Error(`Init segment byte-range request was not honored (got ${response.status}, expected 206): ${this.segmentIndex.initSegmentUrl}`);
                     }
                     return response.arrayBuffer();
                 })
@@ -338,9 +461,18 @@ export class SegmentFetcher {
             throw new Error(`No segment at index ${segmentIndexNumber}`);
         }
 
-        const response = await fetchWithTimeout(segment.url, signal);
+        const url = this._resolveSegmentUrl(segmentIndexNumber, segment);
+
+        const rangeOptions = buildRangeHeaderOptions(segment.byteRangeStart, segment.byteRangeEnd);
+        const response = await fetchWithTimeout(url, signal, rangeOptions);
         if (!response.ok) {
-            throw new Error(`Failed to fetch segment ${segmentIndexNumber} (${response.status}): ${segment.url}`);
+            throw new Error(`Failed to fetch segment ${segmentIndexNumber} (${response.status}): ${url}`);
+        }
+        if (rangeOptions && response.status !== 206) {
+            // See fetchInitSegment's identical check -- a silently-ignored
+            // Range header would otherwise hand mp4box.js the WHOLE local
+            // file instead of just this segment's moof+mdat.
+            throw new Error(`Segment ${segmentIndexNumber} byte-range request was not honored (got ${response.status}, expected 206): ${url}`);
         }
 
         const buffer = await response.arrayBuffer();
@@ -427,19 +559,20 @@ export class SegmentFetcher {
             // network -- logging start and completion here is the only
             // signal that a raw fetch is in flight at all, as opposed to
             // having silently stalled or never having been requested.
-            this._logDebug(`segment ${segmentIndexNumber}: fetching raw bytes...`);
+            const sessionLabel = this._sessionLabelFor(segmentIndexNumber);
+            this._logDebug(`segment ${segmentIndexNumber}: fetching raw bytes... [${sessionLabel}]`);
             const abortController = new AbortController();
             const promise = this.fetchSegment(segmentIndexNumber, { signal: abortController.signal })
                 .then(
                     (buffer) => {
                         this._recordFetchOutcome(segmentIndexNumber, null);
-                        this._logDebug(`segment ${segmentIndexNumber}: raw bytes ready (${buffer.byteLength} bytes)`);
+                        this._logDebug(`segment ${segmentIndexNumber}: raw bytes ready (${buffer.byteLength} bytes) [${sessionLabel}]`);
                         return buffer;
                     },
                     (err) => {
                         this._recordFetchOutcome(segmentIndexNumber, err);
                         if (err.name !== 'AbortError') {
-                            this._logDebug(`segment ${segmentIndexNumber}: raw fetch FAILED -- ${err.message}`);
+                            this._logDebug(`segment ${segmentIndexNumber}: raw fetch FAILED -- ${err.message} [${sessionLabel}]`);
                         }
                         throw err;
                     },

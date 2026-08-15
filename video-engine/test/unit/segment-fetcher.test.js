@@ -235,3 +235,127 @@ describe('SegmentFetcher onError callback', () => {
         expect(errors[0].message).toBe('upstream 500');
     });
 });
+
+describe('SegmentFetcher byte-range fetches (local-file SegmentIndex support)', () => {
+    /**
+     * A local-file-shaped SegmentIndex: every segment (and the init region)
+     * shares one whole-file URL, distinguished only by byte range -- the
+     * shape LocalFileMediaSource's mp4box.js-based segmenting produces,
+     * unlike Jellyfin/HLS's distinct-URL-per-segment shape (SEGMENT_INDEX
+     * above), which never sets these fields.
+     */
+    const RANGE_SEGMENT_INDEX = {
+        initSegmentUrl: 'blob:local-file',
+        initByteRangeStart: 0,
+        initByteRangeEnd: 100,
+        segments: [
+            { index: 0, url: 'blob:local-file', byteRangeStart: 100, byteRangeEnd: 500, duration: 3, startTime: 0, endTime: 3 },
+        ],
+    };
+
+    test('fetchSegment sends a Range header derived from byteRangeStart/End when present', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 206, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(RANGE_SEGMENT_INDEX);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            'blob:local-file',
+            expect.objectContaining({ headers: { Range: 'bytes=100-499' } }),
+        );
+    });
+
+    test('fetchSegment throws if a Range request is not honored (200 instead of 206)', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(RANGE_SEGMENT_INDEX);
+
+        await expect(fetcher.fetchSegment(0)).rejects.toThrow(/not honored/i);
+    });
+
+    test('fetchInitSegment sends a Range header derived from initByteRangeStart/End when present', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 206, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(RANGE_SEGMENT_INDEX);
+
+        await fetcher.fetchInitSegment();
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            'blob:local-file',
+            expect.objectContaining({ headers: { Range: 'bytes=0-99' } }),
+        );
+    });
+
+    test('never sends a Range header for a Jellyfin/HLS-shaped SegmentIndex (no byteRange fields)', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        await fetcher.fetchSegment(0);
+        await fetcher.fetchInitSegment();
+
+        for (const call of global.fetch.mock.calls) {
+            expect(call[1]?.headers).toBeUndefined();
+        }
+    });
+});
+
+describe('SegmentFetcher dual-session anchor routing', () => {
+    /** The "behind" session's own segment list -- its own index 0 is whatever absolute time it was negotiated with (see setBehindSession's indexOffset param), never the stream's absolute index 0. */
+    const BEHIND_SESSION_SEGMENTS = [
+        { index: 0, url: 'https://jellyfin.example.com/behind/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+        { index: 1, url: 'https://jellyfin.example.com/behind/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+        { index: 2, url: 'https://jellyfin.example.com/behind/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+    ];
+
+    test('uses the ordinary url for every segment before any seek moves the anchor, even with a behind session installed', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/videos/seg0.m4s', expect.anything());
+    });
+
+    test('fetches below the anchor from the behind session (offset-translated), at or above it from the ordinary url', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(1);
+        // Behind session negotiated starting exactly at the stream's own index 0 -- offset 0, so indices line up 1:1.
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+    });
+
+    test('translates the behind session index by indexOffset when it was negotiated to start later than stream index 0', async () => {
+        // Behind session negotiated to start at the stream's own segment 5 --
+        // its own index 0 corresponds to the stream's index 5, so requesting
+        // the stream's index 5 must resolve to the behind session's index 0.
+        const indexOffset = 5;
+        const fetcher = new SegmentFetcher({
+            initSegmentUrl: 'https://jellyfin.example.com/videos/init.mp4',
+            segments: Array.from({ length: 8 }, (_, i) => ({
+                index: i,
+                url: `https://jellyfin.example.com/forward/seg${i}.m4s`,
+                duration: 3,
+                startTime: i * 3,
+                endTime: (i + 1) * 3,
+            })),
+        });
+        fetcher.setAnchorSegmentIndex(6);
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, indexOffset);
+
+        await fetcher.fetchSegment(5);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+    });
+
+    test('falls back to the ordinary url when the behind session does not (yet) cover a below-anchor index', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(1);
+        // Behind session's own list is empty at this index (offset points past its own array bounds).
+        fetcher.setBehindSession([], 0);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/videos/seg0.m4s', expect.anything());
+    });
+});

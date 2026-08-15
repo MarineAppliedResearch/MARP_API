@@ -309,37 +309,140 @@
             position: absolute;
             right: 0;
             bottom: 52px;
-            width: 280px;
+            width: 235px;
             background: rgba(1, 5, 13, 0.96);
             border: 1px solid var(--border-strong);
             border-radius: 8px;
             box-shadow: var(--glow-cyan);
-            padding: 10px;
+            padding: 5px;
             display: none;
             z-index: 5;
+            max-height: 70vh;
+            overflow-y: auto;
         }
 
         #playerSettingsMenu.open {
             display: block;
         }
 
-        #playerSettingsMenu h2 {
-            margin: 0 0 10px;
-            font-size: 13px;
-            font-weight: normal;
+        /* --- Accordion: a stack of sections, each a header (always
+           visible, toggles its own body) + a body (collapsed by default).
+           At most one body is open at a time -- see app.js's
+           applyOpenSettingsSection(). No separate "back" affordance is
+           needed since nothing ever navigates away from this list. --- */
+        .settings-section + .settings-section {
+            border-top: 1px solid var(--border);
+        }
+
+        /* Scoped under #playerSettingsMenu (id + class beats the generic
+           ".controls-row button" rule's class+tag specificity) -- without
+           this, that rule's 26px font-size/padding, meant for the
+           play/pause-style transport icons, quietly wins the cascade for
+           every button nested in here, since this whole menu lives inside
+           .controls-row in the DOM. */
+        #playerSettingsMenu .settings-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            background: none;
+            border: none;
             color: var(--cyan-300);
+            font-size: 12.5px;
+            font-weight: 600;
+            padding: 7px 6px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        #playerSettingsMenu .settings-section-header:hover {
+            background: var(--navy-850);
+        }
+
+        /* Chevron flips to point down once its section is expanded. */
+        #playerSettingsMenu .settings-section-header::after {
+            content: '\276F';
+            font-size: 9px;
+            color: var(--faint);
+            transition: transform 0.15s ease;
+        }
+
+        #playerSettingsMenu .settings-section-header.expanded::after {
+            transform: rotate(90deg);
+        }
+
+        .settings-section-body {
+            padding: 2px 6px 8px;
+        }
+
+        .settings-section-body.hidden {
+            display: none;
         }
 
         .settings-group {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-            margin-bottom: 10px;
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+
+        .settings-group label {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 2px;
+            font-size: 10.5px;
+            color: var(--muted);
         }
 
         .settings-actions {
             display: flex;
-            gap: 8px;
+            gap: 6px;
+        }
+
+        #playerSettingsMenu .settings-actions button {
+            font-size: 12px;
+            padding: 4px 8px;
+        }
+
+        #playerSettingsMenu .quality-option {
+            display: block;
+            width: 100%;
+            text-align: left;
+            background: none;
+            border: none;
+            color: var(--text);
+            font-size: 12px;
+            padding: 5px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        #playerSettingsMenu .quality-option:hover {
+            background: var(--navy-850);
+            color: var(--cyan-300);
+        }
+
+        #playerSettingsMenu .quality-option.selected {
+            background: rgba(167, 236, 53, 0.12);
+            color: var(--green-400);
+        }
+
+        .settings-status {
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+
+        #playerSettingsMenu input[type="text"],
+        #playerSettingsMenu input[type="password"] {
+            width: 100%;
+            box-sizing: border-box;
+            background: var(--navy-950);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-size: 12px;
+            padding: 4px 6px;
+            border-radius: 4px;
         }
 
         /* min-width/height keeps a real >=44px touch target even though
@@ -384,16 +487,6 @@
 <body>
     <h1>Marp Video Player Engine -- Test Harness (not part of the annotation tool; validates the WebCodecs engine before it's copied into the C# project)</h1>
 
-    <div class="controls">
-        <label>Jellyfin item id: <input id="itemIdInput" type="text" size="34" value="d29df7a1ef91ab295654645cee2fbf34"></label>
-        <!-- Dev/test-harness default only -- a real service credential,
-             hardcoded here at the user's explicit request despite the
-             git-history/credential-leak risk being raised first. Rotate
-             this token if this repo's visibility or access ever changes. -->
-        <label>Bearer token: <input id="tokenInput" type="text" size="48" value="svc_OKqD5JBHB3ozJMYpw6MIutGX8Sfl0XT3c1zqI7oz1Mg" placeholder="svc_... (optional -- Jellyfin V2 routes are unauthenticated today)"></label>
-        <button id="loadButton">Load</button>
-    </div>
-
     <div id="playerContainer" tabindex="0">
         <canvas id="canvas" width="960" height="540"></canvas>
         <img id="placeholderLogo" src="dist/assets/marp-mark.png" alt="">
@@ -416,21 +509,75 @@
                 <span id="speedDisplay">1x</span>
                 <div class="controls-spacer"></div>
                 <div id="playerSettingsAnchor">
-                    <button id="playerSettingsButton" disabled>&#9881;</button>
+                    <button id="playerSettingsButton">&#9881;</button>
                     <div id="playerSettingsMenu">
-                        <h2>Player Settings</h2>
-                        <div class="settings-group">
-                            <label>Raw cache (GiB):
-                                <input id="rawCacheGiBInput" type="number" min="0.25" step="0.25" value="3" disabled>
-                            </label>
-                            <label>Decoded cache (GiB):
-                                <input id="decodedCacheGiBInput" type="number" min="0.25" step="0.25" value="3" disabled>
-                            </label>
+                        <!-- Compact accordion: each header toggles its own body in
+                             place, at most one open at a time -- no drill-down/back
+                             navigation. The player works from just this canvas
+                             section -- nothing (login, item loading, quality, debug
+                             settings) lives outside #playerContainer. -->
+                        <div class="settings-section">
+                            <button class="settings-section-header" data-section="settingsLoginBody">Server / Login</button>
+                            <div id="settingsLoginBody" class="settings-section-body hidden">
+                                <div id="loginStatus" class="settings-status">Not signed in.</div>
+                                <div class="settings-group">
+                                    <label>Server URL
+                                        <input id="jellyfinServerUrlInput" type="text" placeholder="http://host:port">
+                                    </label>
+                                    <label>Username
+                                        <input id="jellyfinUsernameInput" type="text">
+                                    </label>
+                                    <label>Password
+                                        <input id="jellyfinPasswordInput" type="password">
+                                    </label>
+                                </div>
+                                <div class="settings-actions">
+                                    <button id="jellyfinLoginButton">Sign in</button>
+                                    <button id="jellyfinLogoutButton">Sign out</button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="settings-actions">
-                            <button id="applyCacheSettingsButton" disabled>Apply</button>
-                            <button id="readCacheSettingsButton" disabled>Refresh</button>
-                            <button id="dumpEngineStateButton" disabled>Dump State</button>
+
+                        <div class="settings-section">
+                            <button class="settings-section-header" data-section="settingsLoadItemBody">Load Item</button>
+                            <div id="settingsLoadItemBody" class="settings-section-body hidden">
+                                <div class="settings-group">
+                                    <label>Jellyfin item id
+                                        <input id="itemIdInput" type="text" value="fb6a3c0fbd5e073d40e0840b9a54b79c">
+                                    </label>
+                                </div>
+                                <div class="settings-actions">
+                                    <button id="loadButton">Load</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <button class="settings-section-header" data-section="settingsQualityBody">Quality</button>
+                            <div id="settingsQualityBody" class="settings-section-body hidden">
+                                <div id="qualityOptionsList" class="settings-group">
+                                    <span class="settings-status">Load an item first.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <button class="settings-section-header" data-section="settingsAdvancedBody">Advanced</button>
+                            <div id="settingsAdvancedBody" class="settings-section-body hidden">
+                                <div class="settings-group">
+                                    <label>Raw cache (GiB)
+                                        <input id="rawCacheGiBInput" type="number" min="0.25" step="0.25" value="3" disabled>
+                                    </label>
+                                    <label>Decoded cache (GiB)
+                                        <input id="decodedCacheGiBInput" type="number" min="0.25" step="0.25" value="3" disabled>
+                                    </label>
+                                </div>
+                                <div class="settings-actions">
+                                    <button id="applyCacheSettingsButton" disabled>Apply</button>
+                                    <button id="readCacheSettingsButton" disabled>Refresh</button>
+                                    <button id="dumpEngineStateButton" disabled>Dump State</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

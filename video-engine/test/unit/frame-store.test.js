@@ -113,6 +113,36 @@ describe('FrameStore eviction', () => {
     });
 });
 
+describe('FrameStore#close', () => {
+    test('closes every cached VideoFrame, clears the cache, and closes the shared GopDecoder', () => {
+        // Regression test: close() previously left the shared GopDecoder's
+        // VideoDecoder open, so a replaced engine's old decoder kept
+        // running (and consuming CPU/decode throughput) alongside the new
+        // engine's own decoder -- confirmed live as a multi-second delay
+        // between "closing previous engine" and the new engine being ready.
+        const gopDecoder = { close: jest.fn() };
+        const frameStore = new FrameStore({
+            segmentFetcher: {},
+            gopDecoder,
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            segmentDuration: 3,
+            cacheBudgetBytes: 1,
+        });
+        const buffers = { 0: makeGopBuffer(2), 1: makeGopBuffer(2) };
+        frameStore.buffers.set(0, buffers[0]);
+        frameStore.buffers.set(1, buffers[1]);
+
+        frameStore.close();
+
+        expect(frameStore.buffers.size).toBe(0);
+        buffers[0].frames.forEach((frame) => expect(frame.close).toHaveBeenCalledTimes(1));
+        buffers[1].frames.forEach((frame) => expect(frame.close).toHaveBeenCalledTimes(1));
+        expect(gopDecoder.close).toHaveBeenCalledTimes(1);
+    });
+});
+
 /**
  * Builds a fake Tier 1 (SegmentFetcher) whose raw bytes are always
  * present for `cachedIndices` and never present otherwise -- enough for

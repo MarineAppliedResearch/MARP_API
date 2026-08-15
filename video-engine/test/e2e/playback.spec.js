@@ -96,6 +96,38 @@ test.describe('video-engine playback', () => {
         // since the homepage has no such button) and was first
         // misdiagnosed as needing a longer timeout instead.
         await page.goto('', { waitUntil: 'load' });
+
+        // loadItem() (app.js) now requires an authenticated JellyfinClient
+        // before it will do anything -- added by the direct-browser
+        // JellyfinClient/MediaSource refactor (#36 phase 4). A fresh
+        // Playwright page has no stored session, so this suite must sign
+        // in first or every test here fails identically with "sign in to
+        // a Jellyfin server first", not a real playback problem.
+        const serverUrl = process.env.VIDEO_ENGINE_TEST_JELLYFIN_URL;
+        const username = process.env.VIDEO_ENGINE_TEST_JELLYFIN_USERNAME;
+        const password = process.env.VIDEO_ENGINE_TEST_JELLYFIN_PASSWORD;
+        if (!serverUrl || !username || !password) {
+            throw new Error(
+                'VIDEO_ENGINE_TEST_JELLYFIN_URL/USERNAME/PASSWORD must be set (see .env) to run this suite.'
+            );
+        }
+        // The login fields live inside the gear menu's "Server / Login"
+        // accordion section, hidden until the gear button opens the menu
+        // (that section is expanded by default once open, per app.js's
+        // openSettingsSectionId initial value).
+        await page.click('#playerSettingsButton');
+        await page.fill('#jellyfinServerUrlInput', serverUrl);
+        await page.fill('#jellyfinUsernameInput', username);
+        await page.fill('#jellyfinPasswordInput', password);
+        await page.click('#jellyfinLoginButton');
+        await page.waitForFunction(
+            () => document.getElementById('loginStatus').textContent.startsWith('Signed in'),
+            { timeout: 15_000 }
+        );
+
+        // Loading requires opening the "Load Item" accordion section too --
+        // "Server / Login" is the only one expanded by default.
+        await page.click('[data-section="settingsLoadItemBody"]');
         await page.click('#loadButton');
         await page.waitForFunction(
             () => document.getElementById('playPauseButton') && !document.getElementById('playPauseButton').disabled,

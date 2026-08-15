@@ -17,8 +17,11 @@ import { Scheduler } from './scheduler.js';
 import { CanvasRenderer } from './canvas-renderer.js';
 import { MarpVideoShim } from './marp-video-shim.js';
 import { attachWebView2Bridge } from './webview2-bridge.js';
+import { JellyfinClient } from './jellyfin-client.js';
+import { MediaSource, JellyfinMediaSource } from './media-source.js';
+import { getQualityOptions } from './quality-options.js';
 
-export { attachWebView2Bridge };
+export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource, getQualityOptions };
 
 /**
  * Creates a frame-accurate bidirectional playback engine over a Jellyfin
@@ -32,11 +35,12 @@ export { attachWebView2Bridge };
  * @param {Object} [options.fetchOptions] - Extra fetch() options (e.g. `{headers: {Authorization: 'Bearer ...'}}`) applied to every request this engine makes.
  * @param {number} [options.cacheBudgetBytes] - Decoded-frame LRU cache budget in bytes. Default 3 GiB.
  * @param {number} [options.rawSegmentCacheBudgetBytes] - Raw-segment cache budget in bytes. Default 3 GiB.
- * @returns {Promise<Object>} A {@link module:video-engine/marp-video-shim.MarpVideoShim} instance.
+ * @param {number} [options.maxConcurrentFetches] - Ceiling on simultaneously in-flight raw segment fetches. Default 6, suitable for a source that supports true random access (e.g. a static file server). A source backed by a single sequential live producer (e.g. Jellyfin's on-the-fly HLS transcoder) should pass a much lower value -- see scheduler.js's DEFAULT_MAX_CONCURRENT_TIER1_FETCHES doc comment for why.
+ * @returns {Promise<Object>} A {@link module:video-engine/marp-video-shim.MarpVideoShim} instance, with an added `setBehindSession(behindStreamUrl, behindStartTimeSeconds)` method -- see its own doc comment below.
  * @throws {Error} When the stream can't be loaded or the first segment decodes zero frames.
  */
 export async function createMarpVideoEngine(canvas, options) {
-    const { streamUrl, fetchOptions, cacheBudgetBytes, rawSegmentCacheBudgetBytes } = options;
+    const { streamUrl, fetchOptions, cacheBudgetBytes, rawSegmentCacheBudgetBytes, maxConcurrentFetches } = options;
 
     // Logged at each stage (not just on final success/failure) so a stall
     // in any one step -- e.g. a hung fetch() -- is immediately localized
@@ -44,6 +48,7 @@ export async function createMarpVideoEngine(canvas, options) {
     console.log('[video-engine] loading playlist...');
     const segmentIndex = await loadSegmentIndex(streamUrl, { fetchOptions });
     console.log(`[video-engine] playlist loaded: ${segmentIndex.segments.length} segments, ${segmentIndex.totalDuration.toFixed(3)}s`);
+    console.log(`[video-engine] max concurrent segment fetches: ${maxConcurrentFetches || '(engine default)'}`);
 
     let shim = null;
     const segmentFetcher = new SegmentFetcher(segmentIndex, {
@@ -132,6 +137,7 @@ export async function createMarpVideoEngine(canvas, options) {
         segmentIndex,
         frameStore,
         canvasRenderer,
+        maxConcurrentTier1Fetches: maxConcurrentFetches,
         emit: (type, detail) => {
             if (type === 'error') {
                 console.error('Scheduler emitted "error"', detail && detail.error);
@@ -147,6 +153,36 @@ export async function createMarpVideoEngine(canvas, options) {
     });
 
     shim = new MarpVideoShim(scheduler, { videoWidth, videoHeight, fps });
+
+    /**
+     * Negotiates (or replaces) the "behind" session -- a second,
+     * independent Jellyfin transcode session started earlier than the
+     * current seek anchor via StartTimeTicks, so its own ffmpeg process
+     * only ever sweeps forward through the anchor's behind-region instead
+     * of restarting on every backward segment request (confirmed live:
+     * even one segment behind an already-warm session's position costs a
+     * multi-second restart, regardless of session dedication -- the fix
+     * is a session that never itself needs to move backward).
+     *
+     * Call this once per seek (e.g. from a 'seeked' listener), after the
+     * seek has already landed -- this only affects opportunistic
+     * background fetches for indices below the anchor, never the seek's
+     * own target-segment fetch. Safe to call repeatedly; a newer call's
+     * result simply replaces the previous behind session once it
+     * resolves (callers should discard a stale in-flight call themselves
+     * if a newer seek has already superseded it, the same way
+     * Scheduler#seek's own generation counter works).
+     *
+     * @async
+     * @param {string} behindStreamUrl - A second stream-negotiation URL, negotiated with StartTimeTicks = behindStartTimeSeconds.
+     * @param {number} behindStartTimeSeconds - The exact start time (in seconds) that URL was negotiated with -- used to compute the index offset between the two sessions' own segment numbering.
+     * @returns {Promise<void>}
+     */
+    shim.setBehindSession = async (behindStreamUrl, behindStartTimeSeconds) => {
+        const behindSegmentIndex = await loadSegmentIndex(behindStreamUrl, { fetchOptions });
+        const indexOffset = Math.round(behindStartTimeSeconds / segmentIndex.segments[0].duration);
+        segmentFetcher.setBehindSession(behindSegmentIndex.segments, indexOffset);
+    };
 
     // Prime the first displayed frame and fire the initial metadata
     // events, matching a real <video> element's loadedmetadata/

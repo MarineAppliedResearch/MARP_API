@@ -142,6 +142,7 @@ function makeRecordingTiers({
         hasInFlightFetch: () => false,
         getInFlightFetchCount: () => 0,
         preemptInFlightFetches: () => {},
+        setAnchorSegmentIndex: () => {},
         ensureRawBytes: (index) => {
             fetchedIndices.push(index);
             return Promise.resolve();
@@ -512,6 +513,7 @@ function makeControllableFrameStore() {
         getInFlightFetchCount: () => 0,
         setProtectedRawSegments: () => {},
         preemptInFlightFetches: () => {},
+        setAnchorSegmentIndex: () => {},
         ensureRawBytes(index, { signal } = {}) {
             return new Promise((resolve, reject) => {
                 calls.push({ index, signal, resolve, reject });
@@ -657,6 +659,7 @@ function makeSeekableRecordingFrameStore(segmentDurationSeconds) {
         getInFlightFetchCount: () => 0,
         setProtectedRawSegments: () => {},
         preemptInFlightFetches: () => {},
+        setAnchorSegmentIndex: () => {},
         ensureRawBytes(index) {
             fetchedIndices.push(index);
             return Promise.resolve();
@@ -734,6 +737,7 @@ describe('Scheduler#seek preempts lower-priority in-flight fetches', () => {
             getInFlightFetchCount: () => 0,
             setProtectedRawSegments: () => {},
             preemptInFlightFetches: (keepIndices) => preemptCalls.push([...keepIndices]),
+            setAnchorSegmentIndex: () => {},
             ensureRawBytes: (index) => {
                 if (!buffers.has(index)) {
                     buffers.set(index, { frames: [{ timestamp: Math.round(index * 3 * 1e6) }] });
@@ -1227,5 +1231,48 @@ describe('Scheduler reverse boundary continuity', () => {
 
             previousShownTime = shownTime;
         }
+    });
+});
+
+describe('Scheduler#close', () => {
+    test('stops the paused fill worker, aborts every in-flight fetch, and closes the frame store -- and does not let pause() resurrect the worker', () => {
+        // Regression test: close() used to call pause(), which
+        // unconditionally restarts the paused-fill worker after running
+        // one more cache pass -- silently undoing the _stopPausedFillWorker()
+        // call right before it, so the old engine's 500ms background cache
+        // pass (and its ensureDecoded/fetch calls against an
+        // already-closed decoder/aborted fetcher) never actually stopped.
+        // Confirmed live as a multi-second delay before a replaced engine
+        // became ready, caused by the old engine still actively decoding.
+        jest.useFakeTimers();
+        const preemptInFlightFetches = jest.fn();
+        const close = jest.fn();
+        const scheduler = new Scheduler({
+            segmentIndex: { totalDuration: 100, segments: [{ index: 0, startTime: 0, endTime: 10 }] },
+            frameStore: { buffers: new Map(), segmentFetcher: { preemptInFlightFetches }, close },
+            canvasRenderer: { onFramePresented: () => {}, canvas: { width: 0, height: 0 } },
+            emit: () => {},
+        });
+
+        // Simulate a playing engine with its paused-fill worker not
+        // running yet (matches real usage: close() is called on an
+        // engine that may currently be playing).
+        scheduler.playing = true;
+        scheduler._startPausedFillWorker();
+
+        scheduler.close();
+
+        expect(preemptInFlightFetches).toHaveBeenCalledWith([]);
+        expect(close).toHaveBeenCalledTimes(1);
+        expect(scheduler._pausedIntervalHandle).toBeNull();
+
+        // Advance well past one 500ms fill interval -- if pause()'s
+        // restart-the-worker side effect leaked through, this would fire
+        // another cache pass here.
+        const runCachePassSpy = jest.spyOn(scheduler, '_runCachePass');
+        jest.advanceTimersByTime(2000);
+        expect(runCachePassSpy).not.toHaveBeenCalled();
+
+        jest.useRealTimers();
     });
 });
