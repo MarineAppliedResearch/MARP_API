@@ -815,6 +815,19 @@ export class Scheduler {
         fetcher.setProtectedRawSegments(protectedIndices);
 
         for (const index of protectedIndices) {
+            // The concurrency ceiling applies here too, not just to the
+            // opportunistic loop below. A source backed by a single
+            // sequential transcoder (Jellyfin) answers one request at a
+            // time; firing the whole floor at it concurrently made those
+            // requests race each other's transcoder restarts, which is
+            // what produced the transient 500s seen live. Confirmed
+            // against the real server: a lone backward or far-forward
+            // request never fails, it just costs a restart (~2-3s, with
+            // the NEXT request paying up to ~15s) -- only concurrent ones
+            // fail.
+            if (fetcher.getInFlightFetchCount() >= this._maxConcurrentTier1Fetches) {
+                return;
+            }
             // hasInFlightFetch() skip: this pass runs on every render
             // tick (dozens of times a second) -- without it, a segment
             // whose real fetch is still pending gets a harmless-but-
@@ -825,9 +838,17 @@ export class Scheduler {
             }
         }
 
+        // Whether each side of the playhead has hit something it cannot
+        // fetch yet. Once a side is blocked, this pass stops considering
+        // candidates further out on that side instead of stepping over
+        // them -- see the comment on the `blocked` assignment below.
+        const centerIndex = this.currentSegmentIndex;
+        let forwardBlocked = false;
+        let backwardBlocked = false;
+
         let launched = 0;
         for (const index of opportunisticOrder) {
-            if (launched >= pacingCap) {
+            if (launched >= pacingCap || (forwardBlocked && backwardBlocked)) {
                 break;
             }
             // Concurrency ceiling: an unbounded background frontier must
@@ -837,17 +858,40 @@ export class Scheduler {
             if (fetcher.getInFlightFetchCount() >= this._maxConcurrentTier1Fetches) {
                 break;
             }
-            if (fetcher.hasRawBytes(index) || fetcher.isFetchInBackoff(index) || fetcher.hasInFlightFetch(index)) {
+
+            const isForwardSide = index > centerIndex;
+            if (isForwardSide ? forwardBlocked : backwardBlocked) {
                 continue;
             }
-            // Skip indices no live session can serve without seeking its
-            // own transcode backward (which restarts it) -- they become
-            // reachable once the behind session is re-anchored further
-            // back. Opportunistic only: the protected floor above still
-            // fetches unconditionally, since those frames are needed now.
-            if (fetcher.isBehindCoverageGap(index)) {
+
+            // Already handled: cached needs nothing, in-flight is already
+            // being fetched. Step over these -- they do not block the
+            // frontier, they ARE the frontier advancing.
+            if (fetcher.hasRawBytes(index) || fetcher.hasInFlightFetch(index)) {
                 continue;
             }
+
+            // Genuinely unavailable right now: recently failed, or no live
+            // session can serve it without seeking its own transcode
+            // backward. Block this side rather than stepping outward past
+            // it. Stepping outward is what starved the playhead: with only
+            // one fetch slot against Jellyfin, the scan walked past
+            // backed-off near segments and spent the slot on distant ones
+            // that were already transcoded to disk (confirmed live at
+            // ~59ms each), so far islands filled while the island around
+            // the playhead stayed empty. Waiting is the intended
+            // behaviour -- backoff is short, and the pass reruns every
+            // tick, so the frontier resumes the moment the near segment
+            // is fetchable again.
+            if (fetcher.isFetchInBackoff(index) || fetcher.isBehindCoverageGap(index)) {
+                if (isForwardSide) {
+                    forwardBlocked = true;
+                } else {
+                    backwardBlocked = true;
+                }
+                continue;
+            }
+
             fetcher.ensureRawBytes(index).catch(() => {});
             launched++;
         }

@@ -65,14 +65,33 @@ async function detachFromHardwareSurface(frame) {
         const buffer = new Uint8Array(frame.allocationSize());
         await frame.copyTo(buffer);
 
-        return new VideoFrame(buffer, {
-            format: frame.format,
-            codedWidth: width,
-            codedHeight: height,
-            timestamp: frame.timestamp,
-            duration: frame.duration ?? undefined,
-            colorSpace: frame.colorSpace,
-        });
+        try {
+            return new VideoFrame(buffer, {
+                format: frame.format,
+                codedWidth: width,
+                codedHeight: height,
+                timestamp: frame.timestamp,
+                duration: frame.duration ?? undefined,
+                colorSpace: frame.colorSpace,
+            });
+        } catch (err) {
+            // Called out explicitly because it otherwise surfaces as a
+            // generic "segment failure" that reads like a decode or
+            // network problem, when it is neither: decoding worked, and
+            // the browser simply refused to hand out another frame
+            // buffer. Every cached frame holds its own buffer, so the
+            // decoded-frame cache budget translates almost directly into
+            // live VideoFrame memory -- a budget of several GB asks for
+            // thousands of simultaneous buffers, and Chrome caps the
+            // shared-memory regions backing them per renderer regardless
+            // of how much RAM the machine has.
+            console.error(
+                `[gop-decoder] FRAME ALLOCATION FAILED (${frame.format} ${width}x${height}): ${err.message}. ` +
+                    'The browser refused to allocate another VideoFrame -- decoding itself is fine. ' +
+                    'This is the decoded-frame cache budget exceeding what this browser can allocate; lower it.',
+            );
+            throw err;
+        }
     } finally {
         frame.close();
     }

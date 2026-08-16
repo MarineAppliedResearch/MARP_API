@@ -319,6 +319,81 @@ describe('Scheduler#_runCachePass', () => {
         expect(Math.max(...priority) - Math.min(...priority)).toBeLessThan(30);
     });
 
+    test('does not step over a backed-off near segment to fetch a distant one', () => {
+        // The starvation bug behind "the island around my playhead isn't
+        // caching while other islands are." With a single fetch slot (as
+        // Jellyfin requires), the scan used to walk past near segments that
+        // were temporarily in backoff and spend that slot far away -- where
+        // segments were already transcoded to disk and returned in ~59ms,
+        // so distant islands filled fast while the playhead's own
+        // neighbourhood stayed empty. Waiting is correct: backoff is short
+        // and this pass reruns every tick.
+        const nearestBackwardCandidate = Math.min(...computeProtectedFloor(100, 200, 3)) - 1;
+        const { frameStore, fetchedIndices } = makeRecordingTiers({
+            rawBytesIndices: new Set(),
+            fetchBackoffIndices: new Set([nearestBackwardCandidate]),
+        });
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.currentSegmentIndex = 100;
+        scheduler.playbackRate = -8;
+        scheduler._lastDirectionSign = -1;
+
+        scheduler._runCachePass(300, { symmetric: false }); // segment 100
+
+        // Nothing further back than the blocked segment was fetched.
+        const backwardFetches = fetchedIndices.filter((index) => index < nearestBackwardCandidate);
+        expect(backwardFetches).toEqual([]);
+    });
+
+    test('applies the concurrency ceiling to the protected floor, not just opportunistic fetches', () => {
+        // Jellyfin's HLS transcoder answers one request at a time per
+        // session. Firing the whole protected floor at it concurrently made
+        // those requests race each other's transcoder restarts, which is
+        // what produced the transient 500s -- a lone backward/far request
+        // never fails, only concurrent ones do.
+        const fetchedIndices = [];
+        const frameStore = {
+            segmentFetcher: {
+                hasRawBytes: () => false,
+                isFetchInBackoff: () => false,
+                hasInFlightFetch: () => false,
+                // Already saturated: one fetch is in flight and the ceiling is 1.
+                getInFlightFetchCount: () => 1,
+                isBehindCoverageGap: () => false,
+                preemptInFlightFetches: () => {},
+                setAnchorSegmentIndex: () => {},
+                ensureRawBytes: (index) => {
+                    fetchedIndices.push(index);
+                    return Promise.resolve();
+                },
+                setProtectedRawSegments: () => {},
+            },
+            maxSegmentsBuffered: 100,
+            has: () => false,
+            isDecodeInBackoff: () => false,
+            ensureDecoded: () => Promise.resolve(),
+            setPinned: () => {},
+            setEvictionPriority: () => {},
+            buffers: new Map(),
+        };
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            maxConcurrentTier1Fetches: 1,
+            emit: () => {},
+        });
+
+        scheduler._runCachePass(300, { symmetric: false });
+
+        expect(fetchedIndices).toEqual([]);
+    });
+
     test('opportunistic prefetch skips indices no live session can serve without a backward seek', () => {
         // Jellyfin transcodes strictly forward: asking any session for a
         // segment before where its own ffmpeg process started kills and
