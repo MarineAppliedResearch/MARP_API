@@ -116,6 +116,7 @@ function makeUniformSegmentIndex(count, duration) {
  * @param {Set<number>} [opts.rawBytesIndices] - Segment indices to report as already raw-cached; if omitted, every index reports true (Tier 2 is never gated in that case).
  * @param {Set<number>} [opts.fetchBackoffIndices] - Segment indices isFetchInBackoff() should report true for.
  * @param {Set<number>} [opts.decodeBackoffIndices] - Segment indices isDecodeInBackoff() should report true for.
+ * @param {Set<number>} [opts.behindCoverageGapIndices] - Segment indices isBehindCoverageGap() should report true for (no live session can serve them without a backward seek).
  * @param {number} [opts.maxSegmentsBuffered] - Tier 2 decode budget; defaults to effectively unbounded.
  * @returns {Object} `{frameStore, decodedIndices, fetchedIndices, pinnedSnapshots, protectedRawSnapshots}`.
  */
@@ -123,6 +124,7 @@ function makeRecordingTiers({
     rawBytesIndices = null,
     fetchBackoffIndices = new Set(),
     decodeBackoffIndices = new Set(),
+    behindCoverageGapIndices = new Set(),
     maxSegmentsBuffered = Number.MAX_SAFE_INTEGER,
 } = {}) {
     const decodedIndices = [];
@@ -143,6 +145,7 @@ function makeRecordingTiers({
         getInFlightFetchCount: () => 0,
         preemptInFlightFetches: () => {},
         setAnchorSegmentIndex: () => {},
+        isBehindCoverageGap: (index) => behindCoverageGapIndices.has(index),
         ensureRawBytes: (index) => {
             fetchedIndices.push(index);
             return Promise.resolve();
@@ -171,6 +174,78 @@ function makeRecordingTiers({
 
     return { frameStore, decodedIndices, fetchedIndices, pinnedSnapshots, protectedRawSnapshots };
 }
+
+describe('Scheduler content-mismatch detection', () => {
+    /**
+     * Builds a scheduler whose current segment holds one decoded frame at
+     * `frameTimestampSeconds`, so a presented frame's own timestamp can be
+     * driven independently of the segment grid it is presented under.
+     *
+     * @param {number} frameTimestampSeconds - The decoded frame's own timestamp, in seconds.
+     * @param {number} segmentIndexNumber - Segment index to present it as.
+     * @returns {Object} `{scheduler, emitted}`.
+     */
+    function makeSchedulerWithFrameAt(frameTimestampSeconds, segmentIndexNumber) {
+        const emitted = [];
+        const frames = [{ timestamp: frameTimestampSeconds * 1e6, displayWidth: 1280, displayHeight: 720 }];
+        const { frameStore } = makeRecordingTiers();
+        frameStore.buffers = new Map([[segmentIndexNumber, { frames }]]);
+
+        const segmentIndex = makeUniformSegmentIndex(500, 3);
+        const scheduler = new Scheduler({
+            segmentIndex,
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {}, canvas: { width: 1280, height: 720 } },
+            emit: (type, detail) => emitted.push({ type, detail }),
+        });
+        scheduler.currentSegmentIndex = segmentIndexNumber;
+        scheduler.currentFrameIdx = 0;
+        // The engine reports the time derived from the SEGMENT GRID, which
+        // is the whole point: it stays self-consistent no matter what
+        // content the segment actually holds, so only the decoded frame's
+        // own timestamp can contradict it.
+        scheduler._presentedMediaTime = segmentIndex.segments[segmentIndexNumber].startTime;
+        scheduler.requestVideoFrameCallback(() => {});
+        return { scheduler, emitted };
+    }
+
+    test('warns when a presented frame\'s own timestamp does not match the time being reported for it', () => {
+        // The exact shape of the real bug: absolute segment 375 (1125s)
+        // was served bytes from 24s and presented as 1125s. Every number
+        // the engine derived stayed self-consistent, because mediaTime
+        // comes from the segment grid rather than the decoded bytes --
+        // the frame's own timestamp is the only independent signal.
+        const { scheduler, emitted } = makeSchedulerWithFrameAt(24.08, 375);
+
+        scheduler._dispatchFrameCallbacks();
+
+        const mismatch = emitted.find((event) => event.type === 'debug' && /CONTENT MISMATCH/.test(event.detail.message));
+        expect(mismatch).toBeDefined();
+        expect(mismatch.detail.message).toContain('segment 375');
+    });
+
+    test('stays silent for the ordinary sub-second offset between a segment\'s start and its first real frame', () => {
+        // A segment's first frame routinely sits ~80ms off its declared
+        // start with this transcoder -- that is normal, not a mismatch.
+        const { scheduler, emitted } = makeSchedulerWithFrameAt(1125.08, 375);
+
+        scheduler._dispatchFrameCallbacks();
+
+        expect(emitted.find((event) => event.type === 'debug' && /CONTENT MISMATCH/.test(event.detail.message))).toBeUndefined();
+    });
+
+    test('warns once per segment, not once per frame', () => {
+        const { scheduler, emitted } = makeSchedulerWithFrameAt(24.08, 375);
+
+        scheduler.requestVideoFrameCallback(() => {});
+        scheduler._dispatchFrameCallbacks();
+        scheduler.requestVideoFrameCallback(() => {});
+        scheduler._dispatchFrameCallbacks();
+
+        const mismatches = emitted.filter((event) => event.type === 'debug' && /CONTENT MISMATCH/.test(event.detail.message));
+        expect(mismatches).toHaveLength(1);
+    });
+});
 
 describe('Scheduler#_runCachePass', () => {
     test('forward: pins and decodes the protected floor, skewed 2x toward the direction of travel beyond it', () => {
@@ -201,6 +276,61 @@ describe('Scheduler#_runCachePass', () => {
 
         expect(beyondForward.length).toBeGreaterThan(0);
         expect(beyondForward.length).toBe(beyondBackward.length * 2);
+    });
+
+    test('opportunistic prefetch skips indices no live session can serve without a backward seek', () => {
+        // Jellyfin transcodes strictly forward: asking any session for a
+        // segment before where its own ffmpeg process started kills and
+        // restarts that job (seconds of stall, transient 500s). Segments
+        // in that gap become reachable by re-anchoring the behind session
+        // further back, not by fetching them from the forward session --
+        // so the opportunistic pass must leave them alone.
+        const protectedFloor = computeProtectedFloor(100, 200, 3);
+        const floorMin = Math.min(...protectedFloor);
+
+        // The highest-priority backward candidates -- the ones immediately
+        // below the protected floor. Reverse playback fetches these first,
+        // so if they are skipped, it is the coverage-gap check doing it and
+        // nothing else. Kept to two, since one pass's pacing cap only
+        // launches that many opportunistic fetches (asserted by the control
+        // below, which would fail if this assumption ever changed).
+        const gapIndices = new Set([floorMin - 1, floorMin - 2]);
+
+        const withGaps = makeRecordingTiers({
+            rawBytesIndices: new Set(),
+            behindCoverageGapIndices: gapIndices,
+        });
+        const schedulerWithGaps = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore: withGaps.frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        schedulerWithGaps.playbackRate = -1;
+        schedulerWithGaps._lastDirectionSign = -1;
+        schedulerWithGaps._runCachePass(300, { symmetric: false }); // segment 100
+
+        for (const gapIndex of gapIndices) {
+            expect(withGaps.fetchedIndices).not.toContain(gapIndex);
+        }
+
+        // Control: the identical pass with no coverage gap declared DOES
+        // fetch those same indices -- so the assertion above is proving the
+        // skip, not merely that the pass never reached them.
+        const noGaps = makeRecordingTiers({ rawBytesIndices: new Set() });
+        const schedulerNoGaps = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore: noGaps.frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        schedulerNoGaps.playbackRate = -1;
+        schedulerNoGaps._lastDirectionSign = -1;
+        schedulerNoGaps._runCachePass(300, { symmetric: false });
+
+        for (const gapIndex of gapIndices) {
+            expect(noGaps.fetchedIndices).toContain(gapIndex);
+        }
     });
 
     test('reverse: skew flips to favor lower segment indices', () => {
@@ -355,6 +485,7 @@ describe('Scheduler#_runCachePass', () => {
             isFetchInBackoff: () => false,
             hasInFlightFetch: (index) => pending.has(index),
             getInFlightFetchCount: () => pending.size,
+            isBehindCoverageGap: () => false,
             ensureRawBytes: (index) => {
                 launchedIndices.push(index);
                 pending.add(index);
@@ -442,6 +573,7 @@ describe('Scheduler#_runCachePass', () => {
                 isFetchInBackoff: () => false,
                 hasInFlightFetch: () => false,
                 getInFlightFetchCount: () => 0,
+                isBehindCoverageGap: () => false,
                 ensureRawBytes: () => Promise.reject(new Error('fetch failed')),
                 setProtectedRawSegments: () => {},
             },
@@ -511,6 +643,7 @@ function makeControllableFrameStore() {
         isFetchInBackoff: () => false,
         hasInFlightFetch: () => false,
         getInFlightFetchCount: () => 0,
+        isBehindCoverageGap: () => false,
         setProtectedRawSegments: () => {},
         preemptInFlightFetches: () => {},
         setAnchorSegmentIndex: () => {},
@@ -657,6 +790,7 @@ function makeSeekableRecordingFrameStore(segmentDurationSeconds) {
         isFetchInBackoff: () => false,
         hasInFlightFetch: () => false,
         getInFlightFetchCount: () => 0,
+        isBehindCoverageGap: () => false,
         setProtectedRawSegments: () => {},
         preemptInFlightFetches: () => {},
         setAnchorSegmentIndex: () => {},
@@ -735,6 +869,7 @@ describe('Scheduler#seek preempts lower-priority in-flight fetches', () => {
             isFetchInBackoff: () => false,
             hasInFlightFetch: () => false,
             getInFlightFetchCount: () => 0,
+            isBehindCoverageGap: () => false,
             setProtectedRawSegments: () => {},
             preemptInFlightFetches: (keepIndices) => preemptCalls.push([...keepIndices]),
             setAnchorSegmentIndex: () => {},
@@ -815,6 +950,7 @@ describe('Scheduler#_tick stall anchoring', () => {
                 isFetchInBackoff: () => false,
                 hasInFlightFetch: () => false,
                 getInFlightFetchCount: () => 0,
+                isBehindCoverageGap: () => false,
                 ensureRawBytes: () => Promise.resolve(),
                 setProtectedRawSegments: () => {},
             },
@@ -906,6 +1042,7 @@ describe('Scheduler buffering-state signal', () => {
                 isFetchInBackoff: () => false,
                 hasInFlightFetch: () => false,
                 getInFlightFetchCount: () => 0,
+                isBehindCoverageGap: () => false,
                 ensureRawBytes: () => Promise.resolve(),
                 setProtectedRawSegments: () => {},
             },

@@ -80,6 +80,17 @@ const PAUSED_SKEW_RATIO = 1;
 const PAUSED_FILL_INTERVAL_MS = 500;
 
 /**
+ * How far a presented frame's own decoded timestamp may sit from the
+ * mediaTime being reported for it before that counts as a real content
+ * mismatch, in seconds. Generous on purpose: a segment's first frame
+ * routinely sits a fraction of a second off its declared start (an ~80ms
+ * offset is normal for this transcoder), while a genuine mis-route is off
+ * by whole segments or minutes -- so this only needs to separate those
+ * two scales, not measure either precisely.
+ */
+const CONTENT_MISMATCH_TOLERANCE_SECONDS = 1.5;
+
+/**
  * Drives forward/reverse pacing, seeking, and the two-tier cache
  * algorithm against a FrameStore (Tier 2) and its SegmentFetcher (Tier 1),
  * rendering through a CanvasRenderer.
@@ -117,6 +128,10 @@ export class Scheduler {
         this._anchorWallClockMs = 0;
         this._anchorTime = 0;
         this._presentedMediaTime = 0;
+
+        // Last segment index a content-mismatch warning fired for, so a
+        // real mismatch logs once per segment instead of once per frame.
+        this._lastMismatchWarnedSegment = null;
         this._pausedFreezeTime = null;
         this._rafHandle = null;
         this._pausedIntervalHandle = null;
@@ -199,6 +214,57 @@ export class Scheduler {
 
         const offsetMicros = frameTimestampMicros - firstFrame.timestamp;
         return segment.startTime + offsetMicros / 1e6;
+    }
+
+    /**
+     * Warns when a presented frame's own decoded timestamp disagrees with
+     * the time the engine is claiming to display -- i.e. the frame on
+     * screen is not from where the timecode says it is.
+     *
+     * This exists because that failure was, for a long time, undetectable
+     * from the engine's own output. `mediaTime` is derived from the
+     * forward segment grid (see _frameTimestampToMediaTimeSeconds), so it
+     * can never disagree with that grid no matter what content a segment
+     * actually holds; a mis-routed segment served content from a
+     * completely different part of the video while every number the
+     * engine reported looked self-consistent. The frame's raw timestamp
+     * is the one independent signal available, since it comes from the
+     * decoded bytes themselves.
+     *
+     * Warns once per segment rather than per frame -- at 25fps a genuine
+     * mismatch would otherwise emit dozens of identical lines a second
+     * and bury the rest of the log.
+     *
+     * @param {Object} metadata - The frame metadata about to be dispatched to frame callbacks.
+     * @returns {void}
+     */
+    _warnOnContentMismatch(metadata) {
+        if (!Number.isFinite(metadata.rawFrameTime)) {
+            return;
+        }
+
+        const drift = Math.abs(metadata.rawFrameTime - metadata.mediaTime);
+        if (drift <= CONTENT_MISMATCH_TOLERANCE_SECONDS) {
+            return;
+        }
+
+        if (this._lastMismatchWarnedSegment === metadata.segmentIndex) {
+            return;
+        }
+        this._lastMismatchWarnedSegment = metadata.segmentIndex;
+
+        console.warn(
+            `[scheduler] CONTENT MISMATCH on segment ${metadata.segmentIndex}: ` +
+                `mediaTime=${metadata.mediaTime.toFixed(3)}s vs decoded frame timestamp ` +
+                `${metadata.rawFrameTime.toFixed(3)}s (drift ${drift.toFixed(3)}s)`,
+        );
+        this.emit('debug', {
+            message:
+                `[scheduler] CONTENT MISMATCH on segment ${metadata.segmentIndex}: ` +
+                `presenting mediaTime=${metadata.mediaTime.toFixed(3)}s but the decoded frame's own ` +
+                `timestamp is ${metadata.rawFrameTime.toFixed(3)}s (drift ${drift.toFixed(3)}s) -- ` +
+                `this segment's bytes are not from where its timecode claims.`,
+        });
     }
 
     /**
@@ -297,6 +363,8 @@ export class Scheduler {
             frameIndex: this.currentFrameIdx,
             rawFrameTime: currentFrame ? currentFrame.timestamp / 1e6 : NaN,
         };
+
+        this._warnOnContentMismatch(metadata);
 
         const now = performance.now();
         for (const { callback } of toFire) {
@@ -763,6 +831,14 @@ export class Scheduler {
                 break;
             }
             if (fetcher.hasRawBytes(index) || fetcher.isFetchInBackoff(index) || fetcher.hasInFlightFetch(index)) {
+                continue;
+            }
+            // Skip indices no live session can serve without seeking its
+            // own transcode backward (which restarts it) -- they become
+            // reachable once the behind session is re-anchored further
+            // back. Opportunistic only: the protected floor above still
+            // fetches unconditionally, since those frames are needed now.
+            if (fetcher.isBehindCoverageGap(index)) {
                 continue;
             }
             fetcher.ensureRawBytes(index).catch(() => {});
