@@ -212,6 +212,25 @@ export class GopDecoder {
         try {
             await Promise.race([flushPromise, errorPromise, watchdogPromise]);
         } catch (err) {
+            // A watchdog timeout (or an error the decoder itself didn't
+            // fully shut down from) does NOT mean the real VideoDecoder
+            // actually stopped -- it keeps processing this segment's
+            // already-submitted chunks in the background. Left alone, its
+            // late output fires into whatever segment decodes NEXT via the
+            // shared _currentSink (reassigned once this call's queue slot
+            // releases), silently mixing that segment's frames with
+            // leftovers from this one -- confirmed live as the actual
+            // cause of the FRAME ATTRIBUTION MISMATCH check below, and
+            // almost certainly the root cause of "correct index, wrong
+            // picture" reports after fast reverse scrubbing outran decode
+            // throughput. Closing here guarantees no further output can
+            // ever arrive from this instance; _ensureConfigured()
+            // transparently builds a fresh one for the next decodeSegment()
+            // call.
+            if (this._decoder && this._decoder.state !== 'closed') {
+                this._decoder.close();
+            }
+
             // Some frames may already have been decoded and detached to
             // plain memory before the error/stall occurred -- each is a
             // VideoFrame holding real external memory, so leaving them
@@ -234,13 +253,16 @@ export class GopDecoder {
 
         const frames = await Promise.all(framePromises);
 
-        // TEMPORARY DIAGNOSTIC (remove once confirmed/fixed): checks that
-        // this decode call's output frame timestamps are EXACTLY the set
-        // of timestamps we fed in as input chunks -- a mismatch here means
-        // a frame from a DIFFERENT decodeSegment() call leaked into this
-        // one's output (or one of this segment's own frames leaked OUT),
-        // which is the leading suspected cause of "correct index, wrong
-        // picture" skips reported after seeking.
+        // Permanent regression guard (was a temporary diagnostic -- this
+        // confirmed the actual bug fixed above: a watchdog/error failure
+        // leaving the real decoder running in the background, leaking late
+        // output into the next segment via the shared _currentSink). Kept
+        // rather than removed since a recurrence here is exactly as subtle
+        // and hard to reproduce as the original was. Checks that this
+        // decode call's output frame timestamps are EXACTLY the set of
+        // timestamps fed in as input chunks -- a mismatch means a frame
+        // from a DIFFERENT decodeSegment() call leaked into this one's
+        // output (or one of this segment's own frames leaked OUT).
         const expectedTimestamps = new Set(chunks.map((c) => c.timestamp));
         const actualTimestamps = new Set(frames.map((f) => f.timestamp));
         const unexpected = [...actualTimestamps].filter((t) => !expectedTimestamps.has(t));

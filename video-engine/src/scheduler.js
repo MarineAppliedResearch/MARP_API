@@ -567,8 +567,12 @@ export class Scheduler {
     }
 
     /**
-     * Emits 'waiting'/'playing' on an actual state transition only,
-     * matching the real HTMLMediaElement contract -- not every tick.
+     * Emits 'waiting'/'playing'/'canplay' on an actual state transition
+     * only, matching the real HTMLMediaElement contract -- not every tick.
+     *
+     * Clearing the block while paused emits 'canplay', NOT 'playing':
+     * a paused seek unblocks (spinner off) without playback starting, and
+     * 'playing' is what the UI keys its play/pause button off of.
      *
      * @param {('fetching'|'decoding'|null)} state - The current block, or null to clear it.
      * @returns {void}
@@ -581,7 +585,7 @@ export class Scheduler {
         if (state) {
             this.emit('waiting', { reason: state });
         } else {
-            this.emit('playing');
+            this.emit(this.playing ? 'playing' : 'canplay');
         }
     }
 
@@ -875,10 +879,16 @@ export class Scheduler {
         const frameIdx = this._locateFrameIndex(gopBuffer, clamped, direction, segment.startTime);
         const frame = gopBuffer.frames[frameIdx];
 
-        this.canvasRenderer.render(frame);
+        // Bookkeeping must land BEFORE render(): render() dispatches the
+        // requestVideoFrameCallback listeners synchronously, and they read
+        // currentTime/currentSegmentIndex/currentFrameIdx -- update after,
+        // and every listener sees the pre-seek position (a scrub bar built
+        // on it snaps back to where the seek started).
         this.currentSegmentIndex = segment.index;
         this.currentFrameIdx = frameIdx;
         this._presentedMediaTime = this._frameTimestampToMediaTimeSeconds(segment.index, frame.timestamp);
+
+        this.canvasRenderer.render(frame);
         this._updateBufferState(null);
 
         // Re-anchor so continued playback (if active) resumes from here.

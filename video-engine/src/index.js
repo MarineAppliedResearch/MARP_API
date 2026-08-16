@@ -176,10 +176,14 @@ export async function createMarpVideoEngine(canvas, options) {
      * @async
      * @param {string} behindStreamUrl - A second stream-negotiation URL, negotiated with StartTimeTicks = behindStartTimeSeconds.
      * @param {number} behindStartTimeSeconds - The exact start time (in seconds) that URL was negotiated with -- used to compute the index offset between the two sessions' own segment numbering.
+     * @param {function(): boolean} [isStillWanted] - Checked immediately before applying the result (after this call's own playlist fetch, which can take a real, variable amount of time) -- if it returns false, the result is discarded instead of being applied. Without this, an OLDER negotiation whose own playlist fetch happens to resolve AFTER a newer one's can silently overwrite the newer (correct) behind session with stale routing data -- confirmed live as the actual cause of a segment's decoded content coming from a completely different, much-earlier point in the stream than its own timecode. The caller's own generation-counter check before starting this call is not enough by itself, since nothing re-checks it after this call's async work completes and right before the mutation below.
      * @returns {Promise<void>}
      */
-    shim.setBehindSession = async (behindStreamUrl, behindStartTimeSeconds) => {
+    shim.setBehindSession = async (behindStreamUrl, behindStartTimeSeconds, isStillWanted) => {
         const behindSegmentIndex = await loadSegmentIndex(behindStreamUrl, { fetchOptions });
+        if (isStillWanted && !isStillWanted()) {
+            return;
+        }
         const indexOffset = Math.round(behindStartTimeSeconds / segmentIndex.segments[0].duration);
         segmentFetcher.setBehindSession(behindSegmentIndex.segments, indexOffset);
     };

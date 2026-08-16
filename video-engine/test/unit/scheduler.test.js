@@ -878,6 +878,7 @@ describe('Scheduler buffering-state signal', () => {
             emit: emitSpy,
         });
 
+        scheduler.playing = true;
         scheduler._updateBufferState('fetching');
         scheduler._updateBufferState('fetching'); // same state -- no-op
         scheduler._updateBufferState('decoding'); // reason changed
@@ -1117,6 +1118,53 @@ describe('Scheduler paused background cache-fill worker', () => {
 
             expect(preSeekPinned).toContain(10);
             expect(postSeekPinned).toEqual(computeProtectedFloor(50, 80, 3));
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test('while paused, a seek clears the buffering state via "canplay", never "playing"', async () => {
+        // Regression test: seek() clears the buffer state on landing, and
+        // _updateBufferState(null) used to emit 'playing' unconditionally --
+        // so a cold paused seek (which sets waiting=fetching/decoding on the
+        // way in) ended by announcing playback had started while paused was
+        // still true, leaving the transport button showing the pause icon.
+        // The spinner must still clear, hence 'canplay' rather than nothing.
+        jest.useFakeTimers();
+        try {
+            const segmentIndex = makeUniformSegmentIndex(20, 3);
+            const { frameStore } = makeRecordingTiers();
+            frameStore.buffers = new Map([[10, { frames: [{ timestamp: 1_000_000 }] }]]);
+            frameStore.has = (index) => frameStore.buffers.has(index);
+            frameStore.segmentFetcher.hasRawBytes = () => false;
+            frameStore.ensureDecoded = async (index) => {
+                if (!frameStore.buffers.has(index)) {
+                    const seg = segmentIndex.segments[index];
+                    frameStore.buffers.set(index, { frames: [{ timestamp: Math.round(seg.startTime * 1e6) }] });
+                }
+                return frameStore.buffers.get(index);
+            };
+
+            const emitted = [];
+            const scheduler = new Scheduler({
+                segmentIndex,
+                frameStore,
+                canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
+                emit: (eventType, detail) => emitted.push({ eventType, detail }),
+            });
+
+            scheduler.currentSegmentIndex = 10;
+            scheduler.currentFrameIdx = 0;
+            scheduler._presentedMediaTime = 30;
+            expect(scheduler.playing).toBe(false);
+
+            await scheduler.seek(50);
+
+            const types = emitted.map((entry) => entry.eventType);
+            expect(types).toContain('waiting');
+            expect(types).toContain('canplay');
+            expect(types).not.toContain('playing');
+            expect(scheduler.playing).toBe(false);
         } finally {
             jest.useRealTimers();
         }

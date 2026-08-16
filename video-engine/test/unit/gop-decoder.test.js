@@ -118,4 +118,44 @@ describe('GopDecoder#decodeSegment', () => {
         expect(first.frames.map((f) => f.timestamp)).toEqual([0, 33_333]);
         expect(second.frames.map((f) => f.timestamp)).toEqual([100_000, 133_333]);
     });
+
+    test('closes the real decoder on a watchdog stall, so late background output cannot leak into the next segment (regression)', async () => {
+        // Regression test: a watchdog timeout used to leave the real
+        // decoder running -- decodeSegment() gave up waiting, but nothing
+        // ever called close() on it, so if it eventually produced more
+        // output in the background, that output fired into whatever
+        // segment decoded NEXT via the shared _currentSink, silently
+        // mixing frames from two unrelated segments (confirmed live as
+        // the actual cause of "correct index, wrong picture" after fast
+        // reverse scrubbing outran decode throughput).
+        jest.useFakeTimers();
+        try {
+            FakeVideoDecoder.simulateStall = true;
+            const decoder = new GopDecoder();
+            const stalledDemux = makeDemuxResult([0, 33_333]);
+
+            const stalledResult = decoder.decodeSegment(4, stalledDemux);
+            await jest.advanceTimersByTimeAsync(20_000); // past DECODE_WATCHDOG_MS, pumping microtasks along the way
+            await expect(stalledResult).rejects.toThrow(/stalled/i);
+
+            const stalledInstance = FakeVideoDecoder.instances[0];
+            expect(stalledInstance.state).toBe('closed');
+
+            FakeVideoDecoder.simulateStall = false;
+            const nextDemux = makeDemuxResult([100_000, 133_333]);
+            const nextResult = decoder.decodeSegment(5, nextDemux);
+
+            // The old (now-closed) decoder's background work "finally
+            // completing" -- must be a no-op, not leak into segment 5.
+            stalledInstance.emitLateOutput(
+                new FakeVideoFrame({ timestamp: 999_999, duration: 33_333, displayWidth: 16, displayHeight: 16, format: 'I420' })
+            );
+
+            const { frames } = await nextResult;
+            expect(frames.map((f) => f.timestamp)).toEqual([100_000, 133_333]);
+            expect(FakeVideoDecoder.instances).toHaveLength(2); // a fresh decoder was built for segment 5, not the closed one reused
+        } finally {
+            jest.useRealTimers();
+        }
+    });
 });

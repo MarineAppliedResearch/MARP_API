@@ -296,16 +296,18 @@ export class SegmentFetcher {
     }
 
     /**
-     * Reports whether a segment's raw bytes are already fetched and
-     * cached, without fetching them if not -- used to report per-segment
-     * fetch status (e.g. for a scrub-bar visualization), as distinct from
+     * Reports whether a segment's raw bytes are already fetched, cached,
+     * AND still valid for what this index currently resolves to (see
+     * _getFreshCachedBuffer) -- without fetching them if not. Used to
+     * report per-segment fetch status (e.g. for a scrub-bar
+     * visualization), as distinct from
      * {@link module:video-engine/frame-store.FrameStore#has}'s decoded status.
      *
      * @param {number} segmentIndexNumber - Segment index to check.
-     * @returns {boolean} True if the segment's raw bytes are cached.
+     * @returns {boolean} True if the segment's raw bytes are cached and still fresh.
      */
     hasRawBytes(segmentIndexNumber) {
-        return this._rawSegmentCache.has(segmentIndexNumber);
+        return this._getFreshCachedBuffer(segmentIndexNumber) !== undefined;
     }
 
     /**
@@ -366,19 +368,87 @@ export class SegmentFetcher {
      * fetching -- the one accessor Tier 2 (frame-store.js) is allowed to
      * use for its ordinary decode path, so decode can structurally never
      * trigger a network fetch, even via a race between a caller's own
-     * hasRawBytes() check and its next call.
+     * hasRawBytes() check and its next call. Still subject to the same
+     * freshness check as every other cache read (see
+     * _getFreshCachedBuffer) -- a stale entry throws exactly as if
+     * nothing were cached, rather than handing the decoder bytes that no
+     * longer correspond to what this index should now serve.
      *
      * @param {number} segmentIndexNumber - Segment index to read.
      * @returns {ArrayBuffer} The segment's cached raw bytes.
-     * @throws {Error} When the segment's raw bytes are not cached.
+     * @throws {Error} When the segment's raw bytes are not cached (or are stale).
      */
     getCachedRawBytes(segmentIndexNumber) {
-        const buffer = this._rawSegmentCache.get(segmentIndexNumber);
+        const buffer = this._getFreshCachedBuffer(segmentIndexNumber);
         if (!buffer) {
             throw new Error(`Segment ${segmentIndexNumber} raw bytes are not cached`);
         }
-        this._touch(segmentIndexNumber, buffer);
+        const segment = this.segmentIndex.segments[segmentIndexNumber];
+        this._touch(segmentIndexNumber, buffer, this._resolveSegmentUrl(segmentIndexNumber, segment));
         return buffer;
+    }
+
+    /**
+     * Returns a segment's cached raw bytes, but only if they still match
+     * what _resolveSegmentUrl would fetch for this index right now --
+     * evicting (and reporting a miss) otherwise.
+     *
+     * Without this, a segment index fetched once under one dual-session
+     * routing decision (e.g. from the "behind" session, while this index
+     * was behind an earlier seek's anchor) would keep being served
+     * forever after, even once a later seek moves the anchor and this
+     * same index should now resolve to completely different content (the
+     * forward session's own, different, real segment) -- confirmed live
+     * as the actual cause of a segment whose presented content silently
+     * didn't match its own timecode (mediaTime and the frame's real `raw`
+     * timestamp disagreeing by however far the anchor had since moved).
+     *
+     * @param {number} segmentIndexNumber - Segment index to look up.
+     * @returns {ArrayBuffer|undefined} The cached bytes, or undefined if absent or stale.
+     */
+    _getFreshCachedBuffer(segmentIndexNumber) {
+        const entry = this._rawSegmentCache.get(segmentIndexNumber);
+        if (!entry) {
+            return undefined;
+        }
+
+        const segment = this.segmentIndex.segments[segmentIndexNumber];
+        const currentUrl = this._resolveSegmentUrl(segmentIndexNumber, segment);
+
+        // A transition between the plain forward url and ANY behind
+        // session's url for the same index is NOT a content change -- both
+        // represent the identical real time range (same source, same
+        // quality, and Jellyfin does accurate, non-stream-copy seeking --
+        // see issue #36), just reached via a different Jellyfin session.
+        // This is expected to happen constantly as the anchor moves past
+        // already-cached indices during ordinary forward playback, and
+        // evicting perfectly good bytes for it was pure waste. Only a
+        // transition between two DIFFERENT behind sessions' own urls for
+        // the same index is a genuine content change: each behind
+        // session has its own index offset, so the same absolute index
+        // maps to a different real time position across them -- confirmed
+        // live as the actual cause of a segment's content not matching
+        // its own timecode.
+        const cachedIsForward = entry.url === segment.url;
+        const currentIsForward = currentUrl === segment.url;
+        if (!cachedIsForward && !currentIsForward && entry.url !== currentUrl) {
+            // TEMPORARY DIAGNOSTIC (remove once root-caused): logs every
+            // eviction this check performs, since a user-reported mass
+            // eviction of already-cached segments on seek could not be
+            // reproduced in isolation -- this pins down exactly which
+            // index, which two urls, and what the anchor/offset were at
+            // the moment it actually happens live.
+            console.warn(
+                `[segment-fetcher] EVICTING segment ${segmentIndexNumber}: cachedUrl=${entry.url} currentUrl=${currentUrl} ` +
+                    `anchor=${this._anchorSegmentIndex} behindOffset=${this._behindIndexOffset} ` +
+                    `hasBehindSegments=${!!this._behindSegments} behindSegmentsLength=${this._behindSegments ? this._behindSegments.length : 'n/a'}`
+            );
+            this._rawSegmentBytes -= entry.buffer.byteLength;
+            this._rawSegmentCache.delete(segmentIndexNumber);
+            return undefined;
+        }
+
+        return entry.buffer;
     }
 
     /**
@@ -450,18 +520,18 @@ export class SegmentFetcher {
      * @throws {DOMException} AbortError, when `options.signal` fires before the fetch completes.
      */
     async fetchSegment(segmentIndexNumber, { signal } = {}) {
-        if (this._rawSegmentCache.has(segmentIndexNumber)) {
-            const buffer = this._rawSegmentCache.get(segmentIndexNumber);
-            this._touch(segmentIndexNumber, buffer);
-            return buffer;
-        }
-
         const segment = this.segmentIndex.segments[segmentIndexNumber];
         if (!segment) {
             throw new Error(`No segment at index ${segmentIndexNumber}`);
         }
 
         const url = this._resolveSegmentUrl(segmentIndexNumber, segment);
+
+        const cachedBuffer = this._getFreshCachedBuffer(segmentIndexNumber);
+        if (cachedBuffer) {
+            this._touch(segmentIndexNumber, cachedBuffer, url);
+            return cachedBuffer;
+        }
 
         const rangeOptions = buildRangeHeaderOptions(segment.byteRangeStart, segment.byteRangeEnd);
         const response = await fetchWithTimeout(url, signal, rangeOptions);
@@ -476,7 +546,7 @@ export class SegmentFetcher {
         }
 
         const buffer = await response.arrayBuffer();
-        this._touch(segmentIndexNumber, buffer);
+        this._touch(segmentIndexNumber, buffer, url);
         this._evictIfNeeded();
 
         return buffer;
@@ -546,10 +616,11 @@ export class SegmentFetcher {
      * @returns {Promise<ArrayBuffer>} The segment's raw bytes.
      */
     async ensureRawBytes(segmentIndexNumber, { signal } = {}) {
-        if (this._rawSegmentCache.has(segmentIndexNumber)) {
-            const buffer = this._rawSegmentCache.get(segmentIndexNumber);
-            this._touch(segmentIndexNumber, buffer);
-            return buffer;
+        const cachedBuffer = this._getFreshCachedBuffer(segmentIndexNumber);
+        if (cachedBuffer) {
+            const segment = this.segmentIndex.segments[segmentIndexNumber];
+            this._touch(segmentIndexNumber, cachedBuffer, this._resolveSegmentUrl(segmentIndexNumber, segment));
+            return cachedBuffer;
         }
 
         let entry = this._inFlightFetches.get(segmentIndexNumber);
@@ -614,19 +685,23 @@ export class SegmentFetcher {
 
     /**
      * Marks a cache entry as most-recently-used by re-inserting it (Map
-     * iteration order follows insertion order).
+     * iteration order follows insertion order). Stores the URL these
+     * bytes were actually fetched from (or, for a cache hit, the URL this
+     * index currently resolves to) alongside the buffer -- see
+     * _getFreshCachedBuffer, which is what actually reads it back.
      *
      * @param {number} segmentIndexNumber - Segment index to bump.
      * @param {ArrayBuffer} buffer - Its cached bytes.
+     * @param {string} url - The URL these bytes came from (or currently correspond to).
      * @returns {void}
      */
-    _touch(segmentIndexNumber, buffer) {
-        const previousBuffer = this._rawSegmentCache.get(segmentIndexNumber);
-        if (previousBuffer) {
-            this._rawSegmentBytes -= previousBuffer.byteLength;
+    _touch(segmentIndexNumber, buffer, url) {
+        const previousEntry = this._rawSegmentCache.get(segmentIndexNumber);
+        if (previousEntry) {
+            this._rawSegmentBytes -= previousEntry.buffer.byteLength;
         }
         this._rawSegmentCache.delete(segmentIndexNumber);
-        this._rawSegmentCache.set(segmentIndexNumber, buffer);
+        this._rawSegmentCache.set(segmentIndexNumber, { buffer, url });
         this._rawSegmentBytes += buffer.byteLength;
     }
 
@@ -644,8 +719,8 @@ export class SegmentFetcher {
             // This keeps the local paused neighborhood resident longer.
             for (const key of this._rawSegmentCache.keys()) {
                 if (!this._protectedRawSegments.has(key)) {
-                    const buffer = this._rawSegmentCache.get(key);
-                    this._rawSegmentBytes -= buffer.byteLength;
+                    const entry = this._rawSegmentCache.get(key);
+                    this._rawSegmentBytes -= entry.buffer.byteLength;
                     this._rawSegmentCache.delete(key);
                     evicted = true;
                     break;
@@ -657,8 +732,8 @@ export class SegmentFetcher {
                 // Fall back to ordinary oldest-first eviction.
                 // This avoids an infinite loop when protection is too large.
                 const oldestKey = this._rawSegmentCache.keys().next().value;
-                const buffer = this._rawSegmentCache.get(oldestKey);
-                this._rawSegmentBytes -= buffer.byteLength;
+                const entry = this._rawSegmentCache.get(oldestKey);
+                this._rawSegmentBytes -= entry.buffer.byteLength;
                 this._rawSegmentCache.delete(oldestKey);
             }
         }

@@ -105,6 +105,7 @@ class FakeVideoDecoder {
         this._queue = [];
         this.state = 'unconfigured';
         this.decodeQueueSize = 0;
+        FakeVideoDecoder.instances.push(this);
     }
 
     /**
@@ -149,6 +150,13 @@ class FakeVideoDecoder {
      * @returns {Promise<void>}
      */
     async flush() {
+        if (FakeVideoDecoder.simulateStall) {
+            // Matches a genuine platform stall: no output, no error, never
+            // settles -- the only thing that ends this in gop-decoder.js is
+            // its own watchdog timeout.
+            return new Promise(() => {});
+        }
+
         const chunks = this._queue;
         this._queue = [];
 
@@ -163,6 +171,27 @@ class FakeVideoDecoder {
     }
 
     /**
+     * Test hook: manually fires the output callback as if a queued chunk's
+     * decode had just finished in the background, simulating a real
+     * decoder continuing to process work submitted before flush()/the
+     * watchdog gave up on it. Matches real VideoDecoder semantics: a
+     * closed decoder never fires output() again, so this is a no-op once
+     * close() has been called -- exactly the guarantee GopDecoder's
+     * stall/error recovery relies on to prevent late output from one
+     * segment leaking into the next segment's decode via the shared
+     * _currentSink.
+     *
+     * @param {Object} frame - Frame to emit, as if freshly decoded.
+     * @returns {void}
+     */
+    emitLateOutput(frame) {
+        if (this.state === 'closed') {
+            return;
+        }
+        this._output(frame);
+    }
+
+    /**
      * Marks the fake decoder closed, matching the real VideoDecoder#close.
      *
      * @returns {void}
@@ -171,6 +200,9 @@ class FakeVideoDecoder {
         this.state = 'closed';
     }
 }
+
+/** Every FakeVideoDecoder instance constructed since the last installWebCodecsFakes() call -- lets a test confirm a fresh decoder was built after a failure, not the same (closed) one reused. */
+FakeVideoDecoder.instances = [];
 
 /** Static isConfigSupported, matching the real VideoDecoder's API shape -- gop-decoder.js always awaits this before configuring. */
 FakeVideoDecoder.isConfigSupported = async () => ({ supported: true });
@@ -182,6 +214,7 @@ FakeVideoDecoder.isConfigSupported = async () => ({ supported: true });
  */
 function installWebCodecsFakes() {
     FakeVideoFrame.reconstructedFrames = [];
+    FakeVideoDecoder.instances = [];
 
     const previous = {
         VideoFrame: global.VideoFrame,
@@ -199,6 +232,7 @@ function installWebCodecsFakes() {
         global.VideoDecoder = previous.VideoDecoder;
         delete FakeVideoDecoder.outputForChunk;
         delete FakeVideoDecoder.simulateErrorAfterFrames;
+        delete FakeVideoDecoder.simulateStall;
     };
 }
 

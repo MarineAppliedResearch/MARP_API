@@ -77,6 +77,25 @@ const SEGMENT_SHADING_INTERVAL_MS = 250;
 /** How far behind a landed seek's target the "behind" session starts its own transcode from, in seconds -- see prepareBehindSession. */
 const BEHIND_SESSION_LOOK_BEHIND_SECONDS = 30;
 
+/** How often to check whether the active behind session's coverage has drifted stale relative to the current playhead, in ms -- see maybeRefreshBehindSession. */
+const BEHIND_SESSION_CHECK_INTERVAL_MS = 2000;
+
+/**
+ * The active behind session's coverage should stay within this distance
+ * band behind the current playhead -- see maybeRefreshBehindSession, which
+ * renegotiates a fresh one whenever it drifts outside either edge:
+ *
+ * - Too CLOSE (<= MIN): a reverse scrub is approaching this session's own
+ *   start boundary -- about to run out and fall back to the forward
+ *   session for anything further back (the original restart-cost bug).
+ * - Too FAR (>= MAX): sustained forward playback has moved the current
+ *   position well past where this session was anchored -- it's no longer
+ *   a tight, useful buffer just behind the user, just stale coverage of
+ *   territory they've long since passed.
+ */
+const BEHIND_SESSION_MIN_DISTANCE_SECONDS = 10;
+const BEHIND_SESSION_MAX_DISTANCE_SECONDS = BEHIND_SESSION_LOOK_BEHIND_SECONDS + 15;
+
 const loadButton = document.getElementById("loadButton");
 const itemIdInput = document.getElementById("itemIdInput");
 const canvas = document.getElementById("canvas");
@@ -123,9 +142,29 @@ const jellyfinClient = new MarpVideoEngine.JellyfinClient();
 const mediaSource = new MarpVideoEngine.JellyfinMediaSource(jellyfinClient);
 let currentQualityOption = null;
 let currentItemId = null;
-// Bumped on every 'seeked' -- a behind-session renegotiation in flight
-// when a newer seek lands must not apply its (now-stale) result.
+// Bumped on every renegotiation (a discrete seek, or the periodic
+// low-coverage check) -- a behind-session renegotiation in flight when a
+// newer one starts must not apply its (now-stale) result.
 let behindSessionGeneration = 0;
+// Where the CURRENTLY ACTIVE behind session's own coverage starts
+// (absolute stream time, seconds) -- null until the first one is
+// negotiated. See maybeRefreshBehindSession, which compares the current
+// playhead against this to decide when to renegotiate a fresh one.
+let behindSessionStartTimeSeconds = null;
+let behindSessionCheckHandle = null;
+// True while a prepareBehindSession() negotiation is actually in flight
+// (not yet settled) -- lets the periodic low-coverage check
+// (maybeRefreshBehindSession) avoid piling a new attempt on top of one
+// still awaiting Jellyfin, which would otherwise starve every attempt
+// forever: a real negotiation round-trip can easily take longer than
+// BEHIND_SESSION_CHECK_INTERVAL_MS, and each new call bumps
+// behindSessionGeneration, discarding whatever the previous call was
+// still waiting on -- confirmed live as the actual cause of zero
+// successful renegotiations ever completing. A genuine seek still calls
+// prepareBehindSession() directly and is NOT gated by this, since a real
+// seek's fresher intent should always be allowed to supersede a stale
+// speculative attempt.
+let behindSessionNegotiationInFlight = false;
 
 let scrubDragging = false;
 let segmentShadingHandle = null;
@@ -196,6 +235,18 @@ async function loadItem(itemId, qualityOption) {
       window.marpVideo.close();
     }
 
+    // A fresh engine has no behind session of its own yet -- forget the
+    // old one's coverage rather than comparing the new engine's currentTime
+    // against a boundary that belonged to a completely different session.
+    // Reset the in-flight flag unconditionally too: bumping the generation
+    // means an old engine's still-pending negotiation (if any) will never
+    // see its own generation match again, so its .finally() will never
+    // clear this itself -- left alone, it would stay stuck true forever,
+    // permanently blocking the new engine's own periodic checks.
+    behindSessionStartTimeSeconds = null;
+    behindSessionNegotiationInFlight = false;
+    ++behindSessionGeneration;
+
     window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
       streamUrl,
       rawSegmentCacheBudgetBytes: Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined,
@@ -211,6 +262,16 @@ async function loadItem(itemId, qualityOption) {
       clearInterval(segmentShadingHandle);
     }
     segmentShadingHandle = setInterval(updateSegmentShading, SEGMENT_SHADING_INTERVAL_MS);
+
+    // Keeps the behind session's coverage fresh continuously, not just in
+    // reaction to seeks -- runs an immediate check right away (rather than
+    // waiting up to BEHIND_SESSION_CHECK_INTERVAL_MS for the first tick)
+    // so backward buffer starts warming from the moment playback is ready.
+    if (behindSessionCheckHandle) {
+      clearInterval(behindSessionCheckHandle);
+    }
+    behindSessionCheckHandle = setInterval(maybeRefreshBehindSession, BEHIND_SESSION_CHECK_INTERVAL_MS);
+    maybeRefreshBehindSession();
 
     [
       playPauseButton,
@@ -643,23 +704,98 @@ function prepareBehindSession(landedTimeSeconds) {
   const generation = ++behindSessionGeneration;
   const behindStartTimeSeconds = Math.max(0, landedTimeSeconds - BEHIND_SESSION_LOOK_BEHIND_SECONDS);
 
+  behindSessionNegotiationInFlight = true;
+
   mediaSource
     .resolveBehindStreamUrl(currentItemId, currentQualityOption, behindStartTimeSeconds)
     .then((behindStreamUrl) => {
       if (!behindStreamUrl || generation !== behindSessionGeneration || !window.marpVideo) {
-        // Superseded by a newer seek (or this source has no dual-session
-        // support) -- discard silently, matching Scheduler#seek's own
-        // stale-result handling.
+        // Superseded by a newer renegotiation (or this source has no
+        // dual-session support) -- discard silently, matching
+        // Scheduler#seek's own stale-result handling.
         return;
       }
-      return window.marpVideo.setBehindSession(behindStreamUrl, behindStartTimeSeconds);
+      // setBehindSession() itself does a real network fetch (the behind
+      // session's own playlist) before actually applying anything --
+      // re-check right before that application, not just here, since an
+      // OLDER call's own fetch can easily take longer and finish AFTER a
+      // newer one's, which would otherwise silently clobber the newer
+      // (correct) behind session with stale routing data. Confirmed live
+      // as the actual cause of a segment decoding content from a
+      // completely different, much-earlier point in the stream.
+      return window.marpVideo.setBehindSession(behindStreamUrl, behindStartTimeSeconds, () => generation === behindSessionGeneration);
     })
     .then(() => {
       if (generation === behindSessionGeneration) {
+        behindSessionStartTimeSeconds = behindStartTimeSeconds;
         log(`behind-session ready: sweeping forward from ${behindStartTimeSeconds.toFixed(1)}s`);
       }
     })
-    .catch((err) => log(`ERROR preparing behind session: ${err.message}`));
+    .catch((err) => log(`ERROR preparing behind session: ${err.message}`))
+    .finally(() => {
+      if (generation === behindSessionGeneration) {
+        behindSessionNegotiationInFlight = false;
+      }
+    });
+}
+
+/**
+ * Periodically checks whether the active behind session's own coverage
+ * has drifted outside a healthy distance band behind the current
+ * playhead, and proactively renegotiates a fresh one if so -- runs
+ * continuously during playback (forward or reverse) and even while
+ * paused, not just reactively on a discrete seek, so backward buffer is
+ * ready before the user ever reverses into it (see
+ * BEHIND_SESSION_CHECK_INTERVAL_MS's own setInterval in loadItem).
+ *
+ * Checks BOTH edges of the band, not just one: sustained forward
+ * playback needs a refresh too (the current position drifting too far
+ * PAST where this session was anchored -- BEHIND_SESSION_MAX_DISTANCE_SECONDS),
+ * not only a reverse scrub running low (approaching this session's own
+ * start boundary -- BEHIND_SESSION_MIN_DISTANCE_SECONDS). A single behind
+ * session can't just be told to cover further and further back forever,
+ * though: Jellyfin restarts its ffmpeg the moment a request lands behind
+ * THAT session's own current position too (the same restart cost this
+ * whole feature exists to avoid, just recreated against itself) -- so
+ * "continuous" here means scheduling a fresh renegotiation ahead of need,
+ * not one session sweeping backward indefinitely.
+ * Inputs: none (reads window.marpVideo.currentTime).
+ * Output: none (may call prepareBehindSession).
+ */
+function maybeRefreshBehindSession() {
+  if (typeof mediaSource.resolveBehindStreamUrl !== "function" || !window.marpVideo || !currentItemId) {
+    return;
+  }
+
+  // Never pile a new speculative attempt on top of one still awaiting
+  // Jellyfin -- see behindSessionNegotiationInFlight's own doc comment
+  // for why that starves every attempt forever otherwise. A real seek
+  // still calls prepareBehindSession() directly and is not gated by this.
+  if (behindSessionNegotiationInFlight) {
+    return;
+  }
+
+  const currentTime = window.marpVideo.currentTime;
+  const distanceFromCoverageStart = currentTime - behindSessionStartTimeSeconds;
+  // The "too close, about to run out" check only makes sense if there's
+  // actually somewhere further back LEFT to extend to -- once the behind
+  // session is already anchored at the true start of the stream (0),
+  // extending it further is impossible, so being close to it isn't stale,
+  // it's just correct. Without this, playback starting near time 0 kept
+  // retriggering a fresh (and pointless, always-identical) renegotiation
+  // every single check for the whole first ~10-25s of the video -- real
+  // Jellyfin round-trips, back to back, confirmed live as actively
+  // competing with the forward session for attention rather than just
+  // being a harmless no-op.
+  const canExtendFurtherBack = behindSessionStartTimeSeconds > 0;
+  const coverageStale =
+    behindSessionStartTimeSeconds === null ||
+    (canExtendFurtherBack && distanceFromCoverageStart <= BEHIND_SESSION_MIN_DISTANCE_SECONDS) ||
+    distanceFromCoverageStart >= BEHIND_SESSION_MAX_DISTANCE_SECONDS;
+
+  if (coverageStale) {
+    prepareBehindSession(currentTime);
+  }
 }
 
 /**
@@ -691,9 +827,8 @@ function wireVideoEvents() {
 
   // Buffering spinner: shown whenever playback/seek is blocked on Tier 1
   // (network) or Tier 2 (decode), colored to match the scrub bar's own
-  // fetched=blue/decoded=green convention. Hidden again on the next
-  // "playing" (which now also fires on resume-from-waiting, not just on
-  // an explicit play()).
+  // fetched=blue/decoded=green convention. Hidden again on "playing" or,
+  // when a seek unblocked while paused, on "canplay".
   window.marpVideo.addEventListener("waiting", (event) => {
     log(`event: waiting reason=${event.reason}`);
     bufferingSpinner.classList.remove("hidden");
@@ -734,6 +869,13 @@ function wireVideoEvents() {
     if (playbackReportItemId) {
       mediaSource.reportPlaybackProgress(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback progress: ${err.message}`));
     }
+  });
+
+  // Unblocked while paused (e.g. a cold seek landed): clear the spinner
+  // only -- transport controls must keep showing paused, and this is not
+  // a playback state change, so it reports no progress.
+  window.marpVideo.addEventListener("canplay", () => {
+    bufferingSpinner.classList.add("hidden");
   });
 
   window.marpVideo.addEventListener("pause", () => {

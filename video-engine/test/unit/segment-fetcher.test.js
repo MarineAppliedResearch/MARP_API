@@ -358,4 +358,74 @@ describe('SegmentFetcher dual-session anchor routing', () => {
 
         expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/videos/seg0.m4s', expect.anything());
     });
+
+    test('does NOT re-fetch when a forward<->behind transition is just the anchor moving past an already-cached index', async () => {
+        // A forward url and a behind session's url for the SAME index
+        // represent identical real content (same source, same quality,
+        // and Jellyfin does accurate non-stream-copy seeking -- issue
+        // #36), just via a different session -- confirmed live that
+        // treating this transition as "stale" wasted a huge number of
+        // already-fetched, still-correct segments every time a seek moved
+        // the anchor past them, directly against the design goal of
+        // pre-fetching as much as possible and evicting only when truly
+        // necessary.
+        global.fetch = jest.fn(async (url) => ({
+            ok: true,
+            status: 200,
+            arrayBuffer: async () => new TextEncoder().encode(url).buffer,
+        }));
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        // Index 0 starts at/above the anchor -- ordinary forward fetch.
+        fetcher.setAnchorSegmentIndex(0);
+        const forwardBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(forwardBuffer)).toBe('https://jellyfin.example.com/videos/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        // A seek moves the anchor forward past index 0, and a behind
+        // session happens to be installed -- index 0 now resolves through it.
+        fetcher.setAnchorSegmentIndex(1);
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        const stillCachedBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(stillCachedBuffer)).toBe('https://jellyfin.example.com/videos/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(1); // no new fetch -- the cached bytes were reused
+    });
+
+    test('re-fetches when the SAME index resolves through two DIFFERENT behind sessions (genuinely different content)', async () => {
+        // Regression test for the real bug: two behind sessions negotiated
+        // at different times use different index offsets, so the same
+        // absolute index maps to a different real time position across
+        // them -- confirmed live as a segment whose presented content
+        // silently didn't match its own timecode (raw frame timestamp far
+        // off from the scheduler's own mediaTime for that segment).
+        global.fetch = jest.fn(async (url) => ({
+            ok: true,
+            status: 200,
+            arrayBuffer: async () => new TextEncoder().encode(url).buffer,
+        }));
+
+        const EARLIER_BEHIND_SESSION_SEGMENTS = [
+            { index: 0, url: 'https://jellyfin.example.com/behind-earlier/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+        ];
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(1);
+        fetcher.setBehindSession(EARLIER_BEHIND_SESSION_SEGMENTS, 0);
+
+        const firstBehindBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(firstBehindBuffer)).toBe('https://jellyfin.example.com/behind-earlier/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        // A different behind session (different negotiation, different
+        // offset) is installed while the anchor stays put -- index 0 now
+        // maps to genuinely different real content.
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        const secondBehindBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(secondBehindBuffer)).toBe('https://jellyfin.example.com/behind/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(global.fetch).toHaveBeenLastCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+    });
 });
