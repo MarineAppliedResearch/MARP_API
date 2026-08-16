@@ -132,6 +132,7 @@ function makeRecordingTiers({
     const fetchedIndices = [];
     const pinnedSnapshots = [];
     const protectedRawSnapshots = [];
+    const evictionPrioritySnapshots = [];
 
     const segmentFetcher = {
         hasRawBytes: (index) => (rawBytesIndices ? rawBytesIndices.has(index) : true),
@@ -170,9 +171,12 @@ function makeRecordingTiers({
         setPinned: (indices) => {
             pinnedSnapshots.push([...indices]);
         },
+        setEvictionPriority: (indices) => {
+            evictionPrioritySnapshots.push([...indices]);
+        },
     };
 
-    return { frameStore, decodedIndices, fetchedIndices, pinnedSnapshots, protectedRawSnapshots };
+    return { frameStore, decodedIndices, fetchedIndices, pinnedSnapshots, protectedRawSnapshots, evictionPrioritySnapshots };
 }
 
 describe('Scheduler content-mismatch detection', () => {
@@ -276,6 +280,43 @@ describe('Scheduler#_runCachePass', () => {
 
         expect(beyondForward.length).toBeGreaterThan(0);
         expect(beyondForward.length).toBe(beyondBackward.length * 2);
+    });
+
+    test('hands the decoded cache a playhead-centred, direction-skewed eviction priority', () => {
+        // The cache must evict by distance from the playhead, not by decode
+        // age. Without this the playhead's own neighbourhood -- decoded
+        // earliest, as the playhead approached -- was always the oldest
+        // entry and the first evicted, leaving the island around the
+        // playhead the SMALLEST region of the cache while distant segments
+        // prefetch had just decoded survived.
+        const { frameStore, evictionPrioritySnapshots } = makeRecordingTiers({ maxSegmentsBuffered: 21 });
+        const scheduler = new Scheduler({
+            segmentIndex: makeUniformSegmentIndex(200, 3),
+            frameStore,
+            canvasRenderer: { onFramePresented: () => {} },
+            emit: () => {},
+        });
+        scheduler.playbackRate = 1;
+        scheduler._lastDirectionSign = 1;
+
+        scheduler._runCachePass(300, { symmetric: false }); // segment 100
+
+        const priority = evictionPrioritySnapshots[evictionPrioritySnapshots.length - 1];
+        expect(priority).toBeDefined();
+
+        // The protected floor around the playhead ranks highest.
+        expect(priority.slice(0, 7)).toEqual(computeProtectedFloor(100, 200, 3));
+
+        // Never more entries than the cache can actually hold, or the tail
+        // would be asking to keep segments there is no room for.
+        expect(priority.length).toBeLessThanOrEqual(21);
+
+        // Every retained index is a near neighbour, and the set is skewed
+        // toward the direction of travel rather than symmetric.
+        const forward = priority.filter((index) => index > 103).length;
+        const backward = priority.filter((index) => index < 97).length;
+        expect(forward).toBeGreaterThan(backward);
+        expect(Math.max(...priority) - Math.min(...priority)).toBeLessThan(30);
     });
 
     test('opportunistic prefetch skips indices no live session can serve without a backward seek', () => {
@@ -500,6 +541,7 @@ describe('Scheduler#_runCachePass', () => {
             isDecodeInBackoff: () => false,
             ensureDecoded: () => Promise.resolve(),
             setPinned: () => {},
+            setEvictionPriority: () => {},
         };
         return { frameStore, launchedIndices };
     }
@@ -582,6 +624,7 @@ describe('Scheduler#_runCachePass', () => {
             isDecodeInBackoff: () => false,
             ensureDecoded: () => Promise.reject(new Error('decode failed')),
             setPinned: () => {},
+            setEvictionPriority: () => {},
         };
         const scheduler = new Scheduler({
             segmentIndex: makeUniformSegmentIndex(20, 3),
@@ -667,6 +710,7 @@ function makeControllableFrameStore() {
         has: (index) => buffers.has(index),
         isDecodeInBackoff: () => false,
         setPinned: () => {},
+            setEvictionPriority: () => {},
         async ensureDecoded(index) {
             return buffers.get(index);
         },
@@ -812,6 +856,7 @@ function makeSeekableRecordingFrameStore(segmentDurationSeconds) {
             }
             return buffers.get(index);
         },
+        setEvictionPriority() {},
         setPinned(indices) {
             pinned = [...indices];
         },
@@ -887,6 +932,7 @@ describe('Scheduler#seek preempts lower-priority in-flight fetches', () => {
             has: (index) => buffers.has(index),
             isDecodeInBackoff: () => false,
             setPinned: () => {},
+            setEvictionPriority: () => {},
             async ensureDecoded(index) {
                 return buffers.get(index);
             },
@@ -944,6 +990,7 @@ describe('Scheduler#_tick stall anchoring', () => {
             isDecodeInBackoff: () => false,
             ensureDecoded: () => Promise.resolve(),
             setPinned: () => {},
+            setEvictionPriority: () => {},
             pinned: new Set(),
             segmentFetcher: {
                 hasRawBytes: () => false,
@@ -986,7 +1033,7 @@ describe('Scheduler#_tick pauses advancement while a seek is in flight', () => {
         // real, still-in-flight seek look like it had silently failed.
         const scheduler = new Scheduler({
             segmentIndex: makeUniformSegmentIndex(4, 3),
-            frameStore: { buffers: new Map(), has: () => true, setPinned: () => {}, pinned: new Set() },
+            frameStore: { buffers: new Map(), has: () => true, setPinned: () => {}, setEvictionPriority: () => {}, pinned: new Set() },
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
             emit: () => {},
         });
@@ -1036,6 +1083,7 @@ describe('Scheduler buffering-state signal', () => {
             isDecodeInBackoff: () => false,
             ensureDecoded: () => Promise.resolve(),
             setPinned: () => {},
+            setEvictionPriority: () => {},
             pinned: new Set(),
             segmentFetcher: {
                 hasRawBytes: (index) => rawBytesIndices.has(index),
@@ -1077,6 +1125,7 @@ describe('Scheduler boundary and pause behavior', () => {
                 has: () => true,
                 ensureDecoded: () => Promise.resolve(),
                 setPinned: () => {},
+            setEvictionPriority: () => {},
                 pinned: new Set(),
             },
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
@@ -1105,6 +1154,7 @@ describe('Scheduler boundary and pause behavior', () => {
                 has: () => true,
                 ensureDecoded: () => Promise.resolve(),
                 setPinned: () => {},
+            setEvictionPriority: () => {},
                 pinned: new Set(),
             },
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },
@@ -1389,6 +1439,7 @@ describe('Scheduler reverse boundary continuity', () => {
                 buffers,
                 has: (index) => buffers.has(index),
                 setPinned: () => {},
+            setEvictionPriority: () => {},
                 pinned: new Set(),
             },
             canvasRenderer: { onFramePresented: () => {}, render: () => true, canvas: { width: 0, height: 0 } },

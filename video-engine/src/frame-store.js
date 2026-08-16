@@ -75,9 +75,22 @@ export class FrameStore {
 
         this.maxSegmentsBuffered = this._computeMaxSegmentsBuffered(this._cacheBudgetBytes);
 
-        // segmentIndex -> GopBuffer, insertion order doubles as LRU order.
+        // segmentIndex -> GopBuffer. Insertion order is only the tie-break
+        // for eviction; the real ordering comes from _evictionPriority below.
         this.buffers = new Map();
         this.pinned = new Set();
+
+        // segmentIndex -> rank (0 = most valuable), set each cache pass by
+        // the scheduler. Insertion order alone is the WRONG eviction order
+        // for this cache: segments around the playhead are decoded earliest
+        // (as the playhead approaches them), which made them the oldest
+        // entries and the first evicted, while segments far ahead that
+        // prefetch had just decoded survived as the newest. Observed live
+        // as the playhead's own decoded island being the smallest of five
+        // disjoint islands, with its members evicted and immediately
+        // re-decoded on the following pass -- pure thrash that kept the
+        // cache pegged at its budget while never growing where it mattered.
+        this._evictionPriority = null;
         this._inFlightDecodes = new Map(); // segmentIndex -> Promise
 
         // Track recent real decode failures per segment.
@@ -144,6 +157,32 @@ export class FrameStore {
      */
     setPinned(indices) {
         this.pinned = new Set(indices);
+    }
+
+    /**
+     * Sets the eviction ordering for the current playhead position: the
+     * segment indices worth keeping, most valuable first. Eviction drops
+     * whatever ranks lowest, so the decoded cache fills with one growing
+     * island around the playhead (skewed toward the direction of travel,
+     * since that is how the caller orders it) rather than scattered
+     * islands left behind wherever prefetch happened to reach.
+     *
+     * Segments absent from this list rank below every listed one -- they
+     * are outside the window entirely and are evicted first, oldest-
+     * inserted among them going first.
+     *
+     * @param {Iterable<number>} orderedIndices - Segment indices in descending value, e.g. the scheduler's protected floor followed by its direction-skewed opportunistic order.
+     * @returns {void}
+     */
+    setEvictionPriority(orderedIndices) {
+        const priority = new Map();
+        let rank = 0;
+        for (const index of orderedIndices) {
+            if (!priority.has(index)) {
+                priority.set(index, rank++);
+            }
+        }
+        this._evictionPriority = priority;
     }
 
     /**
@@ -356,8 +395,13 @@ export class FrameStore {
     }
 
     /**
-     * Evicts least-recently-used, unpinned GopBuffers until the cache is
+     * Evicts the lowest-priority unpinned GopBuffers until the cache is
      * back within `maxSegmentsBuffered`, closing every evicted VideoFrame.
+     *
+     * Priority comes from setEvictionPriority (distance from the playhead,
+     * skewed toward the direction of travel); segments never given a rank
+     * fall to the bottom. With no priority set at all this degrades to the
+     * original insertion-order behaviour.
      *
      * @returns {void}
      */
@@ -366,14 +410,23 @@ export class FrameStore {
             return;
         }
 
-        for (const [index, gopBuffer] of this.buffers) {
+        const rankOf = (index) => {
+            const rank = this._evictionPriority && this._evictionPriority.get(index);
+            return rank === undefined || rank === null ? Number.POSITIVE_INFINITY : rank;
+        };
+
+        // Worst-first. Array.prototype.sort is stable, so equal ranks --
+        // including everything outside the window, which all rank Infinity
+        // -- keep insertion order among themselves and the oldest goes first.
+        const evictionOrder = [...this.buffers.keys()]
+            .filter((index) => !this.pinned.has(index))
+            .sort((a, b) => rankOf(b) - rankOf(a));
+
+        for (const index of evictionOrder) {
             if (this.buffers.size <= this.maxSegmentsBuffered) {
                 break;
             }
-            if (this.pinned.has(index)) {
-                continue;
-            }
-            for (const frame of gopBuffer.frames) {
+            for (const frame of this.buffers.get(index).frames) {
                 frame.close();
             }
             this.buffers.delete(index);

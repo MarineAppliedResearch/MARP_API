@@ -776,6 +776,13 @@ export class Scheduler {
         const surplusBudget = Math.max(0, maxDecodedBudget - protectedIndices.length);
 
         const ensureList = [...protectedIndices, ...opportunisticOrder.slice(0, surplusBudget)];
+
+        // The same ordering that decides what to decode also decides what
+        // to keep: without this the cache evicted by decode-completion age,
+        // which systematically discarded the playhead's own neighbourhood
+        // (decoded earliest) in favour of whatever prefetch decoded last.
+        this.frameStore.setEvictionPriority(ensureList);
+
         for (const index of ensureList) {
             if (this.frameStore.has(index) || this.frameStore.isDecodeInBackoff(index)) {
                 continue;
