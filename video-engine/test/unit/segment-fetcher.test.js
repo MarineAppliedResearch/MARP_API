@@ -1,0 +1,431 @@
+/**
+ * Unit tests for SegmentFetcher#hasRawBytes -- the raw-bytes-cached check
+ * getSegmentStates() relies on for scrub-bar visualization. Mocks the
+ * global fetch() (available natively in the Node version this project
+ * targets) rather than hitting a real server, since only the cache-status
+ * bookkeeping is under test here, not real network behavior.
+ *
+ * @fileoverview Unit tests for SegmentFetcher's raw-bytes cache status.
+ * @author Isaac Travers
+ * @module video-engine/test/unit/segment-fetcher.test
+ */
+
+const { SegmentFetcher } = require('../../src/segment-fetcher.js');
+
+const SEGMENT_INDEX = {
+    initSegmentUrl: 'https://jellyfin.example.com/videos/init.mp4',
+    segments: [
+        { index: 0, url: 'https://jellyfin.example.com/videos/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+        { index: 1, url: 'https://jellyfin.example.com/videos/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+    ],
+};
+
+let previousFetch;
+
+beforeEach(() => {
+    previousFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }));
+});
+
+afterEach(() => {
+    global.fetch = previousFetch;
+});
+
+describe('SegmentFetcher#fetchSegment abort signal', () => {
+    test('rejects with AbortError when the passed signal fires before the fetch resolves', async () => {
+        // Regression test: fetchSegment() used to accept no way to cancel
+        // a request at all -- SegmentFetcher's own reference-counted
+        // wanters (ensureRawBytes()) depend on this to actually free
+        // bandwidth when a scrub-drag abandons a segment before its fetch finishes.
+        global.fetch = jest.fn(
+            (url, { signal }) =>
+                new Promise((resolve, reject) => {
+                    signal.addEventListener('abort', () => {
+                        const err = new Error('aborted');
+                        err.name = 'AbortError';
+                        reject(err);
+                    });
+                })
+        );
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        const controller = new AbortController();
+
+        const promise = fetcher.fetchSegment(0, { signal: controller.signal });
+        controller.abort();
+
+        await expect(promise).rejects.toThrow(/aborted/i);
+    });
+
+    test('a real (non-aborted) fetch still resolves normally when a signal is passed but never fires', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        const controller = new AbortController();
+
+        const buffer = await fetcher.fetchSegment(0, { signal: controller.signal });
+
+        expect(buffer).toBeInstanceOf(ArrayBuffer);
+        expect(fetcher.hasRawBytes(0)).toBe(true);
+    });
+});
+
+describe('SegmentFetcher#hasRawBytes', () => {
+    test('is false before a segment is fetched, true after', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        expect(fetcher.hasRawBytes(0)).toBe(false);
+        expect(fetcher.hasRawBytes(1)).toBe(false);
+
+        await fetcher.fetchSegment(0);
+
+        expect(fetcher.hasRawBytes(0)).toBe(true);
+        expect(fetcher.hasRawBytes(1)).toBe(false);
+    });
+
+    test('does not consider the init segment a media segment', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        await fetcher.fetchInitSegment();
+
+        expect(fetcher.hasRawBytes(0)).toBe(false);
+    });
+});
+
+describe('SegmentFetcher#getCachedRawBytes', () => {
+    test('returns cached bytes without fetching, and throws when nothing is cached', async () => {
+        // Tier 2 (frame-store.js) is only allowed to read raw bytes through
+        // this accessor, never fetchSegment() -- it must never trigger a
+        // network fetch, even via a race between its own hasRawBytes()
+        // check and the next call.
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        expect(() => fetcher.getCachedRawBytes(0)).toThrow(/not cached/);
+
+        await fetcher.fetchSegment(0);
+        const fetchCallsBefore = global.fetch.mock.calls.length;
+
+        const buffer = fetcher.getCachedRawBytes(0);
+
+        expect(buffer).toBeInstanceOf(ArrayBuffer);
+        expect(global.fetch.mock.calls.length).toBe(fetchCallsBefore);
+    });
+});
+
+describe('SegmentFetcher#ensureRawBytes reference-counted cancellation', () => {
+    /**
+     * Makes global.fetch() hang until its AbortSignal fires, so tests can
+     * inspect whether ensureRawBytes()'s reference counting actually
+     * cancels the underlying request.
+     *
+     * @returns {void}
+     */
+    function makeFetchHangUntilAborted() {
+        global.fetch = jest.fn(
+            (url, { signal }) =>
+                new Promise((resolve, reject) => {
+                    const onAbort = () => {
+                        const err = new Error('aborted');
+                        err.name = 'AbortError';
+                        reject(err);
+                    };
+                    if (signal.aborted) {
+                        onAbort();
+                    } else {
+                        signal.addEventListener('abort', onAbort);
+                    }
+                })
+        );
+    }
+
+    test('aborts the underlying fetch once the only wanter releases before it resolves', async () => {
+        // Regression test: Scheduler.seek() needs a way to cancel a stale
+        // segment's raw-byte fetch, so scrubbing over N segments doesn't
+        // queue N uncancellable real fetches.
+        makeFetchHangUntilAborted();
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        const controller = new AbortController();
+
+        const promise = fetcher.ensureRawBytes(0, { signal: controller.signal });
+        promise.catch(() => {});
+
+        const entry = fetcher._inFlightFetches.get(0);
+        expect(entry.abortController.signal.aborted).toBe(false);
+
+        controller.abort();
+
+        expect(entry.abortController.signal.aborted).toBe(true);
+        await expect(promise).rejects.toThrow();
+    });
+
+    test('does not abort the fetch while another caller (e.g. opportunistic prefetch, no signal) still wants the same segment', async () => {
+        makeFetchHangUntilAborted();
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        const controller = new AbortController();
+
+        const seekPromise = fetcher.ensureRawBytes(0, { signal: controller.signal });
+        seekPromise.catch(() => {});
+        // No signal -- matches how the scheduler's cache pass calls
+        // ensureRawBytes(), a want that lasts as long as the request is in flight.
+        const prefetchPromise = fetcher.ensureRawBytes(0);
+
+        const entry = fetcher._inFlightFetches.get(0);
+        controller.abort();
+
+        expect(entry.abortController.signal.aborted).toBe(false);
+        expect(fetcher._inFlightFetches.get(0)).toBe(entry);
+
+        void prefetchPromise;
+    });
+
+    test('serves cached bytes without starting a new fetch when already cached', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        await fetcher.fetchSegment(0);
+        const fetchCallsBefore = global.fetch.mock.calls.length;
+
+        const buffer = await fetcher.ensureRawBytes(0);
+
+        expect(buffer).toBeInstanceOf(ArrayBuffer);
+        expect(global.fetch.mock.calls.length).toBe(fetchCallsBefore);
+    });
+});
+
+describe('SegmentFetcher fetch retry backoff', () => {
+    beforeEach(() => {
+        jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    test('a real failure enters backoff, a success clears it, and a cancellation does not count as a failure', async () => {
+        global.fetch = jest.fn(() => Promise.reject(new Error('upstream 500')));
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        expect(fetcher.isFetchInBackoff(0)).toBe(false);
+
+        await expect(fetcher.ensureRawBytes(0)).rejects.toThrow('upstream 500');
+        expect(fetcher.isFetchInBackoff(0)).toBe(true);
+
+        jest.advanceTimersByTime(199);
+        expect(fetcher.isFetchInBackoff(0)).toBe(true);
+        jest.advanceTimersByTime(2);
+        expect(fetcher.isFetchInBackoff(0)).toBe(false);
+
+        fetcher._recordFetchOutcome(0, new Error('boom'));
+        expect(fetcher.isFetchInBackoff(0)).toBe(true);
+        fetcher._recordFetchOutcome(0, null);
+        expect(fetcher.isFetchInBackoff(0)).toBe(false);
+
+        const abortErr = new Error('aborted');
+        abortErr.name = 'AbortError';
+        fetcher._recordFetchOutcome(0, abortErr);
+        expect(fetcher.isFetchInBackoff(0)).toBe(false);
+    });
+});
+
+describe('SegmentFetcher onError callback', () => {
+    test('fires exactly once per real failure, even when many callers share the same in-flight request', async () => {
+        global.fetch = jest.fn(() => Promise.reject(new Error('upstream 500')));
+        const errors = [];
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX, { onError: (err) => errors.push(err) });
+
+        const calls = Array.from({ length: 20 }, () => fetcher.ensureRawBytes(0).catch(() => {}));
+        await Promise.all(calls);
+
+        expect(errors).toHaveLength(1);
+        expect(errors[0].message).toBe('upstream 500');
+    });
+});
+
+describe('SegmentFetcher byte-range fetches (local-file SegmentIndex support)', () => {
+    /**
+     * A local-file-shaped SegmentIndex: every segment (and the init region)
+     * shares one whole-file URL, distinguished only by byte range -- the
+     * shape LocalFileMediaSource's mp4box.js-based segmenting produces,
+     * unlike Jellyfin/HLS's distinct-URL-per-segment shape (SEGMENT_INDEX
+     * above), which never sets these fields.
+     */
+    const RANGE_SEGMENT_INDEX = {
+        initSegmentUrl: 'blob:local-file',
+        initByteRangeStart: 0,
+        initByteRangeEnd: 100,
+        segments: [
+            { index: 0, url: 'blob:local-file', byteRangeStart: 100, byteRangeEnd: 500, duration: 3, startTime: 0, endTime: 3 },
+        ],
+    };
+
+    test('fetchSegment sends a Range header derived from byteRangeStart/End when present', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 206, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(RANGE_SEGMENT_INDEX);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            'blob:local-file',
+            expect.objectContaining({ headers: { Range: 'bytes=100-499' } }),
+        );
+    });
+
+    test('fetchSegment throws if a Range request is not honored (200 instead of 206)', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(RANGE_SEGMENT_INDEX);
+
+        await expect(fetcher.fetchSegment(0)).rejects.toThrow(/not honored/i);
+    });
+
+    test('fetchInitSegment sends a Range header derived from initByteRangeStart/End when present', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 206, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(RANGE_SEGMENT_INDEX);
+
+        await fetcher.fetchInitSegment();
+
+        expect(global.fetch).toHaveBeenCalledWith(
+            'blob:local-file',
+            expect.objectContaining({ headers: { Range: 'bytes=0-99' } }),
+        );
+    });
+
+    test('never sends a Range header for a Jellyfin/HLS-shaped SegmentIndex (no byteRange fields)', async () => {
+        global.fetch = jest.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) }));
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        await fetcher.fetchSegment(0);
+        await fetcher.fetchInitSegment();
+
+        for (const call of global.fetch.mock.calls) {
+            expect(call[1]?.headers).toBeUndefined();
+        }
+    });
+});
+
+describe('SegmentFetcher dual-session anchor routing', () => {
+    /** The "behind" session's own segment list -- its own index 0 is whatever absolute time it was negotiated with (see setBehindSession's indexOffset param), never the stream's absolute index 0. */
+    const BEHIND_SESSION_SEGMENTS = [
+        { index: 0, url: 'https://jellyfin.example.com/behind/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+        { index: 1, url: 'https://jellyfin.example.com/behind/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+        { index: 2, url: 'https://jellyfin.example.com/behind/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+    ];
+
+    test('uses the ordinary url for every segment before any seek moves the anchor, even with a behind session installed', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/videos/seg0.m4s', expect.anything());
+    });
+
+    test('fetches below the anchor from the behind session (offset-translated), at or above it from the ordinary url', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(1);
+        // Behind session negotiated starting exactly at the stream's own index 0 -- offset 0, so indices line up 1:1.
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+    });
+
+    test('translates the behind session index by indexOffset when it was negotiated to start later than stream index 0', async () => {
+        // Behind session negotiated to start at the stream's own segment 5 --
+        // its own index 0 corresponds to the stream's index 5, so requesting
+        // the stream's index 5 must resolve to the behind session's index 0.
+        const indexOffset = 5;
+        const fetcher = new SegmentFetcher({
+            initSegmentUrl: 'https://jellyfin.example.com/videos/init.mp4',
+            segments: Array.from({ length: 8 }, (_, i) => ({
+                index: i,
+                url: `https://jellyfin.example.com/forward/seg${i}.m4s`,
+                duration: 3,
+                startTime: i * 3,
+                endTime: (i + 1) * 3,
+            })),
+        });
+        fetcher.setAnchorSegmentIndex(6);
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, indexOffset);
+
+        await fetcher.fetchSegment(5);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+    });
+
+    test('falls back to the ordinary url when the behind session does not (yet) cover a below-anchor index', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(1);
+        // Behind session's own list is empty at this index (offset points past its own array bounds).
+        fetcher.setBehindSession([], 0);
+
+        await fetcher.fetchSegment(0);
+
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/videos/seg0.m4s', expect.anything());
+    });
+
+    test('does NOT re-fetch when a forward<->behind transition is just the anchor moving past an already-cached index', async () => {
+        // A forward url and a behind session's url for the SAME index
+        // represent identical real content (same source, same quality,
+        // and Jellyfin does accurate non-stream-copy seeking -- issue
+        // #36), just via a different session -- confirmed live that
+        // treating this transition as "stale" wasted a huge number of
+        // already-fetched, still-correct segments every time a seek moved
+        // the anchor past them, directly against the design goal of
+        // pre-fetching as much as possible and evicting only when truly
+        // necessary.
+        global.fetch = jest.fn(async (url) => ({
+            ok: true,
+            status: 200,
+            arrayBuffer: async () => new TextEncoder().encode(url).buffer,
+        }));
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        // Index 0 starts at/above the anchor -- ordinary forward fetch.
+        fetcher.setAnchorSegmentIndex(0);
+        const forwardBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(forwardBuffer)).toBe('https://jellyfin.example.com/videos/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        // A seek moves the anchor forward past index 0, and a behind
+        // session happens to be installed -- index 0 now resolves through it.
+        fetcher.setAnchorSegmentIndex(1);
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        const stillCachedBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(stillCachedBuffer)).toBe('https://jellyfin.example.com/videos/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(1); // no new fetch -- the cached bytes were reused
+    });
+
+    test('re-fetches when the SAME index resolves through two DIFFERENT behind sessions (genuinely different content)', async () => {
+        // Regression test for the real bug: two behind sessions negotiated
+        // at different times use different index offsets, so the same
+        // absolute index maps to a different real time position across
+        // them -- confirmed live as a segment whose presented content
+        // silently didn't match its own timecode (raw frame timestamp far
+        // off from the scheduler's own mediaTime for that segment).
+        global.fetch = jest.fn(async (url) => ({
+            ok: true,
+            status: 200,
+            arrayBuffer: async () => new TextEncoder().encode(url).buffer,
+        }));
+
+        const EARLIER_BEHIND_SESSION_SEGMENTS = [
+            { index: 0, url: 'https://jellyfin.example.com/behind-earlier/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+        ];
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(1);
+        fetcher.setBehindSession(EARLIER_BEHIND_SESSION_SEGMENTS, 0);
+
+        const firstBehindBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(firstBehindBuffer)).toBe('https://jellyfin.example.com/behind-earlier/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+
+        // A different behind session (different negotiation, different
+        // offset) is installed while the anchor stays put -- index 0 now
+        // maps to genuinely different real content.
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
+
+        const secondBehindBuffer = await fetcher.fetchSegment(0);
+        expect(new TextDecoder().decode(secondBehindBuffer)).toBe('https://jellyfin.example.com/behind/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(global.fetch).toHaveBeenLastCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+    });
+});

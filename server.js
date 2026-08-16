@@ -11,6 +11,8 @@
  * @module server
  */
 
+const fs = require('fs');
+const https = require('https');
 const app = require('./app');
 
 /**
@@ -25,8 +27,32 @@ const app = require('./app');
 const port = process.env.PORT || 3000;
 
 /**
- * Start the HTTP server listening on the configured port.
+ * Filesystem paths to a TLS key/certificate pair.
+ *
+ * Both must be set to serve over HTTPS. Browsers only expose WebCodecs
+ * (VideoDecoder), and other secure-context-gated APIs, over https or on
+ * localhost -- so reaching this server at a LAN address needs real TLS.
+ *
+ * @constant
+ * @type {string|undefined}
  */
-app.listen(port, () => {
-    console.log(`Server listening on the port  ${port}`);
-})
+const httpsKeyPath = process.env.HTTPS_KEY_PATH;
+const httpsCertPath = process.env.HTTPS_CERT_PATH;
+
+if (httpsKeyPath && httpsCertPath) {
+    https
+        .createServer(
+            {
+                key: fs.readFileSync(httpsKeyPath),
+                cert: fs.readFileSync(httpsCertPath),
+            },
+            app
+        )
+        .listen(port, () => {
+            console.log(`Server listening (https) on the port  ${port}`);
+        });
+} else {
+    app.listen(port, () => {
+        console.log(`Server listening on the port  ${port}`);
+    });
+}

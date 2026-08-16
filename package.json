@@ -11,7 +11,11 @@
     "docs:schema:infer": "node ./scripts/infer-openapi-schema.js",
     "docs:erd": "node ./sequelize-erd.js",
     "docs:dev:build": "jsdoc -c ./jsdoc.config.json --lenient",
-    "docs:build": "npm run docs:api:build && npm run docs:dev:build"
+    "docs:build": "npm run docs:api:build && npm run docs:dev:build",
+    "build:video-engine": "node video-engine/build.js",
+    "test:video-engine:unit": "jest --config video-engine/jest.config.js --forceExit",
+    "test:video-engine:e2e": "playwright test --config video-engine/playwright.config.js",
+    "test:video-engine": "npm run test:video-engine:unit && npm run test:video-engine:e2e"
   },
   "repository": {
     "type": "git",
@@ -46,10 +50,14 @@
     "swagger-ui-express": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "docdash": "^2.0.2",
+    "esbuild": "^0.28.1",
     "jest": "^30.4.2",
     "jsdoc": "^4.0.5",
+    "mp4box": "^2.4.1",
     "nodemon": "^2.0.7",
+    "playwright": "^1.62.1",
     "sequelize-erd": "^1.3.1",
     "supertest": "^7.2.2"
   }

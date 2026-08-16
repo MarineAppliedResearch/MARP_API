@@ -593,7 +593,7 @@ class JellyfinRepository {
                 MaxStreamingBitrate: maxStreamingBitrate,
                 TranscodingProfiles: [
                     {
-                        Container: 'ts',
+                        Container: 'mp4',
                         Type: 'Video',
                         VideoCodec: 'h264',
                         AudioCodec: 'aac',
