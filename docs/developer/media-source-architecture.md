@@ -424,12 +424,12 @@ print numbers, built and smoke-tested here, then run once by the product owner.
 Goal: answer the three prototype questions and the unit-granularity question
 before committing to an interface.
 
-| Spike | Question | Where it runs |
-|---|---|---|
-| **S1** | Decode cost and unit granularity: how long does a ~250-frame 1080p GOP take to decode? What is time-to-first-frame for seeks landing early vs late in a GOP? What does it cost to re-decode from the keyframe when stepping backwards out of the retained window? | Harness built here, **numbers from the owner's browser** |
-| **S2** | Time-window retention: how wide a window (in seconds) stays comfortably inside the frame-buffer ceiling at 1080p and at a larger format? Where does `VideoFrame` allocation actually start failing? | Same harness |
-| **S3** | Throughput and seek latency for Direct Play, including worst-case (end-of-GOP) seeks. Baseline is measurable here over the internet (670 ms for 9.9 MB); what needs the owner's machine is behaviour on a genuinely constrained link. | Baseline here; constrained-link numbers from the owner |
-| **S4** | Archive survey: containers, codecs, resolutions, framerates actually present; whether any AVI content is WebCodecs-decodable; how many files are non-faststart (`moov` at end). | Scriptable against the media archive |
+| Spike | Question | Where it runs | Status |
+|---|---|---|---|
+| **S1** | Decode cost and unit granularity: how long does a ~250-frame 1080p GOP take to decode? What is time-to-first-frame for seeks landing early vs late in a GOP? What does it cost to re-decode from the keyframe when stepping backwards out of the retained window? | Harness built here, **numbers from the owner's browser** | Harness built and driven; **awaiting real GPU** |
+| **S2** | Time-window retention: how wide a window (in seconds) stays comfortably inside the frame-buffer ceiling at 1080p and at a larger format? Where does `VideoFrame` allocation actually start failing? | Same harness | Same; failure *mode* known (§10) |
+| **S3** | Throughput and seek latency for Direct Play, including worst-case (end-of-GOP) seeks. Baseline is measurable here over the internet (670 ms for 9.9 MB); what needs the owner's machine is behaviour on a genuinely constrained link. | Baseline here; constrained-link numbers from the owner | **Answered** on a fast link (§10) |
+| **S4** | Archive survey: containers, codecs, resolutions, framerates actually present; whether any AVI content is WebCodecs-decodable; how many files are non-faststart (`moov` at end). | Scriptable against the media archive | **Answered** (§10) |
 
 Also in Phase 0, small and worth doing once:
 
@@ -527,6 +527,107 @@ The genuinely open items on this path are narrower:
 - whether per-session concurrency should be 1 or 2 (currently 2; its documented
   failure mode — two concurrent requests for unproduced segments racing a
   restart — has been observed, and backoff absorbs it).
+
+---
+
+## 10. Phase 0 results
+
+All probes are tracked in `video-engine/test/probes/` (see its README) so every
+number below can be re-derived rather than trusted. Fixtures were generated from
+the real 1080p source into `/home/mare/test-fixtures/video-engine/fixtures/`.
+
+### S3 — throughput and seek latency (answered on a fast link)
+
+Measured from the sandbox against the dev server, `s3-throughput.mjs`. Media
+bitrate derived from sample sizes: **7.94 Mbps**, matching the reported 7.95.
+
+| Measurement | Result |
+|---|---|
+| Cold index (1.05 MB prefix) | **109 ms** |
+| Whole GOP (250 frames, ~9.5 MB) | 448–539 ms, 146–180 Mbps |
+| Sustained 8 consecutive GOPs | 76.6 MB / 80 s of video in 3.6 s — **21.9× realtime** |
+
+**Seek cost scales linearly with landing position inside the GOP** — the §4
+mitigation is real and large:
+
+| Landing | Frames fetched | Bytes | Time |
+|---|---|---|---|
+| 0 % | 1 | 0.10 MB (1 %) | 26 ms |
+| 25 % | 63 | 2.47 MB | 139 ms |
+| 50 % | 126 | 4.86 MB | 234 ms |
+| 75 % | 188 | 7.37 MB | 339 ms |
+| 100 % | 250 | 9.67 MB | 432 ms |
+
+A 96× spread between best and worst landing. **Sub-unit addressing therefore
+belongs in the interface from the start** (§7 item 3), not deferred to Phase C:
+without it every seek pays the worst case.
+
+Projected worst-case cold seek for the 10.0 MB largest GOP in this file:
+
+| Link | Worst-case seek | Playback sustainable? |
+|---|---|---|
+| 100 Mbps | 0.8 s | yes |
+| 25 Mbps | 3.4 s | yes |
+| 8 Mbps | 10.5 s | yes, barely (7.9 Mbps needed) |
+| 4 Mbps | 21.0 s | **no** |
+
+So Direct Play over VPN is a **go above ~10 Mbps and a no-go below ~8**, with
+transcode fallback (R6) as the answer under that. Still unmeasured: real
+behaviour on a genuinely constrained link, which needs the owner's connection.
+
+### S4 — archive survey (answered)
+
+`s4-archive-survey.py`, run read-only on the Jellyfin box. 54 files ffprobed
+across every top-level project; `moov` position censused across **all 2,692**
+MP4 files in `/mnt/rov-video-new`.
+
+- **Codec: h264 everywhere** (51/54 sampled), Main or High profile, `yuv420p`
+  — WebCodecs-decodable. The exceptions are **two `mpeg4` Simple Profile**
+  files in `OUTREACH`, both `_output` products of some local tool. WebCodecs
+  generally cannot decode these, which is a concrete instance of R6: capability
+  detection must gate the path, and transcode must catch what fails.
+- **Resolution: 1920×1080 universally.** No 4K present. R7 still holds as a
+  forward-looking requirement, but there is nothing larger to design against
+  today.
+- **Framerate: 25 fps (42) or 30 fps (11).** Both must be handled; neither is
+  safe to assume.
+- **Bitrate spans 0.47 → 29.9 Mbps.** The recent projects (MERCI5, SALT7,
+  PALEO2023, MBNMS2025) run **~28 Mbps High profile** — 3.5× the reference
+  clip. The S3 link projections above must be tripled for that content: a
+  28 Mbps file is **not** Direct-Playable over a 25 Mbps link at all.
+- **Faststart: 2,659 of 2,692 (98.8 %).** Only **31** have `moov` at the end,
+  plus 2 unreadable. They cluster in specific projects (MBNMS2025, MERCI5,
+  SALT7, PALEO2023, the ML training segments, the OUTREACH `_output` files). So
+  a non-faststart fallback is needed for completeness but is **not** on the
+  common path — a tail-probe strategy can be added in Phase B without holding
+  anything up.
+- **No MKV or AVI exists anywhere in the readable archive.** R4's AVI concern is
+  currently hypothetical. Note the other three mounts (`rov-video1`, `seagate`,
+  `seagate2`) return `Input/output error` from the dev account and are
+  **unsurveyed** — the drives may simply be offline.
+
+### S1/S2 — harness built, real numbers still pending
+
+`harness/` is built, served over localhost (WebCodecs needs a secure context)
+and driven end to end under headless Chromium: index build, `isConfigSupported`,
+chunk assembly, decode, and all four S1 measurements plus the S2 ramp run
+without error. **The sandbox's numbers are not reported here on purpose** — it
+has software-only decode, so they answer nothing about a real machine.
+
+Two things the smoke run did establish, which are not decode-speed claims:
+
+1. **Fetch and decode are timed separately** in the harness, so S1's numbers
+   cannot be contaminated by network time the way a naive measurement would be.
+2. **S2's exhaustion mode is a renderer crash, not an exception.** The tab died
+   rather than throwing, so a `try/catch` cannot report the ceiling. The harness
+   therefore logs every 50 retained frames as they are retained; the last line
+   printed brackets the ceiling. (In the sandbox that was 1,350–1,400 frames of
+   1080p, ~54 s, ~3.9 GB nominal — a software-decode figure, quoted only to show
+   the mechanism works.)
+
+**Phase A remains blocked** until S1/S2 are run on real hardware, per the rule
+in §9: the retained-window width and the re-decode cost can still change the
+interface.
 
 ---
 
