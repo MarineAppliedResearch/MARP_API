@@ -395,8 +395,15 @@ export class SegmentFetcher {
     getInFlightFetchCountForSession(segmentIndexNumber) {
         const key = this.sessionKeyFor(segmentIndexNumber);
         let count = 0;
-        for (const inFlightIndex of this._inFlightFetches.keys()) {
-            if (this.sessionKeyFor(inFlightIndex) === key) {
+        // Counts the key each fetch was LAUNCHED against, never a re-derived
+        // one. Routing is time-varying -- a behind session re-anchoring
+        // changes which session a given index resolves to -- so re-deriving
+        // an in-flight fetch's session here misattributed it, let a second
+        // request onto a session that already had one in flight, and that
+        // pair raced a transcoder restart: confirmed live as segment 213
+        // failing with a 500 on the session it shared with segment 211.
+        for (const entry of this._inFlightFetches.values()) {
+            if (entry.sessionKey === key) {
                 count++;
             }
         }
@@ -775,7 +782,10 @@ export class SegmentFetcher {
                 .finally(() => {
                     this._inFlightFetches.delete(segmentIndexNumber);
                 });
-            entry = { promise, wanterCount: 0, abortController };
+            // sessionKey is captured HERE, at launch, and never recomputed --
+            // see getInFlightFetchCountForSession for why re-deriving it
+            // breaks the per-session concurrency ceiling.
+            entry = { promise, wanterCount: 0, abortController, sessionKey: this.sessionKeyFor(segmentIndexNumber) };
             this._inFlightFetches.set(segmentIndexNumber, entry);
         }
 

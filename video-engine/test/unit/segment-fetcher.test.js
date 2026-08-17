@@ -491,6 +491,43 @@ describe('SegmentFetcher dual-session anchor routing', () => {
         resolveFetch();
     });
 
+    test('keeps counting an in-flight fetch against the session it was LAUNCHED on, even after routing changes', async () => {
+        // Confirmed live as a 500: segment 213 was in flight on the
+        // behind@seg210 session when the close session re-anchored, which
+        // changed what 213 would resolve to NOW. Re-deriving the session for
+        // each in-flight fetch therefore misattributed 213, so segment 211
+        // was allowed onto seg210's session as a second concurrent request
+        // -- and that pair raced a transcoder restart, killing 213.
+        global.fetch = jest.fn(() => new Promise(() => {})); // never resolves; stays in flight
+
+        const deepSegments = SEGMENT_INDEX.segments.map((segment) => ({
+            ...segment,
+            url: `https://jellyfin.example.com/deep/seg${segment.index}.m4s`,
+        }));
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+        fetcher.setBehindSessions([{ segments: deepSegments, startTimeSeconds: 0 }]);
+
+        fetcher.ensureRawBytes(1).catch(() => {});
+        expect(fetcher.getInFlightFetchCountForSession(1)).toBe(1);
+
+        // A closer behind session is installed while that fetch is still in
+        // flight, so index 1 would now resolve to the NEW session.
+        const closeSegments = SEGMENT_INDEX.segments.map((segment) => ({
+            ...segment,
+            url: `https://jellyfin.example.com/close/seg${segment.index}.m4s`,
+        }));
+        fetcher.setBehindSessions([
+            { segments: deepSegments, startTimeSeconds: 0 },
+            { segments: closeSegments, startTimeSeconds: 3 },
+        ]);
+
+        // The in-flight fetch still counts against the deep session it was
+        // launched on, so index 0 (which only the deep session can serve)
+        // correctly sees that session as busy.
+        expect(fetcher.getInFlightFetchCountForSession(0)).toBe(1);
+    });
+
     test('falls back to the ordinary url when the behind session does not (yet) cover a below-anchor index', async () => {
         const fetcher = new SegmentFetcher(SEGMENT_INDEX);
         fetcher.setAnchorSegmentIndex(1);

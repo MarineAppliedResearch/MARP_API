@@ -145,23 +145,46 @@ export class JellyfinMediaSource extends MediaSource {
     }
 
     /**
-     * Serialized to 1: confirmed live against Jellyfin's own
+     * Two in flight PER LIVE SESSION (the engine applies this ceiling per
+     * session, not across all of them -- see SegmentFetcher#sessionKeyFor).
+     *
+     * Confirmed live against Jellyfin's own
      * DynamicHlsController.GetDynamicSegment that its on-the-fly HLS
      * transcoder is a single sequential ffmpeg process per PlaySessionId,
-     * not a randomly-addressable file store -- any request for a segment
-     * behind its current transcoding index, or more than ~24s ahead of it,
-     * kills and restarts that session's job. Firing several concurrent
-     * requests spanning both directions around the playhead (this engine's
-     * normal bidirectional prefetch) let two such requests race
-     * conflicting restarts against each other under the same session,
-     * which is what was producing transient 404/500s on real playback.
-     * Serializing means Jellyfin only ever has to reconcile one request's
-     * idea of "where should transcoding be" at a time.
+     * not a randomly-addressable file store: a request for a segment
+     * behind that session's current transcoding index, or more than ~24s
+     * ahead of it, kills and restarts its job. This was originally
+     * serialized to 1 for that reason.
      *
-     * @returns {number} 1.
+     * Two is safe enough to be worth the throughput, because of two later
+     * measurements. First, a segment the transcoder has ALREADY written is
+     * served straight off disk -- ~59ms, no index check, no restart -- and
+     * the large majority of prefetch requests are for exactly those, since
+     * each behind session sweeps forward through ground the playhead is
+     * about to revisit. Only not-yet-produced segments can trigger a
+     * restart at all. Second, the restart is keyed on PlaySessionId (see
+     * TranscodeManager.KillTranscodingJobs), so sessions cannot restart
+     * each other, and the risk is confined to two requests within one
+     * session both landing on unproduced segments.
+     *
+     * Sized at 2 rather than higher so three live sessions stay within the
+     * browser's own ~6 connections-per-origin limit; beyond that, extra
+     * requests would queue in the browser instead of actually running,
+     * which is the same problem DEFAULT_MAX_CONCURRENT_TIER1_FETCHES
+     * exists to avoid.
+     *
+     * Known residual cost, accepted deliberately: two concurrent requests
+     * for segments a freshly re-anchored session has not produced yet can
+     * still race its restart and return a transient 500 (seen live on
+     * segments 147/148 against a session anchored at 146). SegmentFetcher's
+     * backoff retries and playback continues, so this is log noise rather
+     * than a break -- but if it ever becomes disruptive, dropping back to
+     * 1 is the first thing to try.
+     *
+     * @returns {number} 2.
      */
     get maxConcurrentFetches() {
-        return 1;
+        return 2;
     }
 
     /**
