@@ -9,7 +9,6 @@
  */
 
 import { loadSegmentIndex } from './playlist-manager.js';
-import { SegmentFetcher } from './segment-fetcher.js';
 import { JellyfinTranscodeMediaSource } from './media-source-jellyfin-transcode.js';
 import { GopDecoder } from './gop-decoder.js';
 import { FrameStore } from './frame-store.js';
@@ -42,49 +41,42 @@ export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource,
 export async function createMarpVideoEngine(canvas, options) {
     const { streamUrl, fetchOptions, cacheBudgetBytes, rawSegmentCacheBudgetBytes, maxConcurrentFetches } = options;
 
-    // Logged at each stage (not just on final success/failure) so a stall
-    // in any one step -- e.g. a hung fetch() -- is immediately localized
-    // instead of looking like total silence.
-    console.log('[video-engine] loading playlist...');
-    const segmentIndex = await loadSegmentIndex(streamUrl, { fetchOptions });
-    console.log(`[video-engine] playlist loaded: ${segmentIndex.segments.length} segments, ${segmentIndex.totalDuration.toFixed(3)}s`);
-    console.log(`[video-engine] max concurrent segment fetches: ${maxConcurrentFetches || '(engine default)'}`);
-
     let shim = null;
-    const segmentFetcher = new SegmentFetcher(segmentIndex, {
-        maxRawCacheBytes: rawSegmentCacheBudgetBytes,
-        // Forwards raw-fetch progress/failure messages to a 'debug' event
-        // on the shim -- a raw fetch (e.g. one a seek is awaiting) can
-        // otherwise be in flight for many seconds with zero visible
-        // signal that anything is happening at all.
+
+    // Which source is plugged in decides where bytes come from and how they
+    // become decoder chunks; everything below this is source-agnostic.
+    const mediaSource = new JellyfinTranscodeMediaSource({
+        streamUrl,
+        fetchOptions,
+        rawSegmentCacheBudgetBytes,
+        // Forwards progress/failure messages to a 'debug' event on the shim
+        // -- deferred `shim` reference since the source is constructed
+        // before the shim exists (same pattern FrameStore/Scheduler's
+        // callbacks use below).
         onDebug: (message) => {
             if (shim) {
                 shim._dispatch('debug', { message });
             }
         },
-        // Reports each real raw-fetch failure exactly once (see
-        // SegmentFetcher's own constructor doc comment) -- deferred `shim`
-        // reference since SegmentFetcher is constructed before the shim
-        // exists (same pattern FrameStore/Scheduler's callbacks use below).
         onError: (err) => {
-            console.error('SegmentFetcher reported a raw-fetch failure', err);
+            console.error('Media source reported a raw-fetch failure', err);
             if (shim) {
                 shim._dispatch('error', { error: err });
             }
         },
     });
-    const gopDecoder = new GopDecoder();
 
-    // Which source is plugged in decides how bytes become decoder chunks;
-    // everything above this line is source-agnostic.
-    const mediaSource = new JellyfinTranscodeMediaSource({
-        segmentFetcher,
-        onDebug: (message) => {
-            if (shim) {
-                shim._dispatch('debug', { message });
-            }
-        },
-    });
+    // Logged at each stage (not just on final success/failure) so a stall
+    // in any one step -- e.g. a hung fetch() -- is immediately localized
+    // instead of looking like total silence.
+    console.log('[video-engine] loading media source...');
+    await mediaSource.load();
+    const segmentIndex = mediaSource.getUnitIndex();
+    console.log(`[video-engine] source loaded: ${segmentIndex.segments.length} units, ${segmentIndex.totalDuration.toFixed(3)}s`);
+    console.log(`[video-engine] max concurrent segment fetches: ${maxConcurrentFetches || '(engine default)'}`);
+
+    const segmentFetcher = mediaSource.segmentFetcher;
+    const gopDecoder = new GopDecoder();
 
     // Demux+decode the first segment up front, both to display an initial
     // frame and to learn the real negotiated width/height/fps the LRU

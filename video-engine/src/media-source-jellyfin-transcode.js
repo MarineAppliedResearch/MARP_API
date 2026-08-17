@@ -1,33 +1,89 @@
 /**
  * Media source for Jellyfin's on-the-fly HLS transcode path.
  *
- * Owns everything about how THIS source turns a decodable unit into
- * WebCodecs chunks: the shared init segment, mp4box demuxing, and the
- * keyframe-continuity fallback. The engine above only asks for chunks, so
- * a source whose units are byte ranges of one file (Direct Play, local
- * files) can answer the same question without an init segment existing at
- * all.
+ * Owns everything HLS-specific: loading the playlist, the per-segment URLs
+ * and the raw-byte fetcher that uses them, the shared init segment, mp4box
+ * demuxing, and the keyframe-continuity fallback. The engine above sees
+ * only ordered units with real start/end times and asks for their chunks,
+ * so a source whose units are byte ranges of one file (Direct Play, local
+ * files) can answer the same questions with no playlist and no init
+ * segment existing at all.
  *
- * @fileoverview Chunk provision for the Jellyfin HLS transcode path.
+ * @fileoverview The Jellyfin HLS transcode media source.
  * @module video-engine/media-source-jellyfin-transcode
  */
 
 import { demuxSegment } from './demuxer.js';
+import { loadSegmentIndex } from './playlist-manager.js';
+import { SegmentFetcher } from './segment-fetcher.js';
 
 /**
- * Supplies decoder chunks for HLS segments already fetched by Tier 1.
+ * Supplies the unit index and decoder chunks for a Jellyfin HLS stream.
  *
  * @class JellyfinTranscodeMediaSource
  */
 export class JellyfinTranscodeMediaSource {
     /**
      * @param {Object} params
-     * @param {Object} params.segmentFetcher - {@link module:video-engine/segment-fetcher.SegmentFetcher} instance (Tier 1).
+     * @param {string} params.streamUrl - MARP/Jellyfin stream-negotiation URL.
+     * @param {Object} [params.fetchOptions] - Extra fetch() options applied to every request this source makes.
+     * @param {number} [params.rawSegmentCacheBudgetBytes] - Tier 1 raw-segment cache budget in bytes.
      * @param {function(string): void} [params.onDebug] - Called with progress messages, e.g. when the continuity fallback fires.
+     * @param {function(Error): void} [params.onError] - Called once per real raw-fetch failure.
      */
-    constructor({ segmentFetcher, onDebug }) {
-        this.segmentFetcher = segmentFetcher;
+    constructor({ streamUrl, fetchOptions, rawSegmentCacheBudgetBytes, onDebug, onError }) {
+        this.streamUrl = streamUrl;
+        this.fetchOptions = fetchOptions;
+        this.rawSegmentCacheBudgetBytes = rawSegmentCacheBudgetBytes;
         this.onDebug = onDebug;
+        this.onError = onError;
+
+        // Both created by load(), which must run before anything else.
+        this.segmentFetcher = null;
+        this._segmentIndex = null;
+    }
+
+    /**
+     * Loads the playlist and builds this source's Tier 1 fetcher over it.
+     *
+     * Tier 1 lives here rather than in the engine because everything it
+     * does is HLS-specific -- one URL per segment, behind-session routing,
+     * a concurrency ceiling sized for a sequential transcoder. The engine
+     * still drives it (hasRawBytes/ensureRawBytes/preemptInFlightFetches),
+     * it just no longer constructs it.
+     *
+     * @async
+     * @returns {Promise<void>}
+     */
+    async load() {
+        this._segmentIndex = await loadSegmentIndex(this.streamUrl, { fetchOptions: this.fetchOptions });
+        this.segmentFetcher = new SegmentFetcher(this._segmentIndex, {
+            maxRawCacheBytes: this.rawSegmentCacheBudgetBytes,
+            // A raw fetch a seek is awaiting can be in flight for many
+            // seconds with no other visible signal that anything is
+            // happening at all.
+            onDebug: this.onDebug,
+            onError: this.onError,
+        });
+    }
+
+    /**
+     * The engine-facing unit index: ordered decodable units with real
+     * start/end times, and no URLs -- how a unit's bytes are located is
+     * this source's business alone.
+     *
+     * @returns {{segments: Array<{index: number, startTime: number, endTime: number, duration: number}>, totalDuration: number}} Ordered units and total duration.
+     */
+    getUnitIndex() {
+        return {
+            segments: this._segmentIndex.segments.map(({ index, startTime, endTime, duration }) => ({
+                index,
+                startTime,
+                endTime,
+                duration,
+            })),
+            totalDuration: this._segmentIndex.totalDuration,
+        };
     }
 
     /**

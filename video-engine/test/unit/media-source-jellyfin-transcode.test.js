@@ -21,6 +21,19 @@ function makeSegmentFetcher() {
     };
 }
 
+/**
+ * Builds a source with Tier 1 stubbed in place of what load() would create,
+ * so chunk provision can be tested without a real playlist or network.
+ *
+ * @param {Object} segmentFetcher - Tier 1 stub.
+ * @returns {JellyfinTranscodeMediaSource} A source ready for fetchChunks().
+ */
+function makeSource(segmentFetcher) {
+    const source = new JellyfinTranscodeMediaSource({ streamUrl: 'https://example.invalid/master.m3u8' });
+    source.segmentFetcher = segmentFetcher;
+    return source;
+}
+
 beforeEach(() => {
     demuxSegment.mockReset();
 });
@@ -37,7 +50,7 @@ describe('JellyfinTranscodeMediaSource#fetchChunks', () => {
             ],
         });
 
-        const source = new JellyfinTranscodeMediaSource({ segmentFetcher });
+        const source = makeSource(segmentFetcher);
         const result = await source.fetchChunks(1);
 
         expect(demuxSegment).toHaveBeenCalledTimes(1);
@@ -66,7 +79,7 @@ describe('JellyfinTranscodeMediaSource#fetchChunks', () => {
                 ],
             });
 
-        const source = new JellyfinTranscodeMediaSource({ segmentFetcher });
+        const source = makeSource(segmentFetcher);
         const result = await source.fetchChunks(1);
 
         expect(demuxSegment).toHaveBeenCalledTimes(2);
@@ -86,7 +99,7 @@ describe('JellyfinTranscodeMediaSource#fetchChunks', () => {
             chunks: [{ type: 'delta', timestamp: 0, duration: 40_000, data: new Uint8Array([1]) }],
         });
 
-        const source = new JellyfinTranscodeMediaSource({ segmentFetcher });
+        const source = makeSource(segmentFetcher);
 
         await expect(source.fetchChunks(0)).rejects.toThrow('does not start with a keyframe');
         expect(segmentFetcher.ensureRawBytes).not.toHaveBeenCalled();
