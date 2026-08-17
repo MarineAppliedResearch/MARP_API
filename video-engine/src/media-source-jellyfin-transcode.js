@@ -16,6 +16,8 @@
 import { demuxSegment } from './demuxer.js';
 import { loadSegmentIndex } from './playlist-manager.js';
 import { SegmentFetcher } from './segment-fetcher.js';
+import { MediaSource } from './media-source.js';
+import { getQualityOptions } from './quality-options.js';
 
 /**
  * Supplies the unit index and decoder chunks for a Jellyfin HLS stream.
@@ -143,5 +145,147 @@ export class JellyfinTranscodeMediaSource {
         if (this.onDebug) {
             this.onDebug(prefixed);
         }
+    }
+}
+
+/**
+ * Plays directly from a Jellyfin server -- no MARE_API involvement. Wraps a
+ * logged-in JellyfinClient for negotiation and playback reporting.
+ */
+export class JellyfinMediaSource extends MediaSource {
+    /**
+     * @param {import('./jellyfin-client.js').JellyfinClient} jellyfinClient - An already-authenticated client.
+     */
+    constructor(jellyfinClient) {
+        super();
+        this.client = jellyfinClient;
+        this._negotiation = null;
+    }
+
+    /**
+     * Probes the item's source characteristics and builds its quality-tier
+     * menu (see quality-options.js for the tier scheme).
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id.
+     * @returns {Promise<Array<Object>>} Quality options, or [] if this item can't be transcoded at all.
+     */
+    async probeQualityOptions(itemId) {
+        const source = await this.client.probeMediaSource(itemId);
+        return getQualityOptions(source);
+    }
+
+    /**
+     * @async
+     * @param {string} itemId - Jellyfin item id.
+     * @param {Object} qualityOption - A tier from {@link JellyfinMediaSource#probeQualityOptions}.
+     * @returns {Promise<string>} Absolute Jellyfin HLS master playlist URL.
+     */
+    async resolveStreamUrl(itemId, qualityOption) {
+        this._negotiation = await this.client.getPlaybackInfo(itemId, qualityOption);
+        return this._negotiation.streamUrl;
+    }
+
+    /**
+     * Negotiates a second, independent Jellyfin transcode session (its
+     * own PlaySessionId/ffmpeg process), started at `startTimeSeconds`
+     * (earlier than the seek anchor) via StartTimeTicks, so its ffmpeg
+     * process only ever sweeps FORWARD through the anchor's behind-region
+     * -- never restarting -- instead of being asked to move backward.
+     * Confirmed live: even a session fully dedicated to serving segments
+     * behind the anchor still restarts (multi-second cost, real 404/500s
+     * under load) if asked in decreasing order; the fix is a session that
+     * itself never needs to move backward, achieved by starting it
+     * earlier and only ever requesting increasing indices from it (see
+     * SegmentFetcher#setBehindSession/_resolveSegmentUrl).
+     *
+     * Not used for playback reporting -- `_negotiation` (from
+     * resolveStreamUrl) remains the one Jellyfin considers "the" playback
+     * session for resume-position/now-playing purposes; this second
+     * session exists purely to pre-cache bytes.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id.
+     * @param {Object} qualityOption - Same tier passed to {@link JellyfinMediaSource#resolveStreamUrl}.
+     * @param {number} startTimeSeconds - Absolute position (seconds) to start this session's own transcode from.
+     * @returns {Promise<string>} Absolute Jellyfin HLS master playlist URL for the second session.
+     */
+    async resolveBehindStreamUrl(itemId, qualityOption, startTimeSeconds) {
+        const behindNegotiation = await this.client.getPlaybackInfo(itemId, { ...qualityOption, startTimeSeconds });
+        return behindNegotiation.streamUrl;
+    }
+
+    /**
+     * Two in flight PER LIVE SESSION (the engine applies this ceiling per
+     * session, not across all of them -- see SegmentFetcher#sessionKeyFor).
+     *
+     * Confirmed live against Jellyfin's own
+     * DynamicHlsController.GetDynamicSegment that its on-the-fly HLS
+     * transcoder is a single sequential ffmpeg process per PlaySessionId,
+     * not a randomly-addressable file store: a request for a segment
+     * behind that session's current transcoding index, or more than ~24s
+     * ahead of it, kills and restarts its job. This was originally
+     * serialized to 1 for that reason.
+     *
+     * Two is safe enough to be worth the throughput, because of two later
+     * measurements. First, a segment the transcoder has ALREADY written is
+     * served straight off disk -- ~59ms, no index check, no restart -- and
+     * the large majority of prefetch requests are for exactly those, since
+     * each behind session sweeps forward through ground the playhead is
+     * about to revisit. Only not-yet-produced segments can trigger a
+     * restart at all. Second, the restart is keyed on PlaySessionId (see
+     * TranscodeManager.KillTranscodingJobs), so sessions cannot restart
+     * each other, and the risk is confined to two requests within one
+     * session both landing on unproduced segments.
+     *
+     * Sized at 2 rather than higher so three live sessions stay within the
+     * browser's own ~6 connections-per-origin limit; beyond that, extra
+     * requests would queue in the browser instead of actually running,
+     * which is the same problem DEFAULT_MAX_CONCURRENT_TIER1_FETCHES
+     * exists to avoid.
+     *
+     * Known residual cost, accepted deliberately: two concurrent requests
+     * for segments a freshly re-anchored session has not produced yet can
+     * still race its restart and return a transient 500 (seen live on
+     * segments 147/148 against a session anchored at 146). SegmentFetcher's
+     * backoff retries and playback continues, so this is log noise rather
+     * than a break -- but if it ever becomes disruptive, dropping back to
+     * 1 is the first thing to try.
+     *
+     * @returns {number} 2.
+     */
+    get maxConcurrentFetches() {
+        return 2;
+    }
+
+    /**
+     * Builds the report body shared by all three playback-reporting calls,
+     * filling in the mediaSourceId/playSessionId from the negotiation that
+     * produced the currently-playing stream.
+     *
+     * @param {Object} context - Playback context.
+     * @param {number} [context.positionTicks] - Current position, in Jellyfin ticks.
+     * @param {boolean} [context.isPaused] - Whether playback is currently paused.
+     * @returns {Object} Report body for JellyfinClient's reporting methods.
+     */
+    _buildReport(context = {}) {
+        return {
+            mediaSourceId: this._negotiation && this._negotiation.mediaSourceId,
+            playSessionId: this._negotiation && this._negotiation.playSessionId,
+            positionTicks: context.positionTicks,
+            isPaused: context.isPaused,
+        };
+    }
+
+    async reportPlaybackStarted(itemId, context) {
+        await this.client.reportPlaybackStarted(itemId, this._buildReport(context));
+    }
+
+    async reportPlaybackProgress(itemId, context) {
+        await this.client.reportPlaybackProgress(itemId, this._buildReport(context));
+    }
+
+    async reportPlaybackStopped(itemId, context) {
+        await this.client.reportPlaybackStopped(itemId, this._buildReport(context));
     }
 }

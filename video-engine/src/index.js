@@ -9,7 +9,7 @@
  */
 
 import { loadSegmentIndex } from './playlist-manager.js';
-import { JellyfinTranscodeMediaSource } from './media-source-jellyfin-transcode.js';
+import { JellyfinTranscodeMediaSource, JellyfinMediaSource } from './media-source-jellyfin-transcode.js';
 import { GopDecoder } from './gop-decoder.js';
 import { FrameStore } from './frame-store.js';
 import { Scheduler } from './scheduler.js';
@@ -17,7 +17,7 @@ import { CanvasRenderer } from './canvas-renderer.js';
 import { MarpVideoShim } from './marp-video-shim.js';
 import { attachWebView2Bridge } from './webview2-bridge.js';
 import { JellyfinClient } from './jellyfin-client.js';
-import { MediaSource, JellyfinMediaSource } from './media-source.js';
+import { MediaSource } from './media-source.js';
 import { getQualityOptions } from './quality-options.js';
 
 export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource, getQualityOptions };
