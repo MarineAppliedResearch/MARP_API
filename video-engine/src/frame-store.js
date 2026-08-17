@@ -1,14 +1,13 @@
 /**
  * Tier 2 of the two-tier cache: a segment-granularity decoded-frame LRU,
- * plus the demux->decode orchestration needed to fill it.
+ * plus the decode orchestration needed to fill it.
  *
  * Tier 2 never fetches raw bytes itself -- it only decodes a segment once
  * Tier 1 (segment-fetcher.js) already has that segment's raw bytes
- * cached. The one narrow exception is the keyframe-continuity merge
- * fallback below, which needs the immediately preceding segment's raw
- * bytes to make decode possible at all; that's an implementation detail
- * of decoding this segment, not a scheduling decision about what to
- * prefetch ahead of time.
+ * cached. Nor does it demux: chunks come from the media source, which
+ * knows how its own container works (see
+ * media-source-jellyfin-transcode.js, which also owns the
+ * keyframe-continuity fallback that needs the preceding unit's bytes).
  *
  * Partial-GOP retention is pointless: decode is always forward-from-
  * keyframe, so evicting part of a segment's frames still requires a full
@@ -21,8 +20,6 @@
  * @author Isaac Travers
  * @module video-engine/frame-store
  */
-
-import { demuxSegment } from './demuxer.js';
 
 /** Uncompressed 8-bit 4:2:0: full-res Y plane plus quarter-res U/V planes. */
 const BYTES_PER_PIXEL_420_8BIT = 1.5;
@@ -52,6 +49,7 @@ export class FrameStore {
     /**
      * @param {Object} params
      * @param {Object} params.segmentFetcher - {@link module:video-engine/segment-fetcher.SegmentFetcher} instance (Tier 1).
+     * @param {Object} params.mediaSource - Media source supplying decoder chunks for a unit, e.g. {@link module:video-engine/media-source-jellyfin-transcode.JellyfinTranscodeMediaSource}.
      * @param {Object} params.gopDecoder - {@link module:video-engine/gop-decoder.GopDecoder} instance.
      * @param {number} params.width - Real negotiated video width, used to size the cache budget.
      * @param {number} params.height - Real negotiated video height, used to size the cache budget.
@@ -61,8 +59,9 @@ export class FrameStore {
      * @param {function(string): void} [params.onDebug] - Called with the same decode progress messages this class already logs to the console -- lets a consumer (e.g. the test harness's on-page log panel) surface them without needing DevTools open.
      * @param {function(Error): void} [params.onError] - Called exactly once per real (non-cancelled) segment decode failure, regardless of how many callers share the same in-flight request.
      */
-    constructor({ segmentFetcher, gopDecoder, width, height, fps, segmentDuration, cacheBudgetBytes, onDebug, onError }) {
+    constructor({ segmentFetcher, mediaSource, gopDecoder, width, height, fps, segmentDuration, cacheBudgetBytes, onDebug, onError }) {
         this.segmentFetcher = segmentFetcher;
+        this.mediaSource = mediaSource;
         this.gopDecoder = gopDecoder;
         this.onDebug = onDebug;
         this.onError = onError;
@@ -327,40 +326,12 @@ export class FrameStore {
         // gives an at-a-glance answer to "is it still working" without
         // needing a debugger or guesswork.
         this._logDebug(`segment ${segmentIndexNumber}: demuxing + decoding...`);
-        const initBuffer = await this.segmentFetcher.fetchInitSegment();
-        const segmentBuffer = this.segmentFetcher.getCachedRawBytes(segmentIndexNumber);
 
-        let demuxResult = await demuxSegment(initBuffer, segmentBuffer);
-
-        // Record the current segment's own first timestamp before any
-        // continuity merge happens.
-        // We use this later to trim prepended frames back out.
-        const segmentOwnFirstTimestampMicros =
-            demuxResult.chunks.length > 0 ? demuxResult.chunks[0].timestamp : null;
-
-        if (demuxResult.chunks.length === 0 || demuxResult.chunks[0].type !== 'key') {
-            // Defensive fallback: this segment's first sample isn't a
-            // keyframe, contrary to Jellyfin's BreakOnNonKeyFrames=False
-            // guarantee. Merge in the previous segment's chunks so decode
-            // has a real keyframe to start from, rather than corrupting
-            // output or throwing on a healthy stream. This is the one
-            // place Tier 2 fetches raw bytes directly (via Tier 1's
-            // ensureRawBytes) -- an implementation necessity of decoding
-            // THIS segment, not an opportunistic scheduling decision.
-            this._logDebug(`segment ${segmentIndexNumber}: non-key start, merging previous segment for decode continuity`);
-            if (segmentIndexNumber === 0) {
-                throw new Error('First segment does not start with a keyframe -- cannot recover.');
-            }
-
-            const prevBuffer = await this.segmentFetcher.ensureRawBytes(segmentIndexNumber - 1);
-            const prevDemux = await demuxSegment(initBuffer, prevBuffer);
-
-            demuxResult = {
-                codec: demuxResult.codec,
-                description: demuxResult.description,
-                chunks: [...prevDemux.chunks, ...demuxResult.chunks].sort((a, b) => a.timestamp - b.timestamp),
-            };
-        }
+        // How the bytes become chunks is the source's business: HLS demuxes
+        // init+media, a byte-range source slices its own sample table. The
+        // source may prepend a previous unit's chunks for decode continuity,
+        // which is why it also reports this unit's own first timestamp.
+        const { unitFirstTimestampMicros, ...demuxResult } = await this.mediaSource.fetchChunks(segmentIndexNumber);
 
         const gopBuffer = await this.gopDecoder.decodeSegment(segmentIndexNumber, demuxResult);
 
@@ -369,8 +340,8 @@ export class FrameStore {
         // They must not stay cached as part of THIS segment's frame list.
         // Otherwise scheduler time mapping anchors to the wrong frame.
         // That can make visible frames disagree with currentTime.
-        if (segmentOwnFirstTimestampMicros !== null) {
-            gopBuffer.frames = gopBuffer.frames.filter((frame) => frame.timestamp >= segmentOwnFirstTimestampMicros);
+        if (unitFirstTimestampMicros !== null) {
+            gopBuffer.frames = gopBuffer.frames.filter((frame) => frame.timestamp >= unitFirstTimestampMicros);
         }
 
         this._logDebug(`segment ${segmentIndexNumber}: ready (${gopBuffer.frames.length} frames)`);

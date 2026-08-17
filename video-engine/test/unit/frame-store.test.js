@@ -6,27 +6,36 @@
  *
  * Exercises `buffers`/`pinned`/`_evictIfNeeded`/`_touch` directly with
  * fake GopBuffers rather than going through `ensureDecoded()`'s real
- * demux/decode pipeline where the eviction/pinning bookkeeping itself is
- * under test -- that bookkeeping is independent of how a GopBuffer was
- * produced. demuxer.js is mocked so ensureDecoded()'s own tests can drive
- * decode success/failure deterministically without a real mp4 payload.
+ * decode pipeline where the eviction/pinning bookkeeping itself is under
+ * test -- that bookkeeping is independent of how a GopBuffer was produced.
+ * The media source is faked so ensureDecoded()'s own tests can drive decode
+ * success/failure deterministically without a real mp4 payload.
  *
  * @fileoverview Unit tests for FrameStore's LRU eviction/pinning and decode-only orchestration.
  * @author Isaac Travers
  * @module video-engine/test/unit/frame-store.test
  */
 
-jest.mock('../../src/demuxer.js', () => ({
-    demuxSegment: jest.fn(() =>
-        Promise.resolve({
-            codec: 'avc1.test',
-            description: null,
-            chunks: [{ type: 'key', timestamp: 0, duration: 40_000, data: new Uint8Array([1]) }],
-        })
-    ),
-}));
-
 const { FrameStore } = require('../../src/frame-store.js');
+
+/**
+ * Fake media source returning one keyframe chunk -- enough for FrameStore,
+ * which only forwards chunks to the decoder and trims by timestamp.
+ *
+ * @returns {Object} A fake media source.
+ */
+function makeFakeMediaSource() {
+    return {
+        fetchChunks: jest.fn(() =>
+            Promise.resolve({
+                codec: 'avc1.test',
+                description: null,
+                chunks: [{ type: 'key', timestamp: 0, duration: 40_000, data: new Uint8Array([1]) }],
+                unitFirstTimestampMicros: 0,
+            }),
+        ),
+    };
+}
 
 /**
  * Builds a FrameStore with a tiny cache budget so maxSegmentsBuffered
@@ -40,6 +49,7 @@ const { FrameStore } = require('../../src/frame-store.js');
 function makeFrameStore(segmentFetcher = {}) {
     return new FrameStore({
         segmentFetcher,
+        mediaSource: makeFakeMediaSource(),
         gopDecoder: {},
         width: 1920,
         height: 1080,
@@ -260,6 +270,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         const segmentFetcher = makeFakeSegmentFetcher(new Set());
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder: { decodeSegment: jest.fn() },
             width: 1920,
             height: 1080,
@@ -278,6 +289,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         const gopDecoder = { decodeSegment: jest.fn(() => Promise.resolve(gopBuffer)) };
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder,
             width: 1920,
             height: 1080,
@@ -306,6 +318,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         };
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder,
             width: 1920,
             height: 1080,
@@ -334,6 +347,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         const errors = [];
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder,
             width: 1920,
             height: 1080,

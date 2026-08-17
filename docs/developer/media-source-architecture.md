@@ -458,6 +458,11 @@ codec/container inventory.
 4. Replace `_computeMaxSegmentsBuffered`'s segment counting with
    **seconds-of-decoded-video**, derived from the real stream at runtime (R7).
 
+**Decided (product owner):** capability/bandwidth path selection stays **out**
+of Phase A, even though S4 found content that needs it (§10). Phase A remains a
+pure refactor with no new behaviour; the decision logic arrives with Direct Play
+in Phase D. Do not add it here on the argument that the seam is convenient.
+
 **Validation:** all 129 existing unit tests stay green; Playwright run against
 the dev server showing playback, seek, reverse and frame-step unchanged.
 **→ Owner checkpoint 1: manual verification that nothing regressed.**

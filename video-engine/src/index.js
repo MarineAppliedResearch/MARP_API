@@ -10,7 +10,7 @@
 
 import { loadSegmentIndex } from './playlist-manager.js';
 import { SegmentFetcher } from './segment-fetcher.js';
-import { demuxSegment } from './demuxer.js';
+import { JellyfinTranscodeMediaSource } from './media-source-jellyfin-transcode.js';
 import { GopDecoder } from './gop-decoder.js';
 import { FrameStore } from './frame-store.js';
 import { Scheduler } from './scheduler.js';
@@ -75,15 +75,25 @@ export async function createMarpVideoEngine(canvas, options) {
     });
     const gopDecoder = new GopDecoder();
 
+    // Which source is plugged in decides how bytes become decoder chunks;
+    // everything above this line is source-agnostic.
+    const mediaSource = new JellyfinTranscodeMediaSource({
+        segmentFetcher,
+        onDebug: (message) => {
+            if (shim) {
+                shim._dispatch('debug', { message });
+            }
+        },
+    });
+
     // Demux+decode the first segment up front, both to display an initial
     // frame and to learn the real negotiated width/height/fps the LRU
     // cache's memory-budget formula needs -- never guessed/hardcoded.
-    console.log('[video-engine] fetching init + first segment...');
-    const initBuffer = await segmentFetcher.fetchInitSegment();
-    const firstSegmentBuffer = await segmentFetcher.fetchSegment(0);
+    console.log('[video-engine] fetching first segment...');
+    await segmentFetcher.fetchSegment(0);
 
     console.log('[video-engine] demuxing first segment...');
-    const firstDemux = await demuxSegment(initBuffer, firstSegmentBuffer);
+    const { unitFirstTimestampMicros: _firstUnitStart, ...firstDemux } = await mediaSource.fetchChunks(0);
 
     console.log('[video-engine] decoding first segment...');
     const firstGopBuffer = await gopDecoder.decodeSegment(0, firstDemux);
@@ -100,6 +110,7 @@ export async function createMarpVideoEngine(canvas, options) {
 
     const frameStore = new FrameStore({
         segmentFetcher,
+        mediaSource,
         gopDecoder,
         width: videoWidth,
         height: videoHeight,
