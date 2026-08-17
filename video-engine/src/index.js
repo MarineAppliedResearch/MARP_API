@@ -179,12 +179,45 @@ export async function createMarpVideoEngine(canvas, options) {
      * @param {function(): boolean} [isStillWanted] - Checked immediately before applying the result (after this call's own playlist fetch, which can take a real, variable amount of time) -- if it returns false, the result is discarded instead of being applied. Without this, an OLDER negotiation whose own playlist fetch happens to resolve AFTER a newer one's can silently overwrite the newer (correct) behind session with stale routing data -- confirmed live as the actual cause of a segment's decoded content coming from a completely different, much-earlier point in the stream than its own timecode. The caller's own generation-counter check before starting this call is not enough by itself, since nothing re-checks it after this call's async work completes and right before the mutation below.
      * @returns {Promise<void>}
      */
+    // Behind sessions currently installed, keyed by role ('close' /
+    // 'extended'), so each can be re-anchored independently: the close one
+    // re-anchors often as the playhead moves, the extended one rarely.
+    const behindSessionsByRole = new Map();
+
     shim.setBehindSession = async (behindStreamUrl, behindStartTimeSeconds, isStillWanted) => {
+        await shim.setBehindSessionForRole('close', behindStreamUrl, behindStartTimeSeconds, isStillWanted);
+    };
+
+    /**
+     * Negotiates (or replaces) one named behind session, leaving the
+     * others in place.
+     *
+     * Two roles are used today. 'close' sits just behind the playhead and
+     * is re-anchored often -- a forward-sweeping transcode produces the
+     * segment nearest its own anchor first and the furthest one last, so
+     * only a session anchored very close delivers what reverse playback
+     * needs soonest. 'extended' owns the deeper section the playhead is
+     * heading into, and is re-anchored rarely; by the time the playhead
+     * arrives, its segments are already written to disk and serve
+     * immediately (~59ms measured, versus a multi-second restart).
+     *
+     * @async
+     * @param {string} role - Session role, e.g. 'close' or 'extended'.
+     * @param {string} behindStreamUrl - Stream-negotiation URL for this session, negotiated with StartTimeTicks = behindStartTimeSeconds.
+     * @param {number} behindStartTimeSeconds - The exact start time (seconds) that URL was negotiated with.
+     * @param {function(): boolean} [isStillWanted] - Checked immediately before applying the result; see setBehindSession's own note on why a pre-call generation check is not enough.
+     * @returns {Promise<void>}
+     */
+    shim.setBehindSessionForRole = async (role, behindStreamUrl, behindStartTimeSeconds, isStillWanted) => {
         const behindSegmentIndex = await loadSegmentIndex(behindStreamUrl, { fetchOptions });
         if (isStillWanted && !isStillWanted()) {
             return;
         }
-        segmentFetcher.setBehindSession(behindSegmentIndex.segments, behindStartTimeSeconds);
+        behindSessionsByRole.set(role, {
+            segments: behindSegmentIndex.segments,
+            startTimeSeconds: behindStartTimeSeconds,
+        });
+        segmentFetcher.setBehindSessions([...behindSessionsByRole.values()]);
     };
 
     // Prime the first displayed frame and fire the initial metadata

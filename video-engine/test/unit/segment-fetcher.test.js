@@ -396,6 +396,101 @@ describe('SegmentFetcher dual-session anchor routing', () => {
         expect(fetcher.isBehindCoverageGap(2)).toBe(false);
     });
 
+    test('routes to the tightest-fitting behind session when several cover the same index', async () => {
+        // Two behind sessions tile the region behind the playhead: a close
+        // one just behind it, and an extended one owning the deeper
+        // section. Both may technically list a given index, but the one
+        // that STARTED LATEST has the least left to produce before
+        // reaching it, so it is the one most likely to already have it on
+        // disk -- and an already-written segment serves in ~59ms against
+        // the real server, versus a multi-second restart otherwise.
+        const closeSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/close/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/close/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/close/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+        const extendedSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/extended/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/extended/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/extended/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+        fetcher.setBehindSessions([
+            { segments: extendedSegments, startTimeSeconds: 0 }, // deep section
+            { segments: closeSegments, startTimeSeconds: 3 }, // just behind the playhead
+        ]);
+
+        // Segment 1 (3-6s) is reachable by both; the close session started
+        // latest at 3s, so it wins.
+        await fetcher.fetchSegment(1);
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/close/seg1.m4s', expect.anything());
+
+        // Segment 0 (0-3s) predates the close session, so only the
+        // extended one can serve it without seeking backward.
+        await fetcher.fetchSegment(0);
+        expect(global.fetch).toHaveBeenLastCalledWith('https://jellyfin.example.com/extended/seg0.m4s', expect.anything());
+    });
+
+    test('reports a coverage gap only when NO behind session can reach an index', async () => {
+        const behindSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/behind/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/behind/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/behind/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+
+        // Only a deep session: index 0 is covered, so no gap.
+        fetcher.setBehindSessions([{ segments: behindSegments, startTimeSeconds: 0 }]);
+        expect(fetcher.isBehindCoverageGap(0)).toBe(false);
+
+        // Only a close session starting at 3s: index 0 (0-3s) predates it.
+        fetcher.setBehindSessions([{ segments: behindSegments, startTimeSeconds: 3 }]);
+        expect(fetcher.isBehindCoverageGap(0)).toBe(true);
+
+        // Adding the deep session back closes that gap.
+        fetcher.setBehindSessions([
+            { segments: behindSegments, startTimeSeconds: 3 },
+            { segments: behindSegments, startTimeSeconds: 0 },
+        ]);
+        expect(fetcher.isBehindCoverageGap(0)).toBe(false);
+    });
+
+    test('counts in-flight fetches per live session, not globally', async () => {
+        // The concurrency ceiling exists because concurrent requests race
+        // a transcoder restart against each other WITHIN one session.
+        // Separate sessions are separate ffmpeg jobs, so counting globally
+        // would split one slot across them and buy no extra throughput.
+        let resolveFetch;
+        global.fetch = jest.fn(
+            () =>
+                new Promise((resolve) => {
+                    resolveFetch = () => resolve({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) });
+                }),
+        );
+
+        const behindSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/behind/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/behind/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/behind/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+        fetcher.setBehindSessions([{ segments: behindSegments, startTimeSeconds: 0 }]);
+
+        fetcher.ensureRawBytes(0).catch(() => {}); // behind session
+        fetcher.ensureRawBytes(2).catch(() => {}); // forward session (at the anchor)
+
+        // One in flight on each session, not two on one.
+        expect(fetcher.getInFlightFetchCountForSession(0)).toBe(1);
+        expect(fetcher.getInFlightFetchCountForSession(2)).toBe(1);
+        expect(fetcher.getInFlightFetchCount()).toBe(2);
+
+        resolveFetch();
+    });
+
     test('falls back to the ordinary url when the behind session does not (yet) cover a below-anchor index', async () => {
         const fetcher = new SegmentFetcher(SEGMENT_INDEX);
         fetcher.setAnchorSegmentIndex(1);

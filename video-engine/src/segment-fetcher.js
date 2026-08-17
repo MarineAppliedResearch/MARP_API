@@ -163,8 +163,7 @@ export class SegmentFetcher {
         // or above the anchor always use their ordinary `url` (the
         // "forward" session).
         this._anchorSegmentIndex = 0;
-        this._behindSegments = null;
-        this._behindStartTimeSeconds = 0;
+        this._behindSessions = [];
     }
 
     /**
@@ -217,8 +216,66 @@ export class SegmentFetcher {
      * @returns {void}
      */
     setBehindSession(segments, behindStartTimeSeconds = 0) {
-        this._behindSegments = segments;
-        this._behindStartTimeSeconds = behindStartTimeSeconds;
+        this.setBehindSessions(segments ? [{ segments, startTimeSeconds: behindStartTimeSeconds }] : []);
+    }
+
+    /**
+     * Installs (or replaces) every "behind" session at once.
+     *
+     * Multiple sessions tile the region behind the playhead between them:
+     * a close one anchored just behind the playhead, serving what reverse
+     * playback needs immediately, and an extended one anchored deeper,
+     * building coverage of the section the playhead is heading into. Each
+     * is an independent Jellyfin transcode job, so re-anchoring one (which
+     * costs a restart) does not disturb the others.
+     *
+     * Any forward-sweeping session produces the segment nearest its own
+     * anchor FIRST and the one furthest ahead of it LAST -- which is
+     * exactly backwards from what reverse playback consumes. That is why
+     * the close session has to sit very near the playhead and re-anchor
+     * often, rather than covering a wide span: a wide span would produce
+     * the segments reverse needs soonest last of all.
+     *
+     * @param {Array<{segments: Array<Object>, startTimeSeconds: number}>} sessions - Behind sessions, each with its own absolute-indexed segment list and the position its transcode began at. Order does not matter; routing picks by fit (see _behindSessionFor).
+     * @returns {void}
+     */
+    setBehindSessions(sessions) {
+        this._behindSessions = Array.isArray(sessions) ? sessions.filter((session) => session && session.segments) : [];
+    }
+
+    /**
+     * Picks the behind session best placed to serve a segment: among those
+     * whose transcode began at or before it, the one that began LATEST.
+     *
+     * That is the tightest fit -- the session with the least content left
+     * to produce before it reaches this segment, and so the one most
+     * likely to already have it on disk. (A segment already written is
+     * served immediately regardless of session state, measured at ~59ms
+     * against the real server, versus a multi-second restart for one that
+     * forces the job to move.)
+     *
+     * @param {Object} segment - `this.segmentIndex.segments[segmentIndexNumber]`.
+     * @param {number} segmentIndexNumber - Segment index being resolved.
+     * @returns {Object|null} The chosen session, or null if none can serve it without seeking backward.
+     */
+    _behindSessionFor(segment, segmentIndexNumber) {
+        if (!segment) {
+            return null;
+        }
+
+        let best = null;
+        for (const session of this._behindSessions) {
+            if (session.startTimeSeconds > segment.startTime) {
+                continue;
+            }
+            if (!session.segments[segmentIndexNumber]) {
+                continue;
+            }
+            if (!best || session.startTimeSeconds > best.startTimeSeconds) {
+                best = session;
+            }
+        }
+        return best;
     }
 
     /**
@@ -233,31 +290,25 @@ export class SegmentFetcher {
      * @returns {string} The URL to fetch.
      */
     _resolveSegmentUrl(segmentIndexNumber, segment) {
-        if (this._servableByBehindSession(segmentIndexNumber, segment)) {
-            return this._behindSegments[segmentIndexNumber].url;
-        }
-        return segment.url;
+        const session = this._servableByBehindSession(segmentIndexNumber, segment);
+        return session ? session.segments[segmentIndexNumber].url : segment.url;
     }
 
     /**
-     * Whether the behind session can serve this index without being asked
-     * to move backward: it must be installed, the index must be below the
-     * anchor (at or above it belongs to the forward session), the behind
-     * session must actually list that index, and the segment must start
-     * at or after the point that session's own transcode began.
+     * Which behind session should serve this index, if any: the index must
+     * be below the anchor (at or above it belongs to the forward session),
+     * and some behind session must be able to reach it without seeking its
+     * own transcode backward.
      *
      * @param {number} segmentIndexNumber - Segment index to check.
      * @param {Object} segment - `this.segmentIndex.segments[segmentIndexNumber]`.
-     * @returns {boolean} True if the behind session should serve this index.
+     * @returns {Object|null} The session that should serve it, or null.
      */
     _servableByBehindSession(segmentIndexNumber, segment) {
-        return Boolean(
-            this._behindSegments &&
-                segmentIndexNumber < this._anchorSegmentIndex &&
-                this._behindSegments[segmentIndexNumber] &&
-                segment &&
-                segment.startTime >= this._behindStartTimeSeconds,
-        );
+        if (segmentIndexNumber >= this._anchorSegmentIndex) {
+            return null;
+        }
+        return this._behindSessionFor(segment, segmentIndexNumber);
     }
 
     /**
@@ -280,25 +331,76 @@ export class SegmentFetcher {
      * @returns {boolean} True if no session can currently serve this index without a restart.
      */
     isBehindCoverageGap(segmentIndexNumber) {
-        if (!this._behindSegments || segmentIndexNumber >= this._anchorSegmentIndex) {
+        if (this._behindSessions.length === 0 || segmentIndexNumber >= this._anchorSegmentIndex) {
             return false;
         }
         const segment = this.segmentIndex.segments[segmentIndexNumber];
-        return Boolean(segment && segment.startTime < this._behindStartTimeSeconds);
+        return Boolean(segment) && !this._behindSessionFor(segment, segmentIndexNumber);
     }
 
     /**
-     * Reports which session a segment index currently resolves to --
-     * "forward" or "behind" -- purely for debug logging (see
-     * ensureRawBytes's own log lines), so it's visible at a glance which
-     * of the two live transcode sessions a given fetch actually used.
+     * A stable key for the live transcode session a segment index resolves
+     * to -- `"forward"`, or `"behind@<startTime>"` for a behind session
+     * (its own start time identifies it, since that is what distinguishes
+     * one behind session's ffmpeg job from another's).
+     *
+     * Used both for debug logging and for per-session fetch accounting:
+     * concurrent requests only race a restart against each other WITHIN
+     * one session, so the concurrency ceiling is applied per session
+     * rather than globally -- otherwise adding sessions would just split
+     * one slot between them and buy no extra throughput.
      *
      * @param {number} segmentIndexNumber - Segment index to check.
-     * @returns {string} `"forward"` or `"behind"`.
+     * @returns {string} Session key.
+     */
+    sessionKeyFor(segmentIndexNumber) {
+        const segment = this.segmentIndex.segments[segmentIndexNumber];
+        const session = this._servableByBehindSession(segmentIndexNumber, segment);
+        return session ? `behind@${session.startTimeSeconds}` : 'forward';
+    }
+
+    /**
+     * Human-readable session label for debug logging, naming the behind
+     * session by the SEGMENT its transcode starts at rather than its raw
+     * start time -- every other line in the log talks in segment numbers,
+     * so a seconds-based label made it needlessly hard to line a session's
+     * coverage up against the fetches attributed to it.
+     *
+     * Deliberately not used as the accounting key (see sessionKeyFor):
+     * two sessions anchored a fraction of a second apart can fall inside
+     * the same segment, and collapsing them into one label is fine for
+     * reading a log but would merge their concurrency accounting.
+     *
+     * @param {number} segmentIndexNumber - Segment index to check.
+     * @returns {string} `"forward"` or `"behind@seg<index>"`.
      */
     _sessionLabelFor(segmentIndexNumber) {
         const segment = this.segmentIndex.segments[segmentIndexNumber];
-        return this._servableByBehindSession(segmentIndexNumber, segment) ? 'behind' : 'forward';
+        const session = this._servableByBehindSession(segmentIndexNumber, segment);
+        if (!session) {
+            return 'forward';
+        }
+        const startIndex = this.segmentIndex.segments.findIndex((candidate) => candidate.endTime > session.startTimeSeconds);
+        return `behind@seg${startIndex}`;
+    }
+
+    /**
+     * Counts in-flight fetches currently routed to the same live session
+     * as `segmentIndexNumber` -- see sessionKeyFor for why this is counted
+     * per session rather than globally.
+     *
+     * @param {number} segmentIndexNumber - Segment index whose session to count for.
+     * @returns {number} In-flight fetches on that session.
+     */
+    getInFlightFetchCountForSession(segmentIndexNumber) {
+        const key = this.sessionKeyFor(segmentIndexNumber);
+        let count = 0;
+        for (const inFlightIndex of this._inFlightFetches.keys()) {
+            if (this.sessionKeyFor(inFlightIndex) === key) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**

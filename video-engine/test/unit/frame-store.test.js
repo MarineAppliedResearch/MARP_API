@@ -164,6 +164,26 @@ describe('FrameStore eviction priority (playhead island)', () => {
         expect([...frameStore.buffers.keys()]).toContain(10);
     });
 
+    test('never evicts the segment just decoded, even when it ranks lowest', () => {
+        // A seek's own target is decoded while the eviction ranking still
+        // reflects the PRE-seek playhead, so it ranks below everything in
+        // the cache. With the cache full it was evicted inside its own
+        // insertion -- before seek() could read it -- and the seek then
+        // failed on an undefined buffer, breaking seeking entirely.
+        const frameStore = makeFrameStore();
+        frameStore.setEvictionPriority([10, 11, 12]);
+        for (const index of [10, 11, 12]) {
+            frameStore.buffers.set(index, makeGopBuffer(1));
+        }
+
+        // Segment 200 is the seek target: freshly decoded, absent from the
+        // (stale) priority order, and pushing the cache over budget.
+        frameStore.buffers.set(200, makeGopBuffer(1));
+        frameStore._evictIfNeeded(200);
+
+        expect([...frameStore.buffers.keys()]).toContain(200);
+    });
+
     test('falls back to insertion order when no priority has been set', () => {
         // Guards the pre-existing behaviour for any caller that never
         // supplies a priority order (e.g. a bare FrameStore in a test).

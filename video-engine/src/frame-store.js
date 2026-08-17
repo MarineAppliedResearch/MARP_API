@@ -377,7 +377,7 @@ export class FrameStore {
 
         this.buffers.set(segmentIndexNumber, gopBuffer);
         this._touch(segmentIndexNumber);
-        this._evictIfNeeded();
+        this._evictIfNeeded(segmentIndexNumber);
 
         return gopBuffer;
     }
@@ -403,9 +403,10 @@ export class FrameStore {
      * fall to the bottom. With no priority set at all this degrades to the
      * original insertion-order behaviour.
      *
+     * @param {number} [justDecodedIndex] - A segment inserted by the caller right now, exempt from this pass. Its rank reflects wherever the playhead was when the current priority order was computed, which for a seek target is "nowhere near" -- so without this exemption a freshly decoded seek target is evicted inside its own insertion, before the seek can even read it, and the seek fails with an undefined buffer.
      * @returns {void}
      */
-    _evictIfNeeded() {
+    _evictIfNeeded(justDecodedIndex) {
         if (this.buffers.size <= this.maxSegmentsBuffered) {
             return;
         }
@@ -419,7 +420,7 @@ export class FrameStore {
         // including everything outside the window, which all rank Infinity
         // -- keep insertion order among themselves and the oldest goes first.
         const evictionOrder = [...this.buffers.keys()]
-            .filter((index) => !this.pinned.has(index))
+            .filter((index) => !this.pinned.has(index) && index !== justDecodedIndex)
             .sort((a, b) => rankOf(b) - rankOf(a));
 
         for (const index of evictionOrder) {

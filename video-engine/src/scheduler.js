@@ -810,6 +810,25 @@ export class Scheduler {
      * @param {number} pacingCap - Max new fetches this pass may launch beyond the protected floor.
      * @returns {void}
      */
+    /**
+     * Whether the live session serving `index` already has its full
+     * allowance of fetches in flight.
+     *
+     * Falls back to the global in-flight count for a fetcher that does not
+     * report per-session counts (the abstraction only matters for a source
+     * with multiple live producers).
+     *
+     * @param {Object} fetcher - The SegmentFetcher (Tier 1).
+     * @param {number} index - Segment index whose session to check.
+     * @returns {boolean} True if that session has no free fetch slot.
+     */
+    _sessionFetchSlotsFull(fetcher, index) {
+        const inFlight = fetcher.getInFlightFetchCountForSession
+            ? fetcher.getInFlightFetchCountForSession(index)
+            : fetcher.getInFlightFetchCount();
+        return inFlight >= this._maxConcurrentTier1Fetches;
+    }
+
     _runTier1FetchPass(protectedIndices, opportunisticOrder, pacingCap) {
         const fetcher = this.frameStore.segmentFetcher;
         fetcher.setProtectedRawSegments(protectedIndices);
@@ -825,8 +844,8 @@ export class Scheduler {
             // request never fails, it just costs a restart (~2-3s, with
             // the NEXT request paying up to ~15s) -- only concurrent ones
             // fail.
-            if (fetcher.getInFlightFetchCount() >= this._maxConcurrentTier1Fetches) {
-                return;
+            if (this._sessionFetchSlotsFull(fetcher, index)) {
+                continue;
             }
             // hasInFlightFetch() skip: this pass runs on every render
             // tick (dozens of times a second) -- without it, a segment
@@ -851,15 +870,25 @@ export class Scheduler {
             if (launched >= pacingCap || (forwardBlocked && backwardBlocked)) {
                 break;
             }
+            const isForwardSide = index > centerIndex;
+
             // Concurrency ceiling: an unbounded background frontier must
             // not accumulate more simultaneously in-flight fetches than
             // this source can actually tolerate -- see
-            // DEFAULT_MAX_CONCURRENT_TIER1_FETCHES's own doc comment for why.
-            if (fetcher.getInFlightFetchCount() >= this._maxConcurrentTier1Fetches) {
-                break;
+            // DEFAULT_MAX_CONCURRENT_TIER1_FETCHES's own doc comment for
+            // why. Applied per live session rather than globally: requests
+            // only race a transcoder restart against each other within one
+            // session, and counting globally would split a single slot
+            // across the forward and behind sessions instead of letting
+            // each run one fetch of its own.
+            if (this._sessionFetchSlotsFull(fetcher, index)) {
+                if (isForwardSide) {
+                    forwardBlocked = true;
+                } else {
+                    backwardBlocked = true;
+                }
+                continue;
             }
-
-            const isForwardSide = index > centerIndex;
             if (isForwardSide ? forwardBlocked : backwardBlocked) {
                 continue;
             }
@@ -975,8 +1004,9 @@ export class Scheduler {
             previousSeekFetchAbort.abort();
         }
 
+        let decodedBuffer;
         try {
-            await ensurePromise;
+            decodedBuffer = await ensurePromise;
         } catch (err) {
             if (seekFetchAbort.signal.aborted) {
                 // Superseded by a newer seek before this one's fetch
@@ -1002,7 +1032,12 @@ export class Scheduler {
             return;
         }
 
-        const gopBuffer = this.frameStore.buffers.get(segment.index);
+        // Use the buffer this seek actually decoded rather than re-reading
+        // the cache: the cache can legitimately drop it in between (its
+        // eviction ranking still reflects the PRE-seek playhead until the
+        // next cache pass, so a distant seek target ranks last), and
+        // re-reading turned that into a crash on an undefined buffer.
+        const gopBuffer = decodedBuffer || this.frameStore.buffers.get(segment.index);
         const frameIdx = this._locateFrameIndex(gopBuffer, clamped, direction, segment.startTime);
         const frame = gopBuffer.frames[frameIdx];
 
