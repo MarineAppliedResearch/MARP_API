@@ -167,6 +167,13 @@ const qualityOptionsList = document.getElementById("qualityOptionsList");
 // its own session in localStorage; mediaSource wraps it for the engine's
 // generic MediaSource seam (see media-source.js -- LocalFileMediaSource is
 // a planned follow-up implementation of the same interface).
+/** Dev Jellyfin instance (port 8097 -- never the production server on 8096), prefilled into the login form for convenience. */
+const DEV_JELLYFIN = {
+  serverUrl: "http://47.208.203.78:8097",
+  username: "admin",
+  password: "MarpDevJellyfinRemote2026!",
+};
+
 const jellyfinClient = new MarpVideoEngine.JellyfinClient();
 const mediaSource = new MarpVideoEngine.JellyfinMediaSource(jellyfinClient);
 let currentQualityOption = null;
@@ -253,11 +260,16 @@ async function loadItem(itemId, qualityOption) {
     currentItemId = itemId;
     buildQualityOptionsMenu(options, currentQualityOption);
 
-    const streamUrl = await mediaSource.resolveStreamUrl(itemId, currentQualityOption);
+    const directPlay = Boolean(currentQualityOption.directPlay);
     const startupRawCacheGiB = parseFloat(rawCacheGiBInput.value);
     const startupRawCacheBytes = Math.floor(startupRawCacheGiB * 1024 * 1024 * 1024);
 
-    log(`Loading ${streamUrl} (quality=${currentQualityOption.name}) ...`);
+    // Direct Play needs no negotiation at all: the source reads the
+    // original file by byte range off a stateless URL. Everything else
+    // goes through a transcode session as before.
+    const streamUrl = directPlay ? null : await mediaSource.resolveStreamUrl(itemId, currentQualityOption);
+
+    log(directPlay ? `Loading ${itemId} by Direct Play ...` : `Loading ${streamUrl} (quality=${currentQualityOption.name}) ...`);
 
     stopPlaybackReporting();
 
@@ -292,13 +304,31 @@ async function loadItem(itemId, qualityOption) {
     extendedSessionNegotiationInFlight = false;
     ++extendedSessionGeneration;
 
+    const rawCacheBudgetBytes = Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined;
+
     window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
       streamUrl,
-      rawSegmentCacheBudgetBytes: Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined,
-      maxConcurrentFetches: mediaSource.maxConcurrentFetches,
+      rawSegmentCacheBudgetBytes: rawCacheBudgetBytes,
+      // Direct Play is stateless and randomly addressable, so it takes the
+      // engine's own (higher) default concurrency rather than the
+      // transcoder's strict per-session ceiling.
+      maxConcurrentFetches: directPlay ? undefined : mediaSource.maxConcurrentFetches,
+      mediaSource: directPlay
+        ? new MarpVideoEngine.JellyfinDirectPlayMediaSource({
+            client: jellyfinClient,
+            itemId,
+            rawSegmentCacheBudgetBytes: rawCacheBudgetBytes,
+            onDebug: (message) => log(message),
+            onError: (err) => log(`ERROR (media source): ${err.message}`),
+          })
+        : undefined,
     });
     wireVideoEvents();
-    startPlaybackReporting(itemId);
+    // Playback reporting identifies itself with the transcode session's own
+    // ids, which Direct Play never negotiates.
+    if (!directPlay) {
+      startPlaybackReporting(itemId);
+    }
 
     log(`Engine ready. duration=${window.marpVideo.duration.toFixed(3)}s, ${window.marpVideo.videoWidth}x${window.marpVideo.videoHeight}, ${window.marpVideo.fps}fps`);
 
@@ -601,7 +631,30 @@ function updateLoginStatus() {
   }
 }
 
+/**
+ * Prefills the login form with the dev Jellyfin instance's credentials, so
+ * testing does not mean retyping them on every page load.
+ *
+ * Development convenience only: this is the throwaway dev instance on port
+ * 8097, never the production server. Only ever fills blank fields, so a
+ * real session's own values are left alone.
+ * Inputs: none.
+ * Output: none (populates the login inputs).
+ */
+function prefillDevCredentials() {
+  if (!jellyfinServerUrlInput.value) {
+    jellyfinServerUrlInput.value = DEV_JELLYFIN.serverUrl;
+  }
+  if (!jellyfinUsernameInput.value) {
+    jellyfinUsernameInput.value = DEV_JELLYFIN.username;
+  }
+  if (!jellyfinPasswordInput.value) {
+    jellyfinPasswordInput.value = DEV_JELLYFIN.password;
+  }
+}
+
 updateLoginStatus();
+prefillDevCredentials();
 
 jellyfinLoginButton.addEventListener("click", async () => {
   const serverUrl = jellyfinServerUrlInput.value.trim();

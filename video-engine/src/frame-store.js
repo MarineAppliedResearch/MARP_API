@@ -185,6 +185,15 @@ export class FrameStore {
     }
 
     /**
+     * How many decodes are currently in flight against the shared decoder.
+     *
+     * @returns {number} In-flight decode count.
+     */
+    getInFlightDecodeCount() {
+        return this._inFlightDecodes.size;
+    }
+
+    /**
      * Reports whether a segment is already decoded and cached.
      *
      * @param {number} segmentIndexNumber - Segment index to check.

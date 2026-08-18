@@ -38,11 +38,23 @@
 import { findSegmentForTime } from './playlist-manager.js';
 import { computeProtectedFloor, computeOpportunisticOrder } from './cache-window.js';
 
-/** Protected-floor radius, in segments on each side of the playhead. */
-const DEFAULT_PROTECTED_FLOOR_RADIUS_SEGMENTS = 3;
+/**
+ * Protected-floor reach on each side of the playhead, in SECONDS of video.
+ *
+ * Expressed in time rather than units because unit length varies by source:
+ * 3s HLS segments versus ~10s Direct Play/local GOPs. A fixed unit count
+ * silently became 3.3x more memory on the long-GOP sources -- a floor of 3
+ * units either side is 21s (~1.5GB decoded at 1080p) with HLS segments but
+ * 70s (~5.2GB) with GOPs, which exceeds any budget and left the playhead
+ * unable to decode the unit it was about to cross into.
+ */
+const PROTECTED_FLOOR_RADIUS_SECONDS = 9;
 
-/** Tier 2 (decode) opportunistic window: base per-side segment count at rest (paused, or 1x on the non-preferred side). */
-const TIER2_OPPORTUNISTIC_BASE_SEGMENTS = 4;
+/** Tier 2 (decode) opportunistic window: base per-side reach at rest (paused, or 1x on the non-preferred side), in SECONDS -- see PROTECTED_FLOOR_RADIUS_SECONDS. */
+const TIER2_OPPORTUNISTIC_BASE_SECONDS = 12;
+
+/** Ceiling on decodes queued at once against the shared VideoDecoder -- see _runTier2DecodePass. */
+const MAX_CONCURRENT_DECODES = 2;
 
 /** Tier 1 (raw fetch) opportunistic pacing: base new-fetch launches per cache pass at rest. */
 const TIER1_BASE_PACING_PER_PASS = 2;
@@ -112,7 +124,9 @@ export class Scheduler {
         this.frameStore = frameStore;
         this.canvasRenderer = canvasRenderer;
         this.emit = emit;
-        this._protectedFloorRadius = protectedFloorRadius || DEFAULT_PROTECTED_FLOOR_RADIUS_SEGMENTS;
+        const unitDurationSeconds = (segmentIndex.segments[0] && segmentIndex.segments[0].duration) || 1;
+        this._protectedFloorRadius = protectedFloorRadius || this._floorRadiusForUnits(unitDurationSeconds);
+        this._tier2OpportunisticBase = Math.max(1, Math.round(TIER2_OPPORTUNISTIC_BASE_SECONDS / unitDurationSeconds));
         this._maxConcurrentTier1Fetches = maxConcurrentTier1Fetches || DEFAULT_MAX_CONCURRENT_TIER1_FETCHES;
 
         this.playbackRate = 1;
@@ -175,6 +189,30 @@ export class Scheduler {
     }
 
     /** @returns {number} Total stream duration, in seconds. */
+    /**
+     * Converts the seconds-based floor reach into a unit radius, clamped so
+     * the floor can never ask for more decoded units than the cache can
+     * hold.
+     *
+     * That clamp is the invariant that was violated: with ~10s GOPs the
+     * cache held 4 units while the floor pinned 7, so eviction could free
+     * nothing and the unit the playhead was about to enter never decoded.
+     * One slot is always left free for the unit being decoded next.
+     *
+     * @param {number} unitDurationSeconds - Nominal unit length, in seconds.
+     * @returns {number} Floor radius in units, on each side of the playhead.
+     */
+    _floorRadiusForUnits(unitDurationSeconds) {
+        const wanted = Math.max(1, Math.round(PROTECTED_FLOOR_RADIUS_SECONDS / unitDurationSeconds));
+        const capacity = this.frameStore.maxSegmentsBuffered;
+        if (!Number.isFinite(capacity)) {
+            return wanted;
+        }
+        // floorSize = 2r + 1 must stay at or below capacity - 1.
+        const affordable = Math.max(0, Math.floor((capacity - 2) / 2));
+        return Math.min(wanted, affordable);
+    }
+
     get duration() {
         return this.segmentIndex.totalDuration;
     }
@@ -728,8 +766,8 @@ export class Scheduler {
         const protectedIndices = computeProtectedFloor(centerSegment.index, totalSegments, this._protectedFloorRadius);
 
         // Tier 2 (decode): a bounded window, skewed and rate-scaled.
-        const tier2PreferredCount = Math.round(TIER2_OPPORTUNISTIC_BASE_SEGMENTS * skewRatio * scaleFactor);
-        const tier2OtherCount = Math.round(TIER2_OPPORTUNISTIC_BASE_SEGMENTS * scaleFactor);
+        const tier2PreferredCount = Math.round(this._tier2OpportunisticBase * skewRatio * scaleFactor);
+        const tier2OtherCount = Math.round(this._tier2OpportunisticBase * scaleFactor);
         const tier2Order = computeOpportunisticOrder(
             centerSegment.index,
             totalSegments,
@@ -781,9 +819,23 @@ export class Scheduler {
         // to keep: without this the cache evicted by decode-completion age,
         // which systematically discarded the playhead's own neighbourhood
         // (decoded earliest) in favour of whatever prefetch decoded last.
-        this.frameStore.setEvictionPriority(ensureList);
+        // Ranked over the full window, not just what this pass decodes, so
+        // already-decoded distant units keep their correct ranking even
+        // while opportunistic decoding is held back above.
+        this.frameStore.setEvictionPriority([...protectedIndices, ...opportunisticOrder.slice(0, surplusBudget)]);
 
         for (const index of ensureList) {
+            // One VideoDecoder is shared and each unit decodes behind a
+            // flush barrier, so queued decodes run strictly in the order
+            // they were launched. Left unbounded, a unit the playhead is
+            // about to enter waits behind every opportunistic decode
+            // already queued -- with ~250-frame GOPs that is seconds per
+            // unit ahead of it. The floor leads `ensureList`, so capping
+            // the queue keeps those slots for the playhead's own
+            // neighbourhood.
+            if (this.frameStore.getInFlightDecodeCount && this.frameStore.getInFlightDecodeCount() >= MAX_CONCURRENT_DECODES) {
+                break;
+            }
             if (this.frameStore.has(index) || this.frameStore.isDecodeInBackoff(index)) {
                 continue;
             }

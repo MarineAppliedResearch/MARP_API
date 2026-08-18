@@ -957,6 +957,11 @@ describe('Scheduler#seek kicks off the cache pass immediately', () => {
             frameStore,
             canvasRenderer: { onFramePresented: () => {}, render: () => true },
             emit: () => {},
+            // Pinned explicitly: the floor is otherwise derived from unit
+            // duration (see PROTECTED_FLOOR_RADIUS_SECONDS), and this test
+            // is about a paused seek running the cache pass at all, not
+            // about how wide the floor is.
+            protectedFloorRadius: 3,
         });
         expect(scheduler.playing).toBe(false);
 

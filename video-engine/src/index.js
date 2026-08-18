@@ -10,6 +10,7 @@
 
 import { loadSegmentIndex } from './playlist-manager.js';
 import { JellyfinTranscodeMediaSource, JellyfinMediaSource } from './media-source-jellyfin-transcode.js';
+import { JellyfinDirectPlayMediaSource } from './media-source-jellyfin-directplay.js';
 import { GopDecoder } from './gop-decoder.js';
 import { FrameStore } from './frame-store.js';
 import { Scheduler } from './scheduler.js';
@@ -20,7 +21,7 @@ import { JellyfinClient } from './jellyfin-client.js';
 import { MediaSource } from './media-source.js';
 import { getQualityOptions } from './quality-options.js';
 
-export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource, getQualityOptions };
+export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource, JellyfinDirectPlayMediaSource, getQualityOptions };
 
 /**
  * Creates a frame-accurate bidirectional playback engine over a Jellyfin
@@ -30,7 +31,8 @@ export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource,
  * @async
  * @param {HTMLCanvasElement} canvas - Render target.
  * @param {Object} options
- * @param {string} options.streamUrl - MARP stream-negotiation URL, e.g. `/api/v2/jellyfin/items/:id/stream?mode=Transcode`.
+ * @param {string} [options.streamUrl] - MARP stream-negotiation URL, e.g. `/api/v2/jellyfin/items/:id/stream?mode=Transcode`. Used only when `options.mediaSource` is omitted.
+ * @param {Object} [options.mediaSource] - A ready-made media source (e.g. {@link module:video-engine/media-source-jellyfin-directplay.JellyfinDirectPlayMediaSource}). Defaults to a Jellyfin transcode source over `streamUrl`.
  * @param {Object} [options.fetchOptions] - Extra fetch() options (e.g. `{headers: {Authorization: 'Bearer ...'}}`) applied to every request this engine makes.
  * @param {number} [options.cacheBudgetBytes] - Decoded-frame LRU cache budget in bytes. Default 3 GiB.
  * @param {number} [options.rawSegmentCacheBudgetBytes] - Raw-segment cache budget in bytes. Default 3 GiB.
@@ -44,8 +46,10 @@ export async function createMarpVideoEngine(canvas, options) {
     let shim = null;
 
     // Which source is plugged in decides where bytes come from and how they
-    // become decoder chunks; everything below this is source-agnostic.
-    const mediaSource = new JellyfinTranscodeMediaSource({
+    // become decoder chunks; everything below this is source-agnostic. A
+    // caller can supply its own (Direct Play, a local file); the Jellyfin
+    // transcode source is built here only as the default for a streamUrl.
+    const mediaSource = options.mediaSource || new JellyfinTranscodeMediaSource({
         streamUrl,
         fetchOptions,
         rawSegmentCacheBudgetBytes,

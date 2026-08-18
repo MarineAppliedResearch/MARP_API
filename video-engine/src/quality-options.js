@@ -32,11 +32,23 @@ const FIXED_TIERS = [
  * @returns {Array<{name: string, maxStreamingBitrate: number, maxWidth: number, maxHeight: number}>}
  */
 export function getQualityOptions(source) {
-    if (!source || !source.supportsTranscoding) {
+    if (!source) {
         return [];
     }
 
-    const options = [
+    // Direct Play first, and therefore the default: it plays the original
+    // file by byte range with no transcoder involved, so timing comes from
+    // the file's own sample table rather than from HLS segment durations.
+    // Offered regardless of supportsTranscoding, since it needs no
+    // transcode at all -- what it does need is a codec this client can
+    // decode, which only decode itself can establish.
+    const options = [{ name: 'Direct Play', directPlay: true }];
+
+    if (!source.supportsTranscoding) {
+        return options;
+    }
+
+    options.push(
         {
             name: 'Auto',
             maxStreamingBitrate: source.bitrate || FIXED_TIERS[0].maxStreamingBitrate,
@@ -49,7 +61,7 @@ export function getQualityOptions(source) {
             maxWidth: source.width || FIXED_TIERS[0].maxWidth,
             maxHeight: source.height || FIXED_TIERS[0].maxHeight,
         },
-    ];
+    );
 
     for (const tier of FIXED_TIERS) {
         const bitrateIsUseful = !source.bitrate || tier.maxStreamingBitrate < source.bitrate;
