@@ -1,7 +1,10 @@
 # Media-source architecture investigation (#36, Phase 5)
 
-Status: **investigation complete for the Jellyfin paths; requirements confirmed
-with the product owner. No engine code changed on the basis of this document.**
+Status: **built and working.** All three media sources play — Jellyfin
+transcode, Jellyfin Direct Play, and local files — with forward playback,
+reverse playback and frame stepping on each, confirmed by the product owner
+on real hardware. §11 records what was actually built and how it differs from
+the plan below.
 
 Goal: one JavaScript video engine whose scheduler, both cache tiers,
 demux/decode pipeline, reverse playback, seeking, frame stepping and canvas
@@ -21,9 +24,11 @@ optional), the last entry of `agents_history.md` (2026-08-16/17, which explains
 how everything below came to be), then this whole document. There is no
 `CLAUDE.md` in this repo; `agents.md` serves that role.
 
-**State on arrival.** Branch `36-behind-session-absolute-indexing`, pushed to
-origin, five commits: `7e44b2a`, `a6757a2`, `a80f0d3`, `2a4769a`, `14f7843`.
-129/129 video-engine unit tests pass. Bundle rebuilt. No PR opened.
+**State on arrival.** Branch `36-behind-session-absolute-indexing`. All three
+sources work; 132 video-engine unit tests pass; the E2E suite runs the same
+checks against each source. **Read §11 first** — it describes what exists
+now. Sections 0–10 below are the original investigation, kept because their
+measurements are still the evidence base, but their roadmap is superseded.
 
 **Working agreements with the product owner — these were hard-won, honour them:**
 
@@ -37,7 +42,9 @@ origin, five commits: `7e44b2a`, `a6757a2`, `a80f0d3`, `2a4769a`, `14f7843`.
    and direct server measurement are the real signals. Never describe code as
    "tested" or "well-tested" on the strength of unit tests.
 4. **Validation model:** drive Playwright automated checks yourself at each step;
-   the owner verifies manually at the checkpoints marked in §9.
+   the owner verifies manually. The local-file E2E suite is the trustworthy
+   automated signal (deterministic); the Jellyfin suites depend on a live
+   server, and Direct Play's E2E needs real GPU decode.
 5. **Rebuild the bundle** (`node video-engine/build.js`) after any
    `video-engine/src/` change. A stale bundle has silently masked fixes more than
    once — the browser only ever runs `frontend/apps/VideoPlayer/dist/`.
@@ -63,16 +70,13 @@ Admin `admin` / `MarpDevJellyfinRemote2026!`. This sandbox has **no real GPU
 decode**, so decode-timing measurements are invalid here (see §9); networking is
 fine.
 
-**Where to begin:** §9 Phase 0 spikes. Do not start Phase A until S1/S2 have
-answered the retention-window and unit-granularity questions, because their
-answers can still change the interface shape.
+**Where to begin:** §11, which describes what is built and what is still open.
 
-**Two unexplained loose ends**, carried forward rather than fixed: the
-`[behind@seg36]` observation (a session anchored ~114 segments behind being routed
-a far-ahead segment — possibly a bug in the segment-number log label added in the
-last session, not necessarily a routing fault), and whether per-session
-concurrency should be 1 or 2 (currently 2; its documented failure mode has been
-seen live and is absorbed by backoff).
+**Loose ends carried forward** (none blocking): the `[behind@seg36]` observation
+(a session anchored ~114 segments behind being routed a far-ahead segment —
+possibly a bug in the segment-number log label rather than a routing fault);
+whether per-session concurrency should be 1 or 2 (currently 2, its failure mode
+absorbed by backoff); and the items in §11's open list.
 
 ---
 
@@ -642,3 +646,103 @@ Run the finished engine in the C# host: the Range check from §6, secure-context
 confirmation, and the `File`-injection fallback if Range is unsupported. Should be
 wiring, not engine work — and worth doing early on a throwaway branch to de-risk
 the one assumption that cannot be tested here.
+
+---
+
+## 11. What was actually built
+
+Written after the work, and authoritative where it contradicts §§7–9.
+
+### The shape it ended up
+
+```
+engine (source-agnostic)
+  scheduler · frame-store · gop-decoder · canvas-renderer · marp-video-shim
+        │  createMarpVideoEngine(canvas, { mediaSource })
+        ▼
+  Mp4ByteRangeMediaSource ──┬── JellyfinDirectPlayMediaSource  (static=true URL)
+   (moov → GOP units →      └── LocalFileMediaSource           (object URL over a File)
+    chunks by slicing)
+  JellyfinTranscodeMediaSource (playlist → HLS segments → mp4box demux)
+```
+
+A source provides `load()`, `getUnitIndex()`, `fetchChunks(unitIndex)` and a
+Tier 1 fetcher. `createMarpVideoEngine` takes a ready-made `mediaSource`, or
+builds the transcode one from a `streamUrl` as before.
+
+**Direct Play and local files differ only in where the URL comes from.**
+Chromium honours Range requests against a `blob:` URL (verified: 206 with a
+correct `Content-Range`), so a local file needs no separate reader and both
+share one base class. `SegmentFetcher` was reused unchanged for byte ranges —
+it already sent Range headers, asserted 206, and carried the raw cache,
+eviction, backoff and in-flight accounting.
+
+### Where this diverged from the plan
+
+| Plan (§9) | What happened |
+|---|---|
+| Phase A3b: move behind-session lifecycle below the interface | **Dropped.** Pure architectural tidiness — it is not needed for local files or Direct Play, which have no sessions at all. It also moved *timing*, not just code, and was implicated in a reverse-playback corruption report. The owner does not need the app to be session-free. |
+| Phase C: retention as a time window, plus partial-GOP retention | **Partly, and the rest proved unnecessary.** Window *sizing* is now time-based (below). Partial-GOP retention was not needed: reverse works well on 250-frame GOPs on real hardware. |
+| S1/S2 spikes answer decode cost and the memory ceiling | **Retired unrun.** Real playback answered the practical question directly: reverse across 250-frame GOPs is smooth, and a 5 GiB decoded cache holds up. The harnesses remain in `test/probes/harness/` if the numbers are ever wanted. |
+| Cache budget must change from counting segments to seconds | **Not needed.** `_computeMaxSegmentsBuffered` already derives capacity from *bytes* per unit, so it self-adjusts: ~39 s cached with 3 s segments, ~40 s with 10 s GOPs at the same budget. |
+
+### Engine changes the new sources forced
+
+- **Window sizing is in seconds, not unit counts** (`PROTECTED_FLOOR_RADIUS_SECONDS`,
+  `TIER2_OPPORTUNISTIC_BASE_SECONDS`), clamped so the protected floor can never
+  exceed the decoded cache's capacity. A floor of "3 units either side" is 21 s
+  (~1.5 GB at 1080p) with 3 s segments but 70 s (~5.2 GB) with 10 s GOPs — more
+  than the cache could hold, so eviction could free nothing and the unit the
+  playhead was entering never decoded. Forward playback froze at unit boundaries
+  while reverse kept working off already-decoded frames. At 3 s segments the
+  formula reproduces the old constants exactly.
+- **`moov` is located by walking box headers**, not by reading a fixed prefix. The
+  prefix guess reported "not faststart" for a 1.5 GB file whose `moov` was simply
+  larger than the guess. Walking also made genuinely `moov`-at-end files work,
+  covering the ~1 % of the archive that is non-faststart.
+- **Behind sessions are gated to the transcode path.** They were being prepared
+  for Direct Play too, installing an HLS session's segment list into a byte-range
+  fetcher — which then requested transcode segment URLs with byte ranges attached
+  and got 500s and 416s back.
+- **Defaults:** Direct Play is the first and default quality option; the decoded
+  frame cache defaults to 5 GiB.
+
+### A mistake worth not repeating
+
+A decode-queue cap was added for Direct Play's benefit and described as a no-op
+for transcode. It was not: it lived in the shared scheduler, so it throttled
+transcode too, taking the E2E suite from ~15 s to over 4 minutes with decoder
+stalls. It was removed. The general lesson, which the owner predicted before it
+happened: **a change made for one source, placed in shared code, regresses the
+others.** The guard against it is the E2E suite now running every check against
+every source.
+
+### Testing
+
+- 132 unit tests.
+- E2E runs the same six checks (forward, reverse, frame-step drift, three seek
+  cases) against **each** source. The local-file suite is deterministic — same
+  bytes, no transcoder, no network — and measured 6/6 in ~12 s on three
+  consecutive runs. It is the first reliable automated end-to-end signal here.
+- `test/probes/local-file-playback.mjs` plays any MP4 through the app and reports
+  forward/reverse/frame-step, useful for checking real footage quickly.
+
+### Known limits and open items
+
+1. **`mpeg4` files cannot be decoded by WebCodecs** and there is **no automatic
+   fallback** to transcode — the user must pick a transcode tier by hand. S4 found
+   two such files in the archive. Agreed to address in a future phase.
+2. **Direct Play needs real GPU decode.** Its ~250-frame 1080p GOPs stall a
+   software decoder, so its E2E suite fails in the dev sandbox while working on
+   real hardware.
+3. **The transcode E2E is not reliable in the sandbox** — flaky when the dev
+   Jellyfin has to produce segments cold, with runs from 15 s to several minutes.
+   Failures move between tests and reproduce on pre-Direct-Play code.
+4. **Bandwidth-aware source selection was never built** (§4). Direct Play is
+   simply the default; nothing measures throughput or falls back automatically.
+   Recall S4 found recent projects at ~28 Mbps, which is not Direct-Playable over
+   a 25 Mbps link.
+5. **MKV/AVI remain unimplemented** (R4). The container seam exists — a new source
+   subclassing the byte-range base — but no parser has been written, and AVI's
+   typical codecs may not be WebCodecs-decodable anyway.
+6. **WebView2 verification is still outstanding** (R9, §6).
