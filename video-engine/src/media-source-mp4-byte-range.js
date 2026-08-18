@@ -215,19 +215,30 @@ export class Mp4ByteRangeMediaSource {
             const timescale = span[0].timescale;
             let byteStart = Infinity;
             let byteEnd = -Infinity;
+            // Presentation extent, taken across the whole span rather than
+            // from its first and last samples. Samples are in DECODE order,
+            // and with B-frames that is not presentation order: the last
+            // decoded sample is not the latest-presented one. Reading the
+            // ends directly left every unit a frame short, so consecutive
+            // units did not touch -- and a seek landing in one of those gaps
+            // found no unit covering it and fell through to the end of the
+            // file.
+            let firstCts = Infinity;
+            let lastEndCts = -Infinity;
             for (const sample of span) {
                 if (sample.offset < byteStart) byteStart = sample.offset;
                 if (sample.offset + sample.size > byteEnd) byteEnd = sample.offset + sample.size;
+                if (sample.cts < firstCts) firstCts = sample.cts;
+                if (sample.cts + sample.duration > lastEndCts) lastEndCts = sample.cts + sample.duration;
             }
-            const last = span[span.length - 1];
             segments.push({
                 index: unit.index,
                 url,
                 firstSample: unit.firstSample,
                 lastSample: endSampleIndex,
-                startTime: span[0].cts / timescale,
-                endTime: (last.cts + last.duration) / timescale,
-                duration: (last.cts + last.duration - span[0].cts) / timescale,
+                startTime: firstCts / timescale,
+                endTime: lastEndCts / timescale,
+                duration: (lastEndCts - firstCts) / timescale,
                 // Exclusive end: buildRangeHeaderOptions converts to HTTP's
                 // inclusive form itself.
                 byteRangeStart: byteStart,
