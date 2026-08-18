@@ -73,30 +73,42 @@ export class Mp4ByteRangeMediaSource {
      * @throws {Error} When the file has no `moov` in its prefix (non-faststart) or carries no video track.
      */
     async load() {
-        const prefix = await this._fetchRange(0, this.indexPrefixBytes - 1);
+        const moov = await this._locateMoov();
+
+        // ftyp and moov are fed as one contiguous buffer even when the real
+        // file has mdat between them. mp4box only needs the boxes in order
+        // to parse; sample offsets come from the sample table and are
+        // absolute file positions, which is what byte-range reads use, so
+        // closing the gap here changes nothing downstream.
+        const header = await this._fetchRange(0, moov.headerEnd);
+        const moovBytes = await this._fetchRange(moov.offset, moov.offset + moov.size - 1);
+        const combined = new Uint8Array(header.byteLength + moovBytes.byteLength);
+        combined.set(new Uint8Array(header), 0);
+        combined.set(new Uint8Array(moovBytes), header.byteLength);
 
         const iso = createFile();
         let info = null;
         iso.onReady = (parsed) => {
             info = parsed;
         };
-        prefix.fileStart = 0;
-        iso.appendBuffer(prefix);
+        const buffer = combined.buffer;
+        buffer.fileStart = 0;
+        iso.appendBuffer(buffer);
         iso.flush();
 
         if (!info) {
-            throw new Error(`No moov box within the first ${this.indexPrefixBytes} bytes -- this file is not faststart.`);
+            throw new Error(`Found a moov box at offset ${moov.offset} (${moov.size} bytes) but could not parse it.`);
         }
 
         const track = info.tracks.find((candidate) => candidate.type === 'video');
         if (!track) {
-            throw new Error('Direct Play source has no video track.');
+            throw new Error('This file has no video track.');
         }
 
         this._track = track;
         this._samples = iso.getTrackSamplesInfo(track.id);
         if (!this._samples.length) {
-            throw new Error('Direct Play source has an empty sample table.');
+            throw new Error('This file has an empty sample table.');
         }
         this._config = { codec: track.codec, description: this._descriptionBytes(iso, track.id) };
         this._segmentIndex = this._buildUnitIndex();
@@ -111,6 +123,76 @@ export class Mp4ByteRangeMediaSource {
             `indexed ${this._samples.length} samples into ${this._segmentIndex.segments.length} GOPs ` +
                 `(${track.video.width}x${track.video.height}, ${(track.duration / track.timescale).toFixed(1)}s)`,
         );
+    }
+
+    /**
+     * Finds the moov box by walking top-level box headers.
+     *
+     * Reads 16 bytes per box rather than assuming moov sits inside a fixed
+     * prefix. That assumption broke two real cases: a large file whose
+     * sample table alone exceeds the prefix (a 1.5GB dive file reported
+     * "not faststart" when its moov was simply bigger), and files with moov
+     * genuinely at the end, which are ~1% of the archive. Walking costs one
+     * small request per top-level box -- typically three or four.
+     *
+     * @async
+     * @returns {Promise<{offset: number, size: number, headerEnd: number}>} Where moov is, plus the end of the boxes preceding it.
+     * @throws {Error} When no moov box is found.
+     */
+    async _locateMoov() {
+        let offset = 0;
+        let headerEnd = 0;
+        // Bounded so a non-MP4 or a pathological file cannot loop forever.
+        for (let box = 0; box < 64; box++) {
+            const header = await this._fetchRange(offset, offset + 15);
+            if (header.byteLength < 8) {
+                break;
+            }
+            const view = new DataView(header);
+            let size = view.getUint32(0);
+            const type = String.fromCharCode(view.getUint8(4), view.getUint8(5), view.getUint8(6), view.getUint8(7));
+            let headerSize = 8;
+            if (size === 1) {
+                // 64-bit size, carried in the eight bytes after the type.
+                size = Number(view.getBigUint64(8));
+                headerSize = 16;
+            } else if (size === 0) {
+                // Extends to end of file; only meaningful for the last box.
+                size = (await this._fetchTotalSize()) - offset;
+            }
+            if (size < headerSize) {
+                break;
+            }
+            if (type === 'moov') {
+                return { offset, size, headerEnd: Math.max(0, headerEnd - 1) };
+            }
+            // Everything before moov (ftyp, and free/mdat when moov is at
+            // the end) is fed to mp4box only as far as the first box, so
+            // keep the running end of what precedes it.
+            if (box === 0) {
+                headerEnd = size;
+            }
+            offset += size;
+        }
+        throw new Error('No moov box found in this file -- is it a valid MP4?');
+    }
+
+    /**
+     * Total length of the resource, from a Range response's Content-Range.
+     *
+     * @async
+     * @returns {Promise<number>} Size in bytes.
+     */
+    async _fetchTotalSize() {
+        const options = { ...(this.fetchOptions || {}) };
+        options.headers = { ...(options.headers || {}), Range: 'bytes=0-0' };
+        const response = await fetch(this.streamUrl, options);
+        const contentRange = response.headers.get('Content-Range') || '';
+        const total = parseInt(contentRange.split('/')[1], 10);
+        if (!Number.isFinite(total)) {
+            throw new Error('Could not determine the file size from Content-Range.');
+        }
+        return total;
     }
 
     /**

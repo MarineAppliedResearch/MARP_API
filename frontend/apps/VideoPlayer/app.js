@@ -894,8 +894,24 @@ function applyLoadedUiState() {
  * Inputs: landedTimeSeconds (where the seek that just fired 'seeked' landed).
  * Output: none (calls window.marpVideo.setBehindSession once resolved).
  */
+/**
+ * Whether the current playback path uses Jellyfin transcode sessions.
+ *
+ * Behind sessions exist purely to keep a sequential transcoder from being
+ * asked to seek backwards. Direct Play and local files are randomly
+ * addressable, so preparing one is not merely useless there -- it installs
+ * an HLS session's segment list into a byte-range fetcher, which then
+ * requests transcode segment URLs with byte ranges attached and gets 500s
+ * and 416s back.
+ * Inputs: none (reads currentQualityOption/currentItemId).
+ * Output: boolean.
+ */
+function usesTranscodeSessions() {
+  return Boolean(currentItemId && currentQualityOption && !currentQualityOption.directPlay);
+}
+
 function prepareBehindSession(landedTimeSeconds) {
-  if (typeof mediaSource.resolveBehindStreamUrl !== "function" || !currentItemId) {
+  if (!usesTranscodeSessions() || typeof mediaSource.resolveBehindStreamUrl !== "function") {
     return;
   }
 
@@ -1033,7 +1049,7 @@ function findExtendedBehindAnchor(closeStartTimeSeconds) {
  * Output: none (calls window.marpVideo.setBehindSessionForRole).
  */
 function prepareExtendedBehindSession(closeStartTimeSeconds) {
-  if (typeof mediaSource.resolveBehindStreamUrl !== "function" || !currentItemId || !window.marpVideo) {
+  if (!usesTranscodeSessions() || typeof mediaSource.resolveBehindStreamUrl !== "function" || !window.marpVideo) {
     return;
   }
   if (extendedSessionNegotiationInFlight) {
@@ -1094,7 +1110,7 @@ function prepareExtendedBehindSession(closeStartTimeSeconds) {
  * Output: none (may call prepareBehindSession).
  */
 function maybeRefreshBehindSession() {
-  if (typeof mediaSource.resolveBehindStreamUrl !== "function" || !window.marpVideo || !currentItemId) {
+  if (!usesTranscodeSessions() || typeof mediaSource.resolveBehindStreamUrl !== "function" || !window.marpVideo) {
     return;
   }
 
