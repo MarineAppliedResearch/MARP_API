@@ -24,8 +24,15 @@
 /** Uncompressed 8-bit 4:2:0: full-res Y plane plus quarter-res U/V planes. */
 const BYTES_PER_PIXEL_420_8BIT = 1.5;
 
-/** Default decoded-frame cache budget: 3 GiB. */
-const DEFAULT_CACHE_BUDGET_BYTES = 3 * 1024 * 1024 * 1024;
+/**
+ * Default decoded-frame cache budget: 5 GiB.
+ *
+ * Raised from 3 GiB once Direct Play made ~10s GOPs the common unit: at
+ * 1080p one holds ~742MB decoded, so 3 GiB left room for only four units
+ * (~40s of video) and very little slack around the playhead. 5 GiB holds
+ * about seven, and was confirmed to play smoothly forward on real hardware.
+ */
+const DEFAULT_CACHE_BUDGET_BYTES = 5 * 1024 * 1024 * 1024;
 
 /** Floor on buffered segments: current + one prefetch each direction. */
 const MIN_SEGMENTS_BUFFERED = 3;
