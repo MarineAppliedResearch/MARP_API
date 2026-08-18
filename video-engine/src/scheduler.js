@@ -53,9 +53,6 @@ const PROTECTED_FLOOR_RADIUS_SECONDS = 9;
 /** Tier 2 (decode) opportunistic window: base per-side reach at rest (paused, or 1x on the non-preferred side), in SECONDS -- see PROTECTED_FLOOR_RADIUS_SECONDS. */
 const TIER2_OPPORTUNISTIC_BASE_SECONDS = 12;
 
-/** Ceiling on decodes queued at once against the shared VideoDecoder -- see _runTier2DecodePass. */
-const MAX_CONCURRENT_DECODES = 2;
-
 /** Tier 1 (raw fetch) opportunistic pacing: base new-fetch launches per cache pass at rest. */
 const TIER1_BASE_PACING_PER_PASS = 2;
 
@@ -825,17 +822,6 @@ export class Scheduler {
         this.frameStore.setEvictionPriority([...protectedIndices, ...opportunisticOrder.slice(0, surplusBudget)]);
 
         for (const index of ensureList) {
-            // One VideoDecoder is shared and each unit decodes behind a
-            // flush barrier, so queued decodes run strictly in the order
-            // they were launched. Left unbounded, a unit the playhead is
-            // about to enter waits behind every opportunistic decode
-            // already queued -- with ~250-frame GOPs that is seconds per
-            // unit ahead of it. The floor leads `ensureList`, so capping
-            // the queue keeps those slots for the playhead's own
-            // neighbourhood.
-            if (this.frameStore.getInFlightDecodeCount && this.frameStore.getInFlightDecodeCount() >= MAX_CONCURRENT_DECODES) {
-                break;
-            }
             if (this.frameStore.has(index) || this.frameStore.isDecodeInBackoff(index)) {
                 continue;
             }

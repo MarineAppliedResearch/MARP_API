@@ -127,12 +127,42 @@ test.describe('video-engine playback', () => {
 
         // Loading requires opening the "Load Item" accordion section too --
         // "Server / Login" is the only one expanded by default.
-        await page.click('[data-section="settingsLoadItemBody"]');
-        await page.click('#loadButton');
+        // Loads the TRANSCODE path explicitly rather than clicking Load and
+        // inheriting the app's default, which is Direct Play now. Calling
+        // loadItem() directly also avoids loading Direct Play first and then
+        // reloading -- two engine loads, the first of which decodes
+        // 250-frame 1080p GOPs, far too slow under a software decoder.
+        // app.js is a classic script, so its functions are on window.
+        //
+        // 'Auto' specifically, which is what this suite has always tested
+        // (it was the app's default tier when these tests were written).
+        // Pinning it to '720p, 4 Mbps' instead makes the frame-stepping
+        // no-drift test fail by ~2.44s -- reproduced on the pre-Direct-Play
+        // engine too, so that is a real tier-dependent bug on the transcode
+        // path and not a regression from the media-source work.
+        await page.evaluate(async () => {
+            const itemId = document.getElementById('itemIdInput').value.trim();
+            await loadItem(itemId, { name: 'Auto', maxStreamingBitrate: 7_950_247, maxWidth: 1920, maxHeight: 1080 });
+        });
         await page.waitForFunction(
             () => document.getElementById('playPauseButton') && !document.getElementById('playPauseButton').disabled,
             { timeout: ENGINE_LOAD_TIMEOUT_MS }
         );
+        await page.click('[data-section="settingsQualityBody"]');
+        await page.evaluate(() => {
+            const tier = [...document.querySelectorAll('#qualityOptionsList button')].find((button) =>
+                button.textContent.includes('720p')
+            );
+            if (!tier) {
+                throw new Error('720p transcode tier missing from the quality menu.');
+            }
+            tier.click();
+        });
+        await page.waitForFunction(
+            () => window.marpVideo && !document.getElementById('playPauseButton').disabled && window.marpVideo.getSegmentStates().length > 200,
+            { timeout: ENGINE_LOAD_TIMEOUT_MS }
+        );
+        await page.click('#playerSettingsButton');
     });
 
     test.afterAll(async () => {

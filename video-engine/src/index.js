@@ -11,6 +11,7 @@
 import { loadSegmentIndex } from './playlist-manager.js';
 import { JellyfinTranscodeMediaSource, JellyfinMediaSource } from './media-source-jellyfin-transcode.js';
 import { JellyfinDirectPlayMediaSource } from './media-source-jellyfin-directplay.js';
+import { LocalFileMediaSource } from './media-source-local.js';
 import { GopDecoder } from './gop-decoder.js';
 import { FrameStore } from './frame-store.js';
 import { Scheduler } from './scheduler.js';
@@ -21,7 +22,7 @@ import { JellyfinClient } from './jellyfin-client.js';
 import { MediaSource } from './media-source.js';
 import { getQualityOptions } from './quality-options.js';
 
-export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource, JellyfinDirectPlayMediaSource, getQualityOptions };
+export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource, JellyfinDirectPlayMediaSource, LocalFileMediaSource, getQualityOptions };
 
 /**
  * Creates a frame-accurate bidirectional playback engine over a Jellyfin

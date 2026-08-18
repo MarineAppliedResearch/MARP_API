@@ -126,6 +126,7 @@ const BEHIND_SESSION_MIN_DISTANCE_SECONDS = 3;
 const BEHIND_SESSION_MAX_DISTANCE_SECONDS = CLOSE_LOOK_BEHIND_SECONDS + 15;
 
 const loadButton = document.getElementById("loadButton");
+const localFileInput = document.getElementById("localFileInput");
 const itemIdInput = document.getElementById("itemIdInput");
 const canvas = document.getElementById("canvas");
 const playerContainer = document.getElementById("playerContainer");
@@ -348,23 +349,7 @@ async function loadItem(itemId, qualityOption) {
     behindSessionCheckHandle = setInterval(maybeRefreshBehindSession, BEHIND_SESSION_CHECK_INTERVAL_MS);
     maybeRefreshBehindSession();
 
-    [
-      playPauseButton,
-      centerPlayButton,
-      stepBackButton,
-      stepForwardButton,
-      speedOverrideInput,
-      muteButton,
-      fullscreenButton,
-      rawCacheGiBInput,
-      decodedCacheGiBInput,
-      applyCacheSettingsButton,
-      readCacheSettingsButton,
-      dumpEngineStateButton,
-    ].forEach((el) => {
-      el.disabled = false;
-    });
-
+    enableTransportControls();
     syncCacheSettingsFromEngine();
 
     playerContainer.focus();
@@ -383,6 +368,121 @@ loadButton.addEventListener("click", () => {
     return;
   }
   loadItem(itemId, null);
+});
+
+/**
+ * Enables the transport/settings controls once an engine is running --
+ * shared by the Jellyfin and local-file load paths, which both need exactly
+ * this set.
+ * Inputs: none.
+ * Output: none (mutates control disabled state).
+ */
+function enableTransportControls() {
+  [
+    playPauseButton,
+    centerPlayButton,
+    stepBackButton,
+    stepForwardButton,
+    speedOverrideInput,
+    muteButton,
+    fullscreenButton,
+    rawCacheGiBInput,
+    decodedCacheGiBInput,
+    applyCacheSettingsButton,
+    readCacheSettingsButton,
+    dumpEngineStateButton,
+  ].forEach((el) => {
+    el.disabled = false;
+  });
+}
+
+/**
+ * Loads a local file, with no server involved at all.
+ *
+ * Deliberately independent of Jellyfin: no sign-in, no item id, no quality
+ * tiers -- a file on disk has exactly one representation. The source takes
+ * a File and knows nothing about how it was obtained, so the picker and the
+ * drop handler below share this one path.
+ * Inputs: file (File from the picker or a drop).
+ * Output: none (sets window.marpVideo, updates UI).
+ */
+async function loadLocalFile(file) {
+  if (typeof VideoDecoder === "undefined") {
+    log(`ERROR: WebCodecs (VideoDecoder) is unavailable at ${window.location.origin}.`);
+    return;
+  }
+
+  loadButton.disabled = true;
+
+  try {
+    log(`Loading local file ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB) ...`);
+
+    stopPlaybackReporting();
+    if (window.marpVideo) {
+      log("Closing previous engine before loading the new one...");
+      window.marpVideo.close();
+    }
+
+    const startupRawCacheGiB = parseFloat(rawCacheGiBInput.value);
+    const startupRawCacheBytes = Math.floor(startupRawCacheGiB * 1024 * 1024 * 1024);
+
+    currentItemId = null;
+    currentQualityOption = null;
+    window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
+      rawSegmentCacheBudgetBytes: Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined,
+      mediaSource: new MarpVideoEngine.LocalFileMediaSource({
+        file,
+        onDebug: (message) => log(message),
+        onError: (err) => log(`ERROR (media source): ${err.message}`),
+      }),
+    });
+    wireVideoEvents();
+
+    log(`Engine ready. duration=${window.marpVideo.duration.toFixed(3)}s, ${window.marpVideo.videoWidth}x${window.marpVideo.videoHeight}, ${window.marpVideo.fps}fps`);
+
+    // A local file has no tier menu -- say so, rather than leaving whatever
+    // a previous Jellyfin load put there.
+    qualityOptionsList.innerHTML = "";
+    const note = document.createElement("span");
+    note.className = "settings-status";
+    note.textContent = "Local file - no quality tiers.";
+    qualityOptionsList.appendChild(note);
+
+    buildSegmentBlocks(window.marpVideo.getSegmentStates());
+    if (segmentShadingHandle) {
+      clearInterval(segmentShadingHandle);
+    }
+    segmentShadingHandle = setInterval(updateSegmentShading, SEGMENT_SHADING_INTERVAL_MS);
+
+    enableTransportControls();
+    applyLoadedUiState();
+    syncCacheSettingsFromEngine();
+    playerContainer.focus();
+  } catch (err) {
+    log(`ERROR loading local file: ${err.message}`);
+  } finally {
+    loadButton.disabled = false;
+  }
+}
+
+localFileInput.addEventListener("change", () => {
+  const file = localFileInput.files && localFileInput.files[0];
+  if (file) {
+    loadLocalFile(file);
+  }
+});
+
+// Drag-and-drop onto the player. dragover must be prevented, or the browser
+// navigates to the dropped file instead of handing it over.
+canvas.addEventListener("dragover", (event) => {
+  event.preventDefault();
+});
+canvas.addEventListener("drop", (event) => {
+  event.preventDefault();
+  const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+  if (file) {
+    loadLocalFile(file);
+  }
 });
 
 function syncCacheSettingsFromEngine() {
