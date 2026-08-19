@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>MARP player</title>
+        <style>
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+            /* The canvas fills the window; object-fit decides how the frame
+               is letterboxed inside it, mirroring the Stretch the host asks
+               for. A canvas is a replaced element, so object-fit applies. */
+            #canvas { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+        </style>
+    </head>
+    <body>
+        <canvas id="canvas"></canvas>
+
+        <script src="dist/marp-video-engine.js"></script>
+        <script>
+            /*
+             * Host-facing player page.
+             *
+             * Loads one media URL with the MARP video engine and exposes it as
+             * window.marpVideo (and window.mareVideo, so an existing WebView2
+             * host's ExecuteScript strings keep working unchanged).
+             *
+             * Query parameters:
+             *   src   required. Media URL. An .m3u8 is treated as a Jellyfin
+             *         HLS transcode stream; anything else is read as an MP4 by
+             *         byte range, which covers Jellyfin Direct Play
+             *         (/Videos/{id}/stream?static=true) and a local file served
+             *         through a WebView2 virtual-host folder mapping.
+             *   fit   optional. contain (default) | cover | fill | none, matching
+             *         the host's Stretch.
+             *   rawCacheBytes / decodedCacheBytes  optional overrides.
+             *
+             * Progress and errors are posted to the host as status| messages by
+             * attachWebView2Bridge, alongside metadata| and frame|.
+             */
+            (function () {
+                const params = new URLSearchParams(window.location.search);
+                const src = params.get('src');
+                const fit = params.get('fit');
+                const canvas = document.getElementById('canvas');
+
+                if (fit) {
+                    canvas.style.objectFit = fit;
+                }
+
+                /** Posts a line to the host in the same status| channel the bridge uses. */
+                function postStatus(text) {
+                    console.log('[player] ' + text);
+                    if (window.chrome && window.chrome.webview) {
+                        window.chrome.webview.postMessage('status|' + text);
+                    }
+                }
+
+                function numberParam(name) {
+                    const raw = params.get(name);
+                    const value = raw === null ? NaN : Number(raw);
+                    return Number.isFinite(value) && value > 0 ? value : undefined;
+                }
+
+                /**
+                 * Builds the media source for a URL.
+                 *
+                 * The .m3u8 test matches what the host's previous player used to
+                 * decide between hls.js and a direct file, so routing behaviour
+                 * is unchanged.
+                 */
+                function buildOptions(url) {
+                    const rawSegmentCacheBudgetBytes = numberParam('rawCacheBytes');
+                    const cacheBudgetBytes = numberParam('decodedCacheBytes');
+
+                    if (url.toLowerCase().includes('.m3u8')) {
+                        postStatus('source=transcode');
+                        return {
+                            streamUrl: url,
+                            rawSegmentCacheBudgetBytes,
+                            cacheBudgetBytes,
+                            // Jellyfin's transcoder answers one request at a time
+                            // per session; more in flight makes them race its
+                            // restarts. Direct Play and local files have no such
+                            // limit and take the engine's own default.
+                            maxConcurrentFetches: 2,
+                        };
+                    }
+
+                    postStatus('source=byte-range');
+                    return {
+                        mediaSource: new MarpVideoEngine.UrlMediaSource({
+                            url,
+                            rawSegmentCacheBudgetBytes,
+                            onError: (err) => postStatus('source-error ' + err.message),
+                        }),
+                        cacheBudgetBytes,
+                    };
+                }
+
+                async function load() {
+                    if (!src) {
+                        postStatus('error no src parameter given');
+                        return;
+                    }
+                    if (typeof VideoDecoder === 'undefined') {
+                        postStatus('error WebCodecs unavailable -- the page must be served from a secure context (https or localhost), not NavigateToString');
+                        return;
+                    }
+
+                    try {
+                        postStatus('loading');
+                        const engine = await MarpVideoEngine.createMarpVideoEngine(canvas, buildOptions(src));
+
+                        // Both names: marpVideo is the current one, mareVideo
+                        // keeps an existing host's injected scripts working.
+                        window.marpVideo = engine;
+                        window.mareVideo = engine;
+
+                        // Posts status|/metadata|/frame| in the format the host
+                        // already parses.
+                        MarpVideoEngine.attachWebView2Bridge(engine);
+
+                        postStatus('ready ' + engine.videoWidth + 'x' + engine.videoHeight + ' ' + engine.fps + 'fps ' + engine.duration.toFixed(3) + 's');
+                    } catch (err) {
+                        postStatus('error ' + (err && err.message ? err.message : err));
+                    }
+                }
+
+                load();
+            })();
+        </script>
+    </body>
+</html>
