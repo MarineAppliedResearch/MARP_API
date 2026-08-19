@@ -19,8 +19,8 @@
     <body>
         <h2>WebView2 verification</h2>
         <p class="info">
-            Runs every capability the MARP video engine depends on, and says what to change when one fails. Open this page inside the WebView2 host. Checks 1–3 run automatically; 4–6 need
-            a file or a server.
+            Runs every capability the MARP video engine depends on, and says what to change when one fails. Open this page inside the WebView2 host. Checks 1–3 run automatically; 4 needs
+            a file; 5–6 are prefilled with the dev Jellyfin instance (port 8097 — never production) so they are one click.
         </p>
 
         <h3>1–3. Environment, decode, byte ranges</h3>
@@ -35,10 +35,10 @@
 
         <h3>5–6. Jellyfin (Direct Play and transcode)</h3>
         <div>
-            <label>server <input id="server" size="30" placeholder="http://host:8097" /></label>
-            <label>user <input id="user" size="10" /></label>
-            <label>pass <input id="pass" type="password" size="16" /></label>
-            <label>item id <input id="item" size="34" /></label>
+            <label>server <input id="server" size="30" value="http://47.208.203.78:8097" /></label>
+            <label>user <input id="user" size="10" value="admin" /></label>
+            <label>pass <input id="pass" type="password" size="16" value="MarpDevJellyfinRemote2026!" /></label>
+            <label>item id <input id="item" size="34" value="fb6a3c0fbd5e073d40e0840b9a54b79c" /></label>
         </div>
         <div><button id="runJellyfin">Run Jellyfin checks</button></div>
         <div id="jellyfinResults"></div>
