@@ -243,8 +243,13 @@
                 }
 
                 if (location.protocol === 'https:' && server.startsWith('http:')) {
-                    report('jellyfinResults', 'fail', 'mixed content', `page is https, server is http (${server})`,
-                        'A secure page cannot fetch plain http. Either serve this page from http://127.0.0.1 (still a secure context, and not mixed content), or put Jellyfin behind https.');
+                    // A warning, not a failure: the host may already permit this
+                    // via --allow-running-insecure-content, and only an actual
+                    // request can tell. The login and playback rows below are
+                    // the real verdict.
+                    report('jellyfinResults', 'warn', 'mixed content risk', `page is https, server is http (${server})`,
+                        'Normally blocked. If the rows below pass, this host allows it (WebView2 started with --allow-running-insecure-content). ' +
+                            'If they fail with network errors, add that argument, serve this page from http://127.0.0.1, or put Jellyfin behind https.');
                 }
 
                 const client = new MarpVideoEngine.JellyfinClient();
