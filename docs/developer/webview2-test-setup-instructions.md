@@ -1,17 +1,65 @@
 # Instructions: prepare the C# app to run the MARP engine diagnostic
 
-For the agent working in the **C# WPF/WebView2 project** (`VIDEO_PLAYER`,
-containing `MareMediaElement.xaml.cs`). Written by the agent working in the
-MARE_API repo, where the video engine lives.
+**Part 1 is for the agent working in the C# WPF/WebView2 project**
+(`VIDEO_PLAYER`, containing `MareMediaElement.xaml.cs`). **Part 2 is for the
+product owner**, who builds and runs the app.
+
+Written by the agent working in the MARE_API repo, where the video engine
+lives.
+
+## Background — what this is leading to
+
+The MARE annotation GUI plays video through `MareMediaElement`, which hosts a
+WebView2 and, inside it, a plain HTML `<video>` element (plus hls.js for
+Jellyfin transcode streams). That is what `BuildPlayerHtml` generates today.
+
+We are replacing that `<video>` element with a **purpose-built video engine**
+developed in the MARE_API repo. It decodes frames itself using WebCodecs and
+draws them to a `<canvas>`, which a `<video>` element cannot do: exact
+frame-by-frame stepping, and true **reverse playback** at real speed — both
+core to the annotation workflow, and both unreliable or impossible with
+`<video>` seeking.
+
+The engine already works in a normal browser and plays three sources:
+
+- **Jellyfin Direct Play** (the preferred path — the original file, read by
+  HTTP byte range, no transcoding),
+- **Jellyfin transcode** (the fallback, for media the client cannot decode or
+  links too slow for the original bitrate),
+- **local files** on disk.
+
+What that means for this control, eventually:
+
+- `BuildPlayerHtml` stops emitting `<video>`/hls.js and instead loads
+  `marp-video-engine.js` and drives a `<canvas>`.
+- The `Source` URI is routed to whichever of the three sources fits.
+- **The C# side barely changes.** The engine exposes a `<video>`-shaped API
+  (`currentTime`, `playbackRate`, `play()`, `pause()`), and it already posts
+  `status|` / `metadata|` / `frame|` messages in exactly the format
+  `CoreWebView2_WebMessageReceived` parses. The public control API and the
+  annotation GUI above it stay as they are.
+
+**Why a diagnostic first.** WebCodecs is only available in a *secure
+context*, and the current page is loaded with `NavigateToString`, which has
+no origin at all — so the engine would not merely misbehave there, it would
+be undefined. Before porting anything we need to know what this host
+actually supports. Hence the three edits below.
 
 ## Goal
 
-Temporarily point the app's video window at a **diagnostic page** so we can
+Temporarily point the app's video window at a **diagnostic page**, so we can
 find out what WebView2 supports before porting the video engine into it.
 
-You are not integrating the engine yet. You are making one screen show a
-diagnostic page, capturing its output, and reverting. Keep every change
-small and reversible.
+This is not the integration. It is three small, reversible edits so one
+screen shows a diagnostic page instead of video.
+
+**Division of labour:** the C# agent makes the edits below and stops. It does
+not build, run, or verify anything. The product owner then runs the app and
+returns the results.
+
+---
+
+# Part 1 — for the C# agent
 
 ## Why the change is needed (do not skip — it explains the odd parts)
 
@@ -96,39 +144,60 @@ result is now unused — this is a temporary diversion, not a rewrite.
   `SpeedRatio`, `NaturalDuration`, `DisplayedFrameChanged`), or the XAML.
 - Anything outside `MareMediaElement.xaml.cs` and the new `player/` folder.
 
-## Step 4 — run it and capture the output
+## Step 4 — stop, and hand back
 
-1. Start the app and open the window that shows the video player. The
-   diagnostic page appears instead of video.
-2. Checks 1–3 run on load.
-3. For check 4, click the file input and pick any local MP4.
-4. For checks 5–6, click **Run Jellyfin checks** (server, credentials and
-   item id are pre-filled).
-5. Click **Copy summary**, and return **the entire summary text**.
+Do **not** build, run, or verify. Do not try to make anything work end to
+end — the point of the diagnostic is to discover what does not.
 
-If the clipboard button does nothing (hosts often block clipboard access),
-copy the text from the "Summary" box on the page instead.
+Report to the product owner:
 
-## What the results mean — report them, do not fix them
+1. Every file you changed, with the before/after of each edit.
+2. Confirmation that the two files landed at `player/webview2-check.html`
+   and `player/dist/marp-video-engine.js`, and are set to copy to the output
+   directory.
+3. Anything that did not match these instructions — different line numbers,
+   a `CoreWebView2Environment` already being created elsewhere, an existing
+   virtual-host mapping, or a build configuration that does not copy content
+   files. Say so rather than improvising.
 
-Expect some failures; that is the point. Do not attempt repairs.
+If something here cannot be done as written, stop and explain why. A wrong
+guess here produces a misleading diagnostic result, which is worse than no
+result.
 
-- `secure context: FAIL` — Step 3 did not take effect, or navigation fell
-  back to a string. Re-check Step 3, then report.
-- `WebCodecs: FAIL` — follows from the above.
-- `same-origin Range: FAIL` — the virtual host does not serve partial files.
-  Expected-possible; it changes how local video is handled. Just report it.
-- `mixed content` or a failed Jellyfin login — Step 2's argument did not
-  take effect. Verify the environment is passed to
-  `EnsureCoreWebView2Async`, then report.
-- Playback rows failing while the environment rows pass is still a useful
-  result. Report exactly what you see.
+---
 
-Also report: the WebView2 Runtime version installed, and the `user agent`
+# Part 2 — for the product owner (running it)
+
+Once the edits are in, build and run the app, then open the window that
+shows the video player. The diagnostic page appears instead of video.
+
+1. Checks 1–3 run on their own as the page loads.
+2. Check 4: click the file input and pick any local MP4.
+3. Checks 5–6: click **Run Jellyfin checks** — server, credentials and item
+   id are pre-filled for the dev instance on port 8097.
+4. Click **Copy summary** and send back **the whole summary text**. If the
+   clipboard button does nothing (hosts often block clipboard access), copy
+   the text out of the Summary box on the page.
+
+Also useful: the WebView2 Runtime version installed, and the `user agent`
 line the page prints.
 
-## Step 5 — revert
+### Expect some failures — that is the point
 
-Restore `webVideo.NavigateToString(html);` and, if you prefer, the original
-`EnsureCoreWebView2Async()` call. Keep the `player/` folder — the real
+Nothing here needs fixing before reporting:
+
+- `secure context: FAIL` — Step 3 did not take effect. Everything else will
+  fail too; report it and we will sort out the navigation first.
+- `same-origin Range: FAIL` — the virtual host does not serve partial files.
+  A genuinely possible outcome that changes how local video is read; not a
+  fault.
+- `mixed content` or a failed Jellyfin login — Step 2's browser argument did
+  not take effect.
+- Environment rows passing while playback rows fail is still a good result:
+  it means the engine can run there and the remaining work is ours.
+
+### Reverting
+
+Restore `webVideo.NavigateToString(html);` (and, if you like, the original
+`EnsureCoreWebView2Async()` call). Keep the `player/` folder — the real
 integration will use it.
