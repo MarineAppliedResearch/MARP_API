@@ -133,6 +133,26 @@
                 }
             }
 
+            // --- 3b. Byte ranges over the page's OWN origin ----------------------
+            // In the host the page is served by a WebView2 virtual-host folder
+            // mapping. Whether that mapping answers Range requests with 206
+            // decides how local files can be read there: a URL-based source if
+            // it does, a File-based one if it does not. Nothing had tested it.
+            async function checkSameOriginRange() {
+                try {
+                    const res = await fetch('dist/marp-video-engine.js', { headers: { Range: 'bytes=100-199' } });
+                    const bytes = new Uint8Array(await res.arrayBuffer());
+                    const ok = res.status === 206 && bytes.length === 100;
+                    report('auto', ok ? 'pass' : 'fail', 'same-origin Range (this page\'s host)',
+                        `status=${res.status}, bytes=${bytes.length}, Content-Range=${res.headers.get('Content-Range') || 'none'}`,
+                        ok ? null
+                            : 'This origin ignores Range and returns whole files. Local video cannot then be read by byte range from a virtual-host URL — ' +
+                              'the host must hand the page a File instead (picker/drag-drop), or serve media through a WebResourceRequested handler that honours Range.');
+                } catch (err) {
+                    report('auto', 'fail', 'same-origin Range (this page\'s host)', String(err));
+                }
+            }
+
             // --- shared playback exercise ---------------------------------------
             /** Loads an engine and checks forward, reverse and a one-frame step. */
             async function exercise(target, label, options) {
@@ -266,7 +286,7 @@
                 }
             });
 
-            checkDecode().then(checkBlobRange);
+            checkDecode().then(checkBlobRange).then(checkSameOriginRange);
         </script>
     </body>
 </html>
