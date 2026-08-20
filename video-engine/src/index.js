@@ -183,6 +183,16 @@ export async function createMarpVideoEngine(canvas, options) {
 
     shim = new MarpVideoShim(scheduler, { videoWidth, videoHeight, fps });
 
+    // Sources are usually built before the engine exists, so anything they
+    // need to read from it (the playhead, for playback reporting and for
+    // anchoring behind sessions) is handed over here.
+    if (typeof mediaSource.attachEngine === 'function') {
+        mediaSource.attachEngine({
+            getCurrentTime: () => scheduler.currentTime,
+            isPaused: () => shim.paused,
+        });
+    }
+
     // Sources that maintain their own background work (the transcode
     // path's behind sessions) run it from here until the engine closes --
     // otherwise a replaced engine leaves the old one negotiating against

@@ -82,7 +82,10 @@ export async function createJellyfinSource({
     });
     // Jellyfin identifies a playback report by the ids of the negotiation
     // that produced the stream, so the source needs them to report at all.
-    source.negotiation = negotiator._negotiation;
+    source.setPlaybackSession({
+        mediaSourceId: negotiator._negotiation.mediaSourceId,
+        playSessionId: negotiator._negotiation.playSessionId,
+    });
 
     return {
         mediaSource: source,

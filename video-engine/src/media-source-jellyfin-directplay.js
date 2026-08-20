@@ -15,6 +15,7 @@
  */
 
 import { Mp4ByteRangeMediaSource } from './media-source-mp4-byte-range.js';
+import { JellyfinPlaybackReporter } from './jellyfin-playback-reporter.js';
 
 /**
  * Plays a Jellyfin item as its original file.
@@ -29,10 +30,73 @@ export class JellyfinDirectPlayMediaSource extends Mp4ByteRangeMediaSource {
      * @param {string} params.itemId - Jellyfin item id to play.
      * @param {Object} [params.options] - Remaining options, forwarded to {@link Mp4ByteRangeMediaSource}.
      */
-    constructor({ client, itemId, ...options }) {
+    constructor({ client, itemId, getCurrentTime, ...options }) {
         super(options);
         this.client = client;
         this.itemId = itemId;
+        this.getCurrentTime = getCurrentTime;
+
+        // Direct Play needs reporting as much as the transcode path does:
+        // it is what keeps Jellyfin's resume position and now-playing
+        // working, and Direct Play is the default path.
+        this._reporter = new JellyfinPlaybackReporter({
+            client,
+            itemId,
+            getCurrentTime,
+            onDebug: (message) => this._logDebug(message),
+        });
+    }
+
+    /**
+     * Reads the index, then learns the session ids reporting needs.
+     *
+     * Direct Play negotiates nothing to play -- the URL is stateless -- so
+     * the ids come from a PlaybackInfo probe, which is the same call that
+     * reports whether the item can be direct-played at all.
+     *
+     * @async
+     * @returns {Promise<void>}
+     */
+    async load() {
+        await super.load();
+        try {
+            const probe = await this.client.probeMediaSource(this.itemId);
+            this._reporter.setSession({ mediaSourceId: probe.mediaSourceId, playSessionId: probe.playSessionId });
+        } catch (err) {
+            // Reporting is a convenience; failing to identify a session must
+            // never stop playback.
+            this._logDebug(`could not resolve a playback session for reporting: ${err.message}`);
+        }
+    }
+
+
+    /**
+     * Receives readers for engine state the source needs.
+     *
+     * Called by the engine once it is running. A source is usually built
+     * before the engine exists -- a consumer picks one and passes it in --
+     * so anything it needs to know about playback position arrives here
+     * rather than through its constructor.
+     *
+     * @param {Object} engine
+     * @param {function(): number} engine.getCurrentTime - Playhead position, in seconds.
+     * @param {function(): boolean} engine.isPaused - Whether playback is paused.
+     * @returns {void}
+     */
+    attachEngine({ getCurrentTime, isPaused }) {
+        this.getCurrentTime = getCurrentTime;
+        this._reporter.getCurrentTime = getCurrentTime;
+        this._reporter.isPaused = isPaused;
+    }
+
+    /** Starts reporting playback to Jellyfin. @returns {void} */
+    startPlaybackReporting() {
+        this._reporter.start();
+    }
+
+    /** Stops reporting and sends a final "stopped". @returns {void} */
+    stopPlaybackReporting() {
+        this._reporter.stop();
     }
 
     /** The stateless Direct Play URL: no session, no transcoder, honours ranges. */

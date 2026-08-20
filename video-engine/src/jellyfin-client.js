@@ -265,6 +265,11 @@ export class JellyfinClient {
             width: (videoStream && videoStream.Width) || 0,
             height: (videoStream && videoStream.Height) || 0,
             supportsTranscoding: Boolean(mediaSource.SupportsTranscoding),
+            // Jellyfin identifies a playback report by these, and this probe
+            // is already the PlaybackInfo call that produces them -- the
+            // Direct Play path has no other negotiation to take them from.
+            mediaSourceId: mediaSource.Id,
+            playSessionId: data.PlaySessionId,
         };
     }
 
