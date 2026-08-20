@@ -95,7 +95,19 @@ export function attachWebView2Bridge(marpVideo) {
         marpVideo.requestVideoFrameCallback(onVideoFrame);
     }
 
-    marpVideo.addEventListener('loadedmetadata', () => {
+    /**
+     * Announces the loaded stream and starts the frame clock.
+     *
+     * Split out because attaching AFTER the engine is built -- which is the
+     * normal case, since createMarpVideoEngine resolves with a ready engine
+     * and fires loadedmetadata before returning -- means that event is
+     * already gone. A host waiting on it (MareMediaElement raises its
+     * MediaOpened from exactly this message) would then never learn the
+     * video had opened, and its own UI would never appear.
+     *
+     * @returns {void}
+     */
+    function announceLoaded() {
         postStatus(`loadedmetadata duration=${marpVideo.duration}`);
         postMetadata();
         // Starts the frame clock -- matches the original inline glue's
@@ -105,7 +117,15 @@ export function attachWebView2Bridge(marpVideo) {
         // HTMLVideoElement.prototype): MarpVideoShim always provides it,
         // it's this engine's own API, not a browser feature to detect.
         marpVideo.requestVideoFrameCallback(onVideoFrame);
-    });
+    }
+
+    marpVideo.addEventListener('loadedmetadata', announceLoaded);
+
+    // Already loaded by the time we attached: replay it, so a host that
+    // waits for this message is not left waiting forever.
+    if (Number.isFinite(marpVideo.duration) && marpVideo.duration > 0) {
+        announceLoaded();
+    }
 
     marpVideo.addEventListener('durationchange', postMetadata);
     marpVideo.addEventListener('resize', postMetadata);
