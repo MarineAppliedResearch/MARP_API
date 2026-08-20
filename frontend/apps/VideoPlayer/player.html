@@ -23,12 +23,24 @@
              * window.marpVideo (and window.mareVideo, so an existing WebView2
              * host's ExecuteScript strings keep working unchanged).
              *
-             * Query parameters:
-             *   src   required. Media URL. An .m3u8 is treated as a Jellyfin
-             *         HLS transcode stream; anything else is read as an MP4 by
-             *         byte range, which covers Jellyfin Direct Play
-             *         (/Videos/{id}/stream?static=true) and a local file served
-             *         through a WebView2 virtual-host folder mapping.
+             * Two ways to say what to play.
+             *
+             * A Jellyfin item, which is preferred because the library then
+             * handles path selection and, on the transcode path, maintains the
+             * behind sessions that make reverse playback fast:
+             *   server, token, user   the host's existing Jellyfin session
+             *   item                  item id
+             *   mode                  directPlay (default) | transcode
+             *
+             * Or a plain media URL:
+             *   src   an .m3u8 is a Jellyfin HLS transcode stream; anything
+             *         else is read as an MP4 by byte range, which covers a
+             *         local file served through a WebView2 virtual-host folder
+             *         mapping. Note a bare .m3u8 URL cannot maintain behind
+             *         sessions -- there is no session to negotiate with -- so
+             *         prefer the Jellyfin parameters above for that path.
+             *
+             * Both accept:
              *   fit   optional. contain (default) | cover | fill | none, matching
              *         the host's Stretch.
              *   rawCacheBytes / decodedCacheBytes  optional overrides.
@@ -96,9 +108,41 @@
                     };
                 }
 
+                /**
+                 * Builds engine options for a Jellyfin item, letting the
+                 * library pick the path and negotiate whatever it needs.
+                 */
+                async function buildJellyfinOptions() {
+                    const client = new MarpVideoEngine.JellyfinClient();
+                    client.useSession({
+                        serverUrl: params.get('server'),
+                        accessToken: params.get('token'),
+                        userId: params.get('user'),
+                    });
+
+                    const mode = params.get('mode') === 'transcode' ? 'transcode' : 'directPlay';
+                    postStatus('source=jellyfin ' + mode);
+
+                    const built = await MarpVideoEngine.createJellyfinSource({
+                        client,
+                        itemId: params.get('item'),
+                        prefer: mode,
+                        rawSegmentCacheBudgetBytes: numberParam('rawCacheBytes'),
+                        onDebug: (message) => console.log('[player] ' + message),
+                        onError: (err) => postStatus('source-error ' + err.message),
+                    });
+
+                    return {
+                        mediaSource: built.mediaSource,
+                        maxConcurrentFetches: built.maxConcurrentFetches,
+                        cacheBudgetBytes: numberParam('decodedCacheBytes'),
+                    };
+                }
+
                 async function load() {
-                    if (!src) {
-                        postStatus('error no src parameter given');
+                    const jellyfinItem = params.get('item');
+                    if (!src && !jellyfinItem) {
+                        postStatus('error give either src, or server/token/user/item');
                         return;
                     }
                     if (typeof VideoDecoder === 'undefined') {
@@ -108,7 +152,8 @@
 
                     try {
                         postStatus('loading');
-                        const engine = await MarpVideoEngine.createMarpVideoEngine(canvas, buildOptions(src));
+                        const options = jellyfinItem ? await buildJellyfinOptions() : buildOptions(src);
+                        const engine = await MarpVideoEngine.createMarpVideoEngine(canvas, options);
 
                         // Both names: marpVideo is the current one, mareVideo
                         // keeps an existing host's injected scripts working.
