@@ -74,57 +74,6 @@ const CONTROLS_IDLE_HIDE_MS = 2500;
 /** How often segment-state shading is re-read from the engine and redrawn, in ms -- a plain timer, not tied to frame presentation, since it doesn't need to be that responsive. */
 const SEGMENT_SHADING_INTERVAL_MS = 250;
 
-/**
- * How far behind the playhead the CLOSE behind session starts its own
- * transcode, in seconds. Deliberately small.
- *
- * A Jellyfin session only ever sweeps FORWARD from its anchor, so it
- * produces the segment nearest its anchor first and the one nearest the
- * playhead last -- exactly the opposite order from what reverse playback
- * consumes. A session anchored far back therefore delivers what reverse
- * needs soonest LAST of all. Keeping this session tight means it reaches
- * the playhead's own neighbourhood almost immediately; the deeper section
- * is the extended session's job instead (see prepareExtendedBehindSession).
- */
-const CLOSE_LOOK_BEHIND_SECONDS = 9;
-
-/** How far the playhead may drift from the close session's anchor before it is re-anchored, in seconds -- it is meant to hug the playhead, and re-anchoring it is cheap now that it is its own ffmpeg job. */
-const CLOSE_MAX_DRIFT_SECONDS = 18;
-
-/** Ceiling on how many segments below the close session's start the extended session will scan for the next uncached run -- keeps it from anchoring at the very start of a long video the playhead will never reach. */
-const EXTENDED_MAX_SCAN_SEGMENTS = 60;
-
-/** How often to check whether the active behind session's coverage has drifted stale relative to the current playhead, in ms -- see maybeRefreshBehindSession. */
-const BEHIND_SESSION_CHECK_INTERVAL_MS = 2000;
-
-/**
- * The active behind session's coverage should stay within this distance
- * band behind the current playhead -- see maybeRefreshBehindSession, which
- * renegotiates a fresh one whenever it drifts outside either edge:
- *
- * - Too CLOSE (<= MIN): a reverse scrub is approaching this session's own
- *   start boundary -- about to run out and fall back to the forward
- *   session for anything further back (the original restart-cost bug).
- * - Too FAR (>= MAX): sustained forward playback has moved the current
- *   position well past where this session was anchored -- it's no longer
- *   a tight, useful buffer just behind the user, just stale coverage of
- *   territory they've long since passed.
- */
-/**
- * How close the playhead may get to the close session's own start before
- * that session is re-anchored -- it is about to reverse out the bottom of
- * its coverage.
- *
- * Must stay well BELOW CLOSE_LOOK_BEHIND_SECONDS, or a session is stale
- * the moment it is created and re-negotiates on every check: with a 9s
- * look-behind and a 10s trigger, the close session re-anchored every 2
- * seconds forever, paying a transcoder restart each time (seen live as a
- * run of "sweeping forward from 701.8 / 699.8 / 697.8..." during a single
- * slow reverse).
- */
-const BEHIND_SESSION_MIN_DISTANCE_SECONDS = 3;
-const BEHIND_SESSION_MAX_DISTANCE_SECONDS = CLOSE_LOOK_BEHIND_SECONDS + 15;
-
 const loadButton = document.getElementById("loadButton");
 const localFileInput = document.getElementById("localFileInput");
 const itemIdInput = document.getElementById("itemIdInput");
@@ -179,38 +128,6 @@ const jellyfinClient = new MarpVideoEngine.JellyfinClient();
 const mediaSource = new MarpVideoEngine.JellyfinMediaSource(jellyfinClient);
 let currentQualityOption = null;
 let currentItemId = null;
-// Bumped on every renegotiation (a discrete seek, or the periodic
-// low-coverage check) -- a behind-session renegotiation in flight when a
-// newer one starts must not apply its (now-stale) result.
-let behindSessionGeneration = 0;
-// Where the CURRENTLY ACTIVE behind session's own coverage starts
-// (absolute stream time, seconds) -- null until the first one is
-// negotiated. See maybeRefreshBehindSession, which compares the current
-// playhead against this to decide when to renegotiate a fresh one.
-let behindSessionStartTimeSeconds = null;
-let behindSessionCheckHandle = null;
-// True while a prepareBehindSession() negotiation is actually in flight
-// (not yet settled) -- lets the periodic low-coverage check
-// (maybeRefreshBehindSession) avoid piling a new attempt on top of one
-// still awaiting Jellyfin, which would otherwise starve every attempt
-// forever: a real negotiation round-trip can easily take longer than
-// BEHIND_SESSION_CHECK_INTERVAL_MS, and each new call bumps
-// behindSessionGeneration, discarding whatever the previous call was
-// still waiting on -- confirmed live as the actual cause of zero
-// successful renegotiations ever completing. A genuine seek still calls
-// prepareBehindSession() directly and is NOT gated by this, since a real
-// seek's fresher intent should always be allowed to supersede a stale
-// speculative attempt.
-let behindSessionNegotiationInFlight = false;
-
-// The extended behind session tracks its own anchor/generation/in-flight
-// state separately from the close one, so re-anchoring either never
-// discards or stalls the other -- they are independent ffmpeg jobs
-// covering different sections of the region behind the playhead.
-let extendedSessionStartTimeSeconds = null;
-let extendedSessionGeneration = 0;
-let extendedSessionNegotiationInFlight = false;
-
 let scrubDragging = false;
 let segmentShadingHandle = null;
 let settingsMenuOpen = false;
@@ -285,26 +202,6 @@ async function loadItem(itemId, qualityOption) {
       window.marpVideo.close();
     }
 
-    // A fresh engine has no behind session of its own yet -- forget the
-    // old one's coverage rather than comparing the new engine's currentTime
-    // against a boundary that belonged to a completely different session.
-    // Reset the in-flight flag unconditionally too: bumping the generation
-    // means an old engine's still-pending negotiation (if any) will never
-    // see its own generation match again, so its .finally() will never
-    // clear this itself -- left alone, it would stay stuck true forever,
-    // permanently blocking the new engine's own periodic checks.
-    behindSessionStartTimeSeconds = null;
-    behindSessionNegotiationInFlight = false;
-    ++behindSessionGeneration;
-
-    // Same reset for the extended session -- a new engine has none of its
-    // own, and leaving the in-flight flag set would block every future
-    // check (the old negotiation's .finally() can never match the bumped
-    // generation, so it will never clear the flag itself).
-    extendedSessionStartTimeSeconds = null;
-    extendedSessionNegotiationInFlight = false;
-    ++extendedSessionGeneration;
-
     const rawCacheBudgetBytes = Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined;
 
     window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
@@ -314,6 +211,12 @@ async function loadItem(itemId, qualityOption) {
       // engine's own (higher) default concurrency rather than the
       // transcoder's strict per-session ceiling.
       maxConcurrentFetches: directPlay ? undefined : mediaSource.maxConcurrentFetches,
+      // Handed to the transcode source so it negotiates and maintains its
+      // own behind sessions -- the app does not know sessions exist. Ignored
+      // on the Direct Play path below, which needs none.
+      client: jellyfinClient,
+      itemId,
+      qualityOption: currentQualityOption,
       mediaSource: directPlay
         ? new MarpVideoEngine.JellyfinDirectPlayMediaSource({
             client: jellyfinClient,
@@ -338,16 +241,6 @@ async function loadItem(itemId, qualityOption) {
       clearInterval(segmentShadingHandle);
     }
     segmentShadingHandle = setInterval(updateSegmentShading, SEGMENT_SHADING_INTERVAL_MS);
-
-    // Keeps the behind session's coverage fresh continuously, not just in
-    // reaction to seeks -- runs an immediate check right away (rather than
-    // waiting up to BEHIND_SESSION_CHECK_INTERVAL_MS for the first tick)
-    // so backward buffer starts warming from the moment playback is ready.
-    if (behindSessionCheckHandle) {
-      clearInterval(behindSessionCheckHandle);
-    }
-    behindSessionCheckHandle = setInterval(maybeRefreshBehindSession, BEHIND_SESSION_CHECK_INTERVAL_MS);
-    maybeRefreshBehindSession();
 
     enableTransportControls();
     syncCacheSettingsFromEngine();
@@ -882,278 +775,6 @@ function applyLoadedUiState() {
 }
 
 /**
- * Negotiates a fresh "behind" session anchored BEHIND_SESSION_LOOK_BEHIND_SECONDS
- * before a just-landed seek's position, so that region is pre-cached via
- * one continuous forward transcode sweep instead of ever asking a
- * session to move backward (see media-source.js's resolveBehindStreamUrl
- * and index.js's setBehindSession for why). Fire-and-forget from the
- * seek's own point of view -- rewinding immediately after a seek can
- * still stall while this negotiation/sweep is in flight, but every seek
- * kicks it off immediately rather than waiting for the user to actually
- * start rewinding, maximizing how much of a head start it gets.
- * Inputs: landedTimeSeconds (where the seek that just fired 'seeked' landed).
- * Output: none (calls window.marpVideo.setBehindSession once resolved).
- */
-/**
- * Whether the current playback path uses Jellyfin transcode sessions.
- *
- * Behind sessions exist purely to keep a sequential transcoder from being
- * asked to seek backwards. Direct Play and local files are randomly
- * addressable, so preparing one is not merely useless there -- it installs
- * an HLS session's segment list into a byte-range fetcher, which then
- * requests transcode segment URLs with byte ranges attached and gets 500s
- * and 416s back.
- * Inputs: none (reads currentQualityOption/currentItemId).
- * Output: boolean.
- */
-function usesTranscodeSessions() {
-  return Boolean(currentItemId && currentQualityOption && !currentQualityOption.directPlay);
-}
-
-function prepareBehindSession(landedTimeSeconds) {
-  if (!usesTranscodeSessions() || typeof mediaSource.resolveBehindStreamUrl !== "function") {
-    return;
-  }
-
-  const generation = ++behindSessionGeneration;
-  const behindStartTimeSeconds = Math.max(0, landedTimeSeconds - CLOSE_LOOK_BEHIND_SECONDS);
-
-  behindSessionNegotiationInFlight = true;
-
-  mediaSource
-    .resolveBehindStreamUrl(currentItemId, currentQualityOption, behindStartTimeSeconds)
-    .then((behindStreamUrl) => {
-      if (!behindStreamUrl || generation !== behindSessionGeneration || !window.marpVideo) {
-        // Superseded by a newer renegotiation (or this source has no
-        // dual-session support) -- discard silently, matching
-        // Scheduler#seek's own stale-result handling.
-        return;
-      }
-      // setBehindSession() itself does a real network fetch (the behind
-      // session's own playlist) before actually applying anything --
-      // re-check right before that application, not just here, since an
-      // OLDER call's own fetch can easily take longer and finish AFTER a
-      // newer one's, which would otherwise silently clobber the newer
-      // (correct) behind session with stale routing data. Confirmed live
-      // as the actual cause of a segment decoding content from a
-      // completely different, much-earlier point in the stream.
-      return window.marpVideo.setBehindSession(behindStreamUrl, behindStartTimeSeconds, () => generation === behindSessionGeneration);
-    })
-    .then(() => {
-      if (generation === behindSessionGeneration) {
-        behindSessionStartTimeSeconds = behindStartTimeSeconds;
-        log(`close behind-session ready: sweeping forward from segment ${segmentIndexForTime(behindStartTimeSeconds)}`);
-      }
-    })
-    .catch((err) => log(`ERROR preparing behind session: ${err.message}`))
-    .finally(() => {
-      if (generation === behindSessionGeneration) {
-        behindSessionNegotiationInFlight = false;
-      }
-    });
-}
-
-/**
- * Finds where the EXTENDED behind session should be anchored: one chunk
- * off the top of the next run of not-yet-cached segments below the close
- * session's own start.
- *
- * Deliberately derived from real coverage rather than a fixed look-behind
- * distance. The two behind sessions tile the region behind the playhead
- * between them -- the close one hugs the playhead, and this one picks up
- * exactly where that leaves off, taking the deeper section. As runs fill
- * in, the anchor naturally moves further back, and neither session ever
- * re-produces ground already covered.
- *
- * Anchored just below the close session's start rather than at the bottom
- * of the whole missing run. A session produces its own anchor first and
- * sweeps forward from there, so anchoring deep produces the segments
- * nearest the playhead LAST -- measured live, an extended session anchored
- * 191s back would have taken ~100s to cover the region just below the
- * close session, which is precisely the region reverse playback reaches
- * within seconds. Taking one chunk at a time and walking backward as each
- * fills keeps coverage growing contiguously in the direction reverse
- * actually consumes it.
- *
- * Inputs: closeStartTimeSeconds (where the close session begins).
- * Output: an absolute time in seconds to anchor at, or null if there is
- * no uncached run below the close session worth covering.
- */
-/**
- * Maps an absolute time to the segment index covering it.
- *
- * Used for logging: a behind session's anchor is negotiated in seconds,
- * but every other line in the log talks in segment numbers, so reporting
- * the anchor in seconds made it needlessly hard to line up a session's
- * coverage against the fetches attributed to it.
- *
- * Inputs: timeSeconds.
- * Output: segment index, or -1 if no segment covers that time.
- */
-function segmentIndexForTime(timeSeconds) {
-  if (!window.marpVideo) {
-    return -1;
-  }
-  return window.marpVideo.getSegmentStates().findIndex((segment) => segment.endTime > timeSeconds);
-}
-
-function findExtendedBehindAnchor(closeStartTimeSeconds) {
-  const states = window.marpVideo.getSegmentStates();
-  const closeStartIndex = states.findIndex((segment) => segment.endTime > closeStartTimeSeconds);
-  if (closeStartIndex <= 0) {
-    return null; // close session already covers down to the start of the stream
-  }
-
-  const scanFloor = Math.max(0, closeStartIndex - EXTENDED_MAX_SCAN_SEGMENTS);
-
-  // Top of the next missing run, walking down from the close session.
-  let runTop = -1;
-  for (let index = closeStartIndex - 1; index >= scanFloor; index--) {
-    if (!states[index].fetched) {
-      runTop = index;
-      break;
-    }
-  }
-  if (runTop === -1) {
-    return null; // everything within reach behind the close session is already cached
-  }
-
-  // Bottom of that same contiguous missing run.
-  let runBottom = runTop;
-  while (runBottom - 1 >= scanFloor && !states[runBottom - 1].fetched) {
-    runBottom--;
-  }
-
-  // Take one chunk off the TOP of that run rather than anchoring at its
-  // bottom. Anchoring deep produces the segments nearest the playhead last
-  // -- exactly the ones reverse reaches first (see this function's own doc
-  // comment). Walking backward a chunk at a time keeps each sweep short
-  // and lands its output where playback is about to be.
-  const chunkSegments = Math.max(1, Math.round(CLOSE_LOOK_BEHIND_SECONDS / (states[0].endTime - states[0].startTime)));
-  const anchorIndex = Math.max(runBottom, runTop - chunkSegments + 1);
-
-  return states[anchorIndex].startTime;
-}
-
-/**
- * Negotiates (or re-anchors) the extended behind session at the next
- * uncached run below the close session -- see findExtendedBehindAnchor.
- *
- * Re-anchored far less often than the close session: its value is having
- * already produced the deeper section by the time the playhead reverses
- * into it, and every re-anchor restarts its ffmpeg job and throws that
- * head start away. Because it is an independent session, its restarts
- * never disturb the close or forward sessions.
- *
- * Inputs: closeStartTimeSeconds (where the close session begins).
- * Output: none (calls window.marpVideo.setBehindSessionForRole).
- */
-function prepareExtendedBehindSession(closeStartTimeSeconds) {
-  if (!usesTranscodeSessions() || typeof mediaSource.resolveBehindStreamUrl !== "function" || !window.marpVideo) {
-    return;
-  }
-  if (extendedSessionNegotiationInFlight) {
-    return;
-  }
-
-  const anchor = findExtendedBehindAnchor(closeStartTimeSeconds);
-  if (anchor === null || anchor === extendedSessionStartTimeSeconds) {
-    return;
-  }
-
-  const generation = ++extendedSessionGeneration;
-  extendedSessionNegotiationInFlight = true;
-
-  mediaSource
-    .resolveBehindStreamUrl(currentItemId, currentQualityOption, anchor)
-    .then((streamUrl) => {
-      if (!streamUrl || generation !== extendedSessionGeneration || !window.marpVideo) {
-        return;
-      }
-      return window.marpVideo.setBehindSessionForRole("extended", streamUrl, anchor, () => generation === extendedSessionGeneration);
-    })
-    .then(() => {
-      if (generation === extendedSessionGeneration) {
-        extendedSessionStartTimeSeconds = anchor;
-        log(`extended behind-session ready: sweeping forward from segment ${segmentIndexForTime(anchor)}`);
-      }
-    })
-    .catch((err) => log(`ERROR preparing extended behind session: ${err.message}`))
-    .finally(() => {
-      if (generation === extendedSessionGeneration) {
-        extendedSessionNegotiationInFlight = false;
-      }
-    });
-}
-
-/**
- * Periodically checks whether the active behind session's own coverage
- * has drifted outside a healthy distance band behind the current
- * playhead, and proactively renegotiates a fresh one if so -- runs
- * continuously during playback (forward or reverse) and even while
- * paused, not just reactively on a discrete seek, so backward buffer is
- * ready before the user ever reverses into it (see
- * BEHIND_SESSION_CHECK_INTERVAL_MS's own setInterval in loadItem).
- *
- * Checks BOTH edges of the band, not just one: sustained forward
- * playback needs a refresh too (the current position drifting too far
- * PAST where this session was anchored -- BEHIND_SESSION_MAX_DISTANCE_SECONDS),
- * not only a reverse scrub running low (approaching this session's own
- * start boundary -- BEHIND_SESSION_MIN_DISTANCE_SECONDS). A single behind
- * session can't just be told to cover further and further back forever,
- * though: Jellyfin restarts its ffmpeg the moment a request lands behind
- * THAT session's own current position too (the same restart cost this
- * whole feature exists to avoid, just recreated against itself) -- so
- * "continuous" here means scheduling a fresh renegotiation ahead of need,
- * not one session sweeping backward indefinitely.
- * Inputs: none (reads window.marpVideo.currentTime).
- * Output: none (may call prepareBehindSession).
- */
-function maybeRefreshBehindSession() {
-  if (!usesTranscodeSessions() || typeof mediaSource.resolveBehindStreamUrl !== "function" || !window.marpVideo) {
-    return;
-  }
-
-  // Never pile a new speculative attempt on top of one still awaiting
-  // Jellyfin -- see behindSessionNegotiationInFlight's own doc comment
-  // for why that starves every attempt forever otherwise. A real seek
-  // still calls prepareBehindSession() directly and is not gated by this.
-  if (behindSessionNegotiationInFlight) {
-    return;
-  }
-
-  const currentTime = window.marpVideo.currentTime;
-  const distanceFromCoverageStart = currentTime - behindSessionStartTimeSeconds;
-  // The "too close, about to run out" check only makes sense if there's
-  // actually somewhere further back LEFT to extend to -- once the behind
-  // session is already anchored at the true start of the stream (0),
-  // extending it further is impossible, so being close to it isn't stale,
-  // it's just correct. Without this, playback starting near time 0 kept
-  // retriggering a fresh (and pointless, always-identical) renegotiation
-  // every single check for the whole first ~10-25s of the video -- real
-  // Jellyfin round-trips, back to back, confirmed live as actively
-  // competing with the forward session for attention rather than just
-  // being a harmless no-op.
-  const canExtendFurtherBack = behindSessionStartTimeSeconds > 0;
-  const coverageStale =
-    behindSessionStartTimeSeconds === null ||
-    (canExtendFurtherBack && distanceFromCoverageStart <= BEHIND_SESSION_MIN_DISTANCE_SECONDS) ||
-    distanceFromCoverageStart >= BEHIND_SESSION_MAX_DISTANCE_SECONDS;
-
-  if (coverageStale) {
-    prepareBehindSession(currentTime);
-    return;
-  }
-
-  // The close session is healthy, so this tick can go to the deeper
-  // section instead. Checked here rather than on its own timer so the two
-  // never negotiate against Jellyfin simultaneously.
-  if (behindSessionStartTimeSeconds !== null) {
-    prepareExtendedBehindSession(behindSessionStartTimeSeconds);
-  }
-}
-
-/**
  * Wires window.marpVideo's events and frame-callback loop to the log
  * panel, transport controls, and scrub bar.
  * Inputs: none (uses window.marpVideo).
@@ -1177,7 +798,6 @@ function wireVideoEvents() {
       `event: seeked targetTime=${event.targetTime.toFixed(3)} landedTime=${event.currentTime.toFixed(3)} ` +
         `segment=${event.segmentIndex} frameIndex=${event.frameIndex}`
     );
-    prepareBehindSession(event.currentTime);
   });
 
   // Buffering spinner: shown whenever playback/seek is blocked on Tier 1

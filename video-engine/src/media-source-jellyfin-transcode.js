@@ -20,6 +20,41 @@ import { MediaSource } from './media-source.js';
 import { getQualityOptions } from './quality-options.js';
 
 /**
+ * How far behind the playhead the CLOSE behind session starts its own
+ * transcode, in seconds. Deliberately small.
+ *
+ * A Jellyfin session only ever sweeps FORWARD from its anchor, so it
+ * produces the segment nearest its anchor first and the one nearest the
+ * playhead last -- exactly the opposite order from what reverse playback
+ * consumes. A session anchored far back therefore delivers what reverse
+ * needs soonest LAST of all. Keeping this session tight means it reaches
+ * the playhead's own neighbourhood almost immediately; the deeper section
+ * is the extended session's job instead.
+ */
+const CLOSE_LOOK_BEHIND_SECONDS = 9;
+
+/** Ceiling on how many units below the close session's start the extended session will scan for the next uncached run -- keeps it from anchoring at the very start of a long video the playhead will never reach. */
+const EXTENDED_MAX_SCAN_SEGMENTS = 60;
+
+/** How often to check whether the close session's coverage has drifted stale relative to the current playhead, in ms. */
+const BEHIND_SESSION_CHECK_INTERVAL_MS = 2000;
+
+/**
+ * How close the playhead may get to the close session's own start before
+ * that session is re-anchored -- it is about to reverse out the bottom of
+ * its coverage.
+ *
+ * Must stay well BELOW CLOSE_LOOK_BEHIND_SECONDS, or a session is stale
+ * the moment it is created and re-negotiates on every check: with a 9s
+ * look-behind and a 10s trigger, the close session re-anchored every 2
+ * seconds forever, paying a transcoder restart each time.
+ */
+const BEHIND_SESSION_MIN_DISTANCE_SECONDS = 3;
+
+/** How far the playhead may drift PAST the close session's anchor before it is re-anchored -- beyond this it is stale coverage of territory the user has long since passed, not a tight buffer just behind them. */
+const BEHIND_SESSION_MAX_DISTANCE_SECONDS = CLOSE_LOOK_BEHIND_SECONDS + 15;
+
+/**
  * Supplies the unit index and decoder chunks for a Jellyfin HLS stream.
  *
  * @class JellyfinTranscodeMediaSource
@@ -33,16 +68,41 @@ export class JellyfinTranscodeMediaSource {
      * @param {function(string): void} [params.onDebug] - Called with progress messages, e.g. when the continuity fallback fires.
      * @param {function(Error): void} [params.onError] - Called once per real raw-fetch failure.
      */
-    constructor({ streamUrl, fetchOptions, rawSegmentCacheBudgetBytes, onDebug, onError }) {
+    constructor({ streamUrl, fetchOptions, rawSegmentCacheBudgetBytes, onDebug, onError, client, itemId, qualityOption, getCurrentTime }) {
         this.streamUrl = streamUrl;
         this.fetchOptions = fetchOptions;
         this.rawSegmentCacheBudgetBytes = rawSegmentCacheBudgetBytes;
         this.onDebug = onDebug;
         this.onError = onError;
 
+        // Supplied together, these let the source negotiate its own extra
+        // sessions; without them it runs single-session (see _canNegotiate).
+        this.client = client;
+        this.itemId = itemId;
+        this.qualityOption = qualityOption;
+        this.getCurrentTime = getCurrentTime;
+
         // Both created by load(), which must run before anything else.
         this.segmentFetcher = null;
         this._segmentIndex = null;
+
+        // Behind sessions currently installed, keyed by role, so each can be
+        // re-anchored independently: 'close' hugs the playhead and re-anchors
+        // often, 'extended' owns the deeper section and rarely does.
+        this._behindSessionsByRole = new Map();
+
+        // Per-role negotiation bookkeeping. The generation counter discards a
+        // superseded negotiation whose own round-trip finished after a newer
+        // one's; the in-flight flag stops speculative attempts piling up while
+        // one is still awaiting Jellyfin.
+        this._closeStartTimeSeconds = null;
+        this._closeGeneration = 0;
+        this._closeInFlight = false;
+        this._extendedStartTimeSeconds = null;
+        this._extendedGeneration = 0;
+        this._extendedInFlight = false;
+
+        this._maintenanceHandle = null;
     }
 
     /**
@@ -133,6 +193,297 @@ export class JellyfinTranscodeMediaSource {
         }
 
         return { ...demuxResult, unitFirstTimestampMicros };
+    }
+
+    /**
+     * Starts the behind-session maintenance timer, and runs one check
+     * immediately rather than waiting a full interval, so backward buffer
+     * starts warming the moment playback is ready.
+     *
+     * Deliberately its own wall-clock timer rather than something driven
+     * off the scheduler's cache passes: those run per animation frame
+     * while playing and every 500ms while paused, and negotiating a
+     * Jellyfin session costs a real ffmpeg restart, so its cadence must
+     * not be a function of playback state.
+     *
+     * @returns {void}
+     */
+    startBehindSessionMaintenance() {
+        if (!this._canNegotiate() || this._maintenanceHandle !== null) {
+            return;
+        }
+        this._maintenanceHandle = setInterval(() => this._maybeRefreshBehindSessions(), BEHIND_SESSION_CHECK_INTERVAL_MS);
+        this._maybeRefreshBehindSessions();
+    }
+
+    /**
+     * Stops the maintenance timer and abandons any in-flight negotiation
+     * by bumping both generations, so a late result can never apply to a
+     * torn-down source.
+     *
+     * @returns {void}
+     */
+    stopBehindSessionMaintenance() {
+        if (this._maintenanceHandle !== null) {
+            clearInterval(this._maintenanceHandle);
+            this._maintenanceHandle = null;
+        }
+        ++this._closeGeneration;
+        ++this._extendedGeneration;
+    }
+
+    /**
+     * Re-anchors the close behind session at the playhead. Called when a
+     * seek lands, and by the maintenance timer when coverage goes stale.
+     *
+     * Fire-and-forget: this only affects opportunistic background fetches
+     * for units below the anchor, never a seek's own target fetch.
+     *
+     * @param {number} landedTimeSeconds - Where playback now is, in seconds.
+     * @returns {void}
+     */
+    prepareForPlayhead(landedTimeSeconds) {
+        if (!this._canNegotiate()) {
+            return;
+        }
+
+        const generation = ++this._closeGeneration;
+        const behindStartTimeSeconds = Math.max(0, landedTimeSeconds - CLOSE_LOOK_BEHIND_SECONDS);
+        this._closeInFlight = true;
+
+        this._negotiateBehindStreamUrl(behindStartTimeSeconds)
+            .then((behindStreamUrl) => {
+                if (!behindStreamUrl || generation !== this._closeGeneration) {
+                    // Superseded by a newer negotiation -- discard silently.
+                    return undefined;
+                }
+                // Re-checked again inside _applyBehindSession, after its
+                // own playlist fetch: an OLDER call's fetch can finish
+                // AFTER a newer one's and would otherwise clobber the
+                // newer session with stale routing data. Confirmed live as
+                // the cause of a unit decoding content from a completely
+                // different point in the stream.
+                return this._applyBehindSession('close', behindStreamUrl, behindStartTimeSeconds, () => generation === this._closeGeneration);
+            })
+            .then(() => {
+                if (generation === this._closeGeneration) {
+                    this._closeStartTimeSeconds = behindStartTimeSeconds;
+                    this._logDebug(`close behind-session ready: sweeping forward from unit ${this._unitIndexForTime(behindStartTimeSeconds)}`);
+                }
+            })
+            .catch((err) => this._logDebug(`ERROR preparing close behind session: ${err.message}`))
+            .finally(() => {
+                if (generation === this._closeGeneration) {
+                    this._closeInFlight = false;
+                }
+            });
+    }
+
+    /**
+     * Checks whether the close session's coverage has drifted outside its
+     * healthy band behind the playhead and re-anchors it if so; otherwise
+     * spends this tick on the deeper extended session.
+     *
+     * Both edges matter: sustained forward playback drifts the playhead
+     * too far PAST the anchor, and a reverse scrub approaches the anchor
+     * from above and is about to run out below it.
+     *
+     * @returns {void}
+     */
+    _maybeRefreshBehindSessions() {
+        if (!this._canNegotiate() || typeof this.getCurrentTime !== 'function') {
+            return;
+        }
+        // Never pile a speculative attempt on one still awaiting Jellyfin;
+        // a real seek calls prepareForPlayhead directly and is not gated.
+        if (this._closeInFlight) {
+            return;
+        }
+
+        const currentTime = this.getCurrentTime();
+        if (!Number.isFinite(currentTime)) {
+            return;
+        }
+
+        const distanceFromCoverageStart = currentTime - this._closeStartTimeSeconds;
+        // Being close to the anchor is only stale if there is somewhere
+        // further back left to extend to. Once anchored at 0, being near
+        // it is correct, not stale -- without this, playback starting near
+        // time 0 re-negotiated pointlessly on every single check.
+        const canExtendFurtherBack = this._closeStartTimeSeconds > 0;
+        const coverageStale =
+            this._closeStartTimeSeconds === null ||
+            (canExtendFurtherBack && distanceFromCoverageStart <= BEHIND_SESSION_MIN_DISTANCE_SECONDS) ||
+            distanceFromCoverageStart >= BEHIND_SESSION_MAX_DISTANCE_SECONDS;
+
+        if (coverageStale) {
+            this.prepareForPlayhead(currentTime);
+            return;
+        }
+
+        // Checked here rather than on its own timer so the two sessions
+        // never negotiate against Jellyfin simultaneously.
+        if (this._closeStartTimeSeconds !== null) {
+            this._prepareExtendedBehindSession(this._closeStartTimeSeconds);
+        }
+    }
+
+    /**
+     * Finds where the extended session should anchor: one chunk off the
+     * TOP of the next run of uncached units below the close session.
+     *
+     * Anchoring at the bottom of the run instead would produce the units
+     * nearest the playhead LAST -- measured live, an anchor 191s back
+     * would have taken ~100s to reach the region reverse consumes within
+     * seconds. Walking backward a chunk at a time keeps coverage growing
+     * in the direction reverse actually travels.
+     *
+     * @param {number} closeStartTimeSeconds - Where the close session begins.
+     * @returns {number|null} Absolute time to anchor at, or null if there is no uncached run worth covering.
+     */
+    _findExtendedBehindAnchor(closeStartTimeSeconds) {
+        const units = this._segmentIndex.segments;
+        const closeStartIndex = units.findIndex((unit) => unit.endTime > closeStartTimeSeconds);
+        if (closeStartIndex <= 0) {
+            return null; // the close session already covers down to the start
+        }
+
+        const scanFloor = Math.max(0, closeStartIndex - EXTENDED_MAX_SCAN_SEGMENTS);
+
+        // Top of the next missing run, walking down from the close session.
+        let runTop = -1;
+        for (let index = closeStartIndex - 1; index >= scanFloor; index--) {
+            if (!this.segmentFetcher.hasRawBytes(index)) {
+                runTop = index;
+                break;
+            }
+        }
+        if (runTop === -1) {
+            return null; // everything within reach is already cached
+        }
+
+        // Bottom of that same contiguous missing run.
+        let runBottom = runTop;
+        while (runBottom - 1 >= scanFloor && !this.segmentFetcher.hasRawBytes(runBottom - 1)) {
+            runBottom--;
+        }
+
+        const chunkUnits = Math.max(1, Math.round(CLOSE_LOOK_BEHIND_SECONDS / (units[0].endTime - units[0].startTime)));
+        const anchorIndex = Math.max(runBottom, runTop - chunkUnits + 1);
+
+        return units[anchorIndex].startTime;
+    }
+
+    /**
+     * Negotiates (or re-anchors) the extended behind session.
+     *
+     * Re-anchored far less often than the close session: its value is
+     * having already produced the deeper section by the time the playhead
+     * reverses into it, and every re-anchor restarts its ffmpeg job and
+     * throws that head start away.
+     *
+     * @param {number} closeStartTimeSeconds - Where the close session begins.
+     * @returns {void}
+     */
+    _prepareExtendedBehindSession(closeStartTimeSeconds) {
+        if (this._extendedInFlight) {
+            return;
+        }
+
+        const anchor = this._findExtendedBehindAnchor(closeStartTimeSeconds);
+        if (anchor === null || anchor === this._extendedStartTimeSeconds) {
+            return;
+        }
+
+        const generation = ++this._extendedGeneration;
+        this._extendedInFlight = true;
+
+        this._negotiateBehindStreamUrl(anchor)
+            .then((streamUrl) => {
+                if (!streamUrl || generation !== this._extendedGeneration) {
+                    return undefined;
+                }
+                return this._applyBehindSession('extended', streamUrl, anchor, () => generation === this._extendedGeneration);
+            })
+            .then(() => {
+                if (generation === this._extendedGeneration) {
+                    this._extendedStartTimeSeconds = anchor;
+                    this._logDebug(`extended behind-session ready: sweeping forward from unit ${this._unitIndexForTime(anchor)}`);
+                }
+            })
+            .catch((err) => this._logDebug(`ERROR preparing extended behind session: ${err.message}`))
+            .finally(() => {
+                if (generation === this._extendedGeneration) {
+                    this._extendedInFlight = false;
+                }
+            });
+    }
+
+    /**
+     * Loads a behind session's own playlist and installs it for routing.
+     *
+     * Segment indices are absolute in every session, so the start time
+     * only marks how far back this session can serve from without being
+     * forced to seek backward -- it is NOT an index translation.
+     *
+     * @async
+     * @param {string} role - Session role, 'close' or 'extended'.
+     * @param {string} behindStreamUrl - Stream URL negotiated with StartTimeTicks = startTimeSeconds.
+     * @param {number} startTimeSeconds - The exact start time that URL was negotiated with.
+     * @param {function(): boolean} isStillWanted - Re-checked after this call's own playlist fetch, immediately before applying.
+     * @returns {Promise<void>}
+     */
+    async _applyBehindSession(role, behindStreamUrl, startTimeSeconds, isStillWanted) {
+        const behindSegmentIndex = await loadSegmentIndex(behindStreamUrl, { fetchOptions: this.fetchOptions });
+        if (isStillWanted && !isStillWanted()) {
+            return;
+        }
+        this._behindSessionsByRole.set(role, {
+            segments: behindSegmentIndex.segments,
+            startTimeSeconds,
+        });
+        this.segmentFetcher.setBehindSessions([...this._behindSessionsByRole.values()]);
+    }
+
+    /**
+     * Maps an absolute time to the unit index covering it, for logs --
+     * every other line talks in unit numbers, so reporting an anchor only
+     * in seconds made coverage hard to line up against fetches.
+     *
+     * @param {number} timeSeconds - Absolute time.
+     * @returns {number} Unit index, or -1 if no unit covers that time.
+     */
+    _unitIndexForTime(timeSeconds) {
+        return this._segmentIndex.segments.findIndex((unit) => unit.endTime > timeSeconds);
+    }
+
+    /**
+     * Whether this source can negotiate extra Jellyfin sessions for itself.
+     *
+     * Without a client and item id it runs single-session: playback still
+     * works, but the region behind the playhead is not pre-produced, so
+     * reverse falls back on the forward session and pays a transcoder
+     * restart for every backward request.
+     *
+     * @returns {boolean} True when behind sessions are possible.
+     */
+    _canNegotiate() {
+        return Boolean(this.client && this.itemId);
+    }
+
+    /**
+     * Negotiates one extra transcode session starting at an earlier point
+     * in the item, so its ffmpeg process only ever sweeps FORWARD through
+     * the region behind the playhead instead of being asked to seek
+     * backward -- which costs a restart every time.
+     *
+     * @async
+     * @param {number} startTimeSeconds - Where this session's own transcode should begin.
+     * @returns {Promise<string>} Absolute HLS playlist URL for the new session.
+     */
+    async _negotiateBehindStreamUrl(startTimeSeconds) {
+        const negotiation = await this.client.getPlaybackInfo(this.itemId, { ...this.qualityOption, startTimeSeconds });
+        return negotiation.streamUrl;
     }
 
     /**

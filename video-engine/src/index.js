@@ -8,7 +8,6 @@
  * @module video-engine
  */
 
-import { loadSegmentIndex } from './playlist-manager.js';
 import { JellyfinTranscodeMediaSource, JellyfinMediaSource } from './media-source-jellyfin-transcode.js';
 import { JellyfinDirectPlayMediaSource } from './media-source-jellyfin-directplay.js';
 import { LocalFileMediaSource } from './media-source-local.js';
@@ -39,13 +38,20 @@ export { attachWebView2Bridge, JellyfinClient, MediaSource, JellyfinMediaSource,
  * @param {number} [options.cacheBudgetBytes] - Decoded-frame LRU cache budget in bytes. Default 3 GiB.
  * @param {number} [options.rawSegmentCacheBudgetBytes] - Raw-segment cache budget in bytes. Default 3 GiB.
  * @param {number} [options.maxConcurrentFetches] - Ceiling on simultaneously in-flight raw segment fetches. Default 6, suitable for a source that supports true random access (e.g. a static file server). A source backed by a single sequential live producer (e.g. Jellyfin's on-the-fly HLS transcoder) should pass a much lower value -- see scheduler.js's DEFAULT_MAX_CONCURRENT_TIER1_FETCHES doc comment for why.
- * @returns {Promise<Object>} A {@link module:video-engine/marp-video-shim.MarpVideoShim} instance, with an added `setBehindSession(behindStreamUrl, behindStartTimeSeconds)` method -- see its own doc comment below.
+ * @returns {Promise<Object>} A {@link module:video-engine/marp-video-shim.MarpVideoShim} instance.
  * @throws {Error} When the stream can't be loaded or the first segment decodes zero frames.
  */
 export async function createMarpVideoEngine(canvas, options) {
-    const { streamUrl, fetchOptions, cacheBudgetBytes, rawSegmentCacheBudgetBytes, maxConcurrentFetches } = options;
+    const { streamUrl, fetchOptions, cacheBudgetBytes, rawSegmentCacheBudgetBytes, maxConcurrentFetches, client, itemId, qualityOption } = options;
 
     let shim = null;
+    let scheduler = null;
+    // Set once the engine has finished loading. The behind-session hooks
+    // below stay quiet until then: the engine's own priming seek(0) would
+    // otherwise negotiate a session for a playhead position the user never
+    // asked for, which is one of the timing changes that made the previous
+    // attempt at this move suspect.
+    let engineReady = false;
 
     // Which source is plugged in decides where bytes come from and how they
     // become decoder chunks; everything below this is source-agnostic. A
@@ -70,6 +76,14 @@ export async function createMarpVideoEngine(canvas, options) {
                 shim._dispatch('error', { error: err });
             }
         },
+        // With these the transcode source negotiates and maintains its own
+        // behind sessions, which is what makes reverse fast on that path.
+        // Deferred `scheduler` reference for the same reason as `shim`: the
+        // source is built before either exists.
+        client,
+        itemId,
+        qualityOption,
+        getCurrentTime: () => (scheduler ? scheduler.currentTime : NaN),
     });
 
     // Logged at each stage (not just on final success/failure) so a stall
@@ -142,7 +156,7 @@ export async function createMarpVideoEngine(canvas, options) {
 
     const canvasRenderer = new CanvasRenderer(canvas);
 
-    const scheduler = new Scheduler({
+    scheduler = new Scheduler({
         segmentIndex,
         frameStore,
         canvasRenderer,
@@ -150,6 +164,11 @@ export async function createMarpVideoEngine(canvas, options) {
         emit: (type, detail) => {
             if (type === 'error') {
                 console.error('Scheduler emitted "error"', detail && detail.error);
+            }
+            // A landed seek is where the region behind the playhead changes
+            // most; sources that pre-produce it want to know immediately.
+            if (engineReady && type === 'seeked' && typeof mediaSource.prepareForPlayhead === 'function') {
+                mediaSource.prepareForPlayhead(scheduler.currentTime);
             }
             if (shim) {
                 // Forwards whatever detail the scheduler attached (e.g.
@@ -163,72 +182,17 @@ export async function createMarpVideoEngine(canvas, options) {
 
     shim = new MarpVideoShim(scheduler, { videoWidth, videoHeight, fps });
 
-    /**
-     * Negotiates (or replaces) the "behind" session -- a second,
-     * independent Jellyfin transcode session started earlier than the
-     * current seek anchor via StartTimeTicks, so its own ffmpeg process
-     * only ever sweeps forward through the anchor's behind-region instead
-     * of restarting on every backward segment request (confirmed live:
-     * even one segment behind an already-warm session's position costs a
-     * multi-second restart, regardless of session dedication -- the fix
-     * is a session that never itself needs to move backward).
-     *
-     * Call this once per seek (e.g. from a 'seeked' listener), after the
-     * seek has already landed -- this only affects opportunistic
-     * background fetches for indices below the anchor, never the seek's
-     * own target-segment fetch. Safe to call repeatedly; a newer call's
-     * result simply replaces the previous behind session once it
-     * resolves (callers should discard a stale in-flight call themselves
-     * if a newer seek has already superseded it, the same way
-     * Scheduler#seek's own generation counter works).
-     *
-     * @async
-     * @param {string} behindStreamUrl - A second stream-negotiation URL, negotiated with StartTimeTicks = behindStartTimeSeconds.
-     * @param {number} behindStartTimeSeconds - The exact start time (in seconds) that URL was negotiated with. NOT an index translation -- segment indices are absolute in every session (see SegmentFetcher#setBehindSession) -- this only marks how far back this session's own transcode can serve from without being forced to seek backward.
-     * @param {function(): boolean} [isStillWanted] - Checked immediately before applying the result (after this call's own playlist fetch, which can take a real, variable amount of time) -- if it returns false, the result is discarded instead of being applied. Without this, an OLDER negotiation whose own playlist fetch happens to resolve AFTER a newer one's can silently overwrite the newer (correct) behind session with stale routing data -- confirmed live as the actual cause of a segment's decoded content coming from a completely different, much-earlier point in the stream than its own timecode. The caller's own generation-counter check before starting this call is not enough by itself, since nothing re-checks it after this call's async work completes and right before the mutation below.
-     * @returns {Promise<void>}
-     */
-    // Behind sessions currently installed, keyed by role ('close' /
-    // 'extended'), so each can be re-anchored independently: the close one
-    // re-anchors often as the playhead moves, the extended one rarely.
-    const behindSessionsByRole = new Map();
-
-    shim.setBehindSession = async (behindStreamUrl, behindStartTimeSeconds, isStillWanted) => {
-        await shim.setBehindSessionForRole('close', behindStreamUrl, behindStartTimeSeconds, isStillWanted);
-    };
-
-    /**
-     * Negotiates (or replaces) one named behind session, leaving the
-     * others in place.
-     *
-     * Two roles are used today. 'close' sits just behind the playhead and
-     * is re-anchored often -- a forward-sweeping transcode produces the
-     * segment nearest its own anchor first and the furthest one last, so
-     * only a session anchored very close delivers what reverse playback
-     * needs soonest. 'extended' owns the deeper section the playhead is
-     * heading into, and is re-anchored rarely; by the time the playhead
-     * arrives, its segments are already written to disk and serve
-     * immediately (~59ms measured, versus a multi-second restart).
-     *
-     * @async
-     * @param {string} role - Session role, e.g. 'close' or 'extended'.
-     * @param {string} behindStreamUrl - Stream-negotiation URL for this session, negotiated with StartTimeTicks = behindStartTimeSeconds.
-     * @param {number} behindStartTimeSeconds - The exact start time (seconds) that URL was negotiated with.
-     * @param {function(): boolean} [isStillWanted] - Checked immediately before applying the result; see setBehindSession's own note on why a pre-call generation check is not enough.
-     * @returns {Promise<void>}
-     */
-    shim.setBehindSessionForRole = async (role, behindStreamUrl, behindStartTimeSeconds, isStillWanted) => {
-        const behindSegmentIndex = await loadSegmentIndex(behindStreamUrl, { fetchOptions });
-        if (isStillWanted && !isStillWanted()) {
-            return;
-        }
-        behindSessionsByRole.set(role, {
-            segments: behindSegmentIndex.segments,
-            startTimeSeconds: behindStartTimeSeconds,
-        });
-        segmentFetcher.setBehindSessions([...behindSessionsByRole.values()]);
-    };
-
+    // Sources that maintain their own background work (the transcode
+    // path's behind sessions) run it from here until the engine closes --
+    // otherwise a replaced engine leaves the old one negotiating against
+    // Jellyfin forever.
+    if (typeof mediaSource.stopBehindSessionMaintenance === 'function') {
+        const closeShim = shim.close.bind(shim);
+        shim.close = () => {
+            mediaSource.stopBehindSessionMaintenance();
+            closeShim();
+        };
+    }
     // Prime the first displayed frame and fire the initial metadata
     // events, matching a real <video> element's loadedmetadata/
     // durationchange/resize timing on first load.
@@ -236,6 +200,13 @@ export async function createMarpVideoEngine(canvas, options) {
     shim._dispatch('loadedmetadata');
     shim._dispatch('durationchange');
     shim._dispatch('resize');
+
+    // Only now, with the engine up: the same moment the app used to start
+    // this from, so the cadence is unchanged from what has been running.
+    engineReady = true;
+    if (typeof mediaSource.startBehindSessionMaintenance === 'function') {
+        mediaSource.startBehindSessionMaintenance();
+    }
 
     return shim;
 }
