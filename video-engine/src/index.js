@@ -187,13 +187,16 @@ export async function createMarpVideoEngine(canvas, options) {
     // path's behind sessions) run it from here until the engine closes --
     // otherwise a replaced engine leaves the old one negotiating against
     // Jellyfin forever.
-    if (typeof mediaSource.stopBehindSessionMaintenance === 'function') {
-        const closeShim = shim.close.bind(shim);
-        shim.close = () => {
+    const closeShim = shim.close.bind(shim);
+    shim.close = () => {
+        if (typeof mediaSource.stopBehindSessionMaintenance === 'function') {
             mediaSource.stopBehindSessionMaintenance();
-            closeShim();
-        };
-    }
+        }
+        if (typeof mediaSource.stopPlaybackReporting === 'function') {
+            mediaSource.stopPlaybackReporting();
+        }
+        closeShim();
+    };
     // Prime the first displayed frame and fire the initial metadata
     // events, matching a real <video> element's loadedmetadata/
     // durationchange/resize timing on first load.
@@ -207,6 +210,9 @@ export async function createMarpVideoEngine(canvas, options) {
     engineReady = true;
     if (typeof mediaSource.startBehindSessionMaintenance === 'function') {
         mediaSource.startBehindSessionMaintenance();
+    }
+    if (typeof mediaSource.startPlaybackReporting === 'function') {
+        mediaSource.startPlaybackReporting();
     }
 
     return shim;

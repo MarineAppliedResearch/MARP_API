@@ -33,6 +33,12 @@ import { getQualityOptions } from './quality-options.js';
  */
 const CLOSE_LOOK_BEHIND_SECONDS = 9;
 
+/** Jellyfin's own now-playing cadence, matching jellyfin-web's playbackmanager. */
+const PLAYBACK_REPORT_INTERVAL_MS = 10_000;
+
+/** Jellyfin expresses positions in 100-nanosecond ticks. */
+const TICKS_PER_SECOND = 10_000_000;
+
 /** Ceiling on how many units below the close session's start the extended session will scan for the next uncached run -- keeps it from anchoring at the very start of a long video the playhead will never reach. */
 const EXTENDED_MAX_SCAN_SEGMENTS = 60;
 
@@ -103,6 +109,12 @@ export class JellyfinTranscodeMediaSource {
         this._extendedInFlight = false;
 
         this._maintenanceHandle = null;
+
+        // Playback reporting: set by the factory from the negotiation that
+        // produced this source's own stream, since Jellyfin identifies a
+        // report by those ids.
+        this.negotiation = null;
+        this._reportHandle = null;
     }
 
     /**
@@ -455,6 +467,62 @@ export class JellyfinTranscodeMediaSource {
      */
     _unitIndexForTime(timeSeconds) {
         return this._segmentIndex.segments.findIndex((unit) => unit.endTime > timeSeconds);
+    }
+
+    /**
+     * Starts reporting playback to Jellyfin: one "started" report, then
+     * progress every interval.
+     *
+     * This is what drives Jellyfin's own resume-position and now-playing
+     * features. It belongs to the source because the source holds the
+     * session ids a report is identified by; a consumer would otherwise have
+     * to track them, which is how this ended up in the browser app.
+     *
+     * @returns {void}
+     */
+    startPlaybackReporting() {
+        if (!this._canReport() || this._reportHandle !== null) {
+            return;
+        }
+        this._report('Started');
+        this._reportHandle = setInterval(() => this._report('Progress'), PLAYBACK_REPORT_INTERVAL_MS);
+    }
+
+    /** Sends a final "stopped" report and stops the timer. @returns {void} */
+    stopPlaybackReporting() {
+        if (this._reportHandle !== null) {
+            clearInterval(this._reportHandle);
+            this._reportHandle = null;
+        }
+        if (this._canReport()) {
+            this._report('Stopped');
+        }
+    }
+
+    /** @returns {boolean} Whether a report can be identified and sent. */
+    _canReport() {
+        return Boolean(this.client && this.itemId && this.negotiation);
+    }
+
+    /**
+     * @param {('Started'|'Progress'|'Stopped')} kind - Which report to send.
+     * @returns {void}
+     */
+    _report(kind) {
+        const positionSeconds = typeof this.getCurrentTime === 'function' ? this.getCurrentTime() : NaN;
+        const body = {
+            mediaSourceId: this.negotiation.mediaSourceId,
+            playSessionId: this.negotiation.playSessionId,
+            positionTicks: Number.isFinite(positionSeconds) ? Math.round(positionSeconds * TICKS_PER_SECOND) : undefined,
+            isPaused: false,
+        };
+        const send =
+            kind === 'Started'
+                ? this.client.reportPlaybackStarted(this.itemId, body)
+                : kind === 'Stopped'
+                  ? this.client.reportPlaybackStopped(this.itemId, body)
+                  : this.client.reportPlaybackProgress(this.itemId, body);
+        Promise.resolve(send).catch((err) => this._logDebug(`playback ${kind} report failed: ${err.message}`));
     }
 
     /**

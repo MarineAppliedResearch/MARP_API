@@ -181,15 +181,9 @@ async function loadItem(itemId, qualityOption) {
     const directPlay = Boolean(currentQualityOption.directPlay);
     const startupRawCacheGiB = parseFloat(rawCacheGiBInput.value);
     const startupRawCacheBytes = Math.floor(startupRawCacheGiB * 1024 * 1024 * 1024);
+    const rawCacheBudgetBytes = Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined;
 
-    // Direct Play needs no negotiation at all: the source reads the
-    // original file by byte range off a stateless URL. Everything else
-    // goes through a transcode session as before.
-    const streamUrl = directPlay ? null : await mediaSource.resolveStreamUrl(itemId, currentQualityOption);
-
-    log(directPlay ? `Loading ${itemId} by Direct Play ...` : `Loading ${streamUrl} (quality=${currentQualityOption.name}) ...`);
-
-    stopPlaybackReporting();
+    log(`Loading ${itemId} (${currentQualityOption.name}) ...`);
 
     // Tear down the previous engine (if any) before replacing it --
     // without this, switching item/quality left the old scheduler's
@@ -202,37 +196,25 @@ async function loadItem(itemId, qualityOption) {
       window.marpVideo.close();
     }
 
-    const rawCacheBudgetBytes = Number.isFinite(startupRawCacheBytes) ? startupRawCacheBytes : undefined;
-
-    window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
-      streamUrl,
-      rawSegmentCacheBudgetBytes: rawCacheBudgetBytes,
-      // Direct Play is stateless and randomly addressable, so it takes the
-      // engine's own (higher) default concurrency rather than the
-      // transcoder's strict per-session ceiling.
-      maxConcurrentFetches: directPlay ? undefined : mediaSource.maxConcurrentFetches,
-      // Handed to the transcode source so it negotiates and maintains its
-      // own behind sessions -- the app does not know sessions exist. Ignored
-      // on the Direct Play path below, which needs none.
+    // The library decides how to play a Jellyfin item: which path, what to
+    // negotiate, and -- on the transcode path -- the behind sessions that
+    // keep reverse fast. This app does not know any of that exists.
+    const built = await MarpVideoEngine.createJellyfinSource({
       client: jellyfinClient,
       itemId,
-      qualityOption: currentQualityOption,
-      mediaSource: directPlay
-        ? new MarpVideoEngine.JellyfinDirectPlayMediaSource({
-            client: jellyfinClient,
-            itemId,
-            rawSegmentCacheBudgetBytes: rawCacheBudgetBytes,
-            onDebug: (message) => log(message),
-            onError: (err) => log(`ERROR (media source): ${err.message}`),
-          })
-        : undefined,
+      prefer: directPlay ? "directPlay" : "transcode",
+      qualityOption: directPlay ? undefined : currentQualityOption,
+      rawSegmentCacheBudgetBytes: rawCacheBudgetBytes,
+      onDebug: (message) => log(message),
+      onError: (err) => log(`ERROR (media source): ${err.message}`),
+    });
+
+    window.marpVideo = await MarpVideoEngine.createMarpVideoEngine(canvas, {
+      mediaSource: built.mediaSource,
+      maxConcurrentFetches: built.maxConcurrentFetches,
+      rawSegmentCacheBudgetBytes: rawCacheBudgetBytes,
     });
     wireVideoEvents();
-    // Playback reporting identifies itself with the transcode session's own
-    // ids, which Direct Play never negotiates.
-    if (!directPlay) {
-      startPlaybackReporting(itemId);
-    }
 
     log(`Engine ready. duration=${window.marpVideo.duration.toFixed(3)}s, ${window.marpVideo.videoWidth}x${window.marpVideo.videoHeight}, ${window.marpVideo.fps}fps`);
 
@@ -310,7 +292,6 @@ async function loadLocalFile(file) {
   try {
     log(`Loading local file ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB) ...`);
 
-    stopPlaybackReporting();
     if (window.marpVideo) {
       log("Closing previous engine before loading the new one...");
       window.marpVideo.close();
@@ -703,61 +684,8 @@ function buildQualityOptionsMenu(options, selected) {
 // work normally -- matches jellyfin-web's own 10s progress cadence
 // (playbackmanager.js's onPlayerProgressInterval). ---
 
-const PLAYBACK_REPORT_INTERVAL_MS = 10_000;
-const TICKS_PER_SECOND = 10_000_000;
 
-let playbackReportItemId = null;
-let playbackReportHandle = null;
 
-/**
- * Builds the {positionTicks, isPaused} context every playback-report call needs.
- * Inputs: none (uses window.marpVideo).
- * Output: report context object.
- */
-function currentPlaybackReportContext() {
-  return {
-    positionTicks: Math.round((window.marpVideo ? window.marpVideo.currentTime : 0) * TICKS_PER_SECOND),
-    isPaused: window.marpVideo ? window.marpVideo.paused : true,
-  };
-}
-
-/**
- * Starts reporting playback state for itemId to Jellyfin -- an immediate
- * "started" report, then "progress" every PLAYBACK_REPORT_INTERVAL_MS.
- * Inputs: itemId (string).
- * Output: none.
- */
-function startPlaybackReporting(itemId) {
-  playbackReportItemId = itemId;
-  mediaSource.reportPlaybackStarted(itemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback start: ${err.message}`));
-
-  if (playbackReportHandle) {
-    clearInterval(playbackReportHandle);
-  }
-  playbackReportHandle = setInterval(() => {
-    mediaSource.reportPlaybackProgress(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback progress: ${err.message}`));
-  }, PLAYBACK_REPORT_INTERVAL_MS);
-}
-
-/**
- * Stops the progress-reporting interval and sends a final "stopped" report
- * for whichever item was being reported on, if any -- called before
- * loading a new item/quality and on page unload.
- * Inputs: none.
- * Output: none.
- */
-function stopPlaybackReporting() {
-  if (playbackReportHandle) {
-    clearInterval(playbackReportHandle);
-    playbackReportHandle = null;
-  }
-  if (playbackReportItemId) {
-    mediaSource.reportPlaybackStopped(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback stop: ${err.message}`));
-    playbackReportItemId = null;
-  }
-}
-
-window.addEventListener("beforeunload", stopPlaybackReporting);
 
 /**
  * Applies the UI state a freshly-loaded (and, today, always-paused-until-
@@ -841,9 +769,6 @@ function wireVideoEvents() {
     playPauseButton.innerHTML = "&#10074;&#10074;";
     centerPlayOverlay.classList.add("hidden");
     bufferingSpinner.classList.add("hidden");
-    if (playbackReportItemId) {
-      mediaSource.reportPlaybackProgress(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback progress: ${err.message}`));
-    }
   });
 
   // Unblocked while paused (e.g. a cold seek landed): clear the spinner
@@ -857,9 +782,6 @@ function wireVideoEvents() {
     playPauseButton.innerHTML = "&#9654;";
     centerPlayOverlay.classList.remove("hidden");
     showControlsBar();
-    if (playbackReportItemId) {
-      mediaSource.reportPlaybackProgress(playbackReportItemId, currentPlaybackReportContext()).catch((err) => log(`ERROR reporting playback progress: ${err.message}`));
-    }
   });
 
   let frameLogCounter = 0;

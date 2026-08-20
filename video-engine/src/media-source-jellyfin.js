@@ -70,17 +70,22 @@ export async function createJellyfinSource({
 
     const streamUrl = await negotiator.resolveStreamUrl(itemId, tier);
 
-    return {
-        mediaSource: new JellyfinTranscodeMediaSource({
+    const source = new JellyfinTranscodeMediaSource({
             streamUrl,
             rawSegmentCacheBudgetBytes,
             onDebug,
             onError,
             // These are what let the source run its own behind sessions.
-            client,
-            itemId,
-            qualityOption: tier,
-        }),
+        client,
+        itemId,
+        qualityOption: tier,
+    });
+    // Jellyfin identifies a playback report by the ids of the negotiation
+    // that produced the stream, so the source needs them to report at all.
+    source.negotiation = negotiator._negotiation;
+
+    return {
+        mediaSource: source,
         maxConcurrentFetches: negotiator.maxConcurrentFetches,
         qualityOption: tier,
     };
