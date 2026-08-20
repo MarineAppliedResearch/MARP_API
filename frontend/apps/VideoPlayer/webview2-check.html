@@ -70,6 +70,12 @@
                 document.getElementById('summary').textContent = lines.join('\n');
             }
 
+            // --- 0. Is the engine bundle even here? -----------------------------
+            // Checked first and loudly: without it every check below fails in
+            // a confusing way, and the most common cause is a build that did
+            // not copy dist/ next to this page.
+            const bundleLoaded = typeof window.MarpVideoEngine !== 'undefined';
+
             // --- 1. Environment -------------------------------------------------
             const inWebView = Boolean(window.chrome && window.chrome.webview);
             report('auto', 'info', 'host', inWebView ? 'running inside WebView2' : 'running in a plain browser (not WebView2)');
@@ -88,6 +94,14 @@
                         'SetVirtualHostNameToFolderMapping (https://appassets/...) or a small local listener on http://127.0.0.1 (localhost counts as secure). ' +
                         'NavigateToString gives an opaque origin and will always fail this.',
                 );
+            }
+
+            if (bundleLoaded) {
+                report('auto', 'pass', 'engine bundle', 'dist/marp-video-engine.js loaded');
+            } else {
+                report('auto', 'fail', 'engine bundle', 'dist/marp-video-engine.js did NOT load -- window.MarpVideoEngine is undefined',
+                    'Every playback check below will fail until this is fixed. The file must sit at dist/marp-video-engine.js RELATIVE TO THIS PAGE, ' +
+                        'and in a C# project a newly added file defaults to "Do not copy" -- set Copy to Output Directory = Copy if newer and check bin\\...\\player\\dist\\.');
             }
 
             if (typeof VideoDecoder === 'undefined') {
@@ -215,6 +229,10 @@
             // --- 4. Local file ---------------------------------------------------
             async function useFile(file) {
                 report('localResults', 'pass', 'file received', `${file.name}, ${(file.size / 1024 / 1024).toFixed(1)} MB, type "${file.type || 'unknown'}"`);
+                if (!bundleLoaded) {
+                    report('localResults', 'fail', 'local file', 'cannot play: the engine bundle did not load (see above)');
+                    return;
+                }
                 await exercise('localResults', 'local file', {
                     mediaSource: new MarpVideoEngine.LocalFileMediaSource({ file, onError: (e) => report('localResults', 'warn', 'source error', e.message) }),
                 });
@@ -235,6 +253,10 @@
 
             // --- 5/6. Jellyfin ----------------------------------------------------
             document.getElementById('runJellyfin').addEventListener('click', async () => {
+                if (!bundleLoaded) {
+                    report('jellyfinResults', 'fail', 'jellyfin checks', 'cannot run: the engine bundle did not load (see above)');
+                    return;
+                }
                 const server = document.getElementById('server').value.trim();
                 const itemId = document.getElementById('item').value.trim();
                 if (!server || !itemId) {
