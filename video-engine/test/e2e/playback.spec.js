@@ -101,8 +101,8 @@ function waitForEngine(page) {
  *
  * Tiers are passed to loadItem() directly rather than clicked in the
  * quality menu: clicking would load the app's default source first and then
- * reload, paying two engine loads. app.js is a classic script, so its
- * functions are reachable on window.
+ * reload, paying two engine loads. The harness page exposes the player's
+ * loadItem as a window global for exactly this.
  */
 const SOURCES = [
     {
@@ -206,18 +206,42 @@ for (const source of SOURCES) {
         });
 
         test('time moves backward at playbackRate=-1 -- the whole point of this engine', async () => {
+            // Start from well inside the clip, not from wherever the previous
+            // test stopped (~2s in): reverse playback that reaches 0 makes the
+            // engine pause itself, and the pause click below would then be
+            // read as "play" -- leaving the next test stepping through a
+            // clip that is still moving. Measured, not guessed: reverse
+            // covered 2.2s of media in 1.8s of wall clock.
+            await page.evaluate(() => {
+                window.marpVideo.currentTime = Math.min(10, window.marpVideo.duration / 2);
+            });
+            await page.waitForTimeout(500);
             const before = await getPlaybackState(page);
+
+            // The speed override moved into the gear menu's "Playback"
+            // section when the UI became part of the library, so it has to
+            // be opened before the input is reachable. Closed again after,
+            // so the open menu cannot sit over the transport.
+            await page.click('#playerSettingsButton');
+            await page.click('[data-section="settingsPlaybackBody"]');
             await page.fill('#speedOverrideInput', '-1');
             await page.dispatchEvent('#speedOverrideInput', 'change');
+            await page.click('#playerSettingsButton');
+
             await page.click('#playPauseButton');
             await page.waitForTimeout(2000);
             const after = await getPlaybackState(page);
-            await page.click('#playPauseButton');
+
+            // Restored through the API, not by clicking the transport: a
+            // click only toggles, so it says nothing about the state the
+            // next test starts from.
             await page.evaluate(() => {
+                window.marpVideo.pause();
                 window.marpVideo.playbackRate = 1;
             });
 
             expect(after.currentTime).toBeLessThan(before.currentTime);
+            expect(after.paused).toBe(false);
         });
 
         test('5 forward + 5 back steps return to the exact starting frame (no drift)', async () => {

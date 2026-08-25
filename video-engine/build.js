@@ -1,7 +1,13 @@
 /**
- * Bundles the video-engine source into the single self-contained script
- * the browser test harness (and later, the C# WebView2 page) loads, and
- * copies video-engine/assets/ alongside it.
+ * Bundles the video-engine source into the single self-contained script a
+ * consumer loads -- the browser test harness, and the C# WebView2 host's
+ * player page.
+ *
+ * One file is the whole point: the bundle carries the engine, the player UI
+ * (markup, stylesheet, and the placeholder mark as an inlined data URI), so
+ * a consumer copying one script gets a complete working player with no
+ * assets folder to keep in sync and no relative paths to break inside a
+ * WebView2 virtual-host mapping.
  *
  * Output deliberately goes under frontend/apps/VideoPlayer/dist/ -- a
  * "dist" path segment is already excluded by jsdoc.config.json's
@@ -9,12 +15,9 @@
  * (which inlines mp4box's own source, JSDoc comments and all) never gets
  * parsed into the generated developer docs alongside real source.
  *
- * Assets (e.g. the MARP mark placeholder logo) live under
- * video-engine/assets/, not inlined into the JS bundle and not referenced
- * from MARP_API's own /assets/ route -- this package needs to work as a
- * standalone library with no dependency on the app it happens to be
- * developed alongside, so its own assets ship in its own folder,
- * copied to dist/assets/ next to the bundle every build.
+ * video-engine/assets/ is kept as the source of truth for the mark, but is
+ * no longer copied next to the bundle: src/ui/logo.js holds the downscaled
+ * WebP the player actually displays.
  *
  * @fileoverview esbuild bundler script for the video-engine package.
  * @author Isaac Travers
@@ -22,12 +25,10 @@
  */
 
 const esbuild = require('esbuild');
-const fs = require('fs');
 const path = require('path');
 
 /**
- * Runs the esbuild bundle step, then copies video-engine/assets/ into the
- * same output directory as the bundle.
+ * Runs the esbuild bundle step.
  *
  * @async
  * @returns {Promise<void>}
@@ -45,9 +46,6 @@ async function build() {
         sourcemap: true,
         logLevel: 'info',
     });
-
-    fs.cpSync(path.join(__dirname, 'assets'), path.join(outDir, 'assets'), { recursive: true });
-    console.log(`copied video-engine/assets/ -> ${path.join(outDir, 'assets')}`);
 }
 
 build().catch((err) => {
