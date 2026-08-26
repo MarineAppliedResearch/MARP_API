@@ -72,6 +72,20 @@ export const PLAYER_CSS = `
     display: none;
 }
 
+/* Controls off: a host draws its own transport and menus. display:none,
+   not opacity, so nothing here takes a click or a tab stop underneath the
+   host's own overlay. The spinner and the placeholder mark deliberately
+   stay -- they are status, not controls. */
+.marp-player.marp-controls-off .marp-controls-bar,
+.marp-player.marp-controls-off .marp-center-overlay {
+    display: none;
+}
+
+/* Nothing to focus when the player is not the one being driven. */
+.marp-player.marp-controls-off:focus {
+    box-shadow: none;
+}
+
 .marp-player .marp-canvas {
     display: block;
     width: 100%;

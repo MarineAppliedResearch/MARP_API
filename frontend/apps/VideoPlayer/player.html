@@ -42,6 +42,16 @@
              * Both accept:
              *   fit   optional. contain (default) | cover | fill | none,
              *         matching the host's Stretch.
+             *   controls  optional. 1 (default) shows the built-in player UI;
+             *         0 leaves picture, buffering spinner and placeholder mark
+             *         only, for a host that draws its own chrome. Input on the
+             *         video (click-to-play, drag-and-drop, hotkeys) follows it.
+             *   input optional. Overrides that: 1 keeps the speed/space
+             *         hotkeys even with controls off.
+             *   segments  optional. Push segmentindex|/segments| for a host
+             *         drawing its own scrub bar shading. Defaults on when
+             *         controls=0; 0 disables.
+             *   segmentIntervalMs  optional. Default 250.
              *   rawCacheBytes / decodedCacheBytes  optional overrides.
              *
              * Progress and errors are posted to the host as status| messages,
@@ -75,10 +85,25 @@
                 const token = params.get('token');
                 const user = params.get('user');
 
+                // A host with its own transport, scrub bar and menus passes
+                // controls=0. Input on the video goes with them, so the
+                // host's own overlay owns every click and keystroke; pass
+                // input=1 to keep the speed hotkeys anyway.
+                const controls = params.get('controls') !== '0';
+                const inputParam = params.get('input');
+
                 const player = MarpVideoEngine.createMarpVideoPlayer(document.getElementById('playerMount'), {
                     // Fill the host window rather than holding a 16:9 box.
                     aspectRatio: null,
                     maxWidth: null,
+                    controls,
+                    input: inputParam === null ? undefined : inputParam !== '0',
+                    // A host drawing its own scrub bar wants the shading data
+                    // pushed; one segmentindex| per load, then segments| on a
+                    // timer. Defaults on when controls are off, since that is
+                    // the host that needs it.
+                    segmentUpdates: params.get('segments') === '0' ? false : !controls,
+                    segmentIntervalMs: numberParam('segmentIntervalMs'),
                     jellyfin: server && token ? { serverUrl: server, accessToken: token, userId: user } : undefined,
                     defaultItemId: params.get('item') || '',
                     rawCacheGiB: numberParam('rawCacheBytes') ? numberParam('rawCacheBytes') / (1024 * 1024 * 1024) : undefined,

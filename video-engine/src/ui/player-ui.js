@@ -36,7 +36,7 @@ import { buildPlayerMarkup } from './markup.js';
  * any of these also starts playback: they are for actively scrubbing
  * through the video, not for arming a rate.
  */
-const SPEED_KEYMAP = {
+export const SPEED_KEYMAP = {
     q: -8,
     w: -3,
     e: -1,
@@ -146,8 +146,12 @@ export class MarpVideoPlayer {
      * @param {string} [options.defaultItemId] - Prefills the item-id field without loading.
      * @param {string} [options.aspectRatio] - CSS aspect-ratio for the player box. Default '16 / 9'. Pass null with a sized container to fill it instead.
      * @param {string} [options.maxWidth] - CSS max-width for the player box. Default '960px'; pass null for none.
+     * @param {boolean} [options.controls] - Show the built-in controls (transport, scrub bar, settings). Default true. False leaves picture, spinner and placeholder mark only, for a host that draws its own chrome -- see setControlsVisible().
+     * @param {boolean} [options.input] - Handle input on the video itself: click-to-play-pause, drag-and-drop loading, and the speed/space hotkeys. Defaults to whatever `controls` is, so a host that draws its own chrome owns all input by default.
      * @param {boolean} [options.showDiagnostics] - Render the Advanced section. Default true.
      * @param {boolean} [options.webview2Bridge] - Post status|/metadata|/frame| messages to a WebView2 host on every load. Default false.
+     * @param {boolean} [options.segmentUpdates] - With webview2Bridge, also post segmentindex|/segments| so a host can draw its own scrub bar shading. Default false.
+     * @param {number} [options.segmentIntervalMs] - How often segments| is posted. Default 250.
      * @param {boolean} [options.exposeGlobals] - Assign each loaded engine to window.marpVideo and window.mareVideo. Default false.
      * @param {number} [options.rawCacheGiB] - Initial raw-cache budget shown in Advanced. Default 3.
      * @param {number} [options.decodedCacheGiB] - Initial decoded-cache budget shown in Advanced. Default 5.
@@ -187,6 +191,10 @@ export class MarpVideoPlayer {
         // using -- it answers "which tiers does this item have" before any
         // engine exists.
         this.probeSource = new JellyfinMediaSource(this.jellyfinClient);
+
+        // Input follows controls unless asked otherwise: a host drawing its
+        // own chrome owns the keyboard and the pointer by default.
+        this.inputEnabled = options.input === undefined ? options.controls !== false : options.input !== false;
 
         ensureStyles(this.document);
         this._buildDom();
@@ -240,8 +248,18 @@ export class MarpVideoPlayer {
         }
         root.innerHTML = buildPlayerMarkup({ defaultItemId, showDiagnostics });
 
+        // The controls DOM is always built, and hidden when unwanted, rather
+        // than skipped: every load path and event handler here writes to the
+        // time display, the scrub handle, the quality list and the transport
+        // buttons, and guarding all of that against absent elements is where
+        // bugs would breed. Hidden elements take no clicks and no focus, so
+        // they cannot fight a host's own overlay -- the cost is a few dozen
+        // inert nodes.
         this.container.appendChild(root);
         this.root = root;
+
+        this.controlsVisible = this.options.controls !== false;
+        root.classList.toggle('marp-controls-off', !this.controlsVisible);
 
         /** @private Every element this UI touches, by scoped class. */
         this.el = {
@@ -353,6 +371,12 @@ export class MarpVideoPlayer {
             return;
         }
         this.log('Closing previous engine before loading the new one...');
+        // Before the engine goes: the bridge's segment timer would otherwise
+        // keep polling a closed engine.
+        if (this._detachBridge) {
+            this._detachBridge();
+            this._detachBridge = null;
+        }
         this.engine.close();
         this.engine = null;
     }
@@ -388,7 +412,10 @@ export class MarpVideoPlayer {
         if (this.options.webview2Bridge) {
             // Safe to attach after the fact: the bridge replays
             // loadedmetadata on attach for exactly this case.
-            attachWebView2Bridge(this.engine);
+            this._detachBridge = attachWebView2Bridge(this.engine, {
+                segmentUpdates: this.options.segmentUpdates,
+                segmentIntervalMs: this.options.segmentIntervalMs,
+            });
         }
 
         this.root.focus();
@@ -934,6 +961,56 @@ export class MarpVideoPlayer {
     }
 
     /**
+     * Toggles fullscreen on the player element.
+     *
+     * Exposed as a method, not left to the built-in button, so a host that
+     * hides the controls can still offer fullscreen -- it is the one piece
+     * of the transport that needs the player's own element rather than the
+     * engine.
+     *
+     * @returns {Promise<void>} Resolves once the browser has applied the change.
+     */
+    toggleFullscreen() {
+        if (this.document.fullscreenElement) {
+            return this.document.exitFullscreen();
+        }
+        return this.root.requestFullscreen();
+    }
+
+    /**
+     * Shows or hides the built-in controls at runtime.
+     *
+     * For a host that draws its own transport, scrub bar and menus: hiding
+     * leaves the picture, the buffering spinner and the placeholder mark,
+     * and takes the controls out of the hit-testing and focus order so they
+     * cannot intercept anything an overlay above them does.
+     *
+     * Note this does not change input handling on the video itself, which
+     * is fixed at construction by the `input` option -- flipping controls
+     * back on for a debugging session should not silently re-bind the
+     * spacebar a host is already using.
+     *
+     * @param {boolean} visible - True to show the controls, false to hide them.
+     * @returns {void}
+     */
+    setControlsVisible(visible) {
+        this.controlsVisible = Boolean(visible);
+        this.root.classList.toggle('marp-controls-off', !this.controlsVisible);
+        if (!this.controlsVisible) {
+            this.closeSettingsMenu();
+        }
+    }
+
+    /**
+     * Whether the built-in controls are currently shown.
+     *
+     * @returns {boolean} True when visible.
+     */
+    getControlsVisible() {
+        return this.controlsVisible;
+    }
+
+    /**
      * Shows the open accordion section's body and hides the rest -- the gear
      * menu's whole navigation model. No "back" step exists because nothing
      * ever replaces anything else.
@@ -1114,16 +1191,22 @@ export class MarpVideoPlayer {
             }
         });
 
-        // dragover must be prevented, or the browser navigates to the dropped
-        // file instead of handing it over.
-        el.canvas.addEventListener('dragover', (event) => event.preventDefault());
-        el.canvas.addEventListener('drop', (event) => {
-            event.preventDefault();
-            const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
-            if (file) {
-                this.loadFile(file);
-            }
-        });
+        // Input on the video itself is opt-out: a host with its own controls
+        // (and, typically, its own overlay on top of the picture) owns all
+        // of this, and a stray drop or click here would fight it -- a
+        // dropped file would replace what the host loaded.
+        if (this.inputEnabled) {
+            // dragover must be prevented, or the browser navigates to the
+            // dropped file instead of handing it over.
+            el.canvas.addEventListener('dragover', (event) => event.preventDefault());
+            el.canvas.addEventListener('drop', (event) => {
+                event.preventDefault();
+                const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+                if (file) {
+                    this.loadFile(file);
+                }
+            });
+        }
 
         el.login.addEventListener('click', async () => {
             const serverUrl = el.serverUrl.value.trim();
@@ -1227,7 +1310,9 @@ export class MarpVideoPlayer {
         const toggle = () => this.togglePlayPause();
         el.playPause.addEventListener('click', toggle);
         el.centerPlay.addEventListener('click', toggle);
-        el.canvas.addEventListener('click', toggle);
+        if (this.inputEnabled) {
+            el.canvas.addEventListener('click', toggle);
+        }
 
         el.stepForward.addEventListener('click', () => {
             if (this.engine) {
@@ -1259,11 +1344,7 @@ export class MarpVideoPlayer {
         });
 
         el.fullscreen.addEventListener('click', () => {
-            if (this.document.fullscreenElement) {
-                this.document.exitFullscreen();
-            } else {
-                this.root.requestFullscreen();
-            }
+            this.toggleFullscreen();
         });
 
         if (el.applyCache) {
@@ -1303,6 +1384,13 @@ export class MarpVideoPlayer {
 
         // Hotkeys fire only while the player itself has focus (see the root's
         // tabIndex), so typing in the settings fields is never hijacked.
+        // Skipped entirely when input is off: space and q..\\ are exactly the
+        // keys a host is likely to bind itself, and both firing is worse
+        // than neither.
+        if (!this.inputEnabled) {
+            return;
+        }
+
         this.root.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && this.settingsMenuOpen) {
                 this.closeSettingsMenu();

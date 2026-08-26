@@ -19,6 +19,8 @@
  * @module video-engine/webview2-bridge
  */
 
+import { encodeSegmentStates, encodeSegmentGeometry } from './segment-encoding.js';
+
 /**
  * Posts a raw string message to the WebView2 host, if one is present.
  * A no-op in a plain browser tab (no window.chrome.webview) so the exact
@@ -39,9 +41,12 @@ function postToHost(message) {
  * format MareMediaElement.xaml.cs already parses.
  *
  * @param {Object} marpVideo - A MarpVideoShim instance (or anything matching its public surface).
- * @returns {void}
+ * @param {Object} [options]
+ * @param {boolean} [options.segmentUpdates] - Also post `segmentindex|` once per load and `segments|` on a timer, for a host drawing its own scrub bar. Off by default.
+ * @param {number} [options.segmentIntervalMs] - How often to post `segments|`. Default 250, matching the built-in scrub bar's own refresh.
+ * @returns {Function} Detach function that stops the segment timer.
  */
-export function attachWebView2Bridge(marpVideo) {
+export function attachWebView2Bridge(marpVideo, options = {}) {
     /**
      * Posts a `status|<message>` line -- matches HandleStatusMessage's
      * prefix checks (e.g. `status.StartsWith("loadedmetadata", ...)`).
@@ -144,4 +149,65 @@ export function attachWebView2Bridge(marpVideo) {
     marpVideo.addEventListener('pause', () => postStatus('pause'));
     marpVideo.addEventListener('seeking', () => postStatus(`seeking currentTime=${marpVideo.currentTime.toFixed(6)}`));
     marpVideo.addEventListener('seeked', () => postStatus(`seeked currentTime=${marpVideo.currentTime.toFixed(6)}`));
+
+    // --- Segment reporting, for a host drawing its own scrub bar ---
+    //
+    // Off unless asked for: a host that does not draw segment shading
+    // should not pay for the messages. A host that does gets the geometry
+    // once and the states on a timer, which is how the built-in scrub bar
+    // reads the same data (see player-ui.js's own shading interval).
+    let segmentTimer = null;
+    let geometrySent = false;
+
+    /** Posts `segmentindex|<count>|<start,end;...>` once per loaded stream. */
+    function postSegmentGeometry() {
+        const states = marpVideo.getSegmentStates();
+        if (states.length === 0) {
+            return;
+        }
+        postToHost(`segmentindex|${states.length}|${encodeSegmentGeometry(states)}`);
+        geometrySent = true;
+    }
+
+    /** Posts `segments|<digits>`, one digit per segment (1 fetched, 2 decoded, 4 pinned). */
+    function postSegmentStates() {
+        const states = marpVideo.getSegmentStates();
+        if (states.length === 0) {
+            return;
+        }
+        // Geometry first if a reload replaced the stream under us, so a
+        // host never has to map states onto boundaries it has not been
+        // told about.
+        if (!geometrySent) {
+            postSegmentGeometry();
+        }
+        postToHost(`segments|${encodeSegmentStates(states)}`);
+    }
+
+    if (options.segmentUpdates) {
+        const intervalMs = Number.isFinite(options.segmentIntervalMs) ? options.segmentIntervalMs : 250;
+
+        marpVideo.addEventListener('loadedmetadata', () => {
+            geometrySent = false;
+            postSegmentGeometry();
+        });
+        postSegmentGeometry();
+
+        segmentTimer = setInterval(postSegmentStates, intervalMs);
+        postSegmentStates();
+    }
+
+    /**
+     * Stops the segment timer. A host that never enabled segment updates
+     * can ignore this; a page that replaces its engine should call it, or
+     * the old timer keeps polling a closed engine.
+     *
+     * @returns {void}
+     */
+    return function detachWebView2Bridge() {
+        if (segmentTimer) {
+            clearInterval(segmentTimer);
+            segmentTimer = null;
+        }
+    };
 }

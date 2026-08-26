@@ -20,7 +20,7 @@
  */
 
 import { createMarpVideoEngine } from './engine.js';
-import { createMarpVideoPlayer, MarpVideoPlayer } from './ui/player-ui.js';
+import { createMarpVideoPlayer, MarpVideoPlayer, SPEED_KEYMAP } from './ui/player-ui.js';
 import { JellyfinTranscodeMediaSource, JellyfinMediaSource } from './media-source-jellyfin-transcode.js';
 import { JellyfinDirectPlayMediaSource } from './media-source-jellyfin-directplay.js';
 import { LocalFileMediaSource } from './media-source-local.js';
@@ -31,10 +31,12 @@ import { JellyfinClient } from './jellyfin-client.js';
 import { MediaSource } from './media-source.js';
 import { getQualityOptions } from './quality-options.js';
 import { PLAYER_CSS } from './ui/styles.js';
+import { encodeSegmentStates, encodeSegmentGeometry, SEGMENT_FETCHED, SEGMENT_DECODED, SEGMENT_PINNED } from './segment-encoding.js';
 
 export {
     createMarpVideoPlayer,
     MarpVideoPlayer,
+    SPEED_KEYMAP,
     createMarpVideoEngine,
     attachWebView2Bridge,
     JellyfinClient,
@@ -47,4 +49,9 @@ export {
     createJellyfinSource,
     getQualityOptions,
     PLAYER_CSS,
+    encodeSegmentStates,
+    encodeSegmentGeometry,
+    SEGMENT_FETCHED,
+    SEGMENT_DECODED,
+    SEGMENT_PINNED,
 };

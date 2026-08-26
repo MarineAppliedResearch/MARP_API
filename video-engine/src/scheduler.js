@@ -214,7 +214,25 @@ export class Scheduler {
         return this.segmentIndex.totalDuration;
     }
 
-    /** @returns {number} Presentation time of the currently displayed frame, in seconds. */
+    /**
+     * KNOWN BUG (unfixed, low priority -- see
+     * docs/developer/video-player-library-handoff.md): playing in reverse
+     * into the start of a clip makes this read the clip's END for about one
+     * frame before the engine pauses itself at 0. Measured on a 30.44s clip:
+     * the playhead walked 2.16 -> 0.20 normally, then one sample read 30.12,
+     * then 'pause' fired and it settled at 0.12.
+     *
+     * The stop itself is correct -- _tick() clamps targetTime to 0 on a
+     * reverse boundary -- but this getter reports _presentedMediaTime, the
+     * frame actually on screen, not that clamped target, so whatever lands
+     * at the boundary is reported verbatim. Cosmetic in the player (the
+     * scrub handle flicks right for a frame), but the WebView2 bridge posts
+     * a frame| message per presented frame and Jellyfin playback reporting
+     * posts positions, so a consumer can act on that stray value. Reproduce
+     * by playing in reverse into 0 while sampling currentTime.
+     *
+     * @returns {number} Presentation time of the currently displayed frame, in seconds.
+     */
     get currentTime() {
         if (this._pausedFreezeTime !== null && !this.playing && !this.seekingFlag) {
             return this._pausedFreezeTime;

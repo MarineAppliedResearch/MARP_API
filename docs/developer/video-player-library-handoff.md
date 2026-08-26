@@ -102,11 +102,42 @@ whichever engine is loaded, so one object survives item and quality changes
   cannot be decoded at playback speed there, so its E2E suite and the Direct
   Play leg of the player-page probe fail locally and pass on real hardware.
   Do not chase it.
-- **Reverse playback pauses itself at the start of the clip**, and
-  `currentTime` momentarily reads the clip's *end* while it stops. A test
-  that "pauses" with a transport click after reverse playback reaches 0
+- **Reverse playback pauses itself at the start of the clip.** A test that
+  "pauses" with a transport click after reverse playback reaches 0
   therefore starts playback instead. Measured, not inferred; see the
-  reverse-playback test's comment.
+  reverse-playback test's comment. The stray `currentTime` reading at that
+  boundary is a known bug -- see below.
+
+## Known bugs
+
+### currentTime reads the clip's end when reverse playback stops at 0
+
+Not fixed. Logged rather than chased because it is cosmetic in the player
+itself, and the owner's call is to leave it until it actually bothers
+something.
+
+Playing in reverse into the start of a clip makes `currentTime` report the
+clip's **end** for roughly one frame before the engine pauses itself at 0.
+Measured on a 30.44s local fixture: the playhead walked `2.16 -> 2.04 ->
+... -> 0.28 -> 0.20` normally, then one 100ms sample read `30.12`, then
+`pause` fired and it settled at `0.12`.
+
+The stop is correct -- `scheduler.js`'s tick clamps `targetTime` to 0 on a
+reverse boundary. The getter, though, returns `_presentedMediaTime` (the
+frame actually on screen), not that clamped target, so whatever frame lands
+at the boundary is reported verbatim. The clamping and the reporting read
+two different values.
+
+Why it may stop being cosmetic: the WebView2 bridge posts a `frame|`
+message per presented frame, so a host can see `Position` jump to the end;
+and Jellyfin playback reporting posts the current position, so a report
+firing on that sample could record a resume position at the end of the
+video -- which is how something gets marked watched when it was not. The
+`currentTime` glitch was observed directly; neither downstream consequence
+has been confirmed.
+
+Reproduce: play in reverse into 0 while sampling `currentTime`. The note
+lives on the getter in `video-engine/src/scheduler.js` too.
 
 ## How to verify
 
