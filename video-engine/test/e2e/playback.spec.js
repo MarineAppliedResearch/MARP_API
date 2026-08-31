@@ -39,8 +39,13 @@ const { test, expect } = require('@playwright/test');
 /** Real segment fetch time against the live Jellyfin server over a slow connection has been observed taking 30s+ for a single segment. */
 const ENGINE_LOAD_TIMEOUT_MS = 90_000;
 
-/** A real 1080p MP4 on disk. Any MP4 works; override to test your own footage. */
-const LOCAL_FIXTURE = process.env.VIDEO_ENGINE_TEST_LOCAL_FILE || '/home/mare/test-fixtures/video-engine/fixtures/long-gop-faststart.mp4';
+/**
+ * A real 1080p MP4 on disk. Any MP4 works; set VIDEO_ENGINE_TEST_LOCAL_FILE to
+ * point at your own footage. Set from the environment only, with no default:
+ * the previous hardcoded path was absolute and Linux-only, which reported a
+ * misleading missing-fixture path on Windows. Suites needing it skip when unset.
+ */
+const LOCAL_FIXTURE = process.env.VIDEO_ENGINE_TEST_LOCAL_FILE || '';
 
 /**
  * Reads the current window.marpVideo playback state from the page.
@@ -108,7 +113,8 @@ const SOURCES = [
     {
         name: 'local file',
         needsJellyfin: false,
-        skip: !existsSync(LOCAL_FIXTURE) && `local fixture not found: ${LOCAL_FIXTURE}`,
+        skip: (!LOCAL_FIXTURE && 'set VIDEO_ENGINE_TEST_LOCAL_FILE to an MP4 on disk to run this suite')
+            || (!existsSync(LOCAL_FIXTURE) && `local fixture not found: ${LOCAL_FIXTURE}`),
         load: async (page) => {
             await page.click('#playerSettingsButton');
             await page.click('[data-section="settingsLoadItemBody"]');

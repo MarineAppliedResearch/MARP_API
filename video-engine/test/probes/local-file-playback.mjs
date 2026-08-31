@@ -12,7 +12,15 @@
 
 import { chromium } from 'playwright';
 
-const FILE = process.argv[2] || '/home/mare/test-fixtures/video-engine/fixtures/long-gop-faststart.mp4';
+// Pass the MP4 to play as the first argument, or set
+// VIDEO_ENGINE_TEST_LOCAL_FILE. No default: the previous one was an absolute
+// Linux path that does not exist on a Windows development machine.
+const FILE = process.argv[2] || process.env.VIDEO_ENGINE_TEST_LOCAL_FILE;
+
+if (!FILE) {
+    console.error('Usage: node local-file-playback.mjs <file.mp4>  (or set VIDEO_ENGINE_TEST_LOCAL_FILE)');
+    process.exit(1);
+}
 const PLAYER_URL = process.env.VIDEO_ENGINE_TEST_URL || 'http://localhost:3000/apps/VideoPlayer/';
 
 const browser = await chromium.launch();

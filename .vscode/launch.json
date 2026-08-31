@@ -20,9 +20,66 @@
             "request": "launch",
             "name": "Launch via nodemon (auto-restart)",
             "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/nodemon",
+            // On Windows the npm shim is a .cmd file; without this the debugger
+            // fails to spawn nodemon.
+            "windows": {
+                "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/nodemon.cmd"
+            },
             "program": "${workspaceFolder}/server.js",
             "envFile": "${workspaceFolder}/.env",
             "restart": true,
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Jest tests (all)",
+            "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
+            "args": [
+                "--runInBand",
+                "--forceExit"
+            ],
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Jest tests (current file)",
+            "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
+            "args": [
+                "--runInBand",
+                "--forceExit",
+                "--runTestsByPath",
+                "${relativeFile}"
+            ],
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Jest tests (video-engine unit)",
+            "program": "${workspaceFolder}/node_modules/jest/bin/jest.js",
+            "args": [
+                "--config",
+                "video-engine/jest.config.js",
+                "--runInBand",
+                "--forceExit"
+            ],
+            "envFile": "${workspaceFolder}/.env",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
             "skipFiles": [

@@ -9,7 +9,6 @@
       "Bash(curl -s http://localhost:3000/api/v2/jellyfin/libraries)",
       "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\(0\\)\\);console.log\\('items:', d.items.length\\); console.log\\(d.items[0]\\)\")",
       "Bash(curl -s \"http://localhost:3000/api/v2/jellyfin/items/search?q=a&limit=3\")",
-      "Bash(sed -E 's/api_key=[^&]+/api_key=REDACTED/')",
       "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:3000/api/v2/jellyfin/items/00000000-0000-0000-0000-000000000000/stream\")",
       "Bash(curl -s -w \"\\\\nHTTP_STATUS:%{http_code}\\\\n\" \"http://localhost:3000/api/v2/jellyfin/items/search\")",
       "Bash(node -c /home/mare/workspace/MARE_API/repository/jellyfin.repository.js)",
@@ -112,7 +111,6 @@
       "Read(//home/mare/**)",
       "Bash(curl -s -o /dev/null -w \"MARP dev server http=%{http_code}\\\\n\" \"http://localhost:3000/\" --max-time 5)",
       "Bash(echo \"started PID $!\")",
-      "Bash(curl -s -D /home/mare/test-fixtures/video-engine/source-headers.txt -o /home/mare/test-fixtures/video-engine/source-original.mp4 'http://47.208.203.78:8096/Videos/d29df7a1ef91ab295654645cee2fbf34/stream?static=true&api_key=798c8dc7d9084a7b8085fd0f115d295a' --max-time 600)",
       "Bash(echo \"download exit: $?\")",
       "Read(//home/mare/test-fixtures/video-engine/**)",
       "Bash(cat /tmp/claude-1000/-home-mare-workspace-MARE-API/955990fd-8fa8-4383-a6e0-13d51f20d0b4/tasks/b0l1bu6gg.output *)",
@@ -329,9 +327,7 @@
       "Bash(ls /home/mare/workspace/MARE_API/video-engine/test/unit/ 2>/dev/null *)"
     ],
     "additionalDirectories": [
-      "/home/mare/test-fixtures/video-engine",
-      "/home/mare/workspace/MARE_API/routes",
-      "/home/mare/workspace/MARE_API"
+      "C:\\MARE_CODE_DEVELOPMENT\\MARP\\MARE_API"
     ]
   }
 }
