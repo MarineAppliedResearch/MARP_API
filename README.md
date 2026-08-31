@@ -520,9 +520,13 @@ bind. Remove that forward:
 
 ### Media
 
-In development the API reaches media exclusively through Jellyfin over HTTP.
-No mount of the video archive is required on the Windows machine. Point
-`JELLYFIN_BASE_URL` at `http://localhost:8096`.
+The API reaches media through Jellyfin over HTTP, so no mount of the video
+archive is required on the Windows machine.
+
+Development normally points `JELLYFIN_BASE_URL` at the production Jellyfin
+server, which holds the real media library. The Jellyfin instance on the
+development VM is reachable at `http://localhost:8096` through the NAT forward
+and is used only for isolated experiments.
 
 ---
 
