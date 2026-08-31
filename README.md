@@ -86,6 +86,7 @@ The MARP logo and official branding are excluded from the Apache 2.0 software li
 - [Routes](#routes)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Local Windows development](#local-windows-development)
 - [Database migrations and seeds](#database-migrations-and-seeds)
 - [Documentation](#documentation)
 - [Hosting](#hosting)
@@ -314,18 +315,43 @@ Unknown API routes should return a JSON `404`. Unknown non-API routes should ret
 
 ## Getting started
 
+Development runs on your local machine. The development PostgreSQL database and
+Jellyfin run on the Ubuntu VirtualBox VM (`MARP DEV ENVIRONMENT`); the API itself
+runs locally and connects to them over the VM network. See
+[Local Windows development](#local-windows-development) for the VM side.
+
 ### Prerequisites
 
-- Node.js
-- npm
-- PostgreSQL
-- A configured environment file
+- Node.js — version pinned in `.nvmrc`. On Windows, install it with
+  [nvm-windows](https://github.com/coreybutler/nvm-windows); `nvm use` then picks
+  up the pinned version.
+- npm (ships with Node).
+- Network access to the development PostgreSQL database.
+- A configured `.env` file — copy `.env.example` and fill it in.
+
+On Windows, `npm install` builds the native `argon2` dependency. If that step
+fails, install the Visual Studio C++ build tools and re-run it.
 
 ### Install dependencies
 
 ```bash
 npm install
 ```
+
+### Configure the environment
+
+```bash
+cp .env.example .env
+```
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Then edit `.env` and fill in the database, session, and Jellyfin values.
+`.env.example` documents every variable the codebase reads.
 
 ### Start development mode
 
@@ -341,6 +367,22 @@ npm start
 
 The server uses `PORT` when provided and otherwise falls back to port `3000`.
 
+### Launch and debug in VS Code
+
+`.vscode/launch.json` provides ready-made configurations. All of them load
+`.env` automatically:
+
+| Configuration | Purpose |
+| --- | --- |
+| Launch server.js | Start the API under the debugger |
+| Launch via nodemon (auto-restart) | Same, restarting on file changes |
+| Debug Jest tests (all) | Run the full Jest suite under the debugger |
+| Debug Jest tests (current file) | Run only the open test file |
+| Debug Jest tests (video-engine unit) | Run the video-engine unit suite |
+
+Press <kbd>F5</kbd> and pick a configuration. Breakpoints in controllers,
+services, and repositories are hit directly.
+
 After startup, the main local routes are typically:
 
 ```text
@@ -355,30 +397,136 @@ http://localhost:3000/developer-docs
 
 Keep local credentials in `.env` and never commit that file.
 
-A typical development configuration uses standard database variables such as:
+`.env.example` is the authoritative list of every variable the codebase reads,
+with notes on which are required. Copy it to `.env` and fill it in.
+
+A typical development configuration starts from:
 
 ```dotenv
 NODE_ENV=development
 PORT=3000
 
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=5433
 DB_NAME=mare_development
 DB_USER=mare_user
-DB_PASS=replace-with-a-local-password
+DB_PASSWORD=replace-with-a-local-password
 DB_DIALECT=postgres
 ```
 
-Additional variables may be required by optional integrations or deployment environments. Confirm the exact names against the project configuration modules before deploying.
+The password variable is `DB_PASSWORD`, matching `config/config.js`. Earlier
+revisions of this README named it `DB_PASS`, which is not read by anything and
+produces an authentication failure.
 
-Recommended repository files:
+`DB_PORT=5433` assumes the VirtualBox port forward described in
+[Local Windows development](#local-windows-development). Use `5432` when
+connecting to a PostgreSQL server directly.
+
+Optional integrations — Jellyfin, the reporting database, and the video-engine
+test suites — have their own variables. All are documented in `.env.example`.
+
+Repository files:
 
 ```text
 .env          Local secrets; ignored by Git
-.env.example  Safe variable names and example values
+.env.example  Every variable name, with safe placeholder values
 ```
 
 Do not place production passwords, API keys, session secrets, or external-service credentials in the README.
+
+---
+
+## Local Windows development
+
+The API runs on the local Windows machine. The development PostgreSQL database
+and Jellyfin run on the Ubuntu VirtualBox VM `MARP DEV ENVIRONMENT`. The API no
+longer runs on that VM.
+
+### How the host reaches the VM
+
+The VM uses a single NAT network adapter, so the host cannot address the guest
+directly. Services are reached through VirtualBox NAT port forwards:
+
+| Service | Host address | Guest port |
+| --- | --- | --- |
+| PostgreSQL | `localhost:5433` | 5432 |
+| Jellyfin | `localhost:8096` | 8096 |
+| SSH | `localhost:2222` | 22 |
+
+Host port `5433` is used for PostgreSQL so it does not collide with a local
+PostgreSQL install on the default `5432`.
+
+If the PostgreSQL forward is missing, add it with `VBoxManage`. Use `controlvm`
+while the VM is running, or `modifyvm` while it is powered off:
+
+```powershell
+& "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" `
+    controlvm "MARP DEV ENVIRONMENT" natpf1 "Postgres,tcp,127.0.0.1,5433,,5432"
+```
+
+List the current forwards with:
+
+```powershell
+& "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" `
+    showvminfo "MARP DEV ENVIRONMENT" --machinereadable | Select-String "^Forwarding"
+```
+
+### PostgreSQL configuration inside the VM
+
+A port forward alone is not enough. NAT-forwarded traffic arrives at the guest
+on its NAT interface address, not on `127.0.0.1`, so PostgreSQL must be
+listening on more than localhost and must permit the connection.
+
+In `postgresql.conf`:
+
+```conf
+listen_addresses = '*'
+```
+
+In `pg_hba.conf`, allow the VirtualBox NAT gateway, which is the address the
+host appears as inside the guest:
+
+```conf
+host    all    all    10.0.2.2/32    scram-sha-256
+```
+
+Reload PostgreSQL after changing either file:
+
+```bash
+sudo systemctl restart postgresql
+```
+
+### Verifying the connection
+
+From the host, confirm PostgreSQL answers rather than just accepting the socket:
+
+```bash
+npx sequelize-cli db:migrate:status
+```
+
+A successful listing confirms the forward, the listen address, the host-based
+authentication rule, and the credentials in `.env` are all correct.
+
+### Port 3000
+
+The API listens on port `3000` by default. If VirtualBox still holds a
+`3000 -> 3000` forward from when the API ran on the VM, the local API cannot
+bind. Remove that forward:
+
+```powershell
+& "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" `
+    controlvm "MARP DEV ENVIRONMENT" natpf1 delete "MARE API PUBLIC"
+```
+
+### Media
+
+The API reaches media through Jellyfin over HTTP, so no mount of the video
+archive is required on the Windows machine.
+
+Development normally points `JELLYFIN_BASE_URL` at the production Jellyfin
+server, which holds the real media library. The Jellyfin instance on the
+development VM is reachable at `http://localhost:8096` through the NAT forward
+and is used only for isolated experiments.
 
 ---
 
@@ -618,13 +766,12 @@ A change is not complete when the code works but the public contract is inaccura
 
 Current high-value improvements include:
 
-1. Add a definitive `.env.example` with every required variable.
-2. Add environment-specific deployment documentation without coupling the project to one server stack.
-3. Promote dashboard prototypes into formally versioned frontend applications with tests.
-4. Move report SQL view definitions into versioned migration scripts.
-5. Expand automated testing for API contracts, data access, and frontend behavior.
-6. Connect the entry-page login interface to production authentication and authorization.
-7. Continue evolving MARP into a stable shared API for applications, workers, reports, and partner integrations.
+1. Add environment-specific deployment documentation without coupling the project to one server stack.
+2. Promote dashboard prototypes into formally versioned frontend applications with tests.
+3. Move report SQL view definitions into versioned migration scripts.
+4. Expand automated testing for API contracts, data access, and frontend behavior.
+5. Connect the entry-page login interface to production authentication and authorization.
+6. Continue evolving MARP into a stable shared API for applications, workers, reports, and partner integrations.
 
 ---
 

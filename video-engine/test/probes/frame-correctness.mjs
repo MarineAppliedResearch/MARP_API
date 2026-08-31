@@ -27,7 +27,14 @@ import dotenv from 'dotenv';
 dotenv.config({ path: new URL('../../../.env', import.meta.url).pathname });
 
 const LABEL = process.argv[2] || 'build';
-const SOURCE = process.env.FRAME_REFERENCE_FILE || '/home/mare/test-fixtures/video-engine/source-original.mp4';
+// Set FRAME_REFERENCE_FILE to the original source MP4 to compare captures
+// against. No default: the previous one was an absolute Linux path.
+const SOURCE = process.env.FRAME_REFERENCE_FILE;
+
+if (!SOURCE) {
+    console.error('Set FRAME_REFERENCE_FILE to the reference source MP4 before running this probe.');
+    process.exit(1);
+}
 const PLAYER_URL = process.env.VIDEO_ENGINE_TEST_URL || 'http://localhost:3000/apps/VideoPlayer/';
 
 /** Below this PSNR the capture is a different picture, not a noisier one. */

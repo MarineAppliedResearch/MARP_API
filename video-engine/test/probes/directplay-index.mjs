@@ -12,10 +12,23 @@
 
 import { createFile, DataStream } from '../../../node_modules/mp4box/dist/mp4box.all.mjs';
 
-const BASE = process.env.JELLYFIN_URL || 'http://47.208.203.78:8097';
-const ITEM = process.env.JELLYFIN_ITEM || 'fb6a3c0f-bd5e-073d-40e0-840b9a54b79c';
-const USER = process.env.JELLYFIN_USER || 'admin';
-const PASS = process.env.JELLYFIN_PASS || 'MarpDevJellyfinRemote2026!';
+// Configuration comes only from the environment. Earlier revisions carried a
+// server address, item id, username and password as inline fallbacks; those are
+// credentials in source control, so the probe now refuses to run without them.
+// See .env.example for the variable names.
+const BASE = process.env.JELLYFIN_URL;
+const ITEM = process.env.JELLYFIN_ITEM;
+const USER = process.env.JELLYFIN_USER;
+const PASS = process.env.JELLYFIN_PASS;
+
+const missing = Object.entries({ JELLYFIN_URL: BASE, JELLYFIN_ITEM: ITEM, JELLYFIN_USER: USER, JELLYFIN_PASS: PASS })
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+
+if (missing.length > 0) {
+    console.error(`Set ${missing.join(', ')} before running this probe (see .env.example).`);
+    process.exit(1);
+}
 
 const auth = await (
     await fetch(`${BASE}/Users/AuthenticateByName`, {

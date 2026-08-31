@@ -16,7 +16,15 @@ import { readFileSync, writeFileSync, readdirSync, openSync, readSync, closeSync
 import { join } from 'node:path';
 import { createFile } from '../../../node_modules/mp4box/dist/mp4box.all.mjs';
 
-const FIXTURE_DIR = process.argv[2] || '/home/mare/test-fixtures/video-engine/fixtures';
+// Pass the fixture directory as the first argument, or set
+// VIDEO_ENGINE_FIXTURE_DIR. There is no default: the previous one was an
+// absolute Linux path that does not exist on a Windows development machine.
+const FIXTURE_DIR = process.argv[2] || process.env.VIDEO_ENGINE_FIXTURE_DIR;
+
+if (!FIXTURE_DIR) {
+    console.error('Usage: node fixture-manifest.mjs <fixture-dir>  (or set VIDEO_ENGINE_FIXTURE_DIR)');
+    process.exit(1);
+}
 
 /**
  * Walks the top-level box list of an MP4 by reading only box headers.
