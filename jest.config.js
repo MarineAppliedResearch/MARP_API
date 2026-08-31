@@ -13,12 +13,7 @@
  */
 module.exports = {
   /**
-   * Limits discovery to tests/. Without this, Jest's default testMatch also
-   * collected video-engine/test/, whose unit tests are ES modules requiring
-   * the esbuild transform in video-engine/jest.config.js, plus
-   * video-engine/test/e2e/, which is a @playwright/test suite Jest cannot
-   * run at all. Those 13 suites failed to parse on every platform. Run them
-   * with `npm run test:video-engine:unit` and `:e2e` respectively.
+   * Limits discovery to tests/, which is where this repository's suite lives.
    */
   roots: ['<rootDir>/tests'],
 

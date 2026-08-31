@@ -378,7 +378,6 @@ The server uses `PORT` when provided and otherwise falls back to port `3000`.
 | Launch via nodemon (auto-restart) | Same, restarting on file changes |
 | Debug Jest tests (all) | Run the full Jest suite under the debugger |
 | Debug Jest tests (current file) | Run only the open test file |
-| Debug Jest tests (video-engine unit) | Run the video-engine unit suite |
 
 Press <kbd>F5</kbd> and pick a configuration. Breakpoints in controllers,
 services, and repositories are hit directly.
@@ -422,8 +421,8 @@ produces an authentication failure.
 [Local Windows development](#local-windows-development). Use `5432` when
 connecting to a PostgreSQL server directly.
 
-Optional integrations — Jellyfin, the reporting database, and the video-engine
-test suites — have their own variables. All are documented in `.env.example`.
+Optional integrations — Jellyfin and the reporting database — have their own
+variables. All are documented in `.env.example`.
 
 Repository files:
 
