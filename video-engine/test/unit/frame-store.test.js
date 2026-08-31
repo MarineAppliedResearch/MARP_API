@@ -6,27 +6,36 @@
  *
  * Exercises `buffers`/`pinned`/`_evictIfNeeded`/`_touch` directly with
  * fake GopBuffers rather than going through `ensureDecoded()`'s real
- * demux/decode pipeline where the eviction/pinning bookkeeping itself is
- * under test -- that bookkeeping is independent of how a GopBuffer was
- * produced. demuxer.js is mocked so ensureDecoded()'s own tests can drive
- * decode success/failure deterministically without a real mp4 payload.
+ * decode pipeline where the eviction/pinning bookkeeping itself is under
+ * test -- that bookkeeping is independent of how a GopBuffer was produced.
+ * The media source is faked so ensureDecoded()'s own tests can drive decode
+ * success/failure deterministically without a real mp4 payload.
  *
  * @fileoverview Unit tests for FrameStore's LRU eviction/pinning and decode-only orchestration.
  * @author Isaac Travers
  * @module video-engine/test/unit/frame-store.test
  */
 
-jest.mock('../../src/demuxer.js', () => ({
-    demuxSegment: jest.fn(() =>
-        Promise.resolve({
-            codec: 'avc1.test',
-            description: null,
-            chunks: [{ type: 'key', timestamp: 0, duration: 40_000, data: new Uint8Array([1]) }],
-        })
-    ),
-}));
-
 const { FrameStore } = require('../../src/frame-store.js');
+
+/**
+ * Fake media source returning one keyframe chunk -- enough for FrameStore,
+ * which only forwards chunks to the decoder and trims by timestamp.
+ *
+ * @returns {Object} A fake media source.
+ */
+function makeFakeMediaSource() {
+    return {
+        fetchChunks: jest.fn(() =>
+            Promise.resolve({
+                codec: 'avc1.test',
+                description: null,
+                chunks: [{ type: 'key', timestamp: 0, duration: 40_000, data: new Uint8Array([1]) }],
+                unitFirstTimestampMicros: 0,
+            }),
+        ),
+    };
+}
 
 /**
  * Builds a FrameStore with a tiny cache budget so maxSegmentsBuffered
@@ -40,6 +49,7 @@ const { FrameStore } = require('../../src/frame-store.js');
 function makeFrameStore(segmentFetcher = {}) {
     return new FrameStore({
         segmentFetcher,
+        mediaSource: makeFakeMediaSource(),
         gopDecoder: {},
         width: 1920,
         height: 1080,
@@ -113,6 +123,91 @@ describe('FrameStore eviction', () => {
     });
 });
 
+describe('FrameStore eviction priority (playhead island)', () => {
+    test('evicts the segments furthest from the playhead, not the ones decoded longest ago', () => {
+        // Reproduces the live thrash: the cache evicted by decode-completion
+        // order, so the playhead's own neighbourhood -- decoded EARLIEST, as
+        // the playhead approached it -- was always the oldest entry and the
+        // first evicted, while segments 40 ahead that prefetch had just
+        // decoded survived as the newest. Observed live as the playhead's
+        // decoded island being the SMALLEST of five disjoint islands, with
+        // its members evicted and immediately re-decoded every pass.
+        const frameStore = makeFrameStore();
+        const buffers = {
+            // Decoded first (oldest), and immediately around the playhead.
+            110: makeGopBuffer(1),
+            111: makeGopBuffer(1),
+            // Decoded most recently, but far from the playhead.
+            140: makeGopBuffer(1),
+            141: makeGopBuffer(1),
+            142: makeGopBuffer(1),
+        };
+        for (const index of [110, 111, 140, 141, 142]) {
+            frameStore.buffers.set(index, buffers[index]);
+        }
+
+        // Playhead at 111, travelling forward: priority runs outward from
+        // the playhead, so 110/111 are the most valuable segments here and
+        // the distant 140s are the least.
+        frameStore.setEvictionPriority([111, 112, 110, 113, 109]);
+        frameStore._evictIfNeeded();
+
+        const survivors = [...frameStore.buffers.keys()].sort((a, b) => a - b);
+        expect(survivors).toContain(110);
+        expect(survivors).toContain(111);
+        expect(survivors).not.toContain(140);
+        expect(survivors).not.toContain(141);
+    });
+
+    test('still never evicts a pinned segment, whatever the priority order says', () => {
+        const frameStore = makeFrameStore();
+        for (const index of [10, 11, 12, 13, 14]) {
+            frameStore.buffers.set(index, makeGopBuffer(1));
+        }
+
+        // 10 is the lowest-priority entry (absent from the order entirely)
+        // but pinned, so it must survive regardless.
+        frameStore.setPinned([10]);
+        frameStore.setEvictionPriority([13, 14, 12, 11]);
+        frameStore._evictIfNeeded();
+
+        expect([...frameStore.buffers.keys()]).toContain(10);
+    });
+
+    test('never evicts the segment just decoded, even when it ranks lowest', () => {
+        // A seek's own target is decoded while the eviction ranking still
+        // reflects the PRE-seek playhead, so it ranks below everything in
+        // the cache. With the cache full it was evicted inside its own
+        // insertion -- before seek() could read it -- and the seek then
+        // failed on an undefined buffer, breaking seeking entirely.
+        const frameStore = makeFrameStore();
+        frameStore.setEvictionPriority([10, 11, 12]);
+        for (const index of [10, 11, 12]) {
+            frameStore.buffers.set(index, makeGopBuffer(1));
+        }
+
+        // Segment 200 is the seek target: freshly decoded, absent from the
+        // (stale) priority order, and pushing the cache over budget.
+        frameStore.buffers.set(200, makeGopBuffer(1));
+        frameStore._evictIfNeeded(200);
+
+        expect([...frameStore.buffers.keys()]).toContain(200);
+    });
+
+    test('falls back to insertion order when no priority has been set', () => {
+        // Guards the pre-existing behaviour for any caller that never
+        // supplies a priority order (e.g. a bare FrameStore in a test).
+        const frameStore = makeFrameStore();
+        for (const index of [0, 1, 2, 3, 4]) {
+            frameStore.buffers.set(index, makeGopBuffer(1));
+        }
+
+        frameStore._evictIfNeeded();
+
+        expect([...frameStore.buffers.keys()]).toEqual([2, 3, 4]);
+    });
+});
+
 describe('FrameStore#close', () => {
     test('closes every cached VideoFrame, clears the cache, and closes the shared GopDecoder', () => {
         // Regression test: close() previously left the shared GopDecoder's
@@ -175,6 +270,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         const segmentFetcher = makeFakeSegmentFetcher(new Set());
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder: { decodeSegment: jest.fn() },
             width: 1920,
             height: 1080,
@@ -193,6 +289,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         const gopDecoder = { decodeSegment: jest.fn(() => Promise.resolve(gopBuffer)) };
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder,
             width: 1920,
             height: 1080,
@@ -221,6 +318,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         };
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder,
             width: 1920,
             height: 1080,
@@ -249,6 +347,7 @@ describe('FrameStore#ensureDecoded decode-only contract', () => {
         const errors = [];
         const frameStore = new FrameStore({
             segmentFetcher,
+            mediaSource: makeFakeMediaSource(),
             gopDecoder,
             width: 1920,
             height: 1080,

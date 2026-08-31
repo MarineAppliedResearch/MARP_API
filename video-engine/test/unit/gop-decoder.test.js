@@ -46,6 +46,32 @@ function makeDemuxResult(chunkTimestamps) {
 }
 
 describe('GopDecoder#decodeSegment', () => {
+    test('names frame-buffer exhaustion explicitly instead of letting it read as a decode failure', async () => {
+        // A too-large decoded-frame cache budget shows up here, as the
+        // browser refusing to construct another VideoFrame -- every cached
+        // frame holds its own buffer, so a multi-GB budget asks for
+        // thousands of live buffers. Without a dedicated message this
+        // surfaces as a generic "segment failure" that reads like a decode
+        // or network problem, sending debugging in the wrong direction.
+        const originalVideoFrame = global.VideoFrame;
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            global.VideoFrame = function ThrowingVideoFrame() {
+                throw new DOMException('Failed to create a VideoFrame with format: PIXEL_FORMAT_NV12', 'OperationError');
+            };
+
+            const decoder = new GopDecoder();
+            await expect(decoder.decodeSegment(0, makeDemuxResult([0, 33_333]))).rejects.toThrow();
+
+            const message = consoleErrorSpy.mock.calls.map((call) => call[0]).join('\n');
+            expect(message).toMatch(/FRAME ALLOCATION FAILED/);
+            expect(message).toMatch(/cache budget/i);
+        } finally {
+            consoleErrorSpy.mockRestore();
+            global.VideoFrame = originalVideoFrame;
+        }
+    });
+
     test('rejects a segment whose first chunk is not a keyframe', async () => {
         const decoder = new GopDecoder();
         const demuxResult = makeDemuxResult([0, 33_333]);

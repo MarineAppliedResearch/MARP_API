@@ -38,11 +38,20 @@
 import { findSegmentForTime } from './playlist-manager.js';
 import { computeProtectedFloor, computeOpportunisticOrder } from './cache-window.js';
 
-/** Protected-floor radius, in segments on each side of the playhead. */
-const DEFAULT_PROTECTED_FLOOR_RADIUS_SEGMENTS = 3;
+/**
+ * Protected-floor reach on each side of the playhead, in SECONDS of video.
+ *
+ * Expressed in time rather than units because unit length varies by source:
+ * 3s HLS segments versus ~10s Direct Play/local GOPs. A fixed unit count
+ * silently became 3.3x more memory on the long-GOP sources -- a floor of 3
+ * units either side is 21s (~1.5GB decoded at 1080p) with HLS segments but
+ * 70s (~5.2GB) with GOPs, which exceeds any budget and left the playhead
+ * unable to decode the unit it was about to cross into.
+ */
+const PROTECTED_FLOOR_RADIUS_SECONDS = 9;
 
-/** Tier 2 (decode) opportunistic window: base per-side segment count at rest (paused, or 1x on the non-preferred side). */
-const TIER2_OPPORTUNISTIC_BASE_SEGMENTS = 4;
+/** Tier 2 (decode) opportunistic window: base per-side reach at rest (paused, or 1x on the non-preferred side), in SECONDS -- see PROTECTED_FLOOR_RADIUS_SECONDS. */
+const TIER2_OPPORTUNISTIC_BASE_SECONDS = 12;
 
 /** Tier 1 (raw fetch) opportunistic pacing: base new-fetch launches per cache pass at rest. */
 const TIER1_BASE_PACING_PER_PASS = 2;
@@ -80,6 +89,17 @@ const PAUSED_SKEW_RATIO = 1;
 const PAUSED_FILL_INTERVAL_MS = 500;
 
 /**
+ * How far a presented frame's own decoded timestamp may sit from the
+ * mediaTime being reported for it before that counts as a real content
+ * mismatch, in seconds. Generous on purpose: a segment's first frame
+ * routinely sits a fraction of a second off its declared start (an ~80ms
+ * offset is normal for this transcoder), while a genuine mis-route is off
+ * by whole segments or minutes -- so this only needs to separate those
+ * two scales, not measure either precisely.
+ */
+const CONTENT_MISMATCH_TOLERANCE_SECONDS = 1.5;
+
+/**
  * Drives forward/reverse pacing, seeking, and the two-tier cache
  * algorithm against a FrameStore (Tier 2) and its SegmentFetcher (Tier 1),
  * rendering through a CanvasRenderer.
@@ -101,7 +121,9 @@ export class Scheduler {
         this.frameStore = frameStore;
         this.canvasRenderer = canvasRenderer;
         this.emit = emit;
-        this._protectedFloorRadius = protectedFloorRadius || DEFAULT_PROTECTED_FLOOR_RADIUS_SEGMENTS;
+        const unitDurationSeconds = (segmentIndex.segments[0] && segmentIndex.segments[0].duration) || 1;
+        this._protectedFloorRadius = protectedFloorRadius || this._floorRadiusForUnits(unitDurationSeconds);
+        this._tier2OpportunisticBase = Math.max(1, Math.round(TIER2_OPPORTUNISTIC_BASE_SECONDS / unitDurationSeconds));
         this._maxConcurrentTier1Fetches = maxConcurrentTier1Fetches || DEFAULT_MAX_CONCURRENT_TIER1_FETCHES;
 
         this.playbackRate = 1;
@@ -117,6 +139,10 @@ export class Scheduler {
         this._anchorWallClockMs = 0;
         this._anchorTime = 0;
         this._presentedMediaTime = 0;
+
+        // Last segment index a content-mismatch warning fired for, so a
+        // real mismatch logs once per segment instead of once per frame.
+        this._lastMismatchWarnedSegment = null;
         this._pausedFreezeTime = null;
         this._rafHandle = null;
         this._pausedIntervalHandle = null;
@@ -160,11 +186,53 @@ export class Scheduler {
     }
 
     /** @returns {number} Total stream duration, in seconds. */
+    /**
+     * Converts the seconds-based floor reach into a unit radius, clamped so
+     * the floor can never ask for more decoded units than the cache can
+     * hold.
+     *
+     * That clamp is the invariant that was violated: with ~10s GOPs the
+     * cache held 4 units while the floor pinned 7, so eviction could free
+     * nothing and the unit the playhead was about to enter never decoded.
+     * One slot is always left free for the unit being decoded next.
+     *
+     * @param {number} unitDurationSeconds - Nominal unit length, in seconds.
+     * @returns {number} Floor radius in units, on each side of the playhead.
+     */
+    _floorRadiusForUnits(unitDurationSeconds) {
+        const wanted = Math.max(1, Math.round(PROTECTED_FLOOR_RADIUS_SECONDS / unitDurationSeconds));
+        const capacity = this.frameStore.maxSegmentsBuffered;
+        if (!Number.isFinite(capacity)) {
+            return wanted;
+        }
+        // floorSize = 2r + 1 must stay at or below capacity - 1.
+        const affordable = Math.max(0, Math.floor((capacity - 2) / 2));
+        return Math.min(wanted, affordable);
+    }
+
     get duration() {
         return this.segmentIndex.totalDuration;
     }
 
-    /** @returns {number} Presentation time of the currently displayed frame, in seconds. */
+    /**
+     * KNOWN BUG (unfixed, low priority -- see
+     * docs/developer/video-player-library-handoff.md): playing in reverse
+     * into the start of a clip makes this read the clip's END for about one
+     * frame before the engine pauses itself at 0. Measured on a 30.44s clip:
+     * the playhead walked 2.16 -> 0.20 normally, then one sample read 30.12,
+     * then 'pause' fired and it settled at 0.12.
+     *
+     * The stop itself is correct -- _tick() clamps targetTime to 0 on a
+     * reverse boundary -- but this getter reports _presentedMediaTime, the
+     * frame actually on screen, not that clamped target, so whatever lands
+     * at the boundary is reported verbatim. Cosmetic in the player (the
+     * scrub handle flicks right for a frame), but the WebView2 bridge posts
+     * a frame| message per presented frame and Jellyfin playback reporting
+     * posts positions, so a consumer can act on that stray value. Reproduce
+     * by playing in reverse into 0 while sampling currentTime.
+     *
+     * @returns {number} Presentation time of the currently displayed frame, in seconds.
+     */
     get currentTime() {
         if (this._pausedFreezeTime !== null && !this.playing && !this.seekingFlag) {
             return this._pausedFreezeTime;
@@ -199,6 +267,57 @@ export class Scheduler {
 
         const offsetMicros = frameTimestampMicros - firstFrame.timestamp;
         return segment.startTime + offsetMicros / 1e6;
+    }
+
+    /**
+     * Warns when a presented frame's own decoded timestamp disagrees with
+     * the time the engine is claiming to display -- i.e. the frame on
+     * screen is not from where the timecode says it is.
+     *
+     * This exists because that failure was, for a long time, undetectable
+     * from the engine's own output. `mediaTime` is derived from the
+     * forward segment grid (see _frameTimestampToMediaTimeSeconds), so it
+     * can never disagree with that grid no matter what content a segment
+     * actually holds; a mis-routed segment served content from a
+     * completely different part of the video while every number the
+     * engine reported looked self-consistent. The frame's raw timestamp
+     * is the one independent signal available, since it comes from the
+     * decoded bytes themselves.
+     *
+     * Warns once per segment rather than per frame -- at 25fps a genuine
+     * mismatch would otherwise emit dozens of identical lines a second
+     * and bury the rest of the log.
+     *
+     * @param {Object} metadata - The frame metadata about to be dispatched to frame callbacks.
+     * @returns {void}
+     */
+    _warnOnContentMismatch(metadata) {
+        if (!Number.isFinite(metadata.rawFrameTime)) {
+            return;
+        }
+
+        const drift = Math.abs(metadata.rawFrameTime - metadata.mediaTime);
+        if (drift <= CONTENT_MISMATCH_TOLERANCE_SECONDS) {
+            return;
+        }
+
+        if (this._lastMismatchWarnedSegment === metadata.segmentIndex) {
+            return;
+        }
+        this._lastMismatchWarnedSegment = metadata.segmentIndex;
+
+        console.warn(
+            `[scheduler] CONTENT MISMATCH on segment ${metadata.segmentIndex}: ` +
+                `mediaTime=${metadata.mediaTime.toFixed(3)}s vs decoded frame timestamp ` +
+                `${metadata.rawFrameTime.toFixed(3)}s (drift ${drift.toFixed(3)}s)`,
+        );
+        this.emit('debug', {
+            message:
+                `[scheduler] CONTENT MISMATCH on segment ${metadata.segmentIndex}: ` +
+                `presenting mediaTime=${metadata.mediaTime.toFixed(3)}s but the decoded frame's own ` +
+                `timestamp is ${metadata.rawFrameTime.toFixed(3)}s (drift ${drift.toFixed(3)}s) -- ` +
+                `this segment's bytes are not from where its timecode claims.`,
+        });
     }
 
     /**
@@ -297,6 +416,8 @@ export class Scheduler {
             frameIndex: this.currentFrameIdx,
             rawFrameTime: currentFrame ? currentFrame.timestamp / 1e6 : NaN,
         };
+
+        this._warnOnContentMismatch(metadata);
 
         const now = performance.now();
         for (const { callback } of toFire) {
@@ -660,8 +781,8 @@ export class Scheduler {
         const protectedIndices = computeProtectedFloor(centerSegment.index, totalSegments, this._protectedFloorRadius);
 
         // Tier 2 (decode): a bounded window, skewed and rate-scaled.
-        const tier2PreferredCount = Math.round(TIER2_OPPORTUNISTIC_BASE_SEGMENTS * skewRatio * scaleFactor);
-        const tier2OtherCount = Math.round(TIER2_OPPORTUNISTIC_BASE_SEGMENTS * scaleFactor);
+        const tier2PreferredCount = Math.round(this._tier2OpportunisticBase * skewRatio * scaleFactor);
+        const tier2OtherCount = Math.round(this._tier2OpportunisticBase * scaleFactor);
         const tier2Order = computeOpportunisticOrder(
             centerSegment.index,
             totalSegments,
@@ -708,6 +829,16 @@ export class Scheduler {
         const surplusBudget = Math.max(0, maxDecodedBudget - protectedIndices.length);
 
         const ensureList = [...protectedIndices, ...opportunisticOrder.slice(0, surplusBudget)];
+
+        // The same ordering that decides what to decode also decides what
+        // to keep: without this the cache evicted by decode-completion age,
+        // which systematically discarded the playhead's own neighbourhood
+        // (decoded earliest) in favour of whatever prefetch decoded last.
+        // Ranked over the full window, not just what this pass decodes, so
+        // already-decoded distant units keep their correct ranking even
+        // while opportunistic decoding is held back above.
+        this.frameStore.setEvictionPriority([...protectedIndices, ...opportunisticOrder.slice(0, surplusBudget)]);
+
         for (const index of ensureList) {
             if (this.frameStore.has(index) || this.frameStore.isDecodeInBackoff(index)) {
                 continue;
@@ -735,11 +866,43 @@ export class Scheduler {
      * @param {number} pacingCap - Max new fetches this pass may launch beyond the protected floor.
      * @returns {void}
      */
+    /**
+     * Whether the live session serving `index` already has its full
+     * allowance of fetches in flight.
+     *
+     * Falls back to the global in-flight count for a fetcher that does not
+     * report per-session counts (the abstraction only matters for a source
+     * with multiple live producers).
+     *
+     * @param {Object} fetcher - The SegmentFetcher (Tier 1).
+     * @param {number} index - Segment index whose session to check.
+     * @returns {boolean} True if that session has no free fetch slot.
+     */
+    _sessionFetchSlotsFull(fetcher, index) {
+        const inFlight = fetcher.getInFlightFetchCountForSession
+            ? fetcher.getInFlightFetchCountForSession(index)
+            : fetcher.getInFlightFetchCount();
+        return inFlight >= this._maxConcurrentTier1Fetches;
+    }
+
     _runTier1FetchPass(protectedIndices, opportunisticOrder, pacingCap) {
         const fetcher = this.frameStore.segmentFetcher;
         fetcher.setProtectedRawSegments(protectedIndices);
 
         for (const index of protectedIndices) {
+            // The concurrency ceiling applies here too, not just to the
+            // opportunistic loop below. A source backed by a single
+            // sequential transcoder (Jellyfin) answers one request at a
+            // time; firing the whole floor at it concurrently made those
+            // requests race each other's transcoder restarts, which is
+            // what produced the transient 500s seen live. Confirmed
+            // against the real server: a lone backward or far-forward
+            // request never fails, it just costs a restart (~2-3s, with
+            // the NEXT request paying up to ~15s) -- only concurrent ones
+            // fail.
+            if (this._sessionFetchSlotsFull(fetcher, index)) {
+                continue;
+            }
             // hasInFlightFetch() skip: this pass runs on every render
             // tick (dozens of times a second) -- without it, a segment
             // whose real fetch is still pending gets a harmless-but-
@@ -750,21 +913,70 @@ export class Scheduler {
             }
         }
 
+        // Whether each side of the playhead has hit something it cannot
+        // fetch yet. Once a side is blocked, this pass stops considering
+        // candidates further out on that side instead of stepping over
+        // them -- see the comment on the `blocked` assignment below.
+        const centerIndex = this.currentSegmentIndex;
+        let forwardBlocked = false;
+        let backwardBlocked = false;
+
         let launched = 0;
         for (const index of opportunisticOrder) {
-            if (launched >= pacingCap) {
+            if (launched >= pacingCap || (forwardBlocked && backwardBlocked)) {
                 break;
             }
+            const isForwardSide = index > centerIndex;
+
             // Concurrency ceiling: an unbounded background frontier must
             // not accumulate more simultaneously in-flight fetches than
             // this source can actually tolerate -- see
-            // DEFAULT_MAX_CONCURRENT_TIER1_FETCHES's own doc comment for why.
-            if (fetcher.getInFlightFetchCount() >= this._maxConcurrentTier1Fetches) {
-                break;
-            }
-            if (fetcher.hasRawBytes(index) || fetcher.isFetchInBackoff(index) || fetcher.hasInFlightFetch(index)) {
+            // DEFAULT_MAX_CONCURRENT_TIER1_FETCHES's own doc comment for
+            // why. Applied per live session rather than globally: requests
+            // only race a transcoder restart against each other within one
+            // session, and counting globally would split a single slot
+            // across the forward and behind sessions instead of letting
+            // each run one fetch of its own.
+            if (this._sessionFetchSlotsFull(fetcher, index)) {
+                if (isForwardSide) {
+                    forwardBlocked = true;
+                } else {
+                    backwardBlocked = true;
+                }
                 continue;
             }
+            if (isForwardSide ? forwardBlocked : backwardBlocked) {
+                continue;
+            }
+
+            // Already handled: cached needs nothing, in-flight is already
+            // being fetched. Step over these -- they do not block the
+            // frontier, they ARE the frontier advancing.
+            if (fetcher.hasRawBytes(index) || fetcher.hasInFlightFetch(index)) {
+                continue;
+            }
+
+            // Genuinely unavailable right now: recently failed, or no live
+            // session can serve it without seeking its own transcode
+            // backward. Block this side rather than stepping outward past
+            // it. Stepping outward is what starved the playhead: with only
+            // one fetch slot against Jellyfin, the scan walked past
+            // backed-off near segments and spent the slot on distant ones
+            // that were already transcoded to disk (confirmed live at
+            // ~59ms each), so far islands filled while the island around
+            // the playhead stayed empty. Waiting is the intended
+            // behaviour -- backoff is short, and the pass reruns every
+            // tick, so the frontier resumes the moment the near segment
+            // is fetchable again.
+            if (fetcher.isFetchInBackoff(index) || fetcher.isBehindCoverageGap(index)) {
+                if (isForwardSide) {
+                    forwardBlocked = true;
+                } else {
+                    backwardBlocked = true;
+                }
+                continue;
+            }
+
             fetcher.ensureRawBytes(index).catch(() => {});
             launched++;
         }
@@ -848,8 +1060,9 @@ export class Scheduler {
             previousSeekFetchAbort.abort();
         }
 
+        let decodedBuffer;
         try {
-            await ensurePromise;
+            decodedBuffer = await ensurePromise;
         } catch (err) {
             if (seekFetchAbort.signal.aborted) {
                 // Superseded by a newer seek before this one's fetch
@@ -875,7 +1088,12 @@ export class Scheduler {
             return;
         }
 
-        const gopBuffer = this.frameStore.buffers.get(segment.index);
+        // Use the buffer this seek actually decoded rather than re-reading
+        // the cache: the cache can legitimately drop it in between (its
+        // eviction ranking still reflects the PRE-seek playhead until the
+        // next cache pass, so a distant seek target ranks last), and
+        // re-reading turned that into a crash on an undefined buffer.
+        const gopBuffer = decodedBuffer || this.frameStore.buffers.get(segment.index);
         const frameIdx = this._locateFrameIndex(gopBuffer, clamped, direction, segment.startTime);
         const frame = gopBuffer.frames[frameIdx];
 

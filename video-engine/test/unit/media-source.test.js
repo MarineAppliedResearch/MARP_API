@@ -3,10 +3,11 @@
  * implementation, against a fake JellyfinClient (no network/fetch involved
  * -- that's already covered by jellyfin-client.test.js).
  *
- * @fileoverview Tests for media-source.js.
+ * @fileoverview Tests for media-source.js and JellyfinMediaSource.
  */
 
-const { MediaSource, JellyfinMediaSource } = require('../../src/media-source.js');
+const { MediaSource } = require('../../src/media-source.js');
+const { JellyfinMediaSource } = require('../../src/media-source-jellyfin-transcode.js');
 
 describe('MediaSource base class', () => {
     test('resolveStreamUrl rejects by default -- subclasses must override it', async () => {

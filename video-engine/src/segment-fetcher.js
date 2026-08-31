@@ -157,16 +157,13 @@ export class SegmentFetcher {
         // independent Jellyfin transcode session negotiated with an
         // earlier StartTimeTicks, so its own ffmpeg process only ever
         // moves forward -- never restarts -- while sweeping through this
-        // region), translated via `_behindIndexOffset` since that
-        // session's own segment numbering restarts at 0 from its
-        // StartTimeTicks, not from absolute stream time (confirmed live:
-        // segment "0" of a StartTimeTicks-shifted session reports
-        // runtimeTicks=0, i.e. its OWN elapsed time, not the stream's).
-        // Segments at or above the anchor always use their ordinary `url`
-        // (the "forward" session).
+        // region). Segment indices are ABSOLUTE in both sessions and need
+        // no translation between them -- see setBehindSession's own doc
+        // comment for the measurement that established this. Segments at
+        // or above the anchor always use their ordinary `url` (the
+        // "forward" session).
         this._anchorSegmentIndex = 0;
-        this._behindSegments = null;
-        this._behindIndexOffset = 0;
+        this._behindSessions = [];
     }
 
     /**
@@ -196,53 +193,221 @@ export class SegmentFetcher {
      * opportunistic background fetches for indices below the anchor, not
      * the seek's own target-segment fetch.
      *
-     * @param {Array<Object>|null} segments - The behind session's own SegmentIndex.segments (its own index 0 == its StartTimeTicks), or null to clear (single-session mode/no behind session yet negotiated).
-     * @param {number} indexOffset - `forwardIndex - behindArrayIndex` -- i.e. the forward session's segment index that the behind session's own index 0 corresponds to. Typically `Math.round(behindStartTimeSeconds / segmentDurationSeconds)`.
+     * Segment indices are ABSOLUTE in every Jellyfin session, including
+     * one negotiated with StartTimeTicks -- no index translation is
+     * applied or wanted here. Measured directly against the real server:
+     * a session negotiated with StartTimeTicks=1101s returns the ENTIRE
+     * item's playlist (452 segments / 1354.134s, identical to a session
+     * with no start time at all), and ffprobe of its own bytes puts
+     * segment 8 at absolute 24.0s, segment 367 at 1101.0s, and segment
+     * 375 at 1125.0s. StartTimeTicks only tells the transcoder where to
+     * begin ENCODING; it does not renumber or truncate segments.
+     *
+     * This previously applied `indexOffset = Math.round(startTime /
+     * segmentDuration)` on the assumption that each session's numbering
+     * restarted at 0 from its own StartTimeTicks. That assumption was
+     * wrong, and it silently served content from a completely different
+     * part of the video (asking for absolute segment 375 fetched behind
+     * index 8 -- 24 seconds in -- and presented it as 1125s). Do not
+     * reintroduce an offset here.
+     *
+     * @param {Array<Object>|null} segments - The behind session's own SegmentIndex.segments, addressed by absolute segment index, or null to clear (single-session mode/no behind session yet negotiated).
+     * @param {number} [behindStartTimeSeconds=0] - Absolute position this session's transcode was started from. Only indices at or after this point can be served by it without forcing its ffmpeg process to seek backward (which restarts it) -- see isBehindCoverageGap.
      * @returns {void}
      */
-    setBehindSession(segments, indexOffset) {
-        this._behindSegments = segments;
-        this._behindIndexOffset = indexOffset;
+    setBehindSession(segments, behindStartTimeSeconds = 0) {
+        this.setBehindSessions(segments ? [{ segments, startTimeSeconds: behindStartTimeSeconds }] : []);
+    }
+
+    /**
+     * Installs (or replaces) every "behind" session at once.
+     *
+     * Multiple sessions tile the region behind the playhead between them:
+     * a close one anchored just behind the playhead, serving what reverse
+     * playback needs immediately, and an extended one anchored deeper,
+     * building coverage of the section the playhead is heading into. Each
+     * is an independent Jellyfin transcode job, so re-anchoring one (which
+     * costs a restart) does not disturb the others.
+     *
+     * Any forward-sweeping session produces the segment nearest its own
+     * anchor FIRST and the one furthest ahead of it LAST -- which is
+     * exactly backwards from what reverse playback consumes. That is why
+     * the close session has to sit very near the playhead and re-anchor
+     * often, rather than covering a wide span: a wide span would produce
+     * the segments reverse needs soonest last of all.
+     *
+     * @param {Array<{segments: Array<Object>, startTimeSeconds: number}>} sessions - Behind sessions, each with its own absolute-indexed segment list and the position its transcode began at. Order does not matter; routing picks by fit (see _behindSessionFor).
+     * @returns {void}
+     */
+    setBehindSessions(sessions) {
+        this._behindSessions = Array.isArray(sessions) ? sessions.filter((session) => session && session.segments) : [];
+    }
+
+    /**
+     * Picks the behind session best placed to serve a segment: among those
+     * whose transcode began at or before it, the one that began LATEST.
+     *
+     * That is the tightest fit -- the session with the least content left
+     * to produce before it reaches this segment, and so the one most
+     * likely to already have it on disk. (A segment already written is
+     * served immediately regardless of session state, measured at ~59ms
+     * against the real server, versus a multi-second restart for one that
+     * forces the job to move.)
+     *
+     * @param {Object} segment - `this.segmentIndex.segments[segmentIndexNumber]`.
+     * @param {number} segmentIndexNumber - Segment index being resolved.
+     * @returns {Object|null} The chosen session, or null if none can serve it without seeking backward.
+     */
+    _behindSessionFor(segment, segmentIndexNumber) {
+        if (!segment) {
+            return null;
+        }
+
+        let best = null;
+        for (const session of this._behindSessions) {
+            if (session.startTimeSeconds > segment.startTime) {
+                continue;
+            }
+            if (!session.segments[segmentIndexNumber]) {
+                continue;
+            }
+            if (!best || session.startTimeSeconds > best.startTimeSeconds) {
+                best = session;
+            }
+        }
+        return best;
     }
 
     /**
      * Resolves which URL a segment index should be fetched from --
      * ordinary `url` (forward session) at or above the anchor, or the
-     * behind session's own (offset-translated) URL below it, falling back
-     * to `url` if no behind session is installed or it doesn't (yet)
-     * cover that index.
+     * behind session's own URL (same absolute index) below it, falling
+     * back to `url` if no behind session is installed or that index falls
+     * outside what it can serve.
      *
      * @param {number} segmentIndexNumber - Segment index to resolve.
      * @param {Object} segment - `this.segmentIndex.segments[segmentIndexNumber]`.
      * @returns {string} The URL to fetch.
      */
     _resolveSegmentUrl(segmentIndexNumber, segment) {
-        if (this._behindSegments && segmentIndexNumber < this._anchorSegmentIndex) {
-            const behindSegment = this._behindSegments[segmentIndexNumber - this._behindIndexOffset];
-            if (behindSegment) {
-                return behindSegment.url;
-            }
-        }
-        return segment.url;
+        const session = this._servableByBehindSession(segmentIndexNumber, segment);
+        return session ? session.segments[segmentIndexNumber].url : segment.url;
     }
 
     /**
-     * Reports which session a segment index currently resolves to --
-     * "forward" or "behind" -- purely for debug logging (see
-     * ensureRawBytes's own log lines), so it's visible at a glance which
-     * of the two live transcode sessions a given fetch actually used.
+     * Which behind session should serve this index, if any: the index must
+     * be below the anchor (at or above it belongs to the forward session),
+     * and some behind session must be able to reach it without seeking its
+     * own transcode backward.
      *
      * @param {number} segmentIndexNumber - Segment index to check.
-     * @returns {string} `"forward"` or `"behind"`.
+     * @param {Object} segment - `this.segmentIndex.segments[segmentIndexNumber]`.
+     * @returns {Object|null} The session that should serve it, or null.
+     */
+    _servableByBehindSession(segmentIndexNumber, segment) {
+        if (segmentIndexNumber >= this._anchorSegmentIndex) {
+            return null;
+        }
+        return this._behindSessionFor(segment, segmentIndexNumber);
+    }
+
+    /**
+     * Whether this index sits behind the anchor but EARLIER than the
+     * behind session's own transcode start -- i.e. neither session can
+     * serve it cheaply. The forward session would have to seek backward
+     * (Jellyfin kills and restarts that session's ffmpeg job, producing
+     * the transient 500s and multi-second stalls the dual-session design
+     * exists to avoid), and the behind session would too.
+     *
+     * Opportunistic background prefetch skips these entirely and waits
+     * for the behind session to be re-anchored further back (the app's
+     * own periodic refresh does this as the playhead moves), which is the
+     * only way to reach them without a restart: jump the session back,
+     * then sweep forward from there. The render path's own protected
+     * floor deliberately does NOT consult this -- those segments are
+     * needed to show frames right now, so a restart is the lesser cost.
+     *
+     * @param {number} segmentIndexNumber - Segment index to check.
+     * @returns {boolean} True if no session can currently serve this index without a restart.
+     */
+    isBehindCoverageGap(segmentIndexNumber) {
+        if (this._behindSessions.length === 0 || segmentIndexNumber >= this._anchorSegmentIndex) {
+            return false;
+        }
+        const segment = this.segmentIndex.segments[segmentIndexNumber];
+        return Boolean(segment) && !this._behindSessionFor(segment, segmentIndexNumber);
+    }
+
+    /**
+     * A stable key for the live transcode session a segment index resolves
+     * to -- `"forward"`, or `"behind@<startTime>"` for a behind session
+     * (its own start time identifies it, since that is what distinguishes
+     * one behind session's ffmpeg job from another's).
+     *
+     * Used both for debug logging and for per-session fetch accounting:
+     * concurrent requests only race a restart against each other WITHIN
+     * one session, so the concurrency ceiling is applied per session
+     * rather than globally -- otherwise adding sessions would just split
+     * one slot between them and buy no extra throughput.
+     *
+     * @param {number} segmentIndexNumber - Segment index to check.
+     * @returns {string} Session key.
+     */
+    sessionKeyFor(segmentIndexNumber) {
+        const segment = this.segmentIndex.segments[segmentIndexNumber];
+        const session = this._servableByBehindSession(segmentIndexNumber, segment);
+        return session ? `behind@${session.startTimeSeconds}` : 'forward';
+    }
+
+    /**
+     * Human-readable session label for debug logging, naming the behind
+     * session by the SEGMENT its transcode starts at rather than its raw
+     * start time -- every other line in the log talks in segment numbers,
+     * so a seconds-based label made it needlessly hard to line a session's
+     * coverage up against the fetches attributed to it.
+     *
+     * Deliberately not used as the accounting key (see sessionKeyFor):
+     * two sessions anchored a fraction of a second apart can fall inside
+     * the same segment, and collapsing them into one label is fine for
+     * reading a log but would merge their concurrency accounting.
+     *
+     * @param {number} segmentIndexNumber - Segment index to check.
+     * @returns {string} `"forward"` or `"behind@seg<index>"`.
      */
     _sessionLabelFor(segmentIndexNumber) {
-        if (this._behindSegments && segmentIndexNumber < this._anchorSegmentIndex) {
-            const behindSegment = this._behindSegments[segmentIndexNumber - this._behindIndexOffset];
-            if (behindSegment) {
-                return 'behind';
+        const segment = this.segmentIndex.segments[segmentIndexNumber];
+        const session = this._servableByBehindSession(segmentIndexNumber, segment);
+        if (!session) {
+            return 'forward';
+        }
+        const startIndex = this.segmentIndex.segments.findIndex((candidate) => candidate.endTime > session.startTimeSeconds);
+        return `behind@seg${startIndex}`;
+    }
+
+    /**
+     * Counts in-flight fetches currently routed to the same live session
+     * as `segmentIndexNumber` -- see sessionKeyFor for why this is counted
+     * per session rather than globally.
+     *
+     * @param {number} segmentIndexNumber - Segment index whose session to count for.
+     * @returns {number} In-flight fetches on that session.
+     */
+    getInFlightFetchCountForSession(segmentIndexNumber) {
+        const key = this.sessionKeyFor(segmentIndexNumber);
+        let count = 0;
+        // Counts the key each fetch was LAUNCHED against, never a re-derived
+        // one. Routing is time-varying -- a behind session re-anchoring
+        // changes which session a given index resolves to -- so re-deriving
+        // an in-flight fetch's session here misattributed it, let a second
+        // request onto a session that already had one in flight, and that
+        // pair raced a transcoder restart: confirmed live as segment 213
+        // failing with a 500 on the session it shared with segment 211.
+        for (const entry of this._inFlightFetches.values()) {
+            if (entry.sessionKey === key) {
+                count++;
             }
         }
-        return 'forward';
+        return count;
     }
 
     /**
@@ -389,65 +554,31 @@ export class SegmentFetcher {
     }
 
     /**
-     * Returns a segment's cached raw bytes, but only if they still match
-     * what _resolveSegmentUrl would fetch for this index right now --
-     * evicting (and reporting a miss) otherwise.
+     * Returns a segment's cached raw bytes, if present.
      *
-     * Without this, a segment index fetched once under one dual-session
-     * routing decision (e.g. from the "behind" session, while this index
-     * was behind an earlier seek's anchor) would keep being served
-     * forever after, even once a later seek moves the anchor and this
-     * same index should now resolve to completely different content (the
-     * forward session's own, different, real segment) -- confirmed live
-     * as the actual cause of a segment whose presented content silently
-     * didn't match its own timecode (mediaTime and the frame's real `raw`
-     * timestamp disagreeing by however far the anchor had since moved).
+     * No session-routing staleness check is applied, and none is needed:
+     * segment indices are absolute in every Jellyfin session (see
+     * setBehindSession), so index N holds the same real time range no
+     * matter which session's url fetched it -- forward, or any behind
+     * session at any anchor. The url a segment was fetched through is
+     * kept only for diagnostics.
+     *
+     * An earlier version compared the cached url against what
+     * _resolveSegmentUrl would return now and evicted on a mismatch. That
+     * was built on the (since-disproven) belief that each session
+     * numbered its own segments from 0, and it is what silently discarded
+     * large runs of perfectly good cached segments whenever the behind
+     * session was re-anchored -- the unexplained mass-eviction report
+     * that its own temporary diagnostic was added to chase.
      *
      * @param {number} segmentIndexNumber - Segment index to look up.
-     * @returns {ArrayBuffer|undefined} The cached bytes, or undefined if absent or stale.
+     * @returns {ArrayBuffer|undefined} The cached bytes, or undefined if absent.
      */
     _getFreshCachedBuffer(segmentIndexNumber) {
         const entry = this._rawSegmentCache.get(segmentIndexNumber);
         if (!entry) {
             return undefined;
         }
-
-        const segment = this.segmentIndex.segments[segmentIndexNumber];
-        const currentUrl = this._resolveSegmentUrl(segmentIndexNumber, segment);
-
-        // A transition between the plain forward url and ANY behind
-        // session's url for the same index is NOT a content change -- both
-        // represent the identical real time range (same source, same
-        // quality, and Jellyfin does accurate, non-stream-copy seeking --
-        // see issue #36), just reached via a different Jellyfin session.
-        // This is expected to happen constantly as the anchor moves past
-        // already-cached indices during ordinary forward playback, and
-        // evicting perfectly good bytes for it was pure waste. Only a
-        // transition between two DIFFERENT behind sessions' own urls for
-        // the same index is a genuine content change: each behind
-        // session has its own index offset, so the same absolute index
-        // maps to a different real time position across them -- confirmed
-        // live as the actual cause of a segment's content not matching
-        // its own timecode.
-        const cachedIsForward = entry.url === segment.url;
-        const currentIsForward = currentUrl === segment.url;
-        if (!cachedIsForward && !currentIsForward && entry.url !== currentUrl) {
-            // TEMPORARY DIAGNOSTIC (remove once root-caused): logs every
-            // eviction this check performs, since a user-reported mass
-            // eviction of already-cached segments on seek could not be
-            // reproduced in isolation -- this pins down exactly which
-            // index, which two urls, and what the anchor/offset were at
-            // the moment it actually happens live.
-            console.warn(
-                `[segment-fetcher] EVICTING segment ${segmentIndexNumber}: cachedUrl=${entry.url} currentUrl=${currentUrl} ` +
-                    `anchor=${this._anchorSegmentIndex} behindOffset=${this._behindIndexOffset} ` +
-                    `hasBehindSegments=${!!this._behindSegments} behindSegmentsLength=${this._behindSegments ? this._behindSegments.length : 'n/a'}`
-            );
-            this._rawSegmentBytes -= entry.buffer.byteLength;
-            this._rawSegmentCache.delete(segmentIndexNumber);
-            return undefined;
-        }
-
         return entry.buffer;
     }
 
@@ -651,7 +782,10 @@ export class SegmentFetcher {
                 .finally(() => {
                     this._inFlightFetches.delete(segmentIndexNumber);
                 });
-            entry = { promise, wanterCount: 0, abortController };
+            // sessionKey is captured HERE, at launch, and never recomputed --
+            // see getInFlightFetchCountForSession for why re-deriving it
+            // breaks the per-session concurrency ceiling.
+            entry = { promise, wanterCount: 0, abortController, sessionKey: this.sessionKeyFor(segmentIndexNumber) };
             this._inFlightFetches.set(segmentIndexNumber, entry);
         }
 

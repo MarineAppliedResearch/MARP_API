@@ -166,6 +166,27 @@ export class JellyfinClient {
     }
 
     /**
+     * Adopts a session obtained elsewhere, instead of logging in here.
+     *
+     * A host application usually authenticates with Jellyfin through its own
+     * client and already holds a token -- the C# desktop app does. Making it
+     * log in a second time would create a second session for the same user
+     * and mean handling credentials in two places.
+     *
+     * @param {Object} session
+     * @param {string} session.serverUrl - Jellyfin base URL.
+     * @param {string} session.accessToken - An access token for that server.
+     * @param {string} session.userId - The user the token belongs to.
+     * @returns {void}
+     */
+    useSession({ serverUrl, accessToken, userId }) {
+        this.serverUrl = this._normalizeServerUrl(serverUrl || '');
+        this.accessToken = accessToken || '';
+        this.userId = userId || '';
+        this._persistSession();
+    }
+
+    /**
      * Clears the stored session. Does not call Jellyfin to invalidate the
      * token server-side -- just forgets it locally.
      */
@@ -244,6 +265,11 @@ export class JellyfinClient {
             width: (videoStream && videoStream.Width) || 0,
             height: (videoStream && videoStream.Height) || 0,
             supportsTranscoding: Boolean(mediaSource.SupportsTranscoding),
+            // Jellyfin identifies a playback report by these, and this probe
+            // is already the PlaybackInfo call that produces them -- the
+            // Direct Play path has no other negotiation to take them from.
+            mediaSourceId: mediaSource.Id,
+            playSessionId: data.PlaySessionId,
         };
     }
 

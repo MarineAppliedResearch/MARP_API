@@ -298,7 +298,7 @@ describe('SegmentFetcher byte-range fetches (local-file SegmentIndex support)', 
 });
 
 describe('SegmentFetcher dual-session anchor routing', () => {
-    /** The "behind" session's own segment list -- its own index 0 is whatever absolute time it was negotiated with (see setBehindSession's indexOffset param), never the stream's absolute index 0. */
+    /** The "behind" session's own segment list. Segment indices are ABSOLUTE in every Jellyfin session, including one negotiated with StartTimeTicks -- its index 0 is the stream's index 0, not its own start time (measured directly against the real server; see setBehindSession's doc comment). */
     const BEHIND_SESSION_SEGMENTS = [
         { index: 0, url: 'https://jellyfin.example.com/behind/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
         { index: 1, url: 'https://jellyfin.example.com/behind/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
@@ -314,10 +314,9 @@ describe('SegmentFetcher dual-session anchor routing', () => {
         expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/videos/seg0.m4s', expect.anything());
     });
 
-    test('fetches below the anchor from the behind session (offset-translated), at or above it from the ordinary url', async () => {
+    test('fetches below the anchor from the behind session, at or above it from the ordinary url', async () => {
         const fetcher = new SegmentFetcher(SEGMENT_INDEX);
         fetcher.setAnchorSegmentIndex(1);
-        // Behind session negotiated starting exactly at the stream's own index 0 -- offset 0, so indices line up 1:1.
         fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
 
         await fetcher.fetchSegment(0);
@@ -325,11 +324,27 @@ describe('SegmentFetcher dual-session anchor routing', () => {
         expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
     });
 
-    test('translates the behind session index by indexOffset when it was negotiated to start later than stream index 0', async () => {
-        // Behind session negotiated to start at the stream's own segment 5 --
-        // its own index 0 corresponds to the stream's index 5, so requesting
-        // the stream's index 5 must resolve to the behind session's index 0.
-        const indexOffset = 5;
+    test('addresses the behind session by ABSOLUTE index, never translated by its own start time', async () => {
+        // Regression test for the bug that made decoded content silently
+        // not match its own timecode. This used to apply
+        // `indexOffset = Math.round(behindStartTime / segmentDuration)`,
+        // on the assumption that a session negotiated with StartTimeTicks
+        // numbered its own segments from 0. Measured directly against the
+        // real Jellyfin server, that is false: such a session returns the
+        // ENTIRE item's playlist (same segment count and total duration as
+        // a session with no start time), and its segment N holds absolute
+        // [N*duration, (N+1)*duration) -- ffprobe put segment 8 of a
+        // session started at 1101s at 24.0s, and its segment 375 at
+        // 1125.0s. With the offset applied, asking for absolute segment 5
+        // here fetched the behind session's index 0 -- content from a
+        // completely different part of the video.
+        const behindSegments = Array.from({ length: 8 }, (_, i) => ({
+            index: i,
+            url: `https://jellyfin.example.com/behind/seg${i}.m4s`,
+            duration: 3,
+            startTime: i * 3,
+            endTime: (i + 1) * 3,
+        }));
         const fetcher = new SegmentFetcher({
             initSegmentUrl: 'https://jellyfin.example.com/videos/init.mp4',
             segments: Array.from({ length: 8 }, (_, i) => ({
@@ -341,17 +356,182 @@ describe('SegmentFetcher dual-session anchor routing', () => {
             })),
         });
         fetcher.setAnchorSegmentIndex(6);
-        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, indexOffset);
+        // Behind session's transcode began at 9s (absolute segment 3).
+        fetcher.setBehindSession(behindSegments, 9);
 
         await fetcher.fetchSegment(5);
 
-        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg5.m4s', expect.anything());
+    });
+
+    test('does not route to the behind session for indices EARLIER than its own transcode start', async () => {
+        // Asking a session for a segment before where its ffmpeg process
+        // started means asking it to seek backward, which Jellyfin answers
+        // by killing and restarting that session's job -- the exact cost
+        // the dual-session design exists to avoid. Such an index is a
+        // coverage gap: the caller is expected to skip it and wait for the
+        // behind session to be re-anchored further back.
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+        // Behind session started at 3s, so absolute segment 0 (0-3s) predates it.
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 3);
+
+        expect(fetcher.isBehindCoverageGap(0)).toBe(true);
+        expect(fetcher.isBehindCoverageGap(1)).toBe(false);
+
+        await fetcher.fetchSegment(1);
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/behind/seg1.m4s', expect.anything());
+    });
+
+    test('reports no coverage gap at or above the anchor, or when no behind session is installed', async () => {
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+
+        // No behind session yet -- nothing is a gap, everything is the forward session's.
+        expect(fetcher.isBehindCoverageGap(0)).toBe(false);
+
+        fetcher.setAnchorSegmentIndex(1);
+        fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 3);
+
+        // Index 2 is at/above the anchor -- the forward session serves it, no gap.
+        expect(fetcher.isBehindCoverageGap(2)).toBe(false);
+    });
+
+    test('routes to the tightest-fitting behind session when several cover the same index', async () => {
+        // Two behind sessions tile the region behind the playhead: a close
+        // one just behind it, and an extended one owning the deeper
+        // section. Both may technically list a given index, but the one
+        // that STARTED LATEST has the least left to produce before
+        // reaching it, so it is the one most likely to already have it on
+        // disk -- and an already-written segment serves in ~59ms against
+        // the real server, versus a multi-second restart otherwise.
+        const closeSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/close/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/close/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/close/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+        const extendedSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/extended/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/extended/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/extended/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+        fetcher.setBehindSessions([
+            { segments: extendedSegments, startTimeSeconds: 0 }, // deep section
+            { segments: closeSegments, startTimeSeconds: 3 }, // just behind the playhead
+        ]);
+
+        // Segment 1 (3-6s) is reachable by both; the close session started
+        // latest at 3s, so it wins.
+        await fetcher.fetchSegment(1);
+        expect(global.fetch).toHaveBeenCalledWith('https://jellyfin.example.com/close/seg1.m4s', expect.anything());
+
+        // Segment 0 (0-3s) predates the close session, so only the
+        // extended one can serve it without seeking backward.
+        await fetcher.fetchSegment(0);
+        expect(global.fetch).toHaveBeenLastCalledWith('https://jellyfin.example.com/extended/seg0.m4s', expect.anything());
+    });
+
+    test('reports a coverage gap only when NO behind session can reach an index', async () => {
+        const behindSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/behind/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/behind/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/behind/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+
+        // Only a deep session: index 0 is covered, so no gap.
+        fetcher.setBehindSessions([{ segments: behindSegments, startTimeSeconds: 0 }]);
+        expect(fetcher.isBehindCoverageGap(0)).toBe(false);
+
+        // Only a close session starting at 3s: index 0 (0-3s) predates it.
+        fetcher.setBehindSessions([{ segments: behindSegments, startTimeSeconds: 3 }]);
+        expect(fetcher.isBehindCoverageGap(0)).toBe(true);
+
+        // Adding the deep session back closes that gap.
+        fetcher.setBehindSessions([
+            { segments: behindSegments, startTimeSeconds: 3 },
+            { segments: behindSegments, startTimeSeconds: 0 },
+        ]);
+        expect(fetcher.isBehindCoverageGap(0)).toBe(false);
+    });
+
+    test('counts in-flight fetches per live session, not globally', async () => {
+        // The concurrency ceiling exists because concurrent requests race
+        // a transcoder restart against each other WITHIN one session.
+        // Separate sessions are separate ffmpeg jobs, so counting globally
+        // would split one slot across them and buy no extra throughput.
+        let resolveFetch;
+        global.fetch = jest.fn(
+            () =>
+                new Promise((resolve) => {
+                    resolveFetch = () => resolve({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) });
+                }),
+        );
+
+        const behindSegments = [
+            { index: 0, url: 'https://jellyfin.example.com/behind/seg0.m4s', duration: 3, startTime: 0, endTime: 3 },
+            { index: 1, url: 'https://jellyfin.example.com/behind/seg1.m4s', duration: 3, startTime: 3, endTime: 6 },
+            { index: 2, url: 'https://jellyfin.example.com/behind/seg2.m4s', duration: 3, startTime: 6, endTime: 9 },
+        ];
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+        fetcher.setBehindSessions([{ segments: behindSegments, startTimeSeconds: 0 }]);
+
+        fetcher.ensureRawBytes(0).catch(() => {}); // behind session
+        fetcher.ensureRawBytes(2).catch(() => {}); // forward session (at the anchor)
+
+        // One in flight on each session, not two on one.
+        expect(fetcher.getInFlightFetchCountForSession(0)).toBe(1);
+        expect(fetcher.getInFlightFetchCountForSession(2)).toBe(1);
+        expect(fetcher.getInFlightFetchCount()).toBe(2);
+
+        resolveFetch();
+    });
+
+    test('keeps counting an in-flight fetch against the session it was LAUNCHED on, even after routing changes', async () => {
+        // Confirmed live as a 500: segment 213 was in flight on the
+        // behind@seg210 session when the close session re-anchored, which
+        // changed what 213 would resolve to NOW. Re-deriving the session for
+        // each in-flight fetch therefore misattributed 213, so segment 211
+        // was allowed onto seg210's session as a second concurrent request
+        // -- and that pair raced a transcoder restart, killing 213.
+        global.fetch = jest.fn(() => new Promise(() => {})); // never resolves; stays in flight
+
+        const deepSegments = SEGMENT_INDEX.segments.map((segment) => ({
+            ...segment,
+            url: `https://jellyfin.example.com/deep/seg${segment.index}.m4s`,
+        }));
+        const fetcher = new SegmentFetcher(SEGMENT_INDEX);
+        fetcher.setAnchorSegmentIndex(2);
+        fetcher.setBehindSessions([{ segments: deepSegments, startTimeSeconds: 0 }]);
+
+        fetcher.ensureRawBytes(1).catch(() => {});
+        expect(fetcher.getInFlightFetchCountForSession(1)).toBe(1);
+
+        // A closer behind session is installed while that fetch is still in
+        // flight, so index 1 would now resolve to the NEW session.
+        const closeSegments = SEGMENT_INDEX.segments.map((segment) => ({
+            ...segment,
+            url: `https://jellyfin.example.com/close/seg${segment.index}.m4s`,
+        }));
+        fetcher.setBehindSessions([
+            { segments: deepSegments, startTimeSeconds: 0 },
+            { segments: closeSegments, startTimeSeconds: 3 },
+        ]);
+
+        // The in-flight fetch still counts against the deep session it was
+        // launched on, so index 0 (which only the deep session can serve)
+        // correctly sees that session as busy.
+        expect(fetcher.getInFlightFetchCountForSession(0)).toBe(1);
     });
 
     test('falls back to the ordinary url when the behind session does not (yet) cover a below-anchor index', async () => {
         const fetcher = new SegmentFetcher(SEGMENT_INDEX);
         fetcher.setAnchorSegmentIndex(1);
-        // Behind session's own list is empty at this index (offset points past its own array bounds).
+        // Behind session's own list is empty -- it lists no index at all yet.
         fetcher.setBehindSession([], 0);
 
         await fetcher.fetchSegment(0);
@@ -393,13 +573,15 @@ describe('SegmentFetcher dual-session anchor routing', () => {
         expect(global.fetch).toHaveBeenCalledTimes(1); // no new fetch -- the cached bytes were reused
     });
 
-    test('re-fetches when the SAME index resolves through two DIFFERENT behind sessions (genuinely different content)', async () => {
-        // Regression test for the real bug: two behind sessions negotiated
-        // at different times use different index offsets, so the same
-        // absolute index maps to a different real time position across
-        // them -- confirmed live as a segment whose presented content
-        // silently didn't match its own timecode (raw frame timestamp far
-        // off from the scheduler's own mediaTime for that segment).
+    test('does NOT re-fetch when the same index resolves through two DIFFERENT behind sessions (identical content)', async () => {
+        // The inverse of what this test used to assert. It previously
+        // evicted here, on the theory that each behind session had its own
+        // index offset and so the same absolute index mapped to different
+        // real content across them. Segment indices are absolute in every
+        // session, so index N is the SAME real time range no matter which
+        // session's url fetched it -- and evicting on re-anchor threw away
+        // large runs of perfectly good cached segments, which is the
+        // unexplained mass-eviction behavior that was reported live.
         global.fetch = jest.fn(async (url) => ({
             ok: true,
             status: 200,
@@ -418,14 +600,13 @@ describe('SegmentFetcher dual-session anchor routing', () => {
         expect(new TextDecoder().decode(firstBehindBuffer)).toBe('https://jellyfin.example.com/behind-earlier/seg0.m4s');
         expect(global.fetch).toHaveBeenCalledTimes(1);
 
-        // A different behind session (different negotiation, different
-        // offset) is installed while the anchor stays put -- index 0 now
-        // maps to genuinely different real content.
+        // The behind session is re-anchored (a new negotiation, different
+        // urls) while the anchor stays put -- index 0 still holds the same
+        // real content, so the cached bytes must be reused as-is.
         fetcher.setBehindSession(BEHIND_SESSION_SEGMENTS, 0);
 
         const secondBehindBuffer = await fetcher.fetchSegment(0);
-        expect(new TextDecoder().decode(secondBehindBuffer)).toBe('https://jellyfin.example.com/behind/seg0.m4s');
-        expect(global.fetch).toHaveBeenCalledTimes(2);
-        expect(global.fetch).toHaveBeenLastCalledWith('https://jellyfin.example.com/behind/seg0.m4s', expect.anything());
+        expect(new TextDecoder().decode(secondBehindBuffer)).toBe('https://jellyfin.example.com/behind-earlier/seg0.m4s');
+        expect(global.fetch).toHaveBeenCalledTimes(1); // no re-fetch, no eviction
     });
 });
