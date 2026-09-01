@@ -101,6 +101,23 @@ class SessionController {
     }
 
     /**
+     * Fetch every session in a project with the detail a session browser
+     * needs: the processor, the observation count, and the videos those
+     * observations name.
+     *
+     * @async
+     * @param {number|string} project_id - Identifier of the project to list.
+     * @returns {Promise<Array<Object>>} Session records ordered by dive,
+     * then line, then type, each with `user`, `observationCount` and
+     * `video_sources`. Resolves to an empty array when the project has no
+     * sessions or the underlying query fails.
+     */
+    async getSessionsWithDetailByProjectID(project_id){
+        logger.info('Controller: getSessionsWithDetailByProjectID');
+        return await sessionService.getSessionsWithDetailByProjectID(project_id);
+    }
+
+    /**
      * Fetch every session belonging to a given user within a given project.
      *
      * @async

@@ -166,6 +166,106 @@ class SessionRepository {
     }
 
     /**
+     * Fetch every session in a project with the detail a session browser
+     * needs to list them without a processor being chosen first.
+     *
+     * Beyond the session's own columns this carries the processor (from the
+     * joined user), how many observations were recorded against the session,
+     * and which videos those observations name. `video_source` lives on the
+     * observation rather than the session, so it can only be derived; a
+     * session whose observations name more than one video reports all of
+     * them rather than picking one arbitrarily.
+     *
+     * The two aggregates are separate grouped queries rather than part of
+     * the main one, so listing a project costs three round trips whatever
+     * its size, instead of one per session. Joining them in would also
+     * multiply the session rows and make the ordering meaningless.
+     *
+     * Database errors are logged and converted to an empty array, as
+     * elsewhere in this class, so callers cannot distinguish "no sessions"
+     * from "the query failed".
+     *
+     * @async
+     * @param {number|string} project_id - Identifier of the project to list.
+     * @returns {Promise<Array<Object>>} Session records ordered by dive,
+     * then line, then type. Each carries its associated `user`, an
+     * `observationCount`, and a `video_sources` array. Returns an empty
+     * array when the project has no sessions or the query fails.
+     */
+    async getSessionsWithDetailByProjectID(project_id) {
+        try {
+            const sessions = await this.db.sessions.findAll({
+                include: [{
+                    model: this.db.users, as: "user",
+                    // Left join deliberately: a session with no processor
+                    // recorded should still appear under its dive rather
+                    // than disappear from the list.
+                    required: false
+                }],
+                where: {
+                    project_id: project_id
+                },
+                order: [['dive', 'ASC'], ['line', 'ASC'], ['type', 'ASC']]
+            });
+
+            if (sessions.length === 0) {
+                return [];
+            }
+
+            const sessionIds = sessions.map(session => session.session_id);
+
+            const counts = await this.db.observations.findAll({
+                attributes: [
+                    'session_id',
+                    [Sequelize.fn('COUNT', Sequelize.col('observation_id')), 'observationCount']
+                ],
+                where: {
+                    session_id: { [Sequelize.Op.in]: sessionIds }
+                },
+                group: ['session_id'],
+                raw: true
+            });
+
+            const sources = await this.db.observations.findAll({
+                attributes: ['session_id', 'video_source'],
+                where: {
+                    session_id: { [Sequelize.Op.in]: sessionIds },
+                    video_source: { [Sequelize.Op.ne]: null }
+                },
+                group: ['session_id', 'video_source'],
+                order: [['video_source', 'ASC']],
+                raw: true
+            });
+
+            // COUNT comes back as a string from postgres, so it is coerced
+            // here rather than leaving the caller to guess at the type.
+            const countBySession = new Map(
+                counts.map(row => [row.session_id, Number(row.observationCount)])
+            );
+
+            const sourcesBySession = new Map();
+            for (const row of sources) {
+                // Empty strings survive the IS NOT NULL filter and are not
+                // a video anyone can open.
+                if (!row.video_source) continue;
+                if (!sourcesBySession.has(row.session_id)) {
+                    sourcesBySession.set(row.session_id, []);
+                }
+                sourcesBySession.get(row.session_id).push(row.video_source);
+            }
+
+            return sessions.map(session => ({
+                ...session.toJSON(),
+                observationCount: countBySession.get(session.session_id) || 0,
+                video_sources: sourcesBySession.get(session.session_id) || []
+            }));
+        } catch (err) {
+            logger.error('Error::' + err);
+            return [];
+        }
+    }
+
+    /**
      * Fetch every session belonging to a given user within a given project.
      *
      * Database errors are logged and converted to an empty array. As a

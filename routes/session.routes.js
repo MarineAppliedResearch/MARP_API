@@ -121,6 +121,39 @@ function registerSessionRoutes(app) {
     });
 
     registerOpenApiRoute(app, {
+        method: 'get',
+        path: '/api/sessions/project/:projectID',
+        summary: 'Fetch every session in a project, with browser detail',
+        description:
+            'Returns every session in the project, ordered by dive, then line, then type, so a client can group them under their dive without sorting first. Each session carries its processor, how many observations were recorded against it, and the videos those observations name. Unlike GET /api/sessions/user/{userID}/project/{projectID} this does not require a processor to be chosen first, which is what lets a reviewer browse a dive whoever worked on it.',
+        tags: ['V1 · Sessions'],
+        parameters: [
+            {
+                in: 'path',
+                name: 'projectID',
+                required: true,
+                schema: { type: 'integer' },
+                description: 'Identifier of the project whose sessions should be listed.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'Session records returned successfully. An empty array when the project has no sessions.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/SessionWithDetail' } },
+                    },
+                },
+            },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await sessionController.getSessionsWithDetailByProjectID(req.params.projectID);
+            res.json(data);
+        }),
+    });
+
+    registerOpenApiRoute(app, {
         method: 'post',
         path: '/api/session',
         summary: 'Create a new session',

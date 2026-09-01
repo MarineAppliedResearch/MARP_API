@@ -1578,6 +1578,48 @@ const buildOpenApiSpec = () => {
                     },
 
                     /**
+                     * Extends the generated `Session` schema with the joined
+                     * processor and the two derived counts the session browser
+                     * lists. None of it is derivable from the sessions model
+                     * alone -- `video_source` is a column on observations, not
+                     * sessions -- so it is hand-written here rather than
+                     * generated (see model/session.model.js).
+                     */
+                    SessionWithDetail: {
+                        allOf: [
+                            { $ref: '#/components/schemas/Session' },
+                            {
+                                type: 'object',
+                                description:
+                                    'Session response carrying the processor who ran it plus the observation count and video sources derived from its observations. Served by GET /api/sessions/project/{projectID}.',
+                                properties: {
+                                    user: {
+                                        allOf: [{ $ref: '#/components/schemas/User' }],
+                                        nullable: true,
+                                        description:
+                                            'The processor who ran this session. Null when the session has no user_id, since sessions.user_id is nullable and such a session still belongs in the list.',
+                                    },
+                                    observationCount: {
+                                        type: 'integer',
+                                        minimum: 0,
+                                        example: 143,
+                                        description: 'How many observations were recorded against this session. Zero for a session that was opened but never annotated.',
+                                    },
+                                    video_sources: {
+                                        type: 'array',
+                                        description:
+                                            "Distinct, non-empty video_source values across this session's observations, sorted. Usually one entry; more than one means the session's observations name several videos. Empty when the session has no observations, or none of them recorded a video source.",
+                                        items: {
+                                            type: 'string',
+                                            example: '20251007_164658 Fwd.mp4',
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+
+                    /**
                      * The three schemas below extend the generated `Observation` schema
                      * with association data (keyframes, session, datasets) that Sequelize
                      * attaches only when a query's `include` asks for it. They aren't
