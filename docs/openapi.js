@@ -217,6 +217,16 @@ const GENERATED_SCHEMAS = [
         propertyDescriptions: {},
     },
     {
+        modelKey: 'species_pictures',
+        schemaName: 'SpeciesPicture',
+        description:
+            'One picture of one species. The bytes are on disk rather than in the database, so `filename` is a path relative to the picture storage directory; fetch the image itself from GET /api/species/pictures/{pictureId}.',
+        propertyDescriptions: {
+            created_at: 'Timestamp when the picture record was created.',
+            updated_at: 'Timestamp when the picture record was last updated.',
+        },
+    },
+    {
         modelKey: 'observations',
         schemaName: 'Observation',
         description:
@@ -1613,6 +1623,31 @@ const buildOpenApiSpec = () => {
                                             type: 'string',
                                             example: '20251007_164658 Fwd.mp4',
                                         },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+
+                    /**
+                     * Extends the generated `Species` schema with its pictures, which
+                     * Sequelize attaches only when a query includes them. Served by the
+                     * annotation-list endpoints, since a client listing species for
+                     * annotation wants the picture alongside the name rather than a
+                     * second request per row.
+                     */
+                    SpeciesWithPictures: {
+                        allOf: [
+                            { $ref: '#/components/schemas/Species' },
+                            {
+                                type: 'object',
+                                description: 'Species response including the pictures recorded for it.',
+                                properties: {
+                                    pictures: {
+                                        type: 'array',
+                                        description:
+                                            'Pictures recorded for this species. Usually one, occasionally two, and empty for an entry with none. Exactly one carries is_default = true where any exist.',
+                                        items: { $ref: '#/components/schemas/SpeciesPicture' },
                                     },
                                 },
                             },

@@ -72,6 +72,12 @@ module.exports = (sequelize, DataTypes) => {
         as: 'metrics_curves',
         foreignKey: 'species_id',
       });
+
+      // A species can have several pictures, one of which is its default.
+      this.hasMany(models.species_pictures, {
+        as: 'pictures',
+        foreignKey: 'species_id',
+      });
     }
   }
 
@@ -100,6 +106,35 @@ module.exports = (sequelize, DataTypes) => {
         jsonSchema: {
             description: 'Internal MARP taxonomy serial number used as a unique ID across systems.',
             examples: [1054],
+        },
+      },
+
+      species_list: {
+        // Which annotation list this entry belongs to. Part of the identity of
+        // a row: taxserial alone does not identify one, because codes below
+        // 10000 are local to a list and reused across lists (taxserial 55 is a
+        // rockfish complex on Fish, a coral on GULF_Inverts and metal debris on
+        // MarineDebris).
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        comment:
+          "Which annotation list this entry belongs to (e.g. 'Fish', 'GULF_Inverts'). Together with taxserial this identifies an entry.",
+        jsonSchema: {
+            description: 'Which annotation list this entry belongs to. Unique together with taxserial.',
+            examples: ['Fish'],
+        },
+      },
+
+      itis_tsn: {
+        // The real ITIS serial, where taxserial happens to be one. Lets the
+        // same taxon be recognised across lists, which taxserial cannot do.
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'ITIS taxonomic serial number, when taxserial is genuinely one. Null for local per-list codes.',
+        jsonSchema: {
+            description: 'ITIS taxonomic serial number, when taxserial is genuinely one. Null for local per-list codes.',
+            examples: [169237],
         },
       },
 
@@ -144,38 +179,42 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       gui_main_tab_order: {
-        // Display order number of the main tab
-        type: DataTypes.INTEGER,
+        // Display order number of the main tab. A string, not a number: the
+        // GUI's layout encoding allows one row to place a species in several
+        // spots, and then this holds one slot per placement (e.g. '2_2').
+        type: DataTypes.STRING(255),
         allowNull: true,
         comment:
           'Order number for the main tab this item belongs to (controls tab sequencing).',
         jsonSchema: {
             description: 'Order number for the main tab this item belongs to.',
-            examples: [2],
+            examples: ['2', '2_2'],
         },
       },
 
       gui_sub_tab_order: {
-        // Display order within the subtab group
-        type: DataTypes.INTEGER,
+        // Display order within the subtab group. A string for the same reason
+        // as gui_main_tab_order -- may hold one slot per placement.
+        type: DataTypes.STRING(255),
         allowNull: true,
         comment:
           'Order number for the sub-tab this item belongs to (controls layout within a tab).',
         jsonSchema: {
             description: 'Order number for the sub-tab this item belongs to.',
-            examples: [5],
+            examples: ['5', '1_2'],
         },
       },
 
       gui_item_order: {
-        // Display order within the main/subtab group
-        type: DataTypes.INTEGER,
+        // Display order within the main/subtab group. A string for the same
+        // reason as gui_main_tab_order -- may hold one slot per placement.
+        type: DataTypes.STRING(255),
         allowNull: true,
         comment:
           'Position of this species within its GUI sub-tab group.',
         jsonSchema: {
             description: 'Position of this species within its GUI sub-tab group.',
-            examples: [12],
+            examples: ['12', '17_4'],
         },
       },
 
@@ -291,6 +330,54 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      region: {
+        // Geographic range code. Present on four of the seven lists.
+        type: DataTypes.STRING(32),
+        allowNull: true,
+        comment:
+          "Geographic range code for this entry, e.g. 'AK-SCA', 'NCA-Baja'.",
+        jsonSchema: {
+            description: 'Geographic range code for this entry.',
+            examples: ['NCA-Baja'],
+        },
+      },
+
+      likelihood: {
+        // How likely this species is to be seen. Fish list only.
+        type: DataTypes.STRING(32),
+        allowNull: true,
+        comment:
+          "How likely this species is to be encountered: 'Common', 'Uncommon' or 'No data'. Populated on the Fish list only.",
+        jsonSchema: {
+            description: 'How likely this species is to be encountered. Populated on the Fish list only.',
+            examples: ['Common'],
+        },
+      },
+
+      max_size: {
+        // Maximum recorded size in centimetres. Fish list only.
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Maximum recorded size for this species, in centimetres. Populated on the Fish list only.',
+        jsonSchema: {
+            description: 'Maximum recorded size for this species, in centimetres.',
+            examples: [48],
+        },
+      },
+
+      record_max: {
+        // Record maximum size in centimetres. Fish list only.
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Record maximum size for this species, in centimetres. Populated on the Fish list only.',
+        jsonSchema: {
+            description: 'Record maximum size for this species, in centimetres.',
+            examples: [54],
+        },
+      },
+
       notes: {
         // Additional notes or remarks
         type: DataTypes.TEXT,
@@ -347,9 +434,17 @@ module.exports = (sequelize, DataTypes) => {
           fields: ['id'],
         },
         {
-          name: 'species_taxserial_idx',    // enforces one record per taxonomic serial number
+          // An entry is identified by its list plus its taxserial, not by
+          // taxserial alone: values below 10000 are local codes invented per
+          // list and reused across lists, so 59 taxserials legitimately appear
+          // more than once. This replaced a UNIQUE index on taxserial alone.
+          name: 'species_list_taxserial_unique',
           unique: true,
-          fields: ['taxserial'],
+          fields: ['species_list', 'taxserial'],
+        },
+        {
+          name: 'species_species_list_idx', // speeds up serving one list
+          fields: ['species_list'],
         },
         {
           name: 'species_comname_idx',      // speeds up lookups by common name

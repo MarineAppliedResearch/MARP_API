@@ -80,6 +80,14 @@ module.exports = (sequelize, DataTypes) => {
                 as: 'session',
             });
 
+            // Connect each observation to its species catalogue entry, where
+            // one could be resolved.
+            this.belongsTo(models.species, {
+                sourceKey: 'id',
+                foreignKey: 'species_id',
+                as: 'speciesEntry',
+            });
+
             // Connect each observation to its frame-specific keyframe records.
             this.hasMany(models.keyframes, {
                 sourceKey: 'observation_id',
@@ -207,8 +215,22 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.INTEGER,
                 allowNull: true,
                 jsonSchema: {
-                    description: 'Taxonomic serial identifier associated with the observation.',
+                    description: 'Taxonomic serial identifier associated with the observation. Not a key on its own: values below 10000 are local codes reused across annotation lists, which is why species_id exists.',
                     examples: [1054],
+                },
+            },
+
+            // Foreign key to the species catalogue, resolved from taxserial
+            // plus the owning session's type. Nullable because about 4% of
+            // historical observations name a taxserial that is no longer on
+            // their list; comname stays the record of what was chosen.
+            species_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: { model: 'species', key: 'id' },
+                jsonSchema: {
+                    description: 'Identifier of the species catalogue entry this observation records. Null where taxserial could not be resolved to a current list entry.',
+                    examples: [412],
                 },
             },
 

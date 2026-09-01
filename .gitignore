@@ -106,3 +106,6 @@ playwright-report/
 
 # TernJS port file
 .tern-port
+
+# Runtime species picture storage -- populated by migration from seed-data/species/images/
+storage/

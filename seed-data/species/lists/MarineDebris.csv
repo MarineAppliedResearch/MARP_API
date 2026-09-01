@@ -1,0 +1,47 @@
+taxserial,COMNAME,GUI_HomeOrder,GUI_MainTab,GUI_SubTab,GUI_MainTabOrder,GUI_SubTabOrder,GUI_ItemOrder,GUI_DisplayName,ReportGroup
+2,Line,1,Fishing,Fishing,1,1,1,Line,Fishing
+22,Rod & Reel,2,Fishing,Fishing,1,1,2,Rod & Reel,Fishing
+31,Net,3,Fishing,Fishing,1,1,3,Net,Fishing
+33,Pot/Trap,4,Fishing,Fishing,1,1,4,Trap,Fishing
+35,Rigid net attachment,5,Fishing,Fishing,1,1,5,Rigid net att.,Fishing
+36,Accessory item,6,Fishing,Fishing,1,1,6,Fishing Accessory,Fishing
+37,Other,,Fishing,Fishing,1,1,7,Other fishing,Fishing
+,,,,,,,,,
+40,Anchor,7,Anchoring,Anchoring,2,1,1,Anchor,Anchor
+43,Rope/cable,8,Anchoring,Anchoring,2,1,2,Rope/cable,Rope and Cable
+44,Chain,9,Anchoring,Anchoring,2,1,3,Chain,Chain
+,,,,,,,,,
+52,Drum/barrel,10,Industry and Extraction,Industry and Extraction,3,1,3,Drum/barrel,Industry and Extraction
+53,Pipe (piece),11,Industry and Extraction,Industry and Extraction,3,1,1,Pipe (piece),Industry and Extraction
+54,Pipeline,12,Industry and Extraction,Industry and Extraction,3,1,2,Pipeline,Industry and Extraction
+55,Metal structure,13,Industry and Extraction,Industry and Extraction,3,1,4,Metal structure,Industry and Extraction
+56,Other,,Industry and Extraction,Industry and Extraction,3,1,5,Other Industry,Industry and Extraction
+,,,,,,,,,
+75,Wreck,14,Vessel,Vessel,4,1,1,Wreck,Vessel
+76,Mechanical/electrical item,15,Vessel,Vessel,4,1,2,Mechanical/elec. Vessel,Vessel
+77,Accessory item,16,Vessel,Vessel,4,1,3,Accessory item Vessel,Vessel
+78,Other,,Vessel,Vessel,4,1,4,Other Vessel,Vessel
+,,,,,,,,,
+81,Can,17,Land-Based ,Land-Based ,5,1,1,Can,Land-Based and Everyday Use
+83,Tire,18,Land-Based ,Land-Based ,5,1,2,Tire,Land-Based and Everyday Use
+85,Plastic bag/sheet,19,Land-Based ,Land-Based ,5,1,3,Plastic bag/sheet,Land-Based and Everyday Use
+86,Plastic bottle/carton,20,Land-Based ,Land-Based ,5,1,4,Plastic bottle/carton,Land-Based and Everyday Use
+87,Bucket/crate/bin,21,Land-Based ,Land-Based ,5,1,5,Bucket/crate/bin,Land-Based and Everyday Use
+88,Polystyrene (Styrofoam),22,Land-Based ,Land-Based ,5,1,6, (Styrofoam),Land-Based and Everyday Use
+89,Glass or ceramic bottle/jar,23,Land-Based ,Land-Based ,5,1,7,Glass/ceramic bottle/jar,Land-Based and Everyday Use
+180,Textile,24,Land-Based ,Land-Based ,5,1,8,Textile,Land-Based and Everyday Use
+181,Shoe,25,Land-Based ,Land-Based ,5,1,9,Shoe,Land-Based and Everyday Use
+182,Wood item,26,Land-Based ,Land-Based ,5,1,10,Wood item,Land-Based and Everyday Use
+183,Paper/cardboard,27,Land-Based ,Land-Based ,5,1,11,Paper/cardboard,Land-Based and Everyday Use
+184,Medical/sanitary item,28,Land-Based ,Land-Based ,5,1,12,Medical/sanitary item,Land-Based and Everyday Use
+185,Construction/industrial material,29,Land-Based ,Land-Based ,5,1,13,Construction material,Land-Based and Everyday Use
+186,Mechanical/electrical item,30,Land-Based ,Land-Based ,5,1,14,Mechanical/ele. Land,Land-Based and Everyday Use
+187,Other,,Land-Based ,Land-Based ,5,1,15,Other Land-Base,Land-Based and Everyday Use
+,,,,,,,,,
+92,Lost/ abandoned/ or irretrievable instrument/marker,31,Science and Research,Science and Research,6,1,1,Lost instrument,Science and Research
+93,In-use instrument/marker,32,Science and Research,Science and Research,6,1,2,In-use instrument,Science and Research
+94,Other,,Science and Research,Science and Research,6,1,3,Other Science ,Science and Research
+,,,,,,,,,
+100,Other,,Other,Other,7,1,1,Other Other,Other
+101,Unidentified,,Other,Other,7,1,2,Unidentified,Unidentified
+102,Bottom Impact,33,Other,Other,7,1,3,Bottom Impact,Bottom Impact
