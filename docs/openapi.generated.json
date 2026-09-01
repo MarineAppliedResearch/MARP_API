@@ -1395,6 +1395,62 @@
           }
         }
       },
+      "SessionWithDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Session"
+          },
+          {
+            "type": "object",
+            "description": "Session response carrying the processor who ran it plus the observation count and video sources derived from its observations. Served by GET /api/sessions/project/{projectID}.",
+            "properties": {
+              "user": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/User"
+                  }
+                ],
+                "nullable": true,
+                "description": "The processor who ran this session. Null when the session has no user_id, since sessions.user_id is nullable and such a session still belongs in the list."
+              },
+              "observationCount": {
+                "type": "integer",
+                "minimum": 0,
+                "example": 143,
+                "description": "How many observations were recorded against this session. Zero for a session that was opened but never annotated."
+              },
+              "video_sources": {
+                "type": "array",
+                "description": "Distinct, non-empty video_source values across this session's observations, sorted. Usually one entry; more than one means the session's observations name several videos. Empty when the session has no observations, or none of them recorded a video source.",
+                "items": {
+                  "type": "string",
+                  "example": "20251007_164658 Fwd.mp4"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SpeciesWithPictures": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Species"
+          },
+          {
+            "type": "object",
+            "description": "Species response including the pictures recorded for it.",
+            "properties": {
+              "pictures": {
+                "type": "array",
+                "description": "Pictures recorded for this species. Usually one, occasionally two, and empty for an entry with none. Exactly one carries is_default = true where any exist.",
+                "items": {
+                  "$ref": "#/components/schemas/SpeciesPicture"
+                }
+              }
+            }
+          }
+        ]
+      },
       "ObservationWithKeyframes": {
         "allOf": [
           {
@@ -3000,6 +3056,19 @@
             "description": "Internal MARP taxonomy serial number used as a unique ID across systems.",
             "example": 1054
           },
+          "species_list": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true,
+            "description": "Which annotation list this entry belongs to. Unique together with taxserial.",
+            "example": "Fish"
+          },
+          "itis_tsn": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ITIS taxonomic serial number, when taxserial is genuinely one. Null for local per-list codes.",
+            "example": 169237
+          },
           "gui_home_order": {
             "type": "string",
             "nullable": true,
@@ -3019,22 +3088,25 @@
             "example": "Sea Stars"
           },
           "gui_main_tab_order": {
-            "type": "integer",
+            "type": "string",
+            "maxLength": 255,
             "nullable": true,
             "description": "Order number for the main tab this item belongs to.",
-            "example": 2
+            "example": "2"
           },
           "gui_sub_tab_order": {
-            "type": "integer",
+            "type": "string",
+            "maxLength": 255,
             "nullable": true,
             "description": "Order number for the sub-tab this item belongs to.",
-            "example": 5
+            "example": "5"
           },
           "gui_item_order": {
-            "type": "integer",
+            "type": "string",
+            "maxLength": 255,
             "nullable": true,
             "description": "Position of this species within its GUI sub-tab group.",
-            "example": 12
+            "example": "12"
           },
           "gui_display_name": {
             "type": "string",
@@ -3091,6 +3163,32 @@
             "nullable": true,
             "description": "Habitat preference or substrate association.",
             "example": "Rocky"
+          },
+          "region": {
+            "type": "string",
+            "maxLength": 32,
+            "nullable": true,
+            "description": "Geographic range code for this entry.",
+            "example": "NCA-Baja"
+          },
+          "likelihood": {
+            "type": "string",
+            "maxLength": 32,
+            "nullable": true,
+            "description": "How likely this species is to be encountered. Populated on the Fish list only.",
+            "example": "Common"
+          },
+          "max_size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Maximum recorded size for this species, in centimetres.",
+            "example": 48
+          },
+          "record_max": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Record maximum size for this species, in centimetres.",
+            "example": 54
           },
           "notes": {
             "type": "string",
@@ -3637,6 +3735,92 @@
         ],
         "description": "Per-epoch performance and timing data captured during a single training run, including loss values and precision/recall/mAP metrics recorded at the end of that epoch."
       },
+      "SpeciesPicture": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Unique identifier for this picture.",
+            "readOnly": true,
+            "example": 1204
+          },
+          "species_id": {
+            "type": "integer",
+            "description": "Identifier of the species this picture depicts.",
+            "example": 412
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Path relative to the picture storage directory.",
+            "example": "412-1.png"
+          },
+          "original_name": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true,
+            "description": "Filename as supplied. For the imported set this keeps the GUI's original name, which is the only record of how the picture was matched to its species.",
+            "example": "Barred Sand Bass_167834_FI20200619.png"
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "MIME type, used as the Content-Type when serving the file.",
+            "example": "image/png"
+          },
+          "byte_size": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Size of the file in bytes.",
+            "example": 76543
+          },
+          "width": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Width in pixels. Uploads are resized to 244, the width the annotation GUI's species buttons are built around.",
+            "example": 244
+          },
+          "height": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Height in pixels. Varies with the source image's aspect ratio.",
+            "example": 176
+          },
+          "is_default": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether this is the picture to show when only one is wanted. At most one per species.",
+            "example": true
+          },
+          "uploaded_by": {
+            "type": "integer",
+            "nullable": true,
+            "description": "User who uploaded this picture. Null for the imported set.",
+            "example": 8
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the picture record was created."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the picture record was last updated."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "species_id",
+          "filename",
+          "content_type",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "description": "One picture of one species. The bytes are on disk rather than in the database, so `filename` is a path relative to the picture storage directory; fetch the image itself from GET /api/species/pictures/{pictureId}."
+      },
       "Observation": {
         "type": "object",
         "properties": {
@@ -3694,8 +3878,14 @@
           "taxserial": {
             "type": "integer",
             "nullable": true,
-            "description": "Taxonomic serial identifier associated with the observation.",
+            "description": "Taxonomic serial identifier associated with the observation. Not a key on its own: values below 10000 are local codes reused across annotation lists, which is why species_id exists.",
             "example": 1054
+          },
+          "species_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Identifier of the species catalogue entry this observation records. Null where taxserial could not be resolved to a current list entry.",
+            "example": 412
           },
           "comname": {
             "type": "string",
@@ -5295,6 +5485,44 @@
         }
       }
     },
+    "/sessions/project/{projectID}": {
+      "get": {
+        "summary": "Fetch every session in a project, with browser detail",
+        "description": "Returns every session in the project, ordered by dive, then line, then type, so a client can group them under their dive without sorting first. Each session carries its processor, how many observations were recorded against it, and the videos those observations name. Unlike GET /api/sessions/user/{userID}/project/{projectID} this does not require a processor to be chosen first, which is what lets a reviewer browse a dive whoever worked on it.",
+        "tags": [
+          "V1 · Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the project whose sessions should be listed."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session records returned successfully. An empty array when the project has no sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionWithDetail"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/session": {
       "post": {
         "summary": "Create a new session",
@@ -5519,6 +5747,459 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/species/lists": {
+      "get": {
+        "summary": "List the annotation species lists",
+        "description": "Returns the annotation lists a species can belong to, with how many entries each holds. Entries with no list are excluded: those are historical records kept only because machine-learning metrics reference them, and nothing should offer them for annotation.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "responses": {
+          "200": {
+            "description": "Lists returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "species_list",
+                      "entry_count"
+                    ],
+                    "properties": {
+                      "species_list": {
+                        "type": "string",
+                        "example": "GULF_Inverts",
+                        "description": "Name of the list."
+                      },
+                      "entry_count": {
+                        "type": "integer",
+                        "example": 177,
+                        "description": "How many entries the list holds."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/species/list/{list}": {
+      "get": {
+        "summary": "Fetch every entry on one annotation list",
+        "description": "Returns every entry on the named list with its pictures, ordered by main tab, then sub-tab, then item order, so a client can build its tab tree straight from the response. Entries whose item order covers several placements (an underscore-delimited value such as `17_4`) sort last within their group, because that order only means something once the client splits it.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the list, as returned by GET /api/species/lists (e.g. 'Fish')."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries returned successfully. An empty array when the list does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesWithPictures"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/species/list/{list}/search": {
+      "get": {
+        "summary": "Search one annotation list by name",
+        "description": "Case-insensitive substring search over common name, scientific name and GUI display name, scoped to one list. Scoped deliberately: a common name is not unique across the seven lists -- ITIS serial 169237 is \"UI croaker\" on Fish and \"Drum\" on GULF_Fish.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the list to search within."
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Substring to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching entries returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesWithPictures"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/species/list/{list}/taxserial/{taxserial}": {
+      "get": {
+        "summary": "Fetch one entry by list and taxserial",
+        "description": "Returns the single entry identified by a list and a taxserial. Both are needed: taxserial alone does not identify an entry, because values below 10000 are local codes invented per list and reused across lists -- taxserial 55 is a rockfish complex on Fish, a coral on GULF_Inverts and metal debris on MarineDebris.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the list the entry belongs to."
+          },
+          {
+            "in": "path",
+            "name": "taxserial",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Taxserial within that list."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeciesWithPictures"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/species/pictures/{pictureId}": {
+      "get": {
+        "summary": "Fetch a species picture",
+        "description": "Serves the picture file itself, with the Content-Type recorded for it. Responses carry a strong ETag and a long Cache-Control, because a species grid asks for a couple of hundred pictures at once and without them every tab switch re-downloads all of them. A picture never changes once stored -- a replacement is a new record with a new id -- so the ETag is derived from the record rather than the file contents.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture, from a species response or GET /api/species/{id}/pictures."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture file.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; the client's cached copy is current."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a species picture",
+        "description": "Removes the picture record and its file. If the deleted picture was the species' default and other pictures remain, the oldest remaining one becomes the default, so a species with pictures always has one -- an ambiguous default is the problem this table exists to avoid.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deleted picture record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeciesPicture"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/species/{id}/pictures": {
+      "post": {
+        "summary": "Upload pictures for a species",
+        "description": "Accepts one or more images as multipart/form-data under the field name \"pictures\", and stores each resized to 244 pixels wide with its aspect ratio kept. That width is not arbitrary: every picture inherited from the annotation GUI is exactly 244 wide, because the species buttons are laid out around it, so resizing here is what keeps an uploaded photograph consistent with the rest instead of making the uploader resize by hand. Each file is vetted before anything is written: it must decode as a real image, be at least 120x80 (below that it would have to be enlarged too far to be usable), and be no larger than 10 MB. PNG, JPEG and WebP keep their format; GIF is converted to PNG, since an animated GIF does not resize meaningfully and a button has no use for animation. The first picture a species receives becomes its default.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "species.id to attach the pictures to."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "pictures"
+                ],
+                "properties": {
+                  "pictures": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "description": "Up to 10 image files."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The pictures that were stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesPicture"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List the pictures recorded for a species",
+        "description": "Returns the picture records for one species, the default first. The bytes are fetched separately from GET /api/species/pictures/{pictureId}.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "species.id to list pictures for."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Picture records returned successfully. An empty array when the species has none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesPicture"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/species/pictures/{pictureId}/thumbnail": {
+      "get": {
+        "summary": "Fetch a small version of a species picture",
+        "description": "Serves the picture resized to 96 pixels wide, for a grid that shows a couple of hundred at once. Generated on request and cached by the client through the same immutable ETag as the full-size route, since a stored picture never changes -- a replacement is a new record with a new id.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnail.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; the client's cached copy is current."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/species/pictures/{pictureId}/default": {
+      "put": {
+        "summary": "Make a picture the species default",
+        "description": "Marks this picture as the one to show when only one is wanted, clearing whichever picture held that role before. Exactly one picture per species can be the default, so this is how the choice is changed rather than by editing the flag directly. The imported set defaulted to the alphabetically first file, which the GUI effectively chose at random.",
+        "tags": [
+          "V1 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture to make the default."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated picture record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeciesPicture"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
           }
         }
       }
