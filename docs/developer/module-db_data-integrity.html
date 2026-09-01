@@ -186,11 +186,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Count rows, live foreign keys and orphans for one moment in time.
-
-"Live" means the column is not null. A `SET NULL` cascade firing quietly is
-exactly the kind of dereferencing that leaves row counts untouched and still
-loses information, so it is counted separately from orphans.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Count rows, live foreign keys and orphans for one moment in time."Live" means the column is not null. A `SET NULL` cascade firing quietly isexactly the kind of dereferencing that leaves row counts untouched and stillloses information, so it is counted separately from orphans.</li></ul></dd>
     
 
     
@@ -456,12 +452,7 @@ loses information, so it is counted separately from orphans.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Compare two snapshots and describe what was lost.
-
-Inserting is never a problem, so only shrinkage is reported. Orphans that
-already existed before are reported as pre-existing rather than blamed on the
-migration -- otherwise a database with old inconsistencies could never be
-migrated again.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Compare two snapshots and describe what was lost.Inserting is never a problem, so only shrinkage is reported. Orphans thatalready existed before are reported as pre-existing rather than blamed on themigration -- otherwise a database with old inconsistencies could never bemigrated again.</li></ul></dd>
     
 
     
@@ -658,8 +649,7 @@ migrated again.</li></ul></dd>
 
         
 <div class="param-desc">
-    `problems` should
-abort the migration; `notes` are worth printing but not failing over.
+    `problems` shouldabort the migration; `notes` are worth printing but not failing over.
 </div>
 
 
@@ -696,11 +686,7 @@ abort the migration; `notes` are worth printing but not failing over.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Find every foreign key into or out of the given tables.
-
-Both directions matter. Outbound catches this migration's own rows losing
-their target; inbound catches this migration deleting a row that something
-else depends on, which is the more expensive mistake.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Find every foreign key into or out of the given tables.Both directions matter. Outbound catches this migration's own rows losingtheir target; inbound catches this migration deleting a row that somethingelse depends on, which is the more expensive mistake.</li></ul></dd>
     
 
     
@@ -934,12 +920,7 @@ else depends on, which is the more expensive mistake.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Run a migration's work between two integrity snapshots, and throw if anything
-was lost.
-
-Throwing is the point: a migration wrapped in this either leaves the data
-intact or does not apply at all, provided the caller runs it inside the same
-transaction as its work.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Run a migration's work between two integrity snapshots, and throw if anythingwas lost.Throwing is the point: a migration wrapped in this either leaves the dataintact or does not apply at all, provided the caller runs it inside the sametransaction as its work.</li></ul></dd>
     
 
     

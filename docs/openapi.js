@@ -1836,7 +1836,7 @@ const buildOpenApiSpec = () => {
                         },
                         example: {
                             'CAMPA-2025': {
-                                '2026-07-01': { 'Camille Werner': 89.41666666666667 },
+                                '2026-07-01': { 'Processor One': 89.41666666666667 },
                             },
                         },
                     },

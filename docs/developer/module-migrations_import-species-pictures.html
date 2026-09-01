@@ -180,8 +180,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>File extension to MIME type. Anything not listed is skipped rather than
-served with a guessed type.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>File extension to MIME type. Anything not listed is skipped rather thanserved with a guessed type.</li></ul></dd>
     
 
     
@@ -227,8 +226,7 @@ served with a guessed type.</li></ul></dd>
 
 
 <div class="description usertext">
-    File extension to MIME type. Anything not listed is skipped rather than
-served with a guessed type.
+    File extension to MIME type. Anything not listed is skipped rather thanserved with a guessed type.
 </div>
 
 
@@ -260,9 +258,7 @@ served with a guessed type.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Runtime directory the API serves pictures from, and where an upload page will
-later write to. Deliberately outside `seed-data/`, which is read-only source
-material.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Runtime directory the API serves pictures from, and where an upload page willlater write to. Deliberately outside `seed-data/`, which is read-only sourcematerial.</li></ul></dd>
     
 
     
@@ -308,9 +304,7 @@ material.</li></ul></dd>
 
 
 <div class="description usertext">
-    Runtime directory the API serves pictures from, and where an upload page will
-later write to. Deliberately outside `seed-data/`, which is read-only source
-material.
+    Runtime directory the API serves pictures from, and where an upload page willlater write to. Deliberately outside `seed-data/`, which is read-only sourcematerial.
 </div>
 
 
@@ -352,11 +346,7 @@ material.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Removes every picture row and the copied files.
-
-Safe to delete here, unlike the species rows: nothing references a
-picture, and the originals are still checked in under `seed-data/`, so
-this is genuinely reversible by running `up` again.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Removes every picture row and the copied files.Safe to delete here, unlike the species rows: nothing references apicture, and the originals are still checked in under `seed-data/`, sothis is genuinely reversible by running `up` again.</li></ul></dd>
     
 
     
@@ -514,11 +504,7 @@ this is genuinely reversible by running `up` again.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Copies every matched picture into storage and records it.
-
-Re-runnable: the unique index on `(species_id, filename)` means a second
-run updates the same rows, and files are overwritten rather than
-duplicated.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Copies every matched picture into storage and records it.Re-runnable: the unique index on `(species_id, filename)` means a secondrun updates the same rows, and files are overwritten rather thanduplicated.</li></ul></dd>
     
 
     
@@ -706,11 +692,7 @@ duplicated.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Pulls the taxserial out of a GUI picture filename.
-
-The convention is `<name>_<taxserial>_<suffix>.png`, so the number sits
-between the first pair of underscores. A few files have no number at all
-(`UI Urchin Type 1 IMG_0130.png`) and cannot be matched to anything.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Pulls the taxserial out of a GUI picture filename.The convention is `<name>_<taxserial>_<suffix>.png`, so the number sitsbetween the first pair of underscores. A few files have no number at all(`UI Urchin Type 1 IMG_0130.png`) and cannot be matched to anything.</li></ul></dd>
     
 
     
