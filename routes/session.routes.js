@@ -13,6 +13,7 @@
 const sessionController = require('../controller/session.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register every `/api/session(s)` route and its OpenAPI operation on `app`.
@@ -21,8 +22,9 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerSessionRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'sessions:read',
         path: '/api/sessions',
         summary: 'Fetch all sessions',
         description: 'Returns every session record, each including its associated user.',
@@ -43,8 +45,9 @@ function registerSessionRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'sessions:read',
         path: '/api/session/:id',
         summary: 'Fetch a session by id',
         description:
@@ -82,8 +85,9 @@ function registerSessionRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'sessions:read',
         path: '/api/sessions/user/:userID/project/:projectID',
         summary: 'Fetch sessions for a user within a project',
         description: 'Returns sessions matching the given user and project, each including its associated user and project.',
@@ -120,8 +124,9 @@ function registerSessionRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'sessions:read',
         path: '/api/sessions/project/:projectID',
         summary: 'Fetch every session in a project, with browser detail',
         description:
@@ -153,8 +158,9 @@ function registerSessionRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'sessions:write',
         path: '/api/session',
         summary: 'Create a new session',
         description: 'Creates a new session record.',
@@ -178,8 +184,9 @@ function registerSessionRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'sessions:write',
         path: '/api/session/createNewSession/:processorName/:projectName/:line/:dive/:lineID/:type',
         summary: 'Create a session, creating its project and processor user if needed',
         description:
@@ -252,8 +259,9 @@ function registerSessionRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'sessions:write',
         path: '/api/session',
         summary: 'Update an existing session',
         description: 'Updates an existing session record by its session_id field.',
@@ -274,8 +282,9 @@ function registerSessionRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'sessions:write',
         path: '/api/session/:id',
         summary: 'Delete a session',
         description: 'Deletes a session record by id.',

@@ -14,6 +14,7 @@
 const taskController = require('../controller/task.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register every `/api/task(s)` route and its OpenAPI operation on `app`.
@@ -22,8 +23,9 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerTaskRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'tasks:read',
         path: '/api/tasks',
         summary: 'Fetch all tasks',
         description: 'Returns every task row currently available in storage.',
@@ -55,8 +57,9 @@ function registerTaskRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'tasks:write',
         path: '/api/task',
         summary: 'Create a new task',
         description: 'Creates a new task record and returns the inserted row.',
@@ -95,8 +98,9 @@ function registerTaskRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'tasks:write',
         path: '/api/task',
         summary: 'Update an existing task',
         description: 'Updates an existing task record by its id field.',
@@ -147,8 +151,9 @@ function registerTaskRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'tasks:read',
         path: '/api/task/:id',
         summary: 'Fetch a task by id',
         description: 'Returns a single task record, or null if not found.',
@@ -200,8 +205,9 @@ function registerTaskRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'tasks:write',
         path: '/api/task/:id',
         summary: 'Delete a task',
         description: 'Deletes a task record by id.',

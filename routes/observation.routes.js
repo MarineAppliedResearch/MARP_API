@@ -16,6 +16,7 @@
 const observationController = require('../controller/observation.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register every observation route and its OpenAPI operation on `app`.
@@ -24,8 +25,9 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerObservationRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/getObservationsByVideo',
         summary: 'Retrieve observations for a video',
         description:
@@ -48,8 +50,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'reports:read',
         path: '/api/getVideoSummaries/:project_id',
         summary: 'Retrieve video summaries for a project',
         description:
@@ -71,8 +74,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/getObservationsByVideoAndComnames',
         summary: 'Retrieve video observations filtered by common name',
         description:
@@ -107,8 +111,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/getObservationsByVideoAndProject/:videoName/:projectName',
         summary: 'Retrieve observations for a video within a project',
         description:
@@ -135,8 +140,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/getObservationsWithKeyframesByComnames',
         summary: 'Retrieve observations with keyframes by common name',
         description:
@@ -173,8 +179,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         expressMethod: 'use',
         path: '/api/getDistinctComnamesWithKeyframes',
         summary: 'Fetch distinct common names that have keyframes',
@@ -193,8 +200,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'reports:read',
         path: '/api/dashboardData',
         summary: 'Fetch per-user dashboard activity data',
         description:
@@ -216,8 +224,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'reports:read',
         path: '/api/getProjectTimeByDateAndUser',
         summary: 'Fetch estimated recording time by project, date, and user',
         description:
@@ -239,8 +248,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/observations',
         summary: 'Fetch all observations',
         description: 'Returns all observation records available through the V1 API.',
@@ -257,8 +267,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/observation/getLastVideoInfo/:session_id',
         summary: 'Fetch latest video info for a session',
         description: 'Returns the most recent video metadata associated with a session.',
@@ -275,8 +286,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/observation/getMaxObservationFromVideo/:video_source',
         summary: 'Fetch the observation with the highest observation_id for a video',
         description:
@@ -297,8 +309,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:write',
         path: '/api/observation/updateObservationWithCount/:session_id/:observation_id/:count',
         summary: "Update an observation's count field",
         description:
@@ -323,8 +336,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:write',
         path: '/api/observation/updateObservationWithSize/:session_id/:observation_id/:size',
         summary: "Update an observation's size field",
         description:
@@ -347,8 +361,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/observations/bySessionID/:session_id',
         summary: 'Fetch observations for a session',
         description: 'Returns every observation belonging to a session, including associated keyframes when present.',
@@ -368,8 +383,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'observations:write',
         path: '/api/observation',
         summary: 'Create a new observation',
         description:
@@ -392,8 +408,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'observations:write',
         path: '/api/observation',
         summary: 'Update an existing observation',
         description:
@@ -416,8 +433,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'observations:read',
         path: '/api/observation/:id',
         summary: 'Fetch an observation by id',
         description:
@@ -445,8 +463,9 @@ function registerObservationRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'observations:write',
         path: '/api/observation/:id',
         summary: 'Delete an observation',
         description:

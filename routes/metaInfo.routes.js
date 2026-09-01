@@ -15,6 +15,7 @@
 const metaInfoController = require('../controller/metaInfo.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register both `/api/metaInfo/dbName` routes and their OpenAPI operations on `app`.
@@ -23,8 +24,9 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerMetaInfoRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'metaInfo:read',
         path: '/api/metaInfo/dbName',
         summary: 'Retrieve active database name',
         description:
@@ -50,8 +52,9 @@ function registerMetaInfoRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'metaInfo:write',
         path: '/api/metaInfo/dbName',
         summary: 'Set the active database name',
         description:

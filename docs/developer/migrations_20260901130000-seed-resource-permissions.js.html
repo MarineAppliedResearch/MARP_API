@@ -150,6 +150,30 @@ const PERMISSIONS = [
         key: 'users:read',
         description: 'Read the list of people, so a client can show who processed something. Does not include credentials or permissions, which are admin.',
     },
+    {
+        key: 'users:write',
+        description: 'Create and edit the name-only user records that sessions are attributed to. Deliberately separate from admin: recording a new processor is ordinary annotation work, whereas credentials, permissions and passwords are not.',
+    },
+    {
+        key: 'tasks:read',
+        description: 'Read tracked work items.',
+    },
+    {
+        key: 'tasks:write',
+        description: 'Create, change and delete tracked work items.',
+    },
+    {
+        key: 'schema:read',
+        description: 'Read the database structure -- tables, views and relationships. Describes the shape of the data rather than the data itself, and is worth holding back from a caller that only needs survey records.',
+    },
+    {
+        key: 'metaInfo:read',
+        description: 'Read lightweight application-level values, such as which database an instance is pointed at.',
+    },
+    {
+        key: 'metaInfo:write',
+        description: 'Change lightweight application-level values.',
+    },
 ];
 
 /** @type {Object} */

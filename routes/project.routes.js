@@ -14,6 +14,7 @@
 const projectController = require('../controller/project.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register every `/api/project(s)` route and its OpenAPI operation on `app`.
@@ -22,8 +23,9 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerProjectRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'projects:read',
         path: '/api/projects',
         summary: 'Fetch all projects',
         description: 'Returns every project record.',
@@ -44,8 +46,9 @@ function registerProjectRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'projects:read',
         path: '/api/projects/user/:userID',
         summary: 'Fetch projects belonging to a user',
         description: 'Returns every project that has at least one session belonging to the given user.',
@@ -75,8 +78,9 @@ function registerProjectRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'projects:read',
         path: '/api/project/getProjectByName/:projectName',
         summary: 'Fetch a project by name',
         description:
@@ -110,8 +114,9 @@ function registerProjectRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'projects:read',
         path: '/api/project/:id',
         summary: 'Fetch a project by id',
         description:
@@ -151,8 +156,9 @@ function registerProjectRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'projects:write',
         path: '/api/project',
         summary: 'Create a new project',
         description: 'Creates a new project record.',
@@ -176,8 +182,9 @@ function registerProjectRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'projects:write',
         path: '/api/project/createProjectByName/:projectName',
         summary: 'Create a new project by name only',
         description: 'Creates a new project record from a name alone, without a request body.',
@@ -204,8 +211,9 @@ function registerProjectRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'projects:write',
         path: '/api/project',
         summary: 'Update an existing project',
         description: 'Updates an existing project record by its project_id field.',
@@ -226,8 +234,9 @@ function registerProjectRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'projects:write',
         path: '/api/project/:id',
         summary: 'Delete a project',
         description: 'Deletes a project record by id.',

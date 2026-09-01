@@ -4420,6 +4420,39 @@
         }
       }
     },
+    "/v2/tasks": {
+      "get": {
+        "summary": "Fetch all tasks",
+        "description": "Returns every task row currently available in storage. Requires the `tasks:read` permission.",
+        "tags": [
+          "V2 · Tasks"
+        ],
+        "responses": {
+          "200": {
+            "description": "Task list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/task": {
       "post": {
         "summary": "Create a new task",
@@ -4490,6 +4523,95 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/task": {
+      "post": {
+        "summary": "Create a new task",
+        "description": "Creates a new task record and returns the inserted row. Requires the `tasks:write` permission.",
+        "tags": [
+          "V2 · Tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Task record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing task",
+        "description": "Updates an existing task record by its id field. Requires the `tasks:write` permission.",
+        "tags": [
+          "V2 · Tasks"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result, or an empty object if the update failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -4568,6 +4690,89 @@
         }
       }
     },
+    "/v2/task/{id}": {
+      "get": {
+        "summary": "Fetch a task by id",
+        "description": "Returns a single task record, or null if not found. Requires the `tasks:read` permission.",
+        "tags": [
+          "V2 · Tasks"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching task record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a task",
+        "description": "Deletes a task record by id. Requires the `tasks:write` permission.",
+        "tags": [
+          "V2 · Tasks"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the task to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/metaInfo/dbName": {
       "get": {
         "summary": "Retrieve active database name",
@@ -4635,6 +4840,85 @@
         }
       }
     },
+    "/v2/metaInfo/dbName": {
+      "get": {
+        "summary": "Retrieve active database name",
+        "description": "Returns metadata identifying the current configured database as a single-element array containing only a name field (never the full metaInfo row). Requires the `metaInfo:read` permission.",
+        "tags": [
+          "V2 · Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Database name returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaInfoDbName"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the active database name",
+        "description": "Sets the configured database name on the singleton metaInfo row. Upserts: if the metaInfo table already has a row, its name column is updated in place; if the table is empty, a new row is created. This affects the single shared configuration record also read by GET /metaInfo/dbName. Unlike the GET, a database failure here is not swallowed to an empty/placeholder result -- it responds with a standard 500 error envelope so callers can tell the write did not happen. Requires the `metaInfo:write` permission.",
+        "tags": [
+          "V2 · Health"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "example": "Production",
+                    "description": "New value to store as the database name."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Database name set successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetaInfoDbName"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/keyframe": {
       "post": {
         "summary": "Bulk-create keyframe records",
@@ -4668,6 +4952,49 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/keyframe": {
+      "post": {
+        "summary": "Bulk-create keyframe records",
+        "description": "Creates one or more keyframe records in a single transaction. CRITICAL: unlike most other POST routes, the request body itself must be a JSON array of keyframe objects (not wrapped in a named field) — only the observation_id, x, y, width, height, subset, type, comname, and framenum fields are copied from each input object; any others are ignored. If the bulk insert fails, the transaction is rolled back and the failure is only logged, so the response resolves to an empty array `[]` rather than an error — callers cannot distinguish \"nothing to insert\" from \"insert failed.\" Requires the `keyframes:write` permission.",
+        "tags": [
+          "V2 · Keyframes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Keyframe"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Keyframe records, or an empty array if the bulk insert failed (see description).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Keyframe"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -4794,6 +5121,146 @@
         }
       }
     },
+    "/v2/keyframe/{keyframe_id}": {
+      "get": {
+        "summary": "Fetch a keyframe by id",
+        "description": "Returns a single keyframe record by keyframe_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `keyframes:read` permission.",
+        "tags": [
+          "V2 · Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching keyframe record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Keyframe"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing keyframe",
+        "description": "Updates an existing keyframe record by keyframe_id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `keyframes:write` permission.",
+        "tags": [
+          "V2 · Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "keyframe"
+                ],
+                "properties": {
+                  "keyframe": {
+                    "$ref": "#/components/schemas/Keyframe"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated keyframe record, or null if no keyframe matched the given id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Keyframe"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a keyframe",
+        "description": "Deletes a keyframe record by id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing. Requires the `keyframes:write` permission.",
+        "tags": [
+          "V2 · Keyframes"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "keyframe_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "keyframe_id of the keyframe to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/schema/tables": {
       "get": {
         "summary": "Retrieve public table metadata",
@@ -4814,6 +5281,39 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/schema/tables": {
+      "get": {
+        "summary": "Retrieve public table metadata",
+        "description": "Returns one object per base table in the public schema, including table comments, row-estimate metadata, all columns with data types and defaults, primary keys, foreign keys, unique constraints, check constraints, and indexes. Intended for building schema browsers, table grids, query builders, and relationship explorers. Requires the `schema:read` permission.",
+        "tags": [
+          "V2 · Schema"
+        ],
+        "responses": {
+          "200": {
+            "description": "Public table metadata returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaTable"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -4848,6 +5348,39 @@
         }
       }
     },
+    "/v2/schema/views": {
+      "get": {
+        "summary": "Retrieve public view metadata",
+        "description": "Returns one object per public view (including materialized views), including SQL definition text, updatability flag, column metadata, and dependencies on other public tables/views. Intended for building view browsers and dependency visualizations. Requires the `schema:read` permission.",
+        "tags": [
+          "V2 · Schema"
+        ],
+        "responses": {
+          "200": {
+            "description": "Public view metadata returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaView"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/schema/relationships": {
       "get": {
         "summary": "Retrieve public foreign-key relationships",
@@ -4868,6 +5401,39 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/schema/relationships": {
+      "get": {
+        "summary": "Retrieve public foreign-key relationships",
+        "description": "Returns normalized foreign-key relationships between public-schema tables, including source/target columns and ON UPDATE / ON DELETE actions. Intended for relationship graphs and join-aware UI tooling. Requires the `schema:read` permission.",
+        "tags": [
+          "V2 · Schema"
+        ],
+        "responses": {
+          "200": {
+            "description": "Public foreign-key relationships returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SchemaRelationship"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -5144,6 +5710,36 @@
         }
       }
     },
+    "/v2/projects": {
+      "get": {
+        "summary": "Fetch all projects",
+        "description": "Returns every project record. Requires the `projects:read` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "responses": {
+          "200": {
+            "description": "Project list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/projects/user/{userID}": {
       "get": {
         "summary": "Fetch projects belonging to a user",
@@ -5179,6 +5775,47 @@
         }
       }
     },
+    "/v2/projects/user/{userID}": {
+      "get": {
+        "summary": "Fetch projects belonging to a user",
+        "description": "Returns every project that has at least one session belonging to the given user. Requires the `projects:read` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the user whose projects should be returned."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching project records returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/project/getProjectByName/{projectName}": {
       "get": {
         "summary": "Fetch a project by name",
@@ -5210,6 +5847,47 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/project/getProjectByName/{projectName}": {
+      "get": {
+        "summary": "Fetch a project by name",
+        "description": "Returns the project record(s) matching an exact project name. CRITICAL: unlike other repository methods in this codebase, a database failure here resolves with the raw JavaScript Error object itself (not null, not an array, not an ErrorResponse-shaped body) — so a failure response will not match a typical error schema and callers should not rely on a consistent error shape from this endpoint. Requires the `projects:read` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact project name to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching project record(s) as an array, or a raw Error object if the query failed (see description).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Project"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -5275,6 +5953,79 @@
         }
       }
     },
+    "/v2/project/{id}": {
+      "get": {
+        "summary": "Fetch a project by id",
+        "description": "Returns a single project record by project_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `projects:read` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "project_id of the project to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching project record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a project",
+        "description": "Deletes a project record by id. Requires the `projects:write` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the project to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed, as returned by Sequelize."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/project": {
       "post": {
         "summary": "Create a new project",
@@ -5331,6 +6082,74 @@
         }
       }
     },
+    "/v2/project": {
+      "post": {
+        "summary": "Create a new project",
+        "description": "Creates a new project record. Requires the `projects:write` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Project record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing project",
+        "description": "Updates an existing project record by its project_id field. Requires the `projects:write` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/project/createProjectByName/{projectName}": {
       "post": {
         "summary": "Create a new project by name only",
@@ -5363,6 +6182,44 @@
         }
       }
     },
+    "/v2/project/createProjectByName/{projectName}": {
+      "post": {
+        "summary": "Create a new project by name only",
+        "description": "Creates a new project record from a name alone, without a request body. Requires the `projects:write` permission.",
+        "tags": [
+          "V2 · Projects"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name for the new project."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The created Project record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/sessions": {
       "get": {
         "summary": "Fetch all sessions",
@@ -5383,6 +6240,36 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/sessions": {
+      "get": {
+        "summary": "Fetch all sessions",
+        "description": "Returns every session record, each including its associated user. Requires the `sessions:read` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "responses": {
+          "200": {
+            "description": "Session list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -5448,6 +6335,79 @@
         }
       }
     },
+    "/v2/session/{id}": {
+      "get": {
+        "summary": "Fetch a session by id",
+        "description": "Returns a single session record by session_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `sessions:read` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "session_id of the session to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching session record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a session",
+        "description": "Deletes a session record by id. Requires the `sessions:write` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the session to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed, as returned by Sequelize."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/sessions/user/{userID}/project/{projectID}": {
       "get": {
         "summary": "Fetch sessions for a user within a project",
@@ -5492,6 +6452,56 @@
         }
       }
     },
+    "/v2/sessions/user/{userID}/project/{projectID}": {
+      "get": {
+        "summary": "Fetch sessions for a user within a project",
+        "description": "Returns sessions matching the given user and project, each including its associated user and project. Requires the `sessions:read` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the user whose sessions should be fetched."
+          },
+          {
+            "in": "path",
+            "name": "projectID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the project to scope the sessions to."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching session records returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/sessions/project/{projectID}": {
       "get": {
         "summary": "Fetch every session in a project, with browser detail",
@@ -5523,6 +6533,50 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/sessions/project/{projectID}": {
+      "get": {
+        "summary": "Fetch every session in a project, with browser detail",
+        "description": "Returns every session in the project, ordered by dive, then line, then type, so a client can group them under their dive without sorting first. Each session carries its processor, how many observations were recorded against it, and the videos those observations name. Unlike GET /api/sessions/user/{userID}/project/{projectID} this does not require a processor to be chosen first, which is what lets a reviewer browse a dive whoever worked on it. Requires the `sessions:read` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectID",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the project whose sessions should be listed."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session records returned successfully. An empty array when the project has no sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionWithDetail"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -5579,6 +6633,74 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/session": {
+      "post": {
+        "summary": "Create a new session",
+        "description": "Creates a new session record. Requires the `sessions:write` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Session record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing session",
+        "description": "Updates an existing session record by its session_id field. Requires the `sessions:write` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -5659,6 +6781,89 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/session/createNewSession/{processorName}/{projectName}/{line}/{dive}/{lineID}/{type}": {
+      "post": {
+        "summary": "Create a session, creating its project and processor user if needed",
+        "description": "Convenience endpoint that looks up or creates the named processor (user) and project, then creates a new session linking them with the given line, dive, and type. All identifying values are passed as path segments rather than a request body. Requires the `sessions:write` permission.",
+        "tags": [
+          "V2 · Sessions"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "processorName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the user to look up or create as the session's processor."
+          },
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the project to look up or create."
+          },
+          {
+            "in": "path",
+            "name": "line",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Line value for the new session."
+          },
+          {
+            "in": "path",
+            "name": "dive",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Dive value for the new session."
+          },
+          {
+            "in": "path",
+            "name": "lineID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Line identifier for the new session."
+          },
+          {
+            "in": "path",
+            "name": "type",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Session type value."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The created Session record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -7522,6 +8727,39 @@
         }
       }
     },
+    "/v2/ml_models": {
+      "get": {
+        "summary": "Fetch all ML models",
+        "description": "Returns every ML model record. A database failure rejects rather than resolving to an empty array; the route's .catch() handles this and responds with HTTP 500. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "responses": {
+          "200": {
+            "description": "MlModel list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MlModel"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/dataset": {
       "get": {
         "summary": "Fetch all datasets",
@@ -7578,6 +8816,78 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/dataset": {
+      "get": {
+        "summary": "Fetch all datasets",
+        "description": "Returns every dataset record. Database errors are swallowed and resolve to an empty array, so an empty result doesn't distinguish \"no datasets\" from \"query failed.\" Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "responses": {
+          "200": {
+            "description": "Dataset list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Dataset"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new dataset",
+        "description": "Creates a new dataset record. CRITICAL: a database failure here resolves to null rather than rejecting, so the route's .catch() handler is effectively dead code — a failed insert currently still responds with HTTP 200 and a null body rather than an error status. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created dataset record, or null if the insert failed (see description; the failure still returns HTTP 200).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Dataset"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -7696,6 +9006,138 @@
         }
       }
     },
+    "/v2/dataset/{id}": {
+      "get": {
+        "summary": "Fetch a dataset by id",
+        "description": "Returns a single dataset record, or null if not found. Unlike getDatasets, a database error here does actually reject/throw, so the route's .catch() responds with HTTP 500 in that case. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching dataset record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dataset"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing dataset",
+        "description": "Updates an existing dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated dataset record, or null if no dataset matched the given ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Dataset"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a dataset",
+        "description": "Deletes a dataset record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/model": {
       "post": {
         "summary": "Create a new ML model",
@@ -7723,6 +9165,46 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/model": {
+      "post": {
+        "summary": "Create a new ML model",
+        "description": "Creates a new ML model record. Has a real .catch() handler that responds with HTTP 500 on failure. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlModelCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created MlModel record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -7844,6 +9326,138 @@
         }
       }
     },
+    "/v2/model/{id}": {
+      "put": {
+        "summary": "Update an existing ML model",
+        "description": "Updates an existing ML model record by id. Returns the updated MlModel, or null if no row matched the given id (logged as a warning rather than an error in that case). Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MlModelUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated MlModel record, or null if no row matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MlModel"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch an ML model by id",
+        "description": "Returns a single ML model record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MlModel record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MlModel"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an ML model",
+        "description": "Deletes an ML model record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a model cascades to delete its training_runs (see model/ml_models.model.js). Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the ML model to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/training_run": {
       "post": {
         "summary": "Create a new training run",
@@ -7871,6 +9485,46 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/training_run": {
+      "post": {
+        "summary": "Create a new training run",
+        "description": "Creates a new training run record. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingRunCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created TrainingRun record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingRun"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -7992,6 +9646,138 @@
         }
       }
     },
+    "/v2/training_run/{id}": {
+      "put": {
+        "summary": "Update an existing training run",
+        "description": "Updates an existing training run record by id. Returns the updated TrainingRun, or null if no row matched. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrainingRunUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated TrainingRun record, or null if no row matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TrainingRun"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch a training run by id",
+        "description": "Returns a single training run record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching TrainingRun record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrainingRun"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a training run",
+        "description": "Deletes a training run record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a training run cascades to delete its epochs, metrics_summary, hyperparameters, and artifacts (see model/training_runs.model.js). Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the training run to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/metrics_summary": {
       "post": {
         "summary": "Create a new metrics summary",
@@ -8019,6 +9805,46 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/metrics_summary": {
+      "post": {
+        "summary": "Create a new metrics summary",
+        "description": "Creates a new metrics_summary record for a training run and dataset split. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricsSummaryCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created MetricsSummary record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -8140,6 +9966,138 @@
         }
       }
     },
+    "/v2/metrics_summary/{id}": {
+      "get": {
+        "summary": "Fetch a metrics_summary by id",
+        "description": "Returns a single metrics_summary record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MetricsSummary record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing metrics_summary",
+        "description": "Updates an existing metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricsSummaryUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated metrics_summary record, or null if no row matched the given ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MetricsSummary"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a metrics_summary",
+        "description": "Deletes a metrics_summary record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Deleting a metrics_summary cascades to delete its metrics_curves (see model/metrics_summary.model.js). Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_summary to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/metrics_curve": {
       "post": {
         "summary": "Create a single metrics curve point",
@@ -8167,6 +10125,46 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/metrics_curve": {
+      "post": {
+        "summary": "Create a single metrics curve point",
+        "description": "Creates a single metrics_curve point tied to a metrics_summary record. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricsCurveCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created MetricsCurve record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsCurve"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -8288,6 +10286,138 @@
         }
       }
     },
+    "/v2/metrics_curve/{id}": {
+      "get": {
+        "summary": "Fetch a metrics_curve by id",
+        "description": "Returns a single metrics_curve record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_curve to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching MetricsCurve record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsCurve"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing metrics_curve",
+        "description": "Updates an existing metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_curve to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricsCurveUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated metrics_curve record, or null if no row matched the given ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MetricsCurve"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a metrics_curve",
+        "description": "Deletes a metrics_curve record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the metrics_curve to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/metrics_curves/bulk": {
       "post": {
         "summary": "Bulk-create metrics curve records",
@@ -8330,6 +10460,54 @@
         }
       }
     },
+    "/v2/metrics_curves/bulk": {
+      "post": {
+        "summary": "Bulk-create metrics curve records",
+        "description": "Bulk-inserts metrics_curve records. CRITICAL: unlike every sibling create/bulk route, this method takes the raw Express req/res directly rather than an already-extracted body field — the request body must be a raw JSON array of MetricsCurve fields (req.body itself is passed straight to Sequelize's bulkCreate). CRITICAL: on a database failure this resolves to { error: err.message } at HTTP 200 rather than rejecting or returning a non-200 status; the route has no .catch() at all. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MetricsCurve"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "On success, an { inserted: number } summary object (not the created records).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inserted": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/epoch": {
       "post": {
         "summary": "Create a new epoch record",
@@ -8357,6 +10535,46 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/epoch": {
+      "post": {
+        "summary": "Create a new epoch record",
+        "description": "Creates a new epoch record for a training run. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpochCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Epoch record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Epoch"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -8478,6 +10696,138 @@
         }
       }
     },
+    "/v2/epoch/{id}": {
+      "put": {
+        "summary": "Update an existing epoch record",
+        "description": "Updates an existing epoch record by id. Returns the updated Epoch, or null if no row matched. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EpochUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated Epoch record, or null if no row matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Epoch"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch an epoch by id",
+        "description": "Returns a single epoch record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching Epoch record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Epoch"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an epoch",
+        "description": "Deletes an epoch record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the epoch to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/dataset_observation": {
       "post": {
         "summary": "Create a new dataset-observation link",
@@ -8505,6 +10855,46 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/dataset_observation": {
+      "post": {
+        "summary": "Create a new dataset-observation link",
+        "description": "Creates a new dataset_observation join record linking a dataset to an observation. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetObservationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created DatasetObservation record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetObservation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -8626,6 +11016,138 @@
         }
       }
     },
+    "/v2/dataset_observation/{id}": {
+      "get": {
+        "summary": "Fetch a dataset_observation by id",
+        "description": "Returns a single dataset_observation record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `datasets:read` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching DatasetObservation record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetObservation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing dataset_observation",
+        "description": "Updates an existing dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetObservationUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated dataset_observation record, or null if no row matched the given ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DatasetObservation"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a dataset_observation",
+        "description": "Deletes a dataset_observation record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the dataset_observation to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/dataset_observations/bulk": {
       "post": {
         "summary": "Bulk-create dataset-observation links",
@@ -8676,6 +11198,62 @@
         }
       }
     },
+    "/v2/dataset_observations/bulk": {
+      "post": {
+        "summary": "Bulk-create dataset-observation links",
+        "description": "Bulk-inserts dataset_observation records. The response (per the route code) is { inserted: <count> }, NOT the created records. Uses ignoreDuplicates: true internally, which may not reliably suppress unique-constraint errors on Postgres depending on Sequelize version, so a 500 is still possible on duplicate observation_id values despite the flag. Requires the `datasets:write` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "dataset_observations"
+                ],
+                "properties": {
+                  "dataset_observations": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/DatasetObservation"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An { inserted: number } summary object rather than the created records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inserted": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/getObservationsByVideo": {
       "get": {
         "summary": "Retrieve observations for a video",
@@ -8711,6 +11289,47 @@
         }
       }
     },
+    "/v2/getObservationsByVideo": {
+      "get": {
+        "summary": "Retrieve observations for a video",
+        "description": "Returns observations whose video_source exactly matches the supplied videoName. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without keyframes are excluded. An empty array may indicate either that no records matched or that the database query failed. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact video_source value to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/getVideoSummaries/{project_id}": {
       "get": {
         "summary": "Retrieve video summaries for a project",
@@ -8740,6 +11359,45 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/getVideoSummaries/{project_id}": {
+      "get": {
+        "summary": "Retrieve video summaries for a project",
+        "description": "Returns one summary row for each distinct combination of video_source and videoLocation associated with sessions in the specified project. Each row includes the number of distinct observation common names, the number of distinct sessions, and representative dive, line, and session type values selected using MIN aggregation. Results are ordered by the representative dive and line in ascending order. Videos without a matching session in the project are excluded. An empty array may mean that no matching observations were found or that the database query failed. Requires the `reports:read` permission.",
+        "tags": [
+          "V2 · Observations",
+          "V2 · Videos"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Database identifier of the project whose videos should be summarized."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Video summaries returned successfully. distinct_species_count, session_count, dive, and line are numeric strings rather than numbers because they come back from raw Postgres aggregates (Sequelize raw:true); see VideoSummaryReport for the verified field-by-field shape, captured from real response samples.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSummaryReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -8794,6 +11452,62 @@
         }
       }
     },
+    "/v2/getObservationsByVideoAndComnames": {
+      "get": {
+        "summary": "Retrieve video observations filtered by common name",
+        "description": "Returns observations whose video_source exactly matches videoName and whose comname is included in comnameList. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. The current repository returns an empty array both when no observations match and when the database query fails. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations",
+          "V2 · Videos"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact value to match against the observation video_source field."
+          },
+          {
+            "in": "query",
+            "name": "comnameList",
+            "required": true,
+            "style": "form",
+            "explode": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Common names used to filter observations. Supply the parameter repeatedly, such as comnameList=Bat%20star&comnameList=Leather%20star."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObservationWithKeyframes"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/getObservationsByVideoAndProject/{videoName}/{projectName}": {
       "get": {
         "summary": "Retrieve observations for a video within a project",
@@ -8840,6 +11554,58 @@
         }
       }
     },
+    "/v2/getObservationsByVideoAndProject/{videoName}/{projectName}": {
+      "get": {
+        "summary": "Retrieve observations for a video within a project",
+        "description": "Returns observations whose video_source exactly matches videoName and whose associated session belongs to the project identified by projectName. Results are ordered by mediaPosition in ascending order. Each observation includes its full associated session object (the session join has no attribute restriction) in addition to keyframes. Associated keyframes are included when available, but observations without keyframes are also returned. An empty array may indicate that no observations matched, the project was not found, or the database query failed. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations",
+          "V2 · Projects",
+          "V2 · Videos"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "videoName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact value to match against the observation video_source field."
+          },
+          {
+            "in": "path",
+            "name": "projectName",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Exact project name used to locate the associated project record."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObservationWithSessionAndKeyframes"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/getObservationsWithKeyframesByComnames": {
       "get": {
         "summary": "Retrieve observations with keyframes by common name",
@@ -8879,6 +11645,51 @@
         }
       }
     },
+    "/v2/getObservationsWithKeyframesByComnames": {
+      "get": {
+        "summary": "Retrieve observations with keyframes by common name",
+        "description": "Returns observations whose comname matches one of the supplied common names. The comnameList query parameter must contain a comma-separated list of URL-encoded common names. Results are ordered by mediaPosition in ascending order and include associated keyframes. Observations without at least one keyframe are excluded. An empty array may indicate that no observations matched or that the repository query failed. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "comnameList",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "Bat%20star,Leather%20star",
+            "description": "Comma-separated list of common names. Each value is decoded after the string is split on commas."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations with keyframes returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ObservationWithKeyframes"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/getDistinctComnamesWithKeyframes": {
       "get": {
         "summary": "Fetch distinct common names that have keyframes",
@@ -8899,6 +11710,36 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/getDistinctComnamesWithKeyframes": {
+      "get": {
+        "summary": "Fetch distinct common names that have keyframes",
+        "description": "Returns every distinct comname value found on observations that have at least one associated keyframe. This route is registered with `app.use` rather than `app.get`, so it technically responds to any HTTP method, not just GET. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Distinct common names returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -8944,6 +11785,53 @@
         }
       }
     },
+    "/v2/dashboardData": {
+      "get": {
+        "summary": "Fetch per-user dashboard activity data",
+        "description": "Returns per-user, per-date observation activity counts for a dashboard view. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. sessions and projects are always 0 in the current implementation; only the observations count is actually populated. Requires the `reports:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard data returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDashboardData"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/getProjectTimeByDateAndUser": {
       "get": {
         "summary": "Fetch estimated recording time by project, date, and user",
@@ -8985,6 +11873,53 @@
         }
       }
     },
+    "/v2/getProjectTimeByDateAndUser": {
+      "get": {
+        "summary": "Fetch estimated recording time by project, date, and user",
+        "description": "Returns an object keyed by project name, then by date, then by user name, containing the estimated minutes recorded within the given date range. Both start and end are required for any data to come back: the underlying query filters observations.createdAt with a Sequelize Op.between, and an undefined bound matches nothing, so omitting either parameter returns {} rather than unfiltered data. KNOWN BUG: the last observation of every session/day contributes zero minutes to the total, so returned time is systematically undercounted. Requires the `reports:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Start of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
+          },
+          {
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "End of the date range (inclusive) used to filter observations by createdAt. Required in practice for any data to be returned; see description."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grouped time data returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTimeByDateAndUser"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/observations": {
       "get": {
         "summary": "Fetch all observations",
@@ -9005,6 +11940,36 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/observations": {
+      "get": {
+        "summary": "Fetch all observations",
+        "description": "Returns all observation records available through the V1 API. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Observation list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -9030,6 +11995,37 @@
         "responses": {
           "200": {
             "description": "Last video information returned successfully."
+          }
+        }
+      }
+    },
+    "/v2/observation/getLastVideoInfo/{session_id}": {
+      "get": {
+        "summary": "Fetch latest video info for a session",
+        "description": "Returns the most recent video metadata associated with a session. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Last video information returned successfully."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -9065,6 +12061,47 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/observation/getMaxObservationFromVideo/{video_source}": {
+      "get": {
+        "summary": "Fetch the observation with the highest observation_id for a video",
+        "description": "Returns the observation record(s) matching the maximum observation_id for the given video_source. Note that despite the name, the repository implementation returns an array of matching observation records (from a findAll query) rather than a single integer id. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "video_source",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Video source value to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observation record(s) returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -9115,6 +12152,62 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/observation/updateObservationWithCount/{session_id}/{observation_id}/{count}": {
+      "get": {
+        "summary": "Update an observation's count field",
+        "description": "Updates the count field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier used together with obsID to locate the target observation."
+          },
+          {
+            "in": "path",
+            "name": "observation_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Matched against the obsID column, not the observation_id primary key, despite the parameter name."
+          },
+          {
+            "in": "path",
+            "name": "count",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "New count value to persist."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "1 if the update statement executed without throwing, 0 if it failed. Does not indicate whether any row was actually matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -9170,6 +12263,63 @@
         }
       }
     },
+    "/v2/observation/updateObservationWithSize/{session_id}/{observation_id}/{size}": {
+      "get": {
+        "summary": "Update an observation's size field",
+        "description": "Updates the coarsesize field of a specific observation within a session. CRITICAL: despite using HTTP GET, this endpoint performs a database UPDATE — a REST verb violation. CRITICAL: the observation_id path parameter is actually matched against the obsID column, not the observation_id primary key column — supplying the real primary-key value will silently match zero rows, and the repository reports success regardless of how many rows were actually affected. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier used together with obsID to locate the target observation."
+          },
+          {
+            "in": "path",
+            "name": "observation_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Matched against the obsID column, not the observation_id primary key, despite the parameter name."
+          },
+          {
+            "in": "path",
+            "name": "size",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "format": "float"
+            },
+            "description": "New coarse-size value to persist."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "1 if the update statement executed without throwing, 0 if it failed. Does not indicate whether any row was actually matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      }
+    },
     "/observations/bySessionID/{session_id}": {
       "get": {
         "summary": "Fetch observations for a session",
@@ -9201,6 +12351,47 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/observations/bySessionID/{session_id}": {
+      "get": {
+        "summary": "Fetch observations for a session",
+        "description": "Returns every observation belonging to a session, including associated keyframes when present. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Session identifier to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching observations returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Observation"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -9254,6 +12445,74 @@
         "responses": {
           "200": {
             "description": "The Sequelize update result (an array whose first element is the number of affected rows)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observation": {
+      "post": {
+        "summary": "Create a new observation",
+        "description": "Creates a new observation record. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing or exposing error details. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created Observation record, or an empty object `{}` if the insert failed (see description).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Observation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing observation",
+        "description": "Updates an existing observation by its observation_id field. If comname changes, the new value is propagated to every keyframe associated with the same observation, all within one transaction. Unlike most write methods in this codebase, this one does NOT swallow errors: if the observation_id doesn't exist or the update fails, the transaction is rolled back and the error is rethrown, resulting in an HTTP 500 by default (there is no explicit .catch() on this route, so Express's default error handling applies). Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Sequelize update result (an array whose first element is the number of affected rows)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -9318,6 +12577,82 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observation/{id}": {
+      "get": {
+        "summary": "Fetch an observation by id",
+        "description": "Returns a single observation record by observation_id, or null if not found. Database failures reject the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "observation_id of the observation to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching observation record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Observation"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete an observation",
+        "description": "Deletes an observation record by its observation_id. Database failures are logged and swallowed, resolving to an empty object `{}` rather than throwing. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Observations"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "observation_id of the observation to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize), or an empty object `{}` if the delete failed."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
