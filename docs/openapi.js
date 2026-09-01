@@ -2139,6 +2139,67 @@ const buildOpenApiSpec = () => {
                             },
                         },
                     },
+                    TimecodeResyncPreview: {
+                        type: 'object',
+                        description:
+                            'What a burnt-in clock reading would do to a session. `mode` says which of two operations it means, decided from the data rather than chosen by the caller.',
+                        properties: {
+                            sessionId: { type: 'integer', example: 3686 },
+                            mode: {
+                                type: 'string',
+                                enum: ['establish-sync', 'correct-pointer'],
+                                example: 'correct-pointer',
+                                description: '`establish-sync` when the session records no clock at all, in which case the recorded times move and the pointers do not. `correct-pointer` when it does, in which case mediaPosition and each keyframe framenum move and the times do not.',
+                            },
+                            videoSource: { type: 'string', nullable: true, example: null },
+                            fromMediaPosition: { type: 'string', nullable: true, example: null },
+                            reading: {
+                                type: 'object',
+                                description: 'The comparison the decision was made from.',
+                                properties: {
+                                    mediaPosition: { type: 'string', example: '00:02:24.7600000', description: 'The frame the reading was taken on.' },
+                                    dataSays: { type: 'string', example: '15:20:21.6400000', description: 'What the session records as the time at that frame.' },
+                                    pictureSays: { type: 'string', example: '15:20:21.5200000', description: 'What the clock burnt into it read.' },
+                                    differenceMs: { type: 'integer', example: 120, description: 'Positive when the data thinks it is later than the picture does.' },
+                                },
+                            },
+                            shiftMs: { type: 'integer', example: 120, description: 'What is added -- to mediaPosition in pointer mode, to actualPosition in establish mode.' },
+                            frames: { type: 'number', example: 3, description: 'The same shift in frames. A whole number in pointer mode.' },
+                            observationsInScope: { type: 'integer', example: 420 },
+                            observationsToCorrect: { type: 'integer', example: 420 },
+                            keyframesToCorrect: { type: 'integer', example: 2988, description: 'Zero in establish mode, since keyframes are not touched.' },
+                            timesUnchanged: { type: 'boolean', example: true, description: 'True in pointer mode: tc, etc, actualPosition and frame are left exactly as recorded.' },
+                            pointersUnchanged: { type: 'boolean', example: false, description: 'True in establish mode: mediaPosition and framenum are left exactly as recorded.' },
+                            partial: { type: 'boolean', example: false, description: 'True when some observations cannot be read and would be left alone. Refused unless allowPartial is set.' },
+                            counts: {
+                                type: 'object',
+                                description: 'Per-column tallies. Which keys appear depends on the mode.',
+                                additionalProperties: { type: 'integer' },
+                            },
+                            undoWith: {
+                                type: 'object',
+                                description: 'How to reverse this. Nothing records that it happened, so it is worth keeping. `frames` in pointer mode, `shiftMs` in establish mode.',
+                                additionalProperties: { type: 'integer' },
+                            },
+                            sample: {
+                                type: 'array',
+                                description: 'A few observations spread across the scope. Its shape depends on the mode.',
+                                items: { type: 'object', additionalProperties: true },
+                            },
+                        },
+                    },
+                    TimecodeResyncResult: {
+                        allOf: [
+                            { $ref: '#/components/schemas/TimecodeResyncPreview' },
+                            {
+                                type: 'object',
+                                properties: {
+                                    applied: { type: 'boolean', example: true },
+                                    observationsCorrected: { type: 'integer', example: 96 },
+                                },
+                            },
+                        ],
+                    },
                 },
                 responses: {
                     BadRequestError: {

@@ -102,6 +102,7 @@ const registerTokensRoutes = require('./routes/v2_tokens.routes');
 // the circular-require ordering constraints above apply to it, and its
 // require position here is unconstrained.
 const registerJellyfinRoutes = require('./routes/jellyfin.routes');
+const registerTimecodeSyncRoutes = require('./routes/timecode_sync.routes');
 const { configureAuthentication } = require('./auth/auth.setup');
 
 
@@ -324,6 +325,7 @@ registerSpeciesRoutes(app);
 registerDatasetRoutes(app);
 registerObservationRoutes(app);
 registerJellyfinRoutes(app);
+registerTimecodeSyncRoutes(app);
 registerAuthRoutes(app);
 registerUsersRoutes(app);
 registerTokensRoutes(app);
