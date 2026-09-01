@@ -14,6 +14,7 @@
 const userController = require('../controller/user.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register every `/api/user(s)` route and its OpenAPI operation on `app`.
@@ -22,8 +23,10 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerUserRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'users:read',
+        v2Path: '/api/v2/processors',
         path: '/api/users',
         summary: 'Fetch all users',
         description: 'Returns every user record.',
@@ -44,8 +47,10 @@ function registerUserRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'users:read',
+        v2Path: '/api/v2/processors/:id',
         path: '/api/users/:id',
         summary: 'Fetch a user by id',
         description:
@@ -88,8 +93,10 @@ function registerUserRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'users:read',
+        v2Path: '/api/v2/processors/by-name/:name',
         path: '/api/user/:name',
         summary: 'Fetch a user by name',
         description:
@@ -120,8 +127,10 @@ function registerUserRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'users:read',
+        v2Path: '/api/v2/processors/:userID/name',
         path: '/api/user/getUserNameByID/:userID',
         summary: "Fetch a user's display name by id",
         description:
@@ -151,8 +160,10 @@ function registerUserRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'users:write',
+        v2Path: '/api/v2/processors',
         path: '/api/user',
         summary: 'Create a new user',
         description: 'Creates a new user record.',
@@ -176,8 +187,10 @@ function registerUserRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'users:write',
+        v2Path: '/api/v2/processors/by-name/:userName',
         path: '/api/user/createUserByName/:userName',
         summary: 'Create a new user by name only',
         description: 'Creates a new user record from a name alone, without a request body.',
@@ -207,8 +220,10 @@ function registerUserRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'users:write',
+        v2Path: '/api/v2/processors',
         path: '/api/user',
         summary: 'Update an existing user',
         description: 'Updates an existing user record by its user_id field.',
@@ -231,8 +246,10 @@ function registerUserRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'users:write',
+        v2Path: '/api/v2/processors/:id',
         path: '/api/user/:id',
         summary: 'Delete a user',
         description:

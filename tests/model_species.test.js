@@ -66,13 +66,13 @@ describe('Model species lifecycle', () => {
    * record will reference.
    */
   beforeAll(async () => {
-    const modelRes = await request(app)
-      .post('/api/model')
+    const modelRes = await global.api
+      .post('/api/v2/model')
       .send({ model: { name: uniqueTag, model_type: 'yolov8' } });
     modelId = modelRes.body.id;
 
-    const speciesRes = await request(app)
-      .post('/api/species')
+    const speciesRes = await global.api
+      .post('/api/v2/species')
       .send({ species: { taxserial, comname: 'Jest ModelSpecies Parent' } });
     speciesId = speciesRes.body.id;
   });
@@ -84,13 +84,13 @@ describe('Model species lifecycle', () => {
    */
   afterAll(async () => {
     if (modelSpeciesId) {
-      await request(app).delete(`/api/model_species/${modelSpeciesId}`);
+      await global.api.delete(`/api/v2/model_species/${modelSpeciesId}`);
     }
     if (speciesId) {
-      await request(app).delete(`/api/species/${speciesId}`);
+      await global.api.delete(`/api/v2/species/${speciesId}`);
     }
     if (modelId) {
-      await request(app).delete(`/api/model/${modelId}`);
+      await global.api.delete(`/api/v2/model/${modelId}`);
     }
   });
 
@@ -99,8 +99,8 @@ describe('Model species lifecycle', () => {
    * return it.
    */
   it('creates a model_species record', async () => {
-    const res = await request(app)
-      .post('/api/model_species')
+    const res = await global.api
+      .post('/api/v2/model_species')
       .send({ model_id: modelId, species_id: speciesId });
 
     expect(res.status).toBe(200);
@@ -116,8 +116,8 @@ describe('Model species lifecycle', () => {
    * id.
    */
   it('updates the model_species record', async () => {
-    const res = await request(app)
-      .put(`/api/model_species/${modelSpeciesId}`)
+    const res = await global.api
+      .put(`/api/v2/model_species/${modelSpeciesId}`)
       .send({ notes: 'updated by jest' });
 
     expect(res.status).toBe(200);
@@ -129,7 +129,7 @@ describe('Model species lifecycle', () => {
    * the update above.
    */
   it('gets the model_species record by id', async () => {
-    const res = await request(app).get(`/api/model_species/${modelSpeciesId}`);
+    const res = await global.api.get(`/api/v2/model_species/${modelSpeciesId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(modelSpeciesId);
@@ -141,11 +141,11 @@ describe('Model species lifecycle', () => {
    * no trace in the dev database.
    */
   it('deletes the model_species record', async () => {
-    const res = await request(app).delete(`/api/model_species/${modelSpeciesId}`);
+    const res = await global.api.delete(`/api/v2/model_species/${modelSpeciesId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/model_species/${modelSpeciesId}`);
+    const getRes = await global.api.get(`/api/v2/model_species/${modelSpeciesId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

@@ -44,7 +44,7 @@ describe('ML model lifecycle', () => {
    */
   afterAll(async () => {
     if (modelId) {
-      await request(app).delete(`/api/model/${modelId}`);
+      await global.api.delete(`/api/v2/model/${modelId}`);
     }
   });
 
@@ -52,8 +52,8 @@ describe('ML model lifecycle', () => {
    * POST /api/model should insert a new ml_models row and return it.
    */
   it('creates a model', async () => {
-    const res = await request(app)
-      .post('/api/model')
+    const res = await global.api
+      .post('/api/v2/model')
       .send({ model: { name: modelName, model_type: 'yolov8' } });
 
     expect(res.status).toBe(200);
@@ -67,8 +67,8 @@ describe('ML model lifecycle', () => {
    * PUT /api/model/:id should update the model's fields by id.
    */
   it('updates the model', async () => {
-    const res = await request(app)
-      .put(`/api/model/${modelId}`)
+    const res = await global.api
+      .put(`/api/v2/model/${modelId}`)
       .send({ model: { status: 'trained' } });
 
     expect(res.status).toBe(200);
@@ -80,7 +80,7 @@ describe('ML model lifecycle', () => {
    * above.
    */
   it('gets the model by id', async () => {
-    const res = await request(app).get(`/api/model/${modelId}`);
+    const res = await global.api.get(`/api/v2/model/${modelId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(modelId);
@@ -92,11 +92,11 @@ describe('ML model lifecycle', () => {
    * the dev database.
    */
   it('deletes the model', async () => {
-    const res = await request(app).delete(`/api/model/${modelId}`);
+    const res = await global.api.delete(`/api/v2/model/${modelId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/model/${modelId}`);
+    const getRes = await global.api.get(`/api/v2/model/${modelId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

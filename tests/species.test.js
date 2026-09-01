@@ -28,7 +28,7 @@ describe('GET /api/species', () => {
    * always a 200 with an array body, whatever its contents.
    */
   it('returns 200 with an array of species records', async () => {
-    const res = await request(app).get('/api/species');
+    const res = await global.api.get('/api/v2/species');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -65,7 +65,7 @@ describe('Species lifecycle', () => {
    */
   afterAll(async () => {
     if (speciesId) {
-      await request(app).delete(`/api/species/${speciesId}`);
+      await global.api.delete(`/api/v2/species/${speciesId}`);
     }
   });
 
@@ -73,8 +73,8 @@ describe('Species lifecycle', () => {
    * POST /api/species should insert a new species row and return it.
    */
   it('creates a species record', async () => {
-    const res = await request(app)
-      .post('/api/species')
+    const res = await global.api
+      .post('/api/v2/species')
       .send({ species: { taxserial, comname: 'Jest Test Species' } });
 
     expect(res.status).toBe(200);
@@ -88,8 +88,8 @@ describe('Species lifecycle', () => {
    * PUT /api/species/:id should update the species' fields by id.
    */
   it('updates the species', async () => {
-    const res = await request(app)
-      .put(`/api/species/${speciesId}`)
+    const res = await global.api
+      .put(`/api/v2/species/${speciesId}`)
       .send({ species: { comname: 'Updated Jest Species' } });
 
     expect(res.status).toBe(200);
@@ -101,7 +101,7 @@ describe('Species lifecycle', () => {
    * above.
    */
   it('gets the species by id', async () => {
-    const res = await request(app).get(`/api/species/${speciesId}`);
+    const res = await global.api.get(`/api/v2/species/${speciesId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(speciesId);
@@ -113,11 +113,11 @@ describe('Species lifecycle', () => {
    * in the dev database.
    */
   it('deletes the species', async () => {
-    const res = await request(app).delete(`/api/species/${speciesId}`);
+    const res = await global.api.delete(`/api/v2/species/${speciesId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/species/${speciesId}`);
+    const getRes = await global.api.get(`/api/v2/species/${speciesId}`);
     expect(getRes.body).toBeNull();
   });
 });

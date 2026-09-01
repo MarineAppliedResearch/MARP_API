@@ -63,13 +63,13 @@ describe('Keyframe lifecycle', () => {
    * will reference.
    */
   beforeAll(async () => {
-    const sessionRes = await request(app)
-      .post('/api/session')
+    const sessionRes = await global.api
+      .post('/api/v2/session')
       .send({ session: { dive: 'Dive 1', line: 'Line A', lineId, type: 'ROV' } });
     sessionId = sessionRes.body.session_id;
 
-    const observationRes = await request(app)
-      .post('/api/observation')
+    const observationRes = await global.api
+      .post('/api/v2/observation')
       .send({ observation: { session_id: sessionId, comname: 'Jest Keyframe Parent' } });
     observationId = observationRes.body.observation_id;
   });
@@ -81,13 +81,13 @@ describe('Keyframe lifecycle', () => {
    */
   afterAll(async () => {
     if (keyframeId) {
-      await request(app).delete(`/api/keyframe/${keyframeId}`);
+      await global.api.delete(`/api/v2/keyframe/${keyframeId}`);
     }
     if (observationId) {
-      await request(app).delete(`/api/observation/${observationId}`);
+      await global.api.delete(`/api/v2/observation/${observationId}`);
     }
     if (sessionId) {
-      await request(app).delete(`/api/session/${sessionId}`);
+      await global.api.delete(`/api/v2/session/${sessionId}`);
     }
   });
 
@@ -96,8 +96,8 @@ describe('Keyframe lifecycle', () => {
    * return it.
    */
   it('creates a keyframe', async () => {
-    const res = await request(app)
-      .post('/api/keyframe')
+    const res = await global.api
+      .post('/api/v2/keyframe')
       .send([
         {
           observation_id: observationId,
@@ -125,8 +125,8 @@ describe('Keyframe lifecycle', () => {
    * keyframe_id.
    */
   it('updates the keyframe', async () => {
-    const res = await request(app)
-      .put(`/api/keyframe/${keyframeId}`)
+    const res = await global.api
+      .put(`/api/v2/keyframe/${keyframeId}`)
       .send({ keyframe: { framenum: 2 } });
 
     expect(res.status).toBe(200);
@@ -139,12 +139,12 @@ describe('Keyframe lifecycle', () => {
    * annotation belongs to; only the box, its kind and its frame may change.
    */
   it('ignores fields an update is not allowed to change', async () => {
-    const before = await request(app).get(`/api/keyframe/${keyframeId}`);
+    const before = await global.api.get(`/api/v2/keyframe/${keyframeId}`);
     const originalObservationId = before.body.observation_id;
     const originalSubset = before.body.subset;
 
-    const res = await request(app)
-      .put(`/api/keyframe/${keyframeId}`)
+    const res = await global.api
+      .put(`/api/v2/keyframe/${keyframeId}`)
       .send({
         keyframe: {
           // Allowed, and should take effect.
@@ -168,8 +168,8 @@ describe('Keyframe lifecycle', () => {
    * deliberate rather than incidental.
    */
   it('returns null when no updatable field is given', async () => {
-    const res = await request(app)
-      .put(`/api/keyframe/${keyframeId}`)
+    const res = await global.api
+      .put(`/api/v2/keyframe/${keyframeId}`)
       .send({ keyframe: { observation_id: 999999 } });
 
     expect(res.status).toBe(200);
@@ -181,7 +181,7 @@ describe('Keyframe lifecycle', () => {
    * the update above.
    */
   it('gets the keyframe by id', async () => {
-    const res = await request(app).get(`/api/keyframe/${keyframeId}`);
+    const res = await global.api.get(`/api/v2/keyframe/${keyframeId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.keyframe_id).toBe(keyframeId);
@@ -194,11 +194,11 @@ describe('Keyframe lifecycle', () => {
    * no trace in the dev database.
    */
   it('deletes the keyframe', async () => {
-    const res = await request(app).delete(`/api/keyframe/${keyframeId}`);
+    const res = await global.api.delete(`/api/v2/keyframe/${keyframeId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/keyframe/${keyframeId}`);
+    const getRes = await global.api.get(`/api/v2/keyframe/${keyframeId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

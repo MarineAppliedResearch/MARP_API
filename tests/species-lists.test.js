@@ -48,7 +48,7 @@ describe('Annotation species lists', () => {
    * GET /api/species/lists should name every list and count its entries.
    */
   it('lists the seven annotation lists with entry counts', async () => {
-    const res = await request(app).get('/api/species/lists');
+    const res = await global.api.get('/api/v2/species/lists');
 
     expect(res.status).toBe(200);
 
@@ -67,7 +67,7 @@ describe('Annotation species lists', () => {
    * and must not be offered for annotation.
    */
   it('excludes entries that belong to no list', async () => {
-    const res = await request(app).get('/api/species/lists');
+    const res = await global.api.get('/api/v2/species/lists');
 
     expect(res.status).toBe(200);
     expect(res.body.map((list) => list.species_list)).not.toContain(null);
@@ -78,7 +78,7 @@ describe('Annotation species lists', () => {
    * it, each carrying a pictures array.
    */
   it('returns one list, scoped to it, with pictures attached', async () => {
-    const res = await request(app).get('/api/species/list/Fish');
+    const res = await global.api.get('/api/v2/species/list/Fish');
 
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(100);
@@ -92,7 +92,7 @@ describe('Annotation species lists', () => {
    * interleaved.
    */
   it('groups a list by main tab then sub-tab', async () => {
-    const res = await request(app).get('/api/species/list/Fish');
+    const res = await global.api.get('/api/v2/species/list/Fish');
 
     expect(res.status).toBe(200);
 
@@ -111,7 +111,7 @@ describe('Annotation species lists', () => {
    * a real but empty list would produce.
    */
   it('returns an empty array for an unknown list', async () => {
-    const res = await request(app).get('/api/species/list/NoSuchList');
+    const res = await global.api.get('/api/v2/species/list/NoSuchList');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
@@ -124,7 +124,7 @@ describe('Annotation species list search', () => {
    * Search should match on name, case-insensitively, and stay inside the list.
    */
   it('finds entries by name within one list', async () => {
-    const res = await request(app).get('/api/species/list/Fish/search?q=rockfish');
+    const res = await global.api.get('/api/v2/species/list/Fish/search?q=rockfish');
 
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
@@ -142,7 +142,7 @@ describe('Annotation species list search', () => {
    * which would read as a working search.
    */
   it('rejects an empty search term', async () => {
-    const res = await request(app).get('/api/species/list/Fish/search?q=');
+    const res = await global.api.get('/api/v2/species/list/Fish/search?q=');
 
     expect(res.status).toBe(400);
   });
@@ -156,8 +156,8 @@ describe('Species identity is list plus taxserial', () => {
    * entry is meant.
    */
   it('returns different entries for the same taxserial on different lists', async () => {
-    const fish = await request(app).get('/api/species/list/Fish/taxserial/169237');
-    const gulf = await request(app).get('/api/species/list/GULF_Fish/taxserial/169237');
+    const fish = await global.api.get('/api/v2/species/list/Fish/taxserial/169237');
+    const gulf = await global.api.get('/api/v2/species/list/GULF_Fish/taxserial/169237');
 
     expect(fish.status).toBe(200);
     expect(gulf.status).toBe(200);
@@ -177,7 +177,7 @@ describe('Species identity is list plus taxserial', () => {
    * be given an ITIS serial.
    */
   it('leaves itis_tsn null for a local per-list code', async () => {
-    const res = await request(app).get('/api/species/list/Substrate_60Seconds/taxserial/1');
+    const res = await global.api.get('/api/v2/species/list/Substrate_60Seconds/taxserial/1');
 
     expect(res.status).toBe(200);
     expect(res.body.taxserial).toBe(1);
@@ -189,7 +189,7 @@ describe('Species identity is list plus taxserial', () => {
    * synthetic categories rather than taxa.
    */
   it('leaves itis_tsn null for a synthetic Habitat code', async () => {
-    const res = await request(app).get('/api/species/list/Habitat/taxserial/666001');
+    const res = await global.api.get('/api/v2/species/list/Habitat/taxserial/666001');
 
     expect(res.status).toBe(200);
     expect(res.body.comname).toBe('Rock');
@@ -201,7 +201,7 @@ describe('Species identity is list plus taxserial', () => {
    * another list.
    */
   it('404s for a taxserial that is not on the named list', async () => {
-    const res = await request(app).get('/api/species/list/Habitat/taxserial/169237');
+    const res = await global.api.get('/api/v2/species/list/Habitat/taxserial/169237');
 
     expect(res.status).toBe(404);
   });
@@ -225,7 +225,7 @@ describe('Retired species entries', () => {
    * button in the annotation GUI.
    */
   it('excludes retired entries from a list', async () => {
-    const res = await request(app).get('/api/species/list/Fish');
+    const res = await global.api.get('/api/v2/species/list/Fish');
 
     expect(res.status).toBe(200);
     expect(res.body.every((entry) => entry.is_active)).toBe(true);
@@ -236,7 +236,7 @@ describe('Retired species entries', () => {
    * Search is annotation-facing too, so it has to agree with the list.
    */
   it('excludes retired entries from search', async () => {
-    const res = await request(app).get('/api/species/list/Fish/search?q=Olive');
+    const res = await global.api.get('/api/v2/species/list/Fish/search?q=Olive');
 
     expect(res.status).toBe(200);
     expect(res.body.some((entry) => entry.taxserial === RETIRED_FISH_TAXSERIAL)).toBe(false);
@@ -248,7 +248,7 @@ describe('Retired species entries', () => {
    * make that history unreadable.
    */
   it('still resolves a retired entry by list and taxserial', async () => {
-    const res = await request(app).get(`/api/species/list/Fish/taxserial/${RETIRED_FISH_TAXSERIAL}`);
+    const res = await global.api.get(`/api/v2/species/list/Fish/taxserial/${RETIRED_FISH_TAXSERIAL}`);
 
     expect(res.status).toBe(200);
     expect(res.body.taxserial).toBe(RETIRED_FISH_TAXSERIAL);
@@ -265,12 +265,12 @@ describe('Retired species entries', () => {
    * counted, since that would make the count exceed the list.
    */
   it('counts exactly what each list returns', async () => {
-    const lists = await request(app).get('/api/species/lists');
+    const lists = await global.api.get('/api/v2/species/lists');
 
     expect(lists.status).toBe(200);
 
     for (const list of lists.body) {
-      const entries = await request(app).get(`/api/species/list/${list.species_list}`);
+      const entries = await global.api.get(`/api/v2/species/list/${list.species_list}`);
 
       expect(entries.status).toBe(200);
       expect(entries.body).toHaveLength(list.entry_count);
@@ -292,7 +292,7 @@ describe('Species pictures', () => {
    * Finds a species that has at least one picture.
    */
   beforeAll(async () => {
-    const res = await request(app).get('/api/species/list/Fish');
+    const res = await global.api.get('/api/v2/species/list/Fish');
     const withPicture = res.body.find((entry) => entry.pictures.length > 0);
     pictureId = withPicture && withPicture.pictures[0].id;
   });
@@ -301,10 +301,10 @@ describe('Species pictures', () => {
    * A species' pictures should be listable, with the default first.
    */
   it('lists the pictures for a species, default first', async () => {
-    const list = await request(app).get('/api/species/list/Fish');
+    const list = await global.api.get('/api/v2/species/list/Fish');
     const withPicture = list.body.find((entry) => entry.pictures.length > 0);
 
-    const res = await request(app).get(`/api/species/${withPicture.id}/pictures`);
+    const res = await global.api.get(`/api/v2/species/${withPicture.id}/pictures`);
 
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
@@ -317,7 +317,7 @@ describe('Species pictures', () => {
    * picture is ambiguous, which is the bug the GUI had.
    */
   it('marks exactly one picture as default per species', async () => {
-    const res = await request(app).get('/api/species/list/Inverts');
+    const res = await global.api.get('/api/v2/species/list/Inverts');
 
     expect(res.status).toBe(200);
 
@@ -337,7 +337,7 @@ describe('Species pictures', () => {
   it('serves the picture file with caching headers', async () => {
     expect(pictureId).toEqual(expect.any(Number));
 
-    const res = await request(app).get(`/api/species/pictures/${pictureId}`);
+    const res = await global.api.get(`/api/v2/species/pictures/${pictureId}`);
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/^image\//);
@@ -351,11 +351,11 @@ describe('Species pictures', () => {
    * re-downloading every picture.
    */
   it('answers 304 when the client already has the picture', async () => {
-    const first = await request(app).get(`/api/species/pictures/${pictureId}`);
+    const first = await global.api.get(`/api/v2/species/pictures/${pictureId}`);
     const etag = first.headers.etag;
 
-    const second = await request(app)
-      .get(`/api/species/pictures/${pictureId}`)
+    const second = await global.api
+      .get(`/api/v2/species/pictures/${pictureId}`)
       .set('If-None-Match', etag);
 
     expect(second.status).toBe(304);
@@ -365,7 +365,7 @@ describe('Species pictures', () => {
    * An unknown picture is a 404 rather than a stack trace.
    */
   it('404s for an unknown picture id', async () => {
-    const res = await request(app).get('/api/species/pictures/999999999');
+    const res = await global.api.get('/api/v2/species/pictures/999999999');
 
     expect(res.status).toBe(404);
   });

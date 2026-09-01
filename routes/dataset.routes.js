@@ -16,6 +16,7 @@
 const datasetController = require('../controller/dataset.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register every ML-pipeline route and its OpenAPI operation on `app`.
@@ -28,8 +29,9 @@ function registerDatasetRoutes(app) {
     // ml_models
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
         path: '/api/ml_models',
         summary: 'Fetch all ML models',
         description:
@@ -56,8 +58,9 @@ function registerDatasetRoutes(app) {
     // datasets
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'datasets:read',
         path: '/api/dataset',
         summary: 'Fetch all datasets',
         description:
@@ -79,8 +82,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'datasets:read',
         path: '/api/dataset/:id',
         summary: 'Fetch a dataset by id',
         description:
@@ -108,8 +112,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'datasets:write',
         path: '/api/dataset/:id',
         summary: 'Update an existing dataset',
         description:
@@ -139,8 +144,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'datasets:write',
         path: '/api/dataset/:id',
         summary: 'Delete a dataset',
         description:
@@ -159,8 +165,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'datasets:write',
         path: '/api/dataset',
         summary: 'Create a new dataset',
         description:
@@ -191,8 +198,9 @@ function registerDatasetRoutes(app) {
     // ml_models write routes (model_id-keyed, distinct from GET /api/ml_models above)
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'models:write',
         path: '/api/model',
         summary: 'Create a new ML model',
         description: 'Creates a new ML model record. Has a real .catch() handler that responds with HTTP 500 on failure.',
@@ -215,8 +223,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'models:write',
         path: '/api/model/:id',
         summary: 'Update an existing ML model',
         description:
@@ -247,8 +256,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
         path: '/api/model/:id',
         summary: 'Fetch an ML model by id',
         description:
@@ -276,8 +286,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'models:write',
         path: '/api/model/:id',
         summary: 'Delete an ML model',
         description:
@@ -300,8 +311,9 @@ function registerDatasetRoutes(app) {
     // training_runs
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'models:write',
         path: '/api/training_run',
         summary: 'Create a new training run',
         description: 'Creates a new training run record.',
@@ -324,8 +336,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'models:write',
         path: '/api/training_run/:id',
         summary: 'Update an existing training run',
         description: 'Updates an existing training run record by id. Returns the updated TrainingRun, or null if no row matched.',
@@ -355,8 +368,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
         path: '/api/training_run/:id',
         summary: 'Fetch a training run by id',
         description:
@@ -384,8 +398,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'models:write',
         path: '/api/training_run/:id',
         summary: 'Delete a training run',
         description:
@@ -408,8 +423,9 @@ function registerDatasetRoutes(app) {
     // metrics_summary
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'models:write',
         path: '/api/metrics_summary',
         summary: 'Create a new metrics summary',
         description: 'Creates a new metrics_summary record for a training run and dataset split.',
@@ -431,8 +447,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
         path: '/api/metrics_summary/:id',
         summary: 'Fetch a metrics_summary by id',
         description:
@@ -460,8 +477,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'models:write',
         path: '/api/metrics_summary/:id',
         summary: 'Update an existing metrics_summary',
         description:
@@ -491,8 +509,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'models:write',
         path: '/api/metrics_summary/:id',
         summary: 'Delete a metrics_summary',
         description:
@@ -515,8 +534,9 @@ function registerDatasetRoutes(app) {
     // metrics_curves
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'models:write',
         path: '/api/metrics_curve',
         summary: 'Create a single metrics curve point',
         description: 'Creates a single metrics_curve point tied to a metrics_summary record.',
@@ -538,8 +558,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
         path: '/api/metrics_curve/:id',
         summary: 'Fetch a metrics_curve by id',
         description:
@@ -567,8 +588,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'models:write',
         path: '/api/metrics_curve/:id',
         summary: 'Update an existing metrics_curve',
         description:
@@ -598,8 +620,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'models:write',
         path: '/api/metrics_curve/:id',
         summary: 'Delete a metrics_curve',
         description:
@@ -618,8 +641,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'models:write',
         path: '/api/metrics_curves/bulk',
         summary: 'Bulk-create metrics curve records',
         description:
@@ -657,8 +681,9 @@ function registerDatasetRoutes(app) {
     // epochs
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'models:write',
         path: '/api/epoch',
         summary: 'Create a new epoch record',
         description: 'Creates a new epoch record for a training run.',
@@ -681,8 +706,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'models:write',
         path: '/api/epoch/:id',
         summary: 'Update an existing epoch record',
         description: 'Updates an existing epoch record by id. Returns the updated Epoch, or null if no row matched.',
@@ -712,8 +738,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
         path: '/api/epoch/:id',
         summary: 'Fetch an epoch by id',
         description:
@@ -741,8 +768,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'models:write',
         path: '/api/epoch/:id',
         summary: 'Delete an epoch',
         description:
@@ -765,8 +793,9 @@ function registerDatasetRoutes(app) {
     // dataset_observations
     // ---------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'datasets:write',
         path: '/api/dataset_observation',
         summary: 'Create a new dataset-observation link',
         description: 'Creates a new dataset_observation join record linking a dataset to an observation.',
@@ -789,8 +818,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'datasets:read',
         path: '/api/dataset_observation/:id',
         summary: 'Fetch a dataset_observation by id',
         description:
@@ -818,8 +848,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'datasets:write',
         path: '/api/dataset_observation/:id',
         summary: 'Update an existing dataset_observation',
         description:
@@ -849,8 +880,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'datasets:write',
         path: '/api/dataset_observation/:id',
         summary: 'Delete a dataset_observation',
         description:
@@ -869,8 +901,9 @@ function registerDatasetRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'datasets:write',
         path: '/api/dataset_observations/bulk',
         summary: 'Bulk-create dataset-observation links',
         description:

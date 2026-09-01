@@ -47,7 +47,7 @@ describe('Video-based observation read endpoints', () => {
    * Looks up a real project name for use in this describe block's tests.
    */
   beforeAll(async () => {
-    const projectsRes = await request(app).get('/api/projects');
+    const projectsRes = await global.api.get('/api/v2/projects');
     projectName = projectsRes.body.length > 0 ? projectsRes.body[0].name : undefined;
   });
 
@@ -56,8 +56,8 @@ describe('Video-based observation read endpoints', () => {
    * resolving to an empty array.
    */
   it('GET /api/getObservationsByVideo returns 200 with an array', async () => {
-    const res = await request(app)
-      .get('/api/getObservationsByVideo')
+    const res = await global.api
+      .get('/api/v2/getObservationsByVideo')
       .query({ videoName: 'jest-nonexistent-video' });
 
     expect(res.status).toBe(200);
@@ -69,8 +69,8 @@ describe('Video-based observation read endpoints', () => {
    * resolving to an empty array.
    */
   it('GET /api/getObservationsByVideoAndComnames returns 200 with an array', async () => {
-    const res = await request(app)
-      .get('/api/getObservationsByVideoAndComnames')
+    const res = await global.api
+      .get('/api/v2/getObservationsByVideoAndComnames')
       .query({ videoName: 'jest-nonexistent-video', comnameList: 'jest-nonexistent-species' });
 
     expect(res.status).toBe(200);
@@ -86,8 +86,8 @@ describe('Video-based observation read endpoints', () => {
       return;
     }
 
-    const res = await request(app).get(
-      `/api/getObservationsByVideoAndProject/jest-nonexistent-video/${encodeURIComponent(projectName)}`
+    const res = await global.api.get(
+      `/api/v2/getObservationsByVideoAndProject/jest-nonexistent-video/${encodeURIComponent(projectName)}`
     );
 
     expect(res.status).toBe(200);
@@ -99,8 +99,8 @@ describe('Video-based observation read endpoints', () => {
    * resolving to an empty array.
    */
   it('GET /api/getObservationsWithKeyframesByComnames returns 200 with an array', async () => {
-    const res = await request(app)
-      .get('/api/getObservationsWithKeyframesByComnames')
+    const res = await global.api
+      .get('/api/v2/getObservationsWithKeyframesByComnames')
       .query({ comnameList: 'jest-nonexistent-species' });
 
     expect(res.status).toBe(200);
@@ -112,8 +112,8 @@ describe('Video-based observation read endpoints', () => {
    * tolerates no match by resolving to an empty array.
    */
   it('GET /api/observation/getMaxObservationFromVideo/:video_source returns 200 with an array', async () => {
-    const res = await request(app).get(
-      '/api/observation/getMaxObservationFromVideo/jest-nonexistent-video'
+    const res = await global.api.get(
+      '/api/v2/observation/getMaxObservationFromVideo/jest-nonexistent-video'
     );
 
     expect(res.status).toBe(200);
@@ -126,7 +126,7 @@ describe('Video-based observation read endpoints', () => {
  */
 describe('GET /api/getDistinctComnamesWithKeyframes', () => {
   it('returns 200 with an array of distinct common names', async () => {
-    const res = await request(app).get('/api/getDistinctComnamesWithKeyframes');
+    const res = await global.api.get('/api/v2/getDistinctComnamesWithKeyframes');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -161,10 +161,10 @@ describe('Project and session-scoped observation read endpoints', () => {
    * describe block's tests.
    */
   beforeAll(async () => {
-    const projectsRes = await request(app).get('/api/projects');
+    const projectsRes = await global.api.get('/api/v2/projects');
     projectId = projectsRes.body.length > 0 ? projectsRes.body[0].project_id : undefined;
 
-    const sessionsRes = await request(app).get('/api/sessions');
+    const sessionsRes = await global.api.get('/api/v2/sessions');
     sessionId = sessionsRes.body.length > 0 ? sessionsRes.body[0].session_id : undefined;
   });
 
@@ -177,7 +177,7 @@ describe('Project and session-scoped observation read endpoints', () => {
       return;
     }
 
-    const res = await request(app).get(`/api/getVideoSummaries/${projectId}`);
+    const res = await global.api.get(`/api/v2/getVideoSummaries/${projectId}`);
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -192,7 +192,7 @@ describe('Project and session-scoped observation read endpoints', () => {
       return;
     }
 
-    const res = await request(app).get(`/api/observation/getLastVideoInfo/${sessionId}`);
+    const res = await global.api.get(`/api/v2/observation/getLastVideoInfo/${sessionId}`);
 
     expect(res.status).toBe(200);
   });
@@ -207,7 +207,7 @@ describe('Project and session-scoped observation read endpoints', () => {
       return;
     }
 
-    const res = await request(app).get(`/api/observations/bySessionID/${sessionId}`);
+    const res = await global.api.get(`/api/v2/observations/bySessionID/${sessionId}`);
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -230,8 +230,8 @@ describe('Dashboard aggregate read endpoints', () => {
    * narrows its cost.
    */
   it('GET /api/dashboardData returns 200', async () => {
-    const res = await request(app)
-      .get('/api/dashboardData')
+    const res = await global.api
+      .get('/api/v2/dashboardData')
       .query({ start: '2099-01-01', end: '2099-01-02' });
 
     expect(res.status).toBe(200);
@@ -241,8 +241,8 @@ describe('Dashboard aggregate read endpoints', () => {
    * GET /api/getProjectTimeByDateAndUser returns 200 with an object body.
    */
   it('GET /api/getProjectTimeByDateAndUser returns 200', async () => {
-    const res = await request(app)
-      .get('/api/getProjectTimeByDateAndUser')
+    const res = await global.api
+      .get('/api/v2/getProjectTimeByDateAndUser')
       .query({ start: '2099-01-01', end: '2099-01-02' });
 
     expect(res.status).toBe(200);

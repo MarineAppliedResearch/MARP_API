@@ -65,8 +65,8 @@ describe('Observation lifecycle', () => {
    * Creates a disposable parent session for the observation to reference.
    */
   beforeAll(async () => {
-    const res = await request(app)
-      .post('/api/session')
+    const res = await global.api
+      .post('/api/v2/session')
       .send({
         session: { dive: 'Dive 1', line: 'Line A', lineId, type: 'ROV' },
       });
@@ -80,10 +80,10 @@ describe('Observation lifecycle', () => {
    */
   afterAll(async () => {
     if (observationId) {
-      await request(app).delete(`/api/observation/${observationId}`);
+      await global.api.delete(`/api/v2/observation/${observationId}`);
     }
     if (sessionId) {
-      await request(app).delete(`/api/session/${sessionId}`);
+      await global.api.delete(`/api/v2/session/${sessionId}`);
     }
   });
 
@@ -92,8 +92,8 @@ describe('Observation lifecycle', () => {
    * observation_id/obsID server-side) and return it.
    */
   it('creates an observation', async () => {
-    const res = await request(app)
-      .post('/api/observation')
+    const res = await global.api
+      .post('/api/v2/observation')
       .send({ observation: { session_id: sessionId, comname: 'Jest Test Fish' } });
 
     expect(res.status).toBe(200);
@@ -109,8 +109,8 @@ describe('Observation lifecycle', () => {
    * observation_id.
    */
   it('updates the observation', async () => {
-    const res = await request(app)
-      .put('/api/observation')
+    const res = await global.api
+      .put('/api/v2/observation')
       .send({ observation: { observation_id: observationId, comname: 'Updated Jest Fish' } });
 
     expect(res.status).toBe(200);
@@ -121,7 +121,7 @@ describe('Observation lifecycle', () => {
    * the update above.
    */
   it('gets the observation by id', async () => {
-    const res = await request(app).get(`/api/observation/${observationId}`);
+    const res = await global.api.get(`/api/v2/observation/${observationId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.observation_id).toBe(observationId);
@@ -134,13 +134,13 @@ describe('Observation lifecycle', () => {
    * the observation's count field.
    */
   it('updates the observation count via the count endpoint', async () => {
-    const res = await request(app).get(
-      `/api/observation/updateObservationWithCount/${sessionId}/${obsID}/7`
+    const res = await global.api.get(
+      `/api/v2/observation/updateObservationWithCount/${sessionId}/${obsID}/7`
     );
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/observation/${observationId}`);
+    const getRes = await global.api.get(`/api/v2/observation/${observationId}`);
     expect(getRes.body.count).toBe(7);
   });
 
@@ -150,13 +150,13 @@ describe('Observation lifecycle', () => {
    * the observation's coarsesize field.
    */
   it('updates the observation size via the size endpoint', async () => {
-    const res = await request(app).get(
-      `/api/observation/updateObservationWithSize/${sessionId}/${obsID}/3`
+    const res = await global.api.get(
+      `/api/v2/observation/updateObservationWithSize/${sessionId}/${obsID}/3`
     );
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/observation/${observationId}`);
+    const getRes = await global.api.get(`/api/v2/observation/${observationId}`);
     expect(getRes.body.coarsesize).toBe(3);
   });
 
@@ -165,11 +165,11 @@ describe('Observation lifecycle', () => {
    * trace in the dev database.
    */
   it('deletes the observation', async () => {
-    const res = await request(app).delete(`/api/observation/${observationId}`);
+    const res = await global.api.delete(`/api/v2/observation/${observationId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/observation/${observationId}`);
+    const getRes = await global.api.get(`/api/v2/observation/${observationId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

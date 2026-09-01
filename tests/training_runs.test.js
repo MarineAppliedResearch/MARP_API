@@ -49,8 +49,8 @@ describe('Training run lifecycle', () => {
    * reference.
    */
   beforeAll(async () => {
-    const res = await request(app)
-      .post('/api/model')
+    const res = await global.api
+      .post('/api/v2/model')
       .send({ model: { name: modelName, model_type: 'yolov8' } });
     modelId = res.body.id;
   });
@@ -62,10 +62,10 @@ describe('Training run lifecycle', () => {
    */
   afterAll(async () => {
     if (runId) {
-      await request(app).delete(`/api/training_run/${runId}`);
+      await global.api.delete(`/api/v2/training_run/${runId}`);
     }
     if (modelId) {
-      await request(app).delete(`/api/model/${modelId}`);
+      await global.api.delete(`/api/v2/model/${modelId}`);
     }
   });
 
@@ -74,8 +74,8 @@ describe('Training run lifecycle', () => {
    * return it.
    */
   it('creates a training run', async () => {
-    const res = await request(app)
-      .post('/api/training_run')
+    const res = await global.api
+      .post('/api/v2/training_run')
       .send({ training_run: { model_id: modelId, notes: 'created by jest' } });
 
     expect(res.status).toBe(200);
@@ -89,8 +89,8 @@ describe('Training run lifecycle', () => {
    * PUT /api/training_run/:id should update the run's fields by id.
    */
   it('updates the training run', async () => {
-    const res = await request(app)
-      .put(`/api/training_run/${runId}`)
+    const res = await global.api
+      .put(`/api/v2/training_run/${runId}`)
       .send({ training_run: { notes: 'updated by jest' } });
 
     expect(res.status).toBe(200);
@@ -102,7 +102,7 @@ describe('Training run lifecycle', () => {
    * update above.
    */
   it('gets the training run by id', async () => {
-    const res = await request(app).get(`/api/training_run/${runId}`);
+    const res = await global.api.get(`/api/v2/training_run/${runId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(runId);
@@ -114,11 +114,11 @@ describe('Training run lifecycle', () => {
    * no trace in the dev database.
    */
   it('deletes the training run', async () => {
-    const res = await request(app).delete(`/api/training_run/${runId}`);
+    const res = await global.api.delete(`/api/v2/training_run/${runId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/training_run/${runId}`);
+    const getRes = await global.api.get(`/api/v2/training_run/${runId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

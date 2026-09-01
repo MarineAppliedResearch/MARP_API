@@ -65,5 +65,11 @@ module.exports = {
    * real root cause (e.g. the underlying DB error behind a 500) actually
    * gets logged.
    */
-  setupFilesAfterEnv: ['<rootDir>/tests/setup/console-error-passthrough.js'],
+  setupFilesAfterEnv: [
+    '<rootDir>/tests/setup/console-error-passthrough.js',
+
+    // Gives every suite an authenticated agent as global.api. Every route
+    // requires a permission now, so an anonymous call only ever gets 401.
+    '<rootDir>/tests/setup/authenticated-agent.js',
+  ],
 };

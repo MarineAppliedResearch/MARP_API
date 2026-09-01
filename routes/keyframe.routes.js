@@ -13,6 +13,7 @@
 const keyframeController = require('../controller/keyframe.controller');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register every `/api/keyframe(s)` route and its OpenAPI operation on `app`.
@@ -21,8 +22,9 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerKeyframeRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'keyframes:write',
         path: '/api/keyframe',
         summary: 'Bulk-create keyframe records',
         description:
@@ -64,8 +66,9 @@ function registerKeyframeRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'keyframes:read',
         path: '/api/keyframe/:keyframe_id',
         summary: 'Fetch a keyframe by id',
         description:
@@ -116,8 +119,9 @@ function registerKeyframeRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'keyframes:write',
         path: '/api/keyframe/:keyframe_id',
         summary: 'Update an existing keyframe',
         description:
@@ -172,8 +176,9 @@ function registerKeyframeRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'keyframes:write',
         path: '/api/keyframe/:keyframe_id',
         summary: 'Delete a keyframe',
         description:

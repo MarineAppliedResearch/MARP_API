@@ -66,18 +66,18 @@ describe('Dataset observation lifecycle', () => {
    * dataset_observation will reference.
    */
   beforeAll(async () => {
-    const datasetRes = await request(app)
-      .post('/api/dataset')
+    const datasetRes = await global.api
+      .post('/api/v2/dataset')
       .send({ dataset: { name: uniqueTag } });
     datasetId = datasetRes.body.id;
 
-    const sessionRes = await request(app)
-      .post('/api/session')
+    const sessionRes = await global.api
+      .post('/api/v2/session')
       .send({ session: { dive: 'Dive 1', line: 'Line A', lineId: uniqueTag, type: 'ROV' } });
     sessionId = sessionRes.body.session_id;
 
-    const observationRes = await request(app)
-      .post('/api/observation')
+    const observationRes = await global.api
+      .post('/api/v2/observation')
       .send({ observation: { session_id: sessionId, comname: 'Jest DatasetObs Parent' } });
     observationId = observationRes.body.observation_id;
   });
@@ -89,16 +89,16 @@ describe('Dataset observation lifecycle', () => {
    */
   afterAll(async () => {
     if (datasetObservationId) {
-      await request(app).delete(`/api/dataset_observation/${datasetObservationId}`);
+      await global.api.delete(`/api/v2/dataset_observation/${datasetObservationId}`);
     }
     if (observationId) {
-      await request(app).delete(`/api/observation/${observationId}`);
+      await global.api.delete(`/api/v2/observation/${observationId}`);
     }
     if (sessionId) {
-      await request(app).delete(`/api/session/${sessionId}`);
+      await global.api.delete(`/api/v2/session/${sessionId}`);
     }
     if (datasetId) {
-      await request(app).delete(`/api/dataset/${datasetId}`);
+      await global.api.delete(`/api/v2/dataset/${datasetId}`);
     }
   });
 
@@ -107,8 +107,8 @@ describe('Dataset observation lifecycle', () => {
    * dataset_observations row and return it.
    */
   it('creates a dataset_observation', async () => {
-    const res = await request(app)
-      .post('/api/dataset_observation')
+    const res = await global.api
+      .post('/api/v2/dataset_observation')
       .send({
         dataset_observation: {
           dataset_id: datasetId,
@@ -130,8 +130,8 @@ describe('Dataset observation lifecycle', () => {
    * fields by id.
    */
   it('updates the dataset_observation', async () => {
-    const res = await request(app)
-      .put(`/api/dataset_observation/${datasetObservationId}`)
+    const res = await global.api
+      .put(`/api/v2/dataset_observation/${datasetObservationId}`)
       .send({ dataset_observation: { inclusion_type: 'val' } });
 
     expect(res.status).toBe(200);
@@ -143,7 +143,7 @@ describe('Dataset observation lifecycle', () => {
    * reflecting the update above.
    */
   it('gets the dataset_observation by id', async () => {
-    const res = await request(app).get(`/api/dataset_observation/${datasetObservationId}`);
+    const res = await global.api.get(`/api/v2/dataset_observation/${datasetObservationId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(datasetObservationId);
@@ -155,11 +155,11 @@ describe('Dataset observation lifecycle', () => {
    * leaving no trace in the dev database.
    */
   it('deletes the dataset_observation', async () => {
-    const res = await request(app).delete(`/api/dataset_observation/${datasetObservationId}`);
+    const res = await global.api.delete(`/api/v2/dataset_observation/${datasetObservationId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/dataset_observation/${datasetObservationId}`);
+    const getRes = await global.api.get(`/api/v2/dataset_observation/${datasetObservationId}`);
       expect(getRes.status).toBe(404);
       expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
       expect(getRes.body.error.status).toBe(404);

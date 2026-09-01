@@ -45,7 +45,7 @@ describe('Task lifecycle', () => {
    */
   afterAll(async () => {
     if (taskId) {
-      await request(app).delete(`/api/task/${taskId}`);
+      await global.api.delete(`/api/v2/task/${taskId}`);
     }
   });
 
@@ -53,8 +53,8 @@ describe('Task lifecycle', () => {
    * POST /api/task should insert a new tasks row and return it.
    */
   it('creates a task', async () => {
-    const res = await request(app)
-      .post('/api/task')
+    const res = await global.api
+      .post('/api/v2/task')
       .send({ task: { name: taskName, createdby: 'jest' } });
 
     expect(res.status).toBe(200);
@@ -68,8 +68,8 @@ describe('Task lifecycle', () => {
    * PUT /api/task should update the task's fields by id.
    */
   it('updates the task', async () => {
-    const res = await request(app)
-      .put('/api/task')
+    const res = await global.api
+      .put('/api/v2/task')
       .send({ task: { id: taskId, description: 'updated by jest' } });
 
     expect(res.status).toBe(200);
@@ -79,7 +79,7 @@ describe('Task lifecycle', () => {
    * GET /api/task/:id should return the task, reflecting the update above.
    */
   it('gets the task by id', async () => {
-    const res = await request(app).get(`/api/task/${taskId}`);
+    const res = await global.api.get(`/api/v2/task/${taskId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(taskId);
@@ -91,11 +91,11 @@ describe('Task lifecycle', () => {
    * dev database.
    */
   it('deletes the task', async () => {
-    const res = await request(app).delete(`/api/task/${taskId}`);
+    const res = await global.api.delete(`/api/v2/task/${taskId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/task/${taskId}`);
+    const getRes = await global.api.get(`/api/v2/task/${taskId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

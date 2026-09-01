@@ -14,6 +14,7 @@
 const schemaController = require('../controller/schema.controller');
 const { asyncHandler } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Register all three `/api/schema/*` routes and their OpenAPI operations on `app`.
@@ -22,8 +23,9 @@ const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
  * @returns {void}
  */
 function registerSchemaRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'schema:read',
         path: '/api/schema/tables',
         summary: 'Retrieve public table metadata',
         description:
@@ -53,8 +55,9 @@ function registerSchemaRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'schema:read',
         path: '/api/schema/views',
         summary: 'Retrieve public view metadata',
         description:
@@ -82,8 +85,9 @@ function registerSchemaRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'schema:read',
         path: '/api/schema/relationships',
         summary: 'Retrieve public foreign-key relationships',
         description:

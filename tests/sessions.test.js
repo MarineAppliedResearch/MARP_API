@@ -45,7 +45,7 @@ describe('Session lifecycle', () => {
    */
   afterAll(async () => {
     if (sessionId) {
-      await request(app).delete(`/api/session/${sessionId}`);
+      await global.api.delete(`/api/v2/session/${sessionId}`);
     }
   });
 
@@ -53,8 +53,8 @@ describe('Session lifecycle', () => {
    * POST /api/session should insert a new sessions row and return it.
    */
   it('creates a session', async () => {
-    const res = await request(app)
-      .post('/api/session')
+    const res = await global.api
+      .post('/api/v2/session')
       .send({
         session: { dive: 'Dive 1', line: 'Line A', lineId, type: 'ROV' },
       });
@@ -70,8 +70,8 @@ describe('Session lifecycle', () => {
    * PUT /api/session should update the session's fields by session_id.
    */
   it('updates the session', async () => {
-    const res = await request(app)
-      .put('/api/session')
+    const res = await global.api
+      .put('/api/v2/session')
       .send({ session: { session_id: sessionId, type: 'AUV' } });
 
     expect(res.status).toBe(200);
@@ -82,7 +82,7 @@ describe('Session lifecycle', () => {
    * update above.
    */
   it('gets the session by id', async () => {
-    const res = await request(app).get(`/api/session/${sessionId}`);
+    const res = await global.api.get(`/api/v2/session/${sessionId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.session_id).toBe(sessionId);
@@ -94,11 +94,11 @@ describe('Session lifecycle', () => {
    * in the dev database.
    */
   it('deletes the session', async () => {
-    const res = await request(app).delete(`/api/session/${sessionId}`);
+    const res = await global.api.delete(`/api/v2/session/${sessionId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/session/${sessionId}`);
+    const getRes = await global.api.get(`/api/v2/session/${sessionId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

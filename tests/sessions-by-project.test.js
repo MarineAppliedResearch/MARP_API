@@ -97,10 +97,10 @@ describe('Sessions by project', () => {
    * config-wide default leaves room for.
    */
   beforeAll(async () => {
-    const projectRes = await request(app).post(`/api/project/createProjectByName/${projectName}`);
+    const projectRes = await global.api.post(`/api/v2/project/createProjectByName/${projectName}`);
     projectId = projectRes.body.project_id;
 
-    const userRes = await request(app).post(`/api/user/createUserByName/${processorName}`);
+    const userRes = await global.api.post(`/api/v2/processors/by-name/${processorName}`);
     userId = userRes.body.user_id;
 
     /**
@@ -113,8 +113,8 @@ describe('Sessions by project', () => {
      * @returns {Promise<void>}
      */
     async function createSession(label, dive, line, type) {
-      const res = await request(app)
-        .post('/api/session')
+      const res = await global.api
+        .post('/api/v2/session')
         .send({
           session: {
             project_id: projectId,
@@ -138,8 +138,8 @@ describe('Sessions by project', () => {
     // derives obsID from the session's current highest, so concurrent
     // inserts would hand out the same one.
     for (const videoSource of ['jest-video-a.mp4', 'jest-video-a.mp4', 'jest-video-b.mp4']) {
-      const res = await request(app)
-        .post('/api/observation')
+      const res = await global.api
+        .post('/api/v2/observation')
         .send({
           observation: {
             session_id: sessionIds.dive1LineT1Fish,
@@ -159,16 +159,16 @@ describe('Sessions by project', () => {
    */
   afterAll(async () => {
     for (const observationId of observationIds) {
-      await request(app).delete(`/api/observation/${observationId}`);
+      await global.api.delete(`/api/v2/observation/${observationId}`);
     }
     for (const sessionId of Object.values(sessionIds)) {
-      await request(app).delete(`/api/session/${sessionId}`);
+      await global.api.delete(`/api/v2/session/${sessionId}`);
     }
     if (projectId) {
-      await request(app).delete(`/api/project/${projectId}`);
+      await global.api.delete(`/api/v2/project/${projectId}`);
     }
     if (userId) {
-      await request(app).delete(`/api/user/${userId}`);
+      await global.api.delete(`/api/v2/processors/by-name/${userId}`);
     }
   });
 
@@ -178,7 +178,7 @@ describe('Sessions by project', () => {
    * group them under their dive without sorting first.
    */
   it('returns the project sessions ordered by dive, line, then type', async () => {
-    const res = await request(app).get(`/api/sessions/project/${projectId}`);
+    const res = await global.api.get(`/api/v2/sessions/project/${projectId}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(3);
@@ -196,7 +196,7 @@ describe('Sessions by project', () => {
    * who did it without the caller looking the user up separately.
    */
   it('carries the processor on every session', async () => {
-    const res = await request(app).get(`/api/sessions/project/${projectId}`);
+    const res = await global.api.get(`/api/v2/sessions/project/${projectId}`);
 
     expect(res.status).toBe(200);
     for (const session of res.body) {
@@ -212,7 +212,7 @@ describe('Sessions by project', () => {
    * the field.
    */
   it('counts the observations on each session', async () => {
-    const res = await request(app).get(`/api/sessions/project/${projectId}`);
+    const res = await global.api.get(`/api/v2/sessions/project/${projectId}`);
     const bySessionId = new Map(res.body.map((session) => [session.session_id, session]));
 
     expect(bySessionId.get(sessionIds.dive1LineT1Fish).observationCount).toBe(3);
@@ -227,7 +227,7 @@ describe('Sessions by project', () => {
    * report an empty list rather than null.
    */
   it('reports the distinct videos a session observations name', async () => {
-    const res = await request(app).get(`/api/sessions/project/${projectId}`);
+    const res = await global.api.get(`/api/v2/sessions/project/${projectId}`);
     const bySessionId = new Map(res.body.map((session) => [session.session_id, session]));
 
     expect(bySessionId.get(sessionIds.dive1LineT1Fish).video_sources)
@@ -240,17 +240,17 @@ describe('Sessions by project', () => {
    * GUI shows it as an empty list.
    */
   it('returns an empty array for a project with no sessions', async () => {
-    const emptyProjectRes = await request(app)
-      .post(`/api/project/createProjectByName/${projectName}-empty`);
+    const emptyProjectRes = await global.api
+      .post(`/api/v2/project/createProjectByName/${projectName}-empty`);
     const emptyProjectId = emptyProjectRes.body.project_id;
 
     try {
-      const res = await request(app).get(`/api/sessions/project/${emptyProjectId}`);
+      const res = await global.api.get(`/api/v2/sessions/project/${emptyProjectId}`);
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual([]);
     } finally {
-      await request(app).delete(`/api/project/${emptyProjectId}`);
+      await global.api.delete(`/api/v2/project/${emptyProjectId}`);
     }
   });
 });

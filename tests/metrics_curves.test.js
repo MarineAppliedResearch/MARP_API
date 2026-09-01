@@ -66,18 +66,18 @@ describe('Metrics curve lifecycle', () => {
    * metrics_summary the metrics_curve will reference.
    */
   beforeAll(async () => {
-    const modelRes = await request(app)
-      .post('/api/model')
+    const modelRes = await global.api
+      .post('/api/v2/model')
       .send({ model: { name: modelName, model_type: 'yolov8' } });
     modelId = modelRes.body.id;
 
-    const runRes = await request(app)
-      .post('/api/training_run')
+    const runRes = await global.api
+      .post('/api/v2/training_run')
       .send({ training_run: { model_id: modelId } });
     runId = runRes.body.id;
 
-    const summaryRes = await request(app)
-      .post('/api/metrics_summary')
+    const summaryRes = await global.api
+      .post('/api/v2/metrics_summary')
       .send({ metrics_summary: { training_run_id: runId, dataset_split: 'val' } });
     summaryId = summaryRes.body.id;
   });
@@ -89,16 +89,16 @@ describe('Metrics curve lifecycle', () => {
    */
   afterAll(async () => {
     if (curveId) {
-      await request(app).delete(`/api/metrics_curve/${curveId}`);
+      await global.api.delete(`/api/v2/metrics_curve/${curveId}`);
     }
     if (summaryId) {
-      await request(app).delete(`/api/metrics_summary/${summaryId}`);
+      await global.api.delete(`/api/v2/metrics_summary/${summaryId}`);
     }
     if (runId) {
-      await request(app).delete(`/api/training_run/${runId}`);
+      await global.api.delete(`/api/v2/training_run/${runId}`);
     }
     if (modelId) {
-      await request(app).delete(`/api/model/${modelId}`);
+      await global.api.delete(`/api/v2/model/${modelId}`);
     }
   });
 
@@ -107,8 +107,8 @@ describe('Metrics curve lifecycle', () => {
    * return it.
    */
   it('creates a metrics_curve', async () => {
-    const res = await request(app)
-      .post('/api/metrics_curve')
+    const res = await global.api
+      .post('/api/v2/metrics_curve')
       .send({ metrics_curve: { metrics_summary_id: summaryId, confidence_threshold: 0.5 } });
 
     expect(res.status).toBe(200);
@@ -122,8 +122,8 @@ describe('Metrics curve lifecycle', () => {
    * PUT /api/metrics_curve/:id should update the curve's fields by id.
    */
   it('updates the metrics_curve', async () => {
-    const res = await request(app)
-      .put(`/api/metrics_curve/${curveId}`)
+    const res = await global.api
+      .put(`/api/v2/metrics_curve/${curveId}`)
       .send({ metrics_curve: { precision: 0.75 } });
 
     expect(res.status).toBe(200);
@@ -135,7 +135,7 @@ describe('Metrics curve lifecycle', () => {
    * update above.
    */
   it('gets the metrics_curve by id', async () => {
-    const res = await request(app).get(`/api/metrics_curve/${curveId}`);
+    const res = await global.api.get(`/api/v2/metrics_curve/${curveId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(curveId);
@@ -147,11 +147,11 @@ describe('Metrics curve lifecycle', () => {
    * trace in the dev database.
    */
   it('deletes the metrics_curve', async () => {
-    const res = await request(app).delete(`/api/metrics_curve/${curveId}`);
+    const res = await global.api.delete(`/api/v2/metrics_curve/${curveId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/metrics_curve/${curveId}`);
+    const getRes = await global.api.get(`/api/v2/metrics_curve/${curveId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);
