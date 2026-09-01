@@ -409,7 +409,7 @@ class SpeciesRepository {
                     'species_list',
                     [fn('COUNT', col('id')), 'entry_count'],
                 ],
-                where: { species_list: { [Op.ne]: null } },
+                where: { species_list: { [Op.ne]: null }, is_active: true },
                 group: ['species_list'],
                 order: [['species_list', 'ASC']],
                 raw: true,
@@ -437,7 +437,11 @@ class SpeciesRepository {
     async getSpeciesByList(speciesList) {
         try {
             return await this.db.species.findAll({
-                where: { species_list: speciesList },
+                // Retired entries excluded: they are kept only because
+                // observations and ML metrics reference them, and offering one
+                // for annotation would put a duplicate button in the GUI -- and
+                // on the Fish list, bump a live species off the home tab.
+                where: { species_list: speciesList, is_active: true },
                 include: this.PICTURES_INCLUDE,
                 order: this.LIST_ORDER,
             });
@@ -467,6 +471,7 @@ class SpeciesRepository {
             return await this.db.species.findAll({
                 where: {
                     species_list: speciesList,
+                    is_active: true,
                     [Op.or]: [
                         { comname: { [Op.iLike]: pattern } },
                         { species: { [Op.iLike]: pattern } },
@@ -485,11 +490,17 @@ class SpeciesRepository {
     /**
      * Fetch one entry by its list and taxserial -- the pair that identifies it.
      *
+     * Unlike the list and search methods this does not filter on `is_active`.
+     * Those answer "what may be annotated"; this answers "what is this entry",
+     * and a retired one still has to be resolvable -- an old observation
+     * references it, and reporting needs its name. Callers that care can read
+     * `is_active` on the result.
+     *
      * @async
      * @param {string} speciesList - List the entry belongs to.
      * @param {number|string} taxserial - Taxserial within that list.
-     * @returns {Promise<Object|null>} The entry with its pictures, or null when
-     * no entry matches or the query fails.
+     * @returns {Promise<Object|null>} The entry with its pictures, active or
+     * retired, or null when no entry matches or the query fails.
      */
     async getSpeciesByListAndTaxserial(speciesList, taxserial) {
         try {

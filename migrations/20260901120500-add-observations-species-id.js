@@ -34,6 +34,8 @@
 
 'use strict';
 
+const { guardDataIntegrity } = require('../db/data-integrity');
+
 /**
  * Maps a session's `type` onto the annotation list its observations were
  * recorded against.
@@ -95,6 +97,17 @@ module.exports = {
                 { transaction }
             );
 
+            // Backfilling touches 440,102 observations in one statement, so it
+            // runs inside an integrity check: nothing here should delete a row
+            // or drop an existing reference, and if it does the migration rolls
+            // back rather than leaving a partly-rewritten table.
+            const updateMetadata = await guardDataIntegrity({
+                sequelize,
+                transaction,
+                label: 'observations species_id',
+                tables: ['observations', 'species'],
+                work: async () => {
+
             // One statement rather than a row-by-row loop: this touches
             // 440,102 rows, and the join is exactly the identity rule --
             // session type gives the list, taxserial gives the entry within it.
@@ -112,7 +125,7 @@ module.exports = {
             // Sequelize hands back [results, metadata] here, and for a Postgres
             // UPDATE the row count is on the metadata object rather than being
             // the metadata itself.
-            const [, updateMetadata] = await sequelize.query(
+            const [, metadata] = await sequelize.query(
                 // Joined through WHERE rather than JOIN ... ON: Postgres does
                 // not allow the UPDATE target (`o`) to be referenced from a
                 // join condition inside FROM.
@@ -128,6 +141,10 @@ module.exports = {
                     AND o.species_id IS NULL`,
                 { replacements, transaction }
             );
+
+                    return metadata;
+                },
+            });
 
             await queryInterface.addIndex('observations', ['species_id'], {
                 name: 'observations_species_id_idx',

@@ -207,6 +207,77 @@ describe('Species identity is list plus taxserial', () => {
   });
 });
 
+describe('Retired species entries', () => {
+
+  /**
+   * `Fish` taxserial 3030 is a real historical entry: machine-learning metrics
+   * reference it, so it cannot be deleted, but it is not on the current Fish
+   * list. It also carries gui_home_order 3, which collides with a live Fish
+   * entry -- so listing it would bump a real species off the home screen.
+   *
+   * @constant
+   * @type {number}
+   */
+  const RETIRED_FISH_TAXSERIAL = 3030;
+
+  /**
+   * A retired entry must not appear in a list, or it shows up as a duplicate
+   * button in the annotation GUI.
+   */
+  it('excludes retired entries from a list', async () => {
+    const res = await request(app).get('/api/species/list/Fish');
+
+    expect(res.status).toBe(200);
+    expect(res.body.every((entry) => entry.is_active)).toBe(true);
+    expect(res.body.some((entry) => entry.taxserial === RETIRED_FISH_TAXSERIAL)).toBe(false);
+  });
+
+  /**
+   * Search is annotation-facing too, so it has to agree with the list.
+   */
+  it('excludes retired entries from search', async () => {
+    const res = await request(app).get('/api/species/list/Fish/search?q=Olive');
+
+    expect(res.status).toBe(200);
+    expect(res.body.some((entry) => entry.taxserial === RETIRED_FISH_TAXSERIAL)).toBe(false);
+  });
+
+  /**
+   * A direct lookup must still resolve one. Observations recorded years ago
+   * point at these, and reporting needs their names -- excluding them here would
+   * make that history unreadable.
+   */
+  it('still resolves a retired entry by list and taxserial', async () => {
+    const res = await request(app).get(`/api/species/list/Fish/taxserial/${RETIRED_FISH_TAXSERIAL}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.taxserial).toBe(RETIRED_FISH_TAXSERIAL);
+    expect(res.body.is_active).toBe(false);
+  });
+
+  /**
+   * The entry counts describe what can be annotated, so they have to agree with
+   * what the list endpoint actually returns.
+   *
+   * An invariant rather than fixed numbers: pinning "Fish: 180" would fail the
+   * first time somebody adds a species through the API, which is the thing this
+   * work exists to make possible. This still catches a retired entry being
+   * counted, since that would make the count exceed the list.
+   */
+  it('counts exactly what each list returns', async () => {
+    const lists = await request(app).get('/api/species/lists');
+
+    expect(lists.status).toBe(200);
+
+    for (const list of lists.body) {
+      const entries = await request(app).get(`/api/species/list/${list.species_list}`);
+
+      expect(entries.status).toBe(200);
+      expect(entries.body).toHaveLength(list.entry_count);
+    }
+  });
+});
+
 describe('Species pictures', () => {
 
   /**

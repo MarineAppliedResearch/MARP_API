@@ -94,6 +94,9 @@ describe('Species picture upload', () => {
       species_list: 'jest-picture-list',
       taxserial: 987654321,
       comname: 'Jest Picture Subject',
+      // Retired, so this fixture never shows up in GET /api/species/lists
+      // while the suite runs.
+      is_active: false,
     });
     speciesId = created.id;
   });
@@ -273,6 +276,7 @@ describe('Species picture management', () => {
       species_list: 'jest-picture-list',
       taxserial: 987654322,
       comname: 'Jest Picture Manager',
+      is_active: false,
     });
     speciesId = created.id;
 

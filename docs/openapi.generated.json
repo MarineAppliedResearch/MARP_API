@@ -3063,6 +3063,12 @@
             "description": "Which annotation list this entry belongs to. Unique together with taxserial.",
             "example": "Fish"
           },
+          "is_active": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether this entry is offered for annotation. Retired entries remain resolvable but are not listed.",
+            "example": true
+          },
           "itis_tsn": {
             "type": "integer",
             "nullable": true,
@@ -3217,6 +3223,7 @@
         "required": [
           "id",
           "taxserial",
+          "is_active",
           "created_at",
           "updated_at"
         ],

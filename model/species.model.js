@@ -125,6 +125,23 @@ module.exports = (sequelize, DataTypes) => {
         },
       },
 
+      is_active: {
+        // Whether this entry is offered for annotation. A species that
+        // observations or ML metrics reference cannot be deleted, so retiring is
+        // the only way to take one out of use. The list and search endpoints
+        // exclude retired entries; a direct lookup still returns them, because an
+        // old observation still points at one.
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+        comment:
+          'Whether this entry is offered for annotation. False for entries kept only because observations or machine-learning metrics reference them.',
+        jsonSchema: {
+            description: 'Whether this entry is offered for annotation. Retired entries remain resolvable but are not listed.',
+            examples: [true],
+        },
+      },
+
       itis_tsn: {
         // The real ITIS serial, where taxserial happens to be one. Lets the
         // same taxon be recognised across lists, which taxserial cannot do.

@@ -25,6 +25,7 @@
 'use strict';
 
 const { readSpeciesLists } = require('../seed-data/species/species-source');
+const { guardDataIntegrity } = require('../db/data-integrity');
 
 /**
  * Maps the pseudo-list values already stored in `observation_type` on the 218
@@ -88,6 +89,20 @@ module.exports = {
             // for taxserial 27, and it is replaced at the end of this
             // migration by the same index over (species_list, taxserial).
             await queryInterface.removeIndex('species', 'species_taxserial_idx', { transaction });
+
+            // Everything below runs inside an integrity check. This migration
+            // updates 854 rows that 212,000 metrics_curves rows point at, so an
+            // accidental delete or a cascade firing would be expensive and easy
+            // to miss. The check throws, which rolls the whole thing back.
+            await guardDataIntegrity({
+                sequelize,
+                transaction,
+                label: 'species import',
+                // Only species is named; the foreign keys into it -- from
+                // metrics_curves, metrics_summary, model_species and
+                // observations -- are discovered from the database.
+                tables: ['species'],
+                work: async () => {
 
             const { records, skippedEmpty, merged } = readSpeciesLists();
 
@@ -207,6 +222,9 @@ module.exports = {
                 + `${existingByKey.size} pre-existing rows kept without a CSV match, `
                 + `${existingWithoutList.length} left with no list`
             );
+
+                },
+            });
 
             // Postgres treats NULLs as distinct in a unique index, so the rows
             // left without a list do not collide with each other.
