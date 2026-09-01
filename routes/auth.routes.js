@@ -55,6 +55,8 @@ function registerAuthRoutes(app) {
   registerOpenApiRoute(app, {
     method: 'post',
     path: '/api/v2/auth/login',
+    // The way in, so it cannot itself require a credential.
+    security: [],
     summary: 'Sign in with local username and password',
     description:
       'Authenticates a local MARP user using username and password, then establishes a server-side session backed by PostgreSQL. On success, returns the authenticated user profile used in the session.',
@@ -128,6 +130,8 @@ function registerAuthRoutes(app) {
   registerOpenApiRoute(app, {
     method: 'post',
     path: '/api/v2/auth/logout',
+    // Idempotent, and answers 204 with no session at all.
+    security: [],
     summary: 'Sign out the current authenticated session',
     description:
       'Clears the current server-side authentication session. Logout is idempotent and always returns 204 even when no authenticated session exists.',

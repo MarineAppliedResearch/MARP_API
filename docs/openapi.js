@@ -443,7 +443,30 @@ const buildOpenApiSpec = () => {
                 }
             ],
 
+            // Every route requires a credential now (#50). Declared here so the
+            // documentation says so, and so Swagger UI offers somewhere to put one.
+            security: [
+                { bearerAuth: [] },
+                { sessionCookie: [] },
+            ],
+
             components: {
+                securitySchemes: {
+                    bearerAuth: {
+                        type: 'http',
+                        scheme: 'bearer',
+                        description:
+                            'An application token, as `Authorization: Bearer svc_...`. Issued by `POST /api/v2/tokens`, or from the command line with `node scripts/create-application-token.js`. This is how the annotation GUI and the inference worker authenticate.',
+                    },
+                    sessionCookie: {
+                        type: 'apiKey',
+                        in: 'cookie',
+                        name: 'marp.sid',
+                        description:
+                            'The session cookie set by `POST /api/v2/auth/login`. This is how the browser applications authenticate; a browser sends it automatically.',
+                    },
+                },
+
                 schemas: {
                     ErrorDetail: {
                         type: 'object',

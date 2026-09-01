@@ -359,6 +359,7 @@ app.use(
  *     description: Returns the generated OpenAPI document used by the API documentation and development tools.
  *     tags:
  *       - Documentation
+ *     security: []
  *     responses:
  *       200:
  *         description: OpenAPI specification returned successfully.
@@ -380,6 +381,7 @@ app.get('/api/openapi.json', (req, res) => {
  *     description: Returns the generated OpenAPI document from the root-level compatibility endpoint.
  *     tags:
  *       - Documentation
+ *     security: []
  *     responses:
  *       200:
  *         description: OpenAPI specification returned successfully.
@@ -404,6 +406,7 @@ app.get('/openapi.json', (req, res) => {
  *       assets rather than a JSON API response.
  *     tags:
  *       - Documentation
+ *     security: []
  *     responses:
  *       200:
  *         description: Developer documentation page returned successfully.
