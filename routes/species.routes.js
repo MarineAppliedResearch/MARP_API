@@ -22,6 +22,7 @@ const speciesController = require('../controller/species.controller');
 const logger = require('../logger/api.logger');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
+const { registerVersionedRoute } = require('./lib/register-versioned-route');
 
 /**
  * Directory the species picture files live in. Populated from the checked-in
@@ -205,8 +206,9 @@ function handlePictureUpload(req, res, next) {
  * @returns {void}
  */
 function registerSpeciesRoutes(app) {
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species',
         summary: 'Fetch all species',
         description:
@@ -228,8 +230,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/by-comname/:comname',
         summary: 'Fetch a species by common name',
         description:
@@ -268,8 +271,9 @@ function registerSpeciesRoutes(app) {
     // `GET /api/species/lists` against that route with id = 'lists'.
     // -----------------------------------------------------------------
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/lists',
         summary: 'List the annotation species lists',
         description:
@@ -302,8 +306,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/list/:list',
         summary: 'Fetch every entry on one annotation list',
         description:
@@ -335,8 +340,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/list/:list/search',
         summary: 'Search one annotation list by name',
         description:
@@ -384,8 +390,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/list/:list/taxserial/:taxserial',
         summary: 'Fetch one entry by list and taxserial',
         description:
@@ -434,8 +441,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/pictures/:pictureId',
         summary: 'Fetch a species picture',
         description:
@@ -499,8 +507,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'species:write',
         path: '/api/species/:id/pictures',
         summary: 'Upload pictures for a species',
         description:
@@ -645,8 +654,9 @@ function registerSpeciesRoutes(app) {
         ],
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/pictures/:pictureId/thumbnail',
         summary: 'Fetch a small version of a species picture',
         description:
@@ -712,8 +722,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'species:write',
         path: '/api/species/pictures/:pictureId/default',
         summary: 'Make a picture the species default',
         description:
@@ -753,8 +764,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'species:write',
         path: '/api/species/pictures/:pictureId',
         summary: 'Delete a species picture',
         description:
@@ -809,8 +821,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/:id/pictures',
         summary: 'List the pictures recorded for a species',
         description:
@@ -842,8 +855,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'species:read',
         path: '/api/species/:id',
         summary: 'Fetch a species by id',
         description:
@@ -875,8 +889,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'species:write',
         path: '/api/species',
         summary: 'Create a new species record',
         description:
@@ -903,8 +918,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'species:write',
         path: '/api/species/:id',
         summary: 'Update an existing species record',
         description:
@@ -942,8 +958,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'species:write',
         path: '/api/species/:id',
         summary: 'Delete a species record',
         description:
@@ -968,8 +985,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'post',
+        permission: 'models:write',
         path: '/api/model_species',
         summary: 'Create a model-species linkage record',
         description:
@@ -1011,8 +1029,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'get',
+        permission: 'models:read',
         path: '/api/model_species/:id',
         summary: 'Fetch a model_species record by id',
         description:
@@ -1050,8 +1069,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'put',
+        permission: 'models:write',
         path: '/api/model_species/:id',
         summary: 'Update an existing model_species record',
         description:
@@ -1087,8 +1107,9 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
-    registerOpenApiRoute(app, {
+    registerVersionedRoute(app, {
         method: 'delete',
+        permission: 'models:write',
         path: '/api/model_species/:id',
         summary: 'Delete a model_species record',
         description:

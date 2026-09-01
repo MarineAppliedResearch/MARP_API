@@ -5719,6 +5719,74 @@
         }
       }
     },
+    "/v2/species": {
+      "get": {
+        "summary": "Fetch all species",
+        "description": "Returns every species record used for taxonomy, GUI display configuration, and ML model training labels. An empty array may indicate either that no records exist or that the database query failed. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "responses": {
+          "200": {
+            "description": "Species list returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Species"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new species record",
+        "description": "Creates a new species record. The caller must supply a unique taxserial (see the species_taxserial_idx unique index in model/species.model.js). A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `species:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeciesCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The created species record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Species"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/species/by-comname/{comname}": {
       "get": {
         "summary": "Fetch a species by common name",
@@ -5754,6 +5822,51 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v2/species/by-comname/{comname}": {
+      "get": {
+        "summary": "Fetch a species by common name",
+        "description": "Returns the species record whose comname matches the supplied value, case-insensitively. Returns null both when no species matches and when the database query fails. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "comname",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Common name to match, case-insensitively."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching species returned, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           }
         }
       }
@@ -5801,6 +5914,55 @@
         }
       }
     },
+    "/v2/species/lists": {
+      "get": {
+        "summary": "List the annotation species lists",
+        "description": "Returns the annotation lists a species can belong to, with how many entries each holds. Entries with no list are excluded: those are historical records kept only because machine-learning metrics reference them, and nothing should offer them for annotation. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "responses": {
+          "200": {
+            "description": "Lists returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "species_list",
+                      "entry_count"
+                    ],
+                    "properties": {
+                      "species_list": {
+                        "type": "string",
+                        "example": "GULF_Inverts",
+                        "description": "Name of the list."
+                      },
+                      "entry_count": {
+                        "type": "integer",
+                        "example": 177,
+                        "description": "How many entries the list holds."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/species/list/{list}": {
       "get": {
         "summary": "Fetch every entry on one annotation list",
@@ -5832,6 +5994,50 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/species/list/{list}": {
+      "get": {
+        "summary": "Fetch every entry on one annotation list",
+        "description": "Returns every entry on the named list with its pictures, ordered by main tab, then sub-tab, then item order, so a client can build its tab tree straight from the response. Entries whose item order covers several placements (an underscore-delimited value such as `17_4`) sort last within their group, because that order only means something once the client splits it. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the list, as returned by GET /api/species/lists (e.g. 'Fish')."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries returned successfully. An empty array when the list does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesWithPictures"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -5890,6 +6096,63 @@
         }
       }
     },
+    "/v2/species/list/{list}/search": {
+      "get": {
+        "summary": "Search one annotation list by name",
+        "description": "Case-insensitive substring search over common name, scientific name and GUI display name, scoped to one list. Scoped deliberately: a common name is not unique across the seven lists -- ITIS serial 169237 is \"UI croaker\" on Fish and \"Drum\" on GULF_Fish. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the list to search within."
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Substring to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching entries returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesWithPictures"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/species/list/{list}/taxserial/{taxserial}": {
       "get": {
         "summary": "Fetch one entry by list and taxserial",
@@ -5927,6 +6190,59 @@
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/species/list/{list}/taxserial/{taxserial}": {
+      "get": {
+        "summary": "Fetch one entry by list and taxserial",
+        "description": "Returns the single entry identified by a list and a taxserial. Both are needed: taxserial alone does not identify an entry, because values below 10000 are local codes invented per list and reused across lists -- taxserial 55 is a rockfish complex on Fish, a coral on GULF_Inverts and metal debris on MarineDebris. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "list",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Name of the list the entry belongs to."
+          },
+          {
+            "in": "path",
+            "name": "taxserial",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Taxserial within that list."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching entry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeciesWithPictures"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
@@ -6011,6 +6327,102 @@
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/species/pictures/{pictureId}": {
+      "get": {
+        "summary": "Fetch a species picture",
+        "description": "Serves the picture file itself, with the Content-Type recorded for it. Responses carry a strong ETag and a long Cache-Control, because a species grid asks for a couple of hundred pictures at once and without them every tab switch re-downloads all of them. A picture never changes once stored -- a replacement is a new record with a new id -- so the ETag is derived from the record rather than the file contents. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture, from a species response or GET /api/species/{id}/pictures."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture file.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; the client's cached copy is current."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a species picture",
+        "description": "Removes the picture record and its file. If the deleted picture was the species' default and other pictures remain, the oldest remaining one becomes the default, so a species with pictures always has one -- an ambiguous default is the problem this table exists to avoid. Requires the `species:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deleted picture record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeciesPicture"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
@@ -6125,6 +6537,122 @@
         }
       }
     },
+    "/v2/species/{id}/pictures": {
+      "post": {
+        "summary": "Upload pictures for a species",
+        "description": "Accepts one or more images as multipart/form-data under the field name \"pictures\", and stores each resized to 244 pixels wide with its aspect ratio kept. That width is not arbitrary: every picture inherited from the annotation GUI is exactly 244 wide, because the species buttons are laid out around it, so resizing here is what keeps an uploaded photograph consistent with the rest instead of making the uploader resize by hand. Each file is vetted before anything is written: it must decode as a real image, be at least 120x80 (below that it would have to be enlarged too far to be usable), and be no larger than 10 MB. PNG, JPEG and WebP keep their format; GIF is converted to PNG, since an animated GIF does not resize meaningfully and a button has no use for animation. The first picture a species receives becomes its default. Requires the `species:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "species.id to attach the pictures to."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "pictures"
+                ],
+                "properties": {
+                  "pictures": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "description": "Up to 10 image files."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The pictures that were stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesPicture"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "List the pictures recorded for a species",
+        "description": "Returns the picture records for one species, the default first. The bytes are fetched separately from GET /api/species/pictures/{pictureId}. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "species.id to list pictures for."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Picture records returned successfully. An empty array when the species has none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesPicture"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/species/pictures/{pictureId}/thumbnail": {
       "get": {
         "summary": "Fetch a small version of a species picture",
@@ -6173,6 +6701,60 @@
         }
       }
     },
+    "/v2/species/pictures/{pictureId}/thumbnail": {
+      "get": {
+        "summary": "Fetch a small version of a species picture",
+        "description": "Serves the picture resized to 96 pixels wide, for a grid that shows a couple of hundred at once. Generated on request and cached by the client through the same immutable ETag as the full-size route, since a stored picture never changes -- a replacement is a new record with a new id. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnail.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; the client's cached copy is current."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/species/pictures/{pictureId}/default": {
       "put": {
         "summary": "Make a picture the species default",
@@ -6201,6 +6783,50 @@
                 }
               }
             }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/species/pictures/{pictureId}/default": {
+      "put": {
+        "summary": "Make a picture the species default",
+        "description": "Marks this picture as the one to show when only one is wanted, clearing whichever picture held that role before. Exactly one picture per species can be the default, so this is how the choice is changed rather than by editing the flag directly. The imported set defaulted to the alphabetically first file, which the GUI effectively chose at random. Requires the `species:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pictureId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the picture to make the default."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The updated picture record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeciesPicture"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
@@ -6329,6 +6955,142 @@
         }
       }
     },
+    "/v2/species/{id}": {
+      "get": {
+        "summary": "Fetch a species by id",
+        "description": "Returns a single species record by id, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching species record, or null if not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing species record",
+        "description": "Updates an existing species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `species:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeciesUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated species record, or null if no species matched the given id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Species"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a species record",
+        "description": "Deletes a species record by id. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `species:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "id of the species record to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/model_species": {
       "post": {
         "summary": "Create a model-species linkage record",
@@ -6398,6 +7160,88 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/model_species": {
+      "post": {
+        "summary": "Create a model-species linkage record",
+        "description": "Creates a model_species join record linking an ML model to a species, using the request body directly as the record to insert. Note that when the insert fails the response body is an ErrorResponse-shaped object, but the endpoint currently still responds with HTTP 200 rather than an error status. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model_id",
+                  "species_id"
+                ],
+                "properties": {
+                  "model_id": {
+                    "type": "integer",
+                    "example": 7
+                  },
+                  "species_id": {
+                    "type": "integer",
+                    "example": 42
+                  },
+                  "dataset_size": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "balance_weight": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "precision_mean": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "recall_mean": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "f1_mean": {
+                    "type": "number",
+                    "format": "float",
+                    "nullable": true
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Model-species record created successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSpecies"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -6512,6 +7356,138 @@
         "responses": {
           "200": {
             "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/model_species/{id}": {
+      "get": {
+        "summary": "Fetch a model_species record by id",
+        "description": "Returns a single model_species join record by ID, or null if not found. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching model_species record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSpecies"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update an existing model_species record",
+        "description": "Updates an existing model_species join record by ID. The request body fields are used directly (unwrapped), matching the POST /model_species convention. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to update."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelSpecies"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated model_species record, or null if no row matched the given ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ModelSpecies"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a model_species record",
+        "description": "Deletes a model_species join record by ID. A database failure rejects the returned promise, so the route's .catch() responds with HTTP 500 in that case. Requires the `models:write` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the model_species record to delete."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The number of rows destroyed (as returned by Sequelize)."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
