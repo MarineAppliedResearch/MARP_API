@@ -1,5 +1,5 @@
 {
-  "name": "mare-api",
+  "name": "marp-api",
   "version": "1.0.0",
   "description": "MARP API and static frontend applications: Express, Sequelize, and PostgreSQL, with the MARP video engine.",
   "main": "server.js",
@@ -15,15 +15,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MarineAppliedResearch/MARE_API.git"
+    "url": "git+https://github.com/MarineAppliedResearch/MARP_API.git"
   },
   "keywords": [],
   "author": "Isaac Assegai Travers",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/MarineAppliedResearch/MARE_API/issues"
+    "url": "https://github.com/MarineAppliedResearch/MARP_API/issues"
   },
-  "homepage": "https://github.com/MarineAppliedResearch/MARE_API#readme",
+  "homepage": "https://github.com/MarineAppliedResearch/MARP_API#readme",
   "engines": {
     "node": ">=20.0.0"
   },

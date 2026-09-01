@@ -22,10 +22,18 @@
 /**
  * Display name of the user to grant the bootstrap admin permission to.
  *
+ * Taken from `BOOTSTRAP_ADMIN_NAME` in the environment, falling back to a generic
+ * name. Configurable rather than hardcoded for two reasons: a named individual
+ * does not belong in a public repository, and every deployment wants its own
+ * first administrator rather than this project's.
+ *
+ * The user is created if it does not exist, so whatever this resolves to becomes
+ * the first admin account. Set it in `.env` before migrating a new deployment.
+ *
  * @constant
  * @type {string}
  */
-const BOOTSTRAP_ADMIN_NAME = 'Isaac Travers';
+const BOOTSTRAP_ADMIN_NAME = process.env.BOOTSTRAP_ADMIN_NAME || 'MARP Admin';
 
 /** @type {Object} */
 module.exports = {
