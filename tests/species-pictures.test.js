@@ -124,8 +124,8 @@ describe('Species picture upload', () => {
    * record claims.
    */
   it('resizes an oversized upload to the standard width', async () => {
-    const res = await request(app)
-      .post(`/api/species/${speciesId}/pictures`)
+    const res = await global.api
+      .post(`/api/v2/species/${speciesId}/pictures`)
       .attach('pictures', await makePng(800, 600), 'big-photo.png');
 
     expect(res.status).toBe(201);
@@ -154,13 +154,13 @@ describe('Species picture upload', () => {
    * picture is undefined -- the ambiguity this table exists to remove.
    */
   it('makes the first picture the default and later ones not', async () => {
-    const pictures = await request(app).get(`/api/species/${speciesId}/pictures`);
+    const pictures = await global.api.get(`/api/v2/species/${speciesId}/pictures`);
 
     expect(pictures.status).toBe(200);
     expect(pictures.body[0].is_default).toBe(true);
 
-    const second = await request(app)
-      .post(`/api/species/${speciesId}/pictures`)
+    const second = await global.api
+      .post(`/api/v2/species/${speciesId}/pictures`)
       .attach('pictures', await makePng(500, 500), 'second.png');
 
     expect(second.status).toBe(201);
@@ -177,8 +177,8 @@ describe('Species picture upload', () => {
       create: { width: 400, height: 300, channels: 3, background: { r: 200, g: 30, b: 30 } },
     }).gif().toBuffer();
 
-    const res = await request(app)
-      .post(`/api/species/${speciesId}/pictures`)
+    const res = await global.api
+      .post(`/api/v2/species/${speciesId}/pictures`)
       .attach('pictures', gif, 'animated.gif');
 
     expect(res.status).toBe(201);
@@ -194,8 +194,8 @@ describe('Species picture upload', () => {
    * usefulness should be refused with a reason, not stored as a blurry smear.
    */
   it('rejects an image below the minimum size', async () => {
-    const res = await request(app)
-      .post(`/api/species/${speciesId}/pictures`)
+    const res = await global.api
+      .post(`/api/v2/species/${speciesId}/pictures`)
       .attach('pictures', await makePng(60, 40), 'tiny.png');
 
     expect(res.status).toBe(400);
@@ -207,8 +207,8 @@ describe('Species picture upload', () => {
    * proves the bytes are an image.
    */
   it('rejects a non-image sent with an image name', async () => {
-    const res = await request(app)
-      .post(`/api/species/${speciesId}/pictures`)
+    const res = await global.api
+      .post(`/api/v2/species/${speciesId}/pictures`)
       .attach('pictures', Buffer.from('this is definitely not a png'), 'lies.png');
 
     expect(res.status).toBe(400);
@@ -220,7 +220,7 @@ describe('Species picture upload', () => {
    * field name is easy to get wrong.
    */
   it('rejects a request with no files attached', async () => {
-    const res = await request(app).post(`/api/species/${speciesId}/pictures`);
+    const res = await global.api.post(`/api/v2/species/${speciesId}/pictures`);
 
     expect(res.status).toBe(400);
     expect(res.body.error.message).toMatch(/pictures/);
@@ -233,8 +233,8 @@ describe('Species picture upload', () => {
   it('404s for an unknown species and writes nothing', async () => {
     const before = fs.existsSync(STORAGE_DIR) ? fs.readdirSync(STORAGE_DIR).length : 0;
 
-    const res = await request(app)
-      .post('/api/species/999999999/pictures')
+    const res = await global.api
+      .post('/api/v2/species/999999999/pictures')
       .attach('pictures', await makePng(400, 300), 'orphan.png');
 
     expect(res.status).toBe(404);
@@ -281,8 +281,8 @@ describe('Species picture management', () => {
     speciesId = created.id;
 
     for (const name of ['first.png', 'second.png']) {
-      const res = await request(app)
-        .post(`/api/species/${speciesId}/pictures`)
+      const res = await global.api
+        .post(`/api/v2/species/${speciesId}/pictures`)
         .attach('pictures', await makePng(400, 300), name);
       pictureIds.push(res.body[0].id);
       writtenFiles.push(res.body[0].filename);
@@ -310,8 +310,8 @@ describe('Species picture management', () => {
    * header, since a grid asks for hundreds at once.
    */
   it('serves a thumbnail smaller than the full picture', async () => {
-    const full = await request(app).get(`/api/species/pictures/${pictureIds[0]}`);
-    const thumb = await request(app).get(`/api/species/pictures/${pictureIds[0]}/thumbnail`);
+    const full = await global.api.get(`/api/v2/species/pictures/${pictureIds[0]}`);
+    const thumb = await global.api.get(`/api/v2/species/pictures/${pictureIds[0]}/thumbnail`);
 
     expect(thumb.status).toBe(200);
     expect(thumb.headers['content-type']).toMatch(/^image\//);
@@ -327,14 +327,14 @@ describe('Species picture management', () => {
    * cached would be told its full-size copy is current too.
    */
   it('gives the thumbnail its own ETag', async () => {
-    const full = await request(app).get(`/api/species/pictures/${pictureIds[0]}`);
-    const thumb = await request(app).get(`/api/species/pictures/${pictureIds[0]}/thumbnail`);
+    const full = await global.api.get(`/api/v2/species/pictures/${pictureIds[0]}`);
+    const thumb = await global.api.get(`/api/v2/species/pictures/${pictureIds[0]}/thumbnail`);
 
     expect(thumb.headers.etag).toBeTruthy();
     expect(thumb.headers.etag).not.toBe(full.headers.etag);
 
-    const cached = await request(app)
-      .get(`/api/species/pictures/${pictureIds[0]}/thumbnail`)
+    const cached = await global.api
+      .get(`/api/v2/species/pictures/${pictureIds[0]}/thumbnail`)
       .set('If-None-Match', thumb.headers.etag);
 
     expect(cached.status).toBe(304);
@@ -345,12 +345,12 @@ describe('Species picture management', () => {
    * unique index allows only one per species.
    */
   it('moves the default rather than adding a second', async () => {
-    const res = await request(app).put(`/api/species/pictures/${pictureIds[1]}/default`);
+    const res = await global.api.put(`/api/v2/species/pictures/${pictureIds[1]}/default`);
 
     expect(res.status).toBe(200);
     expect(res.body.is_default).toBe(true);
 
-    const all = await request(app).get(`/api/species/${speciesId}/pictures`);
+    const all = await global.api.get(`/api/v2/species/${speciesId}/pictures`);
     const defaults = all.body.filter((picture) => picture.is_default);
 
     expect(defaults).toHaveLength(1);
@@ -362,7 +362,7 @@ describe('Species picture management', () => {
    * always has one.
    */
   it('promotes another default when the default is deleted', async () => {
-    const res = await request(app).delete(`/api/species/pictures/${pictureIds[1]}`);
+    const res = await global.api.delete(`/api/v2/species/pictures/${pictureIds[1]}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(pictureIds[1]);
@@ -370,7 +370,7 @@ describe('Species picture management', () => {
     // The file must go too, not just the row.
     expect(fs.existsSync(path.join(STORAGE_DIR, res.body.filename))).toBe(false);
 
-    const remaining = await request(app).get(`/api/species/${speciesId}/pictures`);
+    const remaining = await global.api.get(`/api/v2/species/${speciesId}/pictures`);
     expect(remaining.body).toHaveLength(1);
     expect(remaining.body[0].is_default).toBe(true);
     expect(remaining.body[0].id).toBe(pictureIds[0]);
@@ -380,7 +380,7 @@ describe('Species picture management', () => {
    * Deleting something that is not there is a 404 rather than a stack trace.
    */
   it('404s when deleting an unknown picture', async () => {
-    const res = await request(app).delete('/api/species/pictures/999999999');
+    const res = await global.api.delete('/api/v2/species/pictures/999999999');
 
     expect(res.status).toBe(404);
   });

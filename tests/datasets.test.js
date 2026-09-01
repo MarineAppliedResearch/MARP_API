@@ -44,7 +44,7 @@ describe('Dataset lifecycle', () => {
    */
   afterAll(async () => {
     if (datasetId) {
-      await request(app).delete(`/api/dataset/${datasetId}`);
+      await global.api.delete(`/api/v2/dataset/${datasetId}`);
     }
   });
 
@@ -52,8 +52,8 @@ describe('Dataset lifecycle', () => {
    * POST /api/dataset should insert a new datasets row and return it.
    */
   it('creates a dataset', async () => {
-    const res = await request(app)
-      .post('/api/dataset')
+    const res = await global.api
+      .post('/api/v2/dataset')
       .send({ dataset: { name: datasetName } });
 
     expect(res.status).toBe(200);
@@ -67,8 +67,8 @@ describe('Dataset lifecycle', () => {
    * PUT /api/dataset/:id should update the dataset's fields by id.
    */
   it('updates the dataset', async () => {
-    const res = await request(app)
-      .put(`/api/dataset/${datasetId}`)
+    const res = await global.api
+      .put(`/api/v2/dataset/${datasetId}`)
       .send({ dataset: { description: 'updated by jest' } });
 
     expect(res.status).toBe(200);
@@ -80,7 +80,7 @@ describe('Dataset lifecycle', () => {
    * above.
    */
   it('gets the dataset by id', async () => {
-    const res = await request(app).get(`/api/dataset/${datasetId}`);
+    const res = await global.api.get(`/api/v2/dataset/${datasetId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(datasetId);
@@ -92,11 +92,11 @@ describe('Dataset lifecycle', () => {
    * in the dev database.
    */
   it('deletes the dataset', async () => {
-    const res = await request(app).delete(`/api/dataset/${datasetId}`);
+    const res = await global.api.delete(`/api/v2/dataset/${datasetId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/dataset/${datasetId}`);
+    const getRes = await global.api.get(`/api/v2/dataset/${datasetId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

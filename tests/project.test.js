@@ -48,7 +48,7 @@ describe('Project lifecycle', () => {
    */
   afterAll(async () => {
     if (createdProjectId) {
-      await request(app).delete(`/api/project/${createdProjectId}`);
+      await global.api.delete(`/api/v2/project/${createdProjectId}`);
     }
   });
 
@@ -58,8 +58,8 @@ describe('Project lifecycle', () => {
    * generated project_id.
    */
   it('creates a project record with the given name', async () => {
-    const res = await request(app).post(
-      `/api/project/createProjectByName/${projectName}`
+    const res = await global.api.post(
+      `/api/v2/project/createProjectByName/${projectName}`
     );
 
     expect(res.status).toBe(200);
@@ -74,8 +74,8 @@ describe('Project lifecycle', () => {
    * project created above among its results.
    */
   it('is then retrievable by name', async () => {
-    const res = await request(app).get(
-      `/api/project/getProjectByName/${projectName}`
+    const res = await global.api.get(
+      `/api/v2/project/getProjectByName/${projectName}`
     );
 
     expect(res.status).toBe(200);
@@ -88,8 +88,8 @@ describe('Project lifecycle', () => {
    */
   it('updates the project', async () => {
     const updatedName = `${projectName}-updated`;
-    const res = await request(app)
-      .put('/api/project')
+    const res = await global.api
+      .put('/api/v2/project')
       .send({ project: { project_id: createdProjectId, name: updatedName } });
 
     expect(res.status).toBe(200);
@@ -100,7 +100,7 @@ describe('Project lifecycle', () => {
    * above.
    */
   it('gets the project by id', async () => {
-    const res = await request(app).get(`/api/project/${createdProjectId}`);
+    const res = await global.api.get(`/api/v2/project/${createdProjectId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.project_id).toBe(createdProjectId);
@@ -112,11 +112,11 @@ describe('Project lifecycle', () => {
    * the dev database.
    */
   it('deletes the project', async () => {
-    const res = await request(app).delete(`/api/project/${createdProjectId}`);
+    const res = await global.api.delete(`/api/v2/project/${createdProjectId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/project/${createdProjectId}`);
+    const getRes = await global.api.get(`/api/v2/project/${createdProjectId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

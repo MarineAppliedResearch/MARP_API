@@ -21,7 +21,7 @@ const app = require('../app');
  */
 describe('GET /api/tasks', () => {
   it('returns 200 with an array of task records', async () => {
-    const res = await request(app).get('/api/tasks');
+    const res = await global.api.get('/api/v2/tasks');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -37,27 +37,26 @@ describe('User read endpoints', () => {
   /**
    * Returns 200 with an array of user records.
    */
-  it('GET /api/users returns 200 with an array', async () => {
-    const res = await request(app).get('/api/users');
+  it('GET /api/v2/processors returns 200 with an array', async () => {
+    const res = await global.api.get('/api/v2/processors');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
   });
 
   /**
-   * GET /api/user/getUserNameByID/:userID throws (and the route has no
-   * .catch()) when no user matches the id, so this test looks up a real
-   * user id from the list endpoint first rather than risking a hang on a
-   * made-up id.
+   * The name lookup throws (and the route has no .catch()) when no user matches
+   * the id, so this test looks up a real user id from the list endpoint first
+   * rather than risking a hang on a made-up id.
    */
-  it('GET /api/user/getUserNameByID/:userID returns the name for a real user', async () => {
-    const listRes = await request(app).get('/api/users');
+  it('GET /api/v2/processors/:userID/name returns the name for a real user', async () => {
+    const listRes = await global.api.get('/api/v2/processors');
     if (listRes.body.length === 0) {
       return;
     }
 
     const realUserId = listRes.body[0].user_id;
-    const res = await request(app).get(`/api/user/getUserNameByID/${realUserId}`);
+    const res = await global.api.get(`/api/v2/processors/${realUserId}/name`);
 
     expect(res.status).toBe(200);
     expect(typeof res.body).toBe('string');
@@ -73,7 +72,7 @@ describe('Project read endpoints', () => {
    * Returns 200 with an array of project records.
    */
   it('GET /api/projects returns 200 with an array', async () => {
-    const res = await request(app).get('/api/projects');
+    const res = await global.api.get('/api/v2/projects');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -85,13 +84,13 @@ describe('Project read endpoints', () => {
    * is used here for a more meaningful check without risk of failure.
    */
   it('GET /api/projects/user/:userID returns 200 with an array', async () => {
-    const listRes = await request(app).get('/api/users');
+    const listRes = await global.api.get('/api/v2/processors');
     if (listRes.body.length === 0) {
       return;
     }
 
     const realUserId = listRes.body[0].user_id;
-    const res = await request(app).get(`/api/projects/user/${realUserId}`);
+    const res = await global.api.get(`/api/v2/projects/user/${realUserId}`);
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -108,7 +107,7 @@ describe('Session read endpoints', () => {
    * Returns 200 with an array of session records.
    */
   it('GET /api/sessions returns 200 with an array', async () => {
-    const res = await request(app).get('/api/sessions');
+    const res = await global.api.get('/api/v2/sessions');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -121,16 +120,16 @@ describe('Session read endpoints', () => {
    * failure.
    */
   it('GET /api/sessions/user/:userID/project/:projectID returns 200 with an array', async () => {
-    const usersRes = await request(app).get('/api/users');
-    const projectsRes = await request(app).get('/api/projects');
+    const usersRes = await global.api.get('/api/v2/processors');
+    const projectsRes = await global.api.get('/api/v2/projects');
     if (usersRes.body.length === 0 || projectsRes.body.length === 0) {
       return;
     }
 
     const realUserId = usersRes.body[0].user_id;
     const realProjectId = projectsRes.body[0].project_id;
-    const res = await request(app).get(
-      `/api/sessions/user/${realUserId}/project/${realProjectId}`
+    const res = await global.api.get(
+      `/api/v2/sessions/user/${realUserId}/project/${realProjectId}`
     );
 
     expect(res.status).toBe(200);
@@ -144,14 +143,14 @@ describe('Session read endpoints', () => {
  */
 describe('GET /api/species/by-comname/:comname', () => {
   it('returns 200 with the matching species record for a real comname', async () => {
-    const listRes = await request(app).get('/api/species');
+    const listRes = await global.api.get('/api/v2/species');
     const withComname = listRes.body.find((s) => s.comname);
     if (!withComname) {
       return;
     }
 
-    const res = await request(app).get(
-      `/api/species/by-comname/${encodeURIComponent(withComname.comname)}`
+    const res = await global.api.get(
+      `/api/v2/species/by-comname/${encodeURIComponent(withComname.comname)}`
     );
 
     expect(res.status).toBe(200);
@@ -164,7 +163,7 @@ describe('GET /api/species/by-comname/:comname', () => {
  */
 describe('GET /api/ml_models', () => {
   it('returns 200 with an array of ML model records', async () => {
-    const res = await request(app).get('/api/ml_models');
+    const res = await global.api.get('/api/v2/ml_models');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -176,7 +175,7 @@ describe('GET /api/ml_models', () => {
  */
 describe('GET /api/dataset', () => {
   it('returns 200 with an array of dataset records', async () => {
-    const res = await request(app).get('/api/dataset');
+    const res = await global.api.get('/api/v2/dataset');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -190,7 +189,7 @@ describe('GET /api/dataset', () => {
  */
 describe('GET /api/metaInfo/dbName', () => {
   it('returns 200 with the current database name', async () => {
-    const res = await request(app).get('/api/metaInfo/dbName');
+    const res = await global.api.get('/api/v2/metaInfo/dbName');
 
     expect(res.status).toBe(200);
   });
@@ -204,28 +203,28 @@ describe('GET /api/metaInfo/dbName', () => {
  */
 describe('PUT /api/metaInfo/dbName', () => {
   it('updates the database name and restores the original value afterward', async () => {
-    const before = await request(app).get('/api/metaInfo/dbName');
+    const before = await global.api.get('/api/v2/metaInfo/dbName');
     const originalName = before.body[0].name;
 
     try {
-      const putRes = await request(app)
-        .put('/api/metaInfo/dbName')
+      const putRes = await global.api
+        .put('/api/v2/metaInfo/dbName')
         .send({ name: 'Test DB Name' });
 
       expect(putRes.status).toBe(200);
       expect(putRes.body[0].name).toBe('Test DB Name');
 
-      const after = await request(app).get('/api/metaInfo/dbName');
+      const after = await global.api.get('/api/v2/metaInfo/dbName');
       expect(after.body[0].name).toBe('Test DB Name');
     } finally {
-      await request(app)
-        .put('/api/metaInfo/dbName')
+      await global.api
+        .put('/api/v2/metaInfo/dbName')
         .send({ name: originalName });
     }
   });
 
   it('returns 400 when name is missing from the request body', async () => {
-    const res = await request(app).put('/api/metaInfo/dbName').send({});
+    const res = await global.api.put('/api/v2/metaInfo/dbName').send({});
 
     expect(res.status).toBe(400);
   });

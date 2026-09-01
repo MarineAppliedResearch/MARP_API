@@ -48,7 +48,7 @@ describe('User lifecycle', () => {
    */
   afterAll(async () => {
     if (userId) {
-      await request(app).delete(`/api/user/${userId}`);
+      await global.api.delete(`/api/v2/processors/${userId}`);
     }
   });
 
@@ -57,8 +57,8 @@ describe('User lifecycle', () => {
    * row and return it.
    */
   it('creates a user', async () => {
-    const res = await request(app).post(
-      `/api/user/createUserByName/${userName}`
+    const res = await global.api.post(
+      `/api/v2/processors/by-name/${userName}`
     );
 
     expect(res.status).toBe(200);
@@ -74,8 +74,8 @@ describe('User lifecycle', () => {
    */
   it('updates the user', async () => {
     const updatedName = `${userName}-updated`;
-    const res = await request(app)
-      .put('/api/user')
+    const res = await global.api
+      .put('/api/v2/processors')
       .send({ user: { user_id: userId, name: updatedName } });
 
     expect(res.status).toBe(200);
@@ -86,7 +86,7 @@ describe('User lifecycle', () => {
    * above.
    */
   it('gets the user by id', async () => {
-    const res = await request(app).get(`/api/users/${userId}`);
+    const res = await global.api.get(`/api/v2/processors/${userId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.user_id).toBe(userId);
@@ -98,11 +98,11 @@ describe('User lifecycle', () => {
    * deleteUser -> deleteUsers typo is fixed.
    */
   it('deletes the user', async () => {
-    const res = await request(app).delete(`/api/user/${userId}`);
+    const res = await global.api.delete(`/api/v2/processors/${userId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/users/${userId}`);
+    const getRes = await global.api.get(`/api/v2/processors/${userId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

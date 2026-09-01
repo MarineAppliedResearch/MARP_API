@@ -1,25 +1,26 @@
 /**
- * Registers one route twice: as it exists today, and as an authenticated V2 route.
+ * Registers a route at its authenticated V2 path.
  *
- * There are 108 unauthenticated V1 routes to move onto V2 (see #50), and writing
- * each definition out twice would double 3,000 lines of route code and guarantee
- * the two copies drift. So a route is declared once, with the permission it should
- * require, and this registers both:
+ * A route is declared with the V1 path it has always had, plus the permission it
+ * requires, and this registers it once -- at the V2 path, behind that permission.
+ * The V1 path is not registered at all.
  *
- *   GET /api/species/lists          unchanged, no gate
- *   GET /api/v2/species/lists       same handler, behind requirePermission(...)
+ *   declared:   GET /api/species/lists    permission: 'species:read'
+ *   registered: GET /api/v2/species/lists behind requirePermission('species:read')
  *
- * One handler, one OpenAPI description, one place to change behaviour. The V2
- * variant differs only in its path, its tag, an added permission note, and the
- * 401/403 responses.
+ * Keeping the declaration in V1 terms means the 140-odd route definitions did not
+ * have to be rewritten, and a reader can still match a route to the handler and
+ * documentation it always had.
  *
- * Declaring both is deliberate rather than a transition step nobody finished: V1
- * has consumers that cannot authenticate yet -- the annotation GUI, the dashboard
- * and entry frontends -- and production runs a codebase with none of the V2 auth
- * substrate at all. How and when V1 is retired is a decision on #50, not something
- * this helper should force.
+ * V1 is gone rather than deprecated. The dashboard and entry frontends already
+ * call only V2, so the annotation GUI was the sole V1 consumer -- and it is being
+ * rewritten as part of #50. Leaving both would have meant an unauthenticated way
+ * in to every route, which is the thing this work exists to close.
  *
- * @fileoverview Registers a route under both the V1 and authenticated V2 prefixes.
+ * **The API and the GUI must therefore ship together.** A GUI still calling V1
+ * stops working entirely against an API that has been promoted without it.
+ *
+ * @fileoverview Registers a route at its authenticated V2 path.
  * @author Isaac Travers
  * @module routes/lib/register-versioned-route
  */
@@ -65,21 +66,24 @@ function toV2Tags(tags) {
 }
 
 /**
- * Register a route as both an unauthenticated V1 route and an authenticated V2
- * route.
+ * Register a route at its authenticated V2 path.
  *
  * @param {Object} app - Express application instance.
  * @param {Object} definition - Exactly what {@link registerOpenApiRoute} takes,
  * plus `permission`.
- * @param {string} definition.permission - Permission key the V2 route requires,
+ * @param {string} definition.permission - Permission key the route requires,
  * e.g. `species:read`.
+ * @param {string} [definition.v2Path] - Overrides the derived V2 path. Needed where
+ * the obvious derivation collides with a V2 route that already exists: the legacy
+ * name-only user routes cannot become `/api/v2/users`, because that is the admin
+ * user-management API.
  * @returns {void}
  * @throws {Error} If `permission` is missing. A route with no permission has no
  * business being registered by this helper -- register it directly and be explicit
  * about why it is ungated.
  */
 function registerVersionedRoute(app, definition) {
-    const { permission, ...routeDefinition } = definition;
+    const { permission, v2Path, ...routeDefinition } = definition;
 
     if (!permission) {
         throw new Error(
@@ -88,17 +92,13 @@ function registerVersionedRoute(app, definition) {
         );
     }
 
-    // V1: exactly as it was. No gate, no change in behaviour, so an existing
-    // consumer cannot be broken by this conversion.
-    registerOpenApiRoute(app, routeDefinition);
-
     const v1Handlers = Array.isArray(routeDefinition.handler)
         ? routeDefinition.handler
         : [routeDefinition.handler];
 
     registerOpenApiRoute(app, {
         ...routeDefinition,
-        path: toV2Path(routeDefinition.path),
+        path: v2Path || toV2Path(routeDefinition.path),
         tags: toV2Tags(routeDefinition.tags),
         description: `${routeDefinition.description || ''} Requires the \`${permission}\` permission.`.trim(),
 
@@ -108,8 +108,7 @@ function registerVersionedRoute(app, definition) {
             403: { $ref: '#/components/responses/ForbiddenError' },
         },
 
-        // The same handlers, behind the gate. Not a copy: the identical function
-        // references, so the two versions cannot diverge in behaviour.
+        // The handlers as declared, behind the gate.
         handler: [requirePermission(permission), ...v1Handlers],
     });
 }

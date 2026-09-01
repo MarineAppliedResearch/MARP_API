@@ -17,7 +17,7 @@ const app = require('../app');
  */
 describe('GET /api/schema/tables', () => {
     it('returns 200 with an array of table metadata objects', async () => {
-        const res = await request(app).get('/api/schema/tables');
+        const res = await global.api.get('/api/v2/schema/tables');
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body)).toBe(true);
@@ -46,7 +46,7 @@ describe('GET /api/schema/tables', () => {
  */
 describe('GET /api/schema/views', () => {
     it('returns 200 with an array of view metadata objects', async () => {
-        const res = await request(app).get('/api/schema/views');
+        const res = await global.api.get('/api/v2/schema/views');
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body)).toBe(true);
@@ -69,7 +69,7 @@ describe('GET /api/schema/views', () => {
  */
 describe('GET /api/schema/relationships', () => {
     it('returns 200 with an array of relationship objects', async () => {
-        const res = await request(app).get('/api/schema/relationships');
+        const res = await global.api.get('/api/v2/schema/relationships');
 
         expect(res.status).toBe(200);
         expect(Array.isArray(res.body)).toBe(true);

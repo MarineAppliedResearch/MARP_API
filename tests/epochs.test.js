@@ -57,13 +57,13 @@ describe('Epoch lifecycle', () => {
    * will reference.
    */
   beforeAll(async () => {
-    const modelRes = await request(app)
-      .post('/api/model')
+    const modelRes = await global.api
+      .post('/api/v2/model')
       .send({ model: { name: modelName, model_type: 'yolov8' } });
     modelId = modelRes.body.id;
 
-    const runRes = await request(app)
-      .post('/api/training_run')
+    const runRes = await global.api
+      .post('/api/v2/training_run')
       .send({ training_run: { model_id: modelId } });
     runId = runRes.body.id;
   });
@@ -75,13 +75,13 @@ describe('Epoch lifecycle', () => {
    */
   afterAll(async () => {
     if (epochId) {
-      await request(app).delete(`/api/epoch/${epochId}`);
+      await global.api.delete(`/api/v2/epoch/${epochId}`);
     }
     if (runId) {
-      await request(app).delete(`/api/training_run/${runId}`);
+      await global.api.delete(`/api/v2/training_run/${runId}`);
     }
     if (modelId) {
-      await request(app).delete(`/api/model/${modelId}`);
+      await global.api.delete(`/api/v2/model/${modelId}`);
     }
   });
 
@@ -89,8 +89,8 @@ describe('Epoch lifecycle', () => {
    * POST /api/epoch should insert a new epochs row and return it.
    */
   it('creates an epoch', async () => {
-    const res = await request(app)
-      .post('/api/epoch')
+    const res = await global.api
+      .post('/api/v2/epoch')
       .send({ epoch: { training_run_id: runId, epoch_number: 1 } });
 
     expect(res.status).toBe(200);
@@ -104,8 +104,8 @@ describe('Epoch lifecycle', () => {
    * PUT /api/epoch/:id should update the epoch's fields by id.
    */
   it('updates the epoch', async () => {
-    const res = await request(app)
-      .put(`/api/epoch/${epochId}`)
+    const res = await global.api
+      .put(`/api/v2/epoch/${epochId}`)
       .send({ epoch: { box_loss: 0.5 } });
 
     expect(res.status).toBe(200);
@@ -117,7 +117,7 @@ describe('Epoch lifecycle', () => {
    * above.
    */
   it('gets the epoch by id', async () => {
-    const res = await request(app).get(`/api/epoch/${epochId}`);
+    const res = await global.api.get(`/api/v2/epoch/${epochId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(epochId);
@@ -129,11 +129,11 @@ describe('Epoch lifecycle', () => {
    * the dev database.
    */
   it('deletes the epoch', async () => {
-    const res = await request(app).delete(`/api/epoch/${epochId}`);
+    const res = await global.api.delete(`/api/v2/epoch/${epochId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/epoch/${epochId}`);
+    const getRes = await global.api.get(`/api/v2/epoch/${epochId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);

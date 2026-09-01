@@ -1,16 +1,15 @@
 /**
  * Endpoint tests for the authenticated V2 species routes.
  *
- * Every species route now exists twice: unchanged at `/api/species/...` with no
- * gate, and at `/api/v2/species/...` behind a permission. Both are served by the
- * same handler through `routes/lib/register-versioned-route.js`, so what is worth
- * testing is not the behaviour a second time -- `tests/species-lists.test.js`
- * covers that -- but the gate:
+ * Every species route lives at `/api/v2/species/...` behind a permission, through
+ * `routes/lib/register-versioned-route.js`. What is worth testing here is not the
+ * behaviour again -- `tests/species-lists.test.js` covers that -- but the gate:
  *
  * - an anonymous caller is refused
  * - a caller holding the wrong permission is refused
- * - a caller holding the right one gets the same answer as V1
+ * - a caller holding the right one gets the full answer
  * - `species:read` does not grant writing
+ * - the old unauthenticated V1 paths are gone
  *
  * The last one matters most. A read/write split that silently lets a reader write
  * is worse than no split at all, because it reads as protection.
@@ -152,16 +151,17 @@ describe('V2 species routes require a permission', () => {
   });
 
   /**
-   * Same handler, so the same answer. If these ever differ, the two versions have
-   * drifted and the helper is not doing its job.
+   * The gate is middleware in front of the same handler, so passing it must not
+   * change the answer. Compared against a caller holding every permission rather
+   * than against V1, which no longer exists.
    */
-  it('returns exactly what the V1 route returns', async () => {
-    const v1 = await request(app).get('/api/species/list/Fish');
-    const v2 = await reader.agent.get('/api/v2/species/list/Fish');
+  it('returns the same answer whatever permissions the caller holds', async () => {
+    const narrow = await reader.agent.get('/api/v2/species/list/Fish');
+    const broad = await global.api.get('/api/v2/species/list/Fish');
 
-    expect(v1.status).toBe(200);
-    expect(v2.status).toBe(200);
-    expect(v2.body).toEqual(v1.body);
+    expect(narrow.status).toBe(200);
+    expect(broad.status).toBe(200);
+    expect(narrow.body).toEqual(broad.body);
   });
 
   /**
@@ -208,15 +208,16 @@ describe('V2 species routes require a permission', () => {
   });
 
   /**
-   * The V1 routes are untouched by this change, and something has to say so --
-   * the annotation GUI, the dashboard and the entry app all still use them.
+   * V1 is gone, not deprecated. If an unauthenticated path ever answers again,
+   * the whole point of this work has been undone -- so it is worth asserting
+   * rather than assuming.
    */
-  it('leaves the V1 routes ungated', async () => {
-    const lists = await request(app).get('/api/species/lists');
-    const fish = await request(app).get('/api/species/list/Fish');
+  it('no longer serves the unauthenticated V1 paths', async () => {
+    for (const path of ['/api/species/lists', '/api/species/list/Fish', '/api/species/1']) {
+      const res = await request(app).get(path);
 
-    expect(lists.status).toBe(200);
-    expect(fish.status).toBe(200);
+      expect(res.status).toBe(404);
+    }
   });
 
   /**

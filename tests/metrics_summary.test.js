@@ -57,13 +57,13 @@ describe('Metrics summary lifecycle', () => {
    * metrics_summary will reference.
    */
   beforeAll(async () => {
-    const modelRes = await request(app)
-      .post('/api/model')
+    const modelRes = await global.api
+      .post('/api/v2/model')
       .send({ model: { name: modelName, model_type: 'yolov8' } });
     modelId = modelRes.body.id;
 
-    const runRes = await request(app)
-      .post('/api/training_run')
+    const runRes = await global.api
+      .post('/api/v2/training_run')
       .send({ training_run: { model_id: modelId } });
     runId = runRes.body.id;
   });
@@ -75,13 +75,13 @@ describe('Metrics summary lifecycle', () => {
    */
   afterAll(async () => {
     if (summaryId) {
-      await request(app).delete(`/api/metrics_summary/${summaryId}`);
+      await global.api.delete(`/api/v2/metrics_summary/${summaryId}`);
     }
     if (runId) {
-      await request(app).delete(`/api/training_run/${runId}`);
+      await global.api.delete(`/api/v2/training_run/${runId}`);
     }
     if (modelId) {
-      await request(app).delete(`/api/model/${modelId}`);
+      await global.api.delete(`/api/v2/model/${modelId}`);
     }
   });
 
@@ -90,8 +90,8 @@ describe('Metrics summary lifecycle', () => {
    * and return it.
    */
   it('creates a metrics_summary', async () => {
-    const res = await request(app)
-      .post('/api/metrics_summary')
+    const res = await global.api
+      .post('/api/v2/metrics_summary')
       .send({ metrics_summary: { training_run_id: runId, dataset_split: 'val' } });
 
     expect(res.status).toBe(200);
@@ -106,8 +106,8 @@ describe('Metrics summary lifecycle', () => {
    * id.
    */
   it('updates the metrics_summary', async () => {
-    const res = await request(app)
-      .put(`/api/metrics_summary/${summaryId}`)
+    const res = await global.api
+      .put(`/api/v2/metrics_summary/${summaryId}`)
       .send({ metrics_summary: { fitness: 0.9 } });
 
     expect(res.status).toBe(200);
@@ -119,7 +119,7 @@ describe('Metrics summary lifecycle', () => {
    * the update above.
    */
   it('gets the metrics_summary by id', async () => {
-    const res = await request(app).get(`/api/metrics_summary/${summaryId}`);
+    const res = await global.api.get(`/api/v2/metrics_summary/${summaryId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(summaryId);
@@ -131,11 +131,11 @@ describe('Metrics summary lifecycle', () => {
    * no trace in the dev database.
    */
   it('deletes the metrics_summary', async () => {
-    const res = await request(app).delete(`/api/metrics_summary/${summaryId}`);
+    const res = await global.api.delete(`/api/v2/metrics_summary/${summaryId}`);
 
     expect(res.status).toBe(200);
 
-    const getRes = await request(app).get(`/api/metrics_summary/${summaryId}`);
+    const getRes = await global.api.get(`/api/v2/metrics_summary/${summaryId}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.error.code).toBe('RESOURCE_NOT_FOUND');
     expect(getRes.body.error.status).toBe(404);
