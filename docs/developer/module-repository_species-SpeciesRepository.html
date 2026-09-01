@@ -178,13 +178,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Ordering for a list, chosen so a client can build its tab tree straight
-from the response.
-
-`gui_item_order` is a string, because one row can place a species in
-several spots and then holds one slot per placement (`17_4`). Those sort
-last within their group: their order is per-placement and only means
-something once the client splits them, which is the GUI's job.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Ordering for a list, chosen so a client can build its tab tree straightfrom the response.`gui_item_order` is a string, because one row can place a species inseveral spots and then holds one slot per placement (`17_4`). Those sortlast within their group: their order is per-placement and only meanssomething once the client splits them, which is the GUI's job.</li></ul></dd>
     
 
     
@@ -230,13 +224,7 @@ something once the client splits them, which is the GUI's job.</li></ul></dd>
 
 
 <div class="description usertext">
-    Ordering for a list, chosen so a client can build its tab tree straight
-from the response.
-
-`gui_item_order` is a string, because one row can place a species in
-several spots and then holds one slot per placement (`17_4`). Those sort
-last within their group: their order is per-placement and only means
-something once the client splits them, which is the GUI's job.
+    Ordering for a list, chosen so a client can build its tab tree straightfrom the response.`gui_item_order` is a string, because one row can place a species inseveral spots and then holds one slot per placement (`17_4`). Those sortlast within their group: their order is per-placement and only meanssomething once the client splits them, which is the GUI's job.
 </div>
 
 
@@ -324,20 +312,7 @@ something once the client splits them, which is the GUI's job.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Fields SpeciesRepository#updateSpecies is allowed to write.
-
-`id`, `species_list` and `taxserial` are absent deliberately: together the
-last two identify an entry, and letting an ordinary edit change them means
-an entry can silently move to another list, collide with the
-`(species_list, taxserial)` unique constraint, or leave every observation
-pointing at it describing something else. Moving an entry between lists is
-a deliberate act, not a side effect of correcting a name.
-
-`itis_tsn` is absent for the same reason: it is derived from `taxserial`,
-so allowing it to be set independently lets the two disagree.
-
-Same protection as `KeyframeRepository.UPDATABLE_FIELDS`, added for the
-same reason (see MARE_API#42).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Fields SpeciesRepository#updateSpecies is allowed to write.`id`, `species_list` and `taxserial` are absent deliberately: together thelast two identify an entry, and letting an ordinary edit change them meansan entry can silently move to another list, collide with the`(species_list, taxserial)` unique constraint, or leave every observationpointing at it describing something else. Moving an entry between lists isa deliberate act, not a side effect of correcting a name.`itis_tsn` is absent for the same reason: it is derived from `taxserial`,so allowing it to be set independently lets the two disagree.Same protection as `KeyframeRepository.UPDATABLE_FIELDS`, added for thesame reason (see MARE_API#42).</li></ul></dd>
     
 
     
@@ -383,20 +358,7 @@ same reason (see MARE_API#42).</li></ul></dd>
 
 
 <div class="description usertext">
-    Fields SpeciesRepository#updateSpecies is allowed to write.
-
-`id`, `species_list` and `taxserial` are absent deliberately: together the
-last two identify an entry, and letting an ordinary edit change them means
-an entry can silently move to another list, collide with the
-`(species_list, taxserial)` unique constraint, or leave every observation
-pointing at it describing something else. Moving an entry between lists is
-a deliberate act, not a side effect of correcting a name.
-
-`itis_tsn` is absent for the same reason: it is derived from `taxserial`,
-so allowing it to be set independently lets the two disagree.
-
-Same protection as `KeyframeRepository.UPDATABLE_FIELDS`, added for the
-same reason (see MARE_API#42).
+    Fields SpeciesRepository#updateSpecies is allowed to write.`id`, `species_list` and `taxserial` are absent deliberately: together thelast two identify an entry, and letting an ordinary edit change them meansan entry can silently move to another list, collide with the`(species_list, taxserial)` unique constraint, or leave every observationpointing at it describing something else. Moving an entry between lists isa deliberate act, not a side effect of correcting a name.`itis_tsn` is absent for the same reason: it is derived from `taxserial`,so allowing it to be set independently lets the two disagree.Same protection as `KeyframeRepository.UPDATABLE_FIELDS`, added for thesame reason (see MARE_API#42).
 </div>
 
 
@@ -438,15 +400,7 @@ same reason (see MARE_API#42).
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Create a new model_species join record linking an ML model to a
-species.
-
-The supplied record is inserted as-is; no validation is performed
-here, so the caller is responsible for providing valid `model_id` and
-`species_id` values.
-
-A database failure is logged and re-thrown, so callers can handle
-errors via the API error contract middleware.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Create a new model_species join record linking an ML model to aspecies.The supplied record is inserted as-is; no validation is performedhere, so the caller is responsible for providing valid `model_id` and`species_id` values.A database failure is logged and re-thrown, so callers can handleerrors via the API error contract middleware.</li></ul></dd>
     
 
     
@@ -604,20 +558,7 @@ errors via the API error contract middleware.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Record an uploaded picture for a species.
-
-Picks the stored filename itself, as `<species_id>-<n><extension>` with
-the lowest `n` not already taken for that species. The caller cannot
-choose it: a client-supplied name would let one upload overwrite another
-species' file, and the original name is kept separately anyway.
-
-The first picture a species gets becomes its default, so a species with
-pictures always has one.
-
-Returns the filename to write to; the caller owns the storage directory
-and writes the bytes, which keeps this class free of filesystem concerns.
-A caller that fails to write must delete the record, or the row will
-outlive the file.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Record an uploaded picture for a species.Picks the stored filename itself, as `<species_id>-<n><extension>` withthe lowest `n` not already taken for that species. The caller cannotchoose it: a client-supplied name would let one upload overwrite anotherspecies' file, and the original name is kept separately anyway.The first picture a species gets becomes its default, so a species withpictures always has one.Returns the filename to write to; the caller owns the storage directoryand writes the bytes, which keeps this class free of filesystem concerns.A caller that fails to write must delete the record, or the row willoutlive the file.</li></ul></dd>
     
 
     
@@ -1060,8 +1001,7 @@ outlive the file.</li></ul></dd>
 
         
 <div class="param-desc">
-    The created picture record, or null if no
-species has that id.
+    The created picture record, or null if nospecies has that id.
 </div>
 
 
@@ -1098,10 +1038,7 @@ species has that id.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Create a new species record.
-
-The caller is responsible for supplying a unique `taxserial` (see the
-`species_taxserial_idx` unique index in model/species.model.js).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Create a new species record.The caller is responsible for supplying a unique `taxserial` (see the`species_taxserial_idx` unique index in model/species.model.js).</li></ul></dd>
     
 
     
@@ -1222,9 +1159,7 @@ The caller is responsible for supplying a unique `taxserial` (see the
 
         
 <div class="param-desc">
-    The created species record. A database
-failure is logged and re-thrown, so the returned promise rejects
-rather than resolving to an error value.
+    The created species record. A databasefailure is logged and re-thrown, so the returned promise rejectsrather than resolving to an error value.
 </div>
 
 
@@ -1385,9 +1320,7 @@ rather than resolving to an error value.
 
         
 <div class="param-desc">
-    The number of rows destroyed (0 or 1). A
-database failure is logged and re-thrown, so the returned promise
-rejects rather than resolving to a fallback value.
+    The number of rows destroyed (0 or 1). Adatabase failure is logged and re-thrown, so the returned promiserejects rather than resolving to a fallback value.
 </div>
 
 
@@ -1424,15 +1357,7 @@ rejects rather than resolving to a fallback value.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Delete one picture record, promoting another default if this was it.
-
-A species that still has pictures should always have one marked default,
-otherwise "the" picture becomes ambiguous again -- which is the problem
-this table was introduced to fix.
-
-Does not touch the file. The caller owns the storage directory and unlinks
-using the returned `filename`, which keeps this class free of filesystem
-concerns.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Delete one picture record, promoting another default if this was it.A species that still has pictures should always have one marked default,otherwise "the" picture becomes ambiguous again -- which is the problemthis table was introduced to fix.Does not touch the file. The caller owns the storage directory and unlinksusing the returned `filename`, which keeps this class free of filesystemconcerns.</li></ul></dd>
     
 
     
@@ -1586,8 +1511,7 @@ concerns.</li></ul></dd>
 
         
 <div class="param-desc">
-    A plain object describing the deleted
-picture (including its `filename`), or null if no picture has that id.
+    A plain object describing the deletedpicture (including its `filename`), or null if no picture has that id.
 </div>
 
 
@@ -1748,9 +1672,7 @@ picture (including its `filename`), or null if no picture has that id.
 
         
 <div class="param-desc">
-    The number of rows destroyed (0 or 1). A
-database failure is logged and re-thrown, so the returned promise
-rejects rather than resolving to a fallback value.
+    The number of rows destroyed (0 or 1). Adatabase failure is logged and re-thrown, so the returned promiserejects rather than resolving to a fallback value.
 </div>
 
 
@@ -1911,10 +1833,7 @@ rejects rather than resolving to a fallback value.
 
         
 <div class="param-desc">
-    The matching model_species record, or
-null if not found. A database failure is logged and re-thrown, so
-the returned promise rejects rather than resolving to a fallback
-value.
+    The matching model_species record, ornull if not found. A database failure is logged and re-thrown, sothe returned promise rejects rather than resolving to a fallbackvalue.
 </div>
 
 
@@ -1951,11 +1870,7 @@ value.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Fetch one picture record by id.
-
-Unlike most methods here a database failure is re-thrown rather than
-swallowed, because the caller serves file bytes and has to tell "no such
-picture" (404) apart from "the lookup failed" (500).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch one picture record by id.Unlike most methods here a database failure is re-thrown rather thanswallowed, because the caller serves file bytes and has to tell "no suchpicture" (404) apart from "the lookup failed" (500).</li></ul></dd>
     
 
     
@@ -2270,8 +2185,7 @@ picture" (404) apart from "the lookup failed" (500).</li></ul></dd>
 
         
 <div class="param-desc">
-    Picture records, the default first.
-Empty array when the species has none or the query fails.
+    Picture records, the default first.Empty array when the species has none or the query fails.
 </div>
 
 
@@ -2308,11 +2222,7 @@ Empty array when the species has none or the query fails.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Fetch every species record.
-
-Database errors are logged and converted to an empty array. As a
-result, callers cannot distinguish between a successful query that
-matched zero species and a database failure.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch every species record.Database errors are logged and converted to an empty array. As aresult, callers cannot distinguish between a successful query thatmatched zero species and a database failure.</li></ul></dd>
     
 
     
@@ -2383,8 +2293,7 @@ matched zero species and a database failure.</li></ul></dd>
 
         
 <div class="param-desc">
-    All species records. Returns an
-empty array when none exist or when the database query fails.
+    All species records. Returns anempty array when none exist or when the database query fails.
 </div>
 
 
@@ -2421,15 +2330,7 @@ empty array when none exist or when the database query fails.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Fetch a single species record by its common name (case-insensitive).
-
-The comparison lowercases both the stored `comname` column and the
-supplied value using SQL `LOWER()`, so callers do not need to
-normalize case themselves.
-
-Database errors are logged and converted to `null`. As a result,
-callers cannot distinguish between "no species matched" and "the
-database query failed" from the return value alone.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch a single species record by its common name (case-insensitive).The comparison lowercases both the stored `comname` column and thesupplied value using SQL `LOWER()`, so callers do not need tonormalize case themselves.Database errors are logged and converted to `null`. As a result,callers cannot distinguish between "no species matched" and "thedatabase query failed" from the return value alone.</li></ul></dd>
     
 
     
@@ -2574,8 +2475,7 @@ database query failed" from the return value alone.</li></ul></dd>
 
         
 <div class="param-desc">
-    The matching species record, or null
-if not found or the query fails.
+    The matching species record, or nullif not found or the query fails.
 </div>
 
 
@@ -2612,12 +2512,7 @@ if not found or the query fails.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Fetch a single species record by its id.
-
-Unlike most methods on this class, a database failure here is logged
-and re-thrown rather than swallowed to a fallback value, so callers
-must catch/handle a rejected promise. A "not found" result, by
-contrast, resolves to `null` rather than throwing.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch a single species record by its id.Unlike most methods on this class, a database failure here is loggedand re-thrown rather than swallowed to a fallback value, so callersmust catch/handle a rejected promise. A "not found" result, bycontrast, resolves to `null` rather than throwing.</li></ul></dd>
     
 
     
@@ -2741,8 +2636,7 @@ contrast, resolves to `null` rather than throwing.</li></ul></dd>
 
         
 <div class="param-desc">
-    The matching species record, or null
-if not found. Rejects if the underlying query fails.
+    The matching species record, or nullif not found. Rejects if the underlying query fails.
 </div>
 
 
@@ -2900,8 +2794,7 @@ if not found. Rejects if the underlying query fails.
 
         
 <div class="param-desc">
-    Entries in display order. Empty array
-when the list does not exist or the query fails.
+    Entries in display order. Empty arraywhen the list does not exist or the query fails.
 </div>
 
 
@@ -2938,13 +2831,7 @@ when the list does not exist or the query fails.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Fetch one entry by its list and taxserial -- the pair that identifies it.
-
-Unlike the list and search methods this does not filter on `is_active`.
-Those answer "what may be annotated"; this answers "what is this entry",
-and a retired one still has to be resolvable -- an old observation
-references it, and reporting needs its name. Callers that care can read
-`is_active` on the result.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch one entry by its list and taxserial -- the pair that identifies it.Unlike the list and search methods this does not filter on `is_active`.Those answer "what may be annotated"; this answers "what is this entry",and a retired one still has to be resolvable -- an old observationreferences it, and reporting needs its name. Callers that care can read`is_active` on the result.</li></ul></dd>
     
 
     
@@ -3092,8 +2979,7 @@ references it, and reporting needs its name. Callers that care can read
 
         
 <div class="param-desc">
-    The entry with its pictures, active or
-retired, or null when no entry matches or the query fails.
+    The entry with its pictures, active orretired, or null when no entry matches or the query fails.
 </div>
 
 
@@ -3130,11 +3016,7 @@ retired, or null when no entry matches or the query fails.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Fetch the annotation lists, with how many entries each holds.
-
-Rows with no list are excluded. Those are historical records kept only
-because machine-learning metrics reference them; they are not on any
-current list and nothing should offer them for annotation.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Fetch the annotation lists, with how many entries each holds.Rows with no list are excluded. Those are historical records kept onlybecause machine-learning metrics reference them; they are not on anycurrent list and nothing should offer them for annotation.</li></ul></dd>
     
 
     
@@ -3205,8 +3087,7 @@ current list and nothing should offer them for annotation.</li></ul></dd>
 
         
 <div class="param-desc">
-    `{ species_list, entry_count }`, list
-name ascending. Empty array on failure.
+    `{ species_list, entry_count }`, listname ascending. Empty array on failure.
 </div>
 
 
@@ -3243,10 +3124,7 @@ name ascending. Empty array on failure.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Search one list by common name, scientific name or display name.
-
-Scoped to a list because a common name is not unique across all seven:
-TSN 169237 is 'UI croaker' on Fish and 'Drum' on GULF_Fish.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Search one list by common name, scientific name or display name.Scoped to a list because a common name is not unique across all seven:TSN 169237 is 'UI croaker' on Fish and 'Drum' on GULF_Fish.</li></ul></dd>
     
 
     
@@ -3391,8 +3269,7 @@ TSN 169237 is 'UI croaker' on Fish and 'Drum' on GULF_Fish.</li></ul></dd>
 
         
 <div class="param-desc">
-    Matching entries in display order.
-Empty array when nothing matches or the query fails.
+    Matching entries in display order.Empty array when nothing matches or the query fails.
 </div>
 
 
@@ -3429,11 +3306,7 @@ Empty array when nothing matches or the query fails.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Make one picture the default for its species.
-
-Clears the species' existing default first, in one transaction, because a
-partial unique index allows only one default per species and setting the
-new one before clearing the old would collide.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Make one picture the default for its species.Clears the species' existing default first, in one transaction, because apartial unique index allows only one default per species and setting thenew one before clearing the old would collide.</li></ul></dd>
     
 
     
@@ -3587,8 +3460,7 @@ new one before clearing the old would collide.</li></ul></dd>
 
         
 <div class="param-desc">
-    The updated picture, or null if no picture
-has that id.
+    The updated picture, or null if no picturehas that id.
 </div>
 
 
@@ -3773,10 +3645,7 @@ has that id.
 
         
 <div class="param-desc">
-    The updated model_species record, or
-null if no row matched `id`. A database failure is logged and
-re-thrown, so the returned promise rejects rather than resolving to
-an error value.
+    The updated model_species record, ornull if no row matched `id`. A database failure is logged andre-thrown, so the returned promise rejects rather than resolving toan error value.
 </div>
 
 
@@ -3961,10 +3830,7 @@ an error value.
 
         
 <div class="param-desc">
-    The updated species record, or null if
-no row matched `speciesId`. A database failure is logged and
-re-thrown, so the returned promise rejects rather than resolving to
-an error value.
+    The updated species record, or null ifno row matched `speciesId`. A database failure is logged andre-thrown, so the returned promise rejects rather than resolving toan error value.
 </div>
 
 

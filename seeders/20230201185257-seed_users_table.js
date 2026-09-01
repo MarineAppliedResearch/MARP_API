@@ -1,6 +1,6 @@
 /**
  * Seeds three fixed-id development users (`user_id` 0-2: Isaac Travers,
- * Sam Parker, Johnathan Centoni) used as `createdby`/`updatedby`/session
+ * Processor Two, Processor Three) used as `createdby`/`updatedby`/session
  * owners by the other development seeders in this directory.
  *
  * @fileoverview Seed data for the `users` table.
@@ -28,9 +28,9 @@ module.exports = {
       var creationTime =   new Date()
 
       await queryInterface.bulkInsert('users', [
-        {name: 'Isaac Travers', user_id: 0 ,createdAt:  creationTime, updatedAt:  creationTime },
-        {name: 'Sam Parker', user_id: 1 , createdAt:  creationTime, updatedAt:  creationTime  },
-        {name: 'Johnathan Centoni', user_id: 2, createdAt:  creationTime, updatedAt:  creationTime  }
+        {name: 'Processor One', user_id: 0 ,createdAt:  creationTime, updatedAt:  creationTime },
+        {name: 'Processor Two', user_id: 1 , createdAt:  creationTime, updatedAt:  creationTime  },
+        {name: 'Processor Three', user_id: 2, createdAt:  creationTime, updatedAt:  creationTime  }
       ], {});
 
 

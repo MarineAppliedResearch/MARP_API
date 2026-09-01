@@ -180,8 +180,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Columns the import writes. `id` is deliberately absent: existing rows keep
-theirs, and new rows get one from the sequence.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Columns the import writes. `id` is deliberately absent: existing rows keeptheirs, and new rows get one from the sequence.</li></ul></dd>
     
 
     
@@ -227,8 +226,7 @@ theirs, and new rows get one from the sequence.</li></ul></dd>
 
 
 <div class="description usertext">
-    Columns the import writes. `id` is deliberately absent: existing rows keep
-theirs, and new rows get one from the sequence.
+    Columns the import writes. `id` is deliberately absent: existing rows keeptheirs, and new rows get one from the sequence.
 </div>
 
 
@@ -260,13 +258,7 @@ theirs, and new rows get one from the sequence.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Maps the pseudo-list values already stored in `observation_type` on the 218
-pre-existing rows onto real list names.
-
-`observation_type` cannot be used as the list column going forward -- five of
-the seven CSVs leave it blank on every row -- but for these historical rows it
-is the only clue to which list they came from, and `Invert_GULF` appears
-nowhere in the CSVs at all.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Maps the pseudo-list values already stored in `observation_type` on the 218pre-existing rows onto real list names.`observation_type` cannot be used as the list column going forward -- five ofthe seven CSVs leave it blank on every row -- but for these historical rows itis the only clue to which list they came from, and `Invert_GULF` appearsnowhere in the CSVs at all.</li></ul></dd>
     
 
     
@@ -312,13 +304,7 @@ nowhere in the CSVs at all.</li></ul></dd>
 
 
 <div class="description usertext">
-    Maps the pseudo-list values already stored in `observation_type` on the 218
-pre-existing rows onto real list names.
-
-`observation_type` cannot be used as the list column going forward -- five of
-the seven CSVs leave it blank on every row -- but for these historical rows it
-is the only clue to which list they came from, and `Invert_GULF` appears
-nowhere in the CSVs at all.
+    Maps the pseudo-list values already stored in `observation_type` on the 218pre-existing rows onto real list names.`observation_type` cannot be used as the list column going forward -- five ofthe seven CSVs leave it blank on every row -- but for these historical rows itis the only clue to which list they came from, and `Invert_GULF` appearsnowhere in the CSVs at all.
 </div>
 
 
@@ -360,22 +346,7 @@ nowhere in the CSVs at all.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Drops the unique constraint and leaves the imported data in place.
-
-Deliberately deletes nothing. Once the import has run there is no
-trustworthy way to tell a row it inserted from one of the original 218 it
-updated: both now carry a list and CSV values, and the previous values of
-the updated rows are not recorded anywhere. Guessing by timestamp or id
-range would risk deleting rows that 212,000 `metrics_curves` entries
-depend on.
-
-That is safe to do because `up` is idempotent -- it matches on
-`(species_list, taxserial)` before falling back to the legacy
-`observation_type` mapping -- so running it again after this updates the
-same rows instead of inserting duplicates.
-
-Genuinely undoing the import means restoring a backup taken before it,
-which is the honest answer for a data migration of this size.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Drops the unique constraint and leaves the imported data in place.Deliberately deletes nothing. Once the import has run there is notrustworthy way to tell a row it inserted from one of the original 218 itupdated: both now carry a list and CSV values, and the previous values ofthe updated rows are not recorded anywhere. Guessing by timestamp or idrange would risk deleting rows that 212,000 `metrics_curves` entriesdepend on.That is safe to do because `up` is idempotent -- it matches on`(species_list, taxserial)` before falling back to the legacy`observation_type` mapping -- so running it again after this updates thesame rows instead of inserting duplicates.Genuinely undoing the import means restoring a backup taken before it,which is the honest answer for a data migration of this size.</li></ul></dd>
     
 
     
@@ -563,8 +534,7 @@ which is the honest answer for a data migration of this size.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Imports every list entry, giving the pre-existing rows a list, then adds
-the unique constraint.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Imports every list entry, giving the pre-existing rows a list, then addsthe unique constraint.</li></ul></dd>
     
 
     
@@ -686,8 +656,7 @@ the unique constraint.</li></ul></dd>
 <dl>
     <dt>
         <div class="param-desc usertext">
-        Re-throws after rolling back if two existing rows collide on
-`(list, taxserial)`, or if any statement fails.
+        Re-throws after rolling back if two existing rows collide on`(list, taxserial)`, or if any statement fails.
         </div>
     </dt>
     <dd></dd>

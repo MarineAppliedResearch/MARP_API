@@ -1,14 +1,14 @@
 {
-  "CAMPA-2025": {
+  "PROJECT-A-2025": {
     "2026-07-01": {
-      "Camille Werner": 89.41666666666667,
-      "Johnathan Centoni": 16.85000000000001,
-      "Maddy Frost": 108.43333333333298,
-      "Edith Solorio-Rodriguez": 104.06666666666659
+      "Processor One": 89.41666666666667,
+      "Processor Two": 16.85000000000001,
+      "Processor Three": 108.43333333333298,
+      "Processor Four": 104.06666666666659
     }
   },
-  "CAMPA 2025 ML Annotations": {
-    "2026-07-01": { "Isaac Travers": 11.45 }
+  "PROJECT-A 2025 ML Annotations": {
+    "2026-07-01": { "Processor Five": 11.45 }
   },
   "test": {
     "2026-07-01": { "Test Person": 9.516666666666667 }
