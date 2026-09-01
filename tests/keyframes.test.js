@@ -134,6 +134,49 @@ describe('Keyframe lifecycle', () => {
   });
 
   /**
+   * An update must not be able to move a keyframe onto a different
+   * observation, or into a different subset. Those identify what the
+   * annotation belongs to; only the box, its kind and its frame may change.
+   */
+  it('ignores fields an update is not allowed to change', async () => {
+    const before = await request(app).get(`/api/keyframe/${keyframeId}`);
+    const originalObservationId = before.body.observation_id;
+    const originalSubset = before.body.subset;
+
+    const res = await request(app)
+      .put(`/api/keyframe/${keyframeId}`)
+      .send({
+        keyframe: {
+          // Allowed, and should take effect.
+          x: 42,
+          // Not allowed, and should be ignored rather than reassigning the
+          // keyframe to some other observation.
+          observation_id: originalObservationId + 1,
+          subset: 'not-the-original-subset',
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.x).toBe(42);
+    expect(res.body.observation_id).toBe(originalObservationId);
+    expect(res.body.subset).toBe(originalSubset);
+  });
+
+  /**
+   * An update carrying nothing updatable is not the same as no such
+   * keyframe, but both currently answer null. Recorded so the behaviour is
+   * deliberate rather than incidental.
+   */
+  it('returns null when no updatable field is given', async () => {
+    const res = await request(app)
+      .put(`/api/keyframe/${keyframeId}`)
+      .send({ keyframe: { observation_id: 999999 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toBeNull();
+  });
+
+  /**
    * GET /api/keyframe/:keyframe_id should return the keyframe, reflecting
    * the update above.
    */
@@ -143,6 +186,7 @@ describe('Keyframe lifecycle', () => {
     expect(res.status).toBe(200);
     expect(res.body.keyframe_id).toBe(keyframeId);
     expect(res.body.framenum).toBe(2);
+    expect(res.body.x).toBe(42);
   });
 
   /**
