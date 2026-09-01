@@ -155,20 +155,54 @@ class KeyframeRepository {
     }
 
     /**
+     * Fields an update is allowed to change: where the box is, what kind of
+     * keyframe it is, and which frame it sits on.
+     *
+     * `observation_id` and `subset` identify what the annotation belongs to
+     * and must not move -- an update that could change them would let a
+     * client reassign a keyframe to a different observation. `comname`
+     * follows the observation's species rather than the keyframe.
+     *
+     * @constant
+     * @type {Array<string>}
+     */
+    static get UPDATABLE_FIELDS() {
+        return ['x', 'y', 'width', 'height', 'type', 'framenum'];
+    }
+
+    /**
      * Update an existing keyframe record by id.
+     *
+     * Only the fields in {@link KeyframeRepository.UPDATABLE_FIELDS} are
+     * written; anything else on `newData` is ignored rather than rejected,
+     * matching how `createKeyframes` copies a fixed set of fields.
      *
      * @async
      * @param {number|string} keyframeId - keyframe_id of the keyframe to update.
-     * @param {Object} newData - Keyframe fields to update.
+     * @param {Object} newData - Keyframe fields to update. Only the updatable ones are used.
      * @returns {Promise<Object|null>} The updated keyframe record, or null
-     * if no row matched `keyframeId`. A database failure is logged and
-     * re-thrown, so the returned promise rejects rather than resolving to
-     * an error value.
+     * if no row matched `keyframeId` or `newData` held nothing updatable. A
+     * database failure is logged and re-thrown, so the returned promise
+     * rejects rather than resolving to an error value.
      */
     async updateKeyframe(keyframeId, newData) {
         try {
+            const fields = {};
+            for (const field of KeyframeRepository.UPDATABLE_FIELDS) {
+                if (newData && newData[field] !== undefined) {
+                    fields[field] = newData[field];
+                }
+            }
+
+            // Nothing to write. Sequelize would issue an empty UPDATE and
+            // report zero rows, which reads as "no such keyframe" and is a
+            // different problem to report.
+            if (Object.keys(fields).length === 0) {
+                return null;
+            }
+
             const [rowsUpdated, [updatedKeyframe]] = await this.db.keyframes.update(
-                newData,
+                fields,
                 { where: { keyframe_id: keyframeId }, returning: true }
             );
 
