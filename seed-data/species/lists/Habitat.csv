@@ -1,0 +1,19 @@
+taxserial,COMNAME,GUI_HomeOrder,GUI_MainTab,GUI_SubTab,GUI_MainTabOrder,GUI_SubTabOrder,GUI_ItemOrder,GUI_DisplayName
+666001,Rock,1,HAB,TYPE1,1,1,1,Rock
+666002,Boulder,2,HAB,TYPE1,1,1,2,Boulder
+666003,Cobble,3,HAB,TYPE1,1,1,3,Cobble
+666004,Sand,4,HAB,TYPE1,1,1,4,Sand
+666005,Mud,5,HAB,TYPE1,1,1,5,Mud
+666006,Ledge,6,HAB,TYPE1,1,1,6,Ledge
+666007,Off Bottom,7,HAB,TYPE1,1,1,7,Off Bottom
+666008,Unknown,8,HAB,TYPE1,1,1,8,Unknown
+667001,TYPE 1,9,,,,,,TYPE 1
+667002,TYPE 2,10,,,,,,TYPE 2
+667003,TYPE 3,11,,,,,,TYPE 3
+667004,TYPE 4,12,,,,,,TYPE 4
+158541,UI feather star,13,Patch,Home,6,1,3,UI Feather Star
+51032,Encrusting hydrocoral,14,Patch,Home,6,1,5,Encrusting Hydrocoral
+52467,Club-tipped anemone,15,Patch,Home,6,1,1,Club-Tipped Anemone
+52431,UI zoanthid,16,Patch,Home,6,1,4,UI Zoanthid
+157325,UI brittle stars,17,Patch,Home,6,1,2,UI Brittle Star
+156755,UI brachiopoda,18,Patch,Home,6,1,6,UI Brachiopoda

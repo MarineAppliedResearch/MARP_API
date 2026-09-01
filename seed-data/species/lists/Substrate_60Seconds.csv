@@ -1,0 +1,16 @@
+taxserial,COMNAME,GUI_HomeOrder,GUI_MainTab,GUI_SubTab,GUI_MainTabOrder,GUI_SubTabOrder,GUI_ItemOrder,GUI_DisplayName
+1,1-Bedrock,1,SUBSTRAT,TYPE1,1,1,1,1-Bedrock
+2,2-Megaclast,2,SUBSTRAT,TYPE1,1,1,2,2-Megaclast
+3,3-Very-coarse-Unconsolidated,3,SUBSTRAT,TYPE1,1,1,3,3-VeryCrse-Uncons
+4,4-Moderately-Coarse-Unconsolidated,4,SUBSTRAT,TYPE1,1,1,4,4-ModCrse-Uncons
+5,5-Mixed-Coarse-Unconsolidated,5,SUBSTRAT,TYPE1,1,1,5,5-MxdCrse-Uncons
+6,6-Sandy-Coarse-Unconsolidated,6,SUBSTRAT,TYPE1,1,1,6,6-SndyCrse-Uncons
+7,7-Fine-Unconsolidated-Mineral,7,SUBSTRAT,TYPE1,1,1,7,7-Fine-Uncons-Min
+8,8-Sandy-Unconsolidated,8,SUBSTRAT,TYPE1,1,1,8,8-Sandy-Uncons
+9,9-Muddy-Unconsolidated,9,SUBSTRAT,TYPE1,1,1,9,9-Muddy-Uncons
+10,10-Algal,10,SUBSTRAT,TYPE1,1,1,10,10-Algal
+11,11-Coral-Reef,11,SUBSTRAT,TYPE1,1,1,11,11-Coral-Reef
+12,12-Coral-Rubble,12,SUBSTRAT,TYPE1,1,1,12,12-Coral-Rubble
+13,13-Shell-Hash,13,SUBSTRAT,TYPE1,1,1,13,13-Shell-Hash
+14,14-Shell-Rubble,14,SUBSTRAT,TYPE1,1,1,14,14-Shell-Rubble
+15,15-Off-Transect,15,SUBSTRAT,TYPE1,1,1,15,15-Off-Transect
