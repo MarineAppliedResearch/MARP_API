@@ -326,7 +326,8 @@ runs locally and connects to them over the VM network. See
   [nvm-windows](https://github.com/coreybutler/nvm-windows); `nvm use` then picks
   up the pinned version.
 - npm (ships with Node).
-- Network access to the development PostgreSQL database.
+- A PostgreSQL server. Either an existing one you have access to, or one you
+  create yourself — see [Building a database from nothing](#building-a-database-from-nothing).
 - A configured `.env` file — copy `.env.example` and fill it in.
 
 On Windows, `npm install` builds the native `argon2` dependency. If that step
@@ -352,6 +353,41 @@ Copy-Item .env.example .env
 
 Then edit `.env` and fill in the database, session, and Jellyfin values.
 `.env.example` documents every variable the codebase reads.
+
+### Building a database from nothing
+
+The migrations in this repository cannot create a database on their own.
+`observations`, `projects`, `sessions` and `metaInfos` have no `createTable`
+migration anywhere — they predate the migration history, and every migration
+that touches them assumes they are already there. For a long time that meant
+standing up MARP required being handed a copy of somebody else's database.
+
+`db/baseline/schema.sql` is the starting point those migrations assume: a
+schema-only capture of the production database, holding no observation data.
+Against an empty database:
+
+```bash
+node scripts/init-database.js     # restore the baseline
+npx sequelize-cli db:migrate      # apply the migrations
+```
+
+The result is the current schema. Nothing is needed beyond Node and this
+repository's own dependencies — no `psql`, no dump file, no copy of anyone's
+data.
+
+The nine migrations whose work the baseline already contains are retired to
+`db/retired-migrations/`, outside Sequelize's path, so there is no special case
+for a fresh database: it runs the same `db:migrate` as production and reaches
+the same schema. See that directory's README.
+
+`node scripts/init-database.js --check` reports what a database currently
+holds and changes nothing. The script refuses to touch a database that already
+has tables, so it cannot overwrite work in progress; to bring an existing
+database up to date, run `db:migrate` on its own.
+
+The baseline also makes the production upgrade testable. It was captured from
+production, so restoring it and running `db:migrate` rehearses exactly the
+upgrade production still has ahead of it, against the real production shape.
 
 ### Start development mode
 
