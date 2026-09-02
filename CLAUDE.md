@@ -30,29 +30,35 @@ migration anywhere. They predate the migration history and every migration that
 touches them assumes they exist, so `db:migrate` against an empty database fails
 immediately.
 
-`db/baseline/` is the starting point they assume -- a schema-only capture of
-production, no observation data. Against an empty database:
+`db/baseline/schema.sql` is the starting point they assume -- a schema-only
+capture of production, no observation data. Against an empty database:
 
 ```bash
-node scripts/init-database.js     # baseline: 23 tables, 4 views, 9 migrations recorded
-npx sequelize-cli db:migrate      # the 19 the baseline predates
+node scripts/init-database.js     # baseline: 23 tables, 4 views
+npx sequelize-cli db:migrate      # 19 migrations
 ```
 
 Verified: this produces a schema identical to the development server's -- 35
 tables and views, 447 columns, 77 indexes, 204 constraints, 4 view definitions.
 
-Two things follow that are easy to get wrong:
+Three things follow that are easy to get wrong:
 
-- **`applied-migrations.sql` is not optional.** Restore the schema without it and
-  `SequelizeMeta` is empty, so `db:migrate` re-runs migrations whose work is
-  already in the schema and fails on the first one.
+- **`migrations/` holds 19 files, not 28.** The nine already in the baseline are
+  retired to `db/retired-migrations/`, where Sequelize cannot see them. Moving
+  one back would break every fresh database.
+- **Existing databases keep 28 ledger rows, nine naming files that are gone.**
+  Sequelize tolerates that -- reports them applied, and looks only for files not
+  in the ledger. So production and a fresh database run the same `db:migrate`
+  with no special case.
 - **The baseline is not a migration, deliberately.** A migration numbered before
   the others would be run against production and recorded in its ledger for no
   benefit -- production already has this schema. Keeping it a script means the
   migration history means one thing only: the upgrade path.
 
-Regenerate both baseline files together, and strip pg_dump's `\restrict` /
-`\unrestrict` lines so the file stays executable by the `pg` driver without psql.
+Recapturing the baseline and retiring a migration are one operation: the
+baseline must contain a migration's work before that migration moves. Strip
+pg_dump's `\restrict` / `\unrestrict` lines on recapture so the file stays
+executable by the `pg` driver without psql.
 
 ## Tests
 

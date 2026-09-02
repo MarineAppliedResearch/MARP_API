@@ -11,8 +11,12 @@
 --
 -- This is the starting point those migrations assume: a schema-only dump of
 -- the production database, which is the authoritative shape. Restore it into
--- an empty database, then run `npx sequelize-cli db:migrate` to apply the
--- migrations it predates.
+-- an empty database, then run `npx sequelize-cli db:migrate`.
+--
+-- The nine migrations whose work is already in here have been retired to
+-- db/retired-migrations/, out of Sequelize's path, so `db:migrate` sees only
+-- the migrations this baseline predates. That means a fresh database and an
+-- existing one run the same command with no special case for either.
 --
 -- Contains no observation data. Tables, views, indexes, constraints and one
 -- enum type only.
@@ -25,9 +29,14 @@
 --   Contents: 23 tables, 4 views
 --
 -- Verified on capture: restoring this into an empty PostgreSQL 18.6 and
--- running the 19 migrations the baseline predates produces a schema identical
--- to the development server's -- 35 tables and views, 447 columns, 77 indexes,
--- 204 constraints and 4 view definitions all matching.
+-- running the remaining migrations produces a schema identical to the
+-- development server's -- 35 tables and views, 447 columns, 77 indexes, 204
+-- constraints and 4 view definitions all matching.
+--
+-- Recapturing this file and retiring a migration are the same operation: the
+-- baseline must include a migration's work before that migration is moved to
+-- db/retired-migrations/, or a database will have no route to the current
+-- schema.
 --
 -- Regenerating
 -- ------------

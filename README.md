@@ -362,28 +362,32 @@ migration anywhere — they predate the migration history, and every migration
 that touches them assumes they are already there. For a long time that meant
 standing up MARP required being handed a copy of somebody else's database.
 
-`db/baseline/` is the starting point those migrations assume: a schema-only
-capture of the production database, holding no observation data. Against an
-empty database:
+`db/baseline/schema.sql` is the starting point those migrations assume: a
+schema-only capture of the production database, holding no observation data.
+Against an empty database:
 
 ```bash
 node scripts/init-database.js     # restore the baseline
-npx sequelize-cli db:migrate      # apply the migrations it predates
+npx sequelize-cli db:migrate      # apply the migrations
 ```
 
 The result is the current schema. Nothing is needed beyond Node and this
 repository's own dependencies — no `psql`, no dump file, no copy of anyone's
 data.
 
+The nine migrations whose work the baseline already contains are retired to
+`db/retired-migrations/`, outside Sequelize's path, so there is no special case
+for a fresh database: it runs the same `db:migrate` as production and reaches
+the same schema. See that directory's README.
+
 `node scripts/init-database.js --check` reports what a database currently
 holds and changes nothing. The script refuses to touch a database that already
 has tables, so it cannot overwrite work in progress; to bring an existing
 database up to date, run `db:migrate` on its own.
 
-The baseline also makes the production upgrade testable. Production is behind
-this branch by the migrations `db/baseline/applied-migrations.sql` does *not*
-list, and restoring the baseline then migrating rehearses exactly that upgrade
-against the real production shape.
+The baseline also makes the production upgrade testable. It was captured from
+production, so restoring it and running `db:migrate` rehearses exactly the
+upgrade production still has ahead of it, against the real production shape.
 
 ### Start development mode
 

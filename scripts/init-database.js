@@ -18,7 +18,10 @@
  *
  *   npx sequelize-cli db:migrate
  *
- * applies the migrations the baseline predates.
+ * applies every migration, which on a fresh database is all of them -- the
+ * ones the baseline already contains are retired to db/retired-migrations/,
+ * outside Sequelize's path. Production runs that same command and gets the
+ * ones it has not seen. Neither path is special-cased.
  *
  * Deliberately not a Sequelize migration. A migration numbered before the
  * others would be run by the CLI against production too, and recorded in
@@ -34,19 +37,18 @@ const { Client } = require('pg');
 const config = require('../config/config')[process.env.NODE_ENV || 'development'];
 
 /**
- * Baseline files, in the order they must be applied.
+ * The baseline file.
  *
- * The ledger is not optional. Restoring the schema without it leaves
- * `SequelizeMeta` empty, so `db:migrate` re-runs migrations whose work is
- * already present and fails on the first one.
+ * One file, and no accompanying record of which migrations it contains: the
+ * migrations whose work is already in the baseline live in
+ * db/retired-migrations/, where Sequelize cannot find them. So an empty
+ * `SequelizeMeta` is the correct state after restoring — every migration
+ * Sequelize can see is one this schema genuinely predates.
  *
  * @constant
- * @type {Array<{file: string, description: string}>}
+ * @type {string}
  */
-const BASELINE_FILES = [
-    { file: 'schema.sql', description: 'tables, views, indexes and constraints' },
-    { file: 'applied-migrations.sql', description: 'migrations the baseline already contains' },
-];
+const BASELINE_FILE = 'schema.sql';
 
 const BASELINE_DIR = path.join(__dirname, '..', 'db', 'baseline');
 
@@ -155,16 +157,14 @@ async function main() {
         }
 
         console.log('');
-        for (const { file, description } of BASELINE_FILES) {
-            console.log(`Applying db/baseline/${file} -- ${description}`);
-            await apply(client, file);
-        }
+        console.log(`Applying db/baseline/${BASELINE_FILE}`);
+        await apply(client, BASELINE_FILE);
 
         const after = await inspect(client);
         console.log('');
-        console.log(`Baseline in place: ${after.tables} tables, ${after.views} views, ${after.migrations} migrations recorded.`);
+        console.log(`Baseline in place: ${after.tables} tables, ${after.views} views.`);
         console.log('');
-        console.log('Now apply the migrations the baseline predates:');
+        console.log('Now apply the migrations:');
         console.log('    npx sequelize-cli db:migrate');
     } finally {
         await client.end();
