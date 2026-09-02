@@ -23,6 +23,37 @@ npx sequelize-cli db:migrate:status
 Node is pinned in `.nvmrc` and installed via nvm-windows. A shell started before nvm
 was installed needs `C:/nvm4w/nodejs` prepended to `PATH`.
 
+## The migrations cannot build a database
+
+`observations`, `projects`, `sessions` and `metaInfos` have no `createTable`
+migration anywhere. They predate the migration history and every migration that
+touches them assumes they exist, so `db:migrate` against an empty database fails
+immediately.
+
+`db/baseline/` is the starting point they assume -- a schema-only capture of
+production, no observation data. Against an empty database:
+
+```bash
+node scripts/init-database.js     # baseline: 23 tables, 4 views, 9 migrations recorded
+npx sequelize-cli db:migrate      # the 19 the baseline predates
+```
+
+Verified: this produces a schema identical to the development server's -- 35
+tables and views, 447 columns, 77 indexes, 204 constraints, 4 view definitions.
+
+Two things follow that are easy to get wrong:
+
+- **`applied-migrations.sql` is not optional.** Restore the schema without it and
+  `SequelizeMeta` is empty, so `db:migrate` re-runs migrations whose work is
+  already in the schema and fails on the first one.
+- **The baseline is not a migration, deliberately.** A migration numbered before
+  the others would be run against production and recorded in its ledger for no
+  benefit -- production already has this schema. Keeping it a script means the
+  migration history means one thing only: the upgrade path.
+
+Regenerate both baseline files together, and strip pg_dump's `\restrict` /
+`\unrestrict` lines so the file stays executable by the `pg` driver without psql.
+
 ## Tests
 
 **`npm test`, not `npx jest`.** The suite runs against the real development
