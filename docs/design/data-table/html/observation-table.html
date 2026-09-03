@@ -1,0 +1,315 @@
+<!doctype html><meta charset="utf-8">
+<style>
+:root{
+  --navy-1000:#01050d; --navy-950:#020814; --navy-900:#03101f; --navy-850:#051828; --navy-800:#07233a;
+  --cyan-300:#64f6f2; --cyan-400:#22d7dc; --cyan-500:#05b9c8;
+  --green-300:#c7ff62; --green-400:#a7ec35;
+  --violet-300:#c3b2f2; --violet-400:#9b7cf0; --violet-500:#5b3fb0;
+  --white:#f7fbff; --text:#c7d4dd; --muted:#8198a8; --faint:#587181;
+  --border:rgba(42,214,220,.28);
+  --amber:#f6c453; --red:#e0616b;
+  --line:rgba(42,214,220,.10);
+  --row:#040e1a; --row-alt:#05121f; --head:#072033;
+  --font:Inter,Aptos,"Segoe UI",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;width:1600px;height:900px;background:var(--navy-1000);color:var(--text);
+     font-family:var(--font);font-size:12px;font-variant-numeric:tabular-nums;overflow:hidden}
+.wrap{display:grid;grid-template-rows:38px 1fr 40px;height:900px}
+
+/* ---------- the table's own toolbar ---------- */
+.tbar{display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--navy-850);
+      border-bottom:1px solid var(--border)}
+.sel{font-size:11.5px;color:var(--cyan-300);font-weight:600}
+.tb{border:1px solid var(--border);border-radius:4px;padding:4px 10px;font-size:11px;color:var(--text);
+    display:flex;align-items:center;gap:5px}
+.tb svg{width:11px;height:11px}
+.tb.off{color:var(--faint);border-color:rgba(42,214,220,.13)}
+.tb.warn{border-color:rgba(246,196,83,.5);color:var(--amber)}
+.divider{width:1px;height:18px;background:rgba(42,214,220,.16);margin:0 3px}
+.right{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+/* ---------- table ---------- */
+.scroll{overflow:hidden;position:relative;background:var(--row)}
+table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed}
+
+/* Two-line header: the name, then the schema facts the column was generated from.
+   Keeps long names readable and makes the schema-driven origin visible. */
+thead th{position:sticky;top:0;z-index:3;background:var(--head);text-align:left;
+         font-size:11px;font-weight:600;letter-spacing:.02em;color:var(--white);
+         padding:5px 8px;height:44px;border-bottom:1px solid var(--border);
+         border-right:1px solid var(--line);white-space:nowrap;overflow:hidden;user-select:none;
+         vertical-align:top}
+thead th .h{display:flex;align-items:center;gap:5px}
+thead th .lbl{overflow:hidden;text-overflow:ellipsis}
+thead th .meta{display:flex;align-items:center;gap:4px;margin-top:3px;
+               font-size:9px;font-weight:500;letter-spacing:.05em;color:#4a6981}
+.sort{color:var(--cyan-300);font-size:9px;display:flex;align-items:center;gap:2px;flex:none}
+.sort b{background:var(--cyan-500);color:#02121a;border-radius:2px;padding:0 3px;font-size:8px}
+.filt{color:var(--amber);font-size:9px;flex:none}
+.lockicon{color:#4a6981;display:flex}
+.lockicon svg{width:8px;height:8px}
+.grip{position:absolute;right:-3px;top:6px;bottom:6px;width:6px;cursor:col-resize}
+.grip:after{content:"";position:absolute;left:2.5px;top:0;bottom:0;width:1px;background:rgba(42,214,220,.3)}
+th{position:relative}
+
+tbody td{padding:0 8px;height:30px;border-bottom:1px solid var(--line);
+         border-right:1px solid var(--line);white-space:nowrap;overflow:hidden;
+         text-overflow:ellipsis;color:var(--text)}
+tbody tr:nth-child(even) td{background:var(--row-alt)}
+tbody tr:nth-child(odd) td{background:var(--row)}
+tbody tr.selected td{background:#0a2035}
+tbody tr.selected td.frz{background:#0c2439}
+
+/* frozen columns keep their own background and cast an edge */
+.frz{position:sticky;z-index:2}
+thead .frz{z-index:4;background:var(--head)}
+tbody tr:nth-child(even) td.frz{background:#061523}
+tbody tr:nth-child(odd) td.frz{background:#04101c}
+.edge{box-shadow:9px 0 12px -8px rgba(0,0,0,.85);border-right:1px solid rgba(42,214,220,.34)}
+
+/* cell kinds */
+.num{text-align:right}
+.ro{color:#8ea0ae}                       /* read-only column */
+.sci{font-style:italic;color:#a9b8c4}
+.mono{font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.null{color:#3f566a}
+.fk{color:var(--cyan-300);border-bottom:1px dotted rgba(100,246,242,.4)}
+.link{color:var(--cyan-300)}
+.thumb{padding:0 4px}
+.thumb img{width:24px;height:24px;border-radius:2px;object-fit:cover;display:block;margin:auto}
+.box{width:12px;height:12px;border-radius:2px;border:1.5px solid #46617a;display:inline-block;
+     vertical-align:-2px}
+.box.on{background:var(--cyan-400);border-color:var(--cyan-400);position:relative}
+.box.on:after{content:"";position:absolute;left:3px;top:.3px;width:3.6px;height:7px;
+              border:solid #02121a;border-width:0 2px 2px 0;transform:rotate(45deg)}
+/* confidence: number plus a quiet bar, a specialised cell presentation */
+.conf{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.confbar{width:38px;height:4px;border-radius:2px;background:#12283a;overflow:hidden;flex:none}
+.confbar i{display:block;height:100%;background:var(--cyan-500)}
+.confbar.lo i{background:var(--amber)}
+/* status pill */
+.pill{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:9px;
+      font-size:9.5px;font-weight:700;letter-spacing:.02em}
+.p-rev{background:rgba(167,236,53,.16);color:var(--green-300);border:1px solid rgba(167,236,53,.4)}
+.p-flag{background:rgba(246,196,83,.14);color:var(--amber);border:1px solid rgba(246,196,83,.45)}
+.p-un{background:rgba(129,152,168,.12);color:var(--muted);border:1px solid rgba(129,152,168,.3)}
+/* editing states */
+td.editing{background:#0b2438 !important;box-shadow:inset 0 0 0 2px var(--cyan-400);padding:0}
+td.editing input{width:100%;height:100%;background:transparent;border:0;outline:none;color:var(--white);
+                 font:inherit;padding:0 8px;font-variant-numeric:tabular-nums}
+td.dirty{background:#12203a !important;position:relative}
+td.dirty:after{content:"";position:absolute;top:0;right:0;border:5px solid transparent;
+               border-top-color:var(--violet-400);border-right-color:var(--violet-400)}
+td.invalid{background:#2a1015 !important;box-shadow:inset 0 0 0 1px rgba(224,97,107,.65);color:#f0b6bb}
+td.invalid .err{color:var(--red);font-size:9px;margin-left:5px}
+/* range selection */
+td.rng{background:#0e2a3d !important;box-shadow:inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-t{box-shadow:inset 0 1px 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-b{box-shadow:inset 0 -1px 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-l{box-shadow:inset 1px 0 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-r{box-shadow:inset -1px 0 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-tl{box-shadow:inset 1px 1px 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-tr{box-shadow:inset -1px 1px 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-bl{box-shadow:inset 1px -1px 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+td.rng-br{box-shadow:inset -1px -1px 0 0 var(--cyan-400), inset 0 0 0 1px rgba(34,215,220,.22)}
+.act{display:flex;gap:4px;align-items:center;height:100%}
+.abtn{width:20px;height:20px;display:grid;place-items:center;border:1px solid var(--line);
+      border-radius:3px;color:var(--muted)}
+.abtn svg{width:10px;height:10px}
+
+/* ---------- footer ---------- */
+.foot{display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--navy-850);
+      border-top:1px solid var(--border);font-size:11px}
+.pager{display:flex;align-items:center;gap:3px}
+.pg{min-width:24px;height:23px;padding:0 6px;display:grid;place-items:center;
+    border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--text)}
+.pg.nav{padding:0 8px;color:var(--muted)}
+input.pg{width:36px;padding:0;background:var(--navy-1000);border:1px solid var(--cyan-400);
+         color:var(--cyan-300);font-weight:700;text-align:center;font-family:var(--font);font-size:11px}
+.gap{color:var(--faint);padding:0 3px}
+.fnote{color:var(--faint);font-size:10.5px}
+.unsaved{margin-left:auto;display:flex;align-items:center;gap:8px}
+.chip{border:1px solid rgba(155,124,240,.5);color:var(--violet-300);border-radius:4px;
+      padding:3px 9px;font-size:11px;font-weight:600}
+.save{background:var(--green-400);color:#0d1a02;border:0;border-radius:4px;padding:6px 14px;
+      font-size:11.5px;font-weight:700;font-family:var(--font)}
+.discard{border:1px solid var(--border);border-radius:4px;padding:5px 11px;font-size:11px;color:var(--muted)}
+</style>
+
+<div class="wrap">
+
+  <div class="tbar">
+    <span class="sel">3 rows selected</span>
+    <div class="divider"></div>
+    <div class="tb">Edit selected</div>
+    <div class="tb">Duplicate</div>
+    <div class="tb off">Delete</div>
+    <div class="right">
+      <div class="tb warn">Filters: 2</div>
+      <div class="divider"></div>
+      <div class="tb">Columns</div>
+      <div class="tb">Export</div>
+      <div class="tb">New record</div>
+    </div>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <colgroup>
+        <col style="width:34px"><col style="width:66px"><col style="width:44px">
+        <col style="width:146px"><col style="width:152px"><col style="width:104px">
+        <col style="width:92px"><col style="width:58px"><col style="width:50px">
+        <col style="width:56px"><col style="width:58px"><col style="width:56px">
+        <col style="width:70px"><col style="width:104px"><col style="width:178px">
+        <col style="width:104px"><col style="width:64px">
+      </colgroup>
+      <thead><tr id="hr"></tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <div class="pager" id="pager"></div>
+    <span class="fnote">25 of 4,281 rows &middot; next page prefetched</span>
+    <div class="unsaved">
+      <span class="chip">3 unsaved changes &middot; 1 invalid</span>
+      <span class="discard">Discard</span>
+      <button class="save">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var LOCK='<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 7V5a4 4 0 118 0v2h1v8H3V7zm2 0h4V5a2 2 0 10-4 0z"/></svg>';
+var EYE ='<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 3C4.4 3 1.6 5.6 1 8c.6 2.4 3.4 5 7 5s6.4-2.6 7-5c-.6-2.4-3.4-5-7-5zm0 8a3 3 0 110-6 3 3 0 010 6z"/></svg>';
+var VID ='<svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="3" width="9" height="10" rx="2"/><path d="m10 7 5-3v8l-5-3z"/></svg>';
+
+/* header: label, type hint, flags. `ro` = read-only column, `frz` = frozen */
+var COLS=[
+ {l:'',        cls:'frz', style:'left:0',      sel:1},
+ {l:'Obs',     cls:'frz', style:'left:34px',   t:'int',  ro:1, sort:'asc', prio:2},
+ {l:'',        cls:'frz edge', style:'left:100px'},
+ {l:'Common name',    t:'fk',   filt:1},
+ {l:'Scientific name',t:'text', ro:1},
+ {l:'Confidence',     t:'num',  sort:'desc', prio:1},
+ {l:'Start TC',       t:'time', ro:1},
+ {l:'Dive',           t:'text', filt:1},
+ {l:'Line',           t:'text'},
+ {l:'Count',          t:'int'},
+ {l:'Size',           t:'int'},
+ {l:'Sex',            t:'enum'},
+ {l:'Keyframes',      t:'calc', ro:1},
+ {l:'Review',         t:'enum'},
+ {l:'Note',           t:'text'},
+ {l:'Updated',        t:'ts',   ro:1},
+ {l:'',               t:''}
+];
+document.getElementById('hr').innerHTML = COLS.map(function(c,i){
+  var inner;
+  if(c.sel){
+    inner = '<div class="h"><span class="box"></span></div>';
+  } else {
+    inner = '<div class="h"><span class="lbl">'+c.l+'</span>'
+          + (c.sort?'<span class="sort">'+(c.sort==='asc'?'&#9650;':'&#9660;')+'<b>'+c.prio+'</b></span>':'')
+          + (c.filt?'<span class="filt">&#9673;</span>':'')
+          + '</div>'
+          + ((c.t||c.ro)?'<div class="meta">'
+              + (c.ro?'<span class="lockicon">'+LOCK+'</span>':'')
+              + (c.t?'<span>'+c.t+'</span>':'')
+              + '</div>':'');
+  }
+  return '<th class="'+(c.cls||'')+'" style="'+(c.style||'')+'">'+inner
+       + (i<COLS.length-1?'<span class="grip"></span>':'') + '</th>';
+}).join('');
+
+var SPECIES=[
+ ['Bat Star','Patiria miniata'],['Bat Star','Patiria miniata'],['Rockfish','Sebastes sp.'],
+ ['Leather Star','Dermasterias imbricata'],['Sunflower Star','Pycnopodia helianthoides'],
+ ['Bat Star','Patiria miniata'],['Red Urchin','Mesocentrotus franciscanus'],
+ ['Bat Star','Patiria miniata'],['Giant Kelp','Macrocystis pyrifera'],
+ ['Bat Star','Patiria miniata'],['Painted Greenling','Oxylebius pictus'],
+ ['Bat Star','Patiria miniata'],['Ochre Star','Pisaster ochraceus'],
+ ['Bat Star','Patiria miniata'],['Blood Star','Henricia leviuscula'],
+ ['Bat Star','Patiria miniata'],['Rock Crab','Cancer productus'],
+ ['Bat Star','Patiria miniata'],['Bat Star','Patiria miniata'],['Sea Cucumber','Parastichopus sp.']
+];
+var SEX=['—','U','U','F','M','U','—','U','—','U','M','U','F','U','U','U','M','U','U','—'];
+var REV=[['rev','Reviewed'],['un','Unreviewed'],['flag','Flagged'],['rev','Reviewed'],['un','Unreviewed'],
+         ['rev','Reviewed'],['un','Unreviewed'],['rev','Reviewed'],['un','Unreviewed'],['flag','Flagged'],
+         ['un','Unreviewed'],['rev','Reviewed'],['un','Unreviewed'],['un','Unreviewed'],['rev','Reviewed'],
+         ['un','Unreviewed'],['flag','Flagged'],['un','Unreviewed'],['rev','Reviewed'],['un','Unreviewed']];
+var NOTES=['','partially occluded by kelp','','on vertical rock face','',
+           'juvenile, size estimated','','',"low visibility — sediment plume",'',
+           '','two individuals overlapping','','','arms regenerating','','',
+           '','','buried, only oral disc visible'];
+
+function tc(i){
+  var s = 2130 + i*47;
+  var h=Math.floor(s/3600), m=Math.floor(s%3600/60), sec=s%60;
+  return ('0'+h).slice(-2)+':'+('0'+m).slice(-2)+':'+('0'+sec).slice(-2)+'.12';
+}
+
+var SELECTED = {2:1,3:1,4:1};
+var rows=[];
+for(var r=0;r<25;r++){
+  var sp = SPECIES[r%20], conf = (0.98 - r*0.021).toFixed(2);
+  var lo = conf < 0.72;
+  var img = String((r*7+3)%28); if(img.length<2) img='0'+img;
+  var cnt = [1,1,1,2,1,1,14,1,1,1,1,2,1,1,1,3,1,1,1,1][r%20];
+  var size = [12,9,26,15,41,11,4,13,null,10,18,12,22,9,7,14,19,11,13,28][r%20];
+  var kf = 8 + ((r*13)%46);
+
+  /* demonstrated states */
+  var editing = (r===6);            // a cell mid-edit
+  var dirty   = (r===8);            // saved-locally, not yet committed
+  var invalid = (r===10);           // failed validation
+  var inRange = (r>=13 && r<=15);   // spreadsheet range selection over Count..Sex
+
+  function rngCls(colIdx){
+    if(!inRange) return '';
+    var c='rng';
+    if(r===13) c+=' rng-t'; if(r===15) c+=' rng-b';
+    if(colIdx===0) c+=' rng-l'; if(colIdx===2) c+=' rng-r';
+    if(r===13&&colIdx===0) c='rng rng-tl'; if(r===13&&colIdx===2) c='rng rng-tr';
+    if(r===15&&colIdx===0) c='rng rng-bl'; if(r===15&&colIdx===2) c='rng rng-br';
+    return c;
+  }
+
+  var tds=[];
+  tds.push('<td class="frz" style="left:0"><span class="box'+(SELECTED[r]?' on':'')+'"></span></td>');
+  tds.push('<td class="frz num ro mono" style="left:34px">'+(1042+r*3)+'</td>');
+  tds.push('<td class="frz edge thumb" style="left:100px"><img src="../../mosaic-reviewer/html/assets/t'+img+'.jpg" alt=""></td>');
+  tds.push('<td class="'+(dirty?'dirty':'')+'"><span class="fk">'+sp[0]+'</span></td>');
+  tds.push('<td class="ro sci">'+sp[1]+'</td>');
+  tds.push('<td><div class="conf"><span>'+conf+'</span>'
+         + '<span class="confbar'+(lo?' lo':'')+'"><i style="width:'+Math.round(conf*100)+'%"></i></span></div></td>');
+  tds.push('<td class="ro mono">'+tc(r)+'</td>');
+  tds.push('<td>D0'+(4+(r%3))+'</td>');
+  tds.push('<td class="num">'+(1+(r%6))+'</td>');
+  if(editing) tds.push('<td class="editing"><input value="14"></td>');
+  else if(invalid) tds.push('<td class="invalid num">-1<span class="err">&#9888;</span></td>');
+  else tds.push('<td class="num '+rngCls(0)+'">'+cnt+'</td>');
+  tds.push('<td class="num '+rngCls(1)+'">'+(size===null?'<span class="null">null</span>':size)+'</td>');
+  tds.push('<td class="'+rngCls(2)+'">'+(SEX[r%20]==='—'?'<span class="null">null</span>':SEX[r%20])+'</td>');
+  tds.push('<td class="num ro"><span class="link">'+kf+'</span></td>');
+  tds.push('<td><span class="pill p-'+REV[r%20][0]+'">'+REV[r%20][1]+'</span></td>');
+  tds.push('<td>'+(NOTES[r%20]?NOTES[r%20]:'<span class="null">null</span>')+'</td>');
+  tds.push('<td class="ro mono">2026-09-0'+(1+(r%3))+' 14:'+('0'+(10+r)).slice(-2)+'</td>');
+  tds.push('<td><div class="act"><span class="abtn">'+EYE+'</span><span class="abtn">'+VID+'</span></div></td>');
+
+  rows.push('<tr class="'+(SELECTED[r]?'selected':'')+'">'+tds.join('')+'</tr>');
+}
+document.getElementById('tb').innerHTML = rows.join('');
+
+function pager(cur,total,span){
+  span=span||2; var p=['<div class="pg nav">&lsaquo; Prev</div>'];
+  var lo=Math.max(1,cur-span), hi=Math.min(total,cur+span);
+  if(lo>1){ p.push('<div class="pg">1</div>'); if(lo>2) p.push('<span class="gap">&hellip;</span>'); }
+  for(var i=lo;i<=hi;i++) p.push(i===cur?'<input class="pg" value="'+i+'">':'<div class="pg">'+i+'</div>');
+  if(hi<total){ if(hi<total-1) p.push('<span class="gap">&hellip;</span>'); p.push('<div class="pg">'+total+'</div>'); }
+  p.push('<div class="pg nav">Next &rsaquo;</div>');
+  return p.join('');
+}
+document.getElementById('pager').innerHTML = pager(7, 86);
+</script>
