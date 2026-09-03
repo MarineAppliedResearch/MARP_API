@@ -1,0 +1,54 @@
+/* ==========================================================================
+   MARP design tokens
+   --------------------------------------------------------------------------
+   The palette, in one place. Previously this block existed only inside
+   landing.css, and was hand-copied into the MARP Video Player's stylesheet —
+   which is how that copy ended up referencing an --amber-300 that was never
+   declared anywhere. New surfaces should link this file rather than restate
+   the values.
+
+   landing.css still carries its own copy for now; consolidating it is a
+   separate change, since that file is live.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  --navy-1000: #01050d;
+  --navy-950: #020814;
+  --navy-900: #03101f;
+  --navy-850: #051828;
+  --navy-800: #07233a;
+
+  --cyan-300: #64f6f2;
+  --cyan-400: #22d7dc;
+  --cyan-500: #05b9c8;
+  --blue-400: #2d9cff;
+  --blue-500: #147ee8;
+  --green-300: #c7ff62;
+  --green-400: #a7ec35;
+  --green-500: #83c91f;
+  --violet-300: #c3b2f2;
+  --violet-400: #9b7cf0;
+  --violet-500: #5b3fb0;
+
+  /* Semantic state colours. Chosen to survive against marine imagery, which is
+     dominated by blue-green water and substrate with orange, red and purple
+     organisms — and never to be the only cue for a state. */
+  --amber-300: #f6c453;
+  --red-400: #e0616b;
+  --red-500: #c0313f;
+  --grey-400: #8b93a0;
+
+  --white: #f7fbff;
+  --text: #c7d4dd;
+  --muted: #8198a8;
+  --faint: #587181;
+
+  --border: rgba(42, 214, 220, 0.28);
+  --border-strong: rgba(42, 214, 220, 0.52);
+  --line: rgba(42, 214, 220, 0.10);
+
+  --body-font: Inter, Aptos, "Segoe UI", Helvetica, Arial, sans-serif;
+  --display-font: "Arial Narrow", "Aptos Narrow", "Roboto Condensed", sans-serif;
+}

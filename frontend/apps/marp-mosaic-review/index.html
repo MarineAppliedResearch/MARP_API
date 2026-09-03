@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP Mosaic Review</title>
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./styles/app.css">
+</head>
+<body data-mode="scientific">
+
+<div class="app">
+
+  <header class="hdr">
+    <img src="../../shared/assets/images/marp-logo.png" alt="MARP">
+    <span class="title">Picture Mosaic Reviewer</span>
+    <nav class="seg" aria-label="Review mode">
+      <button data-mode="scientific" class="on">Scientific Data Review</button>
+      <button data-mode="training">Training Data Review</button>
+      <button data-mode="delete" class="danger">Delete</button>
+    </nav>
+    <span class="mode-note" id="modeNote"></span>
+    <div class="right"><span class="who">IT</span></div>
+  </header>
+
+  <div class="sub">
+    <span>Showing <b id="shown">0</b> of <b id="total">0</b> matching</span>
+    <span class="sep">|</span>
+    <span><b id="markWord">Flagged</b> on page <b id="markedCount">0</b></span>
+    <button class="sortbox">Sort: Confidence (low first) &#9662;</button>
+  </div>
+
+  <div class="body">
+    <aside class="rail">
+      <div class="railhead">
+        <span class="t">Filters</span>
+        <button class="railbtn" id="railbtn" aria-label="Collapse filters">&#9664;</button>
+      </div>
+      <span class="vlabel">Filters</span>
+      <span class="fcount" id="fcount">0</span>
+
+      <div class="rail-body">
+        <div class="lbl">Project</div>
+        <div class="sel"><span>Deep Reef 2025</span><span>+2</span></div>
+        <div class="lbl">Species</div>
+        <div class="sel"><span>Bat Star</span><span>&#9662;</span></div>
+        <div class="lbl">Model</div>
+        <div class="sel"><span>BatStarNet v3.2</span><span>&#9662;</span></div>
+        <div class="lbl">Review status</div>
+        <button class="chk"><span class="box on"></span>Unreviewed<span class="n" id="cUnrev">—</span></button>
+        <button class="chk"><span class="box"></span>Reviewed<span class="n" id="cRev">—</span></button>
+        <div class="prog">
+          <div style="display:flex;justify-content:space-between;font-size:10.5px">
+            <span>Progress</span><b id="progPct" style="color:#f7fbff">0%</b></div>
+          <div class="bar"><i id="progBar" style="width:0%"></i></div>
+          <div class="small" id="progText">&mdash;</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="field" id="field">
+      <div class="grid" id="grid"></div>
+      <div id="picker"></div>
+    </main>
+  </div>
+
+  <footer class="foot">
+    <div class="pager" id="pager"></div>
+    <span class="legend"><span class="swatch"></span>committed</span>
+    <div class="markall">
+      <button class="btn" id="markAll">Flag all on page</button>
+      <button class="btn" id="clearMarks">Clear</button>
+    </div>
+    <span class="count" id="footCount">0 flagged</span>
+    <button class="commit" id="commit">Mark Page Reviewed</button>
+  </footer>
+</div>
+
+<button class="logbtn" id="logbtn">Action log</button>
+<div class="log" id="log" hidden>
+  <h6>Actions fired &mdash; these become API calls</h6>
+  <ol id="logList"></ol>
+</div>
+
+<script type="module">
+  import { actions, state, subscribe } from './src/store.js';
+  import { mount } from './src/render.js';
+
+  /* Surface failures rather than swallowing them — an async render error is
+     otherwise invisible, which cost real time during the first build. */
+  function surface(what, err) {
+    const msg = (err && (err.stack || err.message)) || String(err);
+    document.title = 'ERROR: ' + msg.split('\n')[0];
+    let bar = document.getElementById('errbar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'errbar';
+      bar.style.cssText = 'position:fixed;inset:auto 0 0 0;z-index:99;background:#2a1015;' +
+        'color:#f0b6bb;border-top:1px solid #e0616b;padding:8px 12px;font:12px/1.5 monospace;' +
+        'white-space:pre-wrap;max-height:30vh;overflow:auto';
+      document.body.appendChild(bar);
+    }
+    bar.textContent = `${what}: ${msg}`;
+  }
+  window.addEventListener('error', (e) => surface('error', e.error || e.message));
+  window.addEventListener('unhandledrejection', (e) => surface('unhandled rejection', e.reason));
+
+  mount();
+
+  /* progress is derived, not stored */
+  subscribe(() => {
+    const done = state.committedPages.size * state.pageSize;
+    const pct = state.total ? Math.min(100, Math.round((done / state.total) * 100)) : 0;
+    document.getElementById('progPct').textContent = pct + '%';
+    document.getElementById('progBar').style.width = pct + '%';
+    document.getElementById('progText').textContent =
+      `${done.toLocaleString()} of ${state.total.toLocaleString()}`;
+    document.getElementById('cUnrev').textContent = state.total.toLocaleString();
+  });
+
+  /* ?demo=picker opens the reason panel on load, for screenshots and quick looks */
+  const demo = new URLSearchParams(location.search).get('demo');
+  if (demo) {
+    const unsub = subscribe(() => {
+      if (state.loading || !state.rows.length) return;
+      unsub();
+      const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+      const id = target.observation_id;
+      actions.toggleMark(id);
+      if (demo === 'correct') actions.setReason(id, 'Wrong species');
+    });
+  }
+
+  actions.init().catch((err) => {
+    document.getElementById('grid').innerHTML =
+      `<div style="color:#e0616b;padding:20px;font-size:13px">Could not start: ${err.message}
+       <br><span style="color:#8198a8">This app uses ES modules and fetch, so it needs to be
+       served over HTTP rather than opened from the filesystem.</span></div>`;
+  });
+
+  window.MARP = { state, actions };   // handy from the console
+</script>
+</body>
+</html>
