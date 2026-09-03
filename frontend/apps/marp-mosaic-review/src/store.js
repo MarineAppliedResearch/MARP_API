@@ -27,7 +27,7 @@ export const state = {
     project: null,
     dive: null,
     minConfidence: 0.5,
-    reviewStatus: ['unreviewed'],
+    reviewStatus: ['unreviewed', 'flagged'],
     trainingDisposition: null
   },
   sort: { field: 'confidence', dir: 'asc' },
@@ -128,7 +128,7 @@ export const actions = {
       state.filters.trainingDisposition = ['undecided'];
     }
     if (mode !== 'training' && !(state.filters.reviewStatus || []).length) {
-      state.filters.reviewStatus = ['unreviewed'];
+      state.filters.reviewStatus = ['unreviewed', 'flagged'];
     }
     state.marks.clear();
     state.picker = null;
@@ -218,17 +218,18 @@ export const actions = {
 
   async commitPage() {
     const ids = state.rows.map((r) => r.observation_id);
-    const marked = new Set(state.marks.keys());
-    fire('commitPage:request', { mode: state.mode, page: state.page, count: ids.length, marked: marked.size });
-    const res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marked });
+    const marks = new Map(state.marks);
+    fire('commitPage:request', { mode: state.mode, page: state.page, count: ids.length, marked: marks.size });
+    const res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marks });
     state.committedPages.add(state.page);
     state.lastCommit = res;
     res.reviewed.forEach((r) => state.outcomes.set(r.id, r.outcome));
-    (res.reverted || []).forEach((r) => state.outcomes.set(r.id, 'reverted'));
+    (res.flagged || []).forEach((r) => state.outcomes.set(r.id, r.outcome));
     state.marks.clear();
     state.picker = null;
     fire('commitPage:result', { reviewed: res.reviewed.length,
-      reverted: (res.reverted || []).length, skipped: res.skipped.length });
+      flagged: (res.flagged || []).length, reverted: (res.reverted || []).length,
+      skipped: res.skipped.length });
     state.counts = await MarpData.counts({ filters: {
       species: state.filters.species, project: state.filters.project, dive: state.filters.dive
     } });

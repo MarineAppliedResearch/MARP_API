@@ -24,6 +24,11 @@ function ok(v, msg) { if (!v) throw new Error(msg || 'expected truthy'); }
 async function reset(mode = 'scientific') {
   state.mode = mode;
   state.page = 1;
+  state.filters.species = 'Bat Star';
+  state.filters.project = null;
+  state.filters.reviewStatus = ['unreviewed', 'flagged'];
+  state.filters.trainingDisposition = ['undecided'];
+  state.outcomes.clear();
   state.marks.clear();
   state.changed.clear();
   state.committedPages.clear();
@@ -77,11 +82,11 @@ test('Exception marking and the page commit',
     const res = await MarpData.commitPage({
       mode: 'scientific',
       observationIds: state.rows.map((r) => r.observation_id),
-      marked: new Set([marked])
+      marks: new Map([[marked, { reason: null }]])
     });
     ok(!res.reviewed.some((r) => r.id === marked), 'the marked tile must not be accepted');
-    ok(res.skipped.some((s) => s.id === marked && s.reason === 'marked'),
-       'the marked tile should be reported as skipped');
+    ok(res.flagged.some((f) => f.id === marked && f.outcome === 'flagged'),
+       'it should be reported as flagged, which is a decision rather than a skip');
   });
 
 test('Delete mode',
@@ -92,7 +97,7 @@ test('Delete mode',
     const res = await MarpData.commitPage({
       mode: 'delete',
       observationIds: state.rows.map((r) => r.observation_id),
-      marked: new Set([marked])
+      marks: new Map([[marked, { reason: null }]])
     });
     ok(res.reviewed.some((r) => r.id === marked && r.outcome === 'deleted'),
        'the marked tile should be deleted');
@@ -106,7 +111,7 @@ test('What counts as reviewed',
     const bad = rows.find((r) => r.thumbnail_status !== 'ready');
     if (!bad) return 'skipped — no unavailable thumbnail on page 1';
     const res = await MarpData.commitPage({
-      mode: 'scientific', observationIds: rows.map((r) => r.observation_id), marked: new Set()
+      mode: 'scientific', observationIds: rows.map((r) => r.observation_id), marks: new Map()
     });
     ok(res.skipped.some((s) => s.id === bad.observation_id && s.reason === 'no-imagery'),
        'unavailable imagery must be skipped');
@@ -208,9 +213,10 @@ test('Moving through pages',
     eq(state.outcomes.get(id), 'reviewed', 'first commit accepts it');
     actions.toggleMark(id);
     await actions.commitPage();
-    eq(state.outcomes.get(id), 'reverted', 'marking it and committing takes the acceptance back');
     const row = state.rows.find((r) => r.observation_id === id);
-    eq(row.review_status, 'unreviewed', 'the record itself must be updated, not just the tile');
+    ok(row.review_status !== 'reviewed', 'the acceptance must be withdrawn');
+    eq(row.review_status, 'flagged', 'and the observation is now flagged instead');
+    eq(row.reviewed_by, null, 'the previous acceptance is cleared');
   });
 
 test('The review modes',
@@ -347,6 +353,78 @@ for (const mode of ['scientific', 'training', 'delete']) {
       eq(state.marks.get(id) && state.marks.get(id).reason, 'Occluded');
     });
 }
+
+/* A mark is a decision, not client state: committing must write it to the record,
+   so it is still there after leaving the page, and would survive a reload. */
+test('Review states',
+  'committing a flag writes it to the observation, with its reason', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status === 'unreviewed');
+    ok(target, 'need an unreviewed row');
+    const id = target.observation_id;
+    actions.toggleMark(id);
+    actions.setReason(id, 'Wrong species');
+    await actions.commitPage();
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_status, 'flagged', 'the record must carry the flag');
+    eq(row.flag_reason, 'Wrong species', 'and the reason');
+    eq(row.flagged_by, 'I. Travers', 'and who flagged it');
+  });
+
+test('Review states',
+  'a committed flag is still shown after leaving the page and returning', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status === 'unreviewed');
+    const id = target.observation_id;
+    actions.toggleMark(id);
+    actions.setReason(id, 'Bounding box');
+    await actions.commitPage();
+
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 350));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 350));
+
+    const row = state.rows.find((r) => r.observation_id === id);
+    ok(row, 'a flagged observation is open work, so it stays in the default view');
+    eq(row.review_status, 'flagged');
+    eq(row.flag_reason, 'Bounding box', 'the reason survives too');
+  });
+
+test('Training data review',
+  'committing an exclusion writes it to the observation, with its reason', async () => {
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+    actions.toggleMark(id);
+    actions.setReason(id, 'Occluded');
+    await actions.commitPage();
+    const row = state.rows.find((r) => r.observation_id === id)
+      || (await MarpData.query({ filters: { trainingDisposition: ['excluded'] }, page: 1, pageSize: 600 }))
+           .rows.find((r) => r.observation_id === id);
+    eq(row.training_disposition, 'excluded');
+    eq(row.exclusion_reason, 'Occluded');
+  });
+
+test('Correcting an observation',
+  'a species correction is still visible on the tile after returning', async () => {
+    await reset();
+    state.filters.species = null;            // a correction moves the row out of a species filter
+    await actions.refresh();
+    const id = state.rows[0].observation_id;
+    const was = state.rows[0].comname;
+    actions.toggleMark(id);
+    await actions.changeSpecies(id, 45);            // Sunflower Star
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 350));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 350));
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row) return 'skipped — the corrected row left the current filter';
+    eq(row.comname, 'Sunflower Star', 'the correction persists');
+    eq(row.previous_comname, was, 'and what it was before is still recorded');
+  });
 
 /* ------------------------------------------------------------------ runner */
 

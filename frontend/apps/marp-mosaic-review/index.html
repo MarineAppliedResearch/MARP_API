@@ -137,6 +137,22 @@
       const target = state.rows.find((r) => r.thumbnail_status === 'ready');
       const id = target.observation_id;
       if (demo === 'menu') { document.getElementById('selSpeciesBtn').click(); return; }
+      if (demo === 'persist') {
+        /* flag three with reasons, commit, leave, come back */
+        const three = state.rows.filter((r) => r.thumbnail_status === 'ready').slice(0, 3);
+        three.forEach((r, i) => {
+          actions.toggleMark(r.observation_id);
+          actions.setReason(r.observation_id, ['Wrong species', 'Bounding box', 'Duplicate'][i]);
+        });
+        setTimeout(async () => {
+          await actions.commitPage();
+          setTimeout(() => {
+            actions.goToPage(2);
+            setTimeout(() => actions.goToPage(1), 900);
+          }, 500);
+        }, 400);
+        return;
+      }
       if (demo === 'roundtrip') {
         /* mark three, leave the page, come back — exactly the reported sequence */
         state.rows.slice(0, 3).forEach((r) => actions.toggleMark(r.observation_id));

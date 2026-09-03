@@ -387,3 +387,8 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .tile.has-excluded img { filter: grayscale(.55) brightness(.62); }
 .tile.has-promoted { outline: 2px solid var(--green-400); }
 .tile.has-reviewed { outline: 2px solid rgba(167, 236, 53, .5); }
+
+.tile.has-flagged { outline: 2px solid var(--amber-300); }
+.tile.out-flagged { outline: 2px solid var(--amber-300); }
+.tile.out-excluded { outline: 2px dashed var(--grey-400); }
+.tile.out-excluded img { filter: grayscale(.55) brightness(.62); }

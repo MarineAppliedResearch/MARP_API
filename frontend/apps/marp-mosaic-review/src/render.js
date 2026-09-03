@@ -80,9 +80,9 @@ function tile(row) {
      this reviewer has made in this session. Both have to be visible, and distinct. */
   const existing = state.mode === 'training'
     ? (row.training_disposition !== 'undecided' ? row.training_disposition : null)
-    : (row.review_status === 'reviewed' ? 'reviewed' : null);
+    : (row.review_status !== 'unreviewed' ? row.review_status : null);
   const showExisting = existing && !marked && !outcome;
-  const byMe = (row.reviewed_by || row.training_approved_by) === ME;
+  const byMe = (row.reviewed_by || row.training_approved_by || row.flagged_by || row.excluded_by) === ME;
 
   const cls = ['tile'];
   const noImage = row.thumbnail_status !== 'ready';
@@ -97,7 +97,11 @@ function tile(row) {
   /* The badge is its own control: tapping the tile marks, tapping the badge opens
      the panel. That keeps marking a single uninterrupted gesture. */
   let badge = '';
-  if (outcome === 'reverted')     badge = `<span class="badge b-rev">${markIcon()}TAKEN BACK</span>`;
+  if (outcome === 'flagged')      badge = `<span class="badge b-flag" data-badge="${id}"
+        title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}">${ICON.flag}FLAGGED</span>`;
+  else if (outcome === 'excluded') badge = `<span class="badge b-exc" data-badge="${id}"
+        title="Excluded${row.exclusion_reason ? ' — ' + row.exclusion_reason : ''}">${ICON.exc}EXCLUDED</span>`;
+  else if (outcome === 'reverted') badge = `<span class="badge b-rev">${markIcon()}TAKEN BACK</span>`;
   else if (outcome === 'deleted') badge = `<span class="badge b-gone">${ICON.del}DELETED</span>`;
   else if (outcome === 'promoted') badge = `<span class="badge b-out">${ICON.pro}PROMOTED</span>`;
   else if (outcome === 'reviewed') badge = `<span class="badge b-out">${ICON.tick}REVIEWED</span>`;
@@ -106,7 +110,10 @@ function tile(row) {
   else if (changed)     badge = `<span class="badge b-chg">${ICON.tick}CHANGED</span>`;
   else if (showExisting) {
     const who = byMe ? ' &middot; you' : '';
-    badge = existing === 'excluded'
+    badge = existing === 'flagged'
+      ? `<span class="badge b-flag" data-badge="${id}"
+           title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}${who ? ', by you' : ''}">${ICON.flag}FLAGGED${who}</span>`
+      : existing === 'excluded'
       ? `<span class="badge b-exc">${ICON.exc}EXCLUDED${who}</span>`
       : existing === 'promoted'
         ? `<span class="badge b-pro">${ICON.pro}PROMOTED${who}</span>`
@@ -117,8 +124,13 @@ function tile(row) {
   const corner = state.mode === 'training'
     ? `<span class="frames">${row.keyframe_count}f</span>`
     : (marked && marked.reason ? `<span class="reason-chip">${marked.reason}</span>`
-       : changed ? `<span class="reason-chip" data-changed="${id}"
-             title="Change the species again">was ${changed.from}</span>` : '');
+       : (changed || row.previous_comname)
+         ? `<span class="reason-chip" data-changed="${id}" title="Change the species again">was ${
+             (changed && changed.from) || row.previous_comname}</span>`
+       : ((existing === 'flagged' || outcome === 'flagged') && row.flag_reason)
+         ? `<span class="reason-chip">${row.flag_reason}</span>`
+       : ((existing === 'excluded' || outcome === 'excluded') && row.exclusion_reason)
+         ? `<span class="reason-chip">${row.exclusion_reason}</span>` : '');
 
   /* An unavailable image is still an observation: it keeps its name and stays
      markable. It is only excluded from the bulk commit, which is a separate rule. */
@@ -397,11 +409,11 @@ function renderChrome() {
    as work is committed. */
 const STATUS_SETS = {
   scientific: { key: 'reviewStatus', label: 'Review status',
-                items: [['unreviewed', 'Unreviewed'], ['reviewed', 'Reviewed']] },
+                items: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']] },
   training:   { key: 'trainingDisposition', label: 'Training disposition',
                 items: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']] },
   delete:     { key: 'reviewStatus', label: 'Review status',
-                items: [['unreviewed', 'Unreviewed'], ['reviewed', 'Reviewed']] }
+                items: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']] }
 };
 
 function renderStatusFilters() {

@@ -10,6 +10,8 @@
  * including the per-observation results that #68 requires for bulk operations.
  */
 
+const ME = 'I. Travers';
+
 const LATENCY = { query: 140, commit: 260, species: 180, thumb: 900 };
 
 /** Pretend the network exists, so loading states are real rather than theoretical. */
@@ -52,6 +54,7 @@ export const MarpData = {
     return {
       unreviewed: n((r) => r.review_status === 'unreviewed'),
       reviewed:   n((r) => r.review_status === 'reviewed'),
+      flagged:    n((r) => r.review_status === 'flagged'),
       undecided:  n((r) => r.training_disposition === 'undecided'),
       promoted:   n((r) => r.training_disposition === 'promoted'),
       excluded:   n((r) => r.training_disposition === 'excluded'),
@@ -96,48 +99,66 @@ export const MarpData = {
    * #68 requires that unavailable imagery is skipped without blocking the batch, and
    * that an observation already handled by someone else is reported, not overwritten.
    */
-  async commitPage({ mode, observationIds, marked }) {
+  /**
+   * `marks` is a Map of observation_id -> { reason }. A mark is not a transient
+   * client state: committing writes it to the record, so a flag survives the page,
+   * the session, and the reviewer. #68 requires flagged observations to remain
+   * available for correction rather than disappearing.
+   */
+  async commitPage({ mode, observationIds, marks }) {
     await delay(LATENCY.commit);
-    const reviewed = [], skipped = [], reverted = [];
+    const reviewed = [], flagged = [], skipped = [], reverted = [];
 
     for (const id of observationIds) {
       const row = db.observations.find((r) => r.observation_id === id);
       if (!row) { skipped.push({ id, reason: 'not-found' }); continue; }
       if (row.thumbnail_status !== 'ready') { skipped.push({ id, reason: 'no-imagery' }); continue; }
 
-      const isMarked = marked.has(id);
+      const isMarked = marks.has(id);
 
       if (mode === 'delete') {
         if (isMarked) { row.deleted = true; reviewed.push({ id, outcome: 'deleted' }); }
         continue;                                   // unmarked rows are untouched
       }
       if (isMarked) {
-        /* Undo: the reviewer marked something they had already accepted here, so the
-           commit takes that acceptance back rather than silently ignoring it. */
-        if (mode === 'scientific' && row.review_status === 'reviewed') {
-          row.review_status = 'unreviewed'; row.reviewed_by = null; row.version += 1;
-          reverted.push({ id, outcome: 'reverted' });
-        } else if (mode === 'training' && row.training_disposition === 'promoted') {
-          row.training_disposition = 'undecided'; row.training_approved_by = null; row.version += 1;
-          reverted.push({ id, outcome: 'reverted' });
+        const reason = (marks.get(id) || {}).reason || null;
+        const wasAccepted = mode === 'scientific'
+          ? row.review_status === 'reviewed'
+          : row.training_disposition === 'promoted';
+
+        if (mode === 'scientific') {
+          row.review_status = 'flagged';
+          row.flag_reason = reason;
+          row.flagged_by = ME;
+          row.flagged_at = new Date().toISOString();
+          row.reviewed_by = null;
         } else {
-          skipped.push({ id, reason: 'marked' });
+          row.training_disposition = 'excluded';
+          row.exclusion_reason = reason;
+          row.excluded_by = ME;
+          row.training_approved_by = null;
         }
+        row.version += 1;
+        const outcome = mode === 'scientific' ? 'flagged' : 'excluded';
+        flagged.push({ id, outcome });
+        if (wasAccepted) reverted.push({ id, outcome });   // an acceptance was withdrawn
         continue;
       }
 
       if (mode === 'scientific') {
         row.review_status = 'reviewed';
+        row.flag_reason = null; row.flagged_by = null;
         row.reviewed_by = 'I. Travers';
         reviewed.push({ id, outcome: 'reviewed' });
       } else if (mode === 'training') {
         row.training_disposition = 'promoted';
+        row.exclusion_reason = null; row.excluded_by = null;
         row.training_approved_by = 'I. Travers';
         reviewed.push({ id, outcome: 'promoted' });
       }
       row.version += 1;
     }
-    return { reviewed, skipped, reverted };
+    return { reviewed, flagged, skipped, reverted };
   },
 
   /** A single correction. Returns the authoritative row, as the API will. */
@@ -147,6 +168,8 @@ export const MarpData = {
     const sp = db.species.find((s) => s.species_id === speciesId);
     if (!row || !sp) return { ok: false, error: 'not-found' };
     const previous = { comname: row.comname, scientific_name: row.scientific_name };
+    row.previous_comname = row.comname;
+    row.changed_by = ME;
     row.species_id = sp.species_id;
     row.comname = sp.comname;
     row.scientific_name = sp.species;
