@@ -18,13 +18,16 @@ issue wins.
 | --- | --- |
 | `scientific-review.png` | The main page workflow in Scientific Data Review mode |
 | `filters-collapsed.png` | The same page with the filter rail collapsed |
+| `flag-reason.png` | Choosing an optional reason after flagging a tile |
+| `flag-reason-correct.png` | The same panel with species correction revealed |
 | `training-review.png` | Training Data Review, where the unit is the tracked observation |
 | `delete-mode.png` | Delete Mode, with its inverted commit and ambient danger treatment |
 | `tile-states.png` | Every tile state at working size, plus a desaturated set |
 | `html/` | The source each screenshot was rendered from |
 
 `filters-collapsed.png` renders from `html/scientific-review.html?rail=collapsed` rather
-than a file of its own.
+than a file of its own, and `flag-reason-correct.png` from
+`html/flag-reasons.html?correct=1`.
 
 Each review mode carries its own hue in the chrome — cyan for Scientific, violet for
 Training, red for Delete — while the image field stays identical across all three, so

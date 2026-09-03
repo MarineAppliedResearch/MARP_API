@@ -1,0 +1,276 @@
+<!doctype html><meta charset="utf-8">
+<style>
+:root{
+  --navy-1000:#01050d; --navy-950:#020814; --navy-900:#03101f; --navy-850:#051828; --navy-800:#07233a;
+  --cyan-300:#64f6f2; --cyan-400:#22d7dc; --cyan-500:#05b9c8;
+  --green-300:#c7ff62; --green-400:#a7ec35;
+  --white:#f7fbff; --text:#c7d4dd; --muted:#8198a8; --faint:#587181;
+  --border:rgba(42,214,220,.28);
+  --amber:#f6c453;
+  --field:#17191c; --tile-bd:#2a2d32;
+  --font:Inter,Aptos,"Segoe UI",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;width:1600px;height:900px;background:var(--navy-1000);color:var(--text);
+     font-family:var(--font);font-size:12px;font-variant-numeric:tabular-nums;overflow:hidden}
+.app{display:grid;grid-template-rows:44px 30px 1fr 46px;height:900px}
+
+header{display:flex;align-items:center;gap:11px;padding:0 12px;background:var(--navy-850);
+       border-bottom:1px solid var(--border)}
+header img{height:26px;width:auto}
+.title{font-size:13px;color:var(--white);font-weight:600}
+.seg{display:flex;margin-left:16px;border:1px solid var(--border);border-radius:5px;overflow:hidden}
+.seg div{padding:4px 11px;font-size:11.5px;color:var(--muted);border-right:1px solid var(--border)}
+.seg div:last-child{border-right:0}
+.seg .on{background:var(--cyan-500);color:#02121a;font-weight:600}
+.seg .danger{color:#e9808a}
+.mode-note{margin-left:11px;font-size:10.5px;color:var(--faint)}
+.right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.pill{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--green-300);
+      border:1px solid rgba(167,236,53,.4);border-radius:20px;padding:3px 10px}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--green-400)}
+.who{width:23px;height:23px;border-radius:50%;background:var(--navy-800);border:1px solid var(--border);
+     display:grid;place-items:center;font-size:10px}
+.sub{display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--navy-900);
+     border-bottom:1px solid rgba(42,214,220,.13);font-size:11.5px}
+.sub b{color:var(--white);font-weight:600}
+.sub .sep{color:#2b3d4d}
+.sortbox{margin-left:auto;border:1px solid var(--border);border-radius:4px;padding:3px 9px;font-size:11px}
+
+.body{display:grid;grid-template-columns:158px 1fr;min-height:0}
+aside{background:var(--navy-900);border-right:1px solid rgba(42,214,220,.13);padding:10px;overflow:hidden}
+.lbl{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-300);margin:11px 0 4px}
+.lbl.first{margin-top:0}
+.sel{display:flex;align-items:center;justify-content:space-between;gap:4px;background:var(--navy-850);
+     border:1px solid var(--border);border-radius:4px;padding:5px 7px;font-size:11px;
+     white-space:nowrap;overflow:hidden}
+.sel span:last-child{color:var(--faint);font-size:9px}
+.chk{display:flex;align-items:center;gap:7px;padding:3.5px 0;font-size:11px}
+.box{width:11px;height:11px;border-radius:2px;border:1.5px solid var(--faint);flex:none}
+.box.on{background:var(--cyan-400);border-color:var(--cyan-400);position:relative}
+.box.on:after{content:"";position:absolute;left:2.8px;top:.2px;width:3.4px;height:6.6px;
+              border:solid #02121a;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.chk .n{margin-left:auto;color:var(--muted);font-size:10px}
+
+main{background:var(--field);padding:8px 10px;overflow:hidden;position:relative}
+.grid{display:grid;grid-template-columns:repeat(9,150px);gap:3px;justify-content:center}
+.tile{position:relative;aspect-ratio:1;border-radius:2px;overflow:hidden;background:#101215;
+      outline:1px solid var(--tile-bd);outline-offset:-1px}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.cap{position:absolute;left:0;right:0;bottom:0;padding:3px 5px 3.5px;background:rgba(12,14,17,.42);
+     -webkit-backdrop-filter:blur(7px) saturate(.85);backdrop-filter:blur(7px) saturate(.85);
+     border-top:1px solid rgba(255,255,255,.09);font-size:11.5px;color:#f2f5f8;line-height:1.25;
+     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;
+     text-shadow:0 1px 2px rgba(0,0,0,.65)}
+.badge{position:absolute;top:4px;left:4px;display:flex;align-items:center;gap:3px;
+       padding:1.5px 5px 1.5px 4px;border-radius:2px;font-size:8.5px;font-weight:700}
+.badge svg{width:8px;height:8px;display:block;flex:none}
+.b-flag{background:var(--amber);color:#241a02}
+.flagged{outline:2px solid var(--amber)}
+/* the tile the picker belongs to is lifted, not dimmed, so it stays comparable */
+.active{outline:3px solid var(--amber);z-index:6;box-shadow:0 8px 26px rgba(0,0,0,.7)}
+
+/* ---------- reason picker ---------- */
+.pick{position:absolute;z-index:8;width:452px;background:#0a1826;
+      border:1px solid rgba(246,196,83,.45);border-radius:8px;
+      box-shadow:0 20px 54px rgba(0,0,0,.72);padding:13px 14px 12px}
+.pick:before{content:"";position:absolute;top:-8px;left:64px;width:14px;height:14px;
+             background:#0a1826;border-left:1px solid rgba(246,196,83,.45);
+             border-top:1px solid rgba(246,196,83,.45);transform:rotate(45deg)}
+.pick h4{margin:0 0 2px;font-size:13px;color:var(--white);font-weight:600;
+         display:flex;align-items:center;gap:8px}
+.pick h4 .fl{color:var(--amber);display:flex}
+.pick h4 svg{width:12px;height:12px}
+.opt{font-size:11px;color:var(--faint);font-weight:500;margin-left:auto;letter-spacing:.02em}
+.pick p{margin:0 0 11px;font-size:11.5px;color:var(--muted);line-height:1.45}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+/* generous targets: 40px tall, no hover dependence, no dropdown */
+.chip{height:40px;display:flex;align-items:center;gap:7px;padding:0 15px;border-radius:6px;
+      border:1px solid rgba(42,214,220,.3);background:#0d2334;color:var(--text);
+      font-size:12.5px;font-weight:600;white-space:nowrap}
+.chip svg{width:12px;height:12px;opacity:.75}
+.chip.on{background:var(--amber);border-color:var(--amber);color:#241a02}
+.chip.on svg{opacity:1}
+.pickfoot{display:flex;align-items:center;gap:9px;margin-top:12px;padding-top:11px;
+          border-top:1px solid rgba(42,214,220,.15)}
+.ghost{height:34px;display:flex;align-items:center;padding:0 14px;border-radius:6px;
+       border:1px solid var(--border);color:var(--muted);font-size:12px}
+.ghost.go{border-color:rgba(167,236,53,.5);color:var(--green-300);font-weight:600}
+.pickfoot .ghost{flex:none}
+/* consequence line sits on its own row so it can never squeeze the actions */
+.consq{margin-top:11px;padding-top:10px;border-top:1px solid rgba(42,214,220,.15);
+       font-size:11px;color:var(--faint);line-height:1.45}
+.consq b{color:var(--amber);font-weight:600}
+.consq.ok b{color:var(--cyan-300)}
+
+/* Correction section: revealed by choosing "Wrong species", because the reason and
+   the correction are the same thought. Collapsed otherwise so the fast path stays fast. */
+.correct{margin-top:12px;padding-top:11px;border-top:1px solid rgba(42,214,220,.15)}
+.correct h5{margin:0 0 8px;font-size:12px;color:var(--white);font-weight:600;
+            display:flex;align-items:center;gap:8px}
+.search{height:36px;display:flex;align-items:center;gap:8px;padding:0 11px;border-radius:6px;
+        background:#061523;border:1px solid var(--border);color:var(--faint);font-size:12px}
+.search svg{width:12px;height:12px;opacity:.7;flex:none}
+.search .cursor{width:1px;height:15px;background:var(--cyan-300);margin-left:1px}
+.sugg{margin-top:9px}
+.sugghead{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+.srow{height:38px;display:flex;align-items:center;gap:9px;padding:0 11px;border-radius:5px;
+      border:1px solid transparent;font-size:12.5px}
+.srow + .srow{margin-top:3px}
+.srow .sci{font-style:italic;color:var(--muted);font-size:11.5px}
+.srow .k{margin-left:auto;font-size:10px;color:var(--faint)}
+.srow.hot{background:#0d2334;border-color:rgba(42,214,220,.34);color:var(--white)}
+
+footer{display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--navy-850);
+       border-top:1px solid var(--border)}
+.btn{border:1px solid var(--border);border-radius:4px;padding:5px 10px;font-size:11px;color:var(--text)}
+.pager{display:flex;align-items:center;gap:3px}
+.pg{min-width:25px;height:25px;padding:0 6px;display:grid;place-items:center;
+    border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--text)}
+.pg.nav{padding:0 9px;color:var(--muted)}
+.pg.edge{color:var(--muted)}
+input.pg{width:38px;padding:0;background:var(--navy-1000);border:1px solid var(--cyan-400);
+         color:var(--cyan-300);font-weight:700;text-align:center;font-family:var(--font);font-size:11.5px}
+.pg.done{color:var(--green-300);border-color:rgba(167,236,53,.42);
+         box-shadow:inset 0 -3px 0 -1px var(--green-400)}
+.gap{color:var(--faint);padding:0 3px;font-size:11px}
+.legend{display:flex;align-items:center;gap:6px;margin-left:14px;font-size:10px;color:var(--faint)}
+.swatch{width:16px;height:4px;border-radius:1px;background:var(--green-400)}
+.markall{display:flex;gap:5px;margin-left:16px;padding-left:16px;
+         border-left:1px solid rgba(42,214,220,.16)}
+.count{margin-left:auto;font-size:11px;color:var(--amber)}
+.commit{background:var(--green-400);color:#0d1a02;border:0;border-radius:5px;
+        padding:7px 18px;font-size:12px;font-weight:700;margin-left:26px;font-family:var(--font)}
+</style>
+<div class="app">
+
+  <header>
+    <img src="assets/marp-logo.png" alt="MARP">
+    <div class="title">Picture Mosaic Reviewer</div>
+    <div class="seg">
+      <div class="on">Scientific Data Review</div>
+      <div>Training Data Review</div>
+      <div class="danger">Delete</div>
+    </div>
+    <div class="mode-note">Commit accepts unflagged tiles for scientific use</div>
+    <div class="right">
+      <div class="pill"><span class="dot"></span>Synced</div>
+      <div class="who">IT</div>
+    </div>
+  </header>
+
+  <div class="sub">
+    <div>Showing <b>45</b> of <b>4,281</b> matching</div><div class="sep">|</div>
+    <div>Flagged on page <b style="color:#f6c453">4</b></div>
+    <div class="sortbox">Sort: Confidence (low first) &#9662;</div>
+  </div>
+
+  <div class="body">
+    <aside>
+      <div class="lbl first">Project</div>
+      <div class="sel"><span>Deep Reef 2025</span><span>+2</span></div>
+      <div class="lbl">Dive / Line</div>
+      <div class="sel"><span>D04 &middot; L1&ndash;6</span><span>&#9662;</span></div>
+      <div class="lbl">Species</div>
+      <div class="sel"><span>Bat Star</span><span>&#9662;</span></div>
+      <div class="lbl">Model</div>
+      <div class="sel"><span>BatStarNet v3.2</span><span>&#9662;</span></div>
+      <div class="lbl">Review status</div>
+      <div class="chk"><span class="box on"></span>Unreviewed<span class="n">4,281</span></div>
+      <div class="chk"><span class="box"></span>Reviewed<span class="n">3,205</span></div>
+      <div class="chk"><span class="box"></span>Flagged<span class="n">426</span></div>
+    </aside>
+
+    <main>
+      <div class="grid" id="g"></div>
+
+      <div class="pick" id="pick" style="left:660px;top:242px"></div>
+    </main>
+  </div>
+
+  <footer>
+    <div class="pager" id="pager"></div>
+    <div class="legend"><span class="swatch"></span>reviewed</div>
+    <div class="markall">
+      <div class="btn">Flag all on page</div>
+      <div class="btn">Clear flags</div>
+    </div>
+    <div class="count">&#9873; 4 flagged stay open</div>
+    <button class="commit">Mark Page Reviewed &middot; 39 tiles</button>
+  </footer>
+</div>
+
+<script>
+var FLAG='<svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 1h1.6v14H3zM5.6 2h8l-2 3 2 3h-8z"/></svg>';
+var TICK='<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 12.5 2 8l1.4-1.4 3.1 3.1 6.1-6.1L14 5z"/></svg>';
+var MAG ='<svg viewBox="0 0 16 16" fill="currentColor"><path d="M7 1a6 6 0 104.2 10.3l3.3 3.3 1.4-1.4-3.3-3.3A6 6 0 007 1zm0 2a4 4 0 110 8 4 4 0 010-8z"/></svg>';
+
+/* ?correct=1 shows the correction revealed by choosing "Wrong species" */
+var CORRECT = /correct=1/.test(location.search);
+
+var REASONS = ['Wrong species','False detection','Duplicate','Bounding box','Other / unsure'];
+var picked  = CORRECT ? 'Wrong species' : 'False detection';
+
+var chips = REASONS.map(function(r){
+  var on = (r === picked);
+  return '<div class="chip'+(on?' on':'')+'">'+(on?TICK:'')+r+'</div>';
+}).join('');
+
+var correctBlock = CORRECT ? (
+  '<div class="correct">'
+  + '<h5>Correct the species<span class="opt">saves immediately</span></h5>'
+  + '<div class="search">'+MAG+'<span>lea</span><span class="cursor"></span></div>'
+  + '<div class="sugg">'
+  +   '<div class="sugghead">Matches &middot; MARP taxonomy</div>'
+  +   '<div class="srow hot">Leather Star <span class="sci">Dermasterias imbricata</span><span class="k">&crarr;</span></div>'
+  +   '<div class="srow">Leather Chiton <span class="sci">Katharina tunicata</span></div>'
+  +   '<div class="srow">Blood Star <span class="sci">Henricia leviuscula</span></div>'
+  + '</div></div>'
+) : '';
+
+var consq = CORRECT
+  ? '<div class="consq ok">The correction <b>saves immediately</b> and is recorded against your name. The flag stays until you resolve it.</div>'
+  : '<div class="consq">False detection <b>removes this observation from accepted scientific results</b>. The other reasons are advisory.</div>';
+
+document.getElementById('pick').innerHTML =
+    '<h4><span class="fl">'+FLAG+'</span>Flagged<span class="opt">Reason optional</span></h4>'
+  + '<p>Already recorded. Add a reason to help whoever resolves it, or keep scanning &mdash; the flag stands on its own.</p>'
+  + '<div class="chips">'+chips+'</div>'
+  + correctBlock
+  + consq
+  + '<div class="pickfoot">'
+  +   '<div class="ghost">Remove flag</div>'
+  +   '<div class="ghost">Open video</div>'
+  +   (CORRECT ? '<div class="ghost go">Mark resolved</div>' : '')
+  + '</div>';
+var special={ 3:{active:1,img:8}, 15:{flag:1}, 33:{flag:1}, 41:{flag:1} };
+var RESERVED=[8,17], out=[];
+for(var k=0;k<45;k++){
+  var t=special[k]||{}, idx;
+  if(t.img!==undefined){ idx=t.img; }
+  else { idx=(k*7+3)%28; while(RESERVED.indexOf(idx)>=0) idx=(idx+5)%28; }
+  var n=String(idx); if(n.length<2) n='0'+n;
+  var cls = t.active ? 'flagged active' : (t.flag ? 'flagged' : '');
+  out.push('<div class="tile '+cls+'">'
+    +'<img src="assets/t'+n+'.jpg" alt="">'
+    +((t.flag||t.active)?'<div class="badge b-flag">'+FLAG+'FLAGGED</div>':'')
+    +'<div class="cap">'+(t.active?'Rockfish':'Bat Star')+'</div></div>');
+}
+document.getElementById('g').innerHTML=out.join('');
+
+function pager(cur,total,done,span){
+  span=span||2;
+  function chip(i,cls){ return '<div class="pg'+(done.indexOf(i)>=0?' done':'')+(cls?' '+cls:'')+'">'+i+'</div>'; }
+  var p=['<div class="pg nav">&lsaquo; Prev</div>'];
+  var lo=Math.max(1,cur-span), hi=Math.min(total,cur+span);
+  if(lo>1){ p.push(chip(1,'edge')); if(lo>2) p.push('<span class="gap">&hellip;</span>'); }
+  for(var i=lo;i<=hi;i++){
+    if(i===cur) p.push('<input class="pg" value="'+i+'">');
+    else p.push(chip(i));
+  }
+  if(hi<total){ if(hi<total-1) p.push('<span class="gap">&hellip;</span>'); p.push(chip(total,'edge')); }
+  p.push('<div class="pg nav">Next &rsaquo;</div>');
+  return p.join('');
+}
+document.getElementById('pager').innerHTML=pager(14,96,[1,2,3,4,5,6,7,8,9,10,11,12,13]);
+</script>
