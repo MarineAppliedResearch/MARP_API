@@ -68,10 +68,12 @@ function tile(row) {
   const outcome = state.outcomes.get(id);
   const isActive = state.picker && state.picker.id === id;
   const ME = 'I. Travers';
-  const alreadyDone = state.mode === 'training'
-    ? row.training_disposition === 'promoted'
-    : row.review_status === 'reviewed';
-  const doneByOther = alreadyDone && !marked && !outcome;
+  /* The state the record already carries for the active mode, as opposed to a mark
+     this reviewer has made in this session. Both have to be visible, and distinct. */
+  const existing = state.mode === 'training'
+    ? (row.training_disposition !== 'undecided' ? row.training_disposition : null)
+    : (row.review_status === 'reviewed' ? 'reviewed' : null);
+  const showExisting = existing && !marked && !outcome;
   const byMe = (row.reviewed_by || row.training_approved_by) === ME;
 
   const cls = ['tile'];
@@ -81,9 +83,8 @@ function tile(row) {
   if (marked) cls.push('marked');
   if (isActive) cls.push('active');
   if (changed) cls.push('changed');
-  if (doneByOther) cls.push('done');
   if (outcome) cls.push('out-' + outcome);
-  else if (doneByOther && byMe) cls.push(state.mode === 'training' ? 'out-promoted' : 'out-reviewed');
+  else if (showExisting) cls.push('has-' + existing);
 
   /* The badge is its own control: tapping the tile marks, tapping the badge opens
      the panel. That keeps marking a single uninterrupted gesture. */
@@ -95,10 +96,15 @@ function tile(row) {
   else if (marked) badge = `<span class="badge ${markClass()}" data-badge="${id}"
         title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`;
   else if (changed)     badge = `<span class="badge b-chg">${ICON.tick}CHANGED</span>`;
-  else if (doneByOther) badge = byMe
-        /* work this reviewer already committed, seen again after navigating back */
-        ? `<span class="badge b-out">${ICON.tick}${state.mode === 'training' ? 'PROMOTED' : 'REVIEWED'} &middot; you</span>`
-        : `<span class="badge b-oth">${ICON.eye}${row.reviewed_by || row.training_approved_by || 'REVIEWED'}</span>`;
+  else if (showExisting) {
+    const who = byMe ? ' &middot; you' : '';
+    badge = existing === 'excluded'
+      ? `<span class="badge b-exc">${ICON.exc}EXCLUDED${who}</span>`
+      : existing === 'promoted'
+        ? `<span class="badge b-pro">${ICON.pro}PROMOTED${who}</span>`
+        : byMe ? `<span class="badge b-out">${ICON.tick}REVIEWED &middot; you</span>`
+               : `<span class="badge b-oth">${ICON.eye}${row.reviewed_by || 'REVIEWED'}</span>`;
+  }
 
   const corner = state.mode === 'training'
     ? `<span class="frames">${row.keyframe_count}f</span>`
@@ -354,7 +360,10 @@ function renderChrome() {
   $('#shown').textContent = state.loading ? '…' : state.rows.length;
   $('#total').textContent = state.total.toLocaleString();
   $('#markedCount').textContent = markedCount;
-  $('#markWord').textContent = MODES[state.mode].mark;
+  $('#markedLabel').title =
+    `Tiles you have marked to ${MODES[state.mode].verb.toLowerCase()} on this page. `
+    + 'Decisions already recorded against these observations are shown on the tiles, '
+    + 'and are not counted here.';
   $('#selSpecies').textContent = state.filters.species || 'All species';
   $('#selProject').textContent = state.filters.project || 'All projects';
   $('#sortLabel').textContent = (SORTS.find((s) =>

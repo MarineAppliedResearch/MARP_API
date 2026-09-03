@@ -26,7 +26,7 @@
   <div class="sub">
     <span>Showing <b id="shown">0</b> of <b id="total">0</b> matching</span>
     <span class="sep">|</span>
-    <span><b id="markWord">Flagged</b> on page <b id="markedCount">0</b></span>
+    <span id="markedLabel">Marked this page <b id="markedCount">0</b></span>
     <span class="menuwrap" style="margin-left:auto"><button class="sortbox" id="sortBtn" title="Change the sort order">Sort: <span id="sortLabel">&hellip;</span> &#9662;</button></span>
   </div>
 
@@ -120,8 +120,16 @@
       `${done.toLocaleString()} of ${state.total.toLocaleString()}`;
   });
 
-  /* ?demo=picker opens the reason panel on load, for screenshots and quick looks */
-  const demo = new URLSearchParams(location.search).get('demo');
+  /* Query params for quick looks and screenshots:
+     ?mode=training  ?status=excluded  ?demo=picker|correct|menu */
+  const params = new URLSearchParams(location.search);
+  const wantMode = params.get('mode');
+  const wantStatus = params.get('status');
+  if (wantMode) state.mode = wantMode;
+  if (wantStatus) {
+    state.filters[wantMode === 'training' ? 'trainingDisposition' : 'reviewStatus'] = [wantStatus];
+  }
+  const demo = params.get('demo');
   if (demo) {
     const unsub = subscribe(() => {
       if (state.loading || !state.rows.length) return;

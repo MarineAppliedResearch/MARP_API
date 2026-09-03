@@ -255,6 +255,64 @@ test('Filter and sort dimensions',
     ok(state.counts.reviewed > 0, 'and increase the reviewed count');
   });
 
+test('Training data review',
+  'promoting a page records the promotion on the observations themselves', async () => {
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+    ok(target, 'page 1 should contain a promotable track');
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.outcomes.get(id), 'promoted', 'the tile should report the promotion');
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.training_disposition, 'promoted', 'the record itself must carry it');
+    eq(row.training_approved_by, 'I. Travers', 'and who approved it');
+  });
+
+test('Training data review',
+  'promotions are still visible after navigating away and back', async () => {
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+    await actions.commitPage();
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 300));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 300));
+    eq(state.outcomes.get(id), 'promoted', 'the session record must survive the re-query');
+
+    /* and the record is findable again by filtering on the disposition */
+    state.filters.trainingDisposition = ['promoted'];
+    await actions.refresh();
+    const seen = state.rows.find((r) => r.observation_id === id);
+    if (seen) eq(seen.training_disposition, 'promoted');
+  });
+
+test('Filter and sort dimensions',
+  'filtering by a disposition returns only observations carrying it', async () => {
+    for (const want of ['excluded', 'promoted', 'undecided']) {
+      await reset('training');
+      state.filters.trainingDisposition = [want];
+      await actions.refresh();
+      const wrong = state.rows.filter((r) => r.training_disposition !== want);
+      eq(wrong.length, 0,
+         `every row under the ${want} filter must be ${want}; ${wrong.length} were not`);
+    }
+  });
+
+test('Filter and sort dimensions',
+  'filtering by review status returns only observations carrying it', async () => {
+    for (const want of ['reviewed', 'unreviewed']) {
+      await reset();
+      state.filters.reviewStatus = [want];
+      await actions.refresh();
+      const wrong = state.rows.filter((r) => r.review_status !== want);
+      eq(wrong.length, 0, `every row under the ${want} filter must be ${want}`);
+    }
+  });
+
 /* ------------------------------------------------------------------ runner */
 
 export async function run(mount) {
