@@ -41,6 +41,23 @@ header img{height:26px;width:auto}
 
 .body{display:grid;grid-template-columns:158px 1fr;min-height:0}
 aside{background:var(--navy-900);border-right:1px solid rgba(42,214,220,.13);padding:10px;overflow:hidden}
+.railhead{display:flex;align-items:center;justify-content:space-between;margin:-2px 0 8px}
+.railhead .t{font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.railbtn{width:20px;height:20px;display:grid;place-items:center;border:1px solid var(--border);
+         border-radius:4px;color:var(--cyan-300);font-size:10px;line-height:1;cursor:pointer}
+
+/* Collapsed: the rail becomes a narrow strip. Active filters stay visible as a
+   count, so a reviewer can never scan a filtered mosaic believing it unfiltered. */
+body.rail-collapsed .body{grid-template-columns:34px 1fr}
+body.rail-collapsed aside{padding:8px 0;display:flex;flex-direction:column;align-items:center;gap:9px}
+body.rail-collapsed .railbody{display:none}
+body.rail-collapsed .railhead{display:block;margin:0}
+body.rail-collapsed .railhead .t{display:none}
+body.rail-collapsed .vlabel{writing-mode:vertical-rl;font-size:9px;letter-spacing:.11em;
+       text-transform:uppercase;color:var(--muted)}
+body.rail-collapsed .fcount{min-width:19px;height:19px;display:grid;place-items:center;
+       border-radius:10px;background:var(--cyan-500);color:#02121a;font-size:10px;font-weight:700}
+body.rail-collapsed .grid{grid-template-columns:repeat(10,150px)}
 .lbl{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-300);margin:11px 0 4px}
 .lbl.first{margin-top:0}
 .sel{display:flex;align-items:center;justify-content:space-between;gap:4px;background:var(--navy-850);
@@ -138,13 +155,20 @@ input.pg{width:38px;padding:0;background:var(--navy-1000);border:1px solid var(-
   </header>
 
   <div class="sub">
-    <div>Showing <b>45</b> of <b>4,281</b> matching</div><div class="sep">|</div>
+    <div>Showing <b id="shown">45</b> of <b>4,281</b> matching</div><div class="sep">|</div>
     <div>Flagged on page <b style="color:#f6c453">5</b></div>
     <div class="sortbox">Sort: Confidence (low first) &#9662;</div>
   </div>
 
   <div class="body">
     <aside>
+      <div class="railhead">
+        <span class="t">Filters</span>
+        <span class="railbtn" id="railbtn" title="Collapse filters">&#9664;</span>
+      </div>
+      <div class="vlabel">Filters</div>
+      <div class="fcount">4</div>
+      <div class="railbody">
       <div class="lbl first">Project</div>
       <div class="sel"><span>Deep Reef 2025</span><span>+2</span></div>
       <div class="lbl">Dive / Line</div>
@@ -166,6 +190,7 @@ input.pg{width:38px;padding:0;background:var(--navy-1000);border:1px solid var(-
         <div class="bar"><i></i></div>
         <div class="small">3,205 of 5,047</div>
       </div>
+      </div>
     </aside>
 
     <main><div class="grid" id="g"></div></main>
@@ -179,7 +204,7 @@ input.pg{width:38px;padding:0;background:var(--navy-1000);border:1px solid var(-
       <div class="btn">Clear flags</div>
     </div>
     <div class="count">&#9873; 5 flagged stay open</div>
-    <button class="commit">Mark Page Reviewed &middot; 38 tiles</button>
+    <button class="commit" id="commit">Mark Page Reviewed &middot; 38 tiles</button>
   </footer>
 </div>
 
@@ -198,8 +223,13 @@ var special = {
   38:{na:1},
   41:{n:'Bat Star', st:'flag', badge:'FLAGGED'}
 };
+/* ?rail=collapsed renders the collapsed state, which gains a whole column */
+var COLLAPSED = /rail=collapsed/.test(location.search);
+if(COLLAPSED) document.body.className = 'rail-collapsed';
+var TILES = COLLAPSED ? 50 : 45;
+
 var RESERVED=[8,17], out=[];
-for(var k=0;k<45;k++){
+for(var k=0;k<TILES;k++){
   var t = special[k] || {};
   if(t.ph){ out.push('<div class="tile ph"><img src="assets/marp-mark.png" alt=""><div class="t">PREPARING</div><div class="phbar"><i></i></div></div>'); continue; }
   if(t.na){ out.push('<div class="tile na"><div style="font-size:20px;color:#c07d85">&#9888;</div><div class="t">NO IMAGE</div></div>'); continue; }
@@ -249,4 +279,10 @@ function pager(cur, total, done, span){
 }
 var DONE=[1,2,3,4,5,6,7,8,9,10,11,12,13];
 document.getElementById('pager').innerHTML = pager(14, 96, DONE);
+
+document.getElementById('shown').textContent = TILES;
+document.getElementById('commit').innerHTML = 'Mark Page Reviewed &middot; ' + (TILES-7) + ' tiles';
+document.getElementById('railbtn').addEventListener('click', function(){
+  document.body.classList.toggle('rail-collapsed');
+});
 </script>
