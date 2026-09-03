@@ -1,0 +1,234 @@
+<!doctype html><meta charset="utf-8">
+<style>
+:root{
+  --navy-1000:#01050d; --navy-900:#03101f; --navy-850:#051828; --navy-800:#07233a;
+  --cyan-300:#64f6f2; --cyan-400:#22d7dc; --cyan-500:#05b9c8;
+  --green-300:#c7ff62; --green-400:#a7ec35;
+  --white:#f7fbff; --text:#c7d4dd; --muted:#8198a8; --faint:#587181;
+  --amber:#f6c453; --grey:#8b93a0;
+  --field:#17191c; --tile-bd:#2a2d32;
+  /* Training Data Review carries its own hue in the chrome only.
+     Introduces a colour outside MARP's current palette — see the open question
+     about whether the state and mode vocabulary gets formalised. */
+  --violet:#9b7cf0; --violet-deep:#5b3fb0;
+  --chrome:#17102b; --chrome-rail:#120c22; --chrome-line:rgba(155,124,240,.30);
+  --font:Inter,Aptos,"Segoe UI",Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;width:1600px;height:900px;background:var(--navy-1000);color:var(--text);
+     font-family:var(--font);font-size:12px;font-variant-numeric:tabular-nums;overflow:hidden}
+.app{display:grid;grid-template-rows:44px 30px 1fr 46px;height:900px}
+
+header{display:flex;align-items:center;gap:11px;padding:0 12px;background:var(--chrome);
+       border-bottom:1px solid var(--chrome-line)}
+header img{height:26px;width:auto}
+.title{font-size:13px;color:var(--white);font-weight:600}
+.seg{display:flex;margin-left:16px;border:1px solid var(--chrome-line);border-radius:5px;overflow:hidden}
+.seg div{padding:4px 11px;font-size:11.5px;color:#9a8fb8;border-right:1px solid var(--chrome-line)}
+.seg div:last-child{border-right:0}
+.seg .on{background:var(--violet-deep);color:#f4efff;font-weight:700}
+.seg .danger{color:#e9808a}
+.mode-note{margin-left:11px;font-size:10.5px;color:#c3b2f2}
+.right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.pill{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#c3b2f2;
+      border:1px solid var(--chrome-line);border-radius:20px;padding:3px 10px}
+.who{width:23px;height:23px;border-radius:50%;background:#241a3d;border:1px solid var(--chrome-line);
+     display:grid;place-items:center;font-size:10px}
+
+.sub{display:flex;align-items:center;gap:16px;padding:0 12px;background:var(--chrome-rail);
+     border-bottom:1px solid rgba(155,124,240,.16);font-size:11.5px}
+.sub b{color:var(--white);font-weight:600}
+.sub .sep{color:#3a2f57}
+.sortbox{margin-left:auto;border:1px solid var(--chrome-line);border-radius:4px;padding:3px 9px;font-size:11px}
+
+.body{display:grid;grid-template-columns:158px 1fr;min-height:0}
+aside{background:var(--chrome-rail);border-right:1px solid rgba(155,124,240,.16);padding:10px;overflow:hidden}
+.railhead{display:flex;align-items:center;justify-content:space-between;margin:-2px 0 8px}
+.railhead .t{font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:#9a8fb8}
+.railbtn{width:20px;height:20px;display:grid;place-items:center;border:1px solid var(--chrome-line);
+         border-radius:4px;color:var(--violet);font-size:10px;line-height:1}
+.lbl{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#b7a4ee;margin:11px 0 4px}
+.sel{display:flex;align-items:center;justify-content:space-between;gap:4px;background:#1e1536;
+     border:1px solid var(--chrome-line);border-radius:4px;padding:5px 7px;font-size:11px;
+     white-space:nowrap;overflow:hidden}
+.sel span:last-child{color:#7d6ea3;font-size:9px}
+.chk{display:flex;align-items:center;gap:7px;padding:3.5px 0;font-size:11px}
+.box{width:11px;height:11px;border-radius:2px;border:1.5px solid #6d5f92;flex:none}
+.box.on{background:var(--violet);border-color:var(--violet);position:relative}
+.box.on:after{content:"";position:absolute;left:2.8px;top:.2px;width:3.4px;height:6.6px;
+              border:solid #1a1030;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.chk .n{margin-left:auto;color:#9a8fb8;font-size:10px}
+.warn{margin-top:14px;padding:8px;border:1px solid var(--chrome-line);border-radius:4px;
+      background:#1e1536;font-size:10px;line-height:1.45;color:#c6b8ec}
+.warn b{display:block;color:#e6dcff;font-size:10.5px;margin-bottom:3px}
+
+main{background:var(--field);padding:8px 10px;overflow:hidden;border-left:2px solid var(--violet-deep)}
+.grid{display:grid;grid-template-columns:repeat(9,150px);gap:3px;justify-content:center}
+.tile{position:relative;aspect-ratio:1;border-radius:2px;overflow:hidden;background:#101215;
+      outline:1px solid var(--tile-bd);outline-offset:-1px}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.cap{position:absolute;left:0;right:0;bottom:0;padding:3px 5px 3.5px;background:rgba(12,14,17,.42);
+     -webkit-backdrop-filter:blur(7px) saturate(.85);backdrop-filter:blur(7px) saturate(.85);
+     border-top:1px solid rgba(255,255,255,.09);font-size:11.5px;color:#f2f5f8;line-height:1.25;
+     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center;
+     text-shadow:0 1px 2px rgba(0,0,0,.65)}
+.cap i{font-style:normal;color:#a9b3bd;font-size:10px}
+.badge{position:absolute;top:4px;left:4px;display:flex;align-items:center;gap:3px;
+       padding:1.5px 5px 1.5px 4px;border-radius:2px;font-size:8.5px;font-weight:700;letter-spacing:.02em}
+.badge svg{width:8px;height:8px;display:block;flex:none}
+.b-pro{background:var(--green-400);color:#0d1a02}
+.b-exc{background:var(--grey);color:#15181d}
+.b-inv{background:var(--amber);color:#241a02}
+/* frames chip: the approved unit is the whole track, not this one image */
+.frames{position:absolute;top:4px;right:4px;background:rgba(8,9,11,.82);color:#c2cad3;
+        font-size:8px;padding:1.5px 4px;border-radius:2px;font-weight:600;letter-spacing:.02em}
+/* existing review evidence carried over from Scientific Data Review */
+.evid{position:absolute;bottom:22px;right:4px;background:rgba(8,9,11,.82);
+      border:1px solid rgba(100,246,242,.4);color:var(--cyan-300);font-size:8px;
+      padding:1px 4px;border-radius:2px;font-weight:600}
+.o-pro{outline:2px solid var(--green-400)}
+.o-exc{outline:2px dashed var(--grey)}
+.o-inv{outline:2px solid var(--amber)}
+.dimmed img{filter:brightness(.55) saturate(.5)}
+
+footer{display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--chrome);
+       border-top:1px solid var(--chrome-line)}
+.btn{border:1px solid var(--chrome-line);border-radius:4px;padding:5px 10px;font-size:11px;color:#cfc3ee}
+.pager{display:flex;align-items:center;gap:3px}
+.pg{min-width:25px;height:25px;padding:0 6px;display:grid;place-items:center;
+    border:1px solid var(--chrome-line);border-radius:4px;font-size:11px;color:#cfc3ee}
+.pg.nav{padding:0 9px;color:#9a8fb8}
+.pg.edge{color:#9a8fb8}
+input.pg{width:38px;padding:0;background:#140d26;border:1px solid var(--violet);
+         color:#cbb8ff;font-weight:700;text-align:center;font-family:var(--font);
+         font-size:11.5px;font-variant-numeric:tabular-nums;outline:none}
+.pg.done{color:var(--green-300);border-color:rgba(167,236,53,.42);
+         box-shadow:inset 0 -3px 0 -1px var(--green-400)}
+.gap{color:#6d5f92;padding:0 3px;font-size:11px}
+.legend{display:flex;align-items:center;gap:6px;margin-left:14px;font-size:10px;color:#8b7fae}
+.swatch{width:16px;height:4px;border-radius:1px;background:var(--green-400)}
+.markall{display:flex;gap:5px;margin-left:16px;padding-left:16px;
+         border-left:1px solid rgba(155,124,240,.22)}
+.count{margin-left:auto;font-size:11px;color:var(--grey)}
+.commit{background:var(--green-400);color:#0d1a02;border:0;border-radius:5px;
+        padding:7px 18px;font-size:12px;font-weight:700;margin-left:26px;font-family:var(--font);
+        display:flex;align-items:center;gap:7px}
+.commit svg{width:12px;height:12px}
+</style>
+<div class="app">
+
+  <header>
+    <img src="assets/marp-logo.png" alt="MARP">
+    <div class="title">Picture Mosaic Reviewer</div>
+    <div class="seg">
+      <div>Scientific Data Review</div>
+      <div class="on">Training Data Review</div>
+      <div class="danger">Delete</div>
+    </div>
+    <div class="mode-note">Commit promotes unmarked tracks to training data &mdash; it does not change scientific status</div>
+    <div class="right">
+      <div class="pill">Synced</div>
+      <div class="who">IT</div>
+    </div>
+  </header>
+
+  <div class="sub">
+    <div>Showing <b>45</b> of <b>1,204</b> undecided</div><div class="sep">|</div>
+    <div>Excluded on page <b style="color:#8b93a0">3</b></div><div class="sep">|</div>
+    <div>Re-approval needed <b style="color:#f6c453">1</b></div>
+    <div class="sortbox">Sort: Track length (longest) &#9662;</div>
+  </div>
+
+  <div class="body">
+    <aside>
+      <div class="railhead">
+        <span class="t">Filters</span>
+        <span class="railbtn">&#9664;</span>
+      </div>
+      <div class="lbl">Project</div>
+      <div class="sel"><span>Deep Reef 2025</span><span>+2</span></div>
+      <div class="lbl">Species</div>
+      <div class="sel"><span>Bat Star</span><span>&#9662;</span></div>
+      <div class="lbl">Model</div>
+      <div class="sel"><span>BatStarNet v3.2</span><span>&#9662;</span></div>
+      <div class="lbl">Training disposition</div>
+      <div class="chk"><span class="box on"></span>Undecided<span class="n">1,204</span></div>
+      <div class="chk"><span class="box"></span>Promoted<span class="n">862</span></div>
+      <div class="chk"><span class="box"></span>Excluded<span class="n">331</span></div>
+      <div class="lbl">Minimum track length</div>
+      <div class="sel"><span>8 frames</span><span>&#9662;</span></div>
+      <div class="warn">
+        <b>Training use is independent</b>
+        Promoting a track does not accept it for scientific use, and scientific acceptance does not promote it.
+      </div>
+    </aside>
+
+    <main><div class="grid" id="g"></div></main>
+  </div>
+
+  <footer>
+    <div class="pager" id="pager"></div>
+    <div class="legend"><span class="swatch"></span>promoted</div>
+    <div class="markall">
+      <div class="btn">Exclude all on page</div>
+      <div class="btn">Clear marks</div>
+    </div>
+    <div class="count">3 excluded &middot; 1 needs re-approval</div>
+    <button class="commit">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="m8 1 2 4.4 4.8.5-3.6 3.2 1 4.7L8 11.4 3.8 13.8l1-4.7L1.2 5.9 6 5.4z"/></svg>
+      Promote Page &middot; 41 tracks
+    </button>
+  </footer>
+</div>
+
+<script>
+var PRO='<svg viewBox="0 0 16 16" fill="currentColor"><path d="m8 1 2 4.4 4.8.5-3.6 3.2 1 4.7L8 11.4 3.8 13.8l1-4.7L1.2 5.9 6 5.4z"/></svg>';
+var EXC='<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM3.9 8a4.1 4.1 0 016.3-3.4L4.6 10.2A4 4 0 013.9 8zm4.1 4.1a4 4 0 01-2.2-.7l5.6-5.6A4.1 4.1 0 018 12.1z"/></svg>';
+var INV='<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1 15 14H1zM7.2 6h1.6v4H7.2zm0 5h1.6v1.6H7.2z"/></svg>';
+
+/* Frame counts vary because the approved unit is the tracked observation. */
+var special = {
+  7:  {st:'exc', badge:'EXCLUDED'},
+  11: {st:'pro', badge:'PROMOTED · JM'},
+  19: {st:'inv', badge:'RE-APPROVE', img:17},
+  23: {st:'exc', badge:'EXCLUDED'},
+  30: {st:'pro', badge:'PROMOTED · IT'},
+  37: {st:'exc', badge:'EXCLUDED'}
+};
+var EVID = {2:1, 11:1, 14:1, 26:1, 33:1, 40:1};
+var RESERVED=[8,17], out=[];
+for(var k=0;k<45;k++){
+  var t = special[k] || {};
+  var idx;
+  if(t.img!==undefined){ idx=t.img; }
+  else { idx=(k*7+3)%28; while(RESERVED.indexOf(idx)>=0) idx=(idx+5)%28; }
+  var n=String(idx); if(n.length<2) n='0'+n;
+  var frames = 8 + ((k*13)%46);
+  var cls = t.st ? ' o-'+t.st : '';
+  if(t.st==='exc') cls += ' dimmed';
+  var ico = t.st==='pro'?PRO : t.st==='exc'?EXC : t.st==='inv'?INV : '';
+  out.push('<div class="tile'+cls+'">'
+    +'<img src="assets/t'+n+'.jpg" alt="">'
+    +(t.badge?'<div class="badge b-'+t.st+'">'+ico+t.badge+'</div>':'')
+    +'<div class="frames">'+frames+'f</div>'
+    +(EVID[k]?'<div class="evid">&#10003; sci</div>':'')
+    +'<div class="cap">Bat Star</div></div>');
+}
+document.getElementById('g').innerHTML = out.join('');
+
+function pager(cur,total,done,span){
+  span=span||2;
+  function chip(i,cls){ return '<div class="pg'+(done.indexOf(i)>=0?' done':'')+(cls?' '+cls:'')+'">'+i+'</div>'; }
+  var p=['<div class="pg nav">&lsaquo; Prev</div>'];
+  var lo=Math.max(1,cur-span), hi=Math.min(total,cur+span);
+  if(lo>1){ p.push(chip(1,'edge')); if(lo>2) p.push('<span class="gap">&hellip;</span>'); }
+  for(var i=lo;i<=hi;i++){
+    if(i===cur) p.push('<input class="pg" value="'+i+'" aria-label="Current page">');
+    else p.push(chip(i));
+  }
+  if(hi<total){ if(hi<total-1) p.push('<span class="gap">&hellip;</span>'); p.push(chip(total,'edge')); }
+  p.push('<div class="pg nav">Next &rsaquo;</div>');
+  return p.join('');
+}
+document.getElementById('pager').innerHTML = pager(6, 27, [1,2,3,4,5]);
+</script>
