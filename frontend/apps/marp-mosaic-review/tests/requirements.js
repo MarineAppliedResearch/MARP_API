@@ -313,6 +313,41 @@ test('Filter and sort dimensions',
     }
   });
 
+/* Marks are uncommitted work. Navigating away and back must not lose them,
+   and this must behave identically in every mode. */
+for (const mode of ['scientific', 'training', 'delete']) {
+  test('Moving through pages',
+    `an uncommitted mark survives leaving the page and returning — ${mode}`, async () => {
+      await reset(mode);
+      const id = state.rows[0].observation_id;
+      actions.toggleMark(id);
+      ok(state.marks.has(id), 'marked to begin with');
+
+      actions.goToPage(2);
+      await new Promise((r) => setTimeout(r, 350));
+      ok(!state.rows.some((r) => r.observation_id === id), 'we really did leave the page');
+
+      actions.goToPage(1);
+      await new Promise((r) => setTimeout(r, 350));
+      ok(state.rows.some((r) => r.observation_id === id), 'and came back to it');
+      ok(state.marks.has(id), 'the mark must still be there');
+    });
+
+  test('Moving through pages',
+    `a reason on an uncommitted mark survives too — ${mode}`, async () => {
+      if (mode === 'delete') return 'skipped — delete marks carry no reason';
+      await reset(mode);
+      const id = state.rows[0].observation_id;
+      actions.toggleMark(id);
+      actions.setReason(id, 'Occluded');
+      actions.goToPage(2);
+      await new Promise((r) => setTimeout(r, 350));
+      actions.goToPage(1);
+      await new Promise((r) => setTimeout(r, 350));
+      eq(state.marks.get(id) && state.marks.get(id).reason, 'Occluded');
+    });
+}
+
 /* ------------------------------------------------------------------ runner */
 
 export async function run(mount) {

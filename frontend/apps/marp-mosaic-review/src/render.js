@@ -39,10 +39,14 @@ const markClass = () => ({ scientific: 'b-flag', training: 'b-exc', delete: 'b-d
  * the tiles that fit — so page size follows the viewport, per #68.
  */
 const TARGET_TILE = 150, MIN_TILE = 104, GAP = 2;
+let lastPageSize = null;
 
 export function computeLayout() {
   const field = $('#field'), grid = $('#grid');
   if (!field || !grid) return;
+  /* Never measure mid-load: the skeleton grid feeds a different tile height back
+     in, which changes the page size, which starts another load. */
+  if (state.loading) return;
 
   /* Read the column count CSS actually produced rather than predicting it. */
   const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
@@ -56,7 +60,11 @@ export function computeLayout() {
   const h = Math.max(field.getBoundingClientRect().height, window.innerHeight - CHROME) - 8;
   const rows = Math.max(2, Math.floor((h + GAP) / (tileH + GAP)));
 
-  actions.setPageSize(cols * rows);
+  /* Belt and braces against flapping: refuse a size we have just come back from. */
+  const next = cols * rows;
+  if (next === lastPageSize) return;
+  lastPageSize = state.pageSize;
+  actions.setPageSize(next);
 }
 
 /* ---------------------------------------------------------------- tiles */

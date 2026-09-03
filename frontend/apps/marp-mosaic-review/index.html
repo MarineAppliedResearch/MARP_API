@@ -137,6 +137,15 @@
       const target = state.rows.find((r) => r.thumbnail_status === 'ready');
       const id = target.observation_id;
       if (demo === 'menu') { document.getElementById('selSpeciesBtn').click(); return; }
+      if (demo === 'roundtrip') {
+        /* mark three, leave the page, come back — exactly the reported sequence */
+        state.rows.slice(0, 3).forEach((r) => actions.toggleMark(r.observation_id));
+        setTimeout(() => {
+          actions.goToPage(2);
+          setTimeout(() => actions.goToPage(1), 900);
+        }, 400);
+        return;
+      }
       actions.toggleMark(id);
       actions.openPicker(id);
       if (demo === 'correct') actions.toggleCorrecting(id);

@@ -128,6 +128,10 @@ body.rail-collapsed .fcount { display: grid; }
 /* ---------------------------------------------------------------- field */
 .field { background: var(--field); padding: 4px; position: relative;
          overflow-y: auto; overflow-x: hidden;
+         /* reserve the scrollbar always: without this the bar appearing narrows the
+            field, which shrinks the tiles, which fits another row, which overflows
+            again — the grid never settles */
+         scrollbar-gutter: stable;
          overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 /* the mode tints the chrome around the field; the field itself never changes */
 .field { border-left: 2px solid var(--mode); box-shadow: inset 14px 0 26px -18px var(--mode); }
