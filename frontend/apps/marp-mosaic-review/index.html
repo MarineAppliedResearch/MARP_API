@@ -12,7 +12,7 @@
 <div class="app">
 
   <header class="hdr">
-    <img src="../../shared/assets/images/marp-logo.png" alt="MARP">
+    <img src="../../shared/assets/images/marp-logo-compact.png" alt="MARP">
     <span class="title">Picture Mosaic Reviewer</span>
     <nav class="seg" aria-label="Review mode">
       <button data-mode="scientific" class="on">Scientific Data Review</button>
@@ -20,35 +20,41 @@
       <button data-mode="delete" class="danger">Delete</button>
     </nav>
     <span class="mode-note" id="modeNote"></span>
-    <div class="right"><span class="who">IT</span></div>
+    <div class="right menuwrap"><button class="who" id="userBtn" title="Account and preferences">IT</button></div>
   </header>
 
   <div class="sub">
     <span>Showing <b id="shown">0</b> of <b id="total">0</b> matching</span>
     <span class="sep">|</span>
     <span><b id="markWord">Flagged</b> on page <b id="markedCount">0</b></span>
-    <button class="sortbox">Sort: Confidence (low first) &#9662;</button>
+    <span class="menuwrap" style="margin-left:auto"><button class="sortbox" id="sortBtn" title="Change the sort order">Sort: <span id="sortLabel">&hellip;</span> &#9662;</button></span>
   </div>
 
   <div class="body">
     <aside class="rail">
       <div class="railhead">
         <span class="t">Filters</span>
-        <button class="railbtn" id="railbtn" aria-label="Collapse filters">&#9664;</button>
+        <button class="railbtn" id="railbtn" aria-label="Collapse filters" title="Collapse the filter rail and give the mosaic the space">&#9664;</button>
       </div>
       <span class="vlabel">Filters</span>
       <span class="fcount" id="fcount">0</span>
 
       <div class="rail-body">
         <div class="lbl">Project</div>
-        <div class="sel"><span>Deep Reef 2025</span><span>+2</span></div>
+        <div class="menuwrap"><button class="sel" id="selProjectBtn" title="Filter by project">
+          <span id="selProject">&hellip;</span><span>&#9662;</span></button></div>
         <div class="lbl">Species</div>
-        <div class="sel"><span>Bat Star</span><span>&#9662;</span></div>
+        <div class="menuwrap"><button class="sel" id="selSpeciesBtn" title="Filter by species">
+          <span id="selSpecies">&hellip;</span><span>&#9662;</span></button></div>
         <div class="lbl">Model</div>
-        <div class="sel"><span>BatStarNet v3.2</span><span>&#9662;</span></div>
+        <div class="menuwrap"><button class="sel" id="selModelBtn"
+          title="No model provenance exists on observations yet — see MARP_API#68">
+          <span>BatStarNet v3.2</span><span>&#9662;</span></button></div>
         <div class="lbl">Review status</div>
-        <button class="chk"><span class="box on"></span>Unreviewed<span class="n" id="cUnrev">—</span></button>
-        <button class="chk"><span class="box"></span>Reviewed<span class="n" id="cRev">—</span></button>
+        <button class="chk" data-status="unreviewed" title="Show unreviewed observations">
+          <span class="box"></span>Unreviewed<span class="n" id="cUnrev">—</span></button>
+        <button class="chk" data-status="reviewed" title="Show observations already reviewed">
+          <span class="box"></span>Reviewed<span class="n" id="cRev">—</span></button>
         <div class="prog">
           <div style="display:flex;justify-content:space-between;font-size:10.5px">
             <span>Progress</span><b id="progPct" style="color:#f7fbff">0%</b></div>
@@ -68,8 +74,8 @@
     <div class="pager" id="pager"></div>
     <span class="legend"><span class="swatch"></span>committed</span>
     <div class="markall">
-      <button class="btn" id="markAll">Flag all on page</button>
-      <button class="btn" id="clearMarks">Clear</button>
+      <button class="btn" id="markAll" title="Apply this mode's mark to every tile on this page — the page only, never the whole query">Flag all on page</button>
+      <button class="btn" id="clearMarks" title="Remove every mark on this page">Clear</button>
     </div>
     <span class="count" id="footCount">0 flagged</span>
     <button class="commit" id="commit">Mark Page Reviewed</button>
@@ -126,8 +132,10 @@
       unsub();
       const target = state.rows.find((r) => r.thumbnail_status === 'ready');
       const id = target.observation_id;
+      if (demo === 'menu') { document.getElementById('selSpeciesBtn').click(); return; }
       actions.toggleMark(id);
-      if (demo === 'correct') actions.setReason(id, 'Wrong species');
+      actions.openPicker(id);
+      if (demo === 'correct') actions.toggleCorrecting(id);
     });
   }
 

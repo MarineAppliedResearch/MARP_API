@@ -78,7 +78,7 @@ export const MarpData = {
    */
   async commitPage({ mode, observationIds, marked }) {
     await delay(LATENCY.commit);
-    const reviewed = [], skipped = [];
+    const reviewed = [], skipped = [], reverted = [];
 
     for (const id of observationIds) {
       const row = db.observations.find((r) => r.observation_id === id);
@@ -91,7 +91,20 @@ export const MarpData = {
         if (isMarked) { row.deleted = true; reviewed.push({ id, outcome: 'deleted' }); }
         continue;                                   // unmarked rows are untouched
       }
-      if (isMarked) { skipped.push({ id, reason: 'marked' }); continue; }
+      if (isMarked) {
+        /* Undo: the reviewer marked something they had already accepted here, so the
+           commit takes that acceptance back rather than silently ignoring it. */
+        if (mode === 'scientific' && row.review_status === 'reviewed') {
+          row.review_status = 'unreviewed'; row.reviewed_by = null; row.version += 1;
+          reverted.push({ id, outcome: 'reverted' });
+        } else if (mode === 'training' && row.training_disposition === 'promoted') {
+          row.training_disposition = 'undecided'; row.training_approved_by = null; row.version += 1;
+          reverted.push({ id, outcome: 'reverted' });
+        } else {
+          skipped.push({ id, reason: 'marked' });
+        }
+        continue;
+      }
 
       if (mode === 'scientific') {
         row.review_status = 'reviewed';
@@ -104,7 +117,7 @@ export const MarpData = {
       }
       row.version += 1;
     }
-    return { reviewed, skipped };
+    return { reviewed, skipped, reverted };
   },
 
   /** A single correction. Returns the authoritative row, as the API will. */

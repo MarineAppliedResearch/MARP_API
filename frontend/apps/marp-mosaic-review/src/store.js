@@ -7,6 +7,7 @@
  */
 import { MarpData } from './data.js';
 
+let reqSeq = 0;
 const listeners = new Set();
 const logListeners = new Set();
 
@@ -18,6 +19,7 @@ export const state = {
   total: 0,
   rows: [],
   loading: true,
+  ready: false,                       // the fixture/API has answered at least once
   railCollapsed: false,
 
   filters: {
@@ -34,6 +36,7 @@ export const state = {
   marks: new Map(),                   // id -> { reason }
   changed: new Map(),                 // id -> { from, to }
   committedPages: new Set(),
+  outcomes: new Map(),                // id -> 'reviewed' | 'promoted' | 'deleted'
   picker: null,                       // { id } while the reason panel is open
   lastCommit: null                    // { reviewed, skipped }
 };
@@ -76,11 +79,15 @@ export const MODES = {
 export const actions = {
   async init() {
     await MarpData.load();
+    state.ready = true;
     fire('init');
     await actions.refresh();
   },
 
   async refresh() {
+    /* Requests can overlap — a page change during a page-size change, say — and the
+       slower one must not win. Only the newest response is allowed to land. */
+    const token = ++reqSeq;
     state.loading = true; notify();
     const filters = { ...state.filters };
     if (state.mode === 'training') {
@@ -94,6 +101,8 @@ export const actions = {
     const res = await MarpData.query({
       filters, sort: state.sort, page: state.page, pageSize: state.pageSize
     });
+    if (token !== reqSeq) return;                  // superseded; drop it
+    state.outcomes.clear();
     state.rows = res.rows;
     state.total = res.total;
     state.pageCount = res.pageCount;
@@ -132,7 +141,6 @@ export const actions = {
       fire('unmark', { id, mode: state.mode });
     } else {
       state.marks.set(id, { reason: null });
-      state.picker = { id };
       fire('mark', { id, mode: state.mode, mark: MODES[state.mode].mark });
     }
     notify();
@@ -143,6 +151,29 @@ export const actions = {
     if (!mark) return;
     mark.reason = mark.reason === reason ? null : reason;
     fire('setReason', { id, reason: mark.reason });
+    notify();
+  },
+
+  openPicker(id) {
+    if (!state.marks.has(id)) return;
+    state.picker = { id, correcting: false };
+    fire('openPicker', { id });
+    notify();
+  },
+
+  /** The species chooser is opened deliberately, not revealed by a reason. */
+  toggleCorrecting(id) {
+    if (!state.picker || state.picker.id !== id) return;
+    state.picker.correcting = !state.picker.correcting;
+    fire('toggleCorrecting', { id, correcting: state.picker.correcting });
+    notify();
+  },
+
+  /** Straight back into the chooser from a tile that was already changed. */
+  openCorrection(id) {
+    if (!state.marks.has(id)) state.marks.set(id, { reason: null });
+    state.picker = { id, correcting: true };
+    fire('openCorrection', { id });
     notify();
   },
 
@@ -187,7 +218,12 @@ export const actions = {
     const res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marked });
     state.committedPages.add(state.page);
     state.lastCommit = res;
-    fire('commitPage:result', { reviewed: res.reviewed.length, skipped: res.skipped.length });
+    res.reviewed.forEach((r) => state.outcomes.set(r.id, r.outcome));
+    (res.reverted || []).forEach((r) => state.outcomes.set(r.id, 'reverted'));
+    state.marks.clear();
+    state.picker = null;
+    fire('commitPage:result', { reviewed: res.reviewed.length,
+      reverted: (res.reverted || []).length, skipped: res.skipped.length });
     notify();                                   // page stays loaded; no auto-advance
   },
 
@@ -203,6 +239,33 @@ export const actions = {
     state.railCollapsed = !state.railCollapsed;
     fire('toggleRail', { collapsed: state.railCollapsed });
     notify();
+  },
+
+  /** 8/10: the rail controls actually drive the query now. */
+  setFilter(key, value) {
+    state.filters[key] = value;
+    state.page = 1;
+    state.marks.clear();
+    fire('setFilter', { key, value });
+    actions.refresh();
+  },
+
+  toggleReviewStatus(value) {
+    const cur = state.filters.reviewStatus || [];
+    state.filters.reviewStatus = cur.includes(value)
+      ? cur.filter((v) => v !== value)
+      : cur.concat(value);
+    state.page = 1;
+    fire('toggleReviewStatus', { value, now: state.filters.reviewStatus });
+    actions.refresh();
+  },
+
+  /** Page size follows the viewport, so the grid always fills it. */
+  setPageSize(n) {
+    if (n === state.pageSize || !n) return;
+    state.pageSize = n;
+    fire('setPageSize', { pageSize: n });
+    if (state.ready) actions.refresh();   // rows may not have landed yet; ready is the real guard
   },
 
   setSort(field, dir) {

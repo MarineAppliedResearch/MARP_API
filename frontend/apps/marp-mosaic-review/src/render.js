@@ -17,9 +17,51 @@ const ICON = {
   pro:  '<svg viewBox="0 0 16 16" fill="currentColor"><path d="m8 1 2 4.4 4.8.5-3.6 3.2 1 4.7L8 11.4 3.8 13.8l1-4.7L1.2 5.9 6 5.4z"/></svg>'
 };
 
-const REASONS = ['Wrong species', 'False detection', 'Duplicate', 'Bounding box', 'Other / unsure'];
+const REASONS = {
+  scientific: ['Wrong species', 'False detection', 'Duplicate', 'Bounding box', 'Other / unsure'],
+  training:   ['Bounding box too loose', 'Occluded', 'Too small', 'Ambiguous ID', 'Other / unsure'],
+  delete:     []
+};
+const SORTS = [
+  { field: 'confidence', dir: 'asc',  label: 'Confidence (low first)' },
+  { field: 'confidence', dir: 'desc', label: 'Confidence (high first)' },
+  { field: 'keyframe_count', dir: 'desc', label: 'Track length (longest)' },
+  { field: 'updatedAt', dir: 'desc', label: 'Recently updated' },
+  { field: 'obsID', dir: 'asc', label: 'Observation number' }
+];
 const markIcon = () => ({ scientific: ICON.flag, training: ICON.exc, delete: ICON.del }[state.mode]);
 const markClass = () => ({ scientific: 'b-flag', training: 'b-exc', delete: 'b-del' }[state.mode]);
+
+/* ------------------------------------------------------- responsive layout */
+
+/**
+ * The grid fills the field rather than sitting in it, and the page holds exactly
+ * the tiles that fit — so page size follows the viewport, per #68.
+ */
+const TARGET_TILE = 150, MIN_TILE = 104, GAP = 2;
+
+export function computeLayout() {
+  const field = $('#field'), grid = $('#grid');
+  if (!field || !grid) return;
+
+  /* Chrome heights are fixed in CSS (.app grid-template-rows), so deriving the field
+     box from the viewport is exact and does not depend on when layout settles —
+     measuring the element itself returned a stale height. */
+  const CHROME = 44 + 30 + 46, PAD = 8;
+  const w = (field.clientWidth || (window.innerWidth - (state.railCollapsed ? 34 : 158))) - PAD;
+  /* take whichever measure is available and larger; each is unreliable alone */
+  const h = Math.max(field.getBoundingClientRect().height, window.innerHeight - CHROME) - PAD;
+  if (w < 60 || h < 60) return;
+
+  let cols = Math.max(4, Math.round((w + GAP) / (TARGET_TILE + GAP)));
+  while (cols > 4 && (w - (cols - 1) * GAP) / cols < MIN_TILE) cols--;
+  const tile = (w - (cols - 1) * GAP) / cols;
+  const rows = Math.max(2, Math.floor((h + GAP) / (tile + GAP)));
+
+  grid.style.setProperty('--cols', cols);
+  field.dataset.layout = `${cols}x${rows} w=${Math.round(w)} h=${Math.round(h)} tile=${Math.round(tile)}`;
+  actions.setPageSize(cols * rows);
+}
 
 /* ---------------------------------------------------------------- tiles */
 
@@ -27,50 +69,63 @@ function tile(row) {
   const id = row.observation_id;
   const marked = state.marks.get(id);
   const changed = state.changed.get(id);
+  const outcome = state.outcomes.get(id);
   const isActive = state.picker && state.picker.id === id;
-  const doneByOther = row.review_status === 'reviewed' && !marked;
+  const doneByOther = row.review_status === 'reviewed' && !marked && !outcome;
 
   const cls = ['tile'];
+  const noImage = row.thumbnail_status !== 'ready';
+  if (row.thumbnail_status === 'queued') cls.push('queued');
+  if (row.thumbnail_status === 'failed') cls.push('failed');
   if (marked) cls.push('marked');
   if (isActive) cls.push('active');
   if (changed) cls.push('changed');
   if (doneByOther) cls.push('done');
+  if (outcome) cls.push('out-' + outcome);
 
-  if (row.thumbnail_status === 'queued') {
-    return `<button class="tile queued" data-id="${id}">
-        <img src="./fixtures/thumbs/marp-mark.png" alt="">
-        <span class="ph-t">PREPARING</span><span class="phbar"><i></i></span></button>`;
-  }
-  if (row.thumbnail_status === 'failed') {
-    return `<button class="tile failed" data-id="${id}">
-        <span style="font-size:20px;color:#c07d85">&#9888;</span>
-        <span class="na-t">NO IMAGE</span></button>`;
-  }
-
-  const thumb = String(row.thumb).padStart(2, '0');
+  /* The badge is its own control: tapping the tile marks, tapping the badge opens
+     the panel. That keeps marking a single uninterrupted gesture. */
   let badge = '';
-  if (marked)          badge = `<span class="badge ${markClass()}">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`;
-  else if (changed)    badge = `<span class="badge b-chg">${ICON.tick}CHANGED</span>`;
+  if (outcome === 'reverted')     badge = `<span class="badge b-rev">${markIcon()}TAKEN BACK</span>`;
+  else if (outcome === 'deleted') badge = `<span class="badge b-gone">${ICON.del}DELETED</span>`;
+  else if (outcome === 'promoted') badge = `<span class="badge b-out">${ICON.pro}PROMOTED</span>`;
+  else if (outcome === 'reviewed') badge = `<span class="badge b-out">${ICON.tick}REVIEWED</span>`;
+  else if (marked) badge = `<span class="badge ${markClass()}" data-badge="${id}"
+        title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`;
+  else if (changed)     badge = `<span class="badge b-chg">${ICON.tick}CHANGED</span>`;
   else if (doneByOther) badge = `<span class="badge b-oth">${ICON.eye}${row.reviewed_by || 'REVIEWED'}</span>`;
   else if (row.training_disposition === 'promoted' && state.mode === 'training')
-                       badge = `<span class="badge b-pro">${ICON.pro}PROMOTED</span>`;
+                        badge = `<span class="badge b-pro">${ICON.pro}PROMOTED</span>`;
 
   const corner = state.mode === 'training'
     ? `<span class="frames">${row.keyframe_count}f</span>`
     : (marked && marked.reason ? `<span class="reason-chip">${marked.reason}</span>`
-       : changed ? `<span class="reason-chip">was ${changed.from}</span>` : '');
+       : changed ? `<span class="reason-chip" data-changed="${id}"
+             title="Change the species again">was ${changed.from}</span>` : '');
 
-  return `<button class="${cls.join(' ')}" data-id="${id}">
-      <img src="./fixtures/thumbs/t${thumb}.jpg" alt="${row.comname}">
-      ${badge}${corner}
+  /* An unavailable image is still an observation: it keeps its name and stays
+     markable. It is only excluded from the bulk commit, which is a separate rule. */
+  const body = row.thumbnail_status === 'ready'
+    ? `<img src="./fixtures/thumbs/t${String(row.thumb).padStart(2, '0')}.jpg" alt="${row.comname}">`
+    : row.thumbnail_status === 'queued'
+      ? `<span class="fallback"><img src="./fixtures/thumbs/marp-mark.png" alt="">
+           <span class="ph-t">PREPARING</span><span class="phbar"><i></i></span></span>`
+      : `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
+           <span class="na-t">NO IMAGE</span></span>`;
+
+  const tip = noImage
+    ? `${row.comname} · no image — markable, but excluded from the page commit`
+    : `${row.comname} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
+
+  return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}">
+      ${body}${badge}${corner}
       <span class="cap">${row.comname}</span></button>`;
 }
 
 function renderGrid() {
   const grid = $('#grid');
   if (state.loading) {
-    grid.innerHTML = Array.from({ length: state.pageSize },
-      () => '<div class="tile skeleton"></div>').join('');
+    grid.innerHTML = Array.from({ length: state.pageSize }, () => '<div class="tile skeleton"></div>').join('');
     return;
   }
   grid.innerHTML = state.rows.map(tile).join('');
@@ -81,89 +136,202 @@ function renderGrid() {
 async function renderPicker() {
   const host = $('#picker');
   host.innerHTML = '';
-  if (!state.picker || state.mode !== 'scientific') return;
+  if (!state.picker || state.mode === 'delete') return;
 
-  const id = state.picker.id;
+  const { id, correcting } = state.picker;
   const row = state.rows.find((r) => r.observation_id === id);
   const mark = state.marks.get(id);
   if (!row || !mark) return;
 
-  const wrongSpecies = mark.reason === 'Wrong species';
-  const matches = wrongSpecies ? await MarpData.searchSpecies('') : [];
+  const matches = correcting ? await MarpData.searchSpecies('') : [];
 
-  const panel = el(`<div class="pick" role="dialog" aria-label="Flag reason">
-      <h4><span class="fl">${ICON.flag}</span>Flagged<span class="opt">Reason optional</span></h4>
-      <p>Already recorded. Add a reason to help whoever resolves it, or keep scanning &mdash;
-         the flag stands on its own.</p>
-      <div class="chips">${REASONS.map((r) =>
-        `<button class="chip ${mark.reason === r ? 'on' : ''}" data-reason="${r}">
-           ${mark.reason === r ? ICON.tick : ''}${r}</button>`).join('')}</div>
-      ${wrongSpecies ? `<div class="correct">
+  const panel = el(`<div class="pick" role="dialog" aria-label="Flag options">
+      <h4><span class="fl">${markIcon()}</span>${MODES[state.mode].mark}<span class="opt">Reason optional</span></h4>
+      <p>Already recorded. Add a reason to help whoever resolves it, or close this and
+         keep scanning &mdash; the mark stands on its own.</p>
+      <div class="chips">${REASONS[state.mode].map((r) =>
+        `<button class="chip ${mark.reason === r ? 'on' : ''}" data-reason="${r}"
+           title="Record this as the reason">${mark.reason === r ? ICON.tick : ''}${r}</button>`).join('')}
+        <button class="chip change ${correcting ? 'on' : ''}" data-act="correct"
+          title="Change this observation's species">Change species&hellip;</button>
+      </div>
+      ${correcting ? `<div class="correct">
         <h5>Correct the species<span class="opt">saves immediately</span></h5>
         <input class="search" id="spSearch" placeholder="Search MARP taxonomy&hellip;" autocomplete="off">
         <div class="sugghead">Matches &middot; MARP taxonomy</div>
         <div id="spList">${matches.map((s) =>
           `<button class="srow" data-species="${s.species_id}">${s.comname}
              <span class="sci">${s.species}</span></button>`).join('')}</div></div>` : ''}
-      <div class="consq ${wrongSpecies ? 'ok' : ''}">${wrongSpecies
-        ? 'The correction <b>saves immediately</b> and is recorded against your name. The flag stays until you resolve it.'
-        : 'False detection <b>removes this observation from accepted scientific results</b>. The other reasons are advisory.'}</div>
+      <div class="consq ${correcting ? 'ok' : ''}">${correcting
+        ? 'The correction <b>saves immediately</b> and is recorded against your name. The mark stays until you resolve it.'
+        : state.mode === 'training'
+          ? 'Excluding is <b>a deliberate decision, not the absence of one</b>. It is recorded with its reason and can be reconsidered.'
+          : 'False detection <b>removes this observation from accepted scientific results</b>. The other reasons are advisory.'}</div>
       <div class="pickfoot">
-        <button class="ghost" data-act="unmark">Remove flag</button>
-        <button class="ghost" data-act="video">Open video</button>
-        ${wrongSpecies ? '<button class="ghost go" data-act="resolve">Mark resolved</button>' : ''}
+        <button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${MODES[state.mode].mark.toLowerCase()}</button>
+        <button class="ghost" data-act="video" title="Open the source video at this observation">Open video</button>
+        <button class="ghost go" data-act="resolve" title="Clear the mark, keeping any correction">Mark resolved</button>
       </div></div>`);
 
   host.appendChild(panel);
-
-  /* Anchor to the tile: below it by preference, above when there is no room, and
-     clamped inside the field when it fits neither — a tall panel on a middle row
-     fits nowhere, and must never be positioned off-screen. */
-  const tileEl = $(`.tile[data-id="${id}"]`);
-  const field = $('#field');
-  if (tileEl) {
-    const t = tileEl.getBoundingClientRect();
-    const f = field.getBoundingClientRect();
-    const GAP = 10, EDGE = 8;
-
-    panel.style.maxHeight = (f.height - EDGE * 2) + 'px';
-    panel.style.overflowY = 'auto';
-    const h = Math.min(panel.offsetHeight, f.height - EDGE * 2);
-
-    const below = t.bottom - f.top + GAP;
-    const above = t.top - f.top - h - GAP;
-    let top;
-    if (below + h <= f.height - EDGE) top = below;        // preferred
-    else if (above >= EDGE) top = above;                  // flipped
-    else top = Math.max(EDGE, f.height - h - EDGE);       // clamped
-
-    panel.style.top = top + 'px';
-    panel.style.left = Math.min(
-      Math.max(EDGE, t.left - f.left - 140),
-      Math.max(EDGE, f.width - panel.offsetWidth - EDGE)
-    ) + 'px';
-  }
+  position(panel, id);
 
   panel.querySelectorAll('[data-reason]').forEach((b) =>
     b.addEventListener('click', () => actions.setReason(id, b.dataset.reason)));
-  panel.querySelectorAll('[data-species]').forEach((b) =>
-    b.addEventListener('click', () => actions.changeSpecies(id, Number(b.dataset.species))));
+  bindSpecies(panel, id);
+  panel.querySelector('[data-act="correct"]').addEventListener('click', () => actions.toggleCorrecting(id));
   panel.querySelector('[data-act="unmark"]').addEventListener('click', () => actions.toggleMark(id));
   panel.querySelector('[data-act="video"]').addEventListener('click', () => actions.openVideo(id));
-  const res = panel.querySelector('[data-act="resolve"]');
-  if (res) res.addEventListener('click', () => actions.resolve(id));
+  panel.querySelector('[data-act="resolve"]').addEventListener('click', () => actions.resolve(id));
 
   const search = panel.querySelector('#spSearch');
   if (search) {
+    search.focus();
     search.addEventListener('input', async () => {
       const list = await MarpData.searchSpecies(search.value);
       panel.querySelector('#spList').innerHTML = list.map((s) =>
         `<button class="srow" data-species="${s.species_id}">${s.comname}
            <span class="sci">${s.species}</span></button>`).join('');
-      panel.querySelectorAll('[data-species]').forEach((b) =>
-        b.addEventListener('click', () => actions.changeSpecies(id, Number(b.dataset.species))));
+      bindSpecies(panel, id);
     });
   }
+}
+
+function bindSpecies(panel, id) {
+  panel.querySelectorAll('[data-species]').forEach((b) =>
+    b.addEventListener('click', () => actions.changeSpecies(id, Number(b.dataset.species))));
+}
+
+/** Below the tile by preference, above when there is no room, clamped when neither fits. */
+function position(panel, id) {
+  const tileEl = $(`.tile[data-id="${id}"]`), field = $('#field');
+  if (!tileEl) return;
+  const t = tileEl.getBoundingClientRect(), f = field.getBoundingClientRect(), G = 10, E = 8;
+  panel.style.maxHeight = (f.height - E * 2) + 'px';
+  panel.style.overflowY = 'auto';
+  const h = Math.min(panel.offsetHeight, f.height - E * 2);
+  const below = t.bottom - f.top + G, above = t.top - f.top - h - G;
+  panel.style.top = (below + h <= f.height - E ? below
+                    : above >= E ? above
+                    : Math.max(E, f.height - h - E)) + 'px';
+  panel.style.left = Math.min(Math.max(E, t.left - f.left - 140),
+                              Math.max(E, f.width - panel.offsetWidth - E)) + 'px';
+}
+
+/* ---------------------------------------------------------------- menus */
+
+let openMenuEl = null;
+export function closeMenus() { if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; } }
+
+function menu(anchor, items, { align = 'left', dir = 'down', search = false } = {}) {
+  closeMenus();
+  const rows = () => items.filter((i) => !i.head && !i.hr);
+
+  const body = (filter) => {
+    const f = (filter || '').trim().toLowerCase();
+    const shown = items.filter((i) => {
+      if (i.head || i.hr) return !f;                     // headings only when unfiltered
+      return !f || String(i.label).toLowerCase().includes(f);
+    });
+    if (!shown.some((i) => !i.head && !i.hr)) return '<div class="mhead">No matches</div>';
+    return shown.map((i) => {
+      if (i.head) return `<div class="mhead">${i.head}</div>`;
+      if (i.hr) return '<hr>';
+      return `<button data-v="${i.value}" class="${i.on ? 'on' : ''}">
+        <span class="tick">${i.on ? ICON.tick : ''}</span>${i.label}</button>`;
+    }).join('');
+  };
+
+  /* These lists can get long — projects and taxonomy especially — so they filter
+     as you type rather than making you scroll. */
+  const m = el(`<div class="menu ${dir} ${align}">
+      ${search ? '<input class="msearch" placeholder="Type to filter&hellip;" autocomplete="off">' : ''}
+      <div class="mbody">${body('')}</div>
+    </div>`);
+  /* Anchored against the viewport, not the parent: the filter rail has
+     overflow:hidden and was clipping the menu off the left edge. */
+  document.body.appendChild(m);
+  const a = anchor.getBoundingClientRect();
+  m.style.position = 'fixed';
+  m.style.minWidth = Math.max(190, a.width) + 'px';
+  const w = m.offsetWidth, h = m.offsetHeight, E = 8;
+  let left = align === 'right' ? a.right - w : a.left;
+  left = Math.min(Math.max(E, left), window.innerWidth - w - E);
+  const below = a.bottom + 6;
+  m.style.left = left + 'px';
+  m.style.top = (below + h <= window.innerHeight - E ? below
+                : Math.max(E, a.top - h - 6)) + 'px';
+
+  const bind = () => m.querySelectorAll('[data-v]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const item = rows().find((i) => String(i.value) === b.dataset.v);
+    closeMenus();
+    if (item && item.onPick) item.onPick(item.value);
+  }));
+  bind();
+
+  const input = m.querySelector('.msearch');
+  if (input) {
+    input.addEventListener('click', (e) => e.stopPropagation());
+    input.addEventListener('input', () => { m.querySelector('.mbody').innerHTML = body(input.value); bind(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const first = m.querySelector('[data-v]');
+      if (first) first.click();
+    });
+    setTimeout(() => input.focus(), 0);
+  }
+  openMenuEl = m;
+}
+
+function speciesMenu(anchor) {
+  const items = [{ head: 'Species' },
+    { value: '', label: 'All species', on: !state.filters.species,
+      onPick: () => actions.setFilter('species', null) }];
+  MarpData.species().forEach((s) => items.push({
+    value: s.comname, label: s.comname, on: state.filters.species === s.comname,
+    onPick: (v) => actions.setFilter('species', v)
+  }));
+  menu(anchor, items, { search: true });
+}
+
+function projectMenu(anchor) {
+  const items = [{ head: 'Project' },
+    { value: '', label: 'All projects', on: !state.filters.project,
+      onPick: () => actions.setFilter('project', null) }];
+  MarpData.projects().forEach((p) => items.push({
+    value: p.name, label: p.name, on: state.filters.project === p.name,
+    onPick: (v) => actions.setFilter('project', v)
+  }));
+  menu(anchor, items, { search: true });
+}
+
+function modelMenu(anchor) {
+  menu(anchor, [
+    { head: 'Model — not yet in the schema' },
+    { value: 'v3.2', label: 'BatStarNet v3.2', on: true, onPick: () => {} },
+    { value: 'v3.1', label: 'BatStarNet v3.1', onPick: () => {} },
+    { value: 'any', label: 'Any model', onPick: () => {} }
+  ], { search: true });
+}
+
+function sortMenu(anchor) {
+  menu(anchor, [{ head: 'Sort by' }].concat(SORTS.map((s) => ({
+    value: s.field + ':' + s.dir, label: s.label,
+    on: state.sort.field === s.field && state.sort.dir === s.dir,
+    onPick: (v) => { const [f, d] = v.split(':'); actions.setSort(f, d); }
+  }))), { align: 'right' });
+}
+
+function userMenu(anchor) {
+  menu(anchor, [
+    { head: 'Signed in as I. Travers' },
+    { value: 'prefs', label: 'Preferences', onPick: () => {} },
+    { value: 'keys', label: 'Keyboard shortcuts', onPick: () => {} },
+    { value: 'density', label: 'Tile density', onPick: () => {} },
+    { hr: true },
+    { value: 'out', label: 'Sign out', onPick: () => {} }
+  ], { align: 'right' });
 }
 
 /* ---------------------------------------------------------------- chrome */
@@ -184,31 +352,43 @@ function renderChrome() {
   $('#total').textContent = state.total.toLocaleString();
   $('#markedCount').textContent = markedCount;
   $('#markWord').textContent = MODES[state.mode].mark;
+  $('#selSpecies').textContent = state.filters.species || 'All species';
+  $('#selProject').textContent = state.filters.project || 'All projects';
+  $('#sortLabel').textContent = (SORTS.find((s) =>
+    s.field === state.sort.field && s.dir === state.sort.dir) || SORTS[0]).label;
 
-  $('#commit').innerHTML = `${MODES[state.mode].commit} &middot; ${willAct} tiles`;
+  const commit = $('#commit');
+  commit.innerHTML = `${MODES[state.mode].commit} &middot; ${willAct} tiles`;
+  commit.title = state.mode === 'delete'
+    ? `Permanently deletes the ${markedCount} marked tiles. The ${eligible - markedCount} unmarked tiles are untouched.`
+    : `Applies to the ${willAct} eligible tiles you did not mark. The ${markedCount} marked ones stay open.`;
+
   $('#footCount').textContent = `${markedCount} ${MODES[state.mode].mark.toLowerCase()}`;
   $('#markAll').textContent = `${MODES[state.mode].verb} all on page`;
-  $('#fcount').textContent = Object.values(state.filters).filter(
-    (v) => v != null && (!Array.isArray(v) || v.length)).length;
+  document.querySelectorAll('[data-status]').forEach((b) => {
+    const on = (state.filters.reviewStatus || []).includes(b.dataset.status);
+    b.querySelector('.box').classList.toggle('on', on);
+  });
+  $('#fcount').textContent = ['species', 'project', 'dive'].filter((k) => state.filters[k]).length
+    + (state.filters.reviewStatus && state.filters.reviewStatus.length ? 1 : 0);
 
   renderPager();
 }
 
 function renderPager() {
   const { page, pageCount } = state, span = 2, out = [];
-  const chip = (i) => `<button class="pg ${state.committedPages.has(i) ? 'done' : ''}" data-page="${i}">${i}</button>`;
-  out.push('<button class="pg nav" data-page="prev">&lsaquo; Prev</button>');
+  const chip = (i) => `<button class="pg ${state.committedPages.has(i) ? 'done' : ''}" data-page="${i}"
+      title="${state.committedPages.has(i) ? 'Committed this session' : 'Go to page ' + i}">${i}</button>`;
+  out.push('<button class="pg nav" data-page="prev" title="Previous page">&lsaquo; Prev</button>');
   const lo = Math.max(1, page - span), hi = Math.min(pageCount, page + span);
   if (lo > 1) { out.push(chip(1)); if (lo > 2) out.push('<span class="gap">&hellip;</span>'); }
   for (let i = lo; i <= hi; i++) {
-    out.push(i === page ? `<input class="pg" id="pageInput" value="${i}" aria-label="Current page">` : chip(i));
+    out.push(i === page ? `<input class="pg" id="pageInput" value="${i}" title="Type a page number to jump">` : chip(i));
   }
   if (hi < pageCount) { if (hi < pageCount - 1) out.push('<span class="gap">&hellip;</span>'); out.push(chip(pageCount)); }
-  out.push('<button class="pg nav" data-page="next">Next &rsaquo;</button>');
+  out.push('<button class="pg nav" data-page="next" title="Next page">Next &rsaquo;</button>');
   $('#pager').innerHTML = out.join('');
 }
-
-/* ---------------------------------------------------------------- log */
 
 function renderLog() {
   $('#logList').innerHTML = getLog().slice(0, 60).map((e) => {
@@ -229,9 +409,15 @@ export function mount() {
   $('#clearMarks').addEventListener('click', () => actions.clearMarks());
   $('#commit').addEventListener('click', () => actions.commitPage());
 
+  /* tile marks; badge opens the panel */
   $('#grid').addEventListener('click', (e) => {
+    const badge = e.target.closest('[data-badge]');
+    if (badge) { e.stopPropagation(); actions.openPicker(Number(badge.dataset.badge)); return; }
+    const chip = e.target.closest('[data-changed]');
+    if (chip) { e.stopPropagation(); actions.openCorrection(Number(chip.dataset.changed)); return; }
     const t = e.target.closest('.tile');
-    if (t) actions.toggleMark(Number(t.dataset.id));
+    if (t) actions.toggleMark(Number(t.dataset.id));   // no stopPropagation: the
+    /* document handler below still runs and closes any open panel */
   });
 
   $('#pager').addEventListener('click', (e) => {
@@ -244,14 +430,49 @@ export function mount() {
     if (e.target.id === 'pageInput') actions.goToPage(Number(e.target.value));
   });
 
-  $('#logbtn').addEventListener('click', () => {
+  const anchor = (id, fn) => $(id).addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (openMenuEl) { closeMenus(); return; }
+    fn(e.currentTarget);
+  });
+  anchor('#selSpeciesBtn', speciesMenu);
+  anchor('#selProjectBtn', projectMenu);
+  anchor('#selModelBtn', modelMenu);
+  anchor('#sortBtn', sortMenu);
+  anchor('#userBtn', userMenu);
+
+  document.querySelectorAll('[data-status]').forEach((b) =>
+    b.addEventListener('click', (e) => { e.stopPropagation(); actions.toggleReviewStatus(b.dataset.status); }));
+
+  $('#logbtn').addEventListener('click', (e) => {
+    e.stopPropagation();
     const log = $('#log');
     log.hidden = !log.hidden;
     $('#logbtn').textContent = log.hidden ? 'Action log' : 'Hide log';
   });
 
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') actions.closePicker(); });
+  /* 6: clicking anywhere else dismisses the panel and any open menu */
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.pick')) actions.closePicker();
+    if (!e.target.closest('.menu')) closeMenus();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { actions.closePicker(); closeMenus(); }
+  });
 
-  subscribe(() => { renderChrome(); renderGrid(); renderPicker(); });
+  /* The field's real size is the only reliable input, and it changes on window
+     resize and on rail collapse alike — so observe it rather than guessing when
+     layout has settled. */
+  let t;
+  const ro = new ResizeObserver(() => { clearTimeout(t); t = setTimeout(computeLayout, 90); });
+  ro.observe($('#field'));
+
+  /* Re-measure after every render. A single measurement is unreliable — the field's
+     size settles after layout — and setPageSize no-ops when nothing changed, so this
+     converges in one extra pass rather than looping. */
+  subscribe(() => {
+    renderChrome(); renderGrid(); renderPicker();
+    requestAnimationFrame(computeLayout);
+  });
   onLog(renderLog);
 }

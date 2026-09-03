@@ -187,6 +187,45 @@ test('Filter and sort dimensions',
     eq(c, sorted, 'page 1 should be ascending by confidence');
   });
 
+test('What counts as reviewed',
+  'an observation with no image is still markable, and keeps its species name', async () => {
+    await reset();
+    const bad = state.rows.find((r) => r.thumbnail_status !== 'ready');
+    if (!bad) return 'skipped — no unavailable thumbnail on page 1';
+    ok(bad.comname && bad.comname.length, 'it must still carry its name');
+    actions.toggleMark(bad.observation_id);
+    ok(state.marks.has(bad.observation_id), 'it must be markable');
+  });
+
+test('Moving through pages',
+  'a committed decision can be taken back by marking it and committing again', async () => {
+    await reset();
+    /* pick a row the commit can actually act on: ready imagery, not already reviewed */
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status !== 'reviewed');
+    ok(target, 'page 1 should contain a reviewable row');
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.outcomes.get(id), 'reviewed', 'first commit accepts it');
+    actions.toggleMark(id);
+    await actions.commitPage();
+    eq(state.outcomes.get(id), 'reverted', 'marking it and committing takes the acceptance back');
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_status, 'unreviewed', 'the record itself must be updated, not just the tile');
+  });
+
+test('The review modes',
+  'training review offers reasons, correction and resolution like scientific review', async () => {
+    await reset('training');
+    const id = state.rows[0].observation_id;
+    actions.toggleMark(id);
+    actions.openPicker(id);
+    ok(state.picker && state.picker.id === id, 'the panel opens in training mode too');
+    actions.setReason(id, 'Occluded');
+    eq(state.marks.get(id).reason, 'Occluded', 'a training exclusion carries its reason');
+    actions.resolve(id);
+    ok(!state.marks.has(id), 'resolving clears it, as in scientific review');
+  });
+
 /* ------------------------------------------------------------------ runner */
 
 export async function run(mount) {

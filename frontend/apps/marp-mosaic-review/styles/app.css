@@ -113,20 +113,21 @@ body.rail-collapsed .fcount { display: grid; }
 .small { font-size: 9.5px; color: var(--faint); }
 
 /* ---------------------------------------------------------------- field */
-.field { background: var(--field); padding: 8px 10px; overflow: hidden; position: relative; }
-body[data-mode="training"] .field { border-left: 2px solid var(--violet-500); }
-body[data-mode="delete"]   .field { border-left: 2px solid var(--red-500); }
-.grid { display: grid; grid-template-columns: repeat(9, 150px); gap: 3px; justify-content: center; }
-body.rail-collapsed .grid { grid-template-columns: repeat(10, 150px); }
+.field { background: var(--field); padding: 4px; overflow: hidden; position: relative; }
+/* the mode tints the chrome around the field; the field itself never changes */
+.field { border-left: 2px solid var(--mode); box-shadow: inset 14px 0 26px -18px var(--mode); }
+.grid { display: grid; gap: 2px;
+        grid-template-columns: repeat(var(--cols, 9), minmax(0, 1fr)); }
 
 .tile { position: relative; aspect-ratio: 1; border-radius: 2px; overflow: hidden;
         background: #101215; outline: 1px solid var(--tile-bd); outline-offset: -1px;
         padding: 0; border: 0; display: block; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 5px 3.5px;
-       background: rgba(12, 14, 17, .42);
-       -webkit-backdrop-filter: blur(7px) saturate(.85); backdrop-filter: blur(7px) saturate(.85);
-       border-top: 1px solid rgba(255, 255, 255, .09); font-size: 11.5px; color: #f2f5f8;
+       background: rgba(232, 240, 248, .10);
+       -webkit-backdrop-filter: blur(11px) saturate(1.15) brightness(.62);
+       backdrop-filter: blur(11px) saturate(1.15) brightness(.62);
+       border-top: 1px solid rgba(255, 255, 255, .16); font-size: 11.5px; color: #f4f7fa;
        line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
        text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, .65); }
 .badge { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 3px;
@@ -258,3 +259,57 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .log .t { color: var(--faint); flex: none; }
 .log .n { color: var(--cyan-300); font-weight: 600; flex: none; }
 .log .d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+/* ---------------------------------------------------------------- committed outcomes */
+/* After a commit the page stays loaded, so the result has to be visible on the tiles
+   themselves — otherwise a delete looks identical to a mark that never happened. */
+.tile.out-deleted  { outline: 2px solid var(--red-500); }
+.tile.out-deleted img { filter: grayscale(1) brightness(.28); }
+.tile.out-deleted::after {
+  content: ""; position: absolute; inset: 0; z-index: 2;
+  background: repeating-linear-gradient(45deg, rgba(224,97,107,.16) 0 6px, transparent 6px 14px); }
+.tile.out-reviewed { outline: 2px solid rgba(167, 236, 53, .55); }
+.tile.out-promoted { outline: 2px solid var(--green-400); }
+.b-out { background: var(--green-400); color: #0d1a02; }
+.b-gone { background: var(--red-500); color: #fff; }
+
+/* ---------------------------------------------------------------- menus */
+.menuwrap { position: relative; }
+.menu { position: fixed; z-index: 30; min-width: 190px; background: #061523;
+        border: 1px solid var(--border); border-radius: 6px; padding: 5px;
+        box-shadow: 0 16px 40px rgba(0,0,0,.7); }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+               background: none; border: 0; border-radius: 4px; padding: 7px 9px;
+               font-size: 12px; color: var(--text); }
+.menu button:hover { background: #0d2334; color: var(--white); }
+.menu button.on { color: var(--cyan-300); }
+.menu button .tick { width: 12px; flex: none; color: var(--cyan-300); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+.menu .mhead { font-size: 9px; letter-spacing: .09em; text-transform: uppercase;
+               color: var(--faint); padding: 5px 9px 3px; }
+.sel, .sortbox, .who { cursor: pointer; }
+.sel:hover, .sortbox:hover { border-color: var(--border-strong); }
+
+/* a distinct action inside the picker, separate from the reason chips */
+.chip.change { background: #12203a; border-color: rgba(155,124,240,.55); color: var(--violet-300); }
+.chip.change.on { background: var(--violet-500); border-color: var(--violet-400); color: #fff; }
+
+
+/* A tile with no image still carries its name and stays markable — the fallback
+   sits behind the caption rather than replacing the whole tile. */
+.tile .fallback { position: absolute; inset: 0 0 20px 0; display: grid;
+                  place-items: center; align-content: center; gap: 6px; }
+.tile.queued { background: #131518; outline: 1px dashed #33383f; }
+.tile.failed { background: #171314; outline: 1px dashed #4a3338; }
+.tile.queued .fallback img { width: 22px; height: auto; opacity: .45; object-fit: contain; }
+.tile.marked.queued, .tile.marked.failed { outline: 2px solid var(--amber-300); }
+.reason-chip[data-changed] { cursor: pointer; }
+.reason-chip[data-changed]:hover { border-color: var(--cyan-300); color: var(--cyan-300); }
+.tile.out-reverted { outline: 2px dashed var(--amber-300); }
+.b-rev { background: var(--amber-300); color: #241a02; }
+
+.menu .msearch { width: 100%; height: 30px; margin-bottom: 5px; padding: 0 9px; border-radius: 4px;
+                 background: var(--navy-1000); border: 1px solid var(--border); color: var(--white);
+                 font: inherit; font-size: 12px; }
+.menu .mbody { max-height: 46vh; overflow-y: auto; }
