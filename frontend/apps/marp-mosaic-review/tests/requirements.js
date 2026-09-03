@@ -226,6 +226,35 @@ test('The review modes',
     ok(!state.marks.has(id), 'resolving clears it, as in scientific review');
   });
 
+test('Moving through pages',
+  'a committed decision survives navigating away and back', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status !== 'reviewed');
+    ok(target, 'page 1 should contain a reviewable row');
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.outcomes.get(id), 'reviewed');
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 300));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 300));
+    eq(state.outcomes.get(id), 'reviewed',
+       'the session record of what was committed must not be cleared by a re-query');
+    ok(state.committedPages.has(1), 'the pager must still show the page as committed');
+  });
+
+test('Filter and sort dimensions',
+  'the status counts reflect the data and move when work is committed', async () => {
+    await reset();
+    const before = state.counts.unreviewed;
+    ok(before > 0, 'there should be unreviewed work to start with');
+    await actions.commitPage();
+    await new Promise((r) => setTimeout(r, 300));
+    ok(state.counts.unreviewed < before,
+       `committing should reduce the unreviewed count (was ${before}, now ${state.counts.unreviewed})`);
+    ok(state.counts.reviewed > 0, 'and increase the reviewed count');
+  });
+
 /* ------------------------------------------------------------------ runner */
 
 export async function run(mount) {

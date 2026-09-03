@@ -29,9 +29,10 @@ body[data-mode="delete"] {
 }
 
 * { box-sizing: border-box; }
-html, body { height: 100%; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
   margin: 0;
+  position: fixed; inset: 0;        /* mobile browsers otherwise scroll the page itself */
   background: var(--navy-1000);
   color: var(--text);
   font-family: var(--body-font);
@@ -42,7 +43,17 @@ body {
 button { font: inherit; color: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; }
 
-.app { display: grid; grid-template-rows: 44px 30px 1fr 46px; height: 100vh; }
+/* 100dvh tracks the visible viewport as mobile browser chrome shows and hides;
+   100vh does not, which is what let the footer scroll away. */
+.app { display: grid; grid-template-rows: 44px 30px minmax(0, 1fr) 46px;
+       height: 100vh; height: 100dvh;
+       /* a grid item's automatic minimum is its content, so without these the
+          header's controls make the whole app wider than the screen */
+       width: 100%; max-width: 100vw; overflow: hidden; }
+.app > * { min-width: 0; }
+.hdr, .sub, .foot { overflow: hidden; }
+.body { min-width: 0; }
+.field { min-width: 0; }
 
 /* ---------------------------------------------------------------- header */
 .hdr { display: flex; align-items: center; gap: 11px; padding: 0 12px;
@@ -115,11 +126,15 @@ body.rail-collapsed .fcount { display: grid; }
 .small { font-size: 9.5px; color: var(--faint); }
 
 /* ---------------------------------------------------------------- field */
-.field { background: var(--field); padding: 4px; overflow: hidden; position: relative; }
+.field { background: var(--field); padding: 4px; position: relative;
+         overflow-y: auto; overflow-x: hidden;
+         overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 /* the mode tints the chrome around the field; the field itself never changes */
 .field { border-left: 2px solid var(--mode); box-shadow: inset 14px 0 26px -18px var(--mode); }
+/* CSS decides the column count from the space it actually has, so the grid can
+   never be wider than its container. JS only reads back how many fit. */
 .grid { display: grid; gap: 2px;
-        grid-template-columns: repeat(var(--cols, 9), minmax(0, 1fr)); }
+        grid-template-columns: repeat(auto-fill, minmax(var(--min-tile, 132px), 1fr)); }
 
 .tile { position: relative; aspect-ratio: 1; border-radius: 2px; overflow: hidden;
         background: #101215; outline: 1px solid var(--tile-bd); outline-offset: -1px;
@@ -316,3 +331,49 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
                  background: var(--navy-1000); border: 1px solid var(--border); color: var(--white);
                  font: inherit; font-size: 12px; }
 .menu .mbody { max-height: 46vh; overflow-y: auto; }
+
+
+/* ---------------------------------------------------------------- narrow screens */
+/* On a phone the rail cannot take a third of the width, and the header cannot wrap.
+   The mosaic is the application, so everything else gets out of its way. */
+@media (max-width: 760px) {
+  .grid { --min-tile: 96px; }
+  .app { grid-template-rows: 40px 26px minmax(0, 1fr) 44px; }
+  .hdr { gap: 8px; padding: 0 8px; }
+  .hdr img { height: 20px; }
+  .hdr .title { display: none; }
+  .mode-note { display: none; }
+  .hdr { overflow-x: auto; scrollbar-width: none; }
+  .hdr::-webkit-scrollbar { display: none; }
+  .seg { margin-left: 4px; flex: none; }
+  .sub { overflow-x: auto; scrollbar-width: none; }
+  .foot { overflow-x: auto; scrollbar-width: none; }
+  .seg button { padding: 4px 8px; font-size: 11px; }
+
+  .sub { gap: 10px; padding: 0 8px; font-size: 11px; }
+  .sub .sep { display: none; }
+
+  /* the rail collapses to its strip and opens over the mosaic rather than beside it */
+  .body { grid-template-columns: 30px minmax(0, 1fr); }
+  .rail { padding: 6px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .rail .rail-body { display: none; }
+  .railhead { display: block; margin: 0; }
+  .railhead .t { display: none; }
+  .vlabel, .fcount { display: block; }
+  .fcount { display: grid; }
+  body:not(.rail-collapsed) .rail { position: absolute; z-index: 25; inset: 70px auto 44px 0;
+    width: 190px; align-items: stretch; padding: 10px; overflow-y: auto;
+    box-shadow: 12px 0 40px rgba(0,0,0,.6); border-right: 1px solid var(--mode-line); }
+  body:not(.rail-collapsed) .rail .rail-body { display: block; }
+  body:not(.rail-collapsed) .railhead { display: flex; margin: -2px 0 8px; }
+  body:not(.rail-collapsed) .railhead .t { display: block; }
+  body:not(.rail-collapsed) .vlabel, body:not(.rail-collapsed) .fcount { display: none; }
+
+  .foot { gap: 5px; padding: 0 8px; }
+  .legend, .markall { display: none; }
+  .commit { margin-left: 8px; padding: 7px 12px; font-size: 11.5px; }
+  .count { font-size: 10.5px; }
+  .pg { min-width: 22px; height: 22px; padding: 0 4px; }
+  .pg.nav { padding: 0 6px; }
+  .logbtn { display: none; }
+}

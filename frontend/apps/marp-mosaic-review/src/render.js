@@ -44,22 +44,18 @@ export function computeLayout() {
   const field = $('#field'), grid = $('#grid');
   if (!field || !grid) return;
 
-  /* Chrome heights are fixed in CSS (.app grid-template-rows), so deriving the field
-     box from the viewport is exact and does not depend on when layout settles —
-     measuring the element itself returned a stale height. */
-  const CHROME = 44 + 30 + 46, PAD = 8;
-  const w = (field.clientWidth || (window.innerWidth - (state.railCollapsed ? 34 : 158))) - PAD;
-  /* take whichever measure is available and larger; each is unreliable alone */
-  const h = Math.max(field.getBoundingClientRect().height, window.innerHeight - CHROME) - PAD;
-  if (w < 60 || h < 60) return;
+  /* Read the column count CSS actually produced rather than predicting it. */
+  const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length;
+  if (!cols) return;
 
-  let cols = Math.max(4, Math.round((w + GAP) / (TARGET_TILE + GAP)));
-  while (cols > 4 && (w - (cols - 1) * GAP) / cols < MIN_TILE) cols--;
-  const tile = (w - (cols - 1) * GAP) / cols;
-  const rows = Math.max(2, Math.floor((h + GAP) / (tile + GAP)));
+  const probe = grid.querySelector('.tile');
+  const tileH = probe ? probe.getBoundingClientRect().height : 0;
+  if (tileH < 20) return;
 
-  grid.style.setProperty('--cols', cols);
-  field.dataset.layout = `${cols}x${rows} w=${Math.round(w)} h=${Math.round(h)} tile=${Math.round(tile)}`;
+  const CHROME = window.matchMedia('(max-width: 760px)').matches ? 40 + 26 + 44 : 44 + 30 + 46;
+  const h = Math.max(field.getBoundingClientRect().height, window.innerHeight - CHROME) - 8;
+  const rows = Math.max(2, Math.floor((h + GAP) / (tileH + GAP)));
+
   actions.setPageSize(cols * rows);
 }
 
@@ -71,7 +67,12 @@ function tile(row) {
   const changed = state.changed.get(id);
   const outcome = state.outcomes.get(id);
   const isActive = state.picker && state.picker.id === id;
-  const doneByOther = row.review_status === 'reviewed' && !marked && !outcome;
+  const ME = 'I. Travers';
+  const alreadyDone = state.mode === 'training'
+    ? row.training_disposition === 'promoted'
+    : row.review_status === 'reviewed';
+  const doneByOther = alreadyDone && !marked && !outcome;
+  const byMe = (row.reviewed_by || row.training_approved_by) === ME;
 
   const cls = ['tile'];
   const noImage = row.thumbnail_status !== 'ready';
@@ -82,6 +83,7 @@ function tile(row) {
   if (changed) cls.push('changed');
   if (doneByOther) cls.push('done');
   if (outcome) cls.push('out-' + outcome);
+  else if (doneByOther && byMe) cls.push(state.mode === 'training' ? 'out-promoted' : 'out-reviewed');
 
   /* The badge is its own control: tapping the tile marks, tapping the badge opens
      the panel. That keeps marking a single uninterrupted gesture. */
@@ -93,9 +95,10 @@ function tile(row) {
   else if (marked) badge = `<span class="badge ${markClass()}" data-badge="${id}"
         title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`;
   else if (changed)     badge = `<span class="badge b-chg">${ICON.tick}CHANGED</span>`;
-  else if (doneByOther) badge = `<span class="badge b-oth">${ICON.eye}${row.reviewed_by || 'REVIEWED'}</span>`;
-  else if (row.training_disposition === 'promoted' && state.mode === 'training')
-                        badge = `<span class="badge b-pro">${ICON.pro}PROMOTED</span>`;
+  else if (doneByOther) badge = byMe
+        /* work this reviewer already committed, seen again after navigating back */
+        ? `<span class="badge b-out">${ICON.tick}${state.mode === 'training' ? 'PROMOTED' : 'REVIEWED'} &middot; you</span>`
+        : `<span class="badge b-oth">${ICON.eye}${row.reviewed_by || row.training_approved_by || 'REVIEWED'}</span>`;
 
   const corner = state.mode === 'training'
     ? `<span class="frames">${row.keyframe_count}f</span>`
@@ -365,14 +368,39 @@ function renderChrome() {
 
   $('#footCount').textContent = `${markedCount} ${MODES[state.mode].mark.toLowerCase()}`;
   $('#markAll').textContent = `${MODES[state.mode].verb} all on page`;
-  document.querySelectorAll('[data-status]').forEach((b) => {
-    const on = (state.filters.reviewStatus || []).includes(b.dataset.status);
-    b.querySelector('.box').classList.toggle('on', on);
-  });
+  renderStatusFilters();
   $('#fcount').textContent = ['species', 'project', 'dive'].filter((k) => state.filters[k]).length
     + (state.filters.reviewStatus && state.filters.reviewStatus.length ? 1 : 0);
 
   renderPager();
+}
+
+/* The status filter is mode-specific: scientific review filters on review status,
+   training review on training disposition. Counts come from the query, so they move
+   as work is committed. */
+const STATUS_SETS = {
+  scientific: { key: 'reviewStatus', label: 'Review status',
+                items: [['unreviewed', 'Unreviewed'], ['reviewed', 'Reviewed']] },
+  training:   { key: 'trainingDisposition', label: 'Training disposition',
+                items: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']] },
+  delete:     { key: 'reviewStatus', label: 'Review status',
+                items: [['unreviewed', 'Unreviewed'], ['reviewed', 'Reviewed']] }
+};
+
+function renderStatusFilters() {
+  const set = STATUS_SETS[state.mode];
+  $('#statusLbl').textContent = set.label;
+  const active = state.filters[set.key] || [];
+  $('#statusFilters').innerHTML = set.items.map(([value, label]) =>
+    `<button class="chk" data-status="${value}" data-key="${set.key}"
+       title="Show ${label.toLowerCase()} observations">
+       <span class="box ${active.includes(value) ? 'on' : ''}"></span>${label}
+       <span class="n">${(state.counts[value] ?? 0).toLocaleString()}</span></button>`).join('');
+  $('#statusFilters').querySelectorAll('[data-status]').forEach((b) =>
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      actions.toggleStatus(b.dataset.key, b.dataset.status);
+    }));
 }
 
 function renderPager() {
@@ -440,9 +468,6 @@ export function mount() {
   anchor('#selModelBtn', modelMenu);
   anchor('#sortBtn', sortMenu);
   anchor('#userBtn', userMenu);
-
-  document.querySelectorAll('[data-status]').forEach((b) =>
-    b.addEventListener('click', (e) => { e.stopPropagation(); actions.toggleReviewStatus(b.dataset.status); }));
 
   $('#logbtn').addEventListener('click', (e) => {
     e.stopPropagation();

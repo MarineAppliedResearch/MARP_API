@@ -40,12 +40,32 @@ export const MarpData = {
   },
 
   /**
+   * Status counts for the current non-status filters. The rail shows these, and
+   * they must move when work is committed — a stale count is worse than none.
+   */
+  async counts({ filters = {} } = {}) {
+    let rows = db.observations.filter((r) => !r.deleted);
+    if (filters.species) rows = rows.filter((r) => r.comname === filters.species);
+    if (filters.project) rows = rows.filter((r) => r.project_name === filters.project);
+    if (filters.dive)    rows = rows.filter((r) => r.dive === filters.dive);
+    const n = (fn) => rows.filter(fn).length;
+    return {
+      unreviewed: n((r) => r.review_status === 'unreviewed'),
+      reviewed:   n((r) => r.review_status === 'reviewed'),
+      undecided:  n((r) => r.training_disposition === 'undecided'),
+      promoted:   n((r) => r.training_disposition === 'promoted'),
+      excluded:   n((r) => r.training_disposition === 'excluded'),
+      total: rows.length
+    };
+  },
+
+  /**
    * Filter, sort and page — all of which the real API does server-side. Doing it
    * here keeps the call signature honest about what will be sent over the wire.
    */
   async query({ filters = {}, sort = { field: 'confidence', dir: 'asc' }, page = 1, pageSize = 45 }) {
     await delay(LATENCY.query);
-    let rows = db.observations;
+    let rows = db.observations.filter((r) => !r.deleted);
 
     if (filters.species)  rows = rows.filter((r) => r.comname === filters.species);
     if (filters.project)  rows = rows.filter((r) => r.project_name === filters.project);

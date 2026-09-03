@@ -50,11 +50,8 @@
         <div class="menuwrap"><button class="sel" id="selModelBtn"
           title="No model provenance exists on observations yet — see MARP_API#68">
           <span>BatStarNet v3.2</span><span>&#9662;</span></button></div>
-        <div class="lbl">Review status</div>
-        <button class="chk" data-status="unreviewed" title="Show unreviewed observations">
-          <span class="box"></span>Unreviewed<span class="n" id="cUnrev">—</span></button>
-        <button class="chk" data-status="reviewed" title="Show observations already reviewed">
-          <span class="box"></span>Reviewed<span class="n" id="cRev">—</span></button>
+        <div class="lbl" id="statusLbl">Review status</div>
+        <div id="statusFilters"></div>
         <div class="prog">
           <div style="display:flex;justify-content:space-between;font-size:10.5px">
             <span>Progress</span><b id="progPct" style="color:#f7fbff">0%</b></div>
@@ -121,7 +118,6 @@
     document.getElementById('progBar').style.width = pct + '%';
     document.getElementById('progText').textContent =
       `${done.toLocaleString()} of ${state.total.toLocaleString()}`;
-    document.getElementById('cUnrev').textContent = state.total.toLocaleString();
   });
 
   /* ?demo=picker opens the reason panel on load, for screenshots and quick looks */

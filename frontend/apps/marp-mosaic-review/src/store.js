@@ -20,7 +20,7 @@ export const state = {
   rows: [],
   loading: true,
   ready: false,                       // the fixture/API has answered at least once
-  railCollapsed: false,
+  railCollapsed: window.matchMedia('(max-width: 760px)').matches,
 
   filters: {
     species: 'Bat Star',
@@ -36,6 +36,7 @@ export const state = {
   marks: new Map(),                   // id -> { reason }
   changed: new Map(),                 // id -> { from, to }
   committedPages: new Set(),
+  counts: { unreviewed: 0, reviewed: 0, undecided: 0, promoted: 0, excluded: 0, total: 0 },
   outcomes: new Map(),                // id -> 'reviewed' | 'promoted' | 'deleted'
   picker: null,                       // { id } while the reason panel is open
   lastCommit: null                    // { reviewed, skipped }
@@ -89,20 +90,18 @@ export const actions = {
        slower one must not win. Only the newest response is allowed to land. */
     const token = ++reqSeq;
     state.loading = true; notify();
+    /* Each mode filters on its own status dimension, and only that one. */
     const filters = { ...state.filters };
-    if (state.mode === 'training') {
-      filters.reviewStatus = null;
-      filters.trainingDisposition = ['undecided'];
-    } else if (state.mode === 'delete') {
-      filters.reviewStatus = ['flagged', 'unreviewed'];
-      filters.trainingDisposition = null;
-    }
+    if (state.mode === 'training') filters.reviewStatus = null;
+    else filters.trainingDisposition = null;
     fire('query', { filters, sort: state.sort, page: state.page });
     const res = await MarpData.query({
       filters, sort: state.sort, page: state.page, pageSize: state.pageSize
     });
     if (token !== reqSeq) return;                  // superseded; drop it
-    state.outcomes.clear();
+    state.counts = await MarpData.counts({ filters: {
+      species: state.filters.species, project: state.filters.project, dive: state.filters.dive
+    } });
     state.rows = res.rows;
     state.total = res.total;
     state.pageCount = res.pageCount;
@@ -125,6 +124,12 @@ export const actions = {
   setMode(mode) {
     if (!MODES[mode] || state.mode === mode) return;
     state.mode = mode;
+    if (mode === 'training' && !(state.filters.trainingDisposition || []).length) {
+      state.filters.trainingDisposition = ['undecided'];
+    }
+    if (mode !== 'training' && !(state.filters.reviewStatus || []).length) {
+      state.filters.reviewStatus = ['unreviewed'];
+    }
     state.marks.clear();
     state.picker = null;
     state.page = 1;
@@ -224,6 +229,9 @@ export const actions = {
     state.picker = null;
     fire('commitPage:result', { reviewed: res.reviewed.length,
       reverted: (res.reverted || []).length, skipped: res.skipped.length });
+    state.counts = await MarpData.counts({ filters: {
+      species: state.filters.species, project: state.filters.project, dive: state.filters.dive
+    } });
     notify();                                   // page stays loaded; no auto-advance
   },
 
@@ -250,13 +258,11 @@ export const actions = {
     actions.refresh();
   },
 
-  toggleReviewStatus(value) {
-    const cur = state.filters.reviewStatus || [];
-    state.filters.reviewStatus = cur.includes(value)
-      ? cur.filter((v) => v !== value)
-      : cur.concat(value);
+  toggleStatus(key, value) {
+    const cur = state.filters[key] || [];
+    state.filters[key] = cur.includes(value) ? cur.filter((v) => v !== value) : cur.concat(value);
     state.page = 1;
-    fire('toggleReviewStatus', { value, now: state.filters.reviewStatus });
+    fire('toggleStatus', { key, value, now: state.filters[key] });
     actions.refresh();
   },
 
