@@ -1,54 +1,49 @@
 /**
  * State, and the named actions that change it.
  *
- * Every user gesture goes through an action. Actions are the contract: each one is
- * a named thing that happens, logged as it fires, so the eventual API wiring has an
- * obvious set of seams. Nothing mutates state directly.
+ * Thin on purpose: the rules live in `model/`, the data in `api/`. This file holds
+ * what is currently true, and orchestrates the two. Every user gesture goes through
+ * a named action, which is the seam an API call will eventually sit behind.
  */
 import { MarpData } from './data.js';
+import { MODES, isMode, commitCount } from './model/modes.js';
+import * as page from './model/page.js';
+import * as filters from './model/filters.js';
+
+export { MODES };
 
 let reqSeq = 0;
 const listeners = new Set();
 const logListeners = new Set();
 
 export const state = {
-  mode: 'scientific',                 // scientific | training | delete
+  mode: 'scientific',
   page: 1,
   pageSize: 45,
   pageCount: 1,
   total: 0,
   rows: [],
   loading: true,
-  ready: false,                       // the fixture/API has answered at least once
+  ready: false,
   railCollapsed: window.matchMedia('(max-width: 760px)').matches,
 
-  filters: {
-    species: 'Bat Star',
-    project: null,
-    dive: null,
-    minConfidence: 0.5,
-    reviewStatus: ['unreviewed', 'flagged'],
-    trainingDisposition: null
-  },
-  sort: { field: 'confidence', dir: 'asc' },
+  filters: { ...filters.DEFAULT_FILTERS },
+  sort: { ...filters.DEFAULT_SORT },
+  counts: { unreviewed: 0, reviewed: 0, flagged: 0, undecided: 0, promoted: 0, excluded: 0, total: 0 },
 
-  /** Local, uncommitted decisions for the current page, keyed by observation_id. */
-  marks: new Map(),                   // id -> { reason }
-  changed: new Map(),                 // id -> { from, to }
+  marks: new Map(),        // uncommitted: id -> { reason }
+  changed: new Map(),      // id -> { from, to } for this session
+  outcomes: new Map(),     // id -> what the last commit did
   committedPages: new Set(),
-  /* page number -> the observation ids that were on it when it was committed */
-  pageMembers: new Map(),
-  counts: { unreviewed: 0, reviewed: 0, undecided: 0, promoted: 0, excluded: 0, total: 0 },
-  outcomes: new Map(),                // id -> 'reviewed' | 'promoted' | 'deleted'
-  picker: null,                       // { id } while the reason panel is open
-  lastCommit: null                    // { reviewed, skipped }
+  pageMembers: new Map(),  // page -> the ids it was committed with
+  picker: null,            // { id, correcting }
+  lastCommit: null
 };
 
 /* ---------------------------------------------------------------- plumbing */
 
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 export function onLog(fn) { logListeners.add(fn); return () => logListeners.delete(fn); }
-
 function notify() { listeners.forEach((fn) => fn(state)); }
 
 const logEntries = [];
@@ -64,18 +59,9 @@ function fire(name, detail) {
   logListeners.forEach((fn) => fn(entry));
 }
 
-/** The mode decides what a tap means and what the commit does. */
-export const MODES = {
-  scientific: { label: 'Scientific Data Review', mark: 'Flagged', verb: 'Flag',
-                note: 'Commit accepts unflagged tiles for scientific use',
-                commit: 'Mark Page Reviewed', acts: 'unmarked' },
-  training:   { label: 'Training Data Review',  mark: 'Excluded', verb: 'Exclude',
-                note: 'Commit promotes unmarked tracks to training data — it does not change scientific status',
-                commit: 'Promote Page', acts: 'unmarked' },
-  delete:     { label: 'Delete',                mark: 'Delete', verb: 'Mark',
-                note: 'Commit permanently deletes the marked tiles — unmarked tiles are untouched',
-                commit: 'Delete Marked', acts: 'marked' }
-};
+const countFilters = () => ({
+  species: state.filters.species, project: state.filters.project, dive: state.filters.dive
+});
 
 /* ---------------------------------------------------------------- actions */
 
@@ -92,33 +78,29 @@ export const actions = {
        slower one must not win. Only the newest response is allowed to land. */
     const token = ++reqSeq;
     state.loading = true; notify();
-    /* Each mode filters on its own status dimension, and only that one. */
-    const filters = { ...state.filters };
-    if (state.mode === 'training') filters.reviewStatus = null;
-    else filters.trainingDisposition = null;
-    /* A committed page keeps the exact observations it was committed with, so the
-       reviewer can see what they submitted and change it. Everything else is a
-       normal query over the remaining work. */
+
     const pinned = state.pageMembers.get(state.page);
     let res;
+
     if (pinned) {
+      /* A committed page keeps its membership, so returning shows what was submitted. */
       fire('query:pinned', { page: state.page, count: pinned.length });
       const rows = await MarpData.byIds(pinned);
       if (token !== reqSeq) return;
       res = { rows, total: state.total, pageCount: state.pageCount, page: state.page };
     } else {
-      const exclude = new Set();
-      state.pageMembers.forEach((ids) => ids.forEach((id) => exclude.add(id)));
-      filters.excludeIds = exclude;
-      fire('query', { filters: { ...filters, excludeIds: exclude.size }, sort: state.sort, page: state.page });
+      const query = filters.queryFilters(state.mode, state.filters,
+        { excludeIds: page.pinnedIds(state.pageMembers) });
+      fire('query', { page: state.page, sort: state.sort });
       res = await MarpData.query({
-        filters, sort: state.sort, page: state.page, pageSize: state.pageSize
+        filters: query, sort: state.sort, page: state.page, pageSize: state.pageSize
       });
-      if (token !== reqSeq) return;                // superseded; drop it
+      if (token !== reqSeq) return;
     }
-    state.counts = await MarpData.counts({ filters: {
-      species: state.filters.species, project: state.filters.project, dive: state.filters.dive
-    } });
+
+    state.counts = await MarpData.counts({ filters: countFilters() });
+    if (token !== reqSeq) return;
+
     state.rows = res.rows;
     if (!pinned) { state.total = res.total; state.pageCount = res.pageCount; }
     state.loading = false;
@@ -138,42 +120,30 @@ export const actions = {
   },
 
   setMode(mode) {
-    if (!MODES[mode] || state.mode === mode) return;
+    if (!isMode(mode) || state.mode === mode) return;
     state.mode = mode;
-    state.pageMembers.clear();
-    state.committedPages.clear();
-    if (mode === 'training' && !(state.filters.trainingDisposition || []).length) {
-      state.filters.trainingDisposition = ['undecided'];
-    }
-    if (mode !== 'training' && !(state.filters.reviewStatus || []).length) {
-      state.filters.reviewStatus = ['unreviewed', 'flagged'];
-    }
     state.marks.clear();
     state.picker = null;
     state.page = 1;
+    state.pageMembers = page.clearPins();
+    state.committedPages.clear();
+    state.filters = filters.ensureStatusFor(mode, state.filters);
     fire('setMode', { mode });
     actions.refresh();
   },
 
   toggleMark(id) {
-    const row = state.rows.find((r) => r.observation_id === id);
-    if (!row) return;
-    if (state.marks.has(id)) {
-      state.marks.delete(id);
-      state.picker = null;
-      fire('unmark', { id, mode: state.mode });
-    } else {
-      state.marks.set(id, { reason: null });
-      fire('mark', { id, mode: state.mode, mark: MODES[state.mode].mark });
-    }
+    if (!state.rows.some((r) => r.observation_id === id)) return;
+    const had = state.marks.has(id);
+    state.marks = page.toggleMark(state.marks, id);
+    if (had) state.picker = null;
+    fire(had ? 'unmark' : 'mark', { id, mode: state.mode, mark: MODES[state.mode].mark });
     notify();
   },
 
   setReason(id, reason) {
-    const mark = state.marks.get(id);
-    if (!mark) return;
-    mark.reason = mark.reason === reason ? null : reason;
-    fire('setReason', { id, reason: mark.reason });
+    state.marks = page.setReason(state.marks, id, reason);
+    fire('setReason', { id, reason: (state.marks.get(id) || {}).reason });
     notify();
   },
 
@@ -194,7 +164,7 @@ export const actions = {
 
   /** Straight back into the chooser from a tile that was already changed. */
   openCorrection(id) {
-    if (!state.marks.has(id)) state.marks.set(id, { reason: null });
+    if (!state.marks.has(id)) state.marks = page.toggleMark(state.marks, id);
     state.picker = { id, correcting: true };
     fire('openCorrection', { id });
     notify();
@@ -222,14 +192,14 @@ export const actions = {
   },
 
   markAllOnPage() {
-    state.rows.forEach((r) => { if (!state.marks.has(r.observation_id)) state.marks.set(r.observation_id, { reason: null }); });
+    state.marks = page.markAll(state.marks, state.rows);
     fire('markAllOnPage', { count: state.rows.length, scope: 'page' });
     notify();
   },
 
   clearMarks() {
     const n = state.marks.size;
-    state.marks.clear(); state.picker = null;
+    state.marks = new Map(); state.picker = null;
     fire('clearMarks', { count: n });
     notify();
   },
@@ -237,29 +207,33 @@ export const actions = {
   async commitPage() {
     const ids = state.rows.map((r) => r.observation_id);
     const marks = new Map(state.marks);
-    fire('commitPage:request', { mode: state.mode, page: state.page, count: ids.length, marked: marks.size });
+    fire('commitPage:request', {
+      mode: state.mode, page: state.page,
+      willAct: commitCount({ mode: state.mode, rows: state.rows, marks })
+    });
+
     const res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marks });
+
     state.committedPages.add(state.page);
-    state.pageMembers.set(state.page, ids);
+    state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
+    state.outcomes = page.applyCommit(state.outcomes, res);
     state.lastCommit = res;
-    res.reviewed.forEach((r) => state.outcomes.set(r.id, r.outcome));
-    (res.flagged || []).forEach((r) => state.outcomes.set(r.id, r.outcome));
-    state.marks.clear();
+    state.marks = new Map();
     state.picker = null;
-    fire('commitPage:result', { reviewed: res.reviewed.length,
-      flagged: (res.flagged || []).length, reverted: (res.reverted || []).length,
-      skipped: res.skipped.length });
-    state.counts = await MarpData.counts({ filters: {
-      species: state.filters.species, project: state.filters.project, dive: state.filters.dive
-    } });
-    notify();                                   // page stays loaded; no auto-advance
+
+    fire('commitPage:result', {
+      reviewed: res.reviewed.length, flagged: (res.flagged || []).length,
+      reverted: (res.reverted || []).length, skipped: res.skipped.length
+    });
+    state.counts = await MarpData.counts({ filters: countFilters() });
+    notify();                                   // the page stays loaded; no auto-advance
   },
 
   goToPage(n) {
-    const page = Math.min(Math.max(1, n | 0), state.pageCount);
-    if (page === state.page) return;
-    state.page = page; state.picker = null;
-    fire('goToPage', { page });
+    const next = page.clampPage(n, state.pageCount);
+    if (next === state.page) return;
+    state.page = next; state.picker = null;
+    fire('goToPage', { page: next });
     actions.refresh();
   },
 
@@ -269,23 +243,21 @@ export const actions = {
     notify();
   },
 
-  /** 8/10: the rail controls actually drive the query now. */
   setFilter(key, value) {
-    state.pageMembers.clear();
-    state.committedPages.clear();
-    state.filters[key] = value;
+    state.filters = { ...state.filters, [key]: value };
     state.page = 1;
-    state.marks.clear();
+    state.marks = new Map();
+    state.pageMembers = page.clearPins();
+    state.committedPages.clear();
     fire('setFilter', { key, value });
     actions.refresh();
   },
 
   toggleStatus(key, value) {
-    state.pageMembers.clear();
-    state.committedPages.clear();
-    const cur = state.filters[key] || [];
-    state.filters[key] = cur.includes(value) ? cur.filter((v) => v !== value) : cur.concat(value);
+    state.filters = filters.toggleStatus(state.filters, key, value);
     state.page = 1;
+    state.pageMembers = page.clearPins();
+    state.committedPages.clear();
     fire('toggleStatus', { key, value, now: state.filters[key] });
     actions.refresh();
   },
@@ -295,13 +267,13 @@ export const actions = {
     if (n === state.pageSize || !n) return;
     state.pageSize = n;
     fire('setPageSize', { pageSize: n });
-    if (state.ready) actions.refresh();   // rows may not have landed yet; ready is the real guard
+    if (state.ready) actions.refresh();
   },
 
   setSort(field, dir) {
-    state.pageMembers.clear();
-    state.committedPages.clear();
     state.sort = { field, dir };
+    state.pageMembers = page.clearPins();
+    state.committedPages.clear();
     fire('setSort', state.sort);
     actions.refresh();
   },

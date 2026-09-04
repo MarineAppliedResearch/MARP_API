@@ -1,0 +1,164 @@
+/**
+ * Unit tests for the model layer.
+ *
+ * These need no browser, no server and no database — that is the point of keeping
+ * `model/` free of the DOM and the network. Run them with:
+ *
+ *   node --test frontend/apps/marp-mosaic-review/tests/unit/
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy }
+  from '../../src/model/modes.js';
+import * as page from '../../src/model/page.js';
+import * as filters from '../../src/model/filters.js';
+
+const row = (id, over = {}) => ({
+  observation_id: id,
+  thumbnail_status: 'ready',
+  review_status: 'unreviewed',
+  training_disposition: 'undecided',
+  ...over
+});
+
+/* ------------------------------------------------------------------ modes */
+
+test('every mode names what a mark is and what the commit does', () => {
+  for (const id of ['scientific', 'training', 'delete']) {
+    assert.ok(isMode(id));
+    const m = MODES[id];
+    assert.ok(m.mark && m.verb && m.commit, `${id} must be fully described`);
+    assert.ok(m.statusKey && m.statuses.length, `${id} must filter on a status dimension`);
+  }
+});
+
+test('delete is the only mode whose commit acts on the marked tiles', () => {
+  assert.equal(commitActsOnMarked('delete'), true);
+  assert.equal(commitActsOnMarked('scientific'), false);
+  assert.equal(commitActsOnMarked('training'), false);
+});
+
+test('the commit count follows that inversion', () => {
+  const rows = [row(1), row(2), row(3), row(4)];
+  const marks = new Map([[1, {}], [2, {}]]);
+  assert.equal(commitCount({ mode: 'scientific', rows, marks }), 2, 'acts on the unmarked');
+  assert.equal(commitCount({ mode: 'training', rows, marks }), 2);
+  assert.equal(commitCount({ mode: 'delete', rows, marks }), 2, 'acts on the marked');
+});
+
+test('observations without imagery are not eligible for a commit', () => {
+  const rows = [row(1), row(2, { thumbnail_status: 'failed' }), row(3, { thumbnail_status: 'queued' })];
+  assert.equal(commitCount({ mode: 'scientific', rows, marks: new Map() }), 1);
+});
+
+test('the state a record carries is read per mode', () => {
+  const flagged = row(1, { review_status: 'flagged' });
+  assert.equal(existingState('scientific', flagged), 'flagged');
+  assert.equal(existingState('training', flagged), null, 'review status is not a training state');
+
+  const excluded = row(2, { training_disposition: 'excluded' });
+  assert.equal(existingState('training', excluded), 'excluded');
+  assert.equal(existingState('scientific', excluded), null);
+
+  assert.equal(existingState('scientific', row(3)), null, 'unreviewed carries no state');
+});
+
+test('who decided is found wherever the decision was recorded', () => {
+  assert.equal(decidedBy(row(1, { flagged_by: 'A' })), 'A');
+  assert.equal(decidedBy(row(2, { training_approved_by: 'B' })), 'B');
+  assert.equal(decidedBy(row(3)), null);
+});
+
+/* ------------------------------------------------------------------- page */
+
+test('a tap toggles a mark, and a mark starts without a reason', () => {
+  let marks = new Map();
+  marks = page.toggleMark(marks, 7);
+  assert.deepEqual(marks.get(7), { reason: null });
+  marks = page.toggleMark(marks, 7);
+  assert.equal(marks.has(7), false);
+});
+
+test('choosing the same reason twice clears it', () => {
+  let marks = page.toggleMark(new Map(), 7);
+  marks = page.setReason(marks, 7, 'Occluded');
+  assert.equal(marks.get(7).reason, 'Occluded');
+  marks = page.setReason(marks, 7, 'Occluded');
+  assert.equal(marks.get(7).reason, null);
+});
+
+test('a reason cannot be set on something that is not marked', () => {
+  const marks = page.setReason(new Map(), 9, 'Occluded');
+  assert.equal(marks.has(9), false);
+});
+
+test('marking all is scoped to the page it was given', () => {
+  const rows = [row(1), row(2)];
+  const marks = page.markAll(new Map(), rows);
+  assert.equal(marks.size, 2);
+});
+
+test('a committed page keeps its membership, and pins are excluded elsewhere', () => {
+  let members = page.pinPage(new Map(), 1, [10, 11, 12]);
+  members = page.pinPage(members, 3, [30]);
+  assert.deepEqual(members.get(1), [10, 11, 12]);
+  assert.deepEqual([...page.pinnedIds(members)].sort((a, b) => a - b), [10, 11, 12, 30]);
+  assert.equal(page.clearPins().size, 0);
+});
+
+test('a commit result folds into the outcomes, flagged included', () => {
+  const out = page.applyCommit(new Map(), {
+    reviewed: [{ id: 1, outcome: 'reviewed' }],
+    flagged: [{ id: 2, outcome: 'flagged' }],
+    skipped: [{ id: 3, reason: 'no-imagery' }]
+  });
+  assert.equal(out.get(1), 'reviewed');
+  assert.equal(out.get(2), 'flagged');
+  assert.equal(out.has(3), false, 'a skipped observation has no outcome');
+});
+
+test('the page window pins the ends and gaps the middle', () => {
+  assert.deepEqual(page.pageWindow(1, 3), [1, 2, 3]);
+  assert.deepEqual(page.pageWindow(10, 96), [1, 'gap', 8, 9, 10, 11, 12, 'gap', 96]);
+  assert.deepEqual(page.pageWindow(2, 96), [1, 2, 3, 4, 'gap', 96], 'no gap when nothing is skipped');
+});
+
+test('page numbers clamp to the available range', () => {
+  assert.equal(page.clampPage(0, 10), 1);
+  assert.equal(page.clampPage(99, 10), 10);
+  assert.equal(page.clampPage(NaN, 10), 1);
+});
+
+/* ---------------------------------------------------------------- filters */
+
+test('each mode sends only its own status dimension', () => {
+  const f = { reviewStatus: ['unreviewed'], trainingDisposition: ['undecided'] };
+  assert.equal(filters.queryFilters('scientific', f).trainingDisposition, null);
+  assert.equal(filters.queryFilters('training', f).reviewStatus, null);
+});
+
+test('pinned observations are excluded from the pages still to be done', () => {
+  const out = filters.queryFilters('scientific', {}, { excludeIds: new Set([1, 2]) });
+  assert.equal(out.excludeIds.size, 2);
+  assert.equal(filters.queryFilters('scientific', {}, { excludeIds: new Set() }).excludeIds, undefined);
+});
+
+test('entering a mode with nothing selected falls back to its default', () => {
+  const out = filters.ensureStatusFor('training', { trainingDisposition: [] });
+  assert.deepEqual(out.trainingDisposition, MODES.training.defaultStatus);
+  const kept = filters.ensureStatusFor('training', { trainingDisposition: ['promoted'] });
+  assert.deepEqual(kept.trainingDisposition, ['promoted'], 'an existing choice is respected');
+});
+
+test('flagged work stays in the default scientific view, because it is still open', () => {
+  assert.ok(MODES.scientific.defaultStatus.includes('flagged'));
+  assert.ok(!MODES.scientific.defaultStatus.includes('reviewed'));
+});
+
+test('the active filter count reflects what is narrowing the results', () => {
+  assert.equal(filters.activeFilterCount('scientific',
+    { species: 'Bat Star', project: null, dive: null, reviewStatus: ['unreviewed'] }), 2);
+  assert.equal(filters.activeFilterCount('scientific',
+    { species: null, project: null, dive: null, reviewStatus: [] }), 0);
+});

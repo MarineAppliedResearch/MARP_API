@@ -11,7 +11,8 @@
     "docs:schema:infer": "node ./scripts/infer-openapi-schema.js",
     "docs:erd": "node ./sequelize-erd.js",
     "docs:dev:build": "jsdoc -c ./jsdoc.config.json --lenient",
-    "docs:build": "npm run docs:api:build && npm run docs:dev:build"
+    "docs:build": "npm run docs:api:build && npm run docs:dev:build",
+    "test:frontend": "node --test \"frontend/apps/marp-mosaic-review/tests/unit/*.test.mjs\""
   },
   "repository": {
     "type": "git",

@@ -4,6 +4,9 @@
  */
 import { state, actions, subscribe, MODES, getLog, onLog } from './store.js';
 import { MarpData } from './data.js';
+import { commitCount, existingState, decidedBy } from './model/modes.js';
+import { pageWindow } from './model/page.js';
+import { SORTS, sortLabel, activeFilterCount } from './model/filters.js';
 
 const $ = (sel) => document.querySelector(sel);
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
@@ -17,18 +20,6 @@ const ICON = {
   pro:  '<svg viewBox="0 0 16 16" fill="currentColor"><path d="m8 1 2 4.4 4.8.5-3.6 3.2 1 4.7L8 11.4 3.8 13.8l1-4.7L1.2 5.9 6 5.4z"/></svg>'
 };
 
-const REASONS = {
-  scientific: ['Wrong species', 'False detection', 'Duplicate', 'Bounding box', 'Other / unsure'],
-  training:   ['Bounding box too loose', 'Occluded', 'Too small', 'Ambiguous ID', 'Other / unsure'],
-  delete:     []
-};
-const SORTS = [
-  { field: 'confidence', dir: 'asc',  label: 'Confidence (low first)' },
-  { field: 'confidence', dir: 'desc', label: 'Confidence (high first)' },
-  { field: 'keyframe_count', dir: 'desc', label: 'Track length (longest)' },
-  { field: 'updatedAt', dir: 'desc', label: 'Recently updated' },
-  { field: 'obsID', dir: 'asc', label: 'Observation number' }
-];
 const markIcon = () => ({ scientific: ICON.flag, training: ICON.exc, delete: ICON.del }[state.mode]);
 const markClass = () => ({ scientific: 'b-flag', training: 'b-exc', delete: 'b-del' }[state.mode]);
 
@@ -76,13 +67,10 @@ function tile(row) {
   const outcome = state.outcomes.get(id);
   const isActive = state.picker && state.picker.id === id;
   const ME = 'I. Travers';
-  /* The state the record already carries for the active mode, as opposed to a mark
-     this reviewer has made in this session. Both have to be visible, and distinct. */
-  const existing = state.mode === 'training'
-    ? (row.training_disposition !== 'undecided' ? row.training_disposition : null)
-    : (row.review_status !== 'unreviewed' ? row.review_status : null);
+  /* The state the record already carries, as opposed to a mark made this session. */
+  const existing = existingState(state.mode, row);
   const showExisting = existing && !marked && !outcome;
-  const byMe = (row.reviewed_by || row.training_approved_by || row.flagged_by || row.excluded_by) === ME;
+  const byMe = decidedBy(row) === ME;
 
   const cls = ['tile'];
   const noImage = row.thumbnail_status !== 'ready';
@@ -178,7 +166,7 @@ async function renderPicker() {
       <h4><span class="fl">${markIcon()}</span>${MODES[state.mode].mark}<span class="opt">Reason optional</span></h4>
       <p>Already recorded. Add a reason to help whoever resolves it, or close this and
          keep scanning &mdash; the mark stands on its own.</p>
-      <div class="chips">${REASONS[state.mode].map((r) =>
+      <div class="chips">${MODES[state.mode].reasons.map((r) =>
         `<button class="chip ${mark.reason === r ? 'on' : ''}" data-reason="${r}"
            title="Record this as the reason">${mark.reason === r ? ICON.tick : ''}${r}</button>`).join('')}
         <button class="chip change ${correcting ? 'on' : ''}" data-act="correct"
@@ -375,7 +363,7 @@ function renderChrome() {
 
   const markedCount = state.marks.size;
   const eligible = state.rows.filter((r) => r.thumbnail_status === 'ready').length;
-  const willAct = state.mode === 'delete' ? markedCount : eligible - markedCount;
+  const willAct = commitCount({ mode: state.mode, rows: state.rows, marks: state.marks });
 
   $('#shown').textContent = state.loading ? '…' : state.rows.length;
   $('#total').textContent = state.total.toLocaleString();
@@ -386,8 +374,7 @@ function renderChrome() {
     + 'and are not counted here.';
   $('#selSpecies').textContent = state.filters.species || 'All species';
   $('#selProject').textContent = state.filters.project || 'All projects';
-  $('#sortLabel').textContent = (SORTS.find((s) =>
-    s.field === state.sort.field && s.dir === state.sort.dir) || SORTS[0]).label;
+  $('#sortLabel').textContent = sortLabel(state.sort);
 
   const commit = $('#commit');
   commit.innerHTML = `${MODES[state.mode].commit} &middot; ${willAct} tiles`;
@@ -398,8 +385,7 @@ function renderChrome() {
   $('#footCount').textContent = `${markedCount} ${MODES[state.mode].mark.toLowerCase()}`;
   $('#markAll').textContent = `${MODES[state.mode].verb} all on page`;
   renderStatusFilters();
-  $('#fcount').textContent = ['species', 'project', 'dive'].filter((k) => state.filters[k]).length
-    + (state.filters.reviewStatus && state.filters.reviewStatus.length ? 1 : 0);
+  $('#fcount').textContent = activeFilterCount(state.mode, state.filters);
 
   renderPager();
 }
@@ -407,17 +393,9 @@ function renderChrome() {
 /* The status filter is mode-specific: scientific review filters on review status,
    training review on training disposition. Counts come from the query, so they move
    as work is committed. */
-const STATUS_SETS = {
-  scientific: { key: 'reviewStatus', label: 'Review status',
-                items: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']] },
-  training:   { key: 'trainingDisposition', label: 'Training disposition',
-                items: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']] },
-  delete:     { key: 'reviewStatus', label: 'Review status',
-                items: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']] }
-};
-
 function renderStatusFilters() {
-  const set = STATUS_SETS[state.mode];
+  const m = MODES[state.mode];
+  const set = { key: m.statusKey, label: m.statusLabel, items: m.statuses };
   $('#statusLbl').textContent = set.label;
   const active = state.filters[set.key] || [];
   $('#statusFilters').innerHTML = set.items.map(([value, label]) =>
@@ -433,16 +411,14 @@ function renderStatusFilters() {
 }
 
 function renderPager() {
-  const { page, pageCount } = state, span = 2, out = [];
   const chip = (i) => `<button class="pg ${state.committedPages.has(i) ? 'done' : ''}" data-page="${i}"
       title="${state.committedPages.has(i) ? 'Committed this session' : 'Go to page ' + i}">${i}</button>`;
-  out.push('<button class="pg nav" data-page="prev" title="Previous page">&lsaquo; Prev</button>');
-  const lo = Math.max(1, page - span), hi = Math.min(pageCount, page + span);
-  if (lo > 1) { out.push(chip(1)); if (lo > 2) out.push('<span class="gap">&hellip;</span>'); }
-  for (let i = lo; i <= hi; i++) {
-    out.push(i === page ? `<input class="pg" id="pageInput" value="${i}" title="Type a page number to jump">` : chip(i));
+  const out = ['<button class="pg nav" data-page="prev" title="Previous page">&lsaquo; Prev</button>'];
+  for (const slot of pageWindow(state.page, state.pageCount)) {
+    if (slot === 'gap') out.push('<span class="gap">&hellip;</span>');
+    else if (slot === state.page) out.push(`<input class="pg" id="pageInput" value="${slot}" title="Type a page number to jump">`);
+    else out.push(chip(slot));
   }
-  if (hi < pageCount) { if (hi < pageCount - 1) out.push('<span class="gap">&hellip;</span>'); out.push(chip(pageCount)); }
   out.push('<button class="pg nav" data-page="next" title="Next page">Next &rsaquo;</button>');
   $('#pager').innerHTML = out.join('');
 }

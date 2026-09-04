@@ -52,16 +52,28 @@ the contract the real implementation has to satisfy.
 ## Layout
 
 ```
-index.html            the page
-tests.html            requirement checks, in the browser
-src/data.js           the data seam — fixture today, MARP_API later
-src/store.js          state, and the named actions that change it
-src/render.js         state in, DOM out; never mutates state
-styles/app.css        appearance; palette comes from shared/assets/css/tokens.css
-fixtures/             fabricated observations, and placeholder crops
+index.html              the page
+tests.html              contract checks, in the browser
+
+src/model/              the rules. No DOM, no network.
+  modes.js                what a mark means, what a commit does per mode
+  page.js                 marks, page membership, commit outcomes, paging
+  filters.js              the query each mode asks for
+src/data.js             the data seam — fixture today, MARP_API later
+src/store.js            state and named actions; orchestrates model and data
+src/render.js           state in, DOM out; never mutates state
+
+styles/app.css          appearance; palette from shared/assets/css/tokens.css
+fixtures/               fabricated observations, and placeholder crops
 tools/make-fixture.mjs  regenerates the fixture deterministically
-tests/requirements.js   the checks, each naming the requirement it holds us to
+tests/unit/             model unit tests — Node, no browser, no database
+tests/requirements.js   contract checks, each naming the requirement it holds us to
 ```
+
+**`src/model/` touches neither the DOM nor the network.** That is what makes the
+rules testable in milliseconds, and it is where most of the defects found so far
+actually lived — what a mark means per mode, the inverted commit in Delete Mode,
+what a committed page holds afterwards.
 
 **`src/data.js` is the only place that knows where data comes from.** Everything else
 goes through `MarpData.query()`, `MarpData.commitPage()`, `MarpData.setSpecies()` and
@@ -84,9 +96,16 @@ The organism crops in `fixtures/thumbs/` are placeholders sliced from the earlie
 concept art. They carry no scientific meaning, and are only varied enough to make
 outlier-spotting realistic.
 
-## Requirement checks
+## Tests
 
-`tests.html` runs a set of behavioural checks, each naming the requirement from #68 it
+**Unit — the model, in Node.** No browser, no server, no database; the whole set
+runs in about 50 ms.
+
+```bash
+npm run test:frontend          # from the repository root
+```
+
+**Contract — the workflow, in the browser.** `tests.html` runs a set of behavioural checks, each naming the requirement from #68 it
 holds the prototype to — that a tap toggles, that a reason stays optional, that a
 scientific commit acts on the *unmarked* tiles while a delete commit acts on the
 *marked* ones, that unavailable imagery is skipped without blocking the batch, that
@@ -96,9 +115,14 @@ flag.
 They drive the same actions the interface drives, so they test behaviour rather than
 markup. They need the server running.
 
+**End to end** is not built yet. It is the tier that would catch what the other two
+structurally cannot: three defects so far were in rendering, and every store-level
+check passed while they were live. Planned as Playwright — see #68.
+
 ## Known gaps
 
 - No keyboard model yet, though #68 makes keyboard a first-class speed path
+- No end-to-end tests, so the render layer is unverified
 - The filter rail is presentational; only the fixed default query is applied
 - Marking a tile with unavailable imagery gives no visual feedback
 - Nothing is persisted; reloading resets everything
