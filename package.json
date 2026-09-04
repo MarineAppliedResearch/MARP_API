@@ -12,7 +12,8 @@
     "docs:erd": "node ./sequelize-erd.js",
     "docs:dev:build": "jsdoc -c ./jsdoc.config.json --lenient",
     "docs:build": "npm run docs:api:build && npm run docs:dev:build",
-    "test:frontend": "node --test \"frontend/apps/marp-mosaic-review/tests/unit/*.test.mjs\""
+    "test:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review test",
+    "test:apps": "npm run test:app:mosaic-review"
   },
   "repository": {
     "type": "git",

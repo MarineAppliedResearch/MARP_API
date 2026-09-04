@@ -18,7 +18,7 @@ It uses ES modules and `fetch`, so it needs to be served rather than opened from
 From `frontend/`:
 
 ```bash
-python -m http.server 8123
+npm run serve                  # or: python -m http.server 8123 from frontend/
 ```
 
 - Prototype — <http://localhost:8123/apps/marp-mosaic-review/>
@@ -98,11 +98,33 @@ outlier-spotting realistic.
 
 ## Tests
 
-**Unit — the model, in Node.** No browser, no server, no database; the whole set
-runs in about 50 ms.
+This application owns its own suite, so it can be extracted from MARP_API without
+untangling anything. From this folder:
 
 ```bash
-npm run test:frontend          # from the repository root
+npm install                    # once
+npx playwright install chromium # once
+npm test                       # both tiers
+```
+
+From the repository root, `npm run test:app:mosaic-review` delegates here.
+
+**Unit — the model, in Node.** No browser, no server, no database; ~50 ms.
+
+```bash
+npm run test:unit
+```
+
+**Render — the DOM, in a real browser.** Playwright, run against desktop and a
+phone viewport. This is the tier that catches what the others structurally cannot:
+that a badge is actually drawn, that a panel is not positioned off-screen, that the
+grid settles instead of re-querying itself, and that no console errors occur during
+a full flow. Every one of those was a real defect that the store-level checks passed
+straight through.
+
+```bash
+npm run test:e2e
+npm run test:e2e:headed        # watch it happen
 ```
 
 **Contract — the workflow, in the browser.** `tests.html` runs a set of behavioural checks, each naming the requirement from #68 it
@@ -115,14 +137,9 @@ flag.
 They drive the same actions the interface drives, so they test behaviour rather than
 markup. They need the server running.
 
-**End to end** is not built yet. It is the tier that would catch what the other two
-structurally cannot: three defects so far were in rendering, and every store-level
-check passed while they were live. Planned as Playwright — see #68.
-
 ## Known gaps
 
 - No keyboard model yet, though #68 makes keyboard a first-class speed path
-- No end-to-end tests, so the render layer is unverified
 - The filter rail is presentational; only the fixed default query is applied
 - Marking a tile with unavailable imagery gives no visual feedback
 - Nothing is persisted; reloading resets everything

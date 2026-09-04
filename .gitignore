@@ -109,3 +109,7 @@ playwright-report/
 
 # Runtime species picture storage -- populated by migration from seed-data/species/images/
 storage/
+
+# Playwright artifacts from the frontend app suites
+frontend/apps/*/test-results/
+frontend/apps/*/playwright-report/

@@ -348,6 +348,7 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
   .hdr .title { display: none; }
   .mode-note { display: none; }
   .hdr { overflow-x: auto; scrollbar-width: none; }
+  .hdr .right { display: none; }        /* the account menu is not worth the width here */
   .hdr::-webkit-scrollbar { display: none; }
   .seg { margin-left: 4px; flex: none; }
   .sub { overflow-x: auto; scrollbar-width: none; }
@@ -373,11 +374,21 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
   body:not(.rail-collapsed) .railhead .t { display: block; }
   body:not(.rail-collapsed) .vlabel, body:not(.rail-collapsed) .fcount { display: none; }
 
-  .foot { gap: 5px; padding: 0 8px; }
+  /* Nothing in the bars may wrap: they are fixed-height rows, so a second line
+     is simply clipped. Anything that cannot fit is dropped instead. */
+  .hdr > *, .sub > *, .foot > * { white-space: nowrap; flex: none; }
+  .sortbox { display: none; }                  /* sort lives in the rail on a phone */
+  .sub .marked-word { display: none; }
+
+  .foot { gap: 4px; padding: 0 6px; }
   .legend, .markall { display: none; }
-  .commit { margin-left: 8px; padding: 7px 12px; font-size: 11.5px; }
-  .count { font-size: 10.5px; }
-  .pg { min-width: 22px; height: 22px; padding: 0 4px; }
+  .commit { margin-left: auto; padding: 6px 10px; font-size: 11px; }
+  .count { font-size: 10.5px; margin-left: 4px; }
+  /* keep only prev / current / next — numbered pages do not fit */
+  .pager .pg:not(.nav):not(input) { display: none; }
+  .pager input.pg { width: 34px; }
+  .pager .gap { display: none; }
+  .pg { min-width: 20px; height: 22px; padding: 0 4px; font-size: 10.5px; }
   .pg.nav { padding: 0 6px; }
   .logbtn { display: none; }
 }
