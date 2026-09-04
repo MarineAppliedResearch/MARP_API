@@ -70,11 +70,13 @@ export const scenarios = {
       },
       {
         caption: 'Click anywhere to close',
-        say: "Click anywhere outside to close the panel. The tile now shows what it used to "
+        say: "Click anywhere outside to close the panel. That click only dismisses — it won't "
+           + "unflag whatever happens to be underneath it. The tile now shows what it used to "
            + "be, so you can see at a glance that you changed it.",
         async act({ page, expect }) {
           await page.locator('#field').click({ position: { x: 6, y: 6 } });
           await expect(page.locator('.pick')).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(3);
         }
       },
       {
@@ -205,23 +207,35 @@ export const scenarios = {
       },
       {
         caption: 'Excluding a track, with a reason',
-        say: "Marking here means exclude, not flag. Let's exclude one and say why.",
+        say: "Marking here means exclude, not flag. Let's exclude one, and say why we're "
+           + "excluding it — this one is occluded, so it would teach the model the wrong shape.",
         async act({ page, expect }) {
-          await tilesIn(page).first().click();
-          await page.locator('[data-badge]').first().click();
+          const tile = tilesIn(page).first();
+          await tile.click();
+          await expect(tile).toHaveClass(/marked/);
+          await page.waitForTimeout(400);
+          await tile.locator('[data-badge]').click();
           await expect(page.locator('.pick')).toBeVisible();
           await page.locator('.pick .chip', { hasText: 'Occluded' }).click();
-          await page.locator('#field').click({ position: { x: 6, y: 6 } });
+          await page.waitForTimeout(400);
+          await page.keyboard.press('Escape');
+          /* The exclusion has to still be there once the panel is gone — it used to
+             be cancelled by the very click that dismissed the panel. */
+          await expect(tile).toHaveClass(/marked/);
+          await expect(tile.locator('.badge')).toContainText('EXCLUDED');
+          await expect(tile.locator('.reason-chip')).toHaveText('Occluded');
+          await expect(page.locator('#footCount')).toContainText('1');
         }
       },
       {
         caption: 'Promote Page',
-        say: "And committing promotes everything else into the training set. Excluding is a "
-           + "real decision that gets recorded with its reason — it isn't just the absence "
-           + "of approval.",
+        say: "And committing promotes everything else into the training set. The one we "
+           + "excluded stays excluded, with its reason attached. Excluding is a real decision "
+           + "that gets recorded — it isn't just the absence of approval.",
         async act({ page, expect }) {
           await page.locator('#commit').click();
           await expect(page.locator('.tile .badge', { hasText: 'PROMOTED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'EXCLUDED' })).toHaveCount(1);
         }
       }
     ]

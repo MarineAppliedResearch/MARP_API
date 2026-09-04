@@ -107,6 +107,35 @@ test.describe('marking and the flag panel', () => {
     expect(box.y + box.height).toBeLessThanOrEqual(field.y + field.height + 1);
   });
 
+  test('dismissing the panel does not also unmark the tile', async ({ page }) => {
+    /* Clicking away used to close the panel AND toggle the tile under the cursor,
+       which silently undid the very mark the panel belonged to. */
+    await page.goto('./');
+    await ready(page);
+    const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await expect(page.locator('.pick')).toBeVisible();
+
+    /* Dispatched rather than clicked: on a phone the panel physically covers the
+       grid, and the regression is in the grid's own handler, not in hit-testing. */
+    await page.locator('.tile:not(.failed):not(.queued)').nth(4).dispatchEvent('click');
+    await expect(page.locator('.pick')).toHaveCount(0);
+    await expect(tile).toHaveClass(/marked/);
+    await expect(page.locator('.tile.marked')).toHaveCount(1);
+  });
+
+  test('Escape closes the panel and leaves the mark alone', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.pick')).toHaveCount(0);
+    await expect(tile).toHaveClass(/marked/);
+  });
+
   test('choosing a reason shows it on the tile', async ({ page }) => {
     await page.goto('./');
     await ready(page);
@@ -160,6 +189,19 @@ test.describe('every mode renders', () => {
       expect(await page.locator('.tile').count()).toBeGreaterThan(0);
       const statusLabel = await page.locator('#statusLbl').textContent();
       expect(statusLabel).toBe(mode === 'training' ? 'Training disposition' : 'Review status');
+
+      /* A mark must survive giving it a reason and closing the panel — in every mode. */
+      if (mode === 'training') {
+        const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+        await tile.click();
+        await tile.locator('[data-badge]').click();
+        await page.locator('.pick .chip', { hasText: 'Occluded' }).click();
+        await page.keyboard.press('Escape');
+        await expect(tile).toHaveClass(/marked/);
+        await expect(tile.locator('.badge')).toContainText('EXCLUDED');
+        await expect(tile.locator('.reason-chip')).toHaveText('Occluded');
+        await expect(page.locator('#footCount')).toContainText('1');
+      }
       expect(errors).toEqual([]);
     });
   }

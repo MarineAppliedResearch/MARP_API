@@ -46,7 +46,15 @@ function existingBadge(existing, row, id, byMe) {
 
 /** The top-right chip: track length in training, otherwise the reason or correction. */
 function corner(row, id, { marked, changed, existing, outcome }) {
-  if (state.mode === 'training') return `<span class="frames">${row.keyframe_count}f</span>`;
+  /* Track length is what you judge a candidate on — but once it is excluded it is
+     not going into the training set at all, so the reason is the more useful chip. */
+  if (state.mode === 'training') {
+    const why = (marked && marked.reason) || (existing === 'excluded' && row.exclusion_reason)
+      || (outcome === 'excluded' && row.exclusion_reason);
+    return why
+      ? `<span class="reason-chip" title="${row.keyframe_count} frames">${why}</span>`
+      : `<span class="frames">${row.keyframe_count}f</span>`;
+  }
 
   if (marked && marked.reason) return `<span class="reason-chip">${marked.reason}</span>`;
 

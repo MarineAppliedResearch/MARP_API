@@ -26,8 +26,16 @@ function wireGrid() {
     if (chip) { e.stopPropagation(); actions.openCorrection(Number(chip.dataset.changed)); return; }
 
     const tileEl = e.target.closest('.tile');
-    /* No stopPropagation: the document handler still needs to close an open panel. */
-    if (tileEl) actions.toggleMark(Number(tileEl.dataset.id));
+    if (!tileEl) return;
+
+    /* While the panel is open, the first click anywhere only dismisses it. Acting
+       as well would silently undo the mark the panel belongs to — which is exactly
+       what happened: clicking away after choosing a reason unmarked the tile, and
+       nothing was excluded by the time the page was committed. */
+    if (state.picker) { actions.closePicker(); return; }
+
+    /* No stopPropagation: the document handler still needs to close open menus. */
+    actions.toggleMark(Number(tileEl.dataset.id));
   });
 }
 
