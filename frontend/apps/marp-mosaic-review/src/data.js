@@ -42,6 +42,17 @@ export const MarpData = {
   },
 
   /**
+   * Fetch an exact set of observations, in the order given. A page that has been
+   * committed keeps its membership, so returning to it shows what was submitted
+   * rather than whatever the filter now matches.
+   */
+  async byIds(ids) {
+    await delay(LATENCY.query);
+    const index = new Map(db.observations.map((r) => [r.observation_id, r]));
+    return ids.map((id) => index.get(id)).filter(Boolean);
+  },
+
+  /**
    * Status counts for the current non-status filters. The rail shows these, and
    * they must move when work is committed — a stale count is worse than none.
    */
@@ -74,6 +85,9 @@ export const MarpData = {
     if (filters.project)  rows = rows.filter((r) => r.project_name === filters.project);
     if (filters.dive)     rows = rows.filter((r) => r.dive === filters.dive);
     if (filters.minConfidence != null) rows = rows.filter((r) => r.confidence >= filters.minConfidence);
+    if (filters.excludeIds && filters.excludeIds.size) {
+      rows = rows.filter((r) => !filters.excludeIds.has(r.observation_id));
+    }
     if (filters.reviewStatus && filters.reviewStatus.length) {
       rows = rows.filter((r) => filters.reviewStatus.includes(r.review_status));
     }

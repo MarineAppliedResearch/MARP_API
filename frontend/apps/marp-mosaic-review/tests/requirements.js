@@ -29,6 +29,8 @@ async function reset(mode = 'scientific') {
   state.filters.reviewStatus = ['unreviewed', 'flagged'];
   state.filters.trainingDisposition = ['undecided'];
   state.outcomes.clear();
+  state.pageMembers.clear();
+  state.committedPages.clear();
   state.marks.clear();
   state.changed.clear();
   state.committedPages.clear();
@@ -424,6 +426,67 @@ test('Correcting an observation',
     if (!row) return 'skipped — the corrected row left the current filter';
     eq(row.comname, 'Sunflower Star', 'the correction persists');
     eq(row.previous_comname, was, 'and what it was before is still recorded');
+  });
+
+/* Returning to a committed page must show what was submitted — the accepted
+   observations as well as the flagged ones — so it can be changed and resubmitted. */
+test('Moving through pages',
+  'a committed page still shows everything that was submitted on it', async () => {
+    await reset();
+    const before = state.rows.map((r) => r.observation_id);
+    const flagged = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+    actions.toggleMark(flagged);
+    await actions.commitPage();
+
+    const accepted = state.rows
+      .filter((r) => state.outcomes.get(r.observation_id) === 'reviewed')
+      .map((r) => r.observation_id);
+    ok(accepted.length > 0, 'the commit should have accepted several observations');
+
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 400));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 400));
+
+    eq(state.rows.map((r) => r.observation_id), before,
+       'the page must hold the same observations it was committed with');
+    for (const id of accepted) {
+      const row = state.rows.find((r) => r.observation_id === id);
+      ok(row, `accepted observation ${id} must still be on the page`);
+      eq(row.review_status, 'reviewed', 'and still show as accepted');
+    }
+    const f = state.rows.find((r) => r.observation_id === flagged);
+    eq(f.review_status, 'flagged', 'and the flagged one is still flagged');
+  });
+
+test('Moving through pages',
+  'a committed decision can be changed and resubmitted from the same page', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.rows.find((r) => r.observation_id === id).review_status, 'reviewed');
+
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 400));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 400));
+
+    actions.toggleMark(id);                       // change your mind about it
+    await actions.commitPage();
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_status, 'flagged', 'resubmitting applies the change');
+  });
+
+test('Moving through pages',
+  'an observation pinned to a committed page does not also appear on a later page', async () => {
+    await reset();
+    const pinned = new Set(state.rows.map((r) => r.observation_id));
+    await actions.commitPage();
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 400));
+    const overlap = state.rows.filter((r) => pinned.has(r.observation_id));
+    eq(overlap.length, 0, 'page 2 must not repeat observations held by page 1');
   });
 
 /* ------------------------------------------------------------------ runner */

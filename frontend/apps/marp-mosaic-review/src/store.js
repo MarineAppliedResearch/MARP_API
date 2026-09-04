@@ -36,6 +36,8 @@ export const state = {
   marks: new Map(),                   // id -> { reason }
   changed: new Map(),                 // id -> { from, to }
   committedPages: new Set(),
+  /* page number -> the observation ids that were on it when it was committed */
+  pageMembers: new Map(),
   counts: { unreviewed: 0, reviewed: 0, undecided: 0, promoted: 0, excluded: 0, total: 0 },
   outcomes: new Map(),                // id -> 'reviewed' | 'promoted' | 'deleted'
   picker: null,                       // { id } while the reason panel is open
@@ -94,17 +96,31 @@ export const actions = {
     const filters = { ...state.filters };
     if (state.mode === 'training') filters.reviewStatus = null;
     else filters.trainingDisposition = null;
-    fire('query', { filters, sort: state.sort, page: state.page });
-    const res = await MarpData.query({
-      filters, sort: state.sort, page: state.page, pageSize: state.pageSize
-    });
-    if (token !== reqSeq) return;                  // superseded; drop it
+    /* A committed page keeps the exact observations it was committed with, so the
+       reviewer can see what they submitted and change it. Everything else is a
+       normal query over the remaining work. */
+    const pinned = state.pageMembers.get(state.page);
+    let res;
+    if (pinned) {
+      fire('query:pinned', { page: state.page, count: pinned.length });
+      const rows = await MarpData.byIds(pinned);
+      if (token !== reqSeq) return;
+      res = { rows, total: state.total, pageCount: state.pageCount, page: state.page };
+    } else {
+      const exclude = new Set();
+      state.pageMembers.forEach((ids) => ids.forEach((id) => exclude.add(id)));
+      filters.excludeIds = exclude;
+      fire('query', { filters: { ...filters, excludeIds: exclude.size }, sort: state.sort, page: state.page });
+      res = await MarpData.query({
+        filters, sort: state.sort, page: state.page, pageSize: state.pageSize
+      });
+      if (token !== reqSeq) return;                // superseded; drop it
+    }
     state.counts = await MarpData.counts({ filters: {
       species: state.filters.species, project: state.filters.project, dive: state.filters.dive
     } });
     state.rows = res.rows;
-    state.total = res.total;
-    state.pageCount = res.pageCount;
+    if (!pinned) { state.total = res.total; state.pageCount = res.pageCount; }
     state.loading = false;
     notify();
     actions._chaseQueuedThumbnails();
@@ -124,6 +140,8 @@ export const actions = {
   setMode(mode) {
     if (!MODES[mode] || state.mode === mode) return;
     state.mode = mode;
+    state.pageMembers.clear();
+    state.committedPages.clear();
     if (mode === 'training' && !(state.filters.trainingDisposition || []).length) {
       state.filters.trainingDisposition = ['undecided'];
     }
@@ -222,6 +240,7 @@ export const actions = {
     fire('commitPage:request', { mode: state.mode, page: state.page, count: ids.length, marked: marks.size });
     const res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marks });
     state.committedPages.add(state.page);
+    state.pageMembers.set(state.page, ids);
     state.lastCommit = res;
     res.reviewed.forEach((r) => state.outcomes.set(r.id, r.outcome));
     (res.flagged || []).forEach((r) => state.outcomes.set(r.id, r.outcome));
@@ -252,6 +271,8 @@ export const actions = {
 
   /** 8/10: the rail controls actually drive the query now. */
   setFilter(key, value) {
+    state.pageMembers.clear();
+    state.committedPages.clear();
     state.filters[key] = value;
     state.page = 1;
     state.marks.clear();
@@ -260,6 +281,8 @@ export const actions = {
   },
 
   toggleStatus(key, value) {
+    state.pageMembers.clear();
+    state.committedPages.clear();
     const cur = state.filters[key] || [];
     state.filters[key] = cur.includes(value) ? cur.filter((v) => v !== value) : cur.concat(value);
     state.page = 1;
@@ -276,6 +299,8 @@ export const actions = {
   },
 
   setSort(field, dir) {
+    state.pageMembers.clear();
+    state.committedPages.clear();
     state.sort = { field, dir };
     fire('setSort', state.sort);
     actions.refresh();
