@@ -7,8 +7,15 @@
  * of the real application without anyone driving a browser by hand.
  */
 import { test, expect } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
 
-const HOLD = 1200;        // long enough to read, short enough to watch
+/* Narrated runs hold each caption long enough to be spoken over. */
+const NARRATE = process.env.NARRATE === '1';
+const HOLD = NARRATE ? 3600 : 1200;
+
+/* The captions double as the narration script, so the two cannot drift apart. */
+const timeline = [];
+let t0 = 0;
 
 /** A caption bar, so the recording says what is happening. Not part of the app. */
 async function say(page, text) {
@@ -26,6 +33,7 @@ async function say(page, text) {
     }
     b.textContent = t;
   }, text);
+  timeline.push({ at: Date.now() - t0, text });
   await page.waitForTimeout(HOLD);
 }
 
@@ -39,6 +47,7 @@ test('the review workflow, end to end', async ({ page }) => {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
 
+  t0 = Date.now();
   await page.goto('./');
   await settled(page);
   await say(page, 'MARP Picture Mosaic Reviewer — scanning a page of model-generated observations');
@@ -105,4 +114,8 @@ test('the review workflow, end to end', async ({ page }) => {
   await page.waitForTimeout(600);
 
   expect(errors).toEqual([]);
+
+  /* Written for the narration step; harmless when nothing reads it. */
+  mkdirSync('demo', { recursive: true });
+  writeFileSync('demo/timeline.json', JSON.stringify(timeline, null, 1));
 });

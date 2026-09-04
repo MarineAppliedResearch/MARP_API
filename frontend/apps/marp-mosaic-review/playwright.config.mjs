@@ -24,6 +24,9 @@ export default defineConfig({
     {
       name: 'walkthrough',
       testDir: './tests/walkthrough',
+      /* Narrated runs hold each caption long enough to be spoken over, so this
+         project needs far longer than a normal test. */
+      timeout: 240_000,
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1600, height: 900 },

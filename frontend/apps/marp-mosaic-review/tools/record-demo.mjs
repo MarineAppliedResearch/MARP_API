@@ -11,14 +11,24 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, readdirSync, copyFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { narrate, pickEngine } from './narrate.mjs';
 
 const OUT = 'demo';
 const RESULTS = 'test-results';
+const WANT_NARRATION = process.argv.includes('--narrate');
+
+if (WANT_NARRATION) {
+  const engine = pickEngine();
+  console.log(engine
+    ? `narration: ${engine.name} — ${engine.what}`
+    : 'narration: no speech engine found, the video will be silent');
+}
 
 console.log('running the walkthrough…');
 try {
   execFileSync('npx', ['playwright', 'test', '--project=walkthrough', '--reporter=line'],
-    { stdio: 'inherit', shell: true });
+    { stdio: 'inherit', shell: true,
+      env: { ...process.env, NARRATE: WANT_NARRATION ? '1' : '0' } });
 } catch {
   console.error('\nthe walkthrough failed — no video written, because it would be misleading');
   process.exit(1);
@@ -49,11 +59,24 @@ const ff = spawnSync('ffmpeg', [
   '-movflags', '+faststart', target
 ], { shell: true });
 
+let silent = target;
 if (ff.status === 0) {
-  console.log(`\nwrote ${target}`);
+  console.log(`\nwrote ${silent}`);
 } else {
-  const fallback = join(OUT, `mosaic-review-${stamp}.webm`);
-  copyFileSync(webm, fallback);
-  console.log(`\nffmpeg not available — kept ${fallback}`);
+  silent = join(OUT, `mosaic-review-${stamp}.webm`);
+  copyFileSync(webm, silent);
+  console.log(`\nffmpeg not available — kept ${silent}`);
 }
+
+/* Narration is a nicety. If it cannot be produced — no speech engine, no ffmpeg,
+   no network — say why and keep the silent video. It must never be the reason a
+   demo fails. */
+if (WANT_NARRATION) {
+  const spoken = join(OUT, `mosaic-review-${stamp}-narrated.mp4`);
+  const r = narrate({ video: silent, timeline: join(OUT, 'timeline.json'), out: spoken });
+  console.log(r.ok
+    ? `wrote ${r.out}  (${r.spoken} lines, ${r.engine})`
+    : `narration skipped: ${r.reason} — ${silent} is unchanged`);
+}
+
 rmSync(RESULTS, { recursive: true, force: true });

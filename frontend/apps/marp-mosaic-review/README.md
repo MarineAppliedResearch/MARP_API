@@ -138,12 +138,37 @@ npm run test:e2e:headed        # watch it happen
 
 ```bash
 npm run demo                   # writes demo/mosaic-review-<date>.mp4
+npm run demo:narrated          # …and a spoken version alongside it
 ```
 
 `tests/walkthrough/` is a Playwright test that drives the whole review workflow and
 records video as it goes. It asserts along the way, so a broken application fails
 rather than producing a misleading film. Playwright does the driving and the
 recording; `tools/record-demo.mjs` converts the result to mp4 if ffmpeg is present.
+
+### Narration
+
+The captions double as the narration script, so the two cannot drift apart: the
+walkthrough writes a timeline of what it said and when, and `tools/narrate.mjs`
+speaks each line over the video at that moment.
+
+**This is development tooling, not part of the application or the API**, and nothing
+depends on it. It degrades rather than failing — if there is no speech engine, no
+ffmpeg, or no network, it says why and leaves the silent video untouched.
+
+Speech engines are tried in order of quality:
+
+| Engine | Quality | Notes |
+| --- | --- | --- |
+| `edge-tts` | good, neural | Free, no key. Calls a Microsoft endpoint, so the caption text leaves the machine and it needs internet. `pip install edge-tts` |
+| Windows SAPI | robotic | Local and offline, no install. The fallback |
+
+Pick a voice with `NARRATE_VOICE`, for example
+`NARRATE_VOICE=en-US-AriaNeural npm run demo:narrated`. Adding a paid API, or a
+local neural engine such as Piper, means one more entry in `ENGINES`.
+
+A narrated run holds each caption long enough to be spoken over, so it takes about
+a minute rather than thirty seconds.
 
 **Contract — the workflow, in the browser.** `tests.html` runs a set of behavioural checks, each naming the requirement from #68 it
 holds the prototype to — that a tap toggles, that a reason stays optional, that a
