@@ -137,20 +137,31 @@ npm run test:e2e:headed        # watch it happen
 ## Recording a walkthrough
 
 ```bash
-npm run demo                   # writes demo/mosaic-review-<date>.mp4
-npm run demo:narrated          # …and a spoken version alongside it
+npm run demo                   # the review walkthrough, silent
+npm run demo -- delete         # a named scenario
+npm run demo:narrated -- review   # spoken
+npm run demo:all               # every scenario, spoken
 ```
 
-`tests/walkthrough/` is a Playwright test that drives the whole review workflow and
-records video as it goes. It asserts along the way, so a broken application fails
+Scenarios live in `tests/walkthrough/scenarios.mjs`: **review**, **delete** and
+**training**. Adding one means adding an entry there — the runner and the recorder
+need no changes.
+
+`tests/walkthrough/` is a Playwright test that drives a scenario and records video
+as it goes. It asserts along the way, so a broken application fails
 rather than producing a misleading film. Playwright does the driving and the
 recording; `tools/record-demo.mjs` converts the result to mp4 if ffmpeg is present.
 
 ### Narration
 
-The captions double as the narration script, so the two cannot drift apart: the
-walkthrough writes a timeline of what it said and when, and `tools/narrate.mjs`
-speaks each line over the video at that moment.
+A scene has three parts, deliberately separated: the **caption** shown on screen
+(short, readable at a glance), what is **said** (conversational, and spelled for a
+speech engine — "Marp", not "MARP", which gets read out as four letters), and what
+the app is **driven to do**.
+
+**Lines are spoken and measured before the run**, and each scene is then held for
+exactly as long as its own narration. Without that the captions advance on a timer
+and the next line talks over the last one.
 
 **This is development tooling, not part of the application or the API**, and nothing
 depends on it. It degrades rather than failing — if there is no speech engine, no

@@ -62,40 +62,61 @@ export function pickEngine() {
   return null;
 }
 
+/** How long an audio file runs, in milliseconds. */
+function durationMs(file) {
+  const r = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
+    '-of', 'default=nw=1:nk=1', file], { shell: false, encoding: 'utf8' });
+  const secs = parseFloat((r.stdout || '').trim());
+  return Number.isFinite(secs) ? Math.round(secs * 1000) : null;
+}
+
+/**
+ * Speak each line and measure it.
+ *
+ * Measuring first is what stops lines talking over one another: the walkthrough
+ * holds each caption for as long as its own narration runs.
+ *
+ * @returns {Array<{file: string, ms: number}>|null} null when there is no voice.
+ */
+export function synthesize(lines, workDir) {
+  const engine = pickEngine();
+  if (!engine) return null;
+  if (!has('ffprobe', ['-version'])) return null;
+
+  mkdirSync(workDir, { recursive: true });
+  const clips = [];
+  for (const [i, text] of lines.entries()) {
+    const file = join(workDir, `${String(i).padStart(3, '0')}.mp3`);
+    if (!engine.speak(text, file) || !existsSync(file)) {
+      console.warn(`  could not speak: "${text.slice(0, 48)}…"`);
+      return null;                       // a partial narration would desynchronise
+    }
+    clips.push({ file, ms: durationMs(file) ?? 3000, engine: engine.name });
+  }
+  return clips;
+}
+
 /**
  * Mix spoken captions onto a video.
  * @returns {{ok: boolean, reason?: string, out?: string}}
  */
-export function narrate({ video, timeline, out, workDir = 'demo/.audio' }) {
+export function narrate({ video, clips, timeline, out }) {
   if (!existsSync(video)) return { ok: false, reason: `no video at ${video}` };
   if (!existsSync(timeline)) return { ok: false, reason: `no caption timeline at ${timeline}` };
   if (!has('ffmpeg', ['-version'])) return { ok: false, reason: 'ffmpeg is not installed' };
+  if (!clips || !clips.length) return { ok: false, reason: 'no narration audio was produced' };
 
-  const engine = pickEngine();
-  if (!engine) return { ok: false, reason: 'no speech engine available' };
+  const marks = JSON.parse(readFileSync(timeline, 'utf8'));
+  if (!marks.length) return { ok: false, reason: 'the walkthrough recorded no captions' };
 
-  const lines = JSON.parse(readFileSync(timeline, 'utf8'));
-  if (!lines.length) return { ok: false, reason: 'the walkthrough recorded no captions' };
-
-  mkdirSync(workDir, { recursive: true });
-  console.log(`narrating with ${engine.name} (${engine.what})`);
-
-  const clips = [];
-  for (const [i, line] of lines.entries()) {
-    const file = join(workDir, `${String(i).padStart(3, '0')}.mp3`);
-    if (engine.speak(line.text, file) && existsSync(file)) {
-      clips.push({ file, at: line.at });
-    } else {
-      console.warn(`  could not speak: "${line.text.slice(0, 48)}…"`);
-    }
-  }
-  if (!clips.length) return { ok: false, reason: `${engine.name} produced no audio` };
+  /* Place each already-spoken clip at the moment its caption appeared. */
+  const placed = clips.slice(0, marks.length).map((c, i) => ({ ...c, at: marks[i].at }));
 
   /* Delay each clip to its caption's moment, then mix them into one track. */
-  const inputs = clips.flatMap((c) => ['-i', c.file]);
-  const delays = clips.map((c, i) =>
+  const inputs = placed.flatMap((c) => ['-i', c.file]);
+  const delays = placed.map((c, i) =>
     `[${i + 1}:a]adelay=${Math.max(0, Math.round(c.at))}|${Math.max(0, Math.round(c.at))}[a${i}]`);
-  const mix = `${clips.map((_, i) => `[a${i}]`).join('')}amix=inputs=${clips.length}:normalize=0[out]`;
+  const mix = `${placed.map((_, i) => `[a${i}]`).join('')}amix=inputs=${placed.length}:normalize=0[out]`;
 
   const res = spawnSync('ffmpeg', [
     '-y', '-loglevel', 'error', '-i', video, ...inputs,
@@ -104,14 +125,8 @@ export function narrate({ video, timeline, out, workDir = 'demo/.audio' }) {
     '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-shortest', out
   ], { shell: false });
 
-  rmSync(workDir, { recursive: true, force: true });
   if (res.status !== 0) return { ok: false, reason: 'ffmpeg could not mix the audio' };
-  return { ok: true, out, engine: engine.name, spoken: clips.length };
+  return { ok: true, out, engine: placed[0].engine, spoken: placed.length };
 }
 
-/** `node tools/narrate.mjs <video> <timeline> <out>` */
-if (process.argv.length > 4) {
-  const [video, timeline, out] = process.argv.slice(2);
-  const r = narrate({ video, timeline, out });
-  console.log(r.ok ? `wrote ${r.out}` : `narration skipped: ${r.reason}`);
-}
+

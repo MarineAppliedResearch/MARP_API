@@ -12,7 +12,8 @@
     "test:e2e:headed": "playwright test --headed",
     "fixture": "node tools/make-fixture.mjs",
     "demo": "node tools/record-demo.mjs",
-    "demo:narrated": "node tools/record-demo.mjs --narrate"
+    "demo:narrated": "node tools/record-demo.mjs --narrate",
+    "demo:all": "node tools/record-demo.mjs all --narrate"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0"
