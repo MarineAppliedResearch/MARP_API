@@ -142,6 +142,27 @@ Served at `/api-docs` and `/developer-docs`. Route documentation is code-first
 through `docs/openapi-route-registry.js`; shared schemas, security schemes and error
 responses live in `docs/openapi.js`.
 
+## The frontend applications
+
+`app.js` serves any folder under `frontend/apps/` by name, with shared assets under
+`frontend/shared/`. Adding an app is a folder, not a route. Gating one behind a session
+is a `requirePermissionSession` line registered *before* the static mount, the way
+`/apps/dashboard` already is.
+
+Each application owns its own test suite so it can be extracted into its own repository
+later without untangling anything. `npm run test:apps` from here runs them all.
+
+**`frontend/apps/marp-mosaic-review/CLAUDE.md` holds that app's architecture notes** —
+the layering rule, the one-way data flow, and the invariants that will bite (the grid's
+layout feedback loop, request sequencing, why a committed page keeps its membership,
+why a mark is not a decision). Read it before changing anything structural there. Its
+`README.md` covers running it and recording walkthrough videos.
+
+That app is the MARP Picture Mosaic Reviewer, designed in #68, which also carries the
+phased plan for the schema and endpoints it will need. None of that schema exists yet:
+the app runs entirely against a fixture, and its `src/data.js` is the seam where the
+API will arrive.
+
 ## Known gaps
 
 - Four moderate dependency advisories on `develop`, all in the sequelize chain, where
