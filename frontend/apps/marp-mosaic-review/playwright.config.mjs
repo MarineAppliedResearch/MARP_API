@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = 8199;
 
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: './tests',
   fullyParallel: false,          // the fixture is mutated in place, so runs must not overlap
   workers: 1,
   retries: 0,
@@ -19,10 +19,21 @@ export default defineConfig({
   },
 
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 } } },
+    /* The walkthrough exists to be watched: it records video always, and is the
+       replacement for driving a browser by hand to make a recording. */
+    {
+      name: 'walkthrough',
+      testDir: './tests/walkthrough',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1600, height: 900 },
+        video: { mode: 'on', size: { width: 1600, height: 900 } }
+      }
+    },
+    { name: 'desktop', testDir: './tests/e2e', use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 } } },
     /* The narrow layout has never been verified at real phone width — headless
        Chrome clamps its viewport, but Playwright honours this one. */
-    { name: 'phone', use: { ...devices['Pixel 7'] } }
+    { name: 'phone', testDir: './tests/e2e', use: { ...devices['Pixel 7'] } }
   ],
 
   webServer: {

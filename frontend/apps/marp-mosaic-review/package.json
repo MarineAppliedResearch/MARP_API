@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MARP Picture Mosaic Reviewer — interactive prototype. Owns its own test suite so it can be extracted from MARP_API without untangling anything.",
+  "description": "MARP Picture Mosaic Reviewer \u2014 interactive prototype. Owns its own test suite so it can be extracted from MARP_API without untangling anything.",
   "scripts": {
     "serve": "node tools/serve.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "node --test \"tests/unit/*.test.mjs\"",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --project=desktop --project=phone",
     "test:e2e:headed": "playwright test --headed",
-    "fixture": "node tools/make-fixture.mjs"
+    "fixture": "node tools/make-fixture.mjs",
+    "demo": "node tools/record-demo.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0"

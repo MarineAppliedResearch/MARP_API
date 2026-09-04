@@ -87,7 +87,7 @@
 
 <script type="module">
   import { actions, state, subscribe } from './src/store.js';
-  import { mount } from './src/render.js';
+  import { mount } from './src/ui/mount.js';
 
   /* Surface failures rather than swallowing them — an async render error is
      otherwise invisible, which cost real time during the first build. */

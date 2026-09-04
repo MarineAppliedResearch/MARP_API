@@ -61,7 +61,14 @@ src/model/              the rules. No DOM, no network.
   filters.js              the query each mode asks for
 src/data.js             the data seam — fixture today, MARP_API later
 src/store.js            state and named actions; orchestrates model and data
-src/render.js           state in, DOM out; never mutates state
+src/ui/                 state in, DOM out. Never mutates state.
+  dom.js                  helpers and icons
+  tile.js                 one tile, and the three things it must show at once
+  grid.js                 the mosaic, and the layout maths behind it
+  picker.js               the panel a badge opens
+  menus.js                dropdowns, anchored to the viewport
+  chrome.js               header, sub-bar, rail, pager, action log
+  mount.js                wiring — the only place that binds events
 
 styles/app.css          appearance; palette from shared/assets/css/tokens.css
 fixtures/               fabricated observations, and placeholder crops
@@ -126,6 +133,17 @@ straight through.
 npm run test:e2e
 npm run test:e2e:headed        # watch it happen
 ```
+
+## Recording a walkthrough
+
+```bash
+npm run demo                   # writes demo/mosaic-review-<date>.mp4
+```
+
+`tests/walkthrough/` is a Playwright test that drives the whole review workflow and
+records video as it goes. It asserts along the way, so a broken application fails
+rather than producing a misleading film. Playwright does the driving and the
+recording; `tools/record-demo.mjs` converts the result to mp4 if ffmpeg is present.
 
 **Contract — the workflow, in the browser.** `tests.html` runs a set of behavioural checks, each naming the requirement from #68 it
 holds the prototype to — that a tap toggles, that a reason stays optional, that a
