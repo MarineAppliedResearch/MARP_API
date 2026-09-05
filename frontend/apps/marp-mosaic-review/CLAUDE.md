@@ -30,20 +30,21 @@ As of 2026-09-05, on branch `68-mosaic-review-prototype`:
 - **Phase 2 is done.** The five schema-blocking questions were answered on 2026-09-05
   and are written up as *The schema decisions* in #68. Phase 3 is unblocked.
 
-Three of those answers contradict what this prototype currently does, and are the next
-client work:
+Three of them name client work that has not been built yet. None of it contradicts what
+the prototype does — these are the next things to add, not things to undo:
 
-- **Deletion is permanent and needs an explicit confirmation** stating the exact count,
-  saying it deletes records from the database and cannot be undone. There is none today.
-  This is the most consequential gap in the client.
-- **Page membership is query-derived.** `state.pageMembers` pins a committed page's ids
-  and re-fetches them by id. That was the right fix for a real defect, but the settled
-  answer is deterministic ordering with an `observation_id` tie-breaker instead. Worth
-  confirming with the user before removing the pin: with the default filter, committing
-  a page removes its rows from the filter, so a plain re-query returns *different*
-  observations — which is the defect the pin was added to fix.
-- **Adjacent-page prefetching** is required, not optional. Page N+1 is fetched in the
-  background while the reviewer works, so paging never shows a delay.
+- **The delete confirmation.** Deletion is permanent with no undo, so the client must
+  confirm first, naming the exact count and saying plainly that it deletes records from
+  the database and cannot be undone through MARP. Not built yet.
+- **Adjacent-page prefetching.** Page N+1 is fetched in the background while the reviewer
+  works, so paging never shows a delay. Not built yet.
+- **Deterministic ordering** with an `observation_id` tie-breaker on every query, which is
+  what makes a re-query return the same page.
+
+**`state.pageMembers` stays.** The in-memory pin is wanted: within a session it is what
+lets a reviewer return to a page and see, and undo, what they submitted. The
+query-derived decision is about *reload* — on a fresh load the filters apply normally and
+finished work is expected to have left the view. Do not remove the pin.
 
 Nothing in this app talks to MARP_API yet, and no review or training column exists in
 the database. `src/data.js` is the seam where that arrives, in phase 8.
