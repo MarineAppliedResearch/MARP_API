@@ -38,7 +38,11 @@ export const state = {
   committedPages: new Set(),
   pageMembers: new Map(),  // page -> the ids it was committed with
   picker: null,            // { id, correcting }
-  lastCommit: null
+  lastCommit: null,
+  /* What the commit button is doing. A page commit is the one action here that can
+     take real time and can fail, and it is also the irreversible one, so it says so
+     rather than leaving the reviewer wondering whether the click registered. */
+  commit: { busy: false, status: null }   // status: null | 'ok' | 'failed'
 };
 
 /* ---------------------------------------------------------------- plumbing */
@@ -58,6 +62,17 @@ function fire(name, detail) {
   console.log(`[marp] ${name}`, detail ?? '');
   window.dispatchEvent(new CustomEvent('marp:action', { detail: entry }));
   logListeners.forEach((fn) => fn(entry));
+}
+
+/* The tick and the cross are an acknowledgement, not a state, so they fade rather
+   than sitting there until the next commit. */
+let commitStatusTimer = null;
+function clearCommitStatus(after = 2400) {
+  clearTimeout(commitStatusTimer);
+  commitStatusTimer = setTimeout(() => {
+    state.commit = { ...state.commit, status: null };
+    notify();
+  }, after);
 }
 
 const countFilters = () => ({
@@ -230,6 +245,7 @@ export const actions = {
   },
 
   async commitPage() {
+    if (state.commit.busy) return;                 // one commit at a time
     const ids = state.rows.map((r) => r.observation_id);
     const marks = new Map(state.marks);
     fire('commitPage:request', {
@@ -237,8 +253,24 @@ export const actions = {
       willAct: commitCount({ mode: state.mode, rows: state.rows, marks })
     });
 
-    const res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marks });
+    state.commit = { busy: true, status: null };
+    notify();
 
+    let res;
+    try {
+      res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marks });
+    } catch (err) {
+      /* Nothing is applied. The marks are untouched, so the reviewer can try again
+         without redoing the page. */
+      state.commit = { busy: false, status: 'failed' };
+      fire('commitPage:failed', { message: String(err && err.message || err) });
+      clearCommitStatus();
+      notify();
+      return;
+    }
+
+    state.commit = { busy: false, status: 'ok' };
+    clearCommitStatus();
     state.committedPages.add(state.page);
     state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
     state.outcomes = page.applyCommit(state.outcomes, res);
@@ -274,7 +306,7 @@ export const actions = {
   },
 
   setFilter(key, value) {
-    state.filters = { ...state.filters, [key]: value };
+    state.filters = filters.applyFilter(state.filters, key, value);
     state.page = 1;
     state.marks = new Map();
     state.touched = new Set();

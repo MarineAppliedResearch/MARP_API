@@ -6,10 +6,14 @@
  */
 import { MODES, statusDimensions } from './modes.js';
 
+/** The rail's order, narrowest scope last: where it was, then what it is. */
+export const FILTER_KEYS = ['project', 'dive', 'line', 'species'];
+
 export const DEFAULT_FILTERS = {
   species: 'Bat Star',
   project: null,
   dive: null,
+  line: null,
   minConfidence: 0.5,
   reviewStatus: MODES.scientific.defaultStatus.slice(),
   trainingDisposition: MODES.training.defaultStatus.slice()
@@ -44,6 +48,20 @@ export function queryFilters(mode, filters, { excludeIds } = {}) {
   return out;
 }
 
+/**
+ * Set one filter, and drop anything it invalidates.
+ *
+ * Project, dive and line nest: a line number only means something inside a dive, and
+ * a dive inside a project. Leaving the narrower one set after changing the wider one
+ * produces an empty mosaic and no explanation for it.
+ */
+export function applyFilter(filters, key, value) {
+  const out = { ...filters, [key]: value };
+  if (key === 'project') { out.dive = null; out.line = null; }
+  if (key === 'dive') out.line = null;
+  return out;
+}
+
 /** Toggle one value of a multi-select status filter. */
 export function toggleStatus(filters, key, value) {
   const cur = filters[key] || [];
@@ -65,5 +83,5 @@ export function ensureStatusFor(mode, filters) {
 
 /** How many filters are narrowing the results, for the collapsed rail's badge. */
 export const activeFilterCount = (mode, filters) =>
-  ['species', 'project', 'dive'].filter((k) => filters[k]).length
+  FILTER_KEYS.filter((k) => filters[k]).length
   + statusDimensions(mode).filter((d) => (filters[d.key] || []).length).length;

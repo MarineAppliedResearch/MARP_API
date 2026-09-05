@@ -10,7 +10,8 @@ import { renderGrid, computeLayout } from './grid.js';
 import { renderPicker } from './picker.js';
 import { renderChrome, renderLog } from './chrome.js';
 import {
-  closeMenus, isMenuOpen, speciesMenu, projectMenu, modelMenu, sortMenu, userMenu
+  closeMenus, isMenuOpen, speciesMenu, projectMenu, diveMenu, lineMenu,
+  modelMenu, sortMenu, userMenu
 } from './menus.js';
 
 export { computeLayout };
@@ -61,6 +62,8 @@ function wireMenus() {
   });
   anchor('#selSpeciesBtn', speciesMenu);
   anchor('#selProjectBtn', projectMenu);
+  anchor('#selDiveBtn', diveMenu);
+  anchor('#selLineBtn', lineMenu);
   anchor('#selModelBtn', modelMenu);
   anchor('#sortBtn', sortMenu);
   anchor('#userBtn', userMenu);

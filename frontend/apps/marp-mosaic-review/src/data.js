@@ -19,6 +19,12 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let db = null;
 
+/* Testing affordance: the fixture cannot fail on its own, but the API will, and the
+   button has to show it. Nothing in the application calls this. */
+/* Testing affordance: the fixture cannot fail on its own, but the API will, and the
+   button has to show it. Nothing in the application calls this. */
+let failNext = false;
+
 export const MarpData = {
   async load() {
     if (db) return db;
@@ -36,6 +42,9 @@ export const MarpData = {
    * the last one left behind. Two contract checks were order-dependent for exactly
    * that reason. Against the real API this becomes a no-op or a seeded database.
    */
+  /** Make the next commit fail, so the failed path can be exercised. */
+  failNextCommit() { failNext = true; },
+
   async reload() {
     /* Swap, never null: work already in flight — a queued thumbnail resolving, say —
        still reads `db`, and clearing it first threw where nothing could catch it. */
@@ -47,6 +56,28 @@ export const MarpData = {
 
   species() { return db.species; },
   projects() { return db.projects; },
+
+  /**
+   * The dives, and the lines within them.
+   *
+   * Derived from the observations rather than stored, because that is what the API
+   * will do too: a dive is a property of a session, and the useful list is the one
+   * that actually has observations under the filters already chosen. Offering a dive
+   * that returns nothing is worse than not offering it.
+   */
+  dives({ project } = {}) {
+    const rows = db.observations.filter((r) => !r.deleted
+      && (!project || r.project_name === project));
+    return [...new Set(rows.map((r) => r.dive))].filter(Boolean).sort();
+  },
+
+  lines({ project, dive } = {}) {
+    const rows = db.observations.filter((r) => !r.deleted
+      && (!project || r.project_name === project)
+      && (!dive || r.dive === dive));
+    return [...new Set(rows.map((r) => r.line))].filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  },
 
   /** Free-text search over the taxonomy, as the species chooser needs. */
   async searchSpecies(term) {
@@ -78,6 +109,7 @@ export const MarpData = {
     if (filters.species) rows = rows.filter((r) => r.comname === filters.species);
     if (filters.project) rows = rows.filter((r) => r.project_name === filters.project);
     if (filters.dive)    rows = rows.filter((r) => r.dive === filters.dive);
+    if (filters.line)    rows = rows.filter((r) => String(r.line) === String(filters.line));
     const n = (fn) => rows.filter(fn).length;
     return {
       unreviewed: n((r) => r.review_status === 'unreviewed'),
@@ -101,6 +133,7 @@ export const MarpData = {
     if (filters.species)  rows = rows.filter((r) => r.comname === filters.species);
     if (filters.project)  rows = rows.filter((r) => r.project_name === filters.project);
     if (filters.dive)     rows = rows.filter((r) => r.dive === filters.dive);
+    if (filters.line)     rows = rows.filter((r) => String(r.line) === String(filters.line));
     if (filters.minConfidence != null) rows = rows.filter((r) => r.confidence >= filters.minConfidence);
     if (filters.excludeIds && filters.excludeIds.size) {
       rows = rows.filter((r) => !filters.excludeIds.has(r.observation_id));
@@ -138,6 +171,7 @@ export const MarpData = {
    */
   async commitPage({ mode, observationIds, marks }) {
     await delay(LATENCY.commit);
+    if (failNext) { failNext = false; throw new Error('the commit could not be saved'); }
     const reviewed = [], flagged = [], skipped = [], reverted = [];
 
     for (const id of observationIds) {

@@ -500,3 +500,107 @@ test.describe('a judged tile steps back', () => {
     expect(b).toBeLessThan(1);
   });
 });
+
+test.describe('filtering by where the observation came from', () => {
+  test('the rail reads project, dive, line, species, model', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    const labels = await page.locator('.rail-body .lbl').allInnerTexts();
+    /* The rail uppercases its labels in CSS; the order is what this asserts. */
+    expect(labels.slice(0, 5).map((t) => t.toLowerCase()))
+      .toEqual(['project', 'dive', 'line', 'species', 'model']);
+  });
+
+  test('dive is a dropdown, and choosing one narrows the mosaic', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    const before = Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
+
+    await page.locator('#selDiveBtn').click();
+    await expect(page.locator('.menu')).toBeVisible();
+    await page.locator('.menu [data-v]').nth(1).click();      // nth(0) is "All dives"
+    await ready(page);
+
+    await expect(page.locator('#selDive')).not.toHaveText('All dives');
+    const after = Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
+    expect(after).toBeLessThan(before);
+  });
+
+  test('the line list is scoped to the chosen dive', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('#selLineBtn').click();
+    const allLines = await page.locator('.menu [data-v]').count();
+    await page.keyboard.press('Escape');
+
+    await page.locator('#selDiveBtn').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await ready(page);
+
+    await page.locator('#selLineBtn').click();
+    const scoped = await page.locator('.menu [data-v]').count();
+    expect(scoped, 'one dive offers no more lines than every dive together')
+      .toBeLessThanOrEqual(allLines);
+  });
+
+  test('changing the dive clears the line under it', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('#selLineBtn').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await ready(page);
+    await expect(page.locator('#selLine')).not.toHaveText('All lines');
+
+    await page.locator('#selDiveBtn').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await ready(page);
+    /* Line 2 of one dive is not line 2 of another, so it cannot survive. */
+    await expect(page.locator('#selLine')).toHaveText('All lines');
+  });
+});
+
+test.describe('the commit button reports on itself', () => {
+  test('it spins while saving, then confirms', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const commit = page.locator('#commit');
+    const before = await commit.innerText();
+
+    await commit.click();
+    await expect(commit.locator('.spin')).toBeVisible();
+    await expect(commit).toContainText('Saving');
+    await expect(commit).toBeDisabled();
+
+    await expect(commit).toContainText('Saved');
+    await expect(commit).toHaveClass(/ok/);
+    await expect(commit).toBeEnabled();
+
+    /* The tick is an acknowledgement, not a state: it goes away again. */
+    await expect(commit).toContainText(before.split('·')[0].trim(), { timeout: 6000 });
+  });
+
+  test('a failed commit says so, and changes nothing', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await page.locator('.tile:not(.failed):not(.queued):not(.marked)')
+      .first().getAttribute('data-id');
+    await page.locator(`.tile[data-id="${id}"]`).click();
+
+    await page.evaluate(() => import('./src/data.js').then((m) => m.MarpData.failNextCommit()));
+    const commit = page.locator('#commit');
+    await commit.click();
+
+    await expect(commit).toContainText('Failed');
+    await expect(commit).toHaveClass(/bad/);
+    /* Nothing was applied, and the mark survives so the page need not be redone. */
+    await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/marked/);
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+    await expect(page.locator('.pg.done')).toHaveCount(0);
+  });
+});

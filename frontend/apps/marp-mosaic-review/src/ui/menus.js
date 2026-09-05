@@ -109,6 +109,20 @@ export const projectMenu = (anchor) => filterMenu(anchor, {
   options: MarpData.projects(), labelOf: (p) => p.name
 });
 
+/* Dive and line are scoped by what is already chosen, so the list never offers a
+   combination that returns nothing. */
+export const diveMenu = (anchor) => filterMenu(anchor, {
+  head: 'Dive', allLabel: 'All dives', key: 'dive',
+  options: MarpData.dives({ project: state.filters.project }), labelOf: (d) => d
+});
+
+export const lineMenu = (anchor) => filterMenu(anchor, {
+  head: state.filters.dive ? `Line \u00b7 ${state.filters.dive}` : 'Line',
+  allLabel: 'All lines', key: 'line',
+  options: MarpData.lines({ project: state.filters.project, dive: state.filters.dive }),
+  labelOf: (l) => String(l)
+});
+
 /** No column links an observation to the model that produced it — see #68. */
 export const modelMenu = (anchor) => menu(anchor, [
   { head: 'Model — not yet in the schema' },

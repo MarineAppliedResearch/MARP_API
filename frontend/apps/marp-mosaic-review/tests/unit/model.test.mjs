@@ -271,3 +271,38 @@ test('both dimensions count towards the collapsed rail badge in Delete Mode', ()
   assert.equal(filters.activeFilterCount('delete', f), 3, 'species plus two dimensions');
   assert.equal(filters.activeFilterCount('scientific', f), 2, 'species plus one');
 });
+
+/* ------------------------------- project, dive and line nest */
+
+test('the rail narrows from where it was to what it is', () => {
+  assert.deepEqual(filters.FILTER_KEYS, ['project', 'dive', 'line', 'species']);
+});
+
+test('changing the project drops the dive and the line under it', () => {
+  const f = { ...filters.DEFAULT_FILTERS, project: 'A', dive: 'D04', line: '2' };
+  const out = filters.applyFilter(f, 'project', 'B');
+  assert.equal(out.project, 'B');
+  assert.equal(out.dive, null, 'a dive belongs to a project');
+  assert.equal(out.line, null, 'and a line to a dive');
+});
+
+test('changing the dive drops the line, and keeps the project', () => {
+  const f = { ...filters.DEFAULT_FILTERS, project: 'A', dive: 'D04', line: '2' };
+  const out = filters.applyFilter(f, 'dive', 'D06');
+  assert.equal(out.project, 'A');
+  assert.equal(out.dive, 'D06');
+  assert.equal(out.line, null, 'line 2 of one dive is not line 2 of another');
+});
+
+test('a filter that nothing nests under leaves the rest alone', () => {
+  const f = { ...filters.DEFAULT_FILTERS, project: 'A', dive: 'D04', line: '2' };
+  const out = filters.applyFilter(f, 'species', 'Ochre Star');
+  assert.equal(out.dive, 'D04');
+  assert.equal(out.line, '2');
+});
+
+test('dive and line each count towards the collapsed rail badge', () => {
+  const f = { project: 'A', dive: 'D04', line: '2', species: null,
+    reviewStatus: [], trainingDisposition: [] };
+  assert.equal(filters.activeFilterCount('scientific', f), 3);
+});

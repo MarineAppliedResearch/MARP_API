@@ -350,6 +350,26 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .reason-chip[data-changed]:hover { border-color: var(--cyan-300); color: var(--cyan-300); }
 /* Taking back is heading towards accepted, so it is green rather than amber — but a
    cooler green than the settled ones, and dashed, because nothing is written yet. */
+/* The second status dimension brings its own heading, so two groups never read as
+   one long list of unrelated boxes. */
+.lbl.sub { margin-top: 12px; }
+
+/* The commit is the slow, irreversible action, so the button reports on itself:
+   spinning while it works, then a tick or a cross that fades. The width is held
+   steady so the footer does not jump as the label changes. */
+.commit { min-width: 172px; justify-content: center; }
+.commit svg { width: 13px; height: 13px; display: block; flex: none; }
+.commit[disabled] { cursor: progress; opacity: .92; }
+.commit.ok  { background: var(--accept); color: var(--accept-ink); }
+.commit.bad { background: var(--red-500); color: #fff; }
+.commit .spin {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: spin .62s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .commit .spin { animation-duration: 2.4s; } }
+
 .tile.out-reverted { outline: 2px dashed var(--mint-400); }
 .b-rev { background: var(--mint-400); color: #052015; }
 

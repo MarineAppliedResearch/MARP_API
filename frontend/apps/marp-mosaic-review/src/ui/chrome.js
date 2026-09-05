@@ -8,7 +8,7 @@ import { state, actions, MODES, getLog } from '../store.js';
 import { commitCount, statusDimensions } from '../model/modes.js';
 import { pageWindow } from '../model/page.js';
 import { sortLabel, activeFilterCount } from '../model/filters.js';
-import { $ } from './dom.js';
+import { $, ICON } from './dom.js';
 
 export function renderChrome() {
   document.body.dataset.mode = state.mode;
@@ -34,11 +34,22 @@ export function renderChrome() {
 
   $('#selSpecies').textContent = state.filters.species || 'All species';
   $('#selProject').textContent = state.filters.project || 'All projects';
+  $('#selDive').textContent = state.filters.dive || 'All dives';
+  $('#selLine').textContent = state.filters.line ? `Line ${state.filters.line}` : 'All lines';
   $('#sortLabel').textContent = sortLabel(state.sort);
   $('#fcount').textContent = activeFilterCount(state.mode, state.filters);
 
   const commit = $('#commit');
-  commit.innerHTML = `${m.commit} &middot; ${willAct} tiles`;
+  const { busy, status } = state.commit;
+  commit.classList.toggle('busy', busy);
+  commit.classList.toggle('ok', status === 'ok');
+  commit.classList.toggle('bad', status === 'failed');
+  commit.disabled = busy;
+  commit.innerHTML =
+      busy             ? `<span class="spin" aria-hidden="true"></span>Saving&hellip;`
+    : status === 'ok'  ? `${ICON.tick}Saved`
+    : status === 'failed' ? `${ICON.cross}Failed &mdash; try again`
+    : `${m.commit} &middot; ${willAct} tiles`;
   commit.title = state.mode === 'delete'
     ? `Permanently deletes the ${markedCount} marked tiles. The ${eligible - markedCount} unmarked tiles are untouched.`
     : `Applies to the ${willAct} eligible tiles you did not mark. The ${markedCount} marked ones stay open.`;

@@ -178,7 +178,7 @@ layout.
 | Adding | Touch |
 | --- | --- |
 | a mode | `model/modes.js` (rules), `styles/app.css` (`body[data-mode]` hue), `index.html` (the selector) |
-| a filter | `model/filters.js`, `data.js` query, `ui/chrome.js` rail |
+| a filter | `model/filters.js` (add to `FILTER_KEYS`), `data.js` query and counts, `index.html` rail, `ui/menus.js`, `ui/chrome.js` label, `ui/mount.js` anchor |
 | a gesture | `ui/mount.js` listener → new action in `store.js` → rule in `model/` |
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
 
@@ -197,6 +197,18 @@ promotion wherever it appears.
 
 Palette comes from `frontend/shared/assets/css/tokens.css`. Do not add hex values to
 `styles/app.css`; add a token.
+
+**Project, dive and line nest, and `applyFilter` enforces it.** A line number only
+means something inside a dive, and a dive inside a project — so changing the wider one
+clears the narrower. Leaving them set produces an empty mosaic and no explanation for
+it. The dive and line lists are derived from the observations under the filters already
+chosen, so the rail never offers a combination that returns nothing.
+
+**The commit button reports on itself.** It is the slow action, the irreversible one,
+and the only one that can fail, so it spins while working and then shows a tick or a
+cross that fades after a couple of seconds — an acknowledgement, not a state. A failed
+commit applies nothing and **leaves the marks alone**, so the page never has to be
+redone. `MarpData.failNextCommit()` exists only so that path can be tested.
 
 ## Which tier catches what
 
