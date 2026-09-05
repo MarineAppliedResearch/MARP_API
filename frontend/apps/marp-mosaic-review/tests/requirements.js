@@ -623,6 +623,100 @@ test('Moving through pages',
     eq(overlap.length, 0, 'page 2 must not repeat observations held by page 1');
   });
 
+/* ------------------------------------------- the delete confirmation (#71) */
+
+/**
+ * These count what actually reaches the data seam.
+ *
+ * The requirement is "nothing is sent until the reviewer confirms", and the only honest
+ * way to check that is to count the calls. Looking at the screen would pass whenever the
+ * dialog appeared, whether or not a delete went out behind it.
+ *
+ * Each wraps MarpData.commitPage and restores it in a `finally`, so a failing check
+ * cannot leave the seam stubbed for everything that runs after it.
+ */
+test('Delete mode',
+  'R1: committing sends nothing until the reviewer confirms', async () => {
+    await reset('delete');
+    const real = MarpData.commitPage;
+    let calls = 0;
+    MarpData.commitPage = (...a) => { calls++; return real.apply(MarpData, a); };
+    try {
+      actions.toggleMark(state.rows[0].observation_id);
+      actions.toggleMark(state.rows[1].observation_id);
+      await actions.commitPage();
+
+      eq(calls, 0, 'the first click must not send a delete');
+      ok(state.confirm, 'it must be waiting on a confirmation');
+      eq(state.confirm.count, 2, 'and it must know how many');
+    } finally { MarpData.commitPage = real; }
+  });
+
+test('Delete mode',
+  'R1: cancelling sends nothing and leaves every mark exactly as it was', async () => {
+    await reset('delete');
+    const real = MarpData.commitPage;
+    let calls = 0;
+    MarpData.commitPage = (...a) => { calls++; return real.apply(MarpData, a); };
+    try {
+      const ids = [state.rows[0].observation_id, state.rows[1].observation_id];
+      ids.forEach((id) => actions.toggleMark(id));
+      await actions.commitPage();
+      actions.cancelDelete();
+
+      eq(calls, 0, 'cancelling must not send anything');
+      eq(state.confirm, null, 'the dialog must be closed');
+      eq(ids.every((id) => state.marks.has(id)), true,
+        'every mark must survive a cancel, or the page has to be redone');
+    } finally { MarpData.commitPage = real; }
+  });
+
+test('Delete mode',
+  'R1: confirming sends exactly one delete', async () => {
+    await reset('delete');
+    const real = MarpData.commitPage;
+    let calls = 0;
+    MarpData.commitPage = (...a) => { calls++; return real.apply(MarpData, a); };
+    try {
+      actions.toggleMark(state.rows[0].observation_id);
+      await actions.commitPage();
+      await actions.confirmDelete();
+      /* A second confirm is a no-op, so a double click cannot delete twice. */
+      await actions.confirmDelete();
+
+      eq(calls, 1, 'exactly one delete may be sent');
+      eq(state.confirm, null, 'and the dialog must be closed afterwards');
+    } finally { MarpData.commitPage = real; }
+  });
+
+test('Delete mode',
+  'A5: with nothing marked there is no dialog and nothing is sent', async () => {
+    await reset('delete');
+    const real = MarpData.commitPage;
+    let calls = 0;
+    MarpData.commitPage = (...a) => { calls++; return real.apply(MarpData, a); };
+    try {
+      await actions.commitPage();
+      eq(calls, 0, 'nothing marked is not a deletion');
+      eq(state.confirm, null, 'and must not raise a dialog to confirm destroying nothing');
+    } finally { MarpData.commitPage = real; }
+  });
+
+test('Delete mode',
+  'R4: scientific and training commit immediately, with no confirmation', async () => {
+    for (const mode of ['scientific', 'training']) {
+      await reset(mode);
+      const real = MarpData.commitPage;
+      let calls = 0;
+      MarpData.commitPage = (...a) => { calls++; return real.apply(MarpData, a); };
+      try {
+        await actions.commitPage();
+        eq(calls, 1, `${mode} must commit on the first click`);
+        eq(state.confirm, null, `${mode} must never raise a delete confirmation`);
+      } finally { MarpData.commitPage = real; }
+    }
+  });
+
 /* ------------------------------------------------------------------ runner */
 
 export async function run(mount) {

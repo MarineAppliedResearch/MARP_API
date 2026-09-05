@@ -117,6 +117,38 @@ export function commitCount({ mode, rows, marks }) {
   return commitActsOnMarked(mode) ? marked : eligible.length - marked;
 }
 
+/**
+ * Whether committing in this mode destroys something, and so has to be confirmed.
+ *
+ * Delete is the only one. Scientific review and training review both write a decision
+ * that can be written again differently; a delete has no recovery path at all, which is
+ * why it is the one mode that stops and asks.
+ */
+export const commitIsDestructive = (modeId) => modeId === 'delete';
+
+/**
+ * What a destructive commit is about to destroy.
+ *
+ * The count comes from the same rule the commit itself uses, so the number in the dialog
+ * cannot disagree with the number acted on. The breakdown is the part that matters: a
+ * reviewer stopped by "10 observations" was going to click through anyway, whereas
+ * "3 of them are already reviewed, 2 are teaching a model" is a reason to look again.
+ * That is also why Delete Mode reads both status dimensions in the first place.
+ *
+ * `excluded` training samples are deliberately not counted. Being excluded from training
+ * is not a reason to keep an observation; being promoted is.
+ */
+export function deleteImpact({ rows, marks }) {
+  const targets = rows.filter(
+    (r) => r.thumbnail_status === 'ready' && marks.has(r.observation_id));
+
+  return {
+    count: targets.length,
+    reviewed: targets.filter((r) => existingState('scientific', r)).length,
+    promoted: targets.filter((r) => r.training_disposition === 'promoted').length,
+  };
+}
+
 /** The state a record carries for this mode, or null when it carries none. */
 export function existingState(mode, row) {
   if (mode === 'training') {

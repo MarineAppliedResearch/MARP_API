@@ -650,3 +650,91 @@ test.describe('how many pages are done', () => {
     expect(bar.height).toBeLessThan(80);
   });
 });
+
+/* ------------------------------------------- the delete confirmation (#71) */
+
+test.describe('the delete confirmation', () => {
+  /**
+   * Into Delete Mode with `n` tiles marked, ready to commit.
+   *
+   * The mode is chosen by clicking the segment, not by a query parameter -- the app
+   * does not read one. An earlier version of these tests used `?mode=delete`, ran the
+   * whole thing in scientific review, and reported a missing dialog when what had
+   * actually happened was an ordinary review commit.
+   */
+  async function markForDeletion(page, n) {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    const ids = [];
+    for (let i = 0; i < n; i++) {
+      const tile = page.locator('.tile:not(.marked):not(.failed)').first();
+      const id = await tile.getAttribute('data-id');
+      ids.push(id);
+      await page.locator(`.tile[data-id="${id}"]`).click();
+    }
+    await expect(page.locator('.tile.marked')).toHaveCount(n);
+    return ids;
+  }
+
+  test('R2/R3: it names the number and says the deletion is permanent', async ({ page }) => {
+    await markForDeletion(page, 3);
+    await page.locator('#commit').click();
+
+    const box = page.locator('.confirm__box');
+    await expect(box).toBeVisible();
+    await expect(box.locator('.confirm__title')).toContainText('3 observations');
+    await expect(box.locator('.confirm__warn')).toContainText('cannot be undone');
+  });
+
+  test('R5: focus starts on Cancel, and Escape cancels', async ({ page }) => {
+    const ids = await markForDeletion(page, 2);
+    await page.locator('#commit').click();
+    await expect(page.locator('.confirm__box')).toBeVisible();
+
+    /* Enter and Space are what somebody hits without reading, so neither may destroy
+       anything: the focused control is Cancel. */
+    await expect(page.locator('[data-confirm="cancel"]')).toBeFocused();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.confirm__box')).toHaveCount(0);
+
+    /* Cancelled means nothing happened at all -- the marks are still there, so the
+       page does not have to be redone. */
+    await expect(page.locator('.tile.marked')).toHaveCount(2);
+    for (const id of ids) {
+      await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/marked/);
+    }
+    await expect(page.locator('.tile.out-deleted')).toHaveCount(0);
+  });
+
+  test('R2: confirming deletes exactly the number it named', async ({ page }) => {
+    await markForDeletion(page, 4);
+    await page.locator('#commit').click();
+    await expect(page.locator('.confirm__title')).toContainText('4 observations');
+
+    await page.locator('[data-confirm="go"]').click();
+    await expect(page.locator('.confirm__box')).toHaveCount(0);
+    await expect(page.locator('.tile.out-deleted')).toHaveCount(4);
+  });
+
+  test('A5: with nothing marked, committing raises no dialog', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    await page.locator('#commit').click();
+    await page.waitForTimeout(400);
+    await expect(page.locator('.confirm__box')).toHaveCount(0);
+    await expect(page.locator('.tile.out-deleted')).toHaveCount(0);
+  });
+
+  test('R4: scientific review commits with no confirmation at all', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('#commit').click();
+    await expect(page.locator('#commit')).toContainText('Saved');
+    await expect(page.locator('.confirm__box')).toHaveCount(0);
+  });
+});

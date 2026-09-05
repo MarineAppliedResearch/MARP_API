@@ -6,7 +6,8 @@
  * a named action, which is the seam an API call will eventually sit behind.
  */
 import { MarpData } from './data.js';
-import { MODES, isMode, commitCount, pendingException, existingState } from './model/modes.js';
+import { MODES, isMode, commitCount, pendingException, existingState,
+         commitIsDestructive, deleteImpact } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 
@@ -42,7 +43,11 @@ export const state = {
   /* What the commit button is doing. A page commit is the one action here that can
      take real time and can fail, and it is also the irreversible one, so it says so
      rather than leaving the reviewer wondering whether the click registered. */
-  commit: { busy: false, status: null }   // status: null | 'ok' | 'failed'
+  commit: { busy: false, status: null },  // status: null | 'ok' | 'failed'
+  /* What a destructive commit is waiting to be told to do: null, or the impact the
+     reviewer is being asked to accept. Held in the store rather than the dialog so the
+     rule about what is destroyed and the thing that destroys it cannot drift apart. */
+  confirm: null            // null | { count, reviewed, promoted }
 };
 
 /* ---------------------------------------------------------------- plumbing */
@@ -244,8 +249,43 @@ export const actions = {
     notify();
   },
 
-  async commitPage() {
+  /**
+   * Commit the page.
+   *
+   * In Delete Mode this stops the first time and asks, every time -- deletion is
+   * permanent and there is nothing to restore from, so the friction is the point.
+   * `confirmed` is passed only by `confirmDelete`, never by the button.
+   */
+  /** Yes: go ahead and destroy them. The only caller that may pass `confirmed`. */
+  confirmDelete() {
+    if (!state.confirm) return;
+    return actions.commitPage(true);
+  },
+
+  /** No. Nothing is sent, and every mark is left exactly as it was. */
+  cancelDelete() {
+    if (!state.confirm) return;
+    fire('delete:cancelled', state.confirm);
+    state.confirm = null;
+    notify();
+  },
+
+  async commitPage(confirmed = false) {
     if (state.commit.busy) return;                 // one commit at a time
+
+    if (commitIsDestructive(state.mode) && !confirmed) {
+      const impact = deleteImpact({ rows: state.rows, marks: state.marks });
+      /* Nothing marked is not a deletion, so it is not worth a dialog. Asking somebody
+         to confirm destroying zero records teaches them to dismiss the dialog without
+         reading it, which is exactly what the breakdown above exists to prevent. */
+      if (impact.count === 0) return;
+      state.confirm = impact;
+      fire('delete:confirm-requested', impact);
+      notify();
+      return;
+    }
+    state.confirm = null;
+
     const ids = state.rows.map((r) => r.observation_id);
     const marks = new Map(state.marks);
     fire('commitPage:request', {

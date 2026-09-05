@@ -8,6 +8,7 @@ import { state, actions, subscribe, onLog } from '../store.js';
 import { $ } from './dom.js';
 import { renderGrid, computeLayout } from './grid.js';
 import { renderPicker } from './picker.js';
+import { renderConfirm, wireConfirm } from './confirm.js';
 import { renderChrome, renderLog } from './chrome.js';
 import {
   closeMenus, isMenuOpen, speciesMenu, projectMenu, diveMenu, lineMenu,
@@ -111,6 +112,7 @@ export function mount() {
   wireGrid();
   wirePager();
   wireMenus();
+  wireConfirm();
   wireDismissal();
   wireLayout();
 
@@ -121,6 +123,7 @@ export function mount() {
     renderChrome();
     renderGrid();
     renderPicker();
+    renderConfirm();
     requestAnimationFrame(computeLayout);
   });
   onLog(renderLog);

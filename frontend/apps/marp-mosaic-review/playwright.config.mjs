@@ -1,6 +1,23 @@
 import { defineConfig, devices } from '@playwright/test';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const PORT = 8199;
+/**
+ * A port belonging to this checkout, and to no other.
+ *
+ * A fixed port cost most of a day. A dev server left running in a different checkout
+ * still held 8199, Playwright reused it because `reuseExistingServer` was on, and every
+ * browser test silently graded *that* checkout's code instead of this one's. Six tests
+ * failed against changes they never saw, and the same six passed the moment the stale
+ * process was killed, with nothing else altered.
+ *
+ * Deriving the port from this file's own path means two working copies of this
+ * repository cannot land on the same one, and no coordination is needed to arrange it.
+ * `MARP_TEST_PORT` overrides, for when something outside has to know the number.
+ */
+const PORT = Number(process.env.MARP_TEST_PORT)
+  || 8100 + (parseInt(createHash('sha1')
+       .update(fileURLToPath(import.meta.url)).digest('hex').slice(0, 6), 16) % 700);
 
 export default defineConfig({
   testDir: './tests',
@@ -42,7 +59,10 @@ export default defineConfig({
   webServer: {
     command: `node tools/serve.mjs ${PORT}`,
     url: `http://localhost:${PORT}/apps/marp-mosaic-review/`,
-    reuseExistingServer: !process.env.CI,
+    /* Never adopt a server this run did not start. Reusing one is how the tests came
+       to grade a different checkout without saying so; a busy port must be a loud
+       failure, not a quiet substitution. */
+    reuseExistingServer: false,
     stdout: 'ignore'
   }
 });
