@@ -19,27 +19,20 @@ starting anything.** It is the design record and the plan of record: eleven phas
 each delivers, and what verifies it. This file says how the code works; the issue says
 what to build next and why.
 
-As of 2026-09-05, on branch `68-mosaic-review-prototype`:
+**Do not restate what phase the work is in here.** This file went stale within two days
+of being written, because it duplicated status that #68 owns and that changes every time
+something ships. Status lives in the issue; this file holds what the issue does not — how
+the code is put together, and the traps.
 
-- **Phase 0 is done.** The prototype runs the whole workflow against a fixture, with
-  four test tiers (parse, unit, contract, render/e2e) all green.
-- **Phase 1 is in progress** — closing the client's functional gaps, still fixture
-  backed. #68 lists what is done and what remains. The largest remaining item is
-  multi-select filters: the issue requires irregular combinations across projects,
-  dives and lines, and the rail is single-select today.
-- **Phase 2 is done.** The five schema-blocking questions were answered on 2026-09-05
-  and are written up as *The schema decisions* in #68. Phase 3 is unblocked.
+What is settled and shapes the code:
 
-Three of them name client work that has not been built yet. None of it contradicts what
-the prototype does — these are the next things to add, not things to undo:
-
-- **The delete confirmation.** Deletion is permanent with no undo, so the client must
-  confirm first, naming the exact count and saying plainly that it deletes records from
-  the database and cannot be undone through MARP. Not built yet.
-- **Adjacent-page prefetching.** Page N+1 is fetched in the background while the reviewer
-  works, so paging never shows a delay. Not built yet.
-- **Deterministic ordering** with an `observation_id` tie-breaker on every query, which is
-  what makes a re-query return the same page.
+- **Phase 2 answered the schema questions** — see *The schema decisions* in #68. A review
+  belongs to the reviewer, a species correction edits the observation, Delete is a real
+  permanent delete, page membership is query-derived, and the existing permission model is
+  used initially.
+- **Deterministic ordering** with an `observation_id` tie-breaker on every query is what
+  makes a re-query return the same page. It is a requirement of every query this app will
+  ever make, not a phase.
 
 **`state.pageMembers` stays.** The in-memory pin is wanted: within a session it is what
 lets a reviewer return to a page and see, and undo, what they submitted. The
@@ -226,6 +219,39 @@ roughly 500px, so a screenshot can show phantom grid overflow that does not exis
 Playwright `phone` project honours the real width; use that, not a screenshot, to judge
 layout.
 
+**Accepting needs imagery; flagging does not.** `data.js` used to drop every row whose
+thumbnail had not arrived *before* it looked at the marks, so a flag on a broken tile was
+silently thrown away. "Reviewed" means somebody looked at it, and that needs a picture.
+"Flagged" means somebody is saying something is wrong, and a thumbnail that never arrived
+is itself worth flagging — so a marked row is written either way, and `No imagery` is one
+of the scientific reasons so the record says why.
+
+**The commit button must never offer to act on rows it will skip.** `commitOutcome` splits
+a page into what will be accepted, flagged and skipped; the button shows that number, is
+disabled when a commit would do nothing, and says how many will be skipped when they
+differ. `commitCount` alone was enough only while every row was assumed to have imagery.
+
+**A page has a state, and `pageState` names it.** Empty, filtered-out, no-imagery,
+partial-imagery, ready. Named in `model/` rather than inferred where it is drawn, so the
+chrome and the grid cannot disagree about which state they are in, and so the rule is
+testable without a browser.
+
+**Delete is the only modal, and Cancel holds the focus.** `ui/confirm.js` interrupts
+because deletion is permanent and rare; everything else here is one gesture with no
+dialog, because a reviewer repeats it thousands of times. Focus lands on Cancel, since
+Enter and Space are the keys somebody presses without reading. The dialog reads its count
+from the same rule the commit uses, so the number on screen cannot disagree with the
+number deleted.
+
+**The pointer selects; the keyboard commands.** There is deliberately no keyboard cursor
+through the grid. Marking with a pointer is one action with no traversal, while
+arrow-and-space is two keystrokes plus the walk between tiles — so keyboard selection
+would make the tool slower for the people who use it most. #68 originally said the
+opposite and was corrected on 2026-09-05. `model/keys.js` maps a key to an action or to
+nothing, and `mount.js` has the one listener that consults it. Accessibility parity is
+still required; it is the floor, not the speed path. **Commit is a chord** — it is the one
+irreversible action that is not otherwise gated.
+
 ## Where things go
 
 | Adding | Touch |
@@ -234,6 +260,8 @@ layout.
 | a filter | `model/filters.js` (add to `FILTER_KEYS`), `data.js` query and counts, `index.html` rail, `ui/menus.js`, `ui/chrome.js` label, `ui/mount.js` anchor |
 | a gesture | `ui/mount.js` listener → new action in `store.js` → rule in `model/` |
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
+| a keyboard shortcut | one entry in `SHORTCUTS` in `model/keys.js`, then a case in `runShortcut` in `ui/mount.js`. The hint draws itself on any control the id matches |
+| a page state | `pageState` in `model/modes.js`, then `ui/grid.js` |
 
 Mode colour is **chrome only**. Never tint the imagery — the reviewer is judging how the
 organism looks, and #68 treats the image field as a quiet zone. Dimming a tile the
@@ -396,6 +424,12 @@ Pick a voice with `NARRATE_VOICE`, e.g. `NARRATE_VOICE=en-US-AriaNeural`.
 
 ## Known gaps
 
-Tracked as phase 1 in #68: no keyboard model, the filter rail is partly presentational,
-no empty or completed states, no feedback when marking a tile whose imagery is
-unavailable, and nothing persists across a reload.
+**Not a list of what is unbuilt** — #68 is that, and a second copy here drifts. What
+follows is what the code itself cannot tell you.
+
+- **Nothing persists across a reload.** Marks, the page you were on and the filters are
+  all in memory. Resumability is on the plan; until then, a refresh is a fresh start.
+- **`src/data.js` is a fixture, not an API.** Everything above it is written as though the
+  API already existed, which is the point — but no claim in this file about latency,
+  ordering or failure modes has been tested against a real server.
+- **The Model selector has no data behind it** and stays a placeholder until Phase 3.
