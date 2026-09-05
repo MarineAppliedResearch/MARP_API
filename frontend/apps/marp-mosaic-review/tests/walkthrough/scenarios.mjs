@@ -427,6 +427,64 @@ export const scenarios = {
   },
 
   /* ------------------------------------------------- verify: mode separation */
+  /* --------------------------------------- verify: the delete confirmation */
+  /* Short and single-purpose: show that a permanent delete now stops and asks, that
+     cancelling really does nothing, and that confirming really does delete. Every line
+     asserts what it claims -- a scene that narrates a result without asserting it can
+     lie, and this is the one workflow where that would matter most. */
+  'verify-delete-confirmation': {
+    title: 'Verifying: nothing is deleted without confirming',
+    scenes: [
+      {
+        caption: 'Six marked for deletion',
+        say: "Delete mode. Six observations marked to be permanently removed.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          store.ids = await markMany(page, 6, 200);
+          await expect(page.locator('.tile.marked')).toHaveCount(6);
+        }
+      },
+      {
+        caption: 'It stops and asks',
+        say: "Before this change, committing here destroyed them immediately, with no "
+           + "warning at all. Now it stops, and it tells you exactly what you are about "
+           + "to lose.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('.confirm__box')).toBeVisible();
+          await expect(page.locator('.confirm__title')).toContainText('6 observations');
+          await expect(page.locator('.confirm__warn')).toContainText('cannot be undone');
+          await page.waitForTimeout(3800);       // long enough to actually read it
+        }
+      },
+      {
+        caption: 'Cancel changes nothing',
+        say: "Cancel, and all six are still marked. Nothing was sent, so the page does "
+           + "not have to be done again.",
+        async act({ page, expect }) {
+          await page.locator('[data-confirm="cancel"]').click();
+          await expect(page.locator('.confirm__box')).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(6);
+          await expect(page.locator('.tile.out-deleted')).toHaveCount(0);
+          await page.waitForTimeout(900);
+        }
+      },
+      {
+        caption: 'Confirming deletes exactly six',
+        say: "Commit again, confirm, and now they are gone. Six marked, six deleted.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('.confirm__box')).toBeVisible();
+          await page.waitForTimeout(1100);
+          await page.locator('[data-confirm="go"]').click();
+          await expect(page.locator('.tile.out-deleted')).toHaveCount(6);
+          await page.waitForTimeout(900);
+        }
+      }
+    ]
+  },
+
   'verify-modes': {
     title: 'Verifying: the modes are separate',
     scenes: [

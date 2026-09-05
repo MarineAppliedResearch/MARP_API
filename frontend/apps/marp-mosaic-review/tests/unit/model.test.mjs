@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
-  pendingException, statusDimensions } from '../../src/model/modes.js';
+  pendingException, statusDimensions, commitIsDestructive,
+  deleteImpact } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 
@@ -319,4 +320,56 @@ test('entering a mode opens it at its own default, not the last mode\'s', () => 
 
   const back = filters.defaultStatusFor('training', inDelete);
   assert.deepEqual(back.trainingDisposition, ['undecided']);
+});
+
+/* ------------------------------------------ the delete confirmation (#71) */
+
+test('delete is the only mode whose commit destroys something', () => {
+  assert.equal(commitIsDestructive('delete'), true);
+  assert.equal(commitIsDestructive('scientific'), false);
+  assert.equal(commitIsDestructive('training'), false);
+});
+
+test('R2: deleteImpact counts only the marked rows a commit would act on', () => {
+  /* A marked tile whose thumbnail never arrived is not deleted, so it must not be
+     counted -- otherwise the dialog promises to destroy something it will not. */
+  const rows = [
+    row(1), row(2), row(3),
+    row(4, { thumbnail_status: 'failed' }),
+  ];
+  const marks = new Map([[1, {}], [2, {}], [4, {}]]);
+
+  const impact = deleteImpact({ rows, marks });
+  assert.equal(impact.count, 2);
+  assert.equal(impact.count, commitCount({ mode: 'delete', rows, marks }),
+    'the dialog must show the number the commit acts on');
+});
+
+test('A3: the breakdown counts reviewed and promoted rows, and ignores excluded', () => {
+  const rows = [
+    row(1, { review_status: 'reviewed' }),
+    row(2, { review_status: 'flagged' }),
+    row(3, { training_disposition: 'promoted' }),
+    row(4, { training_disposition: 'excluded' }),
+    row(5),
+  ];
+  const marks = new Map([[1, {}], [2, {}], [3, {}], [4, {}], [5, {}]]);
+
+  const impact = deleteImpact({ rows, marks });
+  assert.equal(impact.count, 5);
+  /* Both reviewed and flagged mean somebody looked at it and decided. */
+  assert.equal(impact.reviewed, 2);
+  /* Excluded is not a reason to keep an observation; promoted is. */
+  assert.equal(impact.promoted, 1);
+});
+
+test('A3: nothing to warn about reports zeroes rather than guessing', () => {
+  const rows = [row(1), row(2)];
+  const impact = deleteImpact({ rows, marks: new Map([[1, {}], [2, {}]]) });
+  assert.deepEqual(impact, { count: 2, reviewed: 0, promoted: 0 });
+});
+
+test('A5: nothing marked is not a deletion', () => {
+  const impact = deleteImpact({ rows: [row(1), row(2)], marks: new Map() });
+  assert.equal(impact.count, 0);
 });

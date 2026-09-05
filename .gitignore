@@ -124,3 +124,4 @@ frontend/apps/*/demo/
 # Walkthrough recordings. Megabytes of video, regenerated on demand by
 # `npm run demo:narrated`, and never a build input.
 /demo/
+.marp-agent.json
