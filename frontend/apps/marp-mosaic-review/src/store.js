@@ -159,7 +159,7 @@ export const actions = {
     state.outcomes = new Map();
     state.touched = new Set();
     state.lastCommit = null;
-    state.filters = filters.ensureStatusFor(mode, state.filters);
+    state.filters = filters.defaultStatusFor(mode, state.filters);
     fire('setMode', { mode });
     actions.refresh();
   },

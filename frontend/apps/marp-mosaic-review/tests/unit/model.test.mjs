@@ -306,3 +306,17 @@ test('dive and line each count towards the collapsed rail badge', () => {
     reviewStatus: [], trainingDisposition: [] };
   assert.equal(filters.activeFilterCount('scientific', f), 3);
 });
+
+test('entering a mode opens it at its own default, not the last mode\'s', () => {
+  /* Training narrows to undecided so finished work leaves the view. Delete shows all
+     three, because there the disposition is context rather than a filter — inheriting
+     the narrowing hid every observation just promoted, which is the worst thing to
+     hide before a permanent delete. */
+  const afterTraining = { ...filters.DEFAULT_FILTERS, trainingDisposition: ['undecided'] };
+  const inDelete = filters.defaultStatusFor('delete', afterTraining);
+  assert.deepEqual(inDelete.trainingDisposition, ['undecided', 'promoted', 'excluded']);
+  assert.deepEqual(inDelete.reviewStatus, ['unreviewed', 'flagged']);
+
+  const back = filters.defaultStatusFor('training', inDelete);
+  assert.deepEqual(back.trainingDisposition, ['undecided']);
+});

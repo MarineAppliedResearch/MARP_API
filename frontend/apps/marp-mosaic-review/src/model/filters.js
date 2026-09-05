@@ -81,6 +81,27 @@ export function ensureStatusFor(mode, filters) {
   return out;
 }
 
+/**
+ * Entering a mode puts every dimension it owns back to that mode's default.
+ *
+ * Carrying a selection across is worse than it sounds, because the modes do not mean
+ * the same thing by a dimension. Training narrows training disposition to *undecided*
+ * so finished work leaves the view; Delete shows all three, because there it is
+ * context rather than a filter. Arriving in Delete straight from Training inherited
+ * the narrowing and hid every observation the reviewer had just promoted — exactly the
+ * rows most worth seeing before deleting something.
+ *
+ * `setMode` already discards marks, outcomes and pins, so a mode opening at its own
+ * default is the consistent behaviour rather than a new one.
+ */
+export function defaultStatusFor(mode, filters) {
+  let out = filters;
+  for (const { key, defaults } of statusDimensions(mode)) {
+    out = { ...out, [key]: defaults.slice() };
+  }
+  return out;
+}
+
 /** How many filters are narrowing the results, for the collapsed rail's badge. */
 export const activeFilterCount = (mode, filters) =>
   FILTER_KEYS.filter((k) => filters[k]).length

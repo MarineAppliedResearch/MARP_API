@@ -25,6 +25,26 @@ const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.m
  * the tile is marked — so anything that clicks and then keeps using the same locator
  * waits forever. Pin the id first.
  */
+/**
+ * Mark the first `n` undecided tiles, one after another.
+ *
+ * Paced rather than instant: the point of the introduction video is that reviewing is
+ * a person going down a wall clicking things, and fifteen tiles vanishing in one frame
+ * does not read as work being done.
+ */
+async function markMany(page, n, gap = 280) {
+  const ids = [];
+  for (let i = 0; i < n; i++) {
+    const next = freshTile(page).first();
+    if (!(await next.count())) break;
+    const id = await next.getAttribute('data-id');
+    ids.push(id);
+    await page.locator(`.tile[data-id="${id}"]`).click();
+    await page.waitForTimeout(gap);
+  }
+  return ids;
+}
+
 async function markFirstFresh(page) {
   const id = await freshTile(page).first().getAttribute('data-id');
   const tile = page.locator(`.tile[data-id="${id}"]`);
@@ -260,35 +280,50 @@ export const scenarios = {
   },
 
   /* ------------------------------------------------------------- overview */
-  /* Roughly two minutes, so the script is budgeted: about 290 spoken words at the
-     ~150 words a minute the neural voice runs at, plus a second of overhead per
-     scene. Every line earns its seconds — this is the video somebody watches once
-     to understand what the reviewer is for. */
+  /* The introduction. Assumes no prior knowledge: what MARP is, what a false positive
+     is and why removing them matters, then each workflow driven at working pace.
+
+     Panels are opened at the start of a scene and left open while the line about them
+     plays. An earlier cut did the whole species correction inside one act, so the
+     window came and went in two seconds under twelve seconds of narration about it. */
   overview: {
-    title: 'MARP Picture Mosaic Reviewer — overview',
+    title: 'MARP Picture Mosaic Reviewer — introduction',
     scenes: [
       {
         caption: 'MARP Picture Mosaic Reviewer',
-        say: "Marp turns underwater video into scientific data. Models watch the footage and "
-           + "produce observations, thousands an hour — and every one needs a human to say "
-           + "whether it is right. This is where that happens."
+        say: "This is the Picture Mosaic Reviewer, part of Marp \u2014 the Marine Analysis and "
+           + "Reporting Platform."
+      },
+      {
+        caption: 'Where the data comes from',
+        say: "Marp turns underwater video into scientific records. A machine learning model "
+           + "watches the footage and marks every animal it thinks it sees."
+      },
+      {
+        caption: 'False positives',
+        say: "A model gets things wrong in two ways. It misses animals that are there \u2014 false "
+           + "negatives. And it marks things that aren't \u2014 false positives. The Picture Mosaic "
+           + "Reviewer is how we find the false positives and get rid of them, simply and in "
+           + "bulk."
       },
       {
         caption: 'Why a mosaic',
-        say: "The trick is showing them together. These are all predicted to be the same "
-           + "species, so the one that does not belong jumps out at you. You are not reading "
-           + "records; you scan.",
+        say: "Instead of one record at a time, we put hundreds on one screen, all the same "
+           + "predicted species. Your eye is very good at finding the thing that doesn't match "
+           + "in a grid of things that do. That's the trick.",
         async act({ page, expect }) {
           await expect(page.locator('.tile').first()).toBeVisible();
         }
       },
       {
-        caption: 'Build the wall: where, then what',
-        say: "The filters build that wall. Project, dive, line \u2014 where it came from \u2014 then "
-           + "species. Narrow it to one dive, and the mosaic follows.",
+        caption: 'The filters build the query',
+        say: "The filters set up the query. Any combination of what's in the database \u2014 "
+           + "project, dive, line, species \u2014 and the mosaic is built from whatever you ask for.",
         async act({ page, expect, settled }) {
+          /* Opened first and left up, so the list is on screen while it is described. */
           await page.locator('#selDiveBtn').click();
           await expect(page.locator('.menu')).toBeVisible();
+          await page.waitForTimeout(5200);
           await page.locator('.menu [data-v]').nth(1).click();
           await settled();
           await expect(page.locator('#selDive')).not.toHaveText('All dives');
@@ -296,100 +331,97 @@ export const scenarios = {
       },
       {
         caption: 'Click the ones that look wrong',
-        say: "Reviewing is clicking the ones that look wrong. No dialog, no form \u2014 you do "
-           + "this thousands of times, so it is one tap. Watch them dim as they are flagged.",
+        say: "Then you go through and click the ones that look wrong.",
         async act({ page, expect, store }) {
-          store.ids = [];
-          for (let i = 0; i < 3; i++) {
-            const id = await freshTile(page).first().getAttribute('data-id');
-            store.ids.push(id);
-            await page.locator(`.tile[data-id="${id}"]`).click();
-            await page.waitForTimeout(330);
-          }
-          await expect(page.locator('.tile.marked')).toHaveCount(3);
+          store.ids = await markMany(page, 15);
+          await expect(page.locator('.tile.marked')).toHaveCount(15);
         }
       },
       {
-        caption: 'Say why, and fix it here',
-        say: "Click the flag itself to say why. And when you know what it should be, correct "
-           + "it here — search the taxonomy, pick the species, and it saves immediately.",
+        caption: 'Recording what was wrong',
+        say: "You can click the flag itself if you want to record what was wrong with it \u2014 "
+           + "wrong species, false detection, a duplicate. That reason stays with the "
+           + "observation for whoever picks it up next.",
+        async act({ page, expect, store }) {
+          const tile = page.locator(`.tile[data-id="${store.ids[0]}"]`);
+          await tile.locator('[data-badge]').click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await page.waitForTimeout(4200);
+          await page.locator('.pick .chip', { hasText: 'Wrong species' }).click();
+          /* Left open: the next scene continues in this same panel. */
+        }
+      },
+      {
+        caption: 'Change the observation here',
+        say: "And if you already know what it actually is, you can change the observation "
+           + "right here in this window. Search the taxonomy, pick the right species, and it "
+           + "saves immediately. No need to open the video.",
         async act({ page, expect, store }) {
           const tile = page.locator(`.tile[data-id="${store.ids[0]}"]`);
           const before = await tile.locator('.cap').innerText();
-          await tile.locator('[data-badge]').click();
-          await expect(page.locator('.pick')).toBeVisible();
-          await page.locator('.pick .chip', { hasText: 'Wrong species' }).click();
-          await page.waitForTimeout(350);
           await page.locator('.pick [data-act="correct"]').click();
           await expect(page.locator('.pick #spSearch')).toBeVisible();
+          await page.waitForTimeout(2600);
           await page.locator('.pick #spSearch').fill('lea');
-          await page.waitForTimeout(700);
+          await page.waitForTimeout(3200);           // the matches, on screen, being read
           await page.locator('.pick .srow').first().click();
           await expect(page.locator('.pick')).toHaveCount(0);
-          /* The caption is the evidence the correction landed. Not the corner chip:
-             when a tile carries both a reason and a correction the reason wins that
-             slot, so a corrected tile shows no sign it was corrected. Raised with
-             the user rather than changed here. */
           await expect(tile.locator('.cap')).not.toHaveText(before);
-          await expect(tile).toHaveClass(/changed/);
         }
       },
       {
-        caption: 'Commit the page, not each tile',
-        say: "Then commit the page. Everything you did not flag is accepted in one action. "
-           + "That is the whole idea: the work scales with how many are wrong, not how many "
-           + "there are.",
+        caption: 'Commit the page',
+        say: "Then you commit the entire page. That takes care of fifty records at once \u2014 "
+           + "everything you didn't flag is accepted, and the ones you flagged keep their flag.",
         async act({ page, expect }) {
           await page.locator('#commit').click();
           await expect(page.locator('#commit')).toContainText('Saved');
-          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'Pages you have finished stay finished',
-        say: "Committed pages go green in the pager, and it counts them. Come back later "
-           + "and everything you submitted is still here \u2014 ready to be changed.",
-        async act({ page, expect, settled }) {
-          await expect(page.locator('#pagesDone')).toContainText('1 of');
-          await page.locator('[data-page="next"]').click();
-          await settled();
-          await page.locator('[data-page="prev"]').click();
-          await settled();
           await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
           await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
         }
       },
       {
-        caption: 'Training Data Review',
-        say: "Same rhythm, different question. Scientific review asks whether an observation "
-           + "is good data. Training review asks whether it is good enough to teach a model "
-           + "with. Separate decisions, so it wears its own colour.",
+        caption: 'Approving training data',
+        say: "In addition to approving the scientific data, we approve the training data the "
+           + "same way. Here we un-approve the ones we don't want teaching the next model, "
+           + "save, and everything else is promoted.",
         async act({ page, expect, settled }) {
           await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
           await settled();
-          await expect(page.locator('#commit')).toContainText('Promote Page');
-          await expect(page.locator('.tile .frames').first()).toBeVisible();
+          await markMany(page, 15, 220);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'PROMOTED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'EXCLUDED' }).first()).toBeVisible();
         }
       },
       {
-        caption: 'Delete Mode',
-        say: "And Delete Mode, for observations that should not exist at all. It shows both "
-           + "review and training status first \u2014 because deleting "
-           + "cannot be undone.",
+        caption: 'Deleting',
+        say: "And deleting works the same way. Mark what shouldn't be in the database at all, "
+           + "and commit. Those records are gone.",
         async act({ page, expect, settled }) {
           await page.locator('.seg button', { hasText: 'Delete' }).click();
           await settled();
-          await expect(page.locator('#commit')).toContainText('Delete Marked');
-          await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+          await markMany(page, 10, 220);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
         }
       },
       {
-        caption: 'Three workflows, one gesture',
-        say: "Three workflows, one gesture, and the imagery never tinted \u2014 because that is "
-           + "what you are judging.",
-        async act({ page, expect }) {
-          await expect(page.locator('.tile').first()).toBeVisible();
+        caption: 'And on to page two',
+        say: "Then on to page two, and we delete half of these as well.",
+        async act({ page, expect, settled }) {
+          await page.locator('[data-page="next"]').click();
+          await settled();
+          const total = await page.locator('.tile:not(.failed):not(.queued)').count();
+          await markMany(page, Math.floor(total / 2), 150);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
         }
+      },
+      {
+        caption: 'MARP Picture Mosaic Reviewer',
+        say: "Using the Marp Picture Mosaic Reviewer gives us a very efficient way to review a "
+           + "model's false positives, and approve or reject them."
       }
     ]
   },
