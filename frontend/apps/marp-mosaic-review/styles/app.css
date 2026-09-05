@@ -14,8 +14,24 @@
   /* The image field is a quiet zone: flat, uniform, chromatically restrained. */
   --field: #17191c;
   --tile-bd: #2a2d32;
+
+  /* What "this workflow accepted it" looks like. Scientific review and training
+     review are independent decisions about the same observation, and they were
+     wearing the same green — so a promoted track and a reviewed observation were
+     indistinguishable at a glance. Training takes the violet it already uses as
+     its mode hue. Delete has no accepted state; its commit removes things. */
+  --accept: var(--green-400);
+  --accept-pale: var(--green-300);
+  --accept-soft: rgba(167, 236, 53, .55);
+  --accept-line: rgba(167, 236, 53, .42);
+  --accept-ink: #0d1a02;
 }
 body[data-mode="training"] {
+  --accept: var(--violet-400);
+  --accept-pale: var(--violet-300);
+  --accept-soft: rgba(155, 124, 240, .55);
+  --accept-line: rgba(155, 124, 240, .42);
+  --accept-ink: #150c2b;
   --mode: var(--violet-500);
   --mode-line: rgba(155, 124, 240, .30);
   --chrome: #17102b;
@@ -122,7 +138,7 @@ body.rail-collapsed .fcount { display: grid; }
                  border: solid #02121a; border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .prog { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .bar { height: 4px; border-radius: 2px; background: var(--navy-800); overflow: hidden; margin: 6px 0 4px; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--green-400)); }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--accept)); }
 .small { font-size: 9.5px; color: var(--faint); }
 
 /* ---------------------------------------------------------------- field */
@@ -167,7 +183,7 @@ body.rail-collapsed .fcount { display: grid; }
 .b-oth  { background: #414852;          color: #dfe6ec; }
 .b-del  { background: var(--red-400);   color: #2b0409; }
 .b-exc  { background: var(--grey-400);  color: #15181d; }
-.b-pro  { background: var(--green-400); color: #0d1a02; }
+.b-pro  { background: var(--violet-400); color: #150c2b; }
 .tile.marked  { outline: 2px solid var(--amber-300); }
 .tile.changed { outline: 2px solid var(--cyan-300); }
 .tile.done    { outline: 2px solid #596270; }
@@ -181,6 +197,10 @@ body[data-mode="delete"] .tile.marked::before {
   background: repeating-linear-gradient(45deg, rgba(224,97,107,.10) 0 6px, transparent 6px 16px); }
 body[data-mode="training"] .tile.marked { outline: 2px dashed var(--grey-400); }
 body[data-mode="training"] .tile.marked img { filter: brightness(.55) saturate(.5); }
+/* A flag is a judgement already made, so the tile steps back the way an excluded or
+   a doomed one does. Lighter than those two on purpose: flagged work stays in the
+   default view precisely so it can be looked at again and resolved. */
+body[data-mode="scientific"] .tile.marked img { filter: brightness(.66) saturate(.75); }
 
 /* fallbacks hold their slot rather than reordering the mosaic */
 .tile.queued, .tile.failed { display: grid; place-items: center; gap: 7px; }
@@ -236,7 +256,7 @@ body[data-mode="training"] .tile.marked img { filter: brightness(.55) saturate(.
 .ghost { height: 34px; display: flex; align-items: center; padding: 0 14px; border-radius: 6px;
          border: 1px solid var(--border); color: var(--muted); font-size: 12px;
          background: none; flex: none; }
-.ghost.go { border-color: rgba(167, 236, 53, .5); color: var(--green-300); font-weight: 600; }
+.ghost.go { border-color: var(--accept-soft); color: var(--accept-pale); font-weight: 600; }
 
 /* ---------------------------------------------------------------- footer */
 .foot { display: flex; align-items: center; gap: 8px; padding: 0 12px;
@@ -248,19 +268,19 @@ body[data-mode="training"] .tile.marked img { filter: brightness(.55) saturate(.
       border: 1px solid var(--mode-line); border-radius: 4px; font-size: 11px; font-weight: 600;
       color: var(--text); background: none; }
 .pg.nav { padding: 0 9px; color: var(--muted); }
-.pg.done { color: var(--green-300); border-color: rgba(167, 236, 53, .42);
-           box-shadow: inset 0 -3px 0 -1px var(--green-400); }
+.pg.done { color: var(--accept-pale); border-color: var(--accept-line);
+           box-shadow: inset 0 -3px 0 -1px var(--accept); }
 input.pg { width: 38px; padding: 0; background: var(--navy-1000); border: 1px solid var(--cyan-400);
            color: var(--cyan-300); font-weight: 700; text-align: center; font-family: inherit;
            font-size: 11.5px; }
 .gap { color: var(--faint); padding: 0 3px; font-size: 11px; }
 .legend { display: flex; align-items: center; gap: 6px; margin-left: 14px;
           font-size: 10px; color: var(--faint); }
-.swatch { width: 16px; height: 4px; border-radius: 1px; background: var(--green-400); }
+.swatch { width: 16px; height: 4px; border-radius: 1px; background: var(--accept); }
 .markall { display: flex; gap: 5px; margin-left: 16px; padding-left: 16px;
            border-left: 1px solid var(--line); }
 .count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--amber-300); }
-.commit { background: var(--green-400); color: #0d1a02; border: 0; border-radius: 5px;
+.commit { background: var(--accept); color: var(--accept-ink); border: 0; border-radius: 5px;
           padding: 7px 18px; font-size: 12px; font-weight: 700; margin-left: 26px;
           display: flex; align-items: center; gap: 7px; }
 body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
@@ -292,7 +312,7 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
   content: ""; position: absolute; inset: 0; z-index: 2;
   background: repeating-linear-gradient(45deg, rgba(224,97,107,.16) 0 6px, transparent 6px 14px); }
 .tile.out-reviewed { outline: 2px solid rgba(167, 236, 53, .55); }
-.tile.out-promoted { outline: 2px solid var(--green-400); }
+.tile.out-promoted { outline: 2px solid var(--violet-400); }
 .b-out { background: var(--green-400); color: #0d1a02; }
 .b-gone { background: var(--red-500); color: #fff; }
 
@@ -398,7 +418,7 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 /* a disposition the record already carries, distinct from a mark made just now */
 .tile.has-excluded { outline: 2px dashed var(--grey-400); }
 .tile.has-excluded img { filter: grayscale(.55) brightness(.62); }
-.tile.has-promoted { outline: 2px solid var(--green-400); }
+.tile.has-promoted { outline: 2px solid var(--violet-400); }
 .tile.has-reviewed { outline: 2px solid rgba(167, 236, 53, .5); }
 
 .tile.has-flagged { outline: 2px solid var(--amber-300); }

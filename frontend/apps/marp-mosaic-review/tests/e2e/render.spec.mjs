@@ -433,3 +433,70 @@ test.describe('taking a decision back reads as heading towards accepted', () => 
     expect(b, `a cooler green than --green-400, got ${colour}`).toBeGreaterThan(80);
   });
 });
+
+test.describe('the two workflows do not wear the same colour', () => {
+  /** Commit the current page and return the rgb of the first outcome badge. */
+  async function commitAndReadBadge(page, label) {
+    await page.locator('#commit').click();
+    const badge = page.locator('.tile .badge', { hasText: label }).first();
+    await expect(badge).toBeVisible();
+    const rgb = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+    return rgb.match(/\d+/g).map(Number);
+  }
+
+  test('REVIEWED is green and PROMOTED is violet, and they are far apart', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const [rr, rg, rb] = await commitAndReadBadge(page, 'REVIEWED');
+    expect(rg, `REVIEWED should be green, got rgb(${rr},${rg},${rb})`).toBeGreaterThan(rr);
+    expect(rg, 'and not blue').toBeGreaterThan(rb);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    const [pr, pg, pb] = await commitAndReadBadge(page, 'PROMOTED');
+    /* Violet: blue leads, and red is well ahead of green. */
+    expect(pb, `PROMOTED should be violet, got rgb(${pr},${pg},${pb})`).toBeGreaterThan(pg);
+    expect(pr, 'and reddish rather than cyan').toBeGreaterThan(pg);
+
+    /* The point of the change: these must not be confusable at a glance. */
+    const distance = Math.hypot(rr - pr, rg - pg, rb - pb);
+    expect(distance, `too close: rgb(${rr},${rg},${rb}) vs rgb(${pr},${pg},${pb})`)
+      .toBeGreaterThan(120);
+  });
+
+  test('the commit button follows the mode that owns the decision', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const read = () => page.locator('#commit')
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    const sci = (await read()).match(/\d+/g).map(Number);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    const tra = (await read()).match(/\d+/g).map(Number);
+
+    expect(sci[1], 'Mark Page Reviewed is green').toBeGreaterThan(sci[2]);
+    expect(tra[2], 'Promote Page is violet').toBeGreaterThan(tra[1]);
+  });
+});
+
+test.describe('a judged tile steps back', () => {
+  test('flagging dims the image, as excluding already did', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await page.locator('.tile:not(.failed):not(.queued):not(.marked)')
+      .first().getAttribute('data-id');
+    const img = page.locator(`.tile[data-id="${id}"] img`);
+
+    const before = await img.evaluate((el) => getComputedStyle(el).filter);
+    await page.locator(`.tile[data-id="${id}"]`).click();
+    const after = await img.evaluate((el) => getComputedStyle(el).filter);
+
+    expect(before).toBe('none');
+    expect(after, 'a flagged tile should be dimmed').toContain('brightness');
+    /* Lighter than an exclusion: flagged work stays in view to be resolved. */
+    const b = Number(after.match(/brightness\(([\d.]+)\)/)[1]);
+    expect(b).toBeGreaterThan(0.55);
+    expect(b).toBeLessThan(1);
+  });
+});

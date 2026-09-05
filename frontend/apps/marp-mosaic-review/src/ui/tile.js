@@ -24,7 +24,9 @@ function outcomeBadge(outcome, row, id) {
       title="Excluded${row.exclusion_reason ? ' — ' + row.exclusion_reason : ''}">${ICON.exc}EXCLUDED</span>`;
     case 'reverted': return `<span class="badge b-rev">${markIcon()}TAKEN BACK</span>`;
     case 'deleted':  return `<span class="badge b-gone">${ICON.del}DELETED</span>`;
-    case 'promoted': return `<span class="badge b-out">${ICON.pro}PROMOTED</span>`;
+    /* b-pro, not b-out: promotion is a training decision and wears training's
+       violet. Reusing the reviewed badge made the two read as the same answer. */
+    case 'promoted': return `<span class="badge b-pro">${ICON.pro}PROMOTED</span>`;
     case 'reviewed': return `<span class="badge b-out">${ICON.tick}REVIEWED</span>`;
     default: return '';
   }

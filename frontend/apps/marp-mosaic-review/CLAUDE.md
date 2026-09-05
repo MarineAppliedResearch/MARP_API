@@ -183,7 +183,17 @@ layout.
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
 
 Mode colour is **chrome only**. Never tint the imagery — the reviewer is judging how the
-organism looks, and #68 treats the image field as a quiet zone.
+organism looks, and #68 treats the image field as a quiet zone. Dimming a tile the
+reviewer has already judged is the one accepted exception: flagged, excluded and doomed
+tiles all step back, flagged the least because it stays in view to be resolved.
+
+**`--accept` is what "this workflow accepted it" looks like, and it follows the mode.**
+Green for scientific review, violet for training — the same violet training already uses
+as its mode hue. They were both green, which made two independent decisions read as the
+same answer. Everything that means *accepted by the current mode* takes this variable:
+the commit button, the pager's committed pages, the legend swatch, the progress bar. The
+PROMOTED badge is violet outright rather than through the variable, because it means
+promotion wherever it appears.
 
 Palette comes from `frontend/shared/assets/css/tokens.css`. Do not add hex values to
 `styles/app.css`; add a token.
