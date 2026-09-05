@@ -14,6 +14,24 @@
 
 const tilesIn = (page) => page.locator('.tile:not(.failed):not(.queued)');
 
+/* A page arrives with its existing flags already marked, so a scenario that wants to
+   demonstrate marking has to start from a tile nobody has decided about yet. */
+const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.marked)');
+
+/**
+ * Mark the first undecided tile and keep hold of it.
+ *
+ * A locator is re-resolved on every use, and `freshTile` stops matching the instant
+ * the tile is marked — so anything that clicks and then keeps using the same locator
+ * waits forever. Pin the id first.
+ */
+async function markFirstFresh(page) {
+  const id = await freshTile(page).first().getAttribute('data-id');
+  const tile = page.locator(`.tile[data-id="${id}"]`);
+  await tile.click();
+  return tile;
+}
+
 export const scenarios = {
 
   /* ------------------------------------------------------------- review */
@@ -236,6 +254,188 @@ export const scenarios = {
           await page.locator('#commit').click();
           await expect(page.locator('.tile .badge', { hasText: 'PROMOTED' }).first()).toBeVisible();
           await expect(page.locator('.tile .badge', { hasText: 'EXCLUDED' })).toHaveCount(1);
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------- verify: mode separation */
+  'verify-modes': {
+    title: 'Verifying: the modes are separate',
+    scenes: [
+      {
+        caption: 'Checking a fix: modes showing each other\u2019s answers',
+        say: "This is a verification run, so watch the badges the whole way through \u2014 the "
+           + "badges are where this bug showed. Scientific review and training review are two "
+           + "separate decisions about the same observation, and the app was letting one of "
+           + "them wear the other one's answer."
+      },
+      {
+        caption: 'Scientific review: flag two, then commit',
+        say: "We're in Scientific Data Review. I'll flag two observations and commit the page. "
+           + "Pay attention to what appears: green means accepted, amber means flagged. That is "
+           + "Scientific review's answer, and it belongs only here.",
+        async act({ page, expect }) {
+          for (let i = 0; i < 2; i++) {           // .first() each time: the set shrinks
+            await markFirstFresh(page);
+            await page.waitForTimeout(400);
+          }
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Now switch to Training Data Review',
+        say: "Now the important part. I'm switching to Training Data Review, and every one of "
+           + "those badges should be gone. Before the fix, this screen came up covered in green "
+           + "REVIEWED badges that Training review never gave \u2014 and clicking a tile would grey "
+           + "it out while it still claimed to be reviewed.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' })).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+        }
+      },
+      {
+        caption: 'Clean \u2014 nothing carried over',
+        say: "And there it is. Clean. Every tile shows its frame count and nothing else, because "
+           + "Training review has not been asked about any of these yet. Notice the filter on the "
+           + "left has changed too \u2014 it reads Training disposition now, not Review status.",
+        async act({ page, expect }) {
+          await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
+          await expect(page.locator('.tile .frames').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Delete Mode: also clean',
+        say: "Delete Mode, same check. Nothing carried over here either.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+        }
+      },
+      {
+        caption: 'Back to Scientific: the flag is on the record',
+        say: "And back to Scientific review. This is the part to watch closely. The flag we made "
+           + "is still here, because committing wrote it to the record \u2014 and look, it comes back "
+           + "already marked. That matters more than it sounds: a mark is what the next commit "
+           + "treats as the exception, so a flag that came back unmarked would be wiped the next "
+           + "time anybody committed this page.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+          await settled();
+          await expect(page.locator('.tile.marked').first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* -------------------------------------------- verify: a committed page edits */
+  'verify-editing': {
+    title: 'Verifying: a committed page is still editable',
+    scenes: [
+      {
+        caption: 'Checking a fix: editing after committing',
+        say: "Second verification. After committing a page, nothing could be changed. Clicking a "
+           + "tile did alter the state underneath, but the screen never moved \u2014 so it looked "
+           + "completely dead. Keep your eye on the first tile through this whole sequence."
+      },
+      {
+        caption: 'Flag one, and commit the page',
+        say: "I'll flag the first tile and commit the page. Watch its badge go amber.",
+        async act({ page, expect }) {
+          await markFirstFresh(page);
+          await page.waitForTimeout(500);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'It is still marked \u2014 that is deliberate',
+        say: "Now look at the outline on that tile. It is still marked, and that is on purpose. "
+           + "A mark is what the next commit treats as the exception, so the flag we just wrote "
+           + "has to stay marked \u2014 otherwise committing again would quietly un-flag it.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile.marked').first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Click it to take the flag back',
+        say: "So I click it, and watch the badge change. It says TAKING BACK. Nothing is written "
+           + "yet \u2014 the record still says flagged, but the next commit will accept it. Before the "
+           + "fix, this click appeared to do nothing at all.",
+        async act({ page, expect }) {
+          await page.locator('.tile.marked').first().click();
+          await expect(page.locator('.tile .badge', { hasText: 'TAKING BACK' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Commit again to accept it',
+        say: "And committing again accepts it. Amber to green, on a page that had already been "
+           + "committed once. That is exactly the thing that was broken.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'TAKING BACK' })).toHaveCount(0);
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------- verify: the species panel */
+  'verify-correction': {
+    title: 'Verifying: the correction panel',
+    scenes: [
+      {
+        caption: 'Checking a fix: the panel flickering',
+        say: "Third verification, and this one is short. When you corrected a species, the panel "
+           + "vanished for a moment and then popped straight back up. Watch the panel this time, "
+           + "not the tiles."
+      },
+      {
+        caption: 'Open the panel, then the species chooser',
+        say: "Flag a tile, open its badge, and open the species chooser. Opening the chooser goes "
+           + "and fetches the taxonomy, and the panel has to stay on screen for the whole of that "
+           + "request. Watch it now \u2014 it should not blink.",
+        async act({ page, expect }) {
+          const tile = await markFirstFresh(page);
+          await page.waitForTimeout(350);
+          await tile.locator('[data-badge]').click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await page.locator('.pick [data-act="correct"]').click();
+          await expect(page.locator('.pick #spSearch')).toBeVisible();
+        }
+      },
+      {
+        caption: 'Search, and choose a species',
+        say: "Search the taxonomy, and pick the right one. Here is the moment: the panel should "
+           + "close, once, and stay closed. It should not come back.",
+        async act({ page }) {
+          await page.locator('.pick #spSearch').fill('lea');
+          await page.waitForTimeout(700);
+          await page.locator('.pick .srow').first().click();
+        }
+      },
+      {
+        caption: 'Closed, and it stays closed',
+        say: "Gone, and it stays gone. The correction saved immediately, the tile now shows what "
+           + "the species used to be, and the flag is still marked \u2014 because correcting a species "
+           + "and resolving a flag are two different decisions.",
+        async act({ page, expect }) {
+          await expect(page.locator('.pick')).toHaveCount(0);
+          for (let i = 0; i < 5; i++) {
+            await page.waitForTimeout(200);
+            await expect(page.locator('.pick')).toHaveCount(0);
+          }
+          await expect(page.locator('.tile.marked').first()).toBeVisible();
+          await expect(page.locator('.reason-chip', { hasText: 'was ' }).first()).toBeVisible();
         }
       }
     ]
