@@ -109,9 +109,12 @@ the robotic voice silently, because the availability check ran through a shell t
 `python -c "import edge_tts"`. Adding an engine, including a local neural one such as
 Piper, is one entry in `ENGINES` in `narrate.mjs`.
 
-## Still to do
+## Scope
 
-Cross-repository use. `marp-video-player` and `VIDEO_PROCESSING_GUI` are separate
-repositories and cannot import from here; serving them means publishing this as a package
-or vendoring it, and vendoring is the duplication the harness exists to prevent. ADR-0007
-records the intent; this directory is the first half of it.
+This serves the applications `marp-api` itself serves, under `frontend/apps/`, plus the
+platform-level walkthrough of the site. That is deliberately the whole audience — the video
+player and the annotation GUI live in their own repositories with their own test
+arrangements, and are not consumers of this.
+
+Adding a new application to it is the two files above and a `walkthrough` Playwright
+project. No packaging, no version to keep in step, no second copy.
