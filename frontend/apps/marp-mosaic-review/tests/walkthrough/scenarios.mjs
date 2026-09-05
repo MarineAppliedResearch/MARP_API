@@ -579,6 +579,88 @@ export const scenarios = {
     ]
   },
 
+  /* ------------------------------------------- verify: the shortcuts */
+  /* Short. The keyboard is not the speed path here -- the pointer is -- so this shows
+     the four things worth a key and the one that deliberately refuses. */
+  'verify-shortcuts': {
+    title: 'Verifying: the keyboard shortcuts',
+    scenes: [
+      {
+        caption: 'The pointer still does the choosing',
+        say: "The keyboard is not how you pick tiles. Pointing at the odd one out is one "
+           + "action; arrowing across a grid is several. So the pointer selects, and the "
+           + "keyboard only handles the page.",
+        async act({ page, expect, store }) {
+          store.first = await page.locator('.tile').first().getAttribute('data-id');
+          const id = await page.locator('.tile:not(.marked)').first().getAttribute('data-id');
+          await page.locator(`.tile[data-id="${id}"]`).click();
+          await expect(page.locator('.tile.marked')).toHaveCount(1);
+          await page.waitForTimeout(900);
+        }
+      },
+      {
+        caption: 'C clears the page',
+        say: "C clears every mark on the page.",
+        async act({ page, expect }) {
+          await page.keyboard.press('c');
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+          await page.waitForTimeout(700);
+        }
+      },
+      {
+        caption: 'N and P turn the pages',
+        say: "N goes forward, P comes back. The shortcut is written on the button it "
+           + "belongs to, so you find it where you'd ask the question.",
+        async act({ page, expect, settled, store }) {
+          await page.keyboard.press('n');
+          await settled();
+          const second = await page.locator('.tile').first().getAttribute('data-id');
+          expect(second).not.toBe(store.first);
+          await page.keyboard.press('p');
+          await settled();
+          await expect(page.locator('.tile').first()).toHaveAttribute('data-id', store.first);
+          await page.waitForTimeout(600);
+        }
+      },
+      {
+        caption: 'Enter on its own does nothing',
+        say: "Committing is the one thing you cannot undo, so it will not answer to a "
+           + "single key. Pressing Enter here does nothing at all — deliberately.",
+        async act({ page, expect }) {
+          await page.keyboard.press('Enter');
+          await page.waitForTimeout(1400);
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+        }
+      },
+      {
+        caption: 'Control and Enter commits',
+        say: "It takes both hands. Control and Enter commits the page.",
+        async act({ page, expect }) {
+          await page.keyboard.press('Control+Enter');
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          await page.waitForTimeout(1500);
+        }
+      },
+      {
+        caption: 'And it says so when it cannot',
+        say: "On a page with nothing to commit, the shortcut nudges the button that is "
+           + "already telling you why, rather than sitting there looking broken.",
+        async act({ page, expect }) {
+          await page.evaluate(async () => {
+            const { state, actions } = await import('./src/store.js');
+            const { MarpData } = await import('./src/data.js');
+            MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
+            await actions.refresh();
+          });
+          await expect(page.locator('#commit')).toBeDisabled();
+          await page.keyboard.press('Control+Enter');
+          await expect(page.locator('#commit')).toHaveClass(/nudge/);
+          await page.waitForTimeout(1600);
+        }
+      }
+    ]
+  },
+
   'verify-modes': {
     title: 'Verifying: the modes are separate',
     scenes: [

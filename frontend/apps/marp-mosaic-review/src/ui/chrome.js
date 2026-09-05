@@ -6,6 +6,7 @@
  */
 import { state, actions, MODES, getLog } from '../store.js';
 import { commitCount, statusDimensions, commitOutcome, pageState } from '../model/modes.js';
+import { hintFor } from '../model/keys.js';
 import { pageWindow } from '../model/page.js';
 import { sortLabel, activeFilterCount } from '../model/filters.js';
 import { $, ICON } from './dom.js';
@@ -81,6 +82,7 @@ export function renderChrome() {
   $('#footCount').textContent = `${markedCount} ${m.mark.toLowerCase()}`;
   $('#markAll').textContent = `${m.verb} all on page`;
 
+  renderShortcutHints();
   renderStatusFilters();
   renderPager();
   renderPagesDone();
@@ -159,4 +161,35 @@ export function renderLog() {
     return `<li><span class="t">${e.at.toTimeString().slice(0, 8)}</span>
       <span class="n">${e.name}</span><span class="d">${detail}</span></li>`;
   }).join('');
+}
+
+/**
+ * Put each shortcut on the control it duplicates.
+ *
+ * A key badge rather than a help screen: a shortcut nobody can find is a shortcut nobody
+ * uses, and a help screen is a place people go once. The `title` is appended too, since
+ * that is reachable by keyboard focus -- but it cannot be the only route, because touch
+ * has no hover at all.
+ *
+ * Idempotent: `renderChrome` runs on every state change, and a badge appended each time
+ * would stack up.
+ */
+function renderShortcutHints() {
+  const pairs = [
+    ['#commit', 'commitPage'],
+    ['#clearMarks', 'clearMarks'],
+    ['.seg button[data-mode="scientific"]', 'modeScientific'],
+    ['.seg button[data-mode="training"]', 'modeTraining'],
+    ['.seg button[data-mode="delete"]', 'modeDelete'],
+  ];
+
+  for (const [selector, action] of pairs) {
+    const el = $(selector);
+    const hint = hintFor(action);
+    if (!el || !hint) continue;
+
+    el.dataset.key = hint;
+    const base = (el.title || '').replace(/\s*\(\S+\)$/, '');
+    if (base && !base.endsWith(`(${hint})`)) el.title = `${base} (${hint})`;
+  }
 }

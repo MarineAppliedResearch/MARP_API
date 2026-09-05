@@ -14,6 +14,7 @@ import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedB
   deleteImpact, commitOutcome, pageState } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
+import { resolveKey, hintFor, SHORTCUTS } from '../../src/model/keys.js';
 
 const row = (id, over = {}) => ({
   observation_id: id,
@@ -428,4 +429,65 @@ test('R9: scientific review can say the observation could not be seen', () => {
   assert.ok(MODES.scientific.reasons.includes('No imagery'),
     'a flag raised because nobody could see it must be able to say so on the record');
   assert.ok(!MODES.delete.reasons.length, 'delete still records no reason');
+});
+
+/* ------------------------------------------- keyboard shortcuts (#74) */
+
+const press = (key, over = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...over });
+
+test('R1-R3: the page-level keys map to their actions', () => {
+  assert.equal(resolveKey(press('ArrowRight')), 'nextPage');
+  assert.equal(resolveKey(press('n')), 'nextPage');
+  assert.equal(resolveKey(press('N')), 'nextPage', 'case must not matter');
+  assert.equal(resolveKey(press('ArrowLeft')), 'prevPage');
+  assert.equal(resolveKey(press('p')), 'prevPage');
+  assert.equal(resolveKey(press('c')), 'clearMarks');
+  assert.equal(resolveKey(press('1')), 'modeScientific');
+  assert.equal(resolveKey(press('2')), 'modeTraining');
+  assert.equal(resolveKey(press('3')), 'modeDelete');
+});
+
+test('R4: no bare key can ever commit', () => {
+  assert.equal(resolveKey(press('Enter')), null, 'Enter alone must not commit a page');
+  assert.equal(resolveKey(press('Enter', { shiftKey: true })), null);
+  assert.equal(resolveKey(press('Enter', { altKey: true })), null);
+
+  assert.equal(resolveKey(press('Enter', { ctrlKey: true })), 'commitPage');
+  assert.equal(resolveKey(press('Enter', { metaKey: true })), 'commitPage', 'Cmd on a Mac');
+
+  /* And the reverse: a chord must not trigger the bare shortcuts, or Ctrl+N would page
+     instead of opening a window. */
+  assert.equal(resolveKey(press('n', { ctrlKey: true })), null);
+});
+
+test('R5: nothing fires while somebody is typing', () => {
+  for (const tagName of ['INPUT', 'TEXTAREA', 'SELECT', 'input']) {
+    assert.equal(resolveKey(press('n'), { tagName }), null, `${tagName} owns its keys`);
+  }
+  assert.equal(resolveKey(press('c'), { isEditable: true }), null,
+    'contenteditable reveals itself through no tag name');
+  /* The species search is the case that motivated this: typing "no imagery" would
+     otherwise page forward twice and clear the page on the way. */
+  assert.equal(resolveKey(press('o'), { tagName: 'INPUT' }), null);
+});
+
+test('R5: a dialog owns the keyboard while it is open', () => {
+  assert.equal(resolveKey(press('n'), { modalOpen: true }), null);
+  assert.equal(resolveKey(press('Enter', { ctrlKey: true }), { modalOpen: true }), null,
+    'committing out from under an open confirmation must be impossible');
+});
+
+test('R6: every shortcut carries a hint to draw on its control', () => {
+  for (const s of SHORTCUTS) {
+    assert.ok(s.hint, `${s.action} needs a hint or it is undiscoverable`);
+    assert.equal(hintFor(s.action), s.hint);
+  }
+  assert.equal(hintFor('commitPage'), 'Ctrl+Enter');
+  assert.equal(hintFor('nothingLikeThis'), null);
+});
+
+test('unknown keys are simply not ours', () => {
+  assert.equal(resolveKey(press('q')), null);
+  assert.equal(resolveKey(press('F5')), null, 'refresh must still refresh');
+  assert.equal(resolveKey(null), null);
 });
