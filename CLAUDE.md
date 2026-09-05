@@ -163,6 +163,14 @@ phased plan for the schema and endpoints it will need. None of that schema exist
 the app runs entirely against a fixture, and its `src/data.js` is the seam where the
 API will arrive.
 
+**The API work is blocked on five questions, not on effort.** #68's *Open questions*
+opens with *Blocking the schema* — whether a flag belongs to the observation or to a
+reviewer, whether a species correction is an edit or an event, whether Delete removes
+rows or marks them, whether a pinned page survives a reload, and whether review, promote
+and delete are one permission or three. Every migration encodes those answers and
+changing them afterwards means rewriting production data, so they are asked, not
+inferred. Work on the client can continue in parallel; the schema cannot start.
+
 ## Known gaps
 
 - Four moderate dependency advisories on `develop`, all in the sequelize chain, where

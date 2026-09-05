@@ -12,6 +12,46 @@ Everything here is vanilla ES modules. No framework, no build step, no bundler, 
 runtime dependencies. That is deliberate and worth preserving: it is what lets this
 app be extracted into its own repository later without untangling a toolchain.
 
+## Where the work is
+
+**Read [MARP_API#68](https://github.com/MarineAppliedResearch/MARP_API/issues/68) before
+starting anything.** It is the design record and the plan of record: eleven phases, what
+each delivers, and what verifies it. This file says how the code works; the issue says
+what to build next and why.
+
+As of 2026-09-05, on branch `68-mosaic-review-prototype`:
+
+- **Phase 0 is done.** The prototype runs the whole workflow against a fixture, with
+  four test tiers (parse, unit, contract, render/e2e) all green.
+- **Phase 1 is in progress** — closing the client's functional gaps, still fixture
+  backed. #68 lists what is done and what remains. The largest remaining item is
+  multi-select filters: the issue requires irregular combinations across projects,
+  dives and lines, and the rail is single-select today.
+- **Phase 2 is the real blocker.** Five questions in #68's *Open questions*, under
+  *Blocking the schema*, have to be answered by the person who owns the data before any
+  migration can be written. They are not inferable from the code, and the whole API
+  stream waits on them. If the next task is "start the API", the first move is to put
+  those five in front of the user, not to start writing migrations.
+
+Nothing in this app talks to MARP_API yet, and no review or training column exists in
+the database. `src/data.js` is the seam where that arrives, in phase 8.
+
+### How this app is worked on
+
+The user reviews changes by using the app, and reports what they see. That has been far
+more effective at finding defects than the suite, so:
+
+- **Run `npm run test:unit` after every change.** It is about a second, and it includes
+  the parse check.
+- **Every reported defect gets a named test at the tier that can actually see it**
+  before it is called fixed. Several were reported twice because the first fix was
+  verified at a tier that structurally could not observe the bug.
+- **Record videos only when asked.** `npm run demo:narrated -- <scenario>` exists for
+  confirming behaviour on request, not as part of the loop. The `verify-*` scenarios
+  narrate what to watch for and assert it as they go.
+- Design decisions go into #68 as they are made. That issue, not this file, is where
+  the user expects to find what was decided and why.
+
 ## The layers, and which way they point
 
 ```
