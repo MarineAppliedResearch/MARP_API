@@ -259,6 +259,141 @@ export const scenarios = {
     ]
   },
 
+  /* ------------------------------------------------------------- overview */
+  /* Roughly two minutes, so the script is budgeted: about 290 spoken words at the
+     ~150 words a minute the neural voice runs at, plus a second of overhead per
+     scene. Every line earns its seconds — this is the video somebody watches once
+     to understand what the reviewer is for. */
+  overview: {
+    title: 'MARP Picture Mosaic Reviewer — overview',
+    scenes: [
+      {
+        caption: 'MARP Picture Mosaic Reviewer',
+        say: "Marp turns underwater video into scientific data. Models watch the footage and "
+           + "produce observations, thousands an hour — and every one needs a human to say "
+           + "whether it is right. This is where that happens."
+      },
+      {
+        caption: 'Why a mosaic',
+        say: "The trick is showing them together. These are all predicted to be the same "
+           + "species, so the one that does not belong jumps out at you. You are not reading "
+           + "records; you scan.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Build the wall: where, then what',
+        say: "The filters build that wall. Project, dive, line \u2014 where it came from \u2014 then "
+           + "species. Narrow it to one dive, and the mosaic follows.",
+        async act({ page, expect, settled }) {
+          await page.locator('#selDiveBtn').click();
+          await expect(page.locator('.menu')).toBeVisible();
+          await page.locator('.menu [data-v]').nth(1).click();
+          await settled();
+          await expect(page.locator('#selDive')).not.toHaveText('All dives');
+        }
+      },
+      {
+        caption: 'Click the ones that look wrong',
+        say: "Reviewing is clicking the ones that look wrong. No dialog, no form \u2014 you do "
+           + "this thousands of times, so it is one tap. Watch them dim as they are flagged.",
+        async act({ page, expect, store }) {
+          store.ids = [];
+          for (let i = 0; i < 3; i++) {
+            const id = await freshTile(page).first().getAttribute('data-id');
+            store.ids.push(id);
+            await page.locator(`.tile[data-id="${id}"]`).click();
+            await page.waitForTimeout(330);
+          }
+          await expect(page.locator('.tile.marked')).toHaveCount(3);
+        }
+      },
+      {
+        caption: 'Say why, and fix it here',
+        say: "Click the flag itself to say why. And when you know what it should be, correct "
+           + "it here — search the taxonomy, pick the species, and it saves immediately.",
+        async act({ page, expect, store }) {
+          const tile = page.locator(`.tile[data-id="${store.ids[0]}"]`);
+          const before = await tile.locator('.cap').innerText();
+          await tile.locator('[data-badge]').click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await page.locator('.pick .chip', { hasText: 'Wrong species' }).click();
+          await page.waitForTimeout(350);
+          await page.locator('.pick [data-act="correct"]').click();
+          await expect(page.locator('.pick #spSearch')).toBeVisible();
+          await page.locator('.pick #spSearch').fill('lea');
+          await page.waitForTimeout(700);
+          await page.locator('.pick .srow').first().click();
+          await expect(page.locator('.pick')).toHaveCount(0);
+          /* The caption is the evidence the correction landed. Not the corner chip:
+             when a tile carries both a reason and a correction the reason wins that
+             slot, so a corrected tile shows no sign it was corrected. Raised with
+             the user rather than changed here. */
+          await expect(tile.locator('.cap')).not.toHaveText(before);
+          await expect(tile).toHaveClass(/changed/);
+        }
+      },
+      {
+        caption: 'Commit the page, not each tile',
+        say: "Then commit the page. Everything you did not flag is accepted in one action. "
+           + "That is the whole idea: the work scales with how many are wrong, not how many "
+           + "there are.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('#commit')).toContainText('Saved');
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Pages you have finished stay finished',
+        say: "Committed pages go green in the pager, and it counts them. Come back later "
+           + "and everything you submitted is still here \u2014 ready to be changed.",
+        async act({ page, expect, settled }) {
+          await expect(page.locator('#pagesDone')).toContainText('1 of');
+          await page.locator('[data-page="next"]').click();
+          await settled();
+          await page.locator('[data-page="prev"]').click();
+          await settled();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Training Data Review',
+        say: "Same rhythm, different question. Scientific review asks whether an observation "
+           + "is good data. Training review asks whether it is good enough to teach a model "
+           + "with. Separate decisions, so it wears its own colour.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await expect(page.locator('#commit')).toContainText('Promote Page');
+          await expect(page.locator('.tile .frames').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Delete Mode',
+        say: "And Delete Mode, for observations that should not exist at all. It shows both "
+           + "review and training status first \u2014 because deleting "
+           + "cannot be undone.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          await expect(page.locator('#commit')).toContainText('Delete Marked');
+          await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+        }
+      },
+      {
+        caption: 'Three workflows, one gesture',
+        say: "Three workflows, one gesture, and the imagery never tinted \u2014 because that is "
+           + "what you are judging.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile').first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
   /* ------------------------------------------------- verify: mode separation */
   'verify-modes': {
     title: 'Verifying: the modes are separate',
