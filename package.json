@@ -17,7 +17,9 @@
     "test:app:mosaic-review:unit": "npm --prefix frontend/apps/marp-mosaic-review run test:unit",
     "test:app:mosaic-review:e2e": "npm --prefix frontend/apps/marp-mosaic-review run test:e2e",
     "serve:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run serve",
-    "demo:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run demo:all"
+    "demo:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run demo:all",
+    "demo": "node tools/record-demo.mjs",
+    "demo:narrated": "node tools/record-demo.mjs --narrate"
   },
   "repository": {
     "type": "git",
@@ -57,6 +59,7 @@
     "swagger-ui-express": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "docdash": "^2.0.2",
     "jest": "^30.4.2",
     "jsdoc": "^4.0.5",

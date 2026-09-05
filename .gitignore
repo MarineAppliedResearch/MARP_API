@@ -120,3 +120,7 @@ frontend/apps/*/demo/
 # Hosts, accounts and key paths for one developer. Repository files may say that a
 # credential exists and where it lives, never its value.
 .marp/local/
+
+# Walkthrough recordings. Megabytes of video, regenerated on demand by
+# `npm run demo:narrated`, and never a build input.
+/demo/
