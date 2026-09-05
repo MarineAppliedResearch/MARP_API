@@ -59,6 +59,7 @@ export function renderChrome() {
 
   renderStatusFilters();
   renderPager();
+  renderPagesDone();
 }
 
 /**
@@ -89,6 +90,25 @@ function renderStatusFilters() {
       e.stopPropagation();
       actions.toggleStatus(b.dataset.key, b.dataset.status);
     }));
+}
+
+/**
+ * How much of the current filter has been committed, counted in pages.
+ *
+ * It shares the legend with the swatch deliberately: the swatch explains what the
+ * hue in the pager means, and the count says how many carry it. The total moves as
+ * finished work leaves the filter, which is honest rather than tidy — the number to
+ * watch is the one on the left.
+ */
+function renderPagesDone() {
+  const done = state.committedPages.size;
+  const total = state.pageCount;
+  $('#pagesDone').innerHTML =
+    `<b>${done}</b> of <b>${total}</b><span class="lw"> pages committed</span>`;
+  $('#legend').title = done
+    ? `${done} of ${total} pages committed this session. The total shrinks as finished `
+      + `work leaves the filter; committed pages keep their place.`
+    : 'No pages committed yet in this filter';
 }
 
 function renderPager() {

@@ -604,3 +604,49 @@ test.describe('the commit button reports on itself', () => {
     await expect(page.locator('.pg.done')).toHaveCount(0);
   });
 });
+
+test.describe('how many pages are done', () => {
+  test('the count rises with each committed page, beside the swatch', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const done = page.locator('#pagesDone');
+    await expect(done).toContainText('0 of');
+
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+    await expect(done).toContainText('1 of');
+
+    await page.locator('[data-page="next"]').click();
+    await ready(page);
+    await page.locator('#commit').click();
+    await expect(done).toContainText('2 of');
+
+    /* It counts pages, not visits: going back to one already committed adds nothing. */
+    await page.locator('[data-page="prev"]').click();
+    await ready(page);
+    await expect(done).toContainText('2 of');
+  });
+
+  test('it resets when the question changes', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('#commit').click();
+    await expect(page.locator('#pagesDone')).toContainText('1 of');
+
+    /* A different mode is a different set of decisions, so the tally starts again. */
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await expect(page.locator('#pagesDone')).toContainText('0 of');
+  });
+
+  test('it survives on a phone, where the trailing words do not', async ({ page }, info) => {
+    test.skip(info.project.name !== 'phone', 'about the phone layout');
+    await page.goto('./');
+    await ready(page);
+    await expect(page.locator('#pagesDone')).toBeVisible();
+    await expect(page.locator('#pagesDone .lw')).toBeHidden();
+    /* The footer must still not wrap, which is what hid the legend in the first place. */
+    const bar = await page.locator('.foot').boundingBox();
+    expect(bar.height).toBeLessThan(80);
+  });
+});
