@@ -55,15 +55,45 @@ export const MODES = {
     accepts: null,
     marks: 'deleted',
     note: 'Commit permanently deletes the marked tiles — unmarked tiles are untouched',
+    /* Delete Mode reads BOTH status dimensions, and it is the only mode that does.
+       Deleting is irreversible, so the useful question before removing an observation
+       is not "what does this one workflow think" but "what does anything on the record
+       say" — that it was flagged, that it was accepted for science, that it is already
+       teaching a model. All of those are reasons to stop.
+
+       They are context, not this mode's own decision: Delete records nothing until the
+       commit, so nothing here ever arrives marked. */
     statusKey: 'reviewStatus',
     statusLabel: 'Review status',
     statuses: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']],
     defaultStatus: ['unreviewed', 'flagged'],
+    alsoStatusKey: 'trainingDisposition',
+    alsoStatusLabel: 'Training disposition',
+    alsoStatuses: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']],
+    alsoDefaultStatus: ['undecided', 'promoted', 'excluded'],
     reasons: []
   }
 };
 
 export const isMode = (id) => Object.prototype.hasOwnProperty.call(MODES, id);
+
+/**
+ * The status dimensions a mode filters on, in the order the rail shows them.
+ *
+ * Every mode has one, except Delete, which has both — see the note on that mode.
+ * Returning a list rather than a key is what lets the rail, the query and the
+ * defaults all stay ignorant of which mode is the exception.
+ */
+export function statusDimensions(modeId) {
+  const m = MODES[modeId];
+  const dims = [{ key: m.statusKey, label: m.statusLabel,
+                  statuses: m.statuses, defaults: m.defaultStatus }];
+  if (m.alsoStatusKey) {
+    dims.push({ key: m.alsoStatusKey, label: m.alsoStatusLabel,
+                statuses: m.alsoStatuses, defaults: m.alsoDefaultStatus });
+  }
+  return dims;
+}
 
 /** Delete Mode inverts the commit: it acts on what was marked, not what was left. */
 export const commitActsOnMarked = (modeId) => modeId === 'delete';

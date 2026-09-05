@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
-  pendingException } from '../../src/model/modes.js';
+  pendingException, statusDimensions } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 
@@ -225,4 +225,49 @@ test('what a commit accepted does not stay marked', () => {
 test('a deleted observation is not a pending intention', () => {
   const outcomes = page.applyCommit(new Map(), { reviewed: [{ id: 1, outcome: 'deleted' }] });
   assert.equal(page.marksAfterCommit(new Map(), outcomes, [1], pendingException('delete')).size, 0);
+});
+
+/* ------------------------------ Delete Mode reads both status dimensions */
+
+test('every mode filters on its own dimension; Delete filters on both', () => {
+  assert.deepEqual(statusDimensions('scientific').map((d) => d.key), ['reviewStatus']);
+  assert.deepEqual(statusDimensions('training').map((d) => d.key), ['trainingDisposition']);
+  /* Deleting is irreversible, so anything already on the record is a reason to stop. */
+  assert.deepEqual(statusDimensions('delete').map((d) => d.key),
+    ['reviewStatus', 'trainingDisposition']);
+});
+
+test('the query keeps every dimension the mode filters on, and drops the rest', () => {
+  const f = {
+    ...filters.DEFAULT_FILTERS,
+    reviewStatus: ['flagged'],
+    trainingDisposition: ['promoted']
+  };
+  const sci = filters.queryFilters('scientific', f);
+  assert.deepEqual(sci.reviewStatus, ['flagged']);
+  assert.equal(sci.trainingDisposition, null, 'training must not narrow scientific review');
+
+  const tra = filters.queryFilters('training', f);
+  assert.equal(tra.reviewStatus, null);
+  assert.deepEqual(tra.trainingDisposition, ['promoted']);
+
+  const del = filters.queryFilters('delete', f);
+  assert.deepEqual(del.reviewStatus, ['flagged'], 'Delete keeps review status');
+  assert.deepEqual(del.trainingDisposition, ['promoted'], 'and training disposition');
+});
+
+test('entering Delete Mode gives both dimensions a default', () => {
+  const bare = { ...filters.DEFAULT_FILTERS, reviewStatus: [], trainingDisposition: [] };
+  const out = filters.ensureStatusFor('delete', bare);
+  assert.ok(out.reviewStatus.length, 'review status falls back');
+  assert.ok(out.trainingDisposition.length, 'and so does training disposition');
+  /* Its training default shows everything: it is there to inform, not to hide rows. */
+  assert.deepEqual(out.trainingDisposition, ['undecided', 'promoted', 'excluded']);
+});
+
+test('both dimensions count towards the collapsed rail badge in Delete Mode', () => {
+  const f = { species: 'Bat Star', project: null, dive: null,
+    reviewStatus: ['flagged'], trainingDisposition: ['promoted'] };
+  assert.equal(filters.activeFilterCount('delete', f), 3, 'species plus two dimensions');
+  assert.equal(filters.activeFilterCount('scientific', f), 2, 'species plus one');
 });

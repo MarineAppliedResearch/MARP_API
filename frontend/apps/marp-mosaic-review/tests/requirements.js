@@ -6,6 +6,7 @@
  * markup — a rendering change should not break them, and a behaviour change should.
  */
 import { state, actions, MODES } from '../src/store.js';
+import { pendingException } from '../src/model/modes.js';
 import { MarpData } from '../src/data.js';
 
 const results = [];
@@ -526,6 +527,39 @@ test('Moving through pages',
     await actions.commitPage();
     const row = state.rows.find((r) => r.observation_id === id);
     eq(row.review_status, 'flagged', 'resubmitting applies the change');
+  });
+
+/* Delete Mode deliberately reads Review status: what the record already says is the
+   most useful thing to know before removing something permanently. Confirmed by the
+   walkthrough on 2026-09-05, where the narration claimed the opposite. */
+test('Delete mode',
+  'Delete Mode shows what the scientific record already says', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(id);
+    await actions.commitPage();                   // flags it on the record
+
+    actions.setMode('delete');
+    await new Promise((r) => setTimeout(r, 500));
+    eq(MODES.delete.statusLabel, 'Review status', 'Delete filters on review status');
+    const row = state.rows.find((r) => r.observation_id === id);
+    ok(row, 'the flagged observation is still in the delete-mode results');
+    eq(row.review_status, 'flagged', 'and it still carries its flag');
+  });
+
+test('Delete mode',
+  'nothing arrives marked in Delete Mode: a flag is not a deletion', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(id);
+    await actions.commitPage();
+
+    actions.setMode('delete');
+    await new Promise((r) => setTimeout(r, 500));
+    eq(state.marks.size, 0, 'marking here means delete, so the flag must not seed one');
+    eq(pendingException('delete'), null);
   });
 
 /* Reported 2026-09-04: flags vanished when a mode was switched, and a committed page

@@ -328,8 +328,10 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .tile.marked.queued, .tile.marked.failed { outline: 2px solid var(--amber-300); }
 .reason-chip[data-changed] { cursor: pointer; }
 .reason-chip[data-changed]:hover { border-color: var(--cyan-300); color: var(--cyan-300); }
-.tile.out-reverted { outline: 2px dashed var(--amber-300); }
-.b-rev { background: var(--amber-300); color: #241a02; }
+/* Taking back is heading towards accepted, so it is green rather than amber — but a
+   cooler green than the settled ones, and dashed, because nothing is written yet. */
+.tile.out-reverted { outline: 2px dashed var(--mint-400); }
+.b-rev { background: var(--mint-400); color: #052015; }
 
 .menu .msearch { width: 100%; height: 30px; margin-bottom: 5px; padding: 0 9px; border-radius: 4px;
                  background: var(--navy-1000); border: 1px solid var(--border); color: var(--white);

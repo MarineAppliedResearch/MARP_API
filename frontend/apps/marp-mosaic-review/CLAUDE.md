@@ -113,6 +113,17 @@ Scientific review reads `review_status`; training reads `training_disposition`. 
 are independent decisions about the same observation** — #68 is explicit about this, and
 conflating them breaks the science, not just the UI.
 
+**Delete Mode is the deliberate exception, and reads both.** `statusDimensions()`
+returns one dimension for the review modes and two for Delete. Deleting is
+irreversible, so the useful question is not what one workflow thinks but whether
+*anything* on the record says stop — it was flagged, it was accepted for science, it is
+already teaching a model. Those badges and filters are context, never a selection:
+`pendingException('delete')` is null, so nothing in Delete ever arrives marked, and the
+commit acts only on what the reviewer picked in this sitting.
+
+Adding a dimension to a mode means editing `MODES` and nothing else — the rail, the
+query, the defaults and the collapsed-rail badge all go through `statusDimensions()`.
+
 ## Invariants that will bite
 
 Each of these is a bug that actually happened. They look like over-engineering until

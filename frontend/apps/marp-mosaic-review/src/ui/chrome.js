@@ -5,7 +5,7 @@
  * the organisms look.
  */
 import { state, actions, MODES, getLog } from '../store.js';
-import { commitCount } from '../model/modes.js';
+import { commitCount, statusDimensions } from '../model/modes.js';
 import { pageWindow } from '../model/page.js';
 import { sortLabel, activeFilterCount } from '../model/filters.js';
 import { $ } from './dom.js';
@@ -51,20 +51,27 @@ export function renderChrome() {
 }
 
 /**
- * The status filter is mode-specific: scientific review filters on review status,
- * training review on training disposition. Counts come from the query, so they move
- * as work is committed.
+ * The status filters are mode-specific: scientific review filters on review status,
+ * training review on training disposition, and Delete on both — because deleting is
+ * irreversible and anything the record already says is a reason to stop. Counts come
+ * from the query, so they move as work is committed.
  */
 function renderStatusFilters() {
-  const m = MODES[state.mode];
-  $('#statusLbl').textContent = m.statusLabel;
-  const active = state.filters[m.statusKey] || [];
+  const dims = statusDimensions(state.mode);
 
-  $('#statusFilters').innerHTML = m.statuses.map(([value, label]) =>
-    `<button class="chk" data-status="${value}" data-key="${m.statusKey}"
-       title="Show ${label.toLowerCase()} observations">
-       <span class="box ${active.includes(value) ? 'on' : ''}"></span>${label}
-       <span class="n">${(state.counts[value] ?? 0).toLocaleString()}</span></button>`).join('');
+  /* The first dimension keeps the existing label slot; any further one brings its
+     own heading, so two groups never read as one long list of unrelated boxes. */
+  $('#statusLbl').textContent = dims[0].label;
+
+  $('#statusFilters').innerHTML = dims.map((dim, i) => {
+    const active = state.filters[dim.key] || [];
+    const heading = i === 0 ? '' : `<div class="lbl sub">${dim.label}</div>`;
+    return heading + dim.statuses.map(([value, label]) =>
+      `<button class="chk" data-status="${value}" data-key="${dim.key}"
+         title="Show ${label.toLowerCase()} observations">
+         <span class="box ${active.includes(value) ? 'on' : ''}"></span>${label}
+         <span class="n">${(state.counts[value] ?? 0).toLocaleString()}</span></button>`).join('');
+  }).join('');
 
   $('#statusFilters').querySelectorAll('[data-status]').forEach((b) =>
     b.addEventListener('click', (e) => {

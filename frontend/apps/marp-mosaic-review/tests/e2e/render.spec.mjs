@@ -21,6 +21,14 @@ async function ready(page) {
   }
 }
 
+/** The rail starts collapsed on a phone, so open it before reaching for a filter. */
+async function openRail(page) {
+  if (await page.locator('.app.railed, body.railed, #rail.collapsed').count()) { /* noop */ }
+  const rail = page.locator('#statusFilters [data-status]').first();
+  if (!(await rail.isVisible().catch(() => false))) await page.locator('#railbtn').click();
+  await expect(rail).toBeVisible();
+}
+
 /** Collect console errors and page errors for the whole test. */
 function watchErrors(page) {
   const errors = [];
@@ -346,5 +354,82 @@ test.describe('the correction panel', () => {
       await page.waitForTimeout(40);
     }
     await expect(page.locator('.pick #spSearch')).toBeVisible();
+  });
+});
+
+test.describe('Delete Mode shows the scientific record', () => {
+  test('an existing flag is visible before anything is deleted', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await page.locator('.tile:not(.failed):not(.queued):not(.marked)')
+      .first().getAttribute('data-id');
+    await page.locator(`.tile[data-id="${id}"]`).click();
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    /* Deleting is irreversible, so what the record already says has to be visible. */
+    await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+    await expect(page.locator('#statusLbl')).toHaveText('Review status');
+    /* But it is context, not a selection: Delete marks nothing on arrival. */
+    await expect(page.locator('.tile.marked')).toHaveCount(0);
+    await expect(page.locator('#commit')).toContainText('0 tiles');
+  });
+
+  test('it offers both status dimensions, and only Delete does', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    /* One dimension in the review modes... */
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveCount(0);
+    await expect(page.locator('#statusFilters [data-key="trainingDisposition"]')).toHaveCount(0);
+
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    /* ...both in Delete, each under its own heading. */
+    await expect(page.locator('#statusLbl')).toHaveText('Review status');
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+    await expect(page.locator('#statusFilters [data-key="reviewStatus"]')).toHaveCount(3);
+    await expect(page.locator('#statusFilters [data-key="trainingDisposition"]')).toHaveCount(3);
+  });
+
+  test('a training filter actually narrows the results in Delete Mode', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    await openRail(page);
+    const before = await page.locator('#total').innerText();
+
+    /* Untick Undecided: what is left is only what a model was already taught with. */
+    await page.locator('#statusFilters [data-key="trainingDisposition"][data-status="undecided"]').click();
+    await ready(page);
+    await expect(page.locator('#total')).not.toHaveText(before);
+  });
+});
+
+test.describe('taking a decision back reads as heading towards accepted', () => {
+  test('the TAKING BACK badge is green, not amber', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await page.locator('.tile:not(.failed):not(.queued):not(.marked)')
+      .first().getAttribute('data-id');
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+    await tile.click();
+    await page.locator('#commit').click();
+    /* Wait for the commit to land: clicking before it does lets marksAfterCommit
+       overwrite the toggle, and the tile comes back marked. */
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+    await tile.click();
+
+    const badge = tile.locator('.badge');
+    await expect(badge).toContainText('TAKING BACK');
+    const colour = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const [r, g, b] = colour.match(/\d+/g).map(Number);
+    expect(g, `green channel should dominate, got ${colour}`).toBeGreaterThan(r + 40);
+    expect(g, `and it should not be the amber it used to be, got ${colour}`).toBeGreaterThan(b);
+    /* Distinct from the settled greens, which are the acid --green ramp. */
+    expect(b, `a cooler green than --green-400, got ${colour}`).toBeGreaterThan(80);
   });
 });

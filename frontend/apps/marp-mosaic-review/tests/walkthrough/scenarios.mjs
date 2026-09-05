@@ -303,20 +303,36 @@ export const scenarios = {
         caption: 'Clean \u2014 nothing carried over',
         say: "And there it is. Clean. Every tile shows its frame count and nothing else, because "
            + "Training review has not been asked about any of these yet. Notice the filter on the "
-           + "left has changed too \u2014 it reads Training disposition now, not Review status.",
+           + "left has changed too \u2014 it reads Training disposition now, not Review status. That "
+           + "is the reason nothing shows: Training is reading a different dimension entirely.",
         async act({ page, expect }) {
           await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
           await expect(page.locator('.tile .frames').first()).toBeVisible();
         }
       },
       {
-        caption: 'Delete Mode: also clean',
-        say: "Delete Mode, same check. Nothing carried over here either.",
+        caption: 'Delete Mode: the flag is meant to show here',
+        say: "Delete Mode is different, and this is deliberate, so watch what stays. The "
+           + "flag is still on screen. Delete Mode filters on Review status, not on its own "
+           + "dimension, because deleting cannot be undone \u2014 and the most useful thing to "
+           + "know before removing an observation is what the scientific record already says "
+           + "about it. That somebody flagged it. Or worse, that somebody accepted it.",
         async act({ page, expect, settled }) {
           await page.locator('.seg button', { hasText: 'Delete' }).click();
           await settled();
-          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+          await expect(page.locator('#statusLbl')).toHaveText('Review status');
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'But nothing here is selected for deletion',
+        say: "What has not carried over is the selection. Look at the button: zero tiles. "
+           + "Those badges are context, not a decision \u2014 a flag is not a deletion, and marking "
+           + "here means something completely different, so nothing arrives marked. You start "
+           + "from an empty selection every time.",
+        async act({ page, expect }) {
           await expect(page.locator('.tile.marked')).toHaveCount(0);
+          await expect(page.locator('#commit')).toContainText('0 tiles');
         }
       },
       {

@@ -4,7 +4,7 @@
  * No DOM, no network. Each mode filters on its own status dimension and only that
  * one, so switching modes must not leave the other mode's status filter applied.
  */
-import { MODES } from './modes.js';
+import { MODES, statusDimensions } from './modes.js';
 
 export const DEFAULT_FILTERS = {
   species: 'Bat Star',
@@ -34,8 +34,12 @@ export const sortLabel = (sort) =>
  */
 export function queryFilters(mode, filters, { excludeIds } = {}) {
   const out = { ...filters };
-  if (mode === 'training') out.reviewStatus = null;
-  else out.trainingDisposition = null;
+  /* Drop every status dimension this mode does not filter on, so the other mode's
+     selection cannot silently narrow the results. Delete keeps both. */
+  const mine = new Set(statusDimensions(mode).map((d) => d.key));
+  for (const key of ['reviewStatus', 'trainingDisposition']) {
+    if (!mine.has(key)) out[key] = null;
+  }
   if (excludeIds && excludeIds.size) out.excludeIds = excludeIds;
   return out;
 }
@@ -49,14 +53,17 @@ export function toggleStatus(filters, key, value) {
   };
 }
 
-/** Entering a mode with nothing selected on its dimension falls back to its default. */
+/** Entering a mode with nothing selected on a dimension falls back to its default. */
 export function ensureStatusFor(mode, filters) {
-  const { statusKey, defaultStatus } = MODES[mode];
-  if ((filters[statusKey] || []).length) return filters;
-  return { ...filters, [statusKey]: defaultStatus.slice() };
+  let out = filters;
+  for (const { key, defaults } of statusDimensions(mode)) {
+    if ((out[key] || []).length) continue;
+    out = { ...out, [key]: defaults.slice() };
+  }
+  return out;
 }
 
 /** How many filters are narrowing the results, for the collapsed rail's badge. */
 export const activeFilterCount = (mode, filters) =>
   ['species', 'project', 'dive'].filter((k) => filters[k]).length
-  + ((filters[MODES[mode].statusKey] || []).length ? 1 : 0);
+  + statusDimensions(mode).filter((d) => (filters[d.key] || []).length).length;
