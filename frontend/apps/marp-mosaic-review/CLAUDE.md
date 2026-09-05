@@ -308,6 +308,11 @@ sent before it finishes is overwritten. Wait for the outcome badge, not a timeou
 
 ## The narrated walkthroughs
 
+**The runner and the recorder are shared** -- `MARP_API/tools/walkthrough/`, extracted from
+here (ADR-0007). Its README is where the scenario format, the caption/say/act rules, the
+timing and the speech engines are documented. What stays in this app is
+`tests/walkthrough/scenarios.mjs`, plus knowing when the grid has stopped moving.
+
 Playwright drives a scenario, records video, and a spoken narration is mixed over it.
 The user watches these to confirm behaviour, so they are a review surface, not a test
 report — but they assert as they go, so a broken app fails and writes no video rather
