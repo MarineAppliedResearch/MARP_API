@@ -27,11 +27,23 @@ As of 2026-09-05, on branch `68-mosaic-review-prototype`:
   backed. #68 lists what is done and what remains. The largest remaining item is
   multi-select filters: the issue requires irregular combinations across projects,
   dives and lines, and the rail is single-select today.
-- **Phase 2 is the real blocker.** Five questions in #68's *Open questions*, under
-  *Blocking the schema*, have to be answered by the person who owns the data before any
-  migration can be written. They are not inferable from the code, and the whole API
-  stream waits on them. If the next task is "start the API", the first move is to put
-  those five in front of the user, not to start writing migrations.
+- **Phase 2 is done.** The five schema-blocking questions were answered on 2026-09-05
+  and are written up as *The schema decisions* in #68. Phase 3 is unblocked.
+
+Three of those answers contradict what this prototype currently does, and are the next
+client work:
+
+- **Deletion is permanent and needs an explicit confirmation** stating the exact count,
+  saying it deletes records from the database and cannot be undone. There is none today.
+  This is the most consequential gap in the client.
+- **Page membership is query-derived.** `state.pageMembers` pins a committed page's ids
+  and re-fetches them by id. That was the right fix for a real defect, but the settled
+  answer is deterministic ordering with an `observation_id` tie-breaker instead. Worth
+  confirming with the user before removing the pin: with the default filter, committing
+  a page removes its rows from the filter, so a plain re-query returns *different*
+  observations — which is the defect the pin was added to fix.
+- **Adjacent-page prefetching** is required, not optional. Page N+1 is fetched in the
+  background while the reviewer works, so paging never shows a delay.
 
 Nothing in this app talks to MARP_API yet, and no review or training column exists in
 the database. `src/data.js` is the seam where that arrives, in phase 8.
