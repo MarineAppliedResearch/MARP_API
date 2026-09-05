@@ -1,0 +1,108 @@
+/**
+ * Building the query a mode asks for.
+ *
+ * No DOM, no network. Each mode filters on its own status dimension and only that
+ * one, so switching modes must not leave the other mode's status filter applied.
+ */
+import { MODES, statusDimensions } from './modes.js';
+
+/** The rail's order, narrowest scope last: where it was, then what it is. */
+export const FILTER_KEYS = ['project', 'dive', 'line', 'species'];
+
+export const DEFAULT_FILTERS = {
+  species: 'Bat Star',
+  project: null,
+  dive: null,
+  line: null,
+  minConfidence: 0.5,
+  reviewStatus: MODES.scientific.defaultStatus.slice(),
+  trainingDisposition: MODES.training.defaultStatus.slice()
+};
+
+export const DEFAULT_SORT = { field: 'confidence', dir: 'asc' };
+
+export const SORTS = [
+  { field: 'confidence', dir: 'asc', label: 'Confidence (low first)' },
+  { field: 'confidence', dir: 'desc', label: 'Confidence (high first)' },
+  { field: 'keyframe_count', dir: 'desc', label: 'Track length (longest)' },
+  { field: 'updatedAt', dir: 'desc', label: 'Recently updated' },
+  { field: 'obsID', dir: 'asc', label: 'Observation number' }
+];
+
+export const sortLabel = (sort) =>
+  (SORTS.find((s) => s.field === sort.field && s.dir === sort.dir) || SORTS[0]).label;
+
+/**
+ * The filters actually sent for a mode: the reviewer's choices, with the other
+ * mode's status dimension dropped so it cannot silently narrow the results.
+ */
+export function queryFilters(mode, filters, { excludeIds } = {}) {
+  const out = { ...filters };
+  /* Drop every status dimension this mode does not filter on, so the other mode's
+     selection cannot silently narrow the results. Delete keeps both. */
+  const mine = new Set(statusDimensions(mode).map((d) => d.key));
+  for (const key of ['reviewStatus', 'trainingDisposition']) {
+    if (!mine.has(key)) out[key] = null;
+  }
+  if (excludeIds && excludeIds.size) out.excludeIds = excludeIds;
+  return out;
+}
+
+/**
+ * Set one filter, and drop anything it invalidates.
+ *
+ * Project, dive and line nest: a line number only means something inside a dive, and
+ * a dive inside a project. Leaving the narrower one set after changing the wider one
+ * produces an empty mosaic and no explanation for it.
+ */
+export function applyFilter(filters, key, value) {
+  const out = { ...filters, [key]: value };
+  if (key === 'project') { out.dive = null; out.line = null; }
+  if (key === 'dive') out.line = null;
+  return out;
+}
+
+/** Toggle one value of a multi-select status filter. */
+export function toggleStatus(filters, key, value) {
+  const cur = filters[key] || [];
+  return {
+    ...filters,
+    [key]: cur.includes(value) ? cur.filter((v) => v !== value) : cur.concat(value)
+  };
+}
+
+/** Entering a mode with nothing selected on a dimension falls back to its default. */
+export function ensureStatusFor(mode, filters) {
+  let out = filters;
+  for (const { key, defaults } of statusDimensions(mode)) {
+    if ((out[key] || []).length) continue;
+    out = { ...out, [key]: defaults.slice() };
+  }
+  return out;
+}
+
+/**
+ * Entering a mode puts every dimension it owns back to that mode's default.
+ *
+ * Carrying a selection across is worse than it sounds, because the modes do not mean
+ * the same thing by a dimension. Training narrows training disposition to *undecided*
+ * so finished work leaves the view; Delete shows all three, because there it is
+ * context rather than a filter. Arriving in Delete straight from Training inherited
+ * the narrowing and hid every observation the reviewer had just promoted — exactly the
+ * rows most worth seeing before deleting something.
+ *
+ * `setMode` already discards marks, outcomes and pins, so a mode opening at its own
+ * default is the consistent behaviour rather than a new one.
+ */
+export function defaultStatusFor(mode, filters) {
+  let out = filters;
+  for (const { key, defaults } of statusDimensions(mode)) {
+    out = { ...out, [key]: defaults.slice() };
+  }
+  return out;
+}
+
+/** How many filters are narrowing the results, for the collapsed rail's badge. */
+export const activeFilterCount = (mode, filters) =>
+  FILTER_KEYS.filter((k) => filters[k]).length
+  + statusDimensions(mode).filter((d) => (filters[d.key] || []).length).length;

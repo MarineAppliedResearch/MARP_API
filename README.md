@@ -315,10 +315,18 @@ Unknown API routes should return a JSON `404`. Unknown non-API routes should ret
 
 ## Getting started
 
-Development runs on your local machine. The development PostgreSQL database and
-Jellyfin run on the Ubuntu VirtualBox VM (`MARP DEV ENVIRONMENT`); the API itself
-runs locally and connects to them over the VM network. See
-[Local Windows development](#local-windows-development) for the VM side.
+Development runs on your local machine, against a local development database.
+`marp db up` in the [umbrella workspace](https://github.com/MarineAppliedResearch/MARP)
+produces one -- a self-contained PostgreSQL, no installer and no virtual machine --
+and prints the `DB_*` settings to paste into `.env`. `marp db env` prints them again
+later, and `marp db status` says what is running.
+
+Any other PostgreSQL works just as well: the API reads five `DB_*` variables and has
+no idea what is serving them.
+
+The earlier arrangement, a shared virtual machine, is being retired. It is still
+described under [Local Windows development](#local-windows-development) for anyone
+who has one running.
 
 ### Prerequisites
 
@@ -441,8 +449,8 @@ A typical development configuration starts from:
 NODE_ENV=development
 PORT=3000
 
-DB_HOST=localhost
-DB_PORT=5433
+DB_HOST=replace-with-the-host-db-env-printed
+DB_PORT=replace-with-the-port-db-env-printed
 DB_NAME=mare_development
 DB_USER=mare_user
 DB_PASSWORD=replace-with-a-local-password
@@ -453,9 +461,9 @@ The password variable is `DB_PASSWORD`, matching `config/config.js`. Earlier
 revisions of this README named it `DB_PASS`, which is not read by anything and
 produces an authentication failure.
 
-`DB_PORT=5433` assumes the VirtualBox port forward described in
-[Local Windows development](#local-windows-development). Use `5432` when
-connecting to a PostgreSQL server directly.
+The host and port are deliberately not written down here. `marp db env` prints the
+ones your database is actually using, and a literal in this file would be wrong the
+first time anyone ran `db up --port` for a second worktree.
 
 Optional integrations — Jellyfin and the reporting database — have their own
 variables. All are documented in `.env.example`.
@@ -472,6 +480,14 @@ Do not place production passwords, API keys, session secrets, or external-servic
 ---
 
 ## Local Windows development
+
+<!-- harness:history -->
+
+> **Historical.** This section describes the shared virtual machine that used to serve
+> the development database and Jellyfin. That arrangement is being retired in favour of
+> a per-developer database from `marp db up`, which is what
+> [Getting started](#getting-started) describes. Kept for anyone still running the VM.
+> Do not copy values out of here into a new setup.
 
 The API runs on the local Windows machine. The development PostgreSQL database
 and Jellyfin run on the Ubuntu VirtualBox VM `MARP DEV ENVIRONMENT`. The API no

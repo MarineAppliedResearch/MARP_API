@@ -6,6 +6,7 @@
  * markup — a rendering change should not break them, and a behaviour change should.
  */
 import { state, actions, MODES } from '../src/store.js';
+import { pendingException } from '../src/model/modes.js';
 import { MarpData } from '../src/data.js';
 
 const results = [];
@@ -20,11 +21,26 @@ function eq(a, b, msg) {
 }
 function ok(v, msg) { if (!v) throw new Error(msg || 'expected truthy'); }
 
-/** Put the store back to a known place between tests. */
+/**
+ * Put the store — and the data — back to a known place between checks.
+ *
+ * Reloading the fixture matters: commits and corrections mutate it, so without this
+ * each check runs against the wreckage of the last one. Two checks here were quietly
+ * order-dependent until a page started arriving with its existing flags marked.
+ */
 async function reset(mode = 'scientific') {
+  await MarpData.reload();
   state.mode = mode;
   state.page = 1;
+  state.filters.species = 'Bat Star';
+  state.filters.project = null;
+  state.filters.reviewStatus = ['unreviewed', 'flagged'];
+  state.filters.trainingDisposition = ['undecided'];
+  state.outcomes.clear();
+  state.pageMembers.clear();
+  state.committedPages.clear();
   state.marks.clear();
+  state.touched.clear();
   state.changed.clear();
   state.committedPages.clear();
   state.picker = null;
@@ -77,11 +93,11 @@ test('Exception marking and the page commit',
     const res = await MarpData.commitPage({
       mode: 'scientific',
       observationIds: state.rows.map((r) => r.observation_id),
-      marked: new Set([marked])
+      marks: new Map([[marked, { reason: null }]])
     });
     ok(!res.reviewed.some((r) => r.id === marked), 'the marked tile must not be accepted');
-    ok(res.skipped.some((s) => s.id === marked && s.reason === 'marked'),
-       'the marked tile should be reported as skipped');
+    ok(res.flagged.some((f) => f.id === marked && f.outcome === 'flagged'),
+       'it should be reported as flagged, which is a decision rather than a skip');
   });
 
 test('Delete mode',
@@ -92,7 +108,7 @@ test('Delete mode',
     const res = await MarpData.commitPage({
       mode: 'delete',
       observationIds: state.rows.map((r) => r.observation_id),
-      marked: new Set([marked])
+      marks: new Map([[marked, { reason: null }]])
     });
     ok(res.reviewed.some((r) => r.id === marked && r.outcome === 'deleted'),
        'the marked tile should be deleted');
@@ -106,7 +122,7 @@ test('What counts as reviewed',
     const bad = rows.find((r) => r.thumbnail_status !== 'ready');
     if (!bad) return 'skipped — no unavailable thumbnail on page 1';
     const res = await MarpData.commitPage({
-      mode: 'scientific', observationIds: rows.map((r) => r.observation_id), marked: new Set()
+      mode: 'scientific', observationIds: rows.map((r) => r.observation_id), marks: new Map()
     });
     ok(res.skipped.some((s) => s.id === bad.observation_id && s.reason === 'no-imagery'),
        'unavailable imagery must be skipped');
@@ -185,6 +201,426 @@ test('Filter and sort dimensions',
     const c = state.rows.map((r) => r.confidence);
     const sorted = c.slice().sort((a, b) => a - b);
     eq(c, sorted, 'page 1 should be ascending by confidence');
+  });
+
+test('What counts as reviewed',
+  'an observation with no image is still markable, and keeps its species name', async () => {
+    await reset();
+    const bad = state.rows.find((r) => r.thumbnail_status !== 'ready');
+    if (!bad) return 'skipped — no unavailable thumbnail on page 1';
+    ok(bad.comname && bad.comname.length, 'it must still carry its name');
+    actions.toggleMark(bad.observation_id);
+    ok(state.marks.has(bad.observation_id), 'it must be markable');
+  });
+
+test('Moving through pages',
+  'a committed decision can be taken back by marking it and committing again', async () => {
+    await reset();
+    /* pick a row the commit can actually act on: ready imagery, not already reviewed */
+    /* Not merely "not reviewed": a row the record already flags arrives marked, and
+       committing keeps it flagged. This check is about a row the commit accepts. */
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && r.review_status === 'unreviewed' && !state.marks.has(r.observation_id));
+    ok(target, 'page 1 should contain an unreviewed, unmarked row');
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.outcomes.get(id), 'reviewed', 'first commit accepts it');
+    actions.toggleMark(id);
+    await actions.commitPage();
+    const row = state.rows.find((r) => r.observation_id === id);
+    ok(row.review_status !== 'reviewed', 'the acceptance must be withdrawn');
+    eq(row.review_status, 'flagged', 'and the observation is now flagged instead');
+    eq(row.reviewed_by, null, 'the previous acceptance is cleared');
+  });
+
+test('The review modes',
+  'training review offers reasons, correction and resolution like scientific review', async () => {
+    await reset('training');
+    const id = state.rows[0].observation_id;
+    actions.toggleMark(id);
+    actions.openPicker(id);
+    ok(state.picker && state.picker.id === id, 'the panel opens in training mode too');
+    actions.setReason(id, 'Occluded');
+    eq(state.marks.get(id).reason, 'Occluded', 'a training exclusion carries its reason');
+    actions.resolve(id);
+    ok(!state.marks.has(id), 'resolving clears it, as in scientific review');
+  });
+
+test('Moving through pages',
+  'a committed decision survives navigating away and back', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status !== 'reviewed');
+    ok(target, 'page 1 should contain a reviewable row');
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.outcomes.get(id), 'reviewed');
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 300));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 300));
+    eq(state.outcomes.get(id), 'reviewed',
+       'the session record of what was committed must not be cleared by a re-query');
+    ok(state.committedPages.has(1), 'the pager must still show the page as committed');
+  });
+
+test('Filter and sort dimensions',
+  'the status counts reflect the data and move when work is committed', async () => {
+    await reset();
+    const before = state.counts.unreviewed;
+    ok(before > 0, 'there should be unreviewed work to start with');
+    await actions.commitPage();
+    await new Promise((r) => setTimeout(r, 300));
+    ok(state.counts.unreviewed < before,
+       `committing should reduce the unreviewed count (was ${before}, now ${state.counts.unreviewed})`);
+    ok(state.counts.reviewed > 0, 'and increase the reviewed count');
+  });
+
+test('Training data review',
+  'promoting a page records the promotion on the observations themselves', async () => {
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+    ok(target, 'page 1 should contain a promotable track');
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.outcomes.get(id), 'promoted', 'the tile should report the promotion');
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.training_disposition, 'promoted', 'the record itself must carry it');
+    eq(row.training_approved_by, 'I. Travers', 'and who approved it');
+  });
+
+test('Training data review',
+  'promotions are still visible after navigating away and back', async () => {
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+    await actions.commitPage();
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 300));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 300));
+    eq(state.outcomes.get(id), 'promoted', 'the session record must survive the re-query');
+
+    /* and the record is findable again by filtering on the disposition */
+    state.filters.trainingDisposition = ['promoted'];
+    await actions.refresh();
+    const seen = state.rows.find((r) => r.observation_id === id);
+    if (seen) eq(seen.training_disposition, 'promoted');
+  });
+
+test('Filter and sort dimensions',
+  'filtering by a disposition returns only observations carrying it', async () => {
+    for (const want of ['excluded', 'promoted', 'undecided']) {
+      await reset('training');
+      state.filters.trainingDisposition = [want];
+      await actions.refresh();
+      const wrong = state.rows.filter((r) => r.training_disposition !== want);
+      eq(wrong.length, 0,
+         `every row under the ${want} filter must be ${want}; ${wrong.length} were not`);
+    }
+  });
+
+test('Filter and sort dimensions',
+  'filtering by review status returns only observations carrying it', async () => {
+    for (const want of ['reviewed', 'unreviewed']) {
+      await reset();
+      state.filters.reviewStatus = [want];
+      await actions.refresh();
+      const wrong = state.rows.filter((r) => r.review_status !== want);
+      eq(wrong.length, 0, `every row under the ${want} filter must be ${want}`);
+    }
+  });
+
+/* Marks are uncommitted work. Navigating away and back must not lose them,
+   and this must behave identically in every mode. */
+for (const mode of ['scientific', 'training', 'delete']) {
+  test('Moving through pages',
+    `an uncommitted mark survives leaving the page and returning — ${mode}`, async () => {
+      await reset(mode);
+      const id = state.rows[0].observation_id;
+      actions.toggleMark(id);
+      ok(state.marks.has(id), 'marked to begin with');
+
+      actions.goToPage(2);
+      await new Promise((r) => setTimeout(r, 350));
+      ok(!state.rows.some((r) => r.observation_id === id), 'we really did leave the page');
+
+      actions.goToPage(1);
+      await new Promise((r) => setTimeout(r, 350));
+      ok(state.rows.some((r) => r.observation_id === id), 'and came back to it');
+      ok(state.marks.has(id), 'the mark must still be there');
+    });
+
+  test('Moving through pages',
+    `a reason on an uncommitted mark survives too — ${mode}`, async () => {
+      if (mode === 'delete') return 'skipped — delete marks carry no reason';
+      await reset(mode);
+      const id = state.rows[0].observation_id;
+      actions.toggleMark(id);
+      actions.setReason(id, 'Occluded');
+      actions.goToPage(2);
+      await new Promise((r) => setTimeout(r, 350));
+      actions.goToPage(1);
+      await new Promise((r) => setTimeout(r, 350));
+      eq(state.marks.get(id) && state.marks.get(id).reason, 'Occluded');
+    });
+}
+
+/* A mark is a decision, not client state: committing must write it to the record,
+   so it is still there after leaving the page, and would survive a reload. */
+test('Review states',
+  'committing a flag writes it to the observation, with its reason', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status === 'unreviewed');
+    ok(target, 'need an unreviewed row');
+    const id = target.observation_id;
+    actions.toggleMark(id);
+    actions.setReason(id, 'Wrong species');
+    await actions.commitPage();
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_status, 'flagged', 'the record must carry the flag');
+    eq(row.flag_reason, 'Wrong species', 'and the reason');
+    eq(row.flagged_by, 'I. Travers', 'and who flagged it');
+  });
+
+test('Review states',
+  'a committed flag is still shown after leaving the page and returning', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status === 'unreviewed');
+    const id = target.observation_id;
+    actions.toggleMark(id);
+    actions.setReason(id, 'Bounding box');
+    await actions.commitPage();
+
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 350));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 350));
+
+    const row = state.rows.find((r) => r.observation_id === id);
+    ok(row, 'a flagged observation is open work, so it stays in the default view');
+    eq(row.review_status, 'flagged');
+    eq(row.flag_reason, 'Bounding box', 'the reason survives too');
+  });
+
+test('Training data review',
+  'committing an exclusion writes it to the observation, with its reason', async () => {
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+    actions.toggleMark(id);
+    actions.setReason(id, 'Occluded');
+    await actions.commitPage();
+    const row = state.rows.find((r) => r.observation_id === id)
+      || (await MarpData.query({ filters: { trainingDisposition: ['excluded'] }, page: 1, pageSize: 600 }))
+           .rows.find((r) => r.observation_id === id);
+    eq(row.training_disposition, 'excluded');
+    eq(row.exclusion_reason, 'Occluded');
+  });
+
+test('Correcting an observation',
+  'a species correction is still visible on the tile after returning', async () => {
+    await reset();
+    state.filters.species = null;            // a correction moves the row out of a species filter
+    await actions.refresh();
+    const id = state.rows[0].observation_id;
+    const was = state.rows[0].comname;
+    actions.toggleMark(id);
+    await actions.changeSpecies(id, 45);            // Sunflower Star
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 350));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 350));
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row) return 'skipped — the corrected row left the current filter';
+    eq(row.comname, 'Sunflower Star', 'the correction persists');
+    eq(row.previous_comname, was, 'and what it was before is still recorded');
+  });
+
+/* Reported 2026-09-04: choosing a species made the panel vanish and immediately
+   reappear. Two faults — the panel never closed on a correction, and renderPicker
+   blanked it before awaiting the taxonomy. Both are behaviour, so both are checked. */
+test('Correcting an observation',
+  'choosing a species closes the panel, because that is what it was opened to do', async () => {
+    await reset();
+    const id = state.rows[0].observation_id;
+    actions.toggleMark(id);
+    actions.openPicker(id);
+    ok(state.picker && state.picker.id === id, 'the panel is open before the correction');
+    await actions.changeSpecies(id, 43);            // Ochre Star
+    eq(state.picker, null, 'and closed after it');
+  });
+
+test('Correcting an observation',
+  'the correction closes the panel but keeps the mark: they are separate decisions', async () => {
+    await reset();
+    const id = state.rows[0].observation_id;
+    actions.toggleMark(id);
+    actions.openPicker(id);
+    await actions.changeSpecies(id, 43);
+    ok(state.marks.has(id), 'correcting the species does not resolve the flag');
+    ok(state.changed.has(id), 'and the correction is recorded');
+  });
+
+test('Correcting an observation',
+  'correcting one tile never closes a panel belonging to another', async () => {
+    await reset();
+    const [a, b] = state.rows.map((r) => r.observation_id);
+    actions.toggleMark(a);
+    actions.toggleMark(b);
+    actions.openPicker(b);
+    await actions.changeSpecies(a, 43);             // a different tile
+    ok(state.picker && state.picker.id === b, 'the open panel is left alone');
+  });
+
+/* Returning to a committed page must show what was submitted — the accepted
+   observations as well as the flagged ones — so it can be changed and resubmitted. */
+test('Moving through pages',
+  'a committed page still shows everything that was submitted on it', async () => {
+    await reset();
+    const before = state.rows.map((r) => r.observation_id);
+    const flagged = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(flagged);                  // toggling a seeded mark would unflag it
+    ok(state.marks.has(flagged), 'the row under test is marked');
+    await actions.commitPage();
+
+    const accepted = state.rows
+      .filter((r) => state.outcomes.get(r.observation_id) === 'reviewed')
+      .map((r) => r.observation_id);
+    ok(accepted.length > 0, 'the commit should have accepted several observations');
+
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 400));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 400));
+
+    eq(state.rows.map((r) => r.observation_id), before,
+       'the page must hold the same observations it was committed with');
+    for (const id of accepted) {
+      const row = state.rows.find((r) => r.observation_id === id);
+      ok(row, `accepted observation ${id} must still be on the page`);
+      eq(row.review_status, 'reviewed', 'and still show as accepted');
+    }
+    const f = state.rows.find((r) => r.observation_id === flagged);
+    eq(f.review_status, 'flagged', 'and the flagged one is still flagged');
+  });
+
+test('Moving through pages',
+  'a committed decision can be changed and resubmitted from the same page', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id));
+    const id = target.observation_id;
+    await actions.commitPage();
+    eq(state.rows.find((r) => r.observation_id === id).review_status, 'reviewed');
+
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 400));
+    actions.goToPage(1);
+    await new Promise((r) => setTimeout(r, 400));
+
+    actions.toggleMark(id);                       // change your mind about it
+    await actions.commitPage();
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_status, 'flagged', 'resubmitting applies the change');
+  });
+
+/* Delete Mode deliberately reads Review status: what the record already says is the
+   most useful thing to know before removing something permanently. Confirmed by the
+   walkthrough on 2026-09-05, where the narration claimed the opposite. */
+test('Delete mode',
+  'Delete Mode shows what the scientific record already says', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(id);
+    await actions.commitPage();                   // flags it on the record
+
+    actions.setMode('delete');
+    await new Promise((r) => setTimeout(r, 500));
+    eq(MODES.delete.statusLabel, 'Review status', 'Delete filters on review status');
+    const row = state.rows.find((r) => r.observation_id === id);
+    ok(row, 'the flagged observation is still in the delete-mode results');
+    eq(row.review_status, 'flagged', 'and it still carries its flag');
+  });
+
+test('Delete mode',
+  'nothing arrives marked in Delete Mode: a flag is not a deletion', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(id);
+    await actions.commitPage();
+
+    actions.setMode('delete');
+    await new Promise((r) => setTimeout(r, 500));
+    eq(state.marks.size, 0, 'marking here means delete, so the flag must not seed one');
+    eq(pendingException('delete'), null);
+  });
+
+/* Reported 2026-09-04: flags vanished when a mode was switched, and a committed page
+   could not be edited. Both came from marks not being the page's exception set. */
+test('Review states',
+  'a page arrives with its existing flags already marked', async () => {
+    await reset();
+    const flaggedRows = state.rows.filter((r) => r.review_status === 'flagged');
+    if (!flaggedRows.length) return 'skipped — no flagged rows on this page';
+    for (const r of flaggedRows) {
+      ok(state.marks.has(r.observation_id),
+         `flagged observation ${r.observation_id} must arrive marked, or committing clears it`);
+    }
+  });
+
+test('Review states',
+  'committing a page does not clear a flag nobody touched', async () => {
+    await reset();
+    const flagged = state.rows.find((r) => r.review_status === 'flagged'
+      && r.thumbnail_status === 'ready');
+    if (!flagged) return 'skipped — no flagged rows on this page';
+    const id = flagged.observation_id;
+    await actions.commitPage();
+    eq(state.rows.find((r) => r.observation_id === id).review_status, 'flagged',
+       'an untouched flag survives a page commit');
+  });
+
+test('Review states',
+  'a committed page stays editable: the exceptions are still marked', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(id);
+    await actions.commitPage();
+    ok(state.marks.has(id), 'the flag stays marked so a click can take it back');
+    actions.toggleMark(id);
+    await actions.commitPage();
+    eq(state.rows.find((r) => r.observation_id === id).review_status, 'reviewed',
+       'and committing again accepts it');
+  });
+
+test('Scientific review and training review are independent',
+  'switching modes clears what the other mode committed', async () => {
+    await reset();
+    await actions.commitPage();
+    ok(state.outcomes.size > 0, 'the scientific commit recorded outcomes');
+    actions.setMode('training');
+    await new Promise((r) => setTimeout(r, 400));
+    eq(state.outcomes.size, 0, "training must not wear scientific review's answers");
+    eq(state.marks.size, 0, 'nor its marks');
+  });
+
+test('Moving through pages',
+  'an observation pinned to a committed page does not also appear on a later page', async () => {
+    await reset();
+    const pinned = new Set(state.rows.map((r) => r.observation_id));
+    await actions.commitPage();
+    actions.goToPage(2);
+    await new Promise((r) => setTimeout(r, 400));
+    const overlap = state.rows.filter((r) => pinned.has(r.observation_id));
+    eq(overlap.length, 0, 'page 2 must not repeat observations held by page 1');
   });
 
 /* ------------------------------------------------------------------ runner */

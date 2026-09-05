@@ -11,7 +11,15 @@
     "docs:schema:infer": "node ./scripts/infer-openapi-schema.js",
     "docs:erd": "node ./sequelize-erd.js",
     "docs:dev:build": "jsdoc -c ./jsdoc.config.json --lenient",
-    "docs:build": "npm run docs:api:build && npm run docs:dev:build"
+    "docs:build": "npm run docs:api:build && npm run docs:dev:build",
+    "test:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review test",
+    "test:apps": "npm run test:app:mosaic-review",
+    "test:app:mosaic-review:unit": "npm --prefix frontend/apps/marp-mosaic-review run test:unit",
+    "test:app:mosaic-review:e2e": "npm --prefix frontend/apps/marp-mosaic-review run test:e2e",
+    "serve:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run serve",
+    "demo:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run demo:all",
+    "demo": "node tools/record-demo.mjs",
+    "demo:narrated": "node tools/record-demo.mjs --narrate"
   },
   "repository": {
     "type": "git",
@@ -51,6 +59,7 @@
     "swagger-ui-express": "^4.5.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "docdash": "^2.0.2",
     "jest": "^30.4.2",
     "jsdoc": "^4.0.5",

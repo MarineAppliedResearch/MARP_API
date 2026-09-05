@@ -109,3 +109,18 @@ playwright-report/
 
 # Runtime species picture storage -- populated by migration from seed-data/species/images/
 storage/
+
+# Playwright artifacts from the frontend app suites
+frontend/apps/*/test-results/
+frontend/apps/*/playwright-report/
+
+frontend/apps/*/demo/
+
+# --- Harness: machine-specific operational notes ---
+# Hosts, accounts and key paths for one developer. Repository files may say that a
+# credential exists and where it lives, never its value.
+.marp/local/
+
+# Walkthrough recordings. Megabytes of video, regenerated on demand by
+# `npm run demo:narrated`, and never a build input.
+/demo/

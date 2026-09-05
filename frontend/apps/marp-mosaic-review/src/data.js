@@ -10,12 +10,20 @@
  * including the per-observation results that #68 requires for bulk operations.
  */
 
+const ME = 'I. Travers';
+
 const LATENCY = { query: 140, commit: 260, species: 180, thumb: 900 };
 
 /** Pretend the network exists, so loading states are real rather than theoretical. */
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let db = null;
+
+/* Testing affordance: the fixture cannot fail on its own, but the API will, and the
+   button has to show it. Nothing in the application calls this. */
+/* Testing affordance: the fixture cannot fail on its own, but the API will, and the
+   button has to show it. Nothing in the application calls this. */
+let failNext = false;
 
 export const MarpData = {
   async load() {
@@ -26,8 +34,50 @@ export const MarpData = {
     return db;
   },
 
+  /**
+   * Throw the loaded data away and fetch it again.
+   *
+   * Commits, corrections and deletions mutate these rows in place, so a suite that
+   * runs many checks against one fixture is running each of them against whatever
+   * the last one left behind. Two contract checks were order-dependent for exactly
+   * that reason. Against the real API this becomes a no-op or a seeded database.
+   */
+  /** Make the next commit fail, so the failed path can be exercised. */
+  failNextCommit() { failNext = true; },
+
+  async reload() {
+    /* Swap, never null: work already in flight — a queued thumbnail resolving, say —
+       still reads `db`, and clearing it first threw where nothing could catch it. */
+    const res = await fetch('./fixtures/observations.json');
+    if (!res.ok) throw new Error(`fixture failed to reload: ${res.status}`);
+    db = await res.json();
+    return db;
+  },
+
   species() { return db.species; },
   projects() { return db.projects; },
+
+  /**
+   * The dives, and the lines within them.
+   *
+   * Derived from the observations rather than stored, because that is what the API
+   * will do too: a dive is a property of a session, and the useful list is the one
+   * that actually has observations under the filters already chosen. Offering a dive
+   * that returns nothing is worse than not offering it.
+   */
+  dives({ project } = {}) {
+    const rows = db.observations.filter((r) => !r.deleted
+      && (!project || r.project_name === project));
+    return [...new Set(rows.map((r) => r.dive))].filter(Boolean).sort();
+  },
+
+  lines({ project, dive } = {}) {
+    const rows = db.observations.filter((r) => !r.deleted
+      && (!project || r.project_name === project)
+      && (!dive || r.dive === dive));
+    return [...new Set(rows.map((r) => r.line))].filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  },
 
   /** Free-text search over the taxonomy, as the species chooser needs. */
   async searchSpecies(term) {
@@ -40,17 +90,54 @@ export const MarpData = {
   },
 
   /**
+   * Fetch an exact set of observations, in the order given. A page that has been
+   * committed keeps its membership, so returning to it shows what was submitted
+   * rather than whatever the filter now matches.
+   */
+  async byIds(ids) {
+    await delay(LATENCY.query);
+    const index = new Map(db.observations.map((r) => [r.observation_id, r]));
+    return ids.map((id) => index.get(id)).filter(Boolean);
+  },
+
+  /**
+   * Status counts for the current non-status filters. The rail shows these, and
+   * they must move when work is committed — a stale count is worse than none.
+   */
+  async counts({ filters = {} } = {}) {
+    let rows = db.observations.filter((r) => !r.deleted);
+    if (filters.species) rows = rows.filter((r) => r.comname === filters.species);
+    if (filters.project) rows = rows.filter((r) => r.project_name === filters.project);
+    if (filters.dive)    rows = rows.filter((r) => r.dive === filters.dive);
+    if (filters.line)    rows = rows.filter((r) => String(r.line) === String(filters.line));
+    const n = (fn) => rows.filter(fn).length;
+    return {
+      unreviewed: n((r) => r.review_status === 'unreviewed'),
+      reviewed:   n((r) => r.review_status === 'reviewed'),
+      flagged:    n((r) => r.review_status === 'flagged'),
+      undecided:  n((r) => r.training_disposition === 'undecided'),
+      promoted:   n((r) => r.training_disposition === 'promoted'),
+      excluded:   n((r) => r.training_disposition === 'excluded'),
+      total: rows.length
+    };
+  },
+
+  /**
    * Filter, sort and page — all of which the real API does server-side. Doing it
    * here keeps the call signature honest about what will be sent over the wire.
    */
   async query({ filters = {}, sort = { field: 'confidence', dir: 'asc' }, page = 1, pageSize = 45 }) {
     await delay(LATENCY.query);
-    let rows = db.observations;
+    let rows = db.observations.filter((r) => !r.deleted);
 
     if (filters.species)  rows = rows.filter((r) => r.comname === filters.species);
     if (filters.project)  rows = rows.filter((r) => r.project_name === filters.project);
     if (filters.dive)     rows = rows.filter((r) => r.dive === filters.dive);
+    if (filters.line)     rows = rows.filter((r) => String(r.line) === String(filters.line));
     if (filters.minConfidence != null) rows = rows.filter((r) => r.confidence >= filters.minConfidence);
+    if (filters.excludeIds && filters.excludeIds.size) {
+      rows = rows.filter((r) => !filters.excludeIds.has(r.observation_id));
+    }
     if (filters.reviewStatus && filters.reviewStatus.length) {
       rows = rows.filter((r) => filters.reviewStatus.includes(r.review_status));
     }
@@ -76,35 +163,67 @@ export const MarpData = {
    * #68 requires that unavailable imagery is skipped without blocking the batch, and
    * that an observation already handled by someone else is reported, not overwritten.
    */
-  async commitPage({ mode, observationIds, marked }) {
+  /**
+   * `marks` is a Map of observation_id -> { reason }. A mark is not a transient
+   * client state: committing writes it to the record, so a flag survives the page,
+   * the session, and the reviewer. #68 requires flagged observations to remain
+   * available for correction rather than disappearing.
+   */
+  async commitPage({ mode, observationIds, marks }) {
     await delay(LATENCY.commit);
-    const reviewed = [], skipped = [];
+    if (failNext) { failNext = false; throw new Error('the commit could not be saved'); }
+    const reviewed = [], flagged = [], skipped = [], reverted = [];
 
     for (const id of observationIds) {
       const row = db.observations.find((r) => r.observation_id === id);
       if (!row) { skipped.push({ id, reason: 'not-found' }); continue; }
       if (row.thumbnail_status !== 'ready') { skipped.push({ id, reason: 'no-imagery' }); continue; }
 
-      const isMarked = marked.has(id);
+      const isMarked = marks.has(id);
 
       if (mode === 'delete') {
         if (isMarked) { row.deleted = true; reviewed.push({ id, outcome: 'deleted' }); }
         continue;                                   // unmarked rows are untouched
       }
-      if (isMarked) { skipped.push({ id, reason: 'marked' }); continue; }
+      if (isMarked) {
+        const reason = (marks.get(id) || {}).reason || null;
+        const wasAccepted = mode === 'scientific'
+          ? row.review_status === 'reviewed'
+          : row.training_disposition === 'promoted';
+
+        if (mode === 'scientific') {
+          row.review_status = 'flagged';
+          row.flag_reason = reason;
+          row.flagged_by = ME;
+          row.flagged_at = new Date().toISOString();
+          row.reviewed_by = null;
+        } else {
+          row.training_disposition = 'excluded';
+          row.exclusion_reason = reason;
+          row.excluded_by = ME;
+          row.training_approved_by = null;
+        }
+        row.version += 1;
+        const outcome = mode === 'scientific' ? 'flagged' : 'excluded';
+        flagged.push({ id, outcome });
+        if (wasAccepted) reverted.push({ id, outcome });   // an acceptance was withdrawn
+        continue;
+      }
 
       if (mode === 'scientific') {
         row.review_status = 'reviewed';
+        row.flag_reason = null; row.flagged_by = null;
         row.reviewed_by = 'I. Travers';
         reviewed.push({ id, outcome: 'reviewed' });
       } else if (mode === 'training') {
         row.training_disposition = 'promoted';
+        row.exclusion_reason = null; row.excluded_by = null;
         row.training_approved_by = 'I. Travers';
         reviewed.push({ id, outcome: 'promoted' });
       }
       row.version += 1;
     }
-    return { reviewed, skipped };
+    return { reviewed, flagged, skipped, reverted };
   },
 
   /** A single correction. Returns the authoritative row, as the API will. */
@@ -114,6 +233,8 @@ export const MarpData = {
     const sp = db.species.find((s) => s.species_id === speciesId);
     if (!row || !sp) return { ok: false, error: 'not-found' };
     const previous = { comname: row.comname, scientific_name: row.scientific_name };
+    row.previous_comname = row.comname;
+    row.changed_by = ME;
     row.species_id = sp.species_id;
     row.comname = sp.comname;
     row.scientific_name = sp.species;

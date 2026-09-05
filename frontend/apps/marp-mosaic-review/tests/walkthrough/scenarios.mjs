@@ -1,0 +1,628 @@
+/**
+ * The walkthrough scripts.
+ *
+ * A scene has three parts, deliberately separated:
+ *
+ *   caption  what appears on screen — short, because it has to be read at a glance
+ *   say      what is spoken — conversational, and spelled for a speech engine
+ *            ("Marp", not "MARP", which gets read out as four letters)
+ *   act      what the app is driven to do, asserting as it goes
+ *
+ * A scene is held for as long as its line takes to speak, so lines never talk over
+ * one another. Silent runs fall back to a fixed hold.
+ */
+
+const tilesIn = (page) => page.locator('.tile:not(.failed):not(.queued)');
+
+/* A page arrives with its existing flags already marked, so a scenario that wants to
+   demonstrate marking has to start from a tile nobody has decided about yet. */
+const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.marked)');
+
+/**
+ * Mark the first undecided tile and keep hold of it.
+ *
+ * A locator is re-resolved on every use, and `freshTile` stops matching the instant
+ * the tile is marked — so anything that clicks and then keeps using the same locator
+ * waits forever. Pin the id first.
+ */
+/**
+ * Mark the first `n` undecided tiles, one after another.
+ *
+ * Paced rather than instant: the point of the introduction video is that reviewing is
+ * a person going down a wall clicking things, and fifteen tiles vanishing in one frame
+ * does not read as work being done.
+ */
+async function markMany(page, n, gap = 280) {
+  const ids = [];
+  for (let i = 0; i < n; i++) {
+    const next = freshTile(page).first();
+    if (!(await next.count())) break;
+    const id = await next.getAttribute('data-id');
+    ids.push(id);
+    await page.locator(`.tile[data-id="${id}"]`).click();
+    await page.waitForTimeout(gap);
+  }
+  return ids;
+}
+
+async function markFirstFresh(page) {
+  const id = await freshTile(page).first().getAttribute('data-id');
+  const tile = page.locator(`.tile[data-id="${id}"]`);
+  await tile.click();
+  return tile;
+}
+
+export const scenarios = {
+
+  /* ------------------------------------------------------------- review */
+  review: {
+    title: 'Scientific Data Review',
+    scenes: [
+      {
+        caption: 'MARP Picture Mosaic Reviewer',
+        say: "This is the Marp Picture Mosaic Reviewer. Every tile here is one observation "
+           + "that a model produced, and they're all predicted to be the same species. "
+           + "That's the whole idea — when they're side by side, the one that doesn't belong "
+           + "jumps out at you."
+      },
+      {
+        caption: 'Click a tile to flag it',
+        say: "Reviewing is just clicking the ones that look wrong. Let's flag three of them. "
+           + "Notice the flag lands straight away — there's no dialog in the way, because "
+           + "this is the thing you'll do thousands of times.",
+        async act({ page, expect }) {
+          for (const i of [0, 1, 2]) {
+            await tilesIn(page).nth(i).click();
+            await page.waitForTimeout(420);
+          }
+          await expect(page.locator('.tile.marked')).toHaveCount(3);
+        }
+      },
+      {
+        caption: 'The badge opens the panel',
+        say: "If you want to say why, click the flag badge itself. That opens this panel. "
+           + "The reason is optional — the flag already counts on its own.",
+        async act({ page, expect }) {
+          await page.locator('[data-badge]').first().click();
+          await expect(page.locator('.pick')).toBeVisible();
+        }
+      },
+      {
+        caption: 'Choosing a reason',
+        say: "Let's say this one is the wrong species.",
+        async act({ page }) {
+          await page.locator('.pick .chip', { hasText: 'Wrong species' }).click();
+        }
+      },
+      {
+        caption: 'Correcting it here, without opening the video',
+        say: "And when you already know what it should be, you can fix it right here. "
+           + "Search the taxonomy, pick the right one, and it saves immediately.",
+        async act({ page, expect }) {
+          await page.locator('.pick [data-act="correct"]').click();
+          await expect(page.locator('.pick #spSearch')).toBeVisible();
+          await page.locator('.pick #spSearch').fill('lea');
+          await page.waitForTimeout(800);
+          await page.locator('.pick .srow').first().click();
+        }
+      },
+      {
+        caption: 'Click anywhere to close',
+        say: "Click anywhere outside to close the panel. That click only dismisses — it won't "
+           + "unflag whatever happens to be underneath it. The tile now shows what it used to "
+           + "be, so you can see at a glance that you changed it.",
+        async act({ page, expect }) {
+          await page.locator('#field').click({ position: { x: 6, y: 6 } });
+          await expect(page.locator('.pick')).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(3);
+        }
+      },
+      {
+        caption: 'Mark Page Reviewed',
+        say: "Now the important part. Instead of approving every observation one at a time, "
+           + "you commit the page. Everything you didn't flag is accepted in a single action. "
+           + "The work scales with how many are wrong, not with how many there are.",
+        async act({ page, expect, store }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          store.reviewed = await page.locator('.tile .badge', { hasText: 'REVIEWED' }).count();
+        }
+      },
+      {
+        caption: 'On to the next page',
+        say: "Green means accepted, amber means still open. Let's move on to the next page.",
+        async act({ page, settled }) {
+          await page.locator('[data-page="next"]').click();
+          await settled();
+        }
+      },
+      {
+        caption: 'Going back to check',
+        say: "But hold on — let's go back and make sure we didn't get that wrong.",
+        async act({ page, settled }) {
+          await page.locator('[data-page="prev"]').click();
+          await settled();
+        }
+      },
+      {
+        caption: 'Everything we submitted is still here',
+        say: "And there it is, exactly as we left it. The ones we accepted, the ones we "
+           + "flagged, and the correction we made. You can change any of it and commit "
+           + "again — nothing is locked away just because you moved on.",
+        async act({ page, expect, store }) {
+          expect(await page.locator('.tile .badge', { hasText: 'REVIEWED' }).count())
+            .toBe(store.reviewed);
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------------------- delete */
+  delete: {
+    title: 'Delete Mode',
+    scenes: [
+      {
+        caption: 'Delete Mode',
+        say: "Delete Mode is for clearing out observations that shouldn't exist at all. "
+           + "It uses the same rhythm as reviewing, but with one important difference.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          await expect(page.locator('#commit')).toContainText('Delete Marked');
+        }
+      },
+      {
+        caption: 'The commit is inverted here',
+        say: "In the review modes, committing accepts everything you didn't mark. Here it's "
+           + "the opposite: it deletes only what you did mark. Everything else is left alone. "
+           + "The header says so, the footer says so, and the button counts them.",
+        async act({ page, expect }) {
+          await expect(page.locator('.mode-note')).toContainText('permanently deletes');
+        }
+      },
+      {
+        caption: 'Marking two for deletion',
+        say: "So let's mark two of these. Nothing is deleted yet — this is just a selection, "
+           + "and you can undo it right up until you commit.",
+        async act({ page, expect }) {
+          for (const i of [0, 1]) {
+            await tilesIn(page).nth(i).click();
+            await page.waitForTimeout(450);
+          }
+          await expect(page.locator('.tile.marked')).toHaveCount(2);
+        }
+      },
+      {
+        caption: 'The whole page is tinted red',
+        say: "Notice the whole frame has gone red. The mode colours everything around the "
+           + "mosaic, but never the images themselves — because tinting the pictures would "
+           + "change how the organisms look, and that's the one thing you're judging.",
+        async act() { /* a beat to look at it */ }
+      },
+      {
+        caption: 'Deleting the marked tiles',
+        say: "Now we commit, and only the marked ones go.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'DELETED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Deleted tiles stay visible, greyed out',
+        say: "The deleted ones stay on the page, greyed out and struck through, so you can "
+           + "see what you just did. The others are untouched.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* ----------------------------------------------------------- training */
+  training: {
+    title: 'Training Data Review',
+    scenes: [
+      {
+        caption: 'Training Data Review',
+        say: "Training Data Review looks the same, but it's answering a different question. "
+           + "Scientific review asks whether an observation is good data. This asks whether "
+           + "it's good enough to teach a model with. Those are separate decisions.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await expect(page.locator('#commit')).toContainText('Promote Page');
+        }
+      },
+      {
+        caption: 'The unit is the whole track',
+        say: "Every tile now shows a frame count. What gets promoted isn't this one picture, "
+           + "it's the whole tracked observation — so a nine frame track and a fifty frame "
+           + "track are very different training samples, and you need to see which is which.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile .frames').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Excluding a track, with a reason',
+        say: "Marking here means exclude, not flag. Let's exclude one, and say why we're "
+           + "excluding it — this one is occluded, so it would teach the model the wrong shape.",
+        async act({ page, expect }) {
+          const tile = tilesIn(page).first();
+          await tile.click();
+          await expect(tile).toHaveClass(/marked/);
+          await page.waitForTimeout(400);
+          await tile.locator('[data-badge]').click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await page.locator('.pick .chip', { hasText: 'Occluded' }).click();
+          await page.waitForTimeout(400);
+          await page.keyboard.press('Escape');
+          /* The exclusion has to still be there once the panel is gone — it used to
+             be cancelled by the very click that dismissed the panel. */
+          await expect(tile).toHaveClass(/marked/);
+          await expect(tile.locator('.badge')).toContainText('EXCLUDED');
+          await expect(tile.locator('.reason-chip')).toHaveText('Occluded');
+          await expect(page.locator('#footCount')).toContainText('1');
+        }
+      },
+      {
+        caption: 'Promote Page',
+        say: "And committing promotes everything else into the training set. The one we "
+           + "excluded stays excluded, with its reason attached. Excluding is a real decision "
+           + "that gets recorded — it isn't just the absence of approval.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'PROMOTED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'EXCLUDED' })).toHaveCount(1);
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------------------- overview */
+  /* The introduction. Assumes no prior knowledge: what MARP is, what a false positive
+     is and why removing them matters, then each workflow driven at working pace.
+
+     Panels are opened at the start of a scene and left open while the line about them
+     plays. An earlier cut did the whole species correction inside one act, so the
+     window came and went in two seconds under twelve seconds of narration about it. */
+  overview: {
+    title: 'MARP Picture Mosaic Reviewer — introduction',
+    scenes: [
+      {
+        caption: 'MARP Picture Mosaic Reviewer',
+        say: "This is the Picture Mosaic Reviewer, part of Marp \u2014 the Marine Analysis and "
+           + "Reporting Platform."
+      },
+      {
+        caption: 'Where the data comes from',
+        say: "Marp turns underwater video into scientific records. A machine learning model "
+           + "watches the footage and marks every animal it thinks it sees."
+      },
+      {
+        caption: 'False positives',
+        say: "A model gets things wrong in two ways. It misses animals that are there \u2014 false "
+           + "negatives. And it marks things that aren't \u2014 false positives. The Picture Mosaic "
+           + "Reviewer is how we find the false positives and get rid of them, simply and in "
+           + "bulk."
+      },
+      {
+        caption: 'Why a mosaic',
+        say: "Instead of one record at a time, we put hundreds on one screen, all the same "
+           + "predicted species. Your eye is very good at finding the thing that doesn't match "
+           + "in a grid of things that do. That's the trick.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'The filters build the query',
+        say: "The filters set up the query. Any combination of what's in the database \u2014 "
+           + "project, dive, line, species \u2014 and the mosaic is built from whatever you ask for.",
+        async act({ page, expect, settled }) {
+          /* Opened first and left up, so the list is on screen while it is described. */
+          await page.locator('#selDiveBtn').click();
+          await expect(page.locator('.menu')).toBeVisible();
+          await page.waitForTimeout(5200);
+          await page.locator('.menu [data-v]').nth(1).click();
+          await settled();
+          await expect(page.locator('#selDive')).not.toHaveText('All dives');
+        }
+      },
+      {
+        caption: 'Click the ones that look wrong',
+        say: "Then you go through and click the ones that look wrong.",
+        async act({ page, expect, store }) {
+          store.ids = await markMany(page, 15);
+          await expect(page.locator('.tile.marked')).toHaveCount(15);
+        }
+      },
+      {
+        caption: 'Recording what was wrong',
+        say: "You can click the flag itself if you want to record what was wrong with it \u2014 "
+           + "wrong species, false detection, a duplicate. That reason stays with the "
+           + "observation for whoever picks it up next.",
+        async act({ page, expect, store }) {
+          const tile = page.locator(`.tile[data-id="${store.ids[0]}"]`);
+          await tile.locator('[data-badge]').click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await page.waitForTimeout(4200);
+          await page.locator('.pick .chip', { hasText: 'Wrong species' }).click();
+          /* Left open: the next scene continues in this same panel. */
+        }
+      },
+      {
+        caption: 'Change the observation here',
+        say: "And if you already know what it actually is, you can change the observation "
+           + "right here in this window. Search the taxonomy, pick the right species, and it "
+           + "saves immediately. No need to open the video.",
+        async act({ page, expect, store }) {
+          const tile = page.locator(`.tile[data-id="${store.ids[0]}"]`);
+          const before = await tile.locator('.cap').innerText();
+          await page.locator('.pick [data-act="correct"]').click();
+          await expect(page.locator('.pick #spSearch')).toBeVisible();
+          await page.waitForTimeout(2600);
+          await page.locator('.pick #spSearch').fill('lea');
+          await page.waitForTimeout(3200);           // the matches, on screen, being read
+          await page.locator('.pick .srow').first().click();
+          await expect(page.locator('.pick')).toHaveCount(0);
+          await expect(tile.locator('.cap')).not.toHaveText(before);
+        }
+      },
+      {
+        caption: 'Commit the page',
+        say: "Then you commit the entire page. That takes care of fifty records at once \u2014 "
+           + "everything you didn't flag is accepted, and the ones you flagged keep their flag.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('#commit')).toContainText('Saved');
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Approving training data',
+        say: "In addition to approving the scientific data, we approve the training data the "
+           + "same way. Here we un-approve the ones we don't want teaching the next model, "
+           + "save, and everything else is promoted.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await markMany(page, 15, 220);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'PROMOTED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'EXCLUDED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Deleting',
+        say: "And deleting works the same way. Mark what shouldn't be in the database at all, "
+           + "and commit. Those records are gone.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          await markMany(page, 10, 220);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'And on to page two',
+        say: "Then on to page two, and we delete half of these as well.",
+        async act({ page, expect, settled }) {
+          await page.locator('[data-page="next"]').click();
+          await settled();
+          const total = await page.locator('.tile:not(.failed):not(.queued)').count();
+          await markMany(page, Math.floor(total / 2), 150);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'MARP Picture Mosaic Reviewer',
+        say: "Using the Marp Picture Mosaic Reviewer gives us a very efficient way to review a "
+           + "model's false positives, and approve or reject them."
+      }
+    ]
+  },
+
+  /* ------------------------------------------------- verify: mode separation */
+  'verify-modes': {
+    title: 'Verifying: the modes are separate',
+    scenes: [
+      {
+        caption: 'Checking a fix: modes showing each other\u2019s answers',
+        say: "This is a verification run, so watch the badges the whole way through \u2014 the "
+           + "badges are where this bug showed. Scientific review and training review are two "
+           + "separate decisions about the same observation, and the app was letting one of "
+           + "them wear the other one's answer."
+      },
+      {
+        caption: 'Scientific review: flag two, then commit',
+        say: "We're in Scientific Data Review. I'll flag two observations and commit the page. "
+           + "Pay attention to what appears: green means accepted, amber means flagged. That is "
+           + "Scientific review's answer, and it belongs only here.",
+        async act({ page, expect }) {
+          for (let i = 0; i < 2; i++) {           // .first() each time: the set shrinks
+            await markFirstFresh(page);
+            await page.waitForTimeout(400);
+          }
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Now switch to Training Data Review',
+        say: "Now the important part. I'm switching to Training Data Review, and every one of "
+           + "those badges should be gone. Before the fix, this screen came up covered in green "
+           + "REVIEWED badges that Training review never gave \u2014 and clicking a tile would grey "
+           + "it out while it still claimed to be reviewed.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' })).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+        }
+      },
+      {
+        caption: 'Clean \u2014 nothing carried over',
+        say: "And there it is. Clean. Every tile shows its frame count and nothing else, because "
+           + "Training review has not been asked about any of these yet. Notice the filter on the "
+           + "left has changed too \u2014 it reads Training disposition now, not Review status. That "
+           + "is the reason nothing shows: Training is reading a different dimension entirely.",
+        async act({ page, expect }) {
+          await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
+          await expect(page.locator('.tile .frames').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Delete Mode: the flag is meant to show here',
+        say: "Delete Mode is different, and this is deliberate, so watch what stays. The "
+           + "flag is still on screen. Delete Mode filters on Review status, not on its own "
+           + "dimension, because deleting cannot be undone \u2014 and the most useful thing to "
+           + "know before removing an observation is what the scientific record already says "
+           + "about it. That somebody flagged it. Or worse, that somebody accepted it.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          await expect(page.locator('#statusLbl')).toHaveText('Review status');
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'But nothing here is selected for deletion',
+        say: "What has not carried over is the selection. Look at the button: zero tiles. "
+           + "Those badges are context, not a decision \u2014 a flag is not a deletion, and marking "
+           + "here means something completely different, so nothing arrives marked. You start "
+           + "from an empty selection every time.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+          await expect(page.locator('#commit')).toContainText('0 tiles');
+        }
+      },
+      {
+        caption: 'Back to Scientific: the flag is on the record',
+        say: "And back to Scientific review. This is the part to watch closely. The flag we made "
+           + "is still here, because committing wrote it to the record \u2014 and look, it comes back "
+           + "already marked. That matters more than it sounds: a mark is what the next commit "
+           + "treats as the exception, so a flag that came back unmarked would be wiped the next "
+           + "time anybody committed this page.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+          await settled();
+          await expect(page.locator('.tile.marked').first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* -------------------------------------------- verify: a committed page edits */
+  'verify-editing': {
+    title: 'Verifying: a committed page is still editable',
+    scenes: [
+      {
+        caption: 'Checking a fix: editing after committing',
+        say: "Second verification. After committing a page, nothing could be changed. Clicking a "
+           + "tile did alter the state underneath, but the screen never moved \u2014 so it looked "
+           + "completely dead. Keep your eye on the first tile through this whole sequence."
+      },
+      {
+        caption: 'Flag one, and commit the page',
+        say: "I'll flag the first tile and commit the page. Watch its badge go amber.",
+        async act({ page, expect }) {
+          await markFirstFresh(page);
+          await page.waitForTimeout(500);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'It is still marked \u2014 that is deliberate',
+        say: "Now look at the outline on that tile. It is still marked, and that is on purpose. "
+           + "A mark is what the next commit treats as the exception, so the flag we just wrote "
+           + "has to stay marked \u2014 otherwise committing again would quietly un-flag it.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile.marked').first()).toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Click it to take the flag back',
+        say: "So I click it, and watch the badge change. It says TAKING BACK. Nothing is written "
+           + "yet \u2014 the record still says flagged, but the next commit will accept it. Before the "
+           + "fix, this click appeared to do nothing at all.",
+        async act({ page, expect }) {
+          await page.locator('.tile.marked').first().click();
+          await expect(page.locator('.tile .badge', { hasText: 'TAKING BACK' }).first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Commit again to accept it',
+        say: "And committing again accepts it. Amber to green, on a page that had already been "
+           + "committed once. That is exactly the thing that was broken.",
+        async act({ page, expect }) {
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'TAKING BACK' })).toHaveCount(0);
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------- verify: the species panel */
+  'verify-correction': {
+    title: 'Verifying: the correction panel',
+    scenes: [
+      {
+        caption: 'Checking a fix: the panel flickering',
+        say: "Third verification, and this one is short. When you corrected a species, the panel "
+           + "vanished for a moment and then popped straight back up. Watch the panel this time, "
+           + "not the tiles."
+      },
+      {
+        caption: 'Open the panel, then the species chooser',
+        say: "Flag a tile, open its badge, and open the species chooser. Opening the chooser goes "
+           + "and fetches the taxonomy, and the panel has to stay on screen for the whole of that "
+           + "request. Watch it now \u2014 it should not blink.",
+        async act({ page, expect }) {
+          const tile = await markFirstFresh(page);
+          await page.waitForTimeout(350);
+          await tile.locator('[data-badge]').click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await page.locator('.pick [data-act="correct"]').click();
+          await expect(page.locator('.pick #spSearch')).toBeVisible();
+        }
+      },
+      {
+        caption: 'Search, and choose a species',
+        say: "Search the taxonomy, and pick the right one. Here is the moment: the panel should "
+           + "close, once, and stay closed. It should not come back.",
+        async act({ page }) {
+          await page.locator('.pick #spSearch').fill('lea');
+          await page.waitForTimeout(700);
+          await page.locator('.pick .srow').first().click();
+        }
+      },
+      {
+        caption: 'Closed, and it stays closed',
+        say: "Gone, and it stays gone. The correction saved immediately, the tile now shows what "
+           + "the species used to be, and the flag is still marked \u2014 because correcting a species "
+           + "and resolving a flag are two different decisions.",
+        async act({ page, expect }) {
+          await expect(page.locator('.pick')).toHaveCount(0);
+          for (let i = 0; i < 5; i++) {
+            await page.waitForTimeout(200);
+            await expect(page.locator('.pick')).toHaveCount(0);
+          }
+          await expect(page.locator('.tile.marked').first()).toBeVisible();
+          await expect(page.locator('.reason-chip', { hasText: 'was ' }).first()).toBeVisible();
+        }
+      }
+    ]
+  }
+};
+
+export const scenarioIds = Object.keys(scenarios);

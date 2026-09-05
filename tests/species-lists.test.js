@@ -23,6 +23,7 @@
 
 const request = require('supertest');
 const app = require('../app');
+const db = require('../model');
 
 /**
  * The seven lists the annotation GUI shipped. Named explicitly because losing
@@ -219,6 +220,50 @@ describe('Retired species entries', () => {
    * @type {number}
    */
   const RETIRED_FISH_TAXSERIAL = 3030;
+
+  /**
+   * Whether this suite had to create the entry itself.
+   *
+   * @type {boolean}
+   */
+  let seeded = false;
+
+  /**
+   * Guarantee the retired entry exists.
+   *
+   * These checks used to rely on the development server happening to hold
+   * taxserial 3030. Against a database built from the baseline and the
+   * migrations -- a fresh clone, or CI -- it does not, and the block failed in
+   * one place and passed *vacuously* in three: "excludes the retired entry from
+   * the list" is trivially true when the list is empty. That is worse than the
+   * failure, because it is silent.
+   *
+   * Created here and removed afterwards, so the suite proves the same thing
+   * wherever it runs.
+   */
+  beforeAll(async () => {
+    const existing = await db.species.findOne({
+      where: { taxserial: RETIRED_FISH_TAXSERIAL, species_list: 'Fish' },
+    });
+    if (existing) return;
+
+    await db.species.create({
+      taxserial: RETIRED_FISH_TAXSERIAL,
+      species_list: 'Fish',
+      comname: 'Retired test entry',
+      species: 'Testus retiredus',
+      gui_display_name: 'Retired test entry',
+      is_active: false,
+    });
+    seeded = true;
+  });
+
+  afterAll(async () => {
+    if (!seeded) return;
+    await db.species.destroy({
+      where: { taxserial: RETIRED_FISH_TAXSERIAL, species_list: 'Fish' },
+    });
+  });
 
   /**
    * A retired entry must not appear in a list, or it shows up as a duplicate
