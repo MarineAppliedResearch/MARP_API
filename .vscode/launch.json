@@ -69,6 +69,61 @@
             ]
         },
         {
+            // The frontend applications keep their own suites and their own
+            // dependencies. None of these need the database or a .env.
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Mosaic Reviewer: all tests",
+            "command": "npm run test:app:mosaic-review"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Mosaic Reviewer: unit tests (fast)",
+            "command": "npm run test:app:mosaic-review:unit"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Mosaic Reviewer: Playwright (desktop + phone)",
+            "command": "npm run test:app:mosaic-review:e2e"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Mosaic Reviewer: Playwright, watch it run",
+            "command": "npm run test:e2e:headed",
+            "cwd": "${workspaceFolder}/frontend/apps/marp-mosaic-review"
+        },
+        {
+            // Breakpoints in src/model/ work here: no browser, no server.
+            "type": "node",
+            "request": "launch",
+            "name": "Debug Mosaic Reviewer model tests",
+            "cwd": "${workspaceFolder}/frontend/apps/marp-mosaic-review",
+            "runtimeArgs": [
+                "--test"
+            ],
+            "program": "${workspaceFolder}/frontend/apps/marp-mosaic-review/tests/unit/model.test.mjs",
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Mosaic Reviewer: serve standalone",
+            "command": "npm run serve:app:mosaic-review"
+        },
+        {
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Mosaic Reviewer: record narrated walkthroughs",
+            "command": "npm run demo:app:mosaic-review"
+        },
+        {
             "type": "node-terminal",
             "request": "launch",
             "name": "Generate API docs",

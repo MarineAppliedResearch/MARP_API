@@ -28,6 +28,23 @@ export const MarpData = {
     return db;
   },
 
+  /**
+   * Throw the loaded data away and fetch it again.
+   *
+   * Commits, corrections and deletions mutate these rows in place, so a suite that
+   * runs many checks against one fixture is running each of them against whatever
+   * the last one left behind. Two contract checks were order-dependent for exactly
+   * that reason. Against the real API this becomes a no-op or a seeded database.
+   */
+  async reload() {
+    /* Swap, never null: work already in flight — a queued thumbnail resolving, say —
+       still reads `db`, and clearing it first threw where nothing could catch it. */
+    const res = await fetch('./fixtures/observations.json');
+    if (!res.ok) throw new Error(`fixture failed to reload: ${res.status}`);
+    db = await res.json();
+    return db;
+  },
+
   species() { return db.species; },
   projects() { return db.projects; },
 

@@ -77,7 +77,32 @@ bugs. `ui/tile.js` derives all three; none of them is stored on the row.
 | --- | --- | --- |
 | **marked** | what this reviewer has marked but not committed | `state.marks`, transient |
 | **existing** | what the record already carried before this reviewer arrived | the row's own status columns |
-| **outcome** | what the last commit just did | `state.outcomes`, per commit |
+| **outcome** | what the last commit just did | `state.outcomes`, per commit, per mode |
+
+Their precedence in `tile.js` is fixed and load-bearing: **a mark outranks an outcome,
+which outranks the record.** Once the reviewer touches a committed tile they are
+editing it, and the screen has to show the new intention rather than the old answer —
+otherwise the click appears to do nothing. A fourth derived state, *taking back*, covers
+the gap: the record still carries the exception, the reviewer has removed the mark, and
+nothing is written until the next commit.
+
+**The marks are the page's exception set — not a scratchpad.** At commit, whatever is
+marked becomes the exception and whatever is not becomes accepted. Three rules follow,
+and all three were bugs before they were rules:
+
+- A page arrives with its existing exceptions **already marked** (`page.seedMarks`).
+  Without that, committing a page holding flags that nobody touched silently cleared
+  them, because the commit accepts everything unmarked.
+- A commit does **not** clear the marks. `page.marksAfterCommit` keeps the exceptions
+  marked, so the page stays editable and a click still means what it meant a moment
+  ago. Delete Mode keeps nothing marked — a deleted row is not a pending intention.
+- `state.touched` holds what the reviewer decided by hand. Those ids are never
+  re-seeded, so taking a flag off and paging away does not put it back.
+
+**`state.outcomes` is scoped to a mode, and `setMode` clears it.** Left standing, a
+scientific commit painted REVIEWED badges across Training and Delete — two independent
+decisions wearing each other's answer. Nothing is lost: what was committed is on the
+record, and the next query reads it back through this mode's own status dimension.
 
 A mark is not a decision. **Committing is what writes it to the record** — that is why a
 flag survives leaving the page, the session, and the reviewer, and why "my flags
@@ -107,6 +132,18 @@ than the one that was asked for last.
 were on screen, and `refresh()` fetches those by id rather than re-running the filter.
 Returning to a page must show what was submitted, not whatever the filter now matches.
 This is why `data.js` has `byIds()` at all.
+
+**A committed page is not finished.** The reviewer can take a flag back and commit
+again. Anything that treats a commit as terminal — clearing marks, locking tiles,
+letting an outcome outrank a mark — breaks that, and it is the single area of this app
+that has produced the most reported bugs.
+
+**Never blank the panel before an `await`.** `renderPicker` is async: it fetches the
+taxonomy when the species chooser is open. Clearing `#picker` first left it missing for
+the length of that request, which read as the panel closing and reopening by itself.
+Fetch, check the render token, *then* replace. Choosing a species also closes the panel
+— that is what it was opened to do — while leaving the mark, because correcting a
+species and resolving a flag are separate decisions.
 
 **A click that dismisses the panel must not also act.** `mount.js` returns early when
 `state.picker` is open. Acting as well silently undid the very mark the panel belonged
@@ -148,7 +185,15 @@ bugs ship.
 | Tier | Catches | Cannot catch |
 | --- | --- | --- |
 | `tests/unit/` — Node | rules, per mode, per commit | anything rendered |
-| `tests.html` — browser contract | store behaviour against requirements | whether it was drawn |
+| `tests/e2e/contract.spec.mjs` → `tests.html` | store behaviour against the requirements in #68, by name | whether it was drawn |
+
+`npm run test:unit` runs `npm run lint` first — `tools/syntax-check.mjs` parses every
+`.js`/`.mjs` in the app. There is no build step, so nothing else reads the source before
+a browser does, and a single stray quote in `tests/requirements.js` took the whole
+contract page down while looking like a sixty-second hang. It runs in about a second.
+
+**Run the unit tier after every change.** It is 50 ms plus the parse check, and it is
+the tier that would have caught most of what has been reported by hand.
 | `tests/e2e/` — Playwright | badges actually drawn, panels on-screen, no console errors | meaning |
 
 **Every rendering defect so far passed the store-level checks.** A badge that is never

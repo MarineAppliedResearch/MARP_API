@@ -20,8 +20,15 @@ function eq(a, b, msg) {
 }
 function ok(v, msg) { if (!v) throw new Error(msg || 'expected truthy'); }
 
-/** Put the store back to a known place between tests. */
+/**
+ * Put the store — and the data — back to a known place between checks.
+ *
+ * Reloading the fixture matters: commits and corrections mutate it, so without this
+ * each check runs against the wreckage of the last one. Two checks here were quietly
+ * order-dependent until a page started arriving with its existing flags marked.
+ */
 async function reset(mode = 'scientific') {
+  await MarpData.reload();
   state.mode = mode;
   state.page = 1;
   state.filters.species = 'Bat Star';
@@ -32,6 +39,7 @@ async function reset(mode = 'scientific') {
   state.pageMembers.clear();
   state.committedPages.clear();
   state.marks.clear();
+  state.touched.clear();
   state.changed.clear();
   state.committedPages.clear();
   state.picker = null;
@@ -208,8 +216,11 @@ test('Moving through pages',
   'a committed decision can be taken back by marking it and committing again', async () => {
     await reset();
     /* pick a row the commit can actually act on: ready imagery, not already reviewed */
-    const target = state.rows.find((r) => r.thumbnail_status === 'ready' && r.review_status !== 'reviewed');
-    ok(target, 'page 1 should contain a reviewable row');
+    /* Not merely "not reviewed": a row the record already flags arrives marked, and
+       committing keeps it flagged. This check is about a row the commit accepts. */
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && r.review_status === 'unreviewed' && !state.marks.has(r.observation_id));
+    ok(target, 'page 1 should contain an unreviewed, unmarked row');
     const id = target.observation_id;
     await actions.commitPage();
     eq(state.outcomes.get(id), 'reviewed', 'first commit accepts it');
@@ -428,14 +439,52 @@ test('Correcting an observation',
     eq(row.previous_comname, was, 'and what it was before is still recorded');
   });
 
+/* Reported 2026-09-04: choosing a species made the panel vanish and immediately
+   reappear. Two faults — the panel never closed on a correction, and renderPicker
+   blanked it before awaiting the taxonomy. Both are behaviour, so both are checked. */
+test('Correcting an observation',
+  'choosing a species closes the panel, because that is what it was opened to do', async () => {
+    await reset();
+    const id = state.rows[0].observation_id;
+    actions.toggleMark(id);
+    actions.openPicker(id);
+    ok(state.picker && state.picker.id === id, 'the panel is open before the correction');
+    await actions.changeSpecies(id, 43);            // Ochre Star
+    eq(state.picker, null, 'and closed after it');
+  });
+
+test('Correcting an observation',
+  'the correction closes the panel but keeps the mark: they are separate decisions', async () => {
+    await reset();
+    const id = state.rows[0].observation_id;
+    actions.toggleMark(id);
+    actions.openPicker(id);
+    await actions.changeSpecies(id, 43);
+    ok(state.marks.has(id), 'correcting the species does not resolve the flag');
+    ok(state.changed.has(id), 'and the correction is recorded');
+  });
+
+test('Correcting an observation',
+  'correcting one tile never closes a panel belonging to another', async () => {
+    await reset();
+    const [a, b] = state.rows.map((r) => r.observation_id);
+    actions.toggleMark(a);
+    actions.toggleMark(b);
+    actions.openPicker(b);
+    await actions.changeSpecies(a, 43);             // a different tile
+    ok(state.picker && state.picker.id === b, 'the open panel is left alone');
+  });
+
 /* Returning to a committed page must show what was submitted — the accepted
    observations as well as the flagged ones — so it can be changed and resubmitted. */
 test('Moving through pages',
   'a committed page still shows everything that was submitted on it', async () => {
     await reset();
     const before = state.rows.map((r) => r.observation_id);
-    const flagged = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
-    actions.toggleMark(flagged);
+    const flagged = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(flagged);                  // toggling a seeded mark would unflag it
+    ok(state.marks.has(flagged), 'the row under test is marked');
     await actions.commitPage();
 
     const accepted = state.rows
@@ -462,7 +511,8 @@ test('Moving through pages',
 test('Moving through pages',
   'a committed decision can be changed and resubmitted from the same page', async () => {
     await reset();
-    const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id));
     const id = target.observation_id;
     await actions.commitPage();
     eq(state.rows.find((r) => r.observation_id === id).review_status, 'reviewed');
@@ -476,6 +526,56 @@ test('Moving through pages',
     await actions.commitPage();
     const row = state.rows.find((r) => r.observation_id === id);
     eq(row.review_status, 'flagged', 'resubmitting applies the change');
+  });
+
+/* Reported 2026-09-04: flags vanished when a mode was switched, and a committed page
+   could not be edited. Both came from marks not being the page's exception set. */
+test('Review states',
+  'a page arrives with its existing flags already marked', async () => {
+    await reset();
+    const flaggedRows = state.rows.filter((r) => r.review_status === 'flagged');
+    if (!flaggedRows.length) return 'skipped — no flagged rows on this page';
+    for (const r of flaggedRows) {
+      ok(state.marks.has(r.observation_id),
+         `flagged observation ${r.observation_id} must arrive marked, or committing clears it`);
+    }
+  });
+
+test('Review states',
+  'committing a page does not clear a flag nobody touched', async () => {
+    await reset();
+    const flagged = state.rows.find((r) => r.review_status === 'flagged'
+      && r.thumbnail_status === 'ready');
+    if (!flagged) return 'skipped — no flagged rows on this page';
+    const id = flagged.observation_id;
+    await actions.commitPage();
+    eq(state.rows.find((r) => r.observation_id === id).review_status, 'flagged',
+       'an untouched flag survives a page commit');
+  });
+
+test('Review states',
+  'a committed page stays editable: the exceptions are still marked', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && !state.marks.has(r.observation_id)).observation_id;
+    actions.toggleMark(id);
+    await actions.commitPage();
+    ok(state.marks.has(id), 'the flag stays marked so a click can take it back');
+    actions.toggleMark(id);
+    await actions.commitPage();
+    eq(state.rows.find((r) => r.observation_id === id).review_status, 'reviewed',
+       'and committing again accepts it');
+  });
+
+test('Scientific review and training review are independent',
+  'switching modes clears what the other mode committed', async () => {
+    await reset();
+    await actions.commitPage();
+    ok(state.outcomes.size > 0, 'the scientific commit recorded outcomes');
+    actions.setMode('training');
+    await new Promise((r) => setTimeout(r, 400));
+    eq(state.outcomes.size, 0, "training must not wear scientific review's answers");
+    eq(state.marks.size, 0, 'nor its marks');
   });
 
 test('Moving through pages',

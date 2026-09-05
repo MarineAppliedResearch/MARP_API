@@ -46,7 +46,7 @@ function position(panel, id) {
 function consequence(mode, correcting) {
   if (correcting) {
     return ['ok', 'The correction <b>saves immediately</b> and is recorded against your name. '
-      + 'The mark stays until you resolve it.'];
+      + 'This panel closes; the mark stays until you resolve it.'];
   }
   if (mode === 'training') {
     return ['', 'Excluding is <b>a deliberate decision, not the absence of one</b>. '
@@ -56,18 +56,26 @@ function consequence(mode, correcting) {
     + 'The other reasons are advisory.'];
 }
 
+let renderSeq = 0;
+
 export async function renderPicker() {
   const host = $('#picker');
-  host.innerHTML = '';
-  if (!state.picker || state.mode === 'delete') return;
+  if (!state.picker || state.mode === 'delete') { host.innerHTML = ''; return; }
 
   const { id, correcting } = state.picker;
   const row = state.rows.find((r) => r.observation_id === id);
   const mark = state.marks.get(id);
-  if (!row || !mark) return;
+  if (!row || !mark) { host.innerHTML = ''; return; }
 
   const m = MODES[state.mode];
+  /* Fetch first, clear second. Blanking the panel and then awaiting the taxonomy
+     left it missing for the length of the request, which looked like the panel
+     closing and reopening by itself. */
+  const token = ++renderSeq;
   const matches = correcting ? await MarpData.searchSpecies('') : [];
+  if (token !== renderSeq) return;                    // a newer render already won
+  if (!state.picker || state.picker.id !== id) { host.innerHTML = ''; return; }
+  host.innerHTML = '';
   const [consqClass, consqText] = consequence(state.mode, correcting);
 
   const panel = el(`<div class="pick" role="dialog" aria-label="${m.mark} options">

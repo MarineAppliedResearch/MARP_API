@@ -6,7 +6,7 @@
  * a named action, which is the seam an API call will eventually sit behind.
  */
 import { MarpData } from './data.js';
-import { MODES, isMode, commitCount } from './model/modes.js';
+import { MODES, isMode, commitCount, pendingException, existingState } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 
@@ -31,7 +31,8 @@ export const state = {
   sort: { ...filters.DEFAULT_SORT },
   counts: { unreviewed: 0, reviewed: 0, flagged: 0, undecided: 0, promoted: 0, excluded: 0, total: 0 },
 
-  marks: new Map(),        // uncommitted: id -> { reason }
+  marks: new Map(),        // the page's exception set: id -> { reason }
+  touched: new Set(),      // what the reviewer decided by hand; never re-seeded
   changed: new Map(),      // id -> { from, to } for this session
   outcomes: new Map(),     // id -> what the last commit did
   committedPages: new Set(),
@@ -102,6 +103,14 @@ export const actions = {
     if (token !== reqSeq) return;
 
     state.rows = res.rows;
+    /* Marks are the page's exception set, so rows that already carry this mode's
+       exception arrive marked. Without this, committing a page that held existing
+       flags cleared them — the commit accepts everything unmarked. */
+    const exception = pendingException(state.mode);
+    if (exception) {
+      state.marks = page.seedMarks(state.marks, state.touched, res.rows,
+        (row) => existingState(state.mode, row) === exception);
+    }
     if (!pinned) { state.total = res.total; state.pageCount = res.pageCount; }
     state.loading = false;
     notify();
@@ -127,6 +136,14 @@ export const actions = {
     state.page = 1;
     state.pageMembers = page.clearPins();
     state.committedPages.clear();
+    /* Outcomes belong to a mode's session of work, not to the observation. Left
+       standing, a scientific commit painted REVIEWED badges across Training and
+       Delete — two independent decisions wearing each other's answer. Nothing is
+       lost by clearing them: what was committed is on the record, and the next
+       query reads it back through this mode's own status dimension. */
+    state.outcomes = new Map();
+    state.touched = new Set();
+    state.lastCommit = null;
     state.filters = filters.ensureStatusFor(mode, state.filters);
     fire('setMode', { mode });
     actions.refresh();
@@ -136,6 +153,7 @@ export const actions = {
     if (!state.rows.some((r) => r.observation_id === id)) return;
     const had = state.marks.has(id);
     state.marks = page.toggleMark(state.marks, id);
+    state.touched.add(id);
     if (had) state.picker = null;
     fire(had ? 'unmark' : 'mark', { id, mode: state.mode, mark: MODES[state.mode].mark });
     notify();
@@ -179,6 +197,11 @@ export const actions = {
     const res = await MarpData.setSpecies(id, speciesId);
     if (!res.ok) { fire('changeSpecies:failed', { id }); return; }
     state.changed.set(id, { from, to: res.observation.comname });
+    /* The correction is what the panel was opened to do, so choosing a species
+       finishes it. Leaving the panel up meant it blanked and rebuilt itself, which
+       read as a flicker rather than as a result. The mark stays: correcting the
+       species is not the same decision as resolving the flag. */
+    if (state.picker && state.picker.id === id) state.picker = null;
     fire('changeSpecies:saved', { id, from, to: res.observation.comname, version: res.observation.version });
     notify();
   },
@@ -193,6 +216,7 @@ export const actions = {
 
   markAllOnPage() {
     state.marks = page.markAll(state.marks, state.rows);
+    state.rows.forEach((r) => state.touched.add(r.observation_id));
     fire('markAllOnPage', { count: state.rows.length, scope: 'page' });
     notify();
   },
@@ -200,6 +224,7 @@ export const actions = {
   clearMarks() {
     const n = state.marks.size;
     state.marks = new Map(); state.picker = null;
+    state.rows.forEach((r) => state.touched.add(r.observation_id));
     fire('clearMarks', { count: n });
     notify();
   },
@@ -218,7 +243,12 @@ export const actions = {
     state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
     state.outcomes = page.applyCommit(state.outcomes, res);
     state.lastCommit = res;
-    state.marks = new Map();
+    /* The exceptions stay marked. A committed page is still editable — clicking a
+       flag takes it back — and a mark has to keep meaning the same thing before
+       and after a commit, or the same gesture reverses its meaning underneath the
+       reviewer. */
+    state.marks = page.marksAfterCommit(
+      marks, state.outcomes, ids, pendingException(state.mode));
     state.picker = null;
 
     fire('commitPage:result', {
@@ -247,6 +277,8 @@ export const actions = {
     state.filters = { ...state.filters, [key]: value };
     state.page = 1;
     state.marks = new Map();
+    state.touched = new Set();
+    state.outcomes = new Map();
     state.pageMembers = page.clearPins();
     state.committedPages.clear();
     fire('setFilter', { key, value });
@@ -256,6 +288,9 @@ export const actions = {
   toggleStatus(key, value) {
     state.filters = filters.toggleStatus(state.filters, key, value);
     state.page = 1;
+    state.marks = new Map();
+    state.touched = new Set();
+    state.outcomes = new Map();
     state.pageMembers = page.clearPins();
     state.committedPages.clear();
     fire('toggleStatus', { key, value, now: state.filters[key] });

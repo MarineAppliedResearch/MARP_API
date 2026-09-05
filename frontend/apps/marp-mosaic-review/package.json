@@ -7,13 +7,14 @@
   "scripts": {
     "serve": "node tools/serve.mjs",
     "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "node --test \"tests/unit/*.test.mjs\"",
+    "test:unit": "npm run lint && node --test \"tests/unit/*.test.mjs\"",
     "test:e2e": "playwright test --project=desktop --project=phone",
     "test:e2e:headed": "playwright test --headed",
     "fixture": "node tools/make-fixture.mjs",
     "demo": "node tools/record-demo.mjs",
     "demo:narrated": "node tools/record-demo.mjs --narrate",
-    "demo:all": "node tools/record-demo.mjs all --narrate"
+    "demo:all": "node tools/record-demo.mjs all --narrate",
+    "lint": "node tools/syntax-check.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0"

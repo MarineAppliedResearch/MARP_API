@@ -243,3 +243,108 @@ test.describe('the filter rail', () => {
       await expect(menu.locator('[data-v]')).toHaveCount(2);   // Rockfish, Rock Crab
     });
 });
+
+test.describe('the modes do not wear each other\'s answers', () => {
+  test('a scientific commit leaves no badge behind in training or delete', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.tile:not(.failed):not(.queued)').first().click();
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+    await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' })).toHaveCount(0);
+
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+  });
+
+  test('switching modes clears the marks along with the outcomes', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.tile:not(.failed):not(.queued)').first().click();
+    await expect(page.locator('.tile.marked')).toHaveCount(1);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await expect(page.locator('.tile.marked')).toHaveCount(0);
+  });
+});
+
+test.describe('a committed page is still editable', () => {
+  test('the flag stays marked, a click takes it back, and committing accepts it', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+    await tile.click();
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+
+    /* Still marked, so the same gesture still means the same thing. */
+    await expect(tile).toHaveClass(/marked/);
+    await expect(tile.locator('.badge')).toContainText('FLAGGED');
+
+    await tile.click();
+    await expect(tile).not.toHaveClass(/marked/);
+    await expect(tile.locator('.badge')).toContainText('TAKING BACK');
+
+    await page.locator('#commit').click();
+    await expect(tile.locator('.badge')).toContainText('REVIEWED');
+  });
+
+  test('a mark outranks what the last commit did', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('#commit').click();
+    /* Pinned by id: the tile stops matching .out-reviewed the moment it is
+       marked, and a positional locator would slide onto a different tile. */
+    const id = await page.locator('.tile.out-reviewed').first().getAttribute('data-id');
+    const accepted = page.locator(`.tile[data-id="${id}"]`);
+    await accepted.click();
+    await expect(accepted.locator('.badge')).toContainText('FLAGGED');
+    await expect(accepted).not.toHaveClass(/out-reviewed/);
+  });
+});
+
+test.describe('the correction panel', () => {
+  test('choosing a species closes it, and it does not flash back', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await page.locator('.pick [data-act="correct"]').click();
+    await expect(page.locator('.pick #spSearch')).toBeVisible();
+    await page.locator('.pick .srow').first().click();
+
+    await expect(page.locator('.pick')).toHaveCount(0);
+    /* It used to blank and rebuild, so watch it stay gone rather than trusting
+       one sample: the flicker was roughly the length of the taxonomy request. */
+    for (let i = 0; i < 6; i++) {
+      await page.waitForTimeout(120);
+      await expect(page.locator('.pick')).toHaveCount(0);
+    }
+    await expect(tile).toHaveClass(/marked/);
+    await expect(tile.locator('.reason-chip')).toContainText('was ');
+  });
+
+  test('the panel does not blank while the taxonomy is loading', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await expect(page.locator('.pick')).toBeVisible();
+
+    /* Opening the species chooser awaits a request. The panel must stay on screen
+       for the whole of it. */
+    await page.locator('.pick [data-act="correct"]').click();
+    for (let i = 0; i < 5; i++) {
+      await expect(page.locator('.pick')).toHaveCount(1);
+      await page.waitForTimeout(40);
+    }
+    await expect(page.locator('.pick #spSearch')).toBeVisible();
+  });
+});

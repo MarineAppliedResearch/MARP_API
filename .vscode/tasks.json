@@ -25,6 +25,59 @@
             "problemMatcher": []
         },
         {
+            // The frontend applications own their own suites, so they are separate
+            // entries rather than part of "npm: test", which runs Jest against the
+            // real PostgreSQL and needs the database up.
+            "type": "npm",
+            "script": "test:apps",
+            "label": "test: all frontend apps",
+            "detail": "every frontend application's own suite",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "test:app:mosaic-review",
+            "label": "test: Mosaic Reviewer (all tiers)",
+            "detail": "syntax check, model unit tests, then Playwright render + contract",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "test:app:mosaic-review:unit",
+            "label": "test: Mosaic Reviewer (unit, fast)",
+            "detail": "parses every file, then the model rules in Node -- about a second",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "test:app:mosaic-review:e2e",
+            "label": "test: Mosaic Reviewer (Playwright, desktop + phone)",
+            "detail": "the render tier and the requirement checks, in a real browser",
+            "group": "test",
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "serve:app:mosaic-review",
+            "label": "serve: Mosaic Reviewer",
+            "detail": "standalone static server, no database -- http://localhost:8123/apps/marp-mosaic-review/",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "type": "npm",
+            "script": "demo:app:mosaic-review",
+            "label": "demo: record narrated walkthrough videos",
+            "detail": "drives every scenario in a browser and writes narrated mp4s to demo/",
+            "problemMatcher": []
+        },
+        {
             "type": "npm",
             "script": "docs:api:build",
             "label": "npm: docs:api:build",

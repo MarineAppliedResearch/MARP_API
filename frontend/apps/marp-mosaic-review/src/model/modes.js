@@ -69,6 +69,14 @@ export const isMode = (id) => Object.prototype.hasOwnProperty.call(MODES, id);
 export const commitActsOnMarked = (modeId) => modeId === 'delete';
 
 /**
+ * What a mark means once the page is committed, when that is a state the reviewer
+ * can still take back. Delete Mode has none: a deleted observation is gone, not a
+ * pending intention, so nothing about it stays marked.
+ */
+export const pendingException = (modeId) =>
+  commitActsOnMarked(modeId) ? null : MODES[modeId].marks;
+
+/**
  * How many observations a commit will act on, given what is on the page and what
  * the reviewer marked. Only observations with imagery are eligible, per
  * "What counts as reviewed".

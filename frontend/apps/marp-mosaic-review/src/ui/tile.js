@@ -6,7 +6,7 @@
  * what the last commit did. Everything here is derived; nothing is stored.
  */
 import { state, MODES } from '../store.js';
-import { existingState, decidedBy } from '../model/modes.js';
+import { existingState, decidedBy, pendingException } from '../model/modes.js';
 import { ICON, ME } from './dom.js';
 
 export const markIcon = (mode = state.mode) =>
@@ -96,6 +96,13 @@ export function tile(row) {
   const outcome = state.outcomes.get(id);
   const existing = existingState(state.mode, row);
   const showExisting = existing && !marked && !outcome;
+
+  /* The record still carries this mode's exception, but the reviewer has taken the
+     mark off and not committed yet. Showing FLAGGED there would deny the click ever
+     happened; showing nothing would hide a flag that is still on the record. */
+  const exception = pendingException(state.mode);
+  const takingBack = !marked && exception && state.touched.has(id)
+    && (outcome === exception || existing === exception);
   const byMe = decidedBy(row) === ME;
   const noImage = row.thumbnail_status !== 'ready';
 
@@ -105,16 +112,24 @@ export function tile(row) {
   if (marked) cls.push('marked');
   if (state.picker && state.picker.id === id) cls.push('active');
   if (changed) cls.push('changed');
-  if (outcome) cls.push('out-' + outcome);
+  /* A mark outranks the last commit. Once the reviewer touches a committed tile
+     they are editing it, and the screen has to show the new intention rather than
+     the old answer — otherwise the click appears to do nothing at all. */
+  if (takingBack) cls.push('out-reverted');
+  else if (outcome && !marked) cls.push('out-' + outcome);
   else if (showExisting) cls.push('has-' + existing);
 
   /* The badge is its own control: tapping the tile marks, tapping the badge opens
      the panel. That keeps marking a single uninterrupted gesture. */
-  const badge = outcome ? outcomeBadge(outcome, row, id)
+  const badge = takingBack
+      ? `<span class="badge b-rev" title="Not committed yet — the next commit accepts it">${markIcon()}TAKING BACK</span>`
     : marked ? `<span class="badge ${markClass()}" data-badge="${id}"
         title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`
-    : changed ? `<span class="badge b-chg">${ICON.tick}CHANGED</span>`
+    : outcome ? outcomeBadge(outcome, row, id)
     : showExisting ? existingBadge(existing, row, id, byMe)
+    /* A correction is not this mode's business, so it only claims the badge when
+       the mode has nothing of its own to say. It always keeps the corner chip. */
+    : changed ? `<span class="badge b-chg">${ICON.tick}CHANGED</span>`
     : '';
 
   const tip = noImage

@@ -114,7 +114,27 @@ npx playwright install chromium # once
 npm test                       # both tiers
 ```
 
-From the repository root, `npm run test:app:mosaic-review` delegates here.
+From the repository root:
+
+| Script | What it runs |
+| --- | --- |
+| `npm run test:apps` | every frontend application's own suite |
+| `npm run test:app:mosaic-review` | this app, all tiers |
+| `npm run test:app:mosaic-review:unit` | the fast tier — parse check plus the model rules |
+| `npm run test:app:mosaic-review:e2e` | Playwright: render and contract, desktop and phone |
+| `npm run serve:app:mosaic-review` | the standalone server, no database |
+| `npm run demo:app:mosaic-review` | record the narrated walkthroughs |
+
+All of them are also in VS Code. **Run and Debug** (F5) lists them under *Mosaic
+Reviewer*, including *Debug Mosaic Reviewer model tests*, where breakpoints in
+`src/model/` work because there is no browser and no server involved. **Run Task**
+lists the same set; the fast unit tier is the default test task, so
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> → *Run Test Task* runs it directly.
+
+**`npm run lint` parses every file in the app.** There is no build step, so nothing
+else reads the source before a browser does. It runs first as part of `test:unit`,
+because a single stray quote once took the whole contract page down and presented as a
+sixty-second hang rather than as an error.
 
 **Unit — the model, in Node.** No browser, no server, no database; ~50 ms.
 

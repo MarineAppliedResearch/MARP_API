@@ -62,6 +62,48 @@ export function applyCommit(outcomes, result) {
   return next;
 }
 
+/**
+ * Seed the marks from what the records already say.
+ *
+ * A mark is not decoration: at commit, whatever is marked becomes the exception and
+ * whatever is not becomes accepted. So a page that arrives already holding flagged
+ * observations has to arrive with them marked, or committing it would quietly clear
+ * flags nobody asked to clear.
+ *
+ * `touched` holds what the reviewer has decided about by hand this session. Those are
+ * never re-seeded — taking a flag off and paging away must not put it back.
+ */
+export function seedMarks(marks, touched, rows, isException) {
+  const next = new Map(marks);
+  rows.forEach((row) => {
+    const id = row.observation_id;
+    if (touched.has(id) || next.has(id) || !isException(row)) return;
+    next.set(id, { reason: row.flag_reason || row.exclusion_reason || null });
+  });
+  return next;
+}
+
+/**
+ * What is still marked once a page has been committed.
+ *
+ * A commit is not the end of the page. In the review modes a mark means "this is
+ * the exception", and after committing, the exceptions are exactly the tiles the
+ * commit flagged or excluded — so they stay marked, and clicking one takes the
+ * decision back. Clearing every mark instead left the page looking finished and
+ * behaving as though a click meant the opposite of what it did.
+ *
+ * Reasons are carried across, because the reason belonged to the decision.
+ */
+export function marksAfterCommit(marks, outcomes, ids, exception) {
+  const next = new Map();
+  if (!exception) return next;                 // Delete Mode keeps nothing marked
+  ids.forEach((id) => {
+    if (outcomes.get(id) !== exception) return;
+    next.set(id, { reason: (marks.get(id) || {}).reason || null });
+  });
+  return next;
+}
+
 /** Page numbers to show: a window around the current page, with the ends pinned. */
 export function pageWindow(current, total, span = 2) {
   const out = [];

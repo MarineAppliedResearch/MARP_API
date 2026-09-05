@@ -13,7 +13,11 @@
     "docs:dev:build": "jsdoc -c ./jsdoc.config.json --lenient",
     "docs:build": "npm run docs:api:build && npm run docs:dev:build",
     "test:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review test",
-    "test:apps": "npm run test:app:mosaic-review"
+    "test:apps": "npm run test:app:mosaic-review",
+    "test:app:mosaic-review:unit": "npm --prefix frontend/apps/marp-mosaic-review run test:unit",
+    "test:app:mosaic-review:e2e": "npm --prefix frontend/apps/marp-mosaic-review run test:e2e",
+    "serve:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run serve",
+    "demo:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run demo:all"
   },
   "repository": {
     "type": "git",

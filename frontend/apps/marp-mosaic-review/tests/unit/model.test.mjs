@@ -9,8 +9,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy }
-  from '../../src/model/modes.js';
+import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
+  pendingException } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 
@@ -161,4 +161,68 @@ test('the active filter count reflects what is narrowing the results', () => {
     { species: 'Bat Star', project: null, dive: null, reviewStatus: ['unreviewed'] }), 2);
   assert.equal(filters.activeFilterCount('scientific',
     { species: null, project: null, dive: null, reviewStatus: [] }), 0);
+});
+
+/* ------------------------------- the marks are the page's exception set */
+
+test('a page arrives with its existing exceptions already marked', () => {
+  const rows = [
+    row(1, { review_status: 'flagged', flag_reason: 'Duplicate' }),
+    row(2, { training_disposition: 'excluded', exclusion_reason: 'Occluded' }),
+    row(3, { review_status: 'reviewed' })
+  ];
+  const isEx = (mode) => (r) => existingState(mode, r) === pendingException(mode);
+
+  const sci = page.seedMarks(new Map(), new Set(), rows, isEx('scientific'));
+  assert.deepEqual([...sci.keys()], [1], 'only what this mode calls an exception');
+  assert.equal(sci.get(1).reason, 'Duplicate', 'the reason comes with it');
+
+  const tra = page.seedMarks(new Map(), new Set(), rows, isEx('training'));
+  assert.deepEqual([...tra.keys()], [2], 'each mode seeds from its own dimension only');
+});
+
+test('committing a page must not clear a flag nobody touched', () => {
+  /* The commit accepts everything unmarked, so an unseeded flag would be erased. */
+  const rows = [row(1, { review_status: 'flagged' }), row(2)];
+  const isEx = (r) => existingState('scientific', r) === pendingException('scientific');
+  const marks = page.seedMarks(new Map(), new Set(), rows, isEx);
+  assert.equal(commitCount({ mode: 'scientific', rows, marks }), 1, 'only the unflagged one');
+});
+
+test('a decision made by hand is never seeded back', () => {
+  const rows = [row(1, { review_status: 'flagged' })];
+  const isEx = (r) => existingState('scientific', r) === pendingException('scientific');
+  assert.equal(page.seedMarks(new Map(), new Set([1]), rows, isEx).size, 0);
+});
+
+test('delete mode has no pending exception, so it seeds nothing', () => {
+  assert.equal(pendingException('delete'), null);
+  assert.equal(pendingException('scientific'), 'flagged');
+  assert.equal(pendingException('training'), 'excluded');
+});
+
+/* --------------------------------------- a committed page stays editable */
+
+const commitResult = {
+  reviewed: [{ id: 2, outcome: 'reviewed' }, { id: 3, outcome: 'reviewed' }],
+  flagged: [{ id: 1, outcome: 'flagged' }], skipped: [], reverted: []
+};
+
+test('the exceptions stay marked after a commit, so a click can take one back', () => {
+  const outcomes = page.applyCommit(new Map(), commitResult);
+  const marks = page.marksAfterCommit(
+    new Map([[1, { reason: 'Duplicate' }]]), outcomes, [1, 2, 3], pendingException('scientific'));
+  assert.deepEqual([...marks.keys()], [1]);
+  assert.equal(marks.get(1).reason, 'Duplicate', 'the reason belonged to the decision');
+});
+
+test('what a commit accepted does not stay marked', () => {
+  const outcomes = page.applyCommit(new Map(), commitResult);
+  const marks = page.marksAfterCommit(new Map(), outcomes, [1, 2, 3], pendingException('scientific'));
+  assert.ok(!marks.has(2) && !marks.has(3));
+});
+
+test('a deleted observation is not a pending intention', () => {
+  const outcomes = page.applyCommit(new Map(), { reviewed: [{ id: 1, outcome: 'deleted' }] });
+  assert.equal(page.marksAfterCommit(new Map(), outcomes, [1], pendingException('delete')).size, 0);
 });
