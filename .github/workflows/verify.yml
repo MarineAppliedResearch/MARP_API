@@ -167,5 +167,14 @@ jobs:
 
       # --runInBand, because the suite writes to a real database and parallel workers
       # race each other over it. See jest.config.js.
+      #
+      # tests/jellyfin.test.js is excluded, and that is a real gap rather than a
+      # formality: its 17 tests drive the central MARP media server, which a GitHub
+      # runner cannot reach. Excluded by name and announced, because a suite that
+      # silently skips looks green while proving nothing -- run them locally, where the
+      # server is reachable, before merging anything that touches Jellyfin.
       - name: API test suite
-        run: npm test
+        run: |
+          echo "::notice::tests/jellyfin.test.js is not run here (17 tests). The central"
+          echo "::notice::media server is unreachable from a runner; run them locally."
+          npx jest --runInBand --forceExit             --testPathIgnorePatterns '/node_modules/' 'tests/walkthrough' 'tests/jellyfin.test.js'

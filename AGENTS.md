@@ -296,7 +296,10 @@ executable by the `pg` driver without psql.
 ## Tests
 
 **The suite runs in CI**, against a PostgreSQL built from `db/baseline/schema.sql` plus
-the migrations — the same sequence `marp db up` uses. It is 227 for 227 on a database with
+the migrations — the same sequence `marp db up` uses. 210 of 227 run there; the 17 in
+`tests/jellyfin.test.js` are excluded by name because they drive the central media server,
+which a runner cannot reach. **Run those locally before merging anything that touches
+Jellyfin** — CI cannot tell you they broke. It is 227 for 227 on a database with
 no data in it, which is what makes that job meaningful. If you add a test that depends on
 rows the development server happens to hold, seed them in the suite; see
 `tests/species-lists.test.js`, where a block used to fail in one place and pass vacuously
