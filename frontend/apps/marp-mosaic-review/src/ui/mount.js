@@ -9,6 +9,7 @@ import { $ } from './dom.js';
 import { renderGrid, computeLayout } from './grid.js';
 import { renderPicker } from './picker.js';
 import { renderConfirm, wireConfirm } from './confirm.js';
+import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import {
   closeMenus, isMenuOpen, speciesMenu, projectMenu, diveMenu, lineMenu,
@@ -90,8 +91,54 @@ function wireDismissal() {
     if (!e.target.closest('.menu')) closeMenus();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { actions.closePicker(); closeMenus(); }
+    if (e.key === 'Escape') { actions.closePicker(); closeMenus(); return; }
+
+    /* One listener, consulting one rule. The Escape handling above shows how quickly
+       scattered key handling spreads; `model/keys.js` owns what a key means so the
+       awkward cases -- typing in the species search, a dialog holding the keyboard --
+       are answered in one place and testable without a browser. */
+    const target = e.target || {};
+    const action = resolveKey(e, {
+      tagName: target.tagName,
+      isEditable: Boolean(target.isContentEditable),
+      modalOpen: Boolean(state.confirm),
+    });
+    if (!action) return;
+
+    e.preventDefault();
+    runShortcut(action);
   });
+}
+
+/**
+ * What each shortcut does.
+ *
+ * Kept beside the listener rather than in the model: the model decides *what a key
+ * means*, which is a rule; this decides what to do about it, which is wiring.
+ */
+function runShortcut(action) {
+  switch (action) {
+    case 'nextPage': return actions.goToPage(state.page + 1);
+    case 'prevPage': return actions.goToPage(state.page - 1);
+    case 'clearMarks': return actions.clearMarks();
+    case 'modeScientific': return actions.setMode('scientific');
+    case 'modeTraining': return actions.setMode('training');
+    case 'modeDelete': return actions.setMode('delete');
+    case 'commitPage': {
+      const commit = $('#commit');
+      /* A shortcut that appears to do nothing reads as broken and gets pressed again.
+         The disabled button already carries the reason, so point at it rather than
+         inventing a second place for the same message. */
+      if (commit && commit.disabled) {
+        commit.classList.remove('nudge');
+        void commit.offsetWidth;                 // restart the animation
+        commit.classList.add('nudge');
+        return;
+      }
+      return actions.commitPage();
+    }
+    default: return undefined;
+  }
 }
 
 function wireLayout() {

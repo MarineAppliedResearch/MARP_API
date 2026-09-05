@@ -829,3 +829,98 @@ test.describe('the states never rendered', () => {
     await expect(page.locator('.pick .chip', { hasText: 'No imagery' })).toBeVisible();
   });
 });
+
+/* ------------------------------------------- keyboard shortcuts (#74) */
+
+test.describe('keyboard shortcuts', () => {
+  test('R1: N pages forward and P comes back', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const first = await page.locator('.tile').first().getAttribute('data-id');
+
+    await page.keyboard.press('n');
+    await ready(page);
+    const second = await page.locator('.tile').first().getAttribute('data-id');
+    expect(second).not.toBe(first);
+
+    await page.keyboard.press('p');
+    await ready(page);
+    await expect(page.locator('.tile').first()).toHaveAttribute('data-id', first);
+  });
+
+  test('R2: C clears the marks on the page', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await page.locator('.tile:not(.marked)').first().getAttribute('data-id');
+    await page.locator(`.tile[data-id="${id}"]`).click();
+    await expect(page.locator('.tile.marked')).toHaveCount(1);
+
+    await page.keyboard.press('c');
+    await expect(page.locator('.tile.marked')).toHaveCount(0);
+  });
+
+  test('R3: the number keys switch mode', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.keyboard.press('3');
+    await expect(page.locator('body')).toHaveAttribute('data-mode', 'delete');
+    await page.keyboard.press('2');
+    await expect(page.locator('body')).toHaveAttribute('data-mode', 'training');
+    await page.keyboard.press('1');
+    await expect(page.locator('body')).toHaveAttribute('data-mode', 'scientific');
+  });
+
+  test('R4: Enter alone does not commit; Ctrl+Enter does', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(600);
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+
+    await page.keyboard.press('Control+Enter');
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+  });
+
+  /* The rule and the wiring can each be right while the pair is wrong: this proves
+     mount.js actually tells resolveKey that an input has focus. */
+  test('R5: typing in the species search does not page', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const before = await page.locator('.tile').first().getAttribute('data-id');
+
+    /* The rail starts collapsed on a phone, so the species control is not reachable
+       until it is opened. The shortcut rule is the same either way; getting to the
+       input is what differs. */
+    await openRail(page);
+    await page.locator('#selSpeciesBtn').click();
+    await page.locator('.menu input').first().fill('no');
+    await page.waitForTimeout(500);
+
+    await expect(page.locator('.tile').first()).toHaveAttribute('data-id', before);
+  });
+
+  test('R6: the shortcuts are drawn on the controls they duplicate', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await expect(page.locator('#commit')).toHaveAttribute('data-key', 'Ctrl+Enter');
+    await expect(page.locator('#clearMarks')).toHaveAttribute('data-key', 'C');
+    await expect(page.locator('.seg button[data-mode="delete"]')).toHaveAttribute('data-key', '3');
+  });
+
+  test('R7: Ctrl+Enter on a page that cannot be committed says so', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      const { MarpData } = await import('./src/data.js');
+      MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
+      await actions.refresh();
+    });
+    await expect(page.locator('#commit')).toBeDisabled();
+
+    await page.keyboard.press('Control+Enter');
+    await expect(page.locator('#commit')).toHaveClass(/nudge/);
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+  });
+});

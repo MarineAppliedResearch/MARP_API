@@ -817,6 +817,40 @@ test('The states never rendered',
     ok(state.total <= state.pageSize, 'nothing beyond one page can exist');
   });
 
+/* ------------------------------------------- keyboard shortcuts (#74) */
+
+test('Keyboard shortcuts',
+  'R1: the paging shortcut moves the page, not just the key handler', async () => {
+    await reset('scientific');
+    const first = state.page;
+    actions.goToPage(state.page + 1);
+    await new Promise((r) => setTimeout(r, 400));
+    ok(state.page > first, 'the action behind the shortcut must really page');
+  });
+
+test('Keyboard shortcuts',
+  'R2: clearing marks really empties them', async () => {
+    await reset('scientific');
+    actions.toggleMark(state.rows[0].observation_id);
+    actions.toggleMark(state.rows[1].observation_id);
+    eq(state.marks.size, 2);
+
+    actions.clearMarks();
+    eq(state.marks.size, 0, 'C must clear the page, not just redraw it');
+  });
+
+test('Keyboard shortcuts',
+  'R4: the commit behind Ctrl+Enter reaches the seam exactly once', async () => {
+    await reset('scientific');
+    const real = MarpData.commitPage;
+    let calls = 0;
+    MarpData.commitPage = (...a) => { calls++; return real.apply(MarpData, a); };
+    try {
+      await actions.commitPage();
+      eq(calls, 1, 'one keypress, one commit');
+    } finally { MarpData.commitPage = real; }
+  });
+
 /* ------------------------------------------------------------------ runner */
 
 export async function run(mount) {

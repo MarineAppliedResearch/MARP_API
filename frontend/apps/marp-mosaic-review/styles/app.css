@@ -503,3 +503,32 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .pagestate--banner span { font-size: 12.5px; line-height: 1.5 }
 
 .skip-note { font-size: 12px; color: #e0b063; margin-left: 10px }
+
+/* --- Keyboard shortcut hints (#74) ---------------------------------------
+   Drawn on the control they duplicate. A help screen is a place people visit
+   once; a badge on the button is where the question is actually asked. */
+[data-key]::after {
+  content: attr(data-key);
+  margin-left: 7px; padding: 1px 5px;
+  font: 500 10px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .02em; vertical-align: 1px;
+  color: rgba(255, 255, 255, .62);
+  background: rgba(255, 255, 255, .09);
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 4px;
+}
+.commit[data-key]::after { color: rgba(255, 255, 255, .78) }
+/* The badge is a hint, not a target: it must never swallow the click. */
+[data-key]::after { pointer-events: none }
+
+/* Ctrl+Enter on a page that cannot be committed. The disabled button already
+   carries the reason, so this points at it rather than repeating it. */
+@keyframes marp-nudge {
+  0%, 100% { transform: translateX(0) }
+  20%      { transform: translateX(-3px) }
+  60%      { transform: translateX(3px) }
+}
+.commit.nudge { animation: marp-nudge .28s ease-in-out 2 }
+@media (prefers-reduced-motion: reduce) {
+  .commit.nudge { animation: none; outline: 2px solid var(--red-400, #e2707a) }
+}
