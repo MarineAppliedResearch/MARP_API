@@ -18,6 +18,13 @@ module.exports = {
   roots: ['<rootDir>/tests'],
 
   /**
+   * The walkthrough lives under tests/ but belongs to Playwright, not Jest. Without
+   * this, Jest collects `tests/walkthrough/run.spec.mjs`, fails to make sense of a
+   * Playwright spec, and reports a failing suite that has nothing to do with the API.
+   */
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/walkthrough/'],
+
+  /**
    * Run tests in a plain Node environment (no DOM/browser globals), since
    * the suite only exercises the Express app and its HTTP layer.
    */

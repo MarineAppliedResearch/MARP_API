@@ -1,16 +1,20 @@
-# The first CI this repository has had.
+# CI for marp-api.
 #
-# What runs here is deliberately only what a clean runner can honestly run. The main Jest
-# suite is NOT here: it needs a real PostgreSQL with this repository's baseline loaded, and
-# `jest.config.js` says why it runs `--runInBand` against a real database rather than mocks.
-# Standing that up in Actions is worth doing and is not done yet -- see the known gap at the
-# bottom of AGENTS.md. A job that appears to run the suite and does not would be worse than
-# no job, because a skipped suite looks green.
+# Two jobs. `checks` is fast and needs nothing: generated documentation matching the
+# routes, the application suites, and the harness. `api` stands up a real PostgreSQL,
+# builds this repository's schema the way a developer would, and runs the whole Jest
+# suite against it.
 #
-# So this workflow checks the things that have silently broken before: generated
-# documentation drifting from the routes that generate it, the shared agent instructions
-# drifting between repositories, and a credential or a stale environment fact reaching a
-# tracked file.
+# That second job was not possible until 2026-09-05. The suite runs against a real
+# database rather than mocks, and one block of it silently depended on the development
+# server's own contents -- it seeded nothing, and asserted the absence of a row that
+# only existed there, so on an empty database one check failed and three passed
+# vacuously. With that block seeding its own entry, the suite is 227 for 227 on a
+# database built from nothing, which is what makes this job worth having.
+#
+# The schema is built exactly as `marp db up` and a developer build it: the baseline
+# first, because the migrations cannot create observations, projects, sessions or
+# metaInfos, then the migrations on top.
 
 name: verify
 
@@ -95,3 +99,61 @@ jobs:
       - name: Task specification gate
         working-directory: marp-api
         run: node ../MARP/scripts/harness/spec-check.mjs .
+
+  api:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: marp_user
+          POSTGRES_PASSWORD: marp_ci_password
+          POSTGRES_DB: mare_v1
+        ports: ['5432:5432']
+        # Without this the first migration races the server's own startup and fails
+        # with a connection error that reads like a configuration mistake.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: development
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: mare_v1
+      DB_USER: marp_user
+      DB_PASSWORD: marp_ci_password
+      DB_DIALECT: postgres
+      # The API refuses to start in production without one and warns in development.
+      # A CI value keeps the log honest; it authenticates nothing that outlives the job.
+      AUTH_SESSION_SECRET: ci-only-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The migrations cannot build a database on their own: observations, projects,
+      # sessions and metaInfos predate the migration history and every migration that
+      # touches them assumes they exist. db/baseline/schema.sql is that starting point.
+      - name: Build the schema from the baseline
+        run: node scripts/init-database.js
+
+      - name: Apply the migrations
+        run: npx sequelize-cli db:migrate
+
+      - name: Migration ledger
+        run: npx sequelize-cli db:migrate:status
+
+      # --runInBand, because the suite writes to a real database and parallel workers
+      # race each other over it. See jest.config.js.
+      - name: API test suite
+        run: npm test

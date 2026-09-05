@@ -264,6 +264,13 @@ executable by the `pg` driver without psql.
 
 ## Tests
 
+**The suite runs in CI**, against a PostgreSQL built from `db/baseline/schema.sql` plus
+the migrations — the same sequence `marp db up` uses. It is 227 for 227 on a database with
+no data in it, which is what makes that job meaningful. If you add a test that depends on
+rows the development server happens to hold, seed them in the suite; see
+`tests/species-lists.test.js`, where a block used to fail in one place and pass vacuously
+in three.
+
 **`npm test`, not `npx jest`.** The suite runs against the real development
 PostgreSQL, and `package.json` passes `--runInBand` for that reason. Running Jest
 directly lets workers race each other over one database and produces a wave of
