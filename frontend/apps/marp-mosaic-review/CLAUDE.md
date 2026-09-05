@@ -263,35 +263,131 @@ cross that fades after a couple of seconds — an acknowledgement, not a state. 
 commit applies nothing and **leaves the marks alone**, so the page never has to be
 redone. `MarpData.failNextCommit()` exists only so that path can be tested.
 
-## Which tier catches what
+## The test tiers, and which one catches what
 
-Three tiers, and they fail in genuinely different ways. Choosing the wrong one is how
-bugs ship.
+Four tiers plus the walkthrough videos. They fail in genuinely different ways, and
+choosing the wrong one is how bugs ship.
 
-| Tier | Catches | Cannot catch |
+| Tier | Command | Catches | Cannot catch |
+| --- | --- | --- | --- |
+| Parse | `npm run lint` | a file that will not parse | anything else |
+| Unit | `npm run test:unit` | the rules in `model/` — per mode, per commit | anything rendered |
+| Contract | part of `test:e2e` | store behaviour against the requirements in #68, by name | whether it was drawn |
+| Render | `npm run test:e2e` | badges actually drawn, panels on-screen, colours, no console errors | meaning |
+
+`npm test` runs all of them. `npm run test:unit` runs the parse check first.
+
+**Run the unit tier after every change.** It is about a second including the parse
+check, and it is the tier that would have caught most of what has been reported by hand.
+
+**Every rendering defect so far passed the store-level checks.** A badge never drawn, a
+panel positioned off-screen, a grid re-querying itself, a tick rendered at four times its
+size — the store was correct every time. **If a fix is about what appears, the test
+belongs in Playwright.** Reporting a fix verified at a tier that structurally cannot
+observe it is how several defects got reported twice.
+
+### Where a new test goes
+
+- A rule — what a mark means, what a commit does, how filters nest → `tests/unit/`,
+  as a plain `node:test` case. No browser, no DOM, no fixture loading.
+- A behaviour the requirements in #68 name → `tests/requirements.js`, registered with
+  `test(requirement, name, fn)` where `requirement` is the heading from the issue. Each
+  check calls `reset()` first, which reloads the fixture so checks cannot contaminate
+  one another.
+- Anything visible → `tests/e2e/render.spec.mjs`.
+
+**The locator trap.** A Playwright locator is re-resolved on every use, so a selector
+that describes a *state* stops matching the moment the state changes:
+`.tile:not(.marked)` clicked once no longer matches that tile, and `.first()` silently
+slides onto a different one. Read `data-id` first and pin the tile:
+``page.locator(`.tile[data-id="${id}"]`)``. Three tests were wrong this way before they
+were right.
+
+**The commit race.** `commitPage` is async and re-seeds the marks when it lands. A click
+sent before it finishes is overwritten. Wait for the outcome badge, not a timeout.
+
+## The narrated walkthroughs
+
+Playwright drives a scenario, records video, and a spoken narration is mixed over it.
+The user watches these to confirm behaviour, so they are a review surface, not a test
+report — but they assert as they go, so a broken app fails and writes no video rather
+than producing a convincing film of something that does not work.
+
+**Record them when asked, not as part of the loop.**
+
+```bash
+npm run demo:narrated -- verify-modes     # one scenario, spoken
+npm run demo -- delete                    # silent, faster
+npm run demo:all                          # every scenario, spoken
+```
+
+Output lands in `demo/`, which is git-ignored. Send the mp4 to the user directly.
+
+### Writing a scenario
+
+One entry in `tests/walkthrough/scenarios.mjs`. The runner and the recorder need no
+changes — that file is the whole interface.
+
+```js
+'verify-something': {
+  title: 'Verifying: what this shows',
+  scenes: [
+    {
+      caption: 'On screen, short',        // read at a glance
+      say: "What the voice says.",        // conversational, spelled for a speech engine
+      async act({ page, expect, settled, store }) { /* drive it, and assert */ }
+    }
+  ]
+}
+```
+
+The three parts are deliberately separate, and each has its own rules:
+
+- **`caption`** is read at a glance while the voice is talking. Keep it to a few words.
+- **`say`** is spoken. Write it as if narrating to somebody watching over your shoulder.
+  **Spell for the engine, not for the page**: write `Marp`, because `MARP` is read out as
+  four letters. Say what to look at before it happens — *"watch the badges"*, *"keep your
+  eye on the first tile"* — because the viewer cannot pause and ask.
+- **`act`** drives the app and **must assert what the line is claiming**. This is the
+  rule that matters most. The training exclusion scene passed for a week while excluding
+  nothing, because it only asserted that a panel opened. A scene that narrates a result
+  and does not assert it can lie.
+
+A verification scenario should also **name the old behaviour** — *"before the fix, this
+click appeared to do nothing"* — so the viewer can tell whether they are looking at the
+fix or at the bug.
+
+`act` receives `settled()`, which waits for the grid to stop moving; use it after
+anything that re-queries. `store` is a plain object that carries values between scenes.
+
+### How the timing works
+
+Each line is **spoken and measured before the run**, and the scene is then held for
+exactly as long as its own narration. Without that the captions advance on a timer and
+the next line talks over the last one. `demo/<id>.holds.json` carries the measured
+durations into the run; `demo/<id>.timeline.json` records when each caption appeared so
+ffmpeg can place the audio.
+
+A narrated run therefore takes a couple of minutes rather than thirty seconds. The
+walkthrough Playwright project has a 240-second timeout for that reason.
+
+### The speech engines
+
+**This is development tooling. Nothing in the application or the API depends on it, and
+it must never be the reason a demo fails.** With no speech engine, no ffmpeg, or no
+network, it says why and leaves the silent video alone.
+
+| Engine | Quality | Notes |
 | --- | --- | --- |
-| `tests/unit/` — Node | rules, per mode, per commit | anything rendered |
-| `tests/e2e/contract.spec.mjs` → `tests.html` | store behaviour against the requirements in #68, by name | whether it was drawn |
+| `edge-tts` | good, neural | Free, no key. Sends the caption text to a Microsoft endpoint, so it needs internet. `pip install edge-tts` |
+| Windows SAPI | robotic | Local, offline, no install. The fallback |
 
-`npm run test:unit` runs `npm run lint` first — `tools/syntax-check.mjs` parses every
-`.js`/`.mjs` in the app. There is no build step, so nothing else reads the source before
-a browser does, and a single stray quote in `tests/requirements.js` took the whole
-contract page down while looking like a sixty-second hang. It runs in about a second.
+Each run prints which engine it chose and what that means — an earlier version fell back
+to the robotic voice silently, because the availability check ran through a shell that
+mangled `python -c "import edge_tts"`. Adding an engine, including a local neural one
+such as Piper, is one entry in `ENGINES` in `tools/narrate.mjs`.
 
-**Run the unit tier after every change.** It is 50 ms plus the parse check, and it is
-the tier that would have caught most of what has been reported by hand.
-| `tests/e2e/` — Playwright | badges actually drawn, panels on-screen, no console errors | meaning |
-
-**Every rendering defect so far passed the store-level checks.** A badge that is never
-drawn, a panel positioned off-screen, a grid that re-queries itself — the store was
-correct in all three cases. If a fix is about what appears, the test belongs in
-Playwright.
-
-The walkthrough videos are a fourth, informal tier and have found a defect the others
-missed. They assert as they go, so a broken app fails rather than producing a
-misleading film. When adding a scene, **assert the state it is narrating** — the
-training exclusion scene passed for a week while excluding nothing, because it only
-asserted that the panel opened.
+Pick a voice with `NARRATE_VOICE`, e.g. `NARRATE_VOICE=en-US-AriaNeural`.
 
 ## Known gaps
 
