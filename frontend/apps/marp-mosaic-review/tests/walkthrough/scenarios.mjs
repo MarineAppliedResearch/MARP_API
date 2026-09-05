@@ -485,6 +485,100 @@ export const scenarios = {
     ]
   },
 
+  /* --------------------------------- verify: the states never rendered */
+  /* Four states the grid could always reach and had never drawn. Every scene asserts what
+     it claims -- the empty message, the disabled commit, the skip note, the recovery. */
+  'verify-empty-and-broken': {
+    title: 'Verifying: the empty and broken states',
+    scenes: [
+      {
+        caption: 'A filter that matches nothing',
+        say: "Ask for something that isn't there. Until now the mosaic just went blank — "
+           + "no message, no way back.",
+        async act({ page, expect }) {
+          await page.evaluate(async () => {
+            const { state, actions } = await import('./src/store.js');
+            state.filters.species = 'No Such Species';
+            await actions.refresh();
+          });
+          await expect(page.locator('.pagestate--empty')).toBeVisible();
+          await expect(page.locator('.pagestate--empty')).toContainText('Nothing to review here');
+          await page.waitForTimeout(2600);
+        }
+      },
+      {
+        caption: 'One way back',
+        say: "It says so, and it offers the one thing worth offering — clear the filters. "
+           + "The rail has five dimensions and working out which one emptied it is not "
+           + "the reviewer's job.",
+        async act({ page, expect, settled }) {
+          await page.locator('[data-act="clear-filters"]').click();
+          await settled();
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await expect(page.locator('.pagestate')).toHaveCount(0);
+        }
+      },
+      {
+        caption: 'When the imagery never arrives',
+        say: "Now break every thumbnail on the page. The observations are still here and "
+           + "still real — but there is nothing to look at.",
+        async act({ page, expect, settled }) {
+          await page.evaluate(async () => {
+            const { state, actions } = await import('./src/store.js');
+            const { MarpData } = await import('./src/data.js');
+            MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
+            await actions.refresh();
+          });
+          await expect(page.locator('.pagestate--banner')).toBeVisible();
+          await page.waitForTimeout(2400);
+        }
+      },
+      {
+        caption: 'The commit stops pretending',
+        say: "The commit button used to look perfectly normal here and would have done "
+           + "nothing at all. Now it is disabled, and it says why.",
+        async act({ page, expect }) {
+          await expect(page.locator('#commit')).toBeDisabled();
+          await expect(page.locator('#commit')).toContainText('nothing to do');
+          await page.waitForTimeout(2800);
+        }
+      },
+      {
+        caption: 'You can still flag what you could not see',
+        say: "This is the important part. A flag is a reviewer saying something is wrong, "
+           + "and a missing picture is worth flagging. That flag reaches the database, "
+           + "even though nobody could see the observation. Until now it was silently "
+           + "thrown away.",
+        async act({ page, expect }) {
+          const id = await page.locator('.tile').first().getAttribute('data-id');
+          await page.locator(`.tile[data-id="${id}"]`).click();
+          await expect(page.locator('.tile.marked')).toHaveCount(1);
+          await expect(page.locator('#commit')).toBeEnabled();
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+          await page.waitForTimeout(1800);
+        }
+      },
+      {
+        caption: 'And you can ask for the picture again',
+        say: "The server refetches missing imagery on its own, and you can ask again from "
+           + "here. The thumbnails come back, and the page carries on.",
+        async act({ page, expect }) {
+          await page.evaluate(async () => {
+            const { state, actions } = await import('./src/store.js');
+            const { MarpData } = await import('./src/data.js');
+            MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
+            await actions.refresh();
+          });
+          await expect(page.locator('.pagestate--banner')).toBeVisible();
+          await page.locator('[data-act="retry-thumbnails"]').click();
+          await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 25000 });
+          await page.waitForTimeout(1200);
+        }
+      }
+    ]
+  },
+
   'verify-modes': {
     title: 'Verifying: the modes are separate',
     scenes: [

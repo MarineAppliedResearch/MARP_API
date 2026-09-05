@@ -45,6 +45,44 @@ export const MarpData = {
   /** Make the next commit fail, so the failed path can be exercised. */
   failNextCommit() { failNext = true; },
 
+  /**
+   * Break the imagery for a set of observations, so the states a reviewer meets on a bad
+   * day can be reached deliberately.
+   *
+   * A testing affordance, like `failNextCommit`. None of the empty-and-broken states was
+   * reachable before this: the fixture is uniformly healthy, so the only way to see a page
+   * of failed thumbnails was to edit the fixture by hand and forget to put it back.
+   *
+   * @param {number[]|'page'} ids  observation ids, or 'page' for everything currently loaded
+   * @param {string} [status]      'failed' (default) or 'queued'
+   */
+  breakThumbnails(ids, status = 'failed') {
+    const wanted = new Set(ids);
+    let broken = 0;
+    for (const row of db.observations) {
+      if (!wanted.has(row.observation_id)) continue;
+      row.thumbnail_status = status;
+      broken++;
+    }
+    return broken;
+  },
+
+  /**
+   * Ask for a thumbnail again.
+   *
+   * The real thing is the server noticing the thumbnail is missing and fetching it; this
+   * is the seam that call will go through. It fails a second time for anything the fixture
+   * has marked permanently broken, so a retry that cannot help does not pretend to.
+   */
+  async retryThumbnail(id) {
+    await delay(LATENCY.thumb);
+    const row = db.observations.find((r) => r.observation_id === id);
+    if (!row) return null;
+    if (row.thumbnail_permanent) return row.thumbnail_status;   // nothing to be done
+    row.thumbnail_status = 'ready';
+    return 'ready';
+  },
+
   async reload() {
     /* Swap, never null: work already in flight — a queued thumbnail resolving, say —
        still reads `db`, and clearing it first threw where nothing could catch it. */
@@ -177,9 +215,17 @@ export const MarpData = {
     for (const id of observationIds) {
       const row = db.observations.find((r) => r.observation_id === id);
       if (!row) { skipped.push({ id, reason: 'not-found' }); continue; }
-      if (row.thumbnail_status !== 'ready') { skipped.push({ id, reason: 'no-imagery' }); continue; }
-
       const isMarked = marks.has(id);
+
+      /* Accepting means somebody looked at it, so it needs a picture. Flagging means
+         somebody is saying something is wrong, and a thumbnail that never arrived is
+         itself worth flagging -- so a marked row is written whether or not it has
+         imagery. This check used to come first and dropped the row before it ever saw
+         the mark, which silently threw away flags. */
+      if (!isMarked && row.thumbnail_status !== 'ready') {
+        skipped.push({ id, reason: 'no-imagery' });
+        continue;
+      }
 
       if (mode === 'delete') {
         if (isMarked) { row.deleted = true; reviewed.push({ id, outcome: 'deleted' }); }

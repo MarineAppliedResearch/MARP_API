@@ -374,7 +374,11 @@ test.describe('Delete Mode shows the scientific record', () => {
     await expect(page.locator('#statusLbl')).toHaveText('Review status');
     /* But it is context, not a selection: Delete marks nothing on arrival. */
     await expect(page.locator('.tile.marked')).toHaveCount(0);
-    await expect(page.locator('#commit')).toContainText('0 tiles');
+    /* Updated for #72: the button used to read "0 tiles" and stay clickable. A commit
+       that would act on nothing is now disabled and says so, which is a stronger form of
+       the same fact -- so this asserts the stronger one rather than the old wording. */
+    await expect(page.locator('#commit')).toBeDisabled();
+    await expect(page.locator('#commit')).toContainText('nothing to do');
   });
 
   test('it offers both status dimensions, and only Delete does', async ({ page }) => {
@@ -719,13 +723,17 @@ test.describe('the delete confirmation', () => {
     await expect(page.locator('.tile.out-deleted')).toHaveCount(4);
   });
 
-  test('A5: with nothing marked, committing raises no dialog', async ({ page }) => {
+  test('A5: with nothing marked, there is nothing to confirm', async ({ page }) => {
     await page.goto('./');
     await ready(page);
     await page.locator('.seg button', { hasText: 'Delete' }).click();
     await ready(page);
-    await page.locator('#commit').click();
-    await page.waitForTimeout(400);
+
+    /* #71 settled that confirming a deletion of zero records must never happen, because
+       it teaches people to dismiss the dialog without reading it. #72 made that
+       unreachable rather than merely handled: the button is disabled, so the click cannot
+       be made at all. Asserting the stronger guarantee. */
+    await expect(page.locator('#commit')).toBeDisabled();
     await expect(page.locator('.confirm__box')).toHaveCount(0);
     await expect(page.locator('.tile.out-deleted')).toHaveCount(0);
   });
@@ -736,5 +744,88 @@ test.describe('the delete confirmation', () => {
     await page.locator('#commit').click();
     await expect(page.locator('#commit')).toContainText('Saved');
     await expect(page.locator('.confirm__box')).toHaveCount(0);
+  });
+});
+
+/* ------------------------------------ the states never rendered (#72) */
+
+test.describe('the states never rendered', () => {
+  /** Empty the mosaic by asking for something that does not exist. */
+  async function emptyIt(page) {
+    await page.goto('./');
+    await ready(page);
+    await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      state.filters.species = 'No Such Species';
+      await actions.refresh();
+    });
+  }
+
+  test('R1: an empty result says so, and offers the way out', async ({ page }) => {
+    await emptyIt(page);
+    await expect(page.locator('#field')).toHaveAttribute('data-state', /empty|filtered-out/);
+    await expect(page.locator('.pagestate--empty')).toBeVisible();
+    await expect(page.locator('.pagestate--empty')).toContainText('Nothing to review here');
+    await expect(page.locator('[data-act="clear-filters"]')).toBeVisible();
+  });
+
+  test('R1: clearing the filters brings the mosaic back', async ({ page }) => {
+    await emptyIt(page);
+    await page.locator('[data-act="clear-filters"]').click();
+    await ready(page);
+    await expect(page.locator('.tile').first()).toBeVisible();
+    await expect(page.locator('.pagestate')).toHaveCount(0);
+  });
+
+  test('R3: a page with no imagery disables the commit and says why', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      const { MarpData } = await import('./src/data.js');
+      MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
+      await actions.refresh();
+    });
+    await expect(page.locator('#commit')).toBeDisabled();
+    await expect(page.locator('#commit')).toContainText('nothing to do');
+    await expect(page.locator('.pagestate--banner')).toBeVisible();
+  });
+
+  test('R7: the banner offers to ask for the imagery again', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      const { MarpData } = await import('./src/data.js');
+      MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
+      await actions.refresh();
+    });
+    await page.locator('[data-act="retry-thumbnails"]').click();
+    /* The tiles come back, so the banner has nothing left to say. */
+    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 20000 });
+    await expect(page.locator('#commit')).toBeEnabled();
+  });
+
+  test('R5: the button says how many will be skipped', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      const { MarpData } = await import('./src/data.js');
+      MarpData.breakThumbnails(state.rows.slice(0, 3).map((r) => r.observation_id));
+      await actions.refresh();
+    });
+    await expect(page.locator('#skipNote')).toBeVisible();
+    await expect(page.locator('#skipNote')).toContainText('without imagery');
+  });
+
+  test('R9: the reason list can say nobody could see it', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await page.locator('.tile:not(.marked)').first().getAttribute('data-id');
+    await page.locator(`.tile[data-id="${id}"]`).click();
+    await page.locator(`.tile[data-id="${id}"] [data-badge]`).click();
+    await expect(page.locator('.pick')).toBeVisible();
+    await expect(page.locator('.pick .chip', { hasText: 'No imagery' })).toBeVisible();
   });
 });

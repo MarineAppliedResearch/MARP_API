@@ -5,7 +5,7 @@
  * the organisms look.
  */
 import { state, actions, MODES, getLog } from '../store.js';
-import { commitCount, statusDimensions } from '../model/modes.js';
+import { commitCount, statusDimensions, commitOutcome, pageState } from '../model/modes.js';
 import { pageWindow } from '../model/page.js';
 import { sortLabel, activeFilterCount } from '../model/filters.js';
 import { $, ICON } from './dom.js';
@@ -44,15 +44,39 @@ export function renderChrome() {
   commit.classList.toggle('busy', busy);
   commit.classList.toggle('ok', status === 'ok');
   commit.classList.toggle('bad', status === 'failed');
-  commit.disabled = busy;
+  /* What the commit will really do, split by outcome -- so the button can stop offering
+     to act on rows it is about to skip. A commit that would do nothing is disabled and
+     says why, rather than looking normal and quietly achieving nothing. */
+  const outcome = commitOutcome({ mode: state.mode, rows: state.rows, marks: state.marks });
+  const nothingToDo = outcome.acts === 0;
+
+  commit.disabled = busy || nothingToDo;
   commit.innerHTML =
       busy             ? `<span class="spin" aria-hidden="true"></span>Saving&hellip;`
     : status === 'ok'  ? `${ICON.tick}Saved`
     : status === 'failed' ? `${ICON.cross}Failed &mdash; try again`
-    : `${m.commit} &middot; ${willAct} tiles`;
-  commit.title = state.mode === 'delete'
-    ? `Permanently deletes the ${markedCount} marked tiles. The ${eligible - markedCount} unmarked tiles are untouched.`
-    : `Applies to the ${willAct} eligible tiles you did not mark. The ${markedCount} marked ones stay open.`;
+    : nothingToDo    ? `${m.commit} &middot; nothing to do`
+    : `${m.commit} &middot; ${outcome.acts} tiles`;
+
+  commit.title = nothingToDo
+    ? (outcome.skips
+        ? `Nothing to commit: the ${outcome.skips} tiles here have no imagery, and nothing is marked. `
+          + 'Flag one to record that it could not be seen, or retry the thumbnails.'
+        : 'Nothing to commit on this page.')
+    : state.mode === 'delete'
+      ? `Permanently deletes the ${markedCount} marked tiles. The ${eligible - markedCount} unmarked tiles are untouched.`
+      : `Accepts ${outcome.accepts}, flags ${outcome.flags}`
+        + (outcome.skips ? `, and skips ${outcome.skips} with no imagery.` : '.');
+
+  /* The one case where the number on the button is not the number of tiles on screen.
+     Saying so is the whole of R5 -- a commit must never quietly mean "some of these". */
+  const skipNote = $('#skipNote');
+  if (skipNote) {
+    skipNote.hidden = !outcome.skips || state.mode === 'delete';
+    skipNote.textContent = outcome.skips
+      ? `${outcome.skips} without imagery will be skipped — flag one to record that.`
+      : '';
+  }
 
   $('#footCount').textContent = `${markedCount} ${m.mark.toLowerCase()}`;
   $('#markAll').textContent = `${m.verb} all on page`;

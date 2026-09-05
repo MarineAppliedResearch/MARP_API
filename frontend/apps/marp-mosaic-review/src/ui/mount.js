@@ -17,6 +17,19 @@ import {
 
 export { computeLayout };
 
+/**
+ * The buttons a page state offers. Delegated from the grid, because the grid is rewritten
+ * on every render and a listener bound to the button itself would not survive it.
+ */
+function wirePageStates() {
+  $('#grid').addEventListener('click', (e) => {
+    const act = e.target.closest('[data-act]');
+    if (!act) return;
+    if (act.dataset.act === 'clear-filters') { e.stopPropagation(); actions.clearFilters(); }
+    if (act.dataset.act === 'retry-thumbnails') { e.stopPropagation(); actions.retryFailedThumbnails(); }
+  });
+}
+
 function wireGrid() {
   $('#grid').addEventListener('click', (e) => {
     /* The badge opens the panel; the tile itself marks. Marking must stay a single
@@ -110,6 +123,7 @@ export function mount() {
   });
 
   wireGrid();
+  wirePageStates();
   wirePager();
   wireMenus();
   wireConfirm();

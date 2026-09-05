@@ -480,3 +480,26 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
   background: #b4232b; border-color: #d2434b; color: #fff; font-weight: 600;
 }
 .btn--danger:hover { background: #c92a33; }
+
+/* --- The states the grid can reach that are not "here are some tiles" (#72) --- */
+.pagestate {
+  grid-column: 1 / -1; display: grid; place-items: center; gap: 10px;
+  padding: 56px 24px; text-align: center; color: var(--ink-dim, #93a7b4);
+}
+.pagestate__icon { font-size: 30px; opacity: .5; line-height: 1 }
+.pagestate h2 { margin: 0; font-size: 18px; color: #dceaf1; font-weight: 600 }
+.pagestate p { margin: 0; max-width: 46ch; line-height: 1.55; font-size: 14px }
+.pagestate .btn { margin-top: 6px }
+
+/* Drawn over the tiles, not instead of them: the observations are still there and still
+   flaggable, and hiding them would say they do not exist. */
+.pagestate--banner {
+  grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 12px 16px; text-align: left;
+  background: rgba(192, 125, 133, .10); border: 1px solid rgba(192, 125, 133, .35);
+  border-radius: 8px; margin-bottom: 2px;
+}
+.pagestate--banner b { color: #ffd9dd; display: block; font-size: 14px }
+.pagestate--banner span { font-size: 12.5px; line-height: 1.5 }
+
+.skip-note { font-size: 12px; color: #e0b063; margin-left: 10px }
