@@ -717,6 +717,106 @@ test('Delete mode',
     }
   });
 
+/* ------------------------------------ the states never rendered (#72) */
+
+test('The states never rendered',
+  'R8: a flag on a row with no imagery reaches the record', async () => {
+    await reset('scientific');
+    const id = state.rows[0].observation_id;
+    MarpData.breakThumbnails([id]);
+    await actions.refresh();
+
+    actions.toggleMark(id);
+    await actions.commitPage();
+
+    /* Read it back through the seam rather than trusting the outcome map: the bug this
+       covers was the write never happening, which an in-memory outcome would still show.
+       Queried, never reloaded -- `reload()` refetches the fixture from disk and would
+       erase the very write being checked for. */
+    const back = await MarpData.query({
+      filters: { ...state.filters, reviewStatus: ['flagged'] }, page: 1, pageSize: 500,
+    });
+    ok(back.rows.some((r) => r.observation_id === id),
+      'the flag must be written even though nobody could see the picture');
+  });
+
+test('The states never rendered',
+  'R8: an unmarked row with no imagery is skipped, never silently accepted', async () => {
+    await reset('scientific');
+    const id = state.rows[0].observation_id;
+    MarpData.breakThumbnails([id]);
+    await actions.refresh();
+
+    await actions.commitPage();
+
+    const reviewed = await MarpData.query({
+      filters: { ...state.filters, reviewStatus: ['reviewed'] }, page: 1, pageSize: 500,
+    });
+    ok(!reviewed.rows.some((r) => r.observation_id === id),
+      'accepting means somebody looked at it, and nobody could');
+  });
+
+test('The states never rendered',
+  'R7: a failed thumbnail can be asked for again', async () => {
+    await reset('scientific');
+    const id = state.rows[0].observation_id;
+    MarpData.breakThumbnails([id]);
+    await actions.refresh();
+    eq(state.rows.find((r) => r.observation_id === id).thumbnail_status, 'failed');
+
+    await actions.retryThumbnail(id);
+    eq(state.rows.find((r) => r.observation_id === id).thumbnail_status, 'ready',
+      'a retry that succeeds puts the imagery back');
+  });
+
+test('The states never rendered',
+  'R7: a whole failed page can be retried at once', async () => {
+    await reset('scientific');
+    const ids = state.rows.map((r) => r.observation_id);
+    MarpData.breakThumbnails(ids);
+    await actions.refresh();
+    ok(state.rows.every((r) => r.thumbnail_status === 'failed'), 'the page starts broken');
+
+    await actions.retryFailedThumbnails();
+    ok(state.rows.every((r) => r.thumbnail_status === 'ready'),
+      'the case that motivated a page-level retry is a page where everything failed');
+  });
+
+test('The states never rendered',
+  'R6: a queued thumbnail becomes ready, and a commit waits for it', async () => {
+    await reset('scientific');
+    const id = state.rows[0].observation_id;
+    MarpData.breakThumbnails([id], 'queued');
+    await actions.refresh();
+    eq(state.rows.find((r) => r.observation_id === id).thumbnail_status, 'queued');
+
+    await actions.retryThumbnail(id);
+    eq(state.rows.find((r) => r.observation_id === id).thumbnail_status, 'ready');
+  });
+
+test('The states never rendered',
+  'R1: clearing the filters from an empty result actually re-queries', async () => {
+    await reset('scientific');
+    /* A combination that matches nothing. */
+    state.filters.species = 'No Such Species';
+    await actions.refresh();
+    eq(state.rows.length, 0, 'the filter must really empty the page');
+
+    await actions.clearFilters();
+    ok(state.rows.length > 0, 'clearing must bring the mosaic back, not just hide the message');
+  });
+
+test('The states never rendered',
+  'R4: a result smaller than a page does not invent a second one', async () => {
+    await reset('scientific');
+    state.filters.species = 'No Such Species';
+    await actions.refresh();
+    eq(state.total, 0);
+    eq(state.rows.length, 0);
+    /* The pager derives from total; a phantom page two is the classic off-by-one here. */
+    ok(state.total <= state.pageSize, 'nothing beyond one page can exist');
+  });
+
 /* ------------------------------------------------------------------ runner */
 
 export async function run(mount) {

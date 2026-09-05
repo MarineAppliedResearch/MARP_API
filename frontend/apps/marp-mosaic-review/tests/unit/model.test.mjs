@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
   pendingException, statusDimensions, commitIsDestructive,
-  deleteImpact } from '../../src/model/modes.js';
+  deleteImpact, commitOutcome, pageState } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 
@@ -372,4 +372,60 @@ test('A3: nothing to warn about reports zeroes rather than guessing', () => {
 test('A5: nothing marked is not a deletion', () => {
   const impact = deleteImpact({ rows: [row(1), row(2)], marks: new Map() });
   assert.equal(impact.count, 0);
+});
+
+/* ------------------------------------- the states never rendered (#72) */
+
+test('R5: commitOutcome splits what a commit accepts, flags and skips', () => {
+  const rows = [
+    row(1),                                   // untouched, has imagery -> accepted
+    row(2),                                   // marked -> flagged
+    row(3, { thumbnail_status: 'failed' }),   // untouched, no imagery -> skipped
+    row(4, { thumbnail_status: 'failed' }),   // marked, no imagery -> still flagged
+  ];
+  const marks = new Map([[2, {}], [4, {}]]);
+
+  const out = commitOutcome({ mode: 'scientific', rows, marks });
+  assert.equal(out.accepts, 1);
+  assert.equal(out.flags, 2, 'a flag does not need imagery');
+  assert.equal(out.skips, 1, 'an unmarked row with no imagery is skipped, never accepted');
+  assert.equal(out.acts, 3, 'the number on the button is accepts plus flags');
+});
+
+test('R5: the button never offers to act on rows the commit will drop', () => {
+  /* The whole page is broken and nothing is marked: a commit would do nothing at all,
+     and saying "12 tiles" would be a lie. */
+  const rows = Array.from({ length: 12 }, (_, i) => row(i + 1, { thumbnail_status: 'failed' }));
+  const out = commitOutcome({ mode: 'scientific', rows, marks: new Map() });
+  assert.equal(out.acts, 0);
+  assert.equal(out.skips, 12);
+});
+
+test('R5: delete acts on what is marked, imagery or not', () => {
+  const rows = [row(1), row(2, { thumbnail_status: 'failed' }), row(3)];
+  const out = commitOutcome({ mode: 'delete', rows, marks: new Map([[1, {}], [2, {}]]) });
+  assert.equal(out.deletes, 2);
+  assert.equal(out.acts, 2);
+});
+
+test('R1: a page with no rows is empty, and knows whether anything matched', () => {
+  assert.equal(pageState({ rows: [], loading: false, total: 0 }), 'empty');
+  assert.equal(pageState({ rows: [], loading: false, total: 40 }), 'filtered-out');
+  assert.equal(pageState({ rows: [], loading: true, total: 0 }), 'loading');
+});
+
+test('R3: a page whose thumbnails all failed is its own state', () => {
+  const failed = [row(1, { thumbnail_status: 'failed' }), row(2, { thumbnail_status: 'failed' })];
+  assert.equal(pageState({ rows: failed, loading: false, total: 2 }), 'no-imagery');
+
+  const some = [row(1), row(2, { thumbnail_status: 'failed' })];
+  assert.equal(pageState({ rows: some, loading: false, total: 2 }), 'partial-imagery');
+
+  assert.equal(pageState({ rows: [row(1), row(2)], loading: false, total: 2 }), 'ready');
+});
+
+test('R9: scientific review can say the observation could not be seen', () => {
+  assert.ok(MODES.scientific.reasons.includes('No imagery'),
+    'a flag raised because nobody could see it must be able to say so on the record');
+  assert.ok(!MODES.delete.reasons.length, 'delete still records no reason');
 });

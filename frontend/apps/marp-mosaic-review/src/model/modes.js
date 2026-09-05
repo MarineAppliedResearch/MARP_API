@@ -25,7 +25,12 @@ export const MODES = {
     statuses: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']],
     /** Flagged work is still open work, so it stays in the default view. */
     defaultStatus: ['unreviewed', 'flagged'],
-    reasons: ['Wrong species', 'False detection', 'Duplicate', 'Bounding box', 'Other / unsure']
+    /* 'No imagery' is here so a flag raised because nobody could see the observation
+       says so on the record. Without it every such flag lands under 'Other / unsure',
+       and the reason a whole batch was flagged is invisible to anything querying it
+       later -- which matters, because that database is a scientific record. */
+    reasons: ['Wrong species', 'False detection', 'Duplicate', 'Bounding box',
+              'No imagery', 'Other / unsure']
   },
 
   training: {
@@ -147,6 +152,48 @@ export function deleteImpact({ rows, marks }) {
     reviewed: targets.filter((r) => existingState('scientific', r)).length,
     promoted: targets.filter((r) => r.training_disposition === 'promoted').length,
   };
+}
+
+/**
+ * What a commit will actually do to this page, split by outcome.
+ *
+ * `commitCount` answers "how many", which was enough while every row was assumed to have
+ * imagery. It is not enough now: accepting a row means somebody looked at it, so it needs
+ * a picture, while flagging one means somebody is saying something is wrong -- and a
+ * missing thumbnail is itself worth flagging.
+ *
+ * So a marked row without imagery is flagged, an unmarked row without imagery is skipped,
+ * and the interface can stop claiming to act on rows it is about to drop.
+ */
+export function commitOutcome({ mode, rows, marks }) {
+  const ready = (r) => r.thumbnail_status === 'ready';
+  const marked = (r) => marks.has(r.observation_id);
+
+  if (commitActsOnMarked(mode)) {
+    /* Delete acts on what is marked. Destroying something nobody could see is a decision
+       for the human, and the confirmation names the count either way. */
+    const targets = rows.filter(marked);
+    return { acts: targets.length, accepts: 0, flags: 0, deletes: targets.length, skips: 0 };
+  }
+
+  const flags = rows.filter((r) => marked(r)).length;
+  const accepts = rows.filter((r) => !marked(r) && ready(r)).length;
+  const skips = rows.filter((r) => !marked(r) && !ready(r)).length;
+  return { acts: flags + accepts, accepts, flags, deletes: 0, skips };
+}
+
+/**
+ * What state this page is in, beyond "here are some tiles".
+ *
+ * Named rather than inferred at the point of drawing, so the rule is testable without a
+ * browser and the chrome and the grid cannot disagree about which state they are in.
+ */
+export function pageState({ rows, loading, total }) {
+  if (loading) return 'loading';
+  if (!rows.length) return total ? 'filtered-out' : 'empty';
+  if (rows.every((r) => r.thumbnail_status === 'failed')) return 'no-imagery';
+  if (rows.some((r) => r.thumbnail_status !== 'ready')) return 'partial-imagery';
+  return 'ready';
 }
 
 /** The state a record carries for this mode, or null when it carries none. */

@@ -7,7 +7,7 @@
  */
 import { MarpData } from './data.js';
 import { MODES, isMode, commitCount, pendingException, existingState,
-         commitIsDestructive, deleteImpact } from './model/modes.js';
+         commitIsDestructive, deleteImpact, commitOutcome, pageState } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 
@@ -250,6 +250,34 @@ export const actions = {
   },
 
   /**
+   * Ask for a thumbnail again.
+   *
+   * The reviewer can do this per tile; `retryFailedThumbnails` does the whole page, which
+   * is the case that motivated it -- a page where every thumbnail failed is the one you
+   * actually want a single button for.
+   */
+  async retryThumbnail(id) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || row.thumbnail_status === 'ready') return;
+    row.thumbnail_status = 'queued';
+    notify();
+    const status = await MarpData.retryThumbnail(id);
+    /* The row may have gone -- a filter change, a new page -- while this was in flight. */
+    const still = state.rows.find((r) => r.observation_id === id);
+    if (!still) return;
+    still.thumbnail_status = status || 'failed';
+    fire('thumbnail:retried', { id, status: still.thumbnail_status });
+    notify();
+  },
+
+  async retryFailedThumbnails() {
+    const failed = state.rows.filter((r) => r.thumbnail_status === 'failed');
+    if (!failed.length) return;
+    fire('thumbnail:retry-page', { count: failed.length });
+    await Promise.all(failed.map((r) => actions.retryThumbnail(r.observation_id)));
+  },
+
+  /**
    * Commit the page.
    *
    * In Delete Mode this stops the first time and asks, every time -- deletion is
@@ -343,6 +371,29 @@ export const actions = {
     state.railCollapsed = !state.railCollapsed;
     fire('toggleRail', { collapsed: state.railCollapsed });
     notify();
+  },
+
+  /**
+   * Back to the mode's own defaults.
+   *
+   * The way out of an empty result, and the only thing the empty state offers -- the rail
+   * has five dimensions and working out which one emptied it is not the reviewer's job.
+   */
+  clearFilters() {
+    const base = { ...filters.DEFAULT_FILTERS };
+    state.filters = filters.defaultStatusFor(state.mode, base);
+    state.page = 1;
+    state.marks = new Map();
+    state.touched = new Set();
+    state.outcomes = new Map();
+    state.pageMembers = page.clearPins();
+    state.committedPages.clear();
+    fire('clearFilters', {});
+    notify();
+    /* `actions.refresh`, not a bare `refresh` -- these are object methods, not closures,
+       and the bare call threw ReferenceError where nothing caught it, so the button
+       looked inert. */
+    return actions.refresh();
   },
 
   setFilter(key, value) {
