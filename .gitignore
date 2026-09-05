@@ -115,3 +115,8 @@ frontend/apps/*/test-results/
 frontend/apps/*/playwright-report/
 
 frontend/apps/*/demo/
+
+# --- Harness: machine-specific operational notes ---
+# Hosts, accounts and key paths for one developer. Repository files may say that a
+# credential exists and where it lives, never its value.
+.marp/local/

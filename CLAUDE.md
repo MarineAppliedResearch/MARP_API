@@ -1,183 +1,30 @@
-# marp-api — working notes
+# marp-api — Claude Code
 
-The MARP API and application backend. One component of the [MARP
-platform](https://github.com/MarineAppliedResearch/MARP); shared conventions live in
-the umbrella repository's `CLAUDE.md` when this repo is opened inside that workspace,
-and `agents.md` here holds general coding guidance. This file holds what is specific
-to working in this repository — mostly things that cost real time to find out.
+See **[AGENTS.md](AGENTS.md)**. It is the single source for how to work in this
+repository, whichever assistant is reading it. Shared platform conventions are synced into
+the top of that file from the [umbrella repository](https://github.com/MarineAppliedResearch/MARP).
 
-## Running anything
+Application-level notes stay where they are: `frontend/apps/marp-mosaic-review/CLAUDE.md`
+holds that app's architecture, its four test tiers, and how the narrated walkthroughs are
+written. Read it before changing anything structural there.
 
-**Run node from the repository root.** `dotenv` resolves `.env` against the working
-directory, so a script run from elsewhere connects to whatever the defaults are and
-fails with `ECONNREFUSED`. That looks exactly like the database being down, and it is
-not.
+## Claude-specific
 
-```bash
-cd MARP_API
-npm run dev                      # nodemon, or F5 in VS Code
-npm test
-npx sequelize-cli db:migrate:status
-```
+`.claude/settings.json` holds this repository's permission rules; `.claude/hooks/` holds
+the two gates that are enforced rather than requested:
 
-Node is pinned in `.nvmrc` and installed via nvm-windows. A shell started before nvm
-was installed needs `C:/nvm4w/nodejs` prepended to `PATH`.
+- **spec-gate** refuses edits outside `.marp/` while a `blocking` assumption in
+  `.marp/task.md` is unanswered. That is gate G1 in `AGENTS.md`, and it is what stops the
+  design stage being skipped by momentum.
+- **danger-gate** stops commands that reach production, force-push, delete a branch, or
+  migrate a database that is not local and disposable.
 
-## The migrations cannot build a database
-
-`observations`, `projects`, `sessions` and `metaInfos` have no `createTable`
-migration anywhere. They predate the migration history and every migration that
-touches them assumes they exist, so `db:migrate` against an empty database fails
-immediately.
-
-`db/baseline/schema.sql` is the starting point they assume -- a schema-only
-capture of production, no observation data. Against an empty database:
+To see what the gate sees:
 
 ```bash
-node scripts/init-database.js     # baseline: 23 tables, 4 views
-npx sequelize-cli db:migrate      # 19 migrations
+node ../scripts/harness/spec-check.mjs .
 ```
 
-Verified: this produces a schema identical to the development server's -- 35
-tables and views, 447 columns, 77 indexes, 204 constraints, 4 view definitions.
-
-Three things follow that are easy to get wrong:
-
-- **`migrations/` holds 19 files, not 28.** The nine already in the baseline are
-  retired to `db/retired-migrations/`, where Sequelize cannot see them. Moving
-  one back would break every fresh database.
-- **Existing databases keep 28 ledger rows, nine naming files that are gone.**
-  Sequelize tolerates that -- reports them applied, and looks only for files not
-  in the ledger. So production and a fresh database run the same `db:migrate`
-  with no special case.
-- **The baseline is not a migration, deliberately.** A migration numbered before
-  the others would be run against production and recorded in its ledger for no
-  benefit -- production already has this schema. Keeping it a script means the
-  migration history means one thing only: the upgrade path.
-
-Recapturing the baseline and retiring a migration are one operation: the
-baseline must contain a migration's work before that migration moves. Strip
-pg_dump's `\restrict` / `\unrestrict` lines on recapture so the file stays
-executable by the `pg` driver without psql.
-
-## Tests
-
-**`npm test`, not `npx jest`.** The suite runs against the real development
-PostgreSQL, and `package.json` passes `--runInBand` for that reason. Running Jest
-directly lets workers race each other over one database and produces a wave of
-failures that look like real breakage — 27 suites failing on a green codebase, in one
-case.
-
-Every route requires a permission (see below), so an anonymous request gets 401 and
-nothing else. `tests/setup/authenticated-agent.js` builds a per-file fixture user
-holding every permission and leaves it on `global.api`; use that rather than
-`request(app)`. The exceptions are suites that deliberately test the refusals —
-`auth`, `v2_users`, `v2_tokens`, `v2_species` — which build their own narrow users.
-
-**The custom reporter swallows `console.log`.** Debugging a test by printing does not
-work; assert the value instead, or run the code outside Jest.
-
-## Every route is authenticated
-
-There are no V1 routes. `routes/lib/register-versioned-route.js` takes a route
-declared with its old V1 path plus the permission it needs and registers it once, at
-`/api/v2/...`, behind `requirePermission`. Permission keys are seeded by
-`migrations/20260901130000-seed-resource-permissions.js` and granted to nobody by
-default.
-
-An application that is not a browser needs a token:
-
-```bash
-node scripts/create-application-token.js --preset annotation-gui \
-  --app "MARE Video Processing GUI"
-```
-
-It prints the token once. `--presets` lists the recorded permission sets.
-
-## The timecode columns
-
-`mediaPosition`, `actualPosition`, `tc`, `etc` and `frame` on `observations` are all
-`varchar(255)` holding .NET `TimeSpan` text, written by the annotation GUI.
-**Use `db/timecode.js`. Never re-implement the arithmetic.** Two subtleties, both
-found by accident rather than by reading:
-
-- Ticks truncate to whole milliseconds, because `TimeSpan.Milliseconds` does.
-  Rounding instead moves 7,501 frame indices by one and carries `.9995` into the next
-  whole second.
-- A negative value formats as `-17:36:09.0800000`, with the sign in front of
-  everything. A parser that only accepts it in front of a day component cannot read
-  back what this module writes.
-
-`observations.frame` is a sub-second index, 0..24. `keyframes.framenum` is an
-absolute frame number from media time. Two different quantities sharing a name;
-conflating them nearly rewrote the wrong column. Frame rate is assumed to be 25
-throughout — see `VIDEO_PROCESSING_GUI#221`.
-
-## Data migrations
-
-The production database is a scientific record; the umbrella `CLAUDE.md` says what
-that means. Every data migration wraps its work in `db/data-integrity.js`, which
-counts rows and foreign-key references before and after and refuses to commit if
-anything was lost, and carries a `down` that restores what it changed.
-
-## Primary keys are assigned inconsistently
-
-`repository/observation.repository.js` sets `observation_id` itself as
-`max(observation_id) + 1`; keyframes let the column default assign. So
-`db.observations.create({...})` fails — the model declares the key without
-`autoIncrement`, so Sequelize sends an explicit null — and the `observations`
-sequence sits unused and drifts behind the table. Insert with SQL if you need to
-create one outside the repository. Tracked in #62.
-
-## Documentation is generated and tracked
-
-`docs/openapi.generated.json` and `docs/developer/` are committed, so a route change
-needs them rebuilt or the diff is a lie:
-
-```bash
-npm run docs:build
-```
-
-Served at `/api-docs` and `/developer-docs`. Route documentation is code-first
-through `docs/openapi-route-registry.js`; shared schemas, security schemes and error
-responses live in `docs/openapi.js`.
-
-## The frontend applications
-
-`app.js` serves any folder under `frontend/apps/` by name, with shared assets under
-`frontend/shared/`. Adding an app is a folder, not a route. Gating one behind a session
-is a `requirePermissionSession` line registered *before* the static mount, the way
-`/apps/dashboard` already is.
-
-Each application owns its own test suite so it can be extracted into its own repository
-later without untangling anything. `npm run test:apps` from here runs them all.
-
-**`frontend/apps/marp-mosaic-review/CLAUDE.md` holds that app's architecture notes** —
-the layering rule, the one-way data flow, and the invariants that will bite (the grid's
-layout feedback loop, request sequencing, why a committed page keeps its membership,
-why a mark is not a decision). Read it before changing anything structural there. Its
-`README.md` covers running it and recording walkthrough videos.
-
-That app is the MARP Picture Mosaic Reviewer, designed in #68, which also carries the
-phased plan for the schema and endpoints it will need. None of that schema exists yet:
-the app runs entirely against a fixture, and its `src/data.js` is the seam where the
-API will arrive.
-
-**The schema decisions are settled** — see *The schema decisions* in #68, answered
-2026-09-05. The ones that change what gets built: a review belongs to the reviewer, so
-`observations` gains a review *table* rather than a `review_status` column; a species
-correction edits the observation; Delete is a real permanent delete with no soft-delete
-marker; page membership is query-derived, which makes deterministic ordering with an
-`observation_id` tie-breaker a hard requirement on every query; and the existing
-permission model is used initially, so no new permission keys are seeded.
-
-Server-side pagination and adjacent-page prefetching are part of that design, not a
-later optimisation: the mosaic runs over hundreds of thousands of rows and must never
-fetch the whole matching set to page through it.
-
-## Known gaps
-
-- Four moderate dependency advisories on `develop`, all in the sequelize chain, where
-  npm's suggested fix is a downgrade to sequelize 3. Left deliberately; see #58.
-- `master` is far behind `develop` and architecturally older. The plan is to promote
-  `develop` wholesale rather than backport.
+Both hooks fail open if the umbrella is not checked out beside this repository — a
+standalone clone is a supported way to work here, and a missing gate must not be a broken
+repository.

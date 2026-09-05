@@ -1,0 +1,97 @@
+# The first CI this repository has had.
+#
+# What runs here is deliberately only what a clean runner can honestly run. The main Jest
+# suite is NOT here: it needs a real PostgreSQL with this repository's baseline loaded, and
+# `jest.config.js` says why it runs `--runInBand` against a real database rather than mocks.
+# Standing that up in Actions is worth doing and is not done yet -- see the known gap at the
+# bottom of AGENTS.md. A job that appears to run the suite and does not would be worse than
+# no job, because a skipped suite looks green.
+#
+# So this workflow checks the things that have silently broken before: generated
+# documentation drifting from the routes that generate it, the shared agent instructions
+# drifting between repositories, and a credential or a stale environment fact reaching a
+# tracked file.
+
+name: verify
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: marp-api
+          fetch-depth: 0        # the OpenAPI diff below needs the merge base
+
+      # The harness checks live in the umbrella, which is public. Checking it out is
+      # cheaper than vendoring four copies of the same script and keeping them in step.
+      - uses: actions/checkout@v4
+        with:
+          repository: MarineAppliedResearch/MARP
+          path: MARP
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: marp-api/.nvmrc
+          cache: npm
+          cache-dependency-path: marp-api/package-lock.json
+
+      - name: Install
+        working-directory: marp-api
+        run: npm ci
+
+      # The frontend applications carry their own suites, and they run against fixtures
+      # rather than the API -- which is exactly why they can be verified here when the
+      # main suite cannot.
+      - name: Application unit tests
+        working-directory: marp-api
+        run: npm run test:app:mosaic-review:unit
+
+      # `docs/openapi.generated.json` and `docs/developer/` are committed, so a route change
+      # without `npm run docs:build` makes the diff a lie. This is that rule as a check.
+      - name: Generated documentation is current
+        working-directory: marp-api
+        run: |
+          npm run docs:api:build
+          if ! git diff --quiet -- docs/openapi.generated.json; then
+            echo "::error::docs/openapi.generated.json is out of date. Run: npm run docs:build"
+            git diff --stat -- docs/openapi.generated.json
+            exit 1
+          fi
+          echo "Generated OpenAPI matches the routes."
+
+      # Advisory, not a gate. A removed path or a newly required field is a breaking change
+      # for the annotation GUI, which lives in a repository this one cannot see and which
+      # nothing else detects. Surfacing it in the PR is the whole point.
+      - name: Report OpenAPI changes against the base
+        if: github.event_name == 'pull_request'
+        working-directory: marp-api
+        continue-on-error: true
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch --quiet origin "${{ github.base_ref }}" || exit 0
+          if git diff --quiet "$base" -- docs/openapi.generated.json; then
+            echo "No API surface change."
+            exit 0
+          fi
+          echo "::warning::The API surface changed. Removals and newly required fields are"
+          echo "::warning::breaking for VIDEO_PROCESSING_GUI. Note them in .marp/task.md."
+          git diff "$base" -- docs/openapi.generated.json | head -200
+
+      # Explicit path: only this component is checked out here, so the registry would
+      # find nothing to scan.
+      - name: Instruction files carry no credential or stale environment fact
+        run: node MARP/scripts/harness/doc-check.mjs marp-api
+
+      - name: Shared instruction block matches the umbrella
+        run: node MARP/scripts/harness/shared-check.mjs marp-api
+
+      - name: Task specification gate
+        working-directory: marp-api
+        run: node ../MARP/scripts/harness/spec-check.mjs .
