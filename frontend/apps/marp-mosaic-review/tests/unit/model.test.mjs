@@ -688,6 +688,67 @@ test('M1: what is applied reads as both halves, not as one phrase', () => {
     filters.sortField({ field: 'updatedAt' }).desc);
 });
 
+test('M2: a secondary term is applied where the primary ties', () => {
+  const sort = { field: 'confidence', dir: 'asc', then: { field: 'keyframe_count', dir: 'desc' } };
+  assert.deepEqual(filters.sortTerms(sort), [
+    { field: 'confidence', dir: 'asc' },
+    { field: 'keyframe_count', dir: 'desc' }
+  ]);
+  assert.deepEqual(filters.sortTerms({ field: 'confidence', dir: 'asc', then: null }),
+    [{ field: 'confidence', dir: 'asc' }]);
+});
+
+test('M2: observation_id is never one of the terms', () => {
+  /* It is the final word in every comparison and it is appended by whatever does the
+     comparing -- not declared as a term, because a term is something a caller can
+     reorder or drop, and page membership is query-derived. A comparator that can return
+     zero for two different rows means page one holds different observations each visit. */
+  const every = [{ field: 'confidence', dir: 'asc', then: null },
+                 { field: 'obsID', dir: 'desc', then: { field: 'updatedAt', dir: 'asc' } }];
+  for (const sort of every) {
+    for (const term of filters.sortTerms(sort)) {
+      assert.notEqual(term.field, 'observation_id');
+    }
+  }
+  assert.ok(!filters.SORT_FIELDS.some((s) => s.field === 'observation_id'));
+});
+
+test('M2: a secondary that can never be reached is not a term', () => {
+  const same = { field: 'confidence', dir: 'asc', then: { field: 'confidence', dir: 'desc' } };
+  assert.equal(filters.sortTerms(same).length, 1, 'the same field twice is one comparison');
+
+  const junk = { field: 'confidence', dir: 'asc', then: { field: 'cuteness', dir: 'asc' } };
+  assert.equal(filters.sortTerms(junk).length, 1);
+});
+
+test('M2: choosing a primary that is already the secondary clears the secondary', () => {
+  /* Rather than swapping them. A swap changes an order the reviewer did not ask to
+     change, and setting it again is one click. */
+  const sort = { field: 'confidence', dir: 'asc', then: { field: 'obsID', dir: 'desc' } };
+  assert.equal(filters.withSort(sort, 'obsID', 'asc').then, null);
+
+  /* A primary change that leaves the secondary reachable keeps it. */
+  const kept = filters.withSort(sort, 'updatedAt', 'desc');
+  assert.deepEqual(kept.then, { field: 'obsID', dir: 'desc' });
+});
+
+test('M2: the secondary can be set and cleared on its own', () => {
+  const sort = { field: 'confidence', dir: 'asc', then: null };
+  const withThen = filters.withSortThen(sort, 'updatedAt', 'desc');
+  assert.deepEqual(withThen, { field: 'confidence', dir: 'asc', then: { field: 'updatedAt', dir: 'desc' } });
+  assert.equal(filters.withSortThen(withThen, null).then, null);
+  assert.equal(filters.withSortThen(withThen, 'confidence', 'asc').then, null,
+    'the primary is not offerable as the secondary');
+});
+
+test('M2: what is applied names both terms', () => {
+  assert.equal(
+    filters.sortLabel({ field: 'confidence', dir: 'asc', then: { field: 'keyframe_count', dir: 'desc' } }),
+    'Confidence ↑ low first, then Track length ↓ longest first');
+  assert.equal(filters.sortLabel({ field: 'confidence', dir: 'asc', then: null }),
+    'Confidence ↑ low first');
+});
+
 test('M1: a sort nobody could have chosen falls back rather than throwing', () => {
   assert.equal(filters.isSort('cuteness', 'asc'), false);
   assert.equal(filters.isSort('confidence', 'sideways'), false);

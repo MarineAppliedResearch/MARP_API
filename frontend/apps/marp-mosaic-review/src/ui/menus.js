@@ -1,9 +1,15 @@
 /**
  * Dropdown menus.
  *
- * Anchored against the viewport rather than the parent: the filter rail has
- * overflow:hidden and was clipping menus off the left edge. Filter lists can get
- * long — projects and taxonomy especially — so they filter as you type.
+ * **Appended to the body and positioned against the viewport, never drawn inside the
+ * control that opened them.** Two reasons, and the second one is newer than the first:
+ * `.rail` is `overflow: hidden`, which clipped menus at its edge; and since #81 L7 the
+ * rail body scrolls, so a menu that lived inside it would scroll away with the filters
+ * while the reviewer was reading it.
+ *
+ * Filter lists can get long — projects and taxonomy especially — so they filter as you
+ * type, and a menu that stays open after a pick restates every entry rather than the one
+ * that was clicked.
  */
 import { state, actions } from '../store.js';
 import { MarpData } from '../data.js';
@@ -224,16 +230,20 @@ export const modelMenu = (anchor) => menu(anchor, [
 ], { search: true });
 
 /**
- * The sort, as two questions rather than one list.
+ * The sort: a field and a direction, and then a second field and direction for the ties.
  *
- * A field and a direction are chosen independently -- #81 M1 -- and the menu stays open
- * between them, because picking a field and then reading it the other way is one thought.
- * The direction entries are worded for the field that is chosen, so the pair reads as a
- * sentence: Track length, longest first.
+ * Four questions in one menu -- #81 M1 and M2 -- and it stays open between them, because
+ * "confidence, low first, and break the ties by track length" is one thought rather than
+ * four errands. Each direction pair is worded for the field it belongs to, so the whole
+ * thing reads as a sentence.
+ *
+ * The secondary never offers the primary's own field: a term that can never be reached is
+ * not a sort, and the rail already refuses to offer a filter that returns nothing.
  */
 export const sortMenu = (anchor) => {
   const build = () => {
     const field = sortField(state.sort);
+    const then = state.sort.then;
     const items = [{ head: 'Sort by' }];
 
     SORT_FIELDS.forEach((s) => items.push({
@@ -248,6 +258,32 @@ export const sortMenu = (anchor) => {
       on: state.sort.dir === dir, keepOpen: true,
       onPick: () => { if (dir !== state.sort.dir) actions.setSort(state.sort.field, dir); },
     }));
+
+    /* The values are prefixed because one menu now holds two field lists and two
+       direction pairs, and `data-v` has to tell them apart. */
+    items.push({ hr: true }, { head: 'Then, where that ties' });
+    items.push({
+      value: 'then:none', label: 'Nothing — leave the order there',
+      on: !then, keepOpen: true,
+      onPick: () => { if (then) actions.setSortThen(null); },
+    });
+    SORT_FIELDS.filter((s) => s.field !== field.field).forEach((s) => items.push({
+      value: `then:${s.field}`, label: s.label,
+      on: Boolean(then) && then.field === s.field, keepOpen: true,
+      onPick: () => {
+        if (!then || then.field !== s.field) actions.setSortThen(s.field, (then && then.dir) || 'asc');
+      },
+    }));
+
+    if (then) {
+      const second = sortField(then);
+      items.push({ head: `${second.label}, in which order` });
+      SORT_DIRS.forEach((dir) => items.push({
+        value: `then:${dir}`, label: `${sortArrow(dir)} ${sentence(second[dir])}`,
+        on: then.dir === dir, keepOpen: true,
+        onPick: () => { if (dir !== then.dir) actions.setSortThen(then.field, dir); },
+      }));
+    }
 
     return items;
   };

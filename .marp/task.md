@@ -82,6 +82,24 @@ Numbered so tests can name them. The ids follow #81.
 - **P1** — The property #77 built survives: adding, removing or reordering a dimension is
   one edit in `src/model/dimensions.js` and nothing else.
 
+### Round two — answered 2026-09-06
+
+The first round's judgement calls were put to the user. L5, the native date ends, the
+session nesting and the P1 hardening all stand. Three things changed, and are numbered
+here so tests can name them too.
+
+- **M2** — **The sort takes a secondary field and direction**, applied when the primary
+  ties. Two constraints, both from #68 rather than from taste: `observation_id` stays the
+  **final** word in every comparison, because page membership is query-derived and a
+  re-query has to return the same page; and the secondary survives the address, because
+  `79-resumability` is underneath this branch and a question that is half in the URL is
+  worse than one that is not in it at all.
+- **M3** — **A phone sorts the same way as everything else**: the same control and the
+  same menu, reachable and usable at phone width. Not a shrunken variant — the first
+  round gave the phone a smaller font and smaller padding, which is exactly that.
+- **R1** — `README.md`'s *Known gaps* says four things that are no longer true. The whole
+  section is checked, not only those four.
+
 ## Open assumptions
 
 None blocking. Everything below is a choice #81 left open, with the default that is being
@@ -120,6 +138,30 @@ implemented and why. Each is one sentence to overrule.
   work, and a rail that silently hides controls at a shorter viewport is the same bug
   waiting for a smaller screen.
 
+### Round two — open assumptions
+
+None blocking. The three below were weighed against the test in `AGENTS.md` — *would a
+different reasonable answer change the behaviour, the schema, the interface, or the data?*
+— and each is settled by a pattern already in this repository rather than by preference,
+so each is recorded and none stops the work. Any of them is one sentence to overrule.
+
+- [x] **A7 · behavioural · non-blocking** — decided 2026-09-06: **there is no secondary
+  sort by default.** Not a free choice: `79-resumability` requires a bare address to be
+  the default question, so a default secondary would have to be written into
+  `defaultBare()` and every existing link would stop round-tripping.
+- [x] **A8 · API contract · non-blocking** — decided 2026-09-06: **the address carries
+  both terms in the one `sort` parameter, comma-separated** —
+  `?sort=confidence.asc,keyframe_count.desc`. A comma is already the list separator for
+  every multi-select in `query-url.js`, and sort fields are drawn from a closed list that
+  cannot contain one. The alternative weighed was a second parameter (`&then=`); it splits
+  one question across two keys, which `toQuery` does nowhere else.
+- [x] **A9 · product/UI · non-blocking** — decided 2026-09-06: **the secondary cannot name
+  the primary's field**, and the menu does not offer it. The rail already refuses to offer
+  a filter combination that returns nothing; a sort term that can never be reached is the
+  same thing. Choosing a primary that is already the secondary clears the secondary rather
+  than swapping them, because a silent swap changes an order the reviewer did not ask to
+  change.
+
 ## Decisions
 
 - **2026-09-06** — `data-key` on a status checkbox is renamed to `data-statuskey`.
@@ -144,6 +186,17 @@ implemented and why. Each is one sentence to overrule.
 10. **L7** — the rail body scrolls; confirm nothing is clipped.
 11. **M1** — field and direction, independently.
 12. Unit tier after every step; browser tier once at the end.
+
+Round two:
+
+13. **M2** — the sort model takes a second term; `sortTerms()` is the one place a
+    comparison order is decided, and `observation_id` is appended by the query itself.
+14. **M2** — the address carries both terms; a malformed second term is discarded without
+    costing the first.
+15. **M2** — one menu, two sections, the second worded for whichever field it names.
+16. **M3** — the phone loses its `.sortbox` override entirely and is measured at phone
+    width rather than assumed.
+17. **R1** — `README.md`'s *Known gaps*, checked against the code rather than trimmed.
 
 ## Acceptance criteria
 

@@ -87,6 +87,17 @@ const countFilters = () => ({
   species: state.filters.species, project: state.filters.project, dive: state.filters.dive
 });
 
+/**
+ * A different order means different pages, so what was pinned is no longer that page.
+ *
+ * Shared by both sort actions, because remembering it in one and forgetting it in the
+ * other would leave a committed page showing rows the new order never put there.
+ */
+function reorder() {
+  state.pageMembers = page.clearPins();
+  state.committedPages.clear();
+}
+
 /* ---------------------------------------------------------------- actions */
 
 /**
@@ -552,10 +563,22 @@ export const actions = {
   },
 
   setSort(field, dir) {
-    state.sort = { field, dir };
-    state.pageMembers = page.clearPins();
-    state.committedPages.clear();
+    state.sort = filters.withSort(state.sort, field, dir);
+    reorder();
     fire('setSort', state.sort);
+    actions.refresh();
+  },
+
+  /**
+   * The secondary term, applied where the primary ties. A null field clears it.
+   *
+   * Its own action rather than an argument to `setSort`, because choosing what to break a
+   * tie with is its own gesture and every gesture here is a seam that becomes a call.
+   */
+  setSortThen(field, dir) {
+    state.sort = filters.withSortThen(state.sort, field, dir);
+    reorder();
+    fire('setSortThen', state.sort.then);
     actions.refresh();
   },
 

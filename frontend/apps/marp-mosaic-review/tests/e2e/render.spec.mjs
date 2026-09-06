@@ -1445,6 +1445,110 @@ test.describe('the filter rail, cleaned up', () => {
       expect(page.url()).toContain('sort=keyframe_count.desc');
     });
 
+  test('M2: a secondary sort is chosen in the same menu, and reaches the address',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      await page.locator('#sortBtn').click();
+      await expect(page.locator('.menu [data-v="then:none"]')).toHaveClass(/on/);
+      /* The primary's own field is not offered as the tie-break: a term that can never be
+         reached is not a sort. */
+      await expect(page.locator('.menu [data-v="then:confidence"]')).toHaveCount(0);
+
+      await page.locator('.menu [data-v="then:keyframe_count"]').click();
+      await ready(page);
+
+      /* The menu stays open and grows a direction pair worded for the field just chosen. */
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(page.locator('.menu [data-v="then:keyframe_count"]')).toHaveClass(/on/);
+      await expect(page.locator('.menu [data-v="then:desc"]')).toContainText('Longest first');
+      await expect(page.locator('#sortLabel'))
+        .toHaveText('Confidence ↑ low first, then Track length ↑ shortest first');
+
+      await page.locator('.menu [data-v="then:desc"]').click();
+      await ready(page);
+      await expect(page.locator('#sortLabel'))
+        .toHaveText('Confidence ↑ low first, then Track length ↓ longest first');
+
+      await page.keyboard.press('Escape');
+      expect(page.url()).toContain('sort=confidence.asc,keyframe_count.desc');
+
+      /* And it survives the reload, which is the whole of #79's claim about this branch. */
+      await page.reload();
+      await ready(page);
+      await expect(page.locator('#sortLabel'))
+        .toHaveText('Confidence ↑ low first, then Track length ↓ longest first');
+    });
+
+  test('M2: the tie-break really breaks ties, and the primary still governs',
+    async ({ page }) => {
+      /* Confidence carries two decimal places over four hundred-odd rows, so the primary
+         ties constantly and the secondary has real work to do. A menu that recorded a
+         secondary and ordered nothing by it would pass every other M2 assertion. */
+      const idsFor = async (sort) => {
+        await page.goto(`./?sort=${sort}`);
+        await ready(page);
+        return page.locator('.tile').evaluateAll((els) => els.map((e) => e.dataset.id));
+      };
+
+      const up = await idsFor('confidence.asc,keyframe_count.asc');
+      const down = await idsFor('confidence.asc,keyframe_count.desc');
+
+      expect(up.length).toBeGreaterThan(10);
+      expect(down.length).toBe(up.length);
+      expect(down.join(','), 'reversing the tie-break must reorder the page')
+        .not.toBe(up.join(','));
+
+      /* The primary is still the first word: whatever the tie-break does, confidence never
+         goes backwards. Read from the store, because a tile does not draw its confidence. */
+      const climbing = await page.evaluate(async () => {
+        const { state } = await import('./src/store.js');
+        return state.rows.every((r, i) => i === 0 || r.confidence >= state.rows[i - 1].confidence);
+      });
+      expect(climbing, 'the secondary must only break ties, never reorder across them')
+        .toBe(true);
+    });
+
+  test('M3: a phone sorts with the same control, at the same size', async ({ page }, info) => {
+    test.skip(info.project.name !== 'phone', 'about the phone layout');
+    await page.goto('./');
+    await ready(page);
+
+    const button = page.locator('#sortBtn');
+    await expect(button).toBeVisible();
+
+    /* Reachable without hunting: the whole control is inside the viewport, rather than
+       pushed off the end of a bar that happens to scroll. */
+    const box = await button.boundingBox();
+    const width = await page.evaluate(() => window.innerWidth);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+
+    /* And the same control, not a smaller one. It was hidden here once, and then given a
+       smaller font and less padding, which is the same answer in a politer form. */
+    const style = (el) => el.evaluate((e) => {
+      const s = getComputedStyle(e);
+      return `${s.fontSize} ${s.paddingTop} ${s.paddingLeft}`;
+    });
+    const onPhone = await style(button);
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await ready(page);
+    expect(onPhone, 'the phone gets the same control as the desktop')
+      .toBe(await style(button));
+
+    /* Usable, not merely present: the whole secondary sort is driven at phone width. */
+    await page.setViewportSize({ width, height: 839 });
+    await ready(page);
+    await button.click();
+    await page.locator('.menu [data-v="then:updatedAt"]').click();
+    await ready(page);
+    await page.locator('.menu [data-v="then:desc"]').click();
+    await ready(page);
+    await expect(page.locator('#sortLabel'))
+      .toHaveText('Confidence ↑ low first, then Last updated ↓ newest first');
+  });
+
   test('M1: the order actually applied changes when the direction does', async ({ page }) => {
     await page.goto('./?sort=confidence.asc');
     await ready(page);

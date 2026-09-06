@@ -73,6 +73,26 @@ test('the rail mount point exists, since everything else hangs off it', () => {
 });
 
 /**
+ * Two controls must not answer to the same name.
+ *
+ * `menus.js` identifies the control a menu belongs to by `data-dim`, `data-span` or `id`,
+ * in that order — by name rather than by node, because the rail is redrawn from state
+ * while a menu is open and the node it was opened from is routinely replaced. That only
+ * works while the three namespaces cannot collide: a dimension whose key happened to equal
+ * an element id would make the sort menu close when a filter button was clicked, and the
+ * reverse.
+ *
+ * A sentence would not have caught it, and a browser test would only catch the collision
+ * that exists rather than the one somebody is about to add.
+ */
+test('no dimension key can be mistaken for a control id', async () => {
+  const { DIMENSIONS } = await import('../../src/model/dimensions.js');
+  const clashes = DIMENSIONS.map((d) => d.key).filter((key) => inMarkup.has(key));
+  assert.deepEqual(clashes, [],
+    'a dimension key that is also an id makes two controls share one menu identity');
+});
+
+/**
  * P1: a dimension is one entry in the declaration and nothing else.
  *
  * #77 built that property and #81 is the first change to lean on it — removing the

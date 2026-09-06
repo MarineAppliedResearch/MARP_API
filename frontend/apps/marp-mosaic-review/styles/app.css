@@ -490,10 +490,13 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
   /* Nothing in the bars may wrap: they are fixed-height rows, so a second line
      is simply clipped. Anything that cannot fit is dropped instead. */
   .hdr > *, .sub > *, .foot > * { white-space: nowrap; flex: none; }
-  /* The sub-bar scrolls sideways on a phone, so the sort travels with it rather than
-     being dropped. It used to be hidden here, under a comment saying it lived in the rail
-     instead — it never did, so a phone simply had no way to reorder the mosaic. */
-  .sortbox { padding: 3px 7px; font-size: 10.5px; }
+  /* The sort is the same control here as anywhere else — same size, same menu. It was
+     hidden on a phone under a comment saying it lived in the rail instead; it never did,
+     so a phone had no way to reorder the mosaic at all. A shrunken variant was the next
+     wrong answer: sorting is not a lesser question on a smaller screen. The only thing
+     that changes is that it stops being pushed to the far right of a bar that scrolls,
+     so it is on screen without hunting for it. */
+  .sortbox { margin-left: 0; }
   .sub .marked-word { display: none; }
 
   .foot { gap: 4px; padding: 0 6px; }

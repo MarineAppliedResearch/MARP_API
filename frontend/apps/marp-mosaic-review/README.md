@@ -36,9 +36,12 @@ the filter rail and gain a column. Mark or clear a whole page.
 
 Queued thumbnails resolve in place after a moment, without reordering the mosaic.
 
-**Deliberately not implemented:** the video drill-down, real filtering controls, the
-data table, live multi-reviewer updates. `openVideo` fires its action and does nothing
-else, on purpose.
+Filter on ten dimensions, several values at a time, over a range of confidence, a window
+of time of day and a range of dates. The whole question is in the address, so a reload
+lands in the same place and the link can be sent to somebody else.
+
+**Deliberately not implemented:** the video drill-down, the data table, live
+multi-reviewer updates. `openVideo` fires its action and does nothing else, on purpose.
 
 ### The action log
 
@@ -213,7 +216,28 @@ markup. They need the server running.
 
 ## Known gaps
 
-- No keyboard model yet, though #68 makes keyboard a first-class speed path
-- The filter rail is presentational; only the fixed default query is applied
-- Marking a tile with unavailable imagery gives no visual feedback
-- Nothing is persisted; reloading resets everything
+**Checked against the code, not remembered.** Every line this section used to hold had
+become false — the rail was called presentational a refactor after it stopped being so,
+and a gap that is no longer a gap is worse than no list, because it sends the next person
+to build something that is already there. **#68 is the list of what is unbuilt**; what
+follows is only what the code itself cannot tell you.
+
+- **The video drill-down is not implemented.** `openVideo` fires its named action and does
+  nothing else, deliberately — the action is the seam, and the player is a separate
+  repository.
+- **Work in progress is not persisted, and that is a decision rather than a gap.** The
+  question — mode, filters, sort, page — lives in the address and survives a reload. Marks,
+  outcomes and pinned pages do not: #68 accepts that undecided items from an uncommitted
+  page may appear again, and a restored mark looks exactly like a committed one on screen
+  while the record agrees with neither.
+- **There is no live multi-reviewer view.** Two people reviewing the same filter will not
+  see each other's commits until they re-query.
+- **The Model filter has no column behind it.** The fixture simulates `model_name`, because
+  a control nobody can exercise is a control nobody can judge, but nothing in the real
+  schema links an observation to the model that produced it. Phase 3 of #68.
+- **The date filter can only answer where a clock was synced.** `tc` carries a date only
+  sometimes, so the filter reports the count it had to exclude rather than looking
+  complete. Recovering the missing dates is #76.
+- **Nothing here has met a real server.** `src/data.js` is a fixture with a simulated
+  latency, so no claim this prototype makes about ordering, failure or timing has been
+  tested against MARP_API.

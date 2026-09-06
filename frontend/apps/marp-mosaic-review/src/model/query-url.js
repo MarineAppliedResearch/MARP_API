@@ -15,7 +15,7 @@
 
 import { DIMENSIONS, KIND, emptyValue, isActive } from './dimensions.js';
 import { isMode, statusDimensions } from './modes.js';
-import { DEFAULT_FILTERS, DEFAULT_SORT, isSort, defaultStatusFor } from './filters.js';
+import { DEFAULT_FILTERS, DEFAULT_SORT, isSort, sortTerms, defaultStatusFor } from './filters.js';
 
 /* The two ends of a range, and the separator between them. A time carries colons and a
    date carries hyphens, so the separator has to be something neither of them contains. */
@@ -85,9 +85,13 @@ export function toQuery({ mode, filters, sort, page }) {
     parts.push(`${key}=${chosen.map(enc).join(',')}`);
   }
 
-  if (sort && (sort.field !== DEFAULT_SORT.field || sort.dir !== DEFAULT_SORT.dir)) {
-    parts.push(`sort=${enc(sort.field)}.${enc(sort.dir)}`);
-  }
+  /* Both terms in the one parameter, comma-separated, because they are one question --
+     `?sort=confidence.asc,keyframe_count.desc`. A comma is already the list separator for
+     every multi-select here, and a sort field comes from a closed list that cannot contain
+     one, so nothing has to be escaped for it. */
+  const terms = sortTerms(sort || DEFAULT_SORT);
+  const written = terms.map((t) => `${enc(t.field)}.${enc(t.dir)}`).join(',');
+  if (written !== `${DEFAULT_SORT.field}.${DEFAULT_SORT.dir}`) parts.push(`sort=${written}`);
   if (page && page > 1) parts.push(`page=${page}`);
 
   /* Nothing is narrowing at all. That is *not* the same as the default question — the
@@ -241,11 +245,22 @@ export function fromQuery(search) {
 
   let sort = { ...DEFAULT_SORT };
   if (params.has('sort')) {
-    const raw = dec(params.get('sort')) || '';
-    const dot = raw.lastIndexOf('.');
-    const field = dot === -1 ? raw : raw.slice(0, dot);
-    const dir = dot === -1 ? '' : raw.slice(dot + 1);
-    if (isSort(field, dir)) sort = { field, dir };
+    /* Each term read on its own, so a malformed secondary does not cost the reviewer the
+       primary they could otherwise have had -- the same rule every dimension above uses. */
+    const read = (text) => {
+      const dot = String(text).lastIndexOf('.');
+      const field = dot === -1 ? String(text) : String(text).slice(0, dot);
+      const dir = dot === -1 ? '' : String(text).slice(dot + 1);
+      const name = dec(field);
+      return name != null && isSort(name, dir) ? { field: name, dir } : null;
+    };
+
+    const [first, second] = String(params.get('sort')).split(',');
+    const primary = read(first);
+    if (primary) {
+      const then = second == null ? null : read(second);
+      sort = { ...primary, then: then && then.field !== primary.field ? then : null };
+    }
   }
 
   let page = 1;

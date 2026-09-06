@@ -45,13 +45,13 @@ test('R1: mode, filters, sort and page all survive the round trip', () => {
     timeOfDay: { from: '22:00', to: '02:00' },
     date: { from: '2019-01-01', to: '2019-12-31' }
   };
-  q.sort = { field: 'obsID', dir: 'asc' };
+  q.sort = { field: 'obsID', dir: 'asc', then: null };
   q.page = 7;
 
   const back = round(q);
   assert.equal(back.mode, 'training');
   assert.equal(back.page, 7);
-  assert.deepEqual(back.sort, { field: 'obsID', dir: 'asc' });
+  assert.deepEqual(back.sort, { field: 'obsID', dir: 'asc', then: null });
   assert.deepEqual(back.filters.dive, ['D04', 'D05']);
   assert.deepEqual(back.filters.species, ['Bat Star', 'Ochre Star']);
   assert.deepEqual(back.filters.confidence, { from: 0.5, to: 0.8 });
@@ -144,7 +144,45 @@ test('R3: a page that is not a page becomes page one', () => {
 
 test('R3: a sort nobody offers is ignored', () => {
   assert.deepEqual(fromQuery('?sort=cuteness.desc').sort, DEFAULT_SORT);
-  assert.deepEqual(fromQuery('?sort=obsID.asc').sort, { field: 'obsID', dir: 'asc' });
+  assert.deepEqual(fromQuery('?sort=obsID.asc').sort,
+    { field: 'obsID', dir: 'asc', then: null });
+});
+
+test('M2: the secondary term survives the address', () => {
+  const q = { ...defaultQuery(), sort: { field: 'confidence', dir: 'asc', then: { field: 'keyframe_count', dir: 'desc' } } };
+  const written = toQuery(q);
+  /* The fixture's default species filter rides along; the sort is the part under test. */
+  assert.equal(written, '?species=Bat%20Star&sort=confidence.asc,keyframe_count.desc',
+    'both terms in one parameter, because they are one question');
+  assert.deepEqual(fromQuery(written).sort, q.sort);
+});
+
+test('M2: a malformed secondary does not cost the reviewer the primary', () => {
+  /* The same rule every dimension already follows. An address is typed, edited and
+     truncated by chat clients, so half of one being unreadable must not discard the
+     half that was fine. */
+  assert.deepEqual(fromQuery('?sort=obsID.desc,cuteness.asc').sort,
+    { field: 'obsID', dir: 'desc', then: null });
+  assert.deepEqual(fromQuery('?sort=obsID.desc,keyframe_count.sideways').sort,
+    { field: 'obsID', dir: 'desc', then: null });
+  assert.deepEqual(fromQuery('?sort=obsID.desc,').sort,
+    { field: 'obsID', dir: 'desc', then: null });
+});
+
+test('M2: a secondary naming the primary is not a term, and is not written', () => {
+  /* It can never be reached, so it is not a sort -- and an address that carried it would
+     round-trip into something different from what it said. */
+  assert.deepEqual(fromQuery('?sort=obsID.asc,obsID.desc').sort,
+    { field: 'obsID', dir: 'asc', then: null });
+  const q = { ...defaultQuery(), sort: { field: 'obsID', dir: 'asc', then: { field: 'obsID', dir: 'desc' } } };
+  assert.equal(toQuery(q), '?species=Bat%20Star&sort=obsID.asc');
+});
+
+test('M2: the default sort still writes a bare address', () => {
+  /* The whole of #79 rests on this: a bare address is the default question. A secondary
+     that defaulted to anything would break every link already sent. */
+  assert.equal(toQuery(defaultQuery()), '');
+  assert.equal(DEFAULT_SORT.then, null);
 });
 
 test('R3: a parameter naming no dimension is simply ignored', () => {
