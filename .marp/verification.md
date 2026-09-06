@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#77
 repos: [MARP_API]
-status: plan
+status: verified
 ---
 
 # Verification plan — filter rail: the remaining dimensions, and multi-select
@@ -97,6 +97,49 @@ narration claimed the opposite of what the app does, which is the exact failure 
 doctrine warns about. Fixed here rather than left broken: it now asserts that the corrected
 tile leaves and the other two marks stay.
 
-## Results
+## Results — 2026-09-05
 
-Filled in at G4, after this plan is approved.
+Verbatim, failures included.
+
+```
+npm run test:unit     69 passed, 0 failed          60 ms
+npm run test:e2e     115 passed, 3 skipped         58.0 s   (desktop + phone)
+```
+
+The 3 skipped are one render check that needs a failed thumbnail on the first page and
+does not always get one. That is a weakness in the check, not a pass — noted, not fixed
+here.
+
+### The three tests this plan added
+
+All three now exist and pass. One of them found a real defect:
+
+- **`R2: the confidence slider narrows the mosaic`** — passed first time. The slider was
+  wired correctly.
+- **`R4: a time window that wraps past midnight returns both sides of it`** — passed first
+  time. Asserted by comparing a 05:00–06:59 window against 05:00–01:00 and requiring the
+  wrapped one to be larger, so it exercises both sides of midnight rather than only
+  proving a non-zero result.
+- **`R5: the date filter says how many observations it could not see`** — **failed, and
+  found a real defect.** `data.js` computed the exclusion count and `ui/rail.js` drew it,
+  but `store.js` never carried it between them, so `state.excludedForNoDate` was always
+  undefined and the note was permanently hidden. R5's entire requirement — that the
+  reviewer is *told* — was not met, and every tier that cannot see the screen passed.
+  Fixed in `store.js`; **the fix was proved by reintroducing the bug and confirming the
+  test fails** (`expect(locator).toBeVisible() failed / Received: hidden`).
+
+### One further check added, unplanned
+
+`a correction under a species filter takes the row off the page, and the other marks stay`,
+in the contract tier. The behaviour was asserted only by a narrated walkthrough, and the
+contract check nearest to it cleared the species filter to sidestep the case and returned
+`'skipped'` when it hit it anyway. A skipped branch looks green.
+
+### An accident worth recording
+
+While proving the R5 test catches its bug, `git checkout --` was used to undo a
+temporarily reintroduced defect. `src/store.js` held uncommitted #77 work, and the
+checkout discarded all of it. It was recovered in full from an unreachable stash object
+(`git fsck --unreachable`), the two later edits were re-applied, and both tiers were
+re-run green. Nothing was lost — but the work is committed now rather than left in the
+working tree, which is what should have been true before any experiment like that.
