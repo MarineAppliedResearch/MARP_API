@@ -1,85 +1,73 @@
 # The demo thumbnails
 
-Fifty pictures, five species by ten variations, reused across the three thousand rows in
-`observations.json`. A reviewer is judging the organism against the name it was given, not
-whether they have seen that exact picture before, so reuse costs nothing.
+Thirty photographs, five species by six, reused across the three thousand rows in
+`observations.json`. Reuse costs nothing here: a reviewer is judging the organism against
+the name it was given, not whether they have seen that exact frame before.
 
-## What is in here now, and what should be
+## `manifest.json` is the authority
 
-**The `.svg` files are a stand-in.** They are drawn from code by
-`tools/make-thumbs.mjs` — deterministic, dependency-free, and obviously illustrations.
-They exist so the app has five visibly different organisms to work with.
+**It says which species a picture shows. The filename does not.**
 
-**The intention is realistic model-generated photographs**, as the earlier `t*.jpg` files
-were. Those were generated outside this repository. Nothing in the code prefers one over
-the other.
-
-## Dropping real images in
-
-`tools/make-fixture.mjs` reads this folder rather than assuming a naming template, so the
-changeover is: add the files, re-run the generator, done. No code change.
-
+```json
+"bat-star-05.jpg": {
+  "species": "Bat Star",
+  "scientific_name": "Patiria miniata",
+  "batch": "murky batch",
+  "water_condition": "murky",
+  "notes": "Murkier-water bat star on reef.",
+  "width": 512, "height": 512, "jpeg_quality": 76, "size_bytes": 49917
+}
 ```
-bat-star-01.jpg  …  bat-star-10.jpg
-red-urchin-01.jpg  …  red-urchin-10.jpg
-rockfish-01.jpg  …  rockfish-10.jpg
-rock-crab-01.jpg  …  rock-crab-10.jpg
-sea-cucumber-01.jpg  …  sea-cucumber-10.jpg
-```
+
+`tools/make-fixture.mjs` reads `species` from here and nowhere else. Deriving it from the
+filename would work right up until a file was renamed, and then the fixture would quietly
+claim a crab was a sea star — which is the exact mistake this application exists to catch,
+so it is a poor one to build in at the source.
+
+Some entries carry `duplicate_visual_of`, meaning that picture is the same composition
+re-encoded. Nothing depends on it today; it is recorded so nobody wonders later why two
+frames look identical.
+
+## Adding or replacing pictures
+
+1. Put the file in this folder.
+2. Add an entry to `manifest.json` with at least `species`.
+3. Re-run the generator and commit what it writes:
 
 ```bash
+cd frontend/apps/marp-mosaic-review
 node tools/make-fixture.mjs
+npm run test:unit
 ```
 
-Rules the loader follows:
+`fixtures/observations.json` records which picture each of three thousand rows uses, so it
+has to be regenerated in the same change or the fixture points at files that are gone.
 
-- `.jpg`, `.jpeg`, `.png`, `.webp` and `.avif` all work, and **a raster file beats an
-  `.svg` of the same number** — so the species can be replaced one at a time without the
-  app breaking in between.
-- The numbering must be two digits. Ten per species is what the generator expects; more
-  or fewer works, it just uses what it finds.
-- Square. #68's crop rule means a tile is square, and a non-square image is letterboxed
-  or cropped by the browser rather than by anything that knows what is in it.
-- Around 256×256 is plenty. The largest a tile is ever drawn is about 200 pixels.
+Anything the browser can draw works — `.jpg`, `.png`, `.webp`. Square is what matters:
+#68's crop rule makes a tile square, and a non-square image is cropped by the browser
+rather than by anything that knows what is in the frame. 512×512 is what is here and is
+comfortably more than the ~200 pixels a tile is ever drawn at.
 
-## What each one should show
+## `marp-mark.png` is not one of them
 
-The whole point is **contrast at tile size**. A page holds one predicted species and the
-reviewer's job is to spot the one that does not belong, so a wrong classification has to
-be obvious in a 150-pixel square, at a glance, without reading the caption. Five species
-that are hard to tell apart would make a prettier fixture and a useless one.
-
-Common to all fifty:
-
-> Underwater ROV survey still from a temperate Pacific rocky reef. Natural available
-> light with a slight cool cast, mild backscatter, shallow depth of field. A single
-> organism roughly centred, filling about half the frame, resting on the substrate.
-> Square crop. Photographic, not illustrated; the look of a frame grabbed from survey
-> video rather than a studio photograph.
-
-Then per species, ten each — vary the angle, the distance, the substrate and how much of
-the animal is occluded, because a fixture where every picture is the same pose teaches a
-reviewer to recognise the picture instead of the animal:
-
-| File prefix | Species | What it should read as |
-| --- | --- | --- |
-| `bat-star` | Bat star, *Patiria miniata* | A webbed five-armed sea star, short blunt arms, mottled orange to red. The common case, and the species most of the fixture claims to be. |
-| `red-urchin` | Red urchin, *Mesocentrotus franciscanus* | A dark test under long red-purple spines. A spiny ball. |
-| `rockfish` | Rockfish, *Sebastes* sp. | A fish in profile, banded copper and olive, hovering just off the bottom. The only vertebrate, and the clearest wrong answer. |
-| `rock-crab` | Rock crab, *Cancer productus* | A wide brick-red carapace, walking legs out to the sides, claws forward. |
-| `sea-cucumber` | Sea cucumber, *Parastichopus* sp. | An elongate ochre body with papillae, lying along the substrate. |
-
-A few of each should be **awkward** — partly occluded by kelp, at an oblique angle, or
-further from the camera. A fixture in which every organism is perfectly presented cannot
-show what the reviewer's job is actually like, and the interface has states for exactly
-those cases.
+It is the placeholder drawn behind a thumbnail that has not arrived or has failed, and it
+has no manifest entry. It was deleted once during a bulk replacement of this folder, which
+left `ui/tile.js` pointing at nothing for every queued tile. Leave it alone.
 
 ## How a misclassification is represented
 
 `comname` on an observation is **what the model claimed**. The picture is **what is really
-there**. Where they disagree, that row is a misclassification, and it stays on a page of
-Bat Stars precisely because the label is wrong — which is what the reviewer is there to
-catch. `tools/make-fixture.mjs` does this deliberately; see the comment on `isMisclassified`.
+there**. Where they disagree, that row is a misclassification — and it stays on a page of
+Bat Stars precisely because the label is wrong, which is why it is there to be caught.
 
-`marp-mark.png` is not one of the fifty. It is the placeholder behind a thumbnail that has
-not arrived or has failed, and it stays.
+About 7% of every species' rows are like that, deliberately and evenly: filtering to Rock
+Crab gives pages of crabs with a few wrong ones among them, exactly as Bat Star does.
+Otherwise four of the five species would lead somewhere with nothing to practise on. See
+`WRONG_RATE` and `MIX` in `tools/make-fixture.mjs`.
+
+## Transporting images as text
+
+`tools/decode-thumbs.mjs` turns `<name>.jpg.b64` text files back into images, checking the
+magic number and, if a `SHA256SUMS` file is present, the hash. It exists because an agent
+generating imagery had a GitHub connector that could commit text but not binary. Not needed
+when files can be added directly; kept because that situation recurs.

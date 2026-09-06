@@ -7,7 +7,7 @@
  *
  * Deterministic: same seed in, same file out. Run with `node tools/make-fixture.mjs`.
  */
-import { writeFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,69 +29,59 @@ const pick = (a) => a[Math.floor(rand() * a.length)];
 const between = (lo, hi) => lo + Math.floor(rand() * (hi - lo + 1));
 
 /**
- * The five species with imagery, and the ten drawings each.
+ * The imagery, read from `fixtures/thumbs/manifest.json`.
  *
- * `tools/make-thumbs.mjs` draws them. An observation may only be given a species that has
- * pictures, because the whole point of the mosaic is judging what is *shown* against what
- * is *claimed* — a tile whose label says urchin and whose picture is a generic blob teaches
- * a reviewer nothing, and teaches us nothing about whether the interface works.
+ * **The manifest says which species a picture shows, not the filename.** Deriving it from
+ * the name would work right up until a file is renamed, and then the fixture would quietly
+ * claim a crab was a sea star — which is the single mistake this whole application exists
+ * to catch, so it is a poor one to build in at the source.
+ *
+ * An observation may only claim a species that has pictures. The point of the mosaic is
+ * judging what is *shown* against what is *claimed*, and a tile labelled urchin with no
+ * urchin behind it teaches a reviewer nothing.
  *
  * The taxonomy below stays longer than this list on purpose: the correction panel has to
- * offer species that are not on the page, or correcting a mistake is a choice between the
- * five things already in front of you.
+ * offer species that are not on the page, or fixing a mistake is a choice between the five
+ * things already in front of you.
  */
-const IMAGED = {
-  'Bat Star': 'bat-star',
-  'Red Urchin': 'red-urchin',
-  'Rockfish': 'rockfish',
-  'Rock Crab': 'rock-crab',
-  'Sea Cucumber': 'sea-cucumber'
-};
-const VARIANTS = 10;
+const MANIFEST = JSON.parse(readFileSync(join(THUMBS, 'manifest.json'), 'utf8'));
 
-/**
- * The files that actually exist, per species, whatever they happen to be.
- *
- * Read from the folder rather than assembled from a naming rule, so **swapping the
- * imagery is a matter of dropping files in and re-running this** -- no code change, no
- * extension baked into a template. That matters because the drawings currently in there
- * are a stand-in: they are procedural SVGs, and the intention is real model-generated
- * photographs. When those arrive as `bat-star-01.jpg` and friends they are simply picked
- * up, and a raster file wins over an SVG of the same name so the changeover can be partial.
- *
- * `fixtures/thumbs/README.md` is the contract: what to name them and what they should show.
- */
-const RASTER = ['.jpg', '.jpeg', '.png', '.webp', '.avif'];
+/** Species name -> its pictures, sorted, so the fixture is reproducible. */
+const PICTURES = (() => {
+  const out = {};
+  for (const [file, meta] of Object.entries(MANIFEST)) {
+    if (!meta || !meta.species) continue;
+    (out[meta.species] = out[meta.species] || []).push(file);
+  }
+  for (const list of Object.values(out)) list.sort();
+  return out;
+})();
 
-function variantsOf(slug) {
-  const all = readdirSync(THUMBS).filter((f) => f.startsWith(`${slug}-`));
-  const byIndex = new Map();
-  for (const f of all.sort()) {
-    const m = /-(\d{2})\.([a-z0-9]+)$/i.exec(f);
-    if (!m) continue;
-    const raster = RASTER.includes(`.${m[2].toLowerCase()}`);
-    const held = byIndex.get(m[1]);
-    /* A photograph beats a drawing of the same number, so the two can coexist while the
-       real imagery is being filled in one species at a time. */
-    if (!held || (raster && !held.raster)) byIndex.set(m[1], { file: f, raster });
-  }
-  const files = [...byIndex.keys()].sort().map((k) => byIndex.get(k).file);
-  if (!files.length) {
-    throw new Error(`No thumbnails for "${slug}" in fixtures/thumbs. `
-      + 'Run `node tools/make-thumbs.mjs`, or add the images. See fixtures/thumbs/README.md.');
-  }
-  return files;
+const IMAGED_SPECIES = Object.keys(PICTURES);
+if (!IMAGED_SPECIES.length) {
+  throw new Error('fixtures/thumbs/manifest.json lists no species. See that folder README.');
 }
 
-const VARIANT_FILES = Object.fromEntries(
-  Object.values(IMAGED).map((slug) => [slug, variantsOf(slug)]));
-
-/** One of a species' pictures, chosen so the same row always gets the same one. */
-function thumbFor(comname, n) {
-  const files = VARIANT_FILES[IMAGED[comname]];
+/**
+ * One of a species' pictures.
+ *
+ * `n` is the row's own index, so a row always gets the same picture and re-running this
+ * changes nothing. A handful of pictures spread over three thousand rows repeat heavily,
+ * which is expected and fine — a reviewer is judging the organism against the name, not
+ * whether they have seen this exact frame before.
+ */
+function pictureFor(species, n) {
+  const files = PICTURES[species];
+  if (!files) throw new Error('No pictures for "' + species + '" in manifest.json');
   return files[n % files.length];
 }
 
+/**
+ * The taxonomy the correction panel offers.
+ *
+ * Deliberately longer than the five species that have pictures: correcting a mistake has
+ * to be a real choice, not a pick from the same five already on the page.
+ */
 const SPECIES = [
   { species_id: 41, taxserial: 157213, comname: 'Bat Star',          species: 'Patiria miniata' },
   { species_id: 42, taxserial: 157220, comname: 'Leather Star',      species: 'Dermasterias imbricata' },
@@ -136,9 +126,23 @@ function timecode(totalSeconds, frac) {
 const TOTAL = 3000;
 const rows = [];
 
-/* The species a page is predicted to be, and the ones a mistake looks like. */
-const PRIMARY = SPECIES.find((x) => x.comname === 'Bat Star');
-const CONFUSABLE = SPECIES.filter((x) => IMAGED[x.comname] && x !== PRIMARY);
+/**
+ * How the claimed species are spread.
+ *
+ * Every species gets enough observations to be worth reviewing, not just the one the
+ * default filter opens on. Filtering to Rock Crab has to give pages of crabs with a few
+ * wrong ones among them, exactly as filtering to Bat Star does — otherwise four of the
+ * five species lead somewhere that cannot be practised on.
+ *
+ * Bat Star stays the largest because it is what the fixture opens on, and a first page
+ * should be full.
+ */
+const MIX = IMAGED_SPECIES.flatMap((name) =>
+  Array(name === 'Bat Star' ? 8 : 3).fill(name));
+
+/* How often the label is wrong. The same rate for every species, so there is something to
+   find whichever one you filter to. */
+const WRONG_RATE = 0.07;
 
 for (let i = 0; i < TOTAL; i++) {
   /**
@@ -146,7 +150,7 @@ for (let i = 0; i < TOTAL; i++) {
    *
    * These are two different things, and keeping them apart is the entire point of the
    * mosaic. `comname` is the model's claim -- it is what the filter matches and what the
-   * caption says. The drawing is the truth. A **misclassification** is a row claiming Bat
+   * caption says. The picture is the truth. A **misclassification** is a row claiming Bat
    * Star with a crab in the frame, and that is what the reviewer is hunting: it survives
    * the species filter precisely because the label is wrong, which is why it is on the
    * page at all.
@@ -156,11 +160,13 @@ for (let i = 0; i < TOTAL; i++) {
    * so a page of Bat Stars was three hundred correct Bat Stars and there was nothing to
    * find. The tool looked like it worked and demonstrated nothing.
    */
-  const isMisclassified = rand() < 0.07;
-  const isOtherSpecies = !isMisclassified && rand() < 0.04;
+  const claimedName = pick(MIX);
+  const isMisclassified = rand() < WRONG_RATE;
+  const shownName = isMisclassified
+    ? pick(IMAGED_SPECIES.filter((n) => n !== claimedName))
+    : claimedName;
 
-  const sp = isOtherSpecies ? pick(CONFUSABLE) : PRIMARY;   // what the model claimed
-  const shown = isMisclassified ? pick(CONFUSABLE) : sp;    // what is really in the frame
+  const sp = SPECIES.find((x) => x.comname === claimedName);   // what the model claimed
 
   const project = PROJECTS[i % 3 === 0 ? 0 : (i % 5 === 0 ? 1 : 0)];
   const user = pick(USERS);
@@ -251,7 +257,7 @@ for (let i = 0; i < TOTAL; i++) {
        drawings are reused across three thousand rows, and that is the point -- a reviewer
        is judging the organism against the name, not whether they have seen this exact
        picture before. */
-    thumb: thumbFor(shown.comname, i + (shown.species_id % VARIANTS)),
+    thumb: pictureFor(shownName, i),
 
     createdAt: '2026-08-' + String(10 + (i % 20)).padStart(2, '0') + 'T09:00:00Z',
     updatedAt: '2026-09-0' + (1 + (i % 3)) + 'T14:' + String(10 + (i % 50)).padStart(2, '0') + ':00Z',
@@ -263,8 +269,13 @@ for (let i = 0; i < TOTAL; i++) {
 /* Two guaranteed misclassifications near the top of the first page, so the prototype
    always has something to find without waiting on the dice. Both claim Bat Star, which is
    what keeps them past the species filter; the pictures say otherwise. */
-rows[3]  = { ...rows[3],  thumb: thumbFor('Rockfish', 2), confidence: 0.54 };
-rows[9]  = { ...rows[9],  thumb: thumbFor('Rock Crab', 5), confidence: 0.57 };
+const batStar = SPECIES.find((x) => x.comname === 'Bat Star');
+for (const [at, shows] of [[3, 'Rockfish'], [9, 'Rock Crab']]) {
+  rows[at] = { ...rows[at], comname: batStar.comname, scientific_name: batStar.species,
+               species_id: batStar.species_id, taxserial: batStar.taxserial,
+               thumb: pictureFor(shows, at), thumbnail_status: 'ready',
+               confidence: at === 3 ? 0.54 : 0.57 };
+}
 rows[20] = { ...rows[20], review_status: 'reviewed', reviewed_by: 'J. Marsh' };
 rows[28] = { ...rows[28], thumbnail_status: 'queued' };
 rows[38] = { ...rows[38], thumbnail_status: 'failed' };

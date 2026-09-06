@@ -125,3 +125,6 @@ frontend/apps/*/demo/
 # `npm run demo:narrated`, and never a build input.
 /demo/
 .marp-agent.json
+
+# Isolated agent worktrees. Each is its own checkout of this repository.
+.claude/worktrees/
