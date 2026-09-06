@@ -98,11 +98,15 @@ function renderStatusFilters() {
      own heading, so two groups never read as one long list of unrelated boxes. */
   $('#statusLbl').textContent = dims[0].label;
 
+  /* `data-statuskey`, not `data-key`. `data-key` belongs to the keyboard-shortcut badge
+     added by #74, and `[data-key]::after { content: attr(data-key) }` drew its value on
+     screen -- so every status checkbox carried a grey pill reading `reviewStatus` beside
+     its label, and nobody could tell what the second control was for. That is #81 B4. */
   $('#statusFilters').innerHTML = dims.map((dim, i) => {
     const active = state.filters[dim.key] || [];
     const heading = i === 0 ? '' : `<div class="lbl sub">${dim.label}</div>`;
     return heading + dim.statuses.map(([value, label]) =>
-      `<button class="chk" data-status="${value}" data-key="${dim.key}"
+      `<button class="chk" data-status="${value}" data-statuskey="${dim.key}"
          title="Show ${label.toLowerCase()} observations">
          <span class="box ${active.includes(value) ? 'on' : ''}"></span>${label}
          <span class="n">${(state.counts[value] ?? 0).toLocaleString()}</span></button>`).join('');
@@ -111,7 +115,7 @@ function renderStatusFilters() {
   $('#statusFilters').querySelectorAll('[data-status]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.stopPropagation();
-      actions.toggleStatus(b.dataset.key, b.dataset.status);
+      actions.toggleStatus(b.dataset.statuskey, b.dataset.status);
     }));
 }
 

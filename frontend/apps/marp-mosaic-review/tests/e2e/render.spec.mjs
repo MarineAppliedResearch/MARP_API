@@ -387,15 +387,15 @@ test.describe('Delete Mode shows the scientific record', () => {
     await openRail(page);
     /* One dimension in the review modes... */
     await expect(page.locator('#statusFilters .lbl.sub')).toHaveCount(0);
-    await expect(page.locator('#statusFilters [data-key="trainingDisposition"]')).toHaveCount(0);
+    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(0);
 
     await page.locator('.seg button', { hasText: 'Delete' }).click();
     await ready(page);
     /* ...both in Delete, each under its own heading. */
     await expect(page.locator('#statusLbl')).toHaveText('Review status');
     await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
-    await expect(page.locator('#statusFilters [data-key="reviewStatus"]')).toHaveCount(3);
-    await expect(page.locator('#statusFilters [data-key="trainingDisposition"]')).toHaveCount(3);
+    await expect(page.locator('#statusFilters [data-statuskey="reviewStatus"]')).toHaveCount(3);
+    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(3);
   });
 
   test('a training filter actually narrows the results in Delete Mode', async ({ page }) => {
@@ -407,7 +407,7 @@ test.describe('Delete Mode shows the scientific record', () => {
     const before = await page.locator('#total').innerText();
 
     /* Untick Undecided: what is left is only what a model was already taught with. */
-    await page.locator('#statusFilters [data-key="trainingDisposition"][data-status="undecided"]').click();
+    await page.locator('#statusFilters [data-statuskey="trainingDisposition"][data-status="undecided"]').click();
     await ready(page);
     await expect(page.locator('#total')).not.toHaveText(before);
   });
@@ -1170,5 +1170,35 @@ test.describe('keyboard shortcuts', () => {
     await page.keyboard.press('Control+Enter');
     await expect(page.locator('#commit')).toHaveClass(/nudge/);
     await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+  });
+});
+
+/**
+ * #81 — the reported bugs and the crowding.
+ *
+ * All of these are about what is on the screen, which is why they are here rather than in
+ * `tests/unit/`. Four were reported from use, and the store was right for every one of
+ * them: the menus held the right values, the status filter held the right key, and the
+ * rail declared every dimension it was asked to. None of that is what the reviewer saw.
+ */
+test.describe('the filter rail, cleaned up', () => {
+  test('B4: a status filter draws one control, not two', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    /* The second control was a keyboard-shortcut badge. `renderStatusFilters` wrote
+       `data-key="reviewStatus"` to name the status dimension, and #74's
+       `[data-key]::after { content: attr(data-key) }` drew that value beside the label as
+       a grey pill. Two meanings for one attribute, and the pill read `reviewStatus`. */
+    const unreviewed = page.locator('#statusFilters [data-status="unreviewed"]');
+    await expect(unreviewed).toBeVisible();
+    const badge = await unreviewed.evaluate((el) => getComputedStyle(el, '::after').content);
+    expect(badge, 'a status checkbox draws no badge of any kind').toBe('none');
+
+    /* And the badge still works where it belongs, so this is not a fix by deletion. */
+    const commit = await page.locator('#commit').evaluate(
+      (el) => getComputedStyle(el, '::after').content);
+    expect(commit).not.toBe('none');
   });
 });
