@@ -90,14 +90,14 @@ export const DIMENSIONS = [
        works, which is why it is separate from `date` rather than one control. */
     key: 'timeOfDay', field: 'tc',
     source: 'observations.tc -- time of day, always present', kind: KIND.WINDOW,
-    label: 'time of day',
+    label: 'time of day', all: 'Any time',
   },
   {
     /* And this one does not always work. `tc` only carries a date where the clock was
        synced, so this dimension must report what it could not see -- see #76. */
     key: 'date', field: 'tc',
     source: 'observations.tc -- date, only where the clock was synced. #76', kind: KIND.RANGE,
-    label: 'date', reportsExclusions: true,
+    label: 'date', all: 'Any date', reportsExclusions: true,
   },
 
   {

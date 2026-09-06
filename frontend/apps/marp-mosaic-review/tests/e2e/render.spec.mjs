@@ -621,7 +621,15 @@ test.describe('filtering by where the observation came from', () => {
 test.describe('filtering by when it happened, and how sure the model was', () => {
   /** Type into one end of a two-ended control and let the rail's change handler run. */
   async function setSpan(page, key, end, value) {
-    await page.locator(`[data-span="${key}"] [data-end="${end}"]`).fill(value);
+    const box = page.locator(`[data-span="${key}"] [data-end="${end}"]`);
+    /* Time and date live behind a summary button since #81 L5, so the popover holding
+       their ends has to be opened first. The confidence track is in the rail itself. */
+    if (!(await box.count())) await page.locator(`[data-dim="${key}"]`).click();
+    await box.fill(value);
+    /* `fill` raises `input` and not `change`, and the rail waits for `change` — text
+       sitting in a field is not a value anybody has committed to yet. Enter is what a
+       person presses, and it is one of the three events the panel listens for. */
+    await box.press('Enter');
     await ready(page);
   }
 
@@ -662,10 +670,13 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
       expect(oneSide).toBeGreaterThan(0);
 
       /* Now wrap it past midnight. Written as an AND rather than an OR — the usual way
-         this goes wrong — a wrapped window returns nothing at all. */
+         this goes wrong — a wrapped window returns nothing at all.
+
+         Polled rather than read once: both windows return more than a page, so the tile
+         count `ready()` watches is the same either side of the change and cannot say when
+         the new result has landed. The number that moves is the one to wait on. */
       await setSpan(page, 'timeOfDay', 'to', '01:00');
-      const wrapped = await total(page);
-      expect(wrapped).toBeGreaterThan(oneSide);
+      await expect.poll(() => total(page)).toBeGreaterThan(oneSide);
     });
 
   test('R5: the date filter says how many observations it could not see',
@@ -1268,6 +1279,132 @@ test.describe('the filter rail, cleaned up', () => {
       await project.click();
       await expect(page.locator('.menu')).toHaveCount(0);
     });
+
+  test('B3: the time controls are 24-hour, with no AM or PM anywhere', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('[data-dim="timeOfDay"]').click();
+    const from = page.locator('[data-span="timeOfDay"] [data-end="from"]');
+    await expect(from).toBeVisible();
+
+    /* A native `<input type="time">` draws 12-hour from the browser locale and there is
+       no attribute that changes it -- `lang="en-GB"` was tried in this same Chromium and
+       still drew `01:30 PM`. So these are text fields, and what the field holds is
+       exactly what is on the screen, which is what makes this assertable at all. */
+    await expect(from).toHaveAttribute('type', 'text');
+    await from.fill('13:30');
+    await from.press('Enter');
+    await expect(from).toHaveValue('13:30');
+
+    const panel = await page.locator('.menu--panel').innerText();
+    expect(panel.toLowerCase()).not.toMatch(/\b(am|pm)\b/);
+    expect(panel).toContain('24-hour');
+
+    /* And the summary on the rail button says the same thing back, in the same clock. */
+    await expect(page.locator('[data-dim="timeOfDay"]')).toContainText('13:30');
+
+    /* A time that is not a time does not become a filter, and does not sit in the field
+       looking as though it did. */
+    await from.fill('noon');
+    await from.press('Enter');
+    await expect(from).toHaveValue('');
+
+    /* Shorthand is read the way it is meant, and the field says what was understood. */
+    await from.fill('930');
+    await from.press('Enter');
+    await expect(from).toHaveValue('09:30');
+  });
+
+  test('L4: confidence is one track carrying two handles', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    const from = page.locator('[data-span="confidence"] [data-end="from"]');
+    const to = page.locator('[data-span="confidence"] [data-end="to"]');
+    const a = await from.boundingBox();
+    const b = await to.boundingBox();
+
+    /* Two stacked sliders is what this replaced, so the assertion is that they occupy
+       the same strip: same top, same left, same width. Stacked, the second sat a row
+       below the first and the pair read as two independent numbers. */
+    expect(Math.round(a.y)).toBe(Math.round(b.y));
+    expect(Math.round(a.x)).toBe(Math.round(b.x));
+    expect(Math.round(a.width)).toBe(Math.round(b.width));
+    await expect(page.locator('[data-span="confidence"] .dual__track')).toHaveCount(1);
+
+    /* And the fill between the handles follows them, which is the only thing that makes
+       one track legible as a range rather than as two dots. */
+    await from.evaluate((el) => {
+      el.value = '0.4';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(page.locator('[data-span="confidence"]'))
+      .toHaveAttribute('style', /--from:\s*40%/);
+    await expect(page.locator('.span-val')).toContainText('0.40');
+  });
+
+  test('L5: time and date take one rail row each', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    /* Two native inputs each did not fit side by side in the rail column, so they
+       wrapped, and the pair took three rows between them. Behind a summary button they
+       take one row each, and the popover has the width the controls need. */
+    for (const key of ['timeOfDay', 'date']) {
+      await expect(page.locator(`#railDimensions [data-span="${key}"]`)).toHaveCount(0);
+      await expect(page.locator(`[data-dim="${key}"]`)).toHaveCount(1);
+    }
+
+    const one = await page.locator('[data-dim="timeOfDay"]').boundingBox();
+    const two = await page.locator('[data-dim="date"]').boundingBox();
+    expect(two.y - one.y).toBeLessThan(60);      // label plus control, and nothing more
+
+    await page.locator('[data-dim="date"]').click();
+    await expect(page.locator('.menu--panel [data-span="date"] [data-end="from"]'))
+      .toBeVisible();
+    await expect(page.locator('.menu--panel [data-span="date"] [data-end="to"]'))
+      .toBeVisible();
+  });
+
+  test('L6: the reset is the first control in the rail, and costs almost nothing',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      const reset = await page.locator('#railReset').boundingBox();
+      const collapse = await page.locator('#railbtn').boundingBox();
+      const firstFilter = await page.locator('#railDimensions .lbl').first().boundingBox();
+
+      expect(reset.y).toBeLessThan(firstFilter.y);
+      expect(reset.width).toBeLessThanOrEqual(collapse.width + 1);
+      /* It says what it is to a screen reader and on hover; it does not spend a word on
+         saying it in the rail. */
+      await expect(page.locator('#railReset')).toHaveAttribute('aria-label', /reset/i);
+    });
+
+  test('L7: nothing in the rail is drawn where it cannot be reached', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    /* The rail was `overflow: hidden` over content taller than it, so the status filters
+       and the progress bar were drawn below the fold and could not be reached at all.
+       A rail that hides controls silently is worse than one that scrolls. */
+    const rail = await page.locator('.rail').boundingBox();
+    for (const sel of ['#statusFilters [data-status="unreviewed"]',
+                       '#statusFilters [data-status="reviewed"]', '.prog']) {
+      const box = await page.locator(sel).boundingBox();
+      expect(box, `${sel} is drawn`).not.toBeNull();
+      expect(box.y + box.height, `${sel} is inside the rail`)
+        .toBeLessThanOrEqual(rail.y + rail.height + 1);
+    }
+    await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
+  });
 
   test('B4: a status filter draws one control, not two', async ({ page }) => {
     await page.goto('./');

@@ -577,6 +577,25 @@ test('R5: the excluded rows are counted, not silently dropped', () => {
     'nothing is excluded when the dimension is not filtering');
 });
 
+test('B3: a typed time becomes 24-hour, or nothing at all', () => {
+  /* The ends of a time window are text fields, because a native time input renders from
+     the browser locale and no attribute overrides it. This is where what somebody typed
+     becomes a value the filter can use. */
+  assert.equal(match.normaliseClock('9:30'), '09:30');
+  assert.equal(match.normaliseClock('0930'), '09:30');
+  assert.equal(match.normaliseClock('22:00'), '22:00');
+  assert.equal(match.normaliseClock(' 07:05 '), '07:05');
+
+  /* Not a time of day: that end is simply not set. Never a filter half-understood, and
+     never a 12-hour reading of something written in 24-hour. */
+  assert.equal(match.normaliseClock('9:30 PM'), null);
+  assert.equal(match.normaliseClock('24:00'), null);
+  assert.equal(match.normaliseClock('12:60'), null);
+  assert.equal(match.normaliseClock('half nine'), null);
+  assert.equal(match.normaliseClock(''), null);
+  assert.equal(match.normaliseClock(null), null);
+});
+
 test('R3: time of day works on every observation, dated or not', () => {
   const d = dimensions.DIMENSION.timeOfDay;
   const night = { from: '22:00', to: '02:00' };

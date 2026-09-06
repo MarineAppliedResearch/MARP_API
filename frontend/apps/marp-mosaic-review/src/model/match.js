@@ -40,6 +40,28 @@ export function clockMs(text) {
 }
 
 /**
+ * `HH:MM` from whatever somebody typed into one end of a time window, or null.
+ *
+ * The ends are text fields rather than `<input type="time">`, because a native time input
+ * renders from the browser's locale and no attribute overrides it — `lang="en-GB"` still
+ * draws `01:30 PM` in Chromium, and MARP writes 24-hour everywhere. #81 B3.
+ *
+ * So this is where a typed time becomes a value: `9:30` and `0930` both mean half past
+ * nine. Anything that is not a time of day at all returns null, which leaves that end
+ * unset — never a filter applied half-understood.
+ */
+export function normaliseClock(text) {
+  if (text == null) return null;
+  const t = String(text).trim();
+  if (t === '') return null;
+  const m = /^(\d{1,2}):?([0-5]\d)$/.exec(t);
+  if (!m) return null;
+  const h = Number(m[1]);
+  if (h > 23) return null;
+  return `${String(h).padStart(2, '0')}:${m[2]}`;
+}
+
+/**
  * Is this time of day inside the window?
  *
  * A window may wrap: 22:00 to 02:00 is one night, not two ranges. Inside a wrapped

@@ -142,6 +142,27 @@ export function menu(anchor, items, { align = 'left', search = false, rebuild = 
   openAnchorKey = anchorKey(anchor);
 }
 
+/**
+ * A menu that is a small panel of controls rather than a list of choices.
+ *
+ * The two-ended filters need this. Two native inputs will not fit side by side in a 158px
+ * rail column, so they stacked, and time and date took three rows between them — #81 L5.
+ * Behind a summary button they take one row each and the popover has the width the
+ * controls actually need. It is a `.menu` so that Escape and a click elsewhere dismiss it
+ * exactly like every other menu here, and so two cannot be open at once.
+ */
+export function panelMenu(anchor, html, { align = 'left', wire = null } = {}) {
+  closeMenus();
+  const m = el(`<div class="menu menu--panel">${html}</div>`);
+  document.body.appendChild(m);
+  place(m, anchor, align);
+  /* A click inside is somebody using a control, never a pick. */
+  m.addEventListener('click', (e) => e.stopPropagation());
+  if (wire) wire(m);
+  openMenuEl = m;
+  openAnchorKey = anchorKey(anchor);
+}
+
 /* ------------------------------------------------------------- the menus */
 
 /**
