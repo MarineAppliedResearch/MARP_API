@@ -216,20 +216,20 @@ for (let i = 0; i < TOTAL; i++) {
        is confidence ascending, page one came back with no correct observations on it at
        all. A page has to read as mostly right for the wrong one to pop out -- that is the
        premise the whole tool rests on, and separating the bands cleanly destroyed it. */
-    /* Both draw from the same 0.50-0.99 range; the exponents only lean them apart. The
-       lean is small on purpose, and the numbers were measured rather than guessed.
-
-       A wrong call should tend to be a less certain one, so sorting by least-certain-first
-       genuinely brings mistakes forward. But the default sort *is* confidence ascending,
-       so any real separation lands every mistake on page one: a first attempt used
-       0.50-0.78 against 0.62-0.99 and page one came back with no correct observations on
-       it at all. A page has to read as mostly right for the wrong one to pop out -- that
-       is the premise the tool rests on. At these exponents page one holds seven or eight
-       misclassifications out of fifty, against about seven in a hundred overall: enough
-       that sorting by confidence is visibly worth doing, few enough that the page still
-       looks like a page of bat stars. */
-    confidence: Number((0.50 + 0.49
-      * Math.pow(rand(), isMisclassified ? 1.25 : 0.85)).toFixed(2)),
+    /**
+     * Confidence is independent of whether the label is right.
+     *
+     * It was not, for a while: a wrong call was given a lower confidence so that sorting
+     * by least-certain-first would bring mistakes forward. That is realistic and it ruined
+     * the fixture, because the default sort *is* confidence ascending — so page one
+     * collected the mistakes and ran at three times the underlying rate. Reported from use
+     * as "on a page of 60 bat stars I had to flag 20".
+     *
+     * Whether low confidence really predicts error is an empirical question about a model,
+     * not something to bake into demo data. Uniform here means every page carries roughly
+     * the same few wrong ones, wherever you are in the result and however you sort it.
+     */
+    confidence: Number((0.50 + rand() * 0.49).toFixed(2)),
 
     tc: timecode(start, between(0, 24)),
     etc: timecode(start + between(2, 40), between(0, 24)),
