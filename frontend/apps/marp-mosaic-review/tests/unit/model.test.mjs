@@ -15,6 +15,8 @@ import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedB
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 import { resolveKey, hintFor, SHORTCUTS } from '../../src/model/keys.js';
+import * as dimensions from '../../src/model/dimensions.js';
+import * as match from '../../src/model/match.js';
 
 const row = (id, over = {}) => ({
   observation_id: id,
@@ -276,24 +278,46 @@ test('both dimensions count towards the collapsed rail badge in Delete Mode', ()
 
 /* ------------------------------- project, dive and line nest */
 
-test('the rail narrows from where it was to what it is', () => {
-  assert.deepEqual(filters.FILTER_KEYS, ['project', 'dive', 'line', 'species']);
+test('R6: the rail is whatever the declaration says, in its order', () => {
+  /* This used to assert a literal list of four. The point of the declaration is that
+     nothing keeps a second copy of that list -- a dimension present in DIMENSIONS and
+     missing from FILTER_KEYS would filter but not count towards the collapsed badge. */
+  assert.deepEqual(filters.FILTER_KEYS, dimensions.DIMENSIONS.map((d) => d.key));
+  assert.ok(filters.FILTER_KEYS.length >= 10, 'the five new dimensions are present');
+
+  for (const key of filters.FILTER_KEYS) {
+    assert.ok(key in filters.DEFAULT_FILTERS, `${key} needs a default or it is half-wired`);
+  }
 });
 
-test('changing the project drops the dive and the line under it', () => {
-  const f = { ...filters.DEFAULT_FILTERS, project: 'A', dive: 'D04', line: '2' };
-  const out = filters.applyFilter(f, 'project', 'B');
-  assert.equal(out.project, 'B');
-  assert.equal(out.dive, null, 'a dive belongs to a project');
-  assert.equal(out.line, null, 'and a line to a dive');
+test('R7: removing a project keeps the dives that still apply', () => {
+  /* The old rule cleared every narrower dimension outright. With several selectable that
+     throws away a careful selection because one project was dropped. */
+  const f = {
+    ...filters.DEFAULT_FILTERS,
+    project: ['Deep Reef', 'Nearshore'], dive: ['D04', 'D05', 'D09'], line: ['1'],
+  };
+  const reachable = { dive: ['D04', 'D05'], line: ['1'] };   // D09 belonged to Nearshore
+
+  const out = filters.applyFilter(f, 'project', ['Deep Reef'], reachable);
+  assert.deepEqual(out.project, ['Deep Reef']);
+  assert.deepEqual(out.dive, ['D04', 'D05'], 'the dives that still exist are kept');
+  assert.deepEqual(out.line, ['1'], 'and so is anything under them');
 });
 
-test('changing the dive drops the line, and keeps the project', () => {
-  const f = { ...filters.DEFAULT_FILTERS, project: 'A', dive: 'D04', line: '2' };
-  const out = filters.applyFilter(f, 'dive', 'D06');
-  assert.equal(out.project, 'A');
-  assert.equal(out.dive, 'D06');
-  assert.equal(out.line, null, 'line 2 of one dive is not line 2 of another');
+test('R7: a dependent with nothing left over falls back to not filtering', () => {
+  const f = { ...filters.DEFAULT_FILTERS, project: ['A'], dive: ['D04'] };
+  const out = filters.applyFilter(f, 'project', ['B'], { dive: [], line: [] });
+  assert.deepEqual(out.dive, [], 'empty means the dimension stops filtering, not that nothing matches');
+});
+
+test('R7: with no reachability known, the old blunt rule still applies', () => {
+  /* Safe rather than wrong: only the data layer knows which dives belong to which
+     project, and clearing is the answer that cannot show a combination returning nothing. */
+  const f = { ...filters.DEFAULT_FILTERS, project: ['A'], dive: ['D04'], line: ['2'] };
+  const out = filters.applyFilter(f, 'project', ['B']);
+  assert.deepEqual(out.dive, []);
+  assert.deepEqual(out.line, []);
 });
 
 test('a filter that nothing nests under leaves the rest alone', () => {
@@ -490,4 +514,118 @@ test('unknown keys are simply not ours', () => {
   assert.equal(resolveKey(press('q')), null);
   assert.equal(resolveKey(press('F5')), null, 'refresh must still refresh');
   assert.equal(resolveKey(null), null);
+});
+
+/* --------------------------------------- the filter rail (#77) */
+
+test('R4: tc is read with its day group, exactly as db/timecode.js reads it', () => {
+  /* A dive crossing midnight writes `1.00:15:33`. Reading the day as part of the hour,
+     or ignoring the group entirely, puts the same observation in a different hour
+     depending on who asked -- and that module's comment is that getting this slightly
+     wrong is a changed scientific record, not a rounding error. */
+  assert.equal(match.timeOfDayMs('21:57:22'), ((21 * 3600) + (57 * 60) + 22) * 1000);
+  assert.equal(match.timeOfDayMs('1.00:15:33'), ((0 * 3600) + (15 * 60) + 33) * 1000,
+    'past midnight is 00:15 the next day, not hour 1 and not hour 24');
+  assert.equal(match.timeOfDayMs('00:02:18.2800000'), 138280);
+  assert.equal(match.timeOfDayMs(''), null);
+  assert.equal(match.timeOfDayMs('not a timespan'), null);
+});
+
+test('R4: a time window may wrap past midnight, and both sides are one night', () => {
+  const at = (t) => match.timeOfDayMs(t);
+  const from = match.clockMs('22:00'), to = match.clockMs('02:00');
+
+  assert.equal(match.withinWindow(at('22:30:00'), from, to), true, 'before midnight');
+  assert.equal(match.withinWindow(at('1.00:15:33'), from, to), true, 'after midnight');
+  assert.equal(match.withinWindow(at('12:00:00'), from, to), false, 'the middle of the day is not night');
+  assert.equal(match.withinWindow(at('21:59:59'), from, to), false, 'just before it opens');
+});
+
+test('R4: an ordinary window does not wrap', () => {
+  const from = match.clockMs('09:00'), to = match.clockMs('17:00');
+  assert.equal(match.withinWindow(match.timeOfDayMs('12:00:00'), from, to), true);
+  assert.equal(match.withinWindow(match.timeOfDayMs('22:00:00'), from, to), false,
+    'a non-wrapping window written with OR instead of AND would let this through');
+});
+
+test('R5: a row whose tc carries no date cannot answer a date filter', () => {
+  assert.equal(match.carriesDate('21:57:22'), false);
+  assert.equal(match.carriesDate('2019-07-12 21:57:22'), true);
+  assert.equal(match.dateOf('2019-07-12 21:57:22'), '2019-07-12');
+  assert.equal(match.dateOf('21:57:22'), null);
+
+  const d = dimensions.DIMENSION.date;
+  const value = { from: '2019-01-01', to: '2019-12-31' };
+  assert.equal(match.matchesDimension(d, value, { tc: '2019-07-12 21:57:22' }), true);
+  assert.equal(match.matchesDimension(d, value, { tc: '21:57:22' }), false,
+    'excluded rather than guessed at');
+});
+
+test('R5: the excluded rows are counted, not silently dropped', () => {
+  const rows = [
+    { tc: '2019-07-12 21:57:22' }, { tc: '2019-08-01 10:00:00' },
+    { tc: '21:57:22' }, { tc: '1.00:15:33' }, { tc: null },
+  ];
+  const filtered = { date: { from: '2019-01-01', to: '2019-12-31' } };
+  assert.equal(match.unanswerable(filtered, rows), 3,
+    'three rows have no date and the reviewer has to be told');
+  assert.equal(match.unanswerable({ date: null }, rows), 0,
+    'nothing is excluded when the dimension is not filtering');
+});
+
+test('R3: time of day works on every observation, dated or not', () => {
+  const d = dimensions.DIMENSION.timeOfDay;
+  const night = { from: '22:00', to: '02:00' };
+  assert.equal(match.matchesDimension(d, night, { tc: '22:30:00' }), true);
+  assert.equal(match.matchesDimension(d, night, { tc: '1.00:15:33' }), true,
+    'no date needed -- which is the whole reason this is its own dimension');
+});
+
+test('R8: an empty selection means the dimension is not filtering', () => {
+  const d = dimensions.DIMENSION.project;
+  assert.equal(match.matchesDimension(d, [], { project_name: 'anything' }), true);
+  assert.equal(match.matchesDimension(d, null, { project_name: 'anything' }), true);
+  assert.equal(match.matchesDimension(d, ['A'], { project_name: 'B' }), false);
+});
+
+test('R2: confidence filters on both ends', () => {
+  const d = dimensions.DIMENSION.confidence;
+  const mid = { from: 0.5, to: 0.8 };
+  assert.equal(match.matchesDimension(d, mid, { confidence: 0.62 }), true);
+  assert.equal(match.matchesDimension(d, mid, { confidence: 0.95 }), false,
+    'the upper end is what minConfidence could never express');
+  assert.equal(match.matchesDimension(d, mid, { confidence: 0.5 }), true, 'inclusive');
+});
+
+test('R6: several values of one dimension are an OR', () => {
+  const d = dimensions.DIMENSION.dive;
+  const chosen = ['D04', 'D06'];
+  assert.equal(match.matchesDimension(d, chosen, { dive: 'D04' }), true);
+  assert.equal(match.matchesDimension(d, chosen, { dive: 'D06' }), true);
+  assert.equal(match.matchesDimension(d, chosen, { dive: 'D05' }), false);
+});
+
+test('the rail groups by the question each dimension answers', () => {
+  const groups = dimensions.dimensionGroups();
+  assert.ok(groups.length >= 3, 'ten dropdowns in one column is a list, not a rail');
+  const total = groups.reduce((n, g) => n + g.dimensions.length, 0);
+  assert.equal(total, dimensions.DIMENSIONS.length, 'every dimension lands in a group');
+});
+
+test('dependents are found through the whole chain', () => {
+  assert.deepEqual(dimensions.dependentsOf('project').sort(), ['dive', 'line']);
+  assert.deepEqual(dimensions.dependentsOf('dive'), ['line']);
+  assert.deepEqual(dimensions.dependentsOf('species'), []);
+});
+
+test('every dimension records where its data really comes from', () => {
+  /* The prototype exists to find out what the schema has to become, so a dimension that
+     does not say where its field comes from is a finding nobody wrote down. Two of these
+     currently point at nothing in the real schema, and that is the output of the work
+     rather than an oversight -- see the audit on #68. */
+  for (const d of dimensions.DIMENSIONS) {
+    assert.ok(d.source, `${d.key} must say where its data comes from`);
+  }
+  assert.match(dimensions.DIMENSION.model.source, /NOTHING YET/,
+    'the missing link from an observation to its model is the point, and must stay visible');
 });

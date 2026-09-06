@@ -12,6 +12,9 @@
 
 const ME = 'I. Travers';
 
+import { matchesFilters, unanswerable } from './model/match.js';
+import { DIMENSIONS, DIMENSION, KIND } from './model/dimensions.js';
+
 const LATENCY = { query: 140, commit: 260, species: 180, thumb: 900 };
 
 /** Pretend the network exists, so loading states are real rather than theoretical. */
@@ -96,25 +99,45 @@ export const MarpData = {
   projects() { return db.projects; },
 
   /**
-   * The dives, and the lines within them.
+   * What a dimension can still offer, given everything else the reviewer has chosen.
    *
-   * Derived from the observations rather than stored, because that is what the API
-   * will do too: a dive is a property of a session, and the useful list is the one
-   * that actually has observations under the filters already chosen. Offering a dive
-   * that returns nothing is worse than not offering it.
+   * Derived from the observations rather than stored, because that is what the API will
+   * do too: a dive is a property of a session, and the useful list is the one that
+   * actually has observations under the filters already chosen. Offering a dive that
+   * returns nothing is worse than not offering it.
+   *
+   * One function for every set dimension, because there is nothing dive-specific about
+   * "which values are still reachable" -- and because a per-dimension copy is exactly
+   * the tax this refactor removed.
    */
-  dives({ project } = {}) {
-    const rows = db.observations.filter((r) => !r.deleted
-      && (!project || r.project_name === project));
-    return [...new Set(rows.map((r) => r.dive))].filter(Boolean).sort();
+  optionsFor(key, filters = {}) {
+    const dimension = DIMENSION[key];
+    if (!dimension || dimension.kind !== KIND.SET) return [];
+
+    /* Everything except this dimension: a dive list narrowed by the dives already
+       chosen would only ever offer what is already selected. */
+    const others = { ...filters, [key]: null };
+    const rows = db.observations.filter((r) => !r.deleted && matchesFilters(others, r));
+
+    return [...new Set(rows.map((r) => r[dimension.field]))]
+      .filter((v) => v != null && v !== '')
+      .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   },
 
-  lines({ project, dive } = {}) {
-    const rows = db.observations.filter((r) => !r.deleted
-      && (!project || r.project_name === project)
-      && (!dive || r.dive === dive));
-    return [...new Set(rows.map((r) => r.line))].filter(Boolean)
-      .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  /**
+   * Which values of the dependent dimensions are still reachable after a change.
+   *
+   * `model/match.js` needs this to drop only what no longer applies rather than clearing
+   * a whole selection -- and only the data layer knows which dives belong to which
+   * project.
+   */
+  reachableUnder(filters) {
+    const out = {};
+    for (const d of DIMENSIONS) {
+      if (d.kind !== KIND.SET || !d.nestsUnder) continue;
+      out[d.key] = MarpData.optionsFor(d.key, filters);
+    }
+    return out;
   },
 
   /** Free-text search over the taxonomy, as the species chooser needs. */
@@ -143,11 +166,11 @@ export const MarpData = {
    * they must move when work is committed — a stale count is worse than none.
    */
   async counts({ filters = {} } = {}) {
-    let rows = db.observations.filter((r) => !r.deleted);
-    if (filters.species) rows = rows.filter((r) => r.comname === filters.species);
-    if (filters.project) rows = rows.filter((r) => r.project_name === filters.project);
-    if (filters.dive)    rows = rows.filter((r) => r.dive === filters.dive);
-    if (filters.line)    rows = rows.filter((r) => String(r.line) === String(filters.line));
+    /* The same rule the query uses. This had its own copy of the filter logic, which
+       compared a multi-select array with === and silently counted nothing -- the exact
+       duplication the declaration was introduced to remove, surviving in the one place
+       nobody looked. */
+    const rows = db.observations.filter((r) => !r.deleted && matchesFilters(filters, r));
     const n = (fn) => rows.filter(fn).length;
     return {
       unreviewed: n((r) => r.review_status === 'unreviewed'),
@@ -168,11 +191,17 @@ export const MarpData = {
     await delay(LATENCY.query);
     let rows = db.observations.filter((r) => !r.deleted);
 
-    if (filters.species)  rows = rows.filter((r) => r.comname === filters.species);
-    if (filters.project)  rows = rows.filter((r) => r.project_name === filters.project);
-    if (filters.dive)     rows = rows.filter((r) => r.dive === filters.dive);
-    if (filters.line)     rows = rows.filter((r) => String(r.line) === String(filters.line));
-    if (filters.minConfidence != null) rows = rows.filter((r) => r.confidence >= filters.minConfidence);
+    /* Every rail dimension goes through one rule, declared in model/dimensions.js and
+       applied by model/match.js, so the fixture and the API cannot disagree about what a
+       filter means -- and so adding a dimension is one entry there and nothing here. */
+    const beforeDimensions = rows.length;
+    rows = rows.filter((r) => matchesFilters(filters, r));
+
+    /* The date dimension cannot answer for a row whose `tc` never carried a date, so
+       those are excluded -- and counted, because a filter that silently omits looks
+       complete and is not. See #76. */
+    const excludedForNoDate = unanswerable(filters, db.observations.filter((r) => !r.deleted));
+
     if (filters.excludeIds && filters.excludeIds.size) {
       rows = rows.filter((r) => !filters.excludeIds.has(r.observation_id));
     }
@@ -193,7 +222,10 @@ export const MarpData = {
     const total = rows.length;
     const pageCount = Math.max(1, Math.ceil(total / pageSize));
     const start = (page - 1) * pageSize;
-    return { rows: rows.slice(start, start + pageSize), total, pageCount, page, pageSize };
+    return {
+      rows: rows.slice(start, start + pageSize), total, pageCount, page, pageSize,
+      excludedForNoDate,
+    };
   },
 
   /**

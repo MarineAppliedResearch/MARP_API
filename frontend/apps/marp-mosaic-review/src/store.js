@@ -10,6 +10,7 @@ import { MODES, isMode, commitCount, pendingException, existingState,
          commitIsDestructive, deleteImpact, commitOutcome, pageState } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
+import * as dimensions from './model/dimensions.js';
 
 export { MODES };
 
@@ -24,6 +25,7 @@ export const state = {
   pageCount: 1,
   total: 0,
   rows: [],
+  excludedForNoDate: 0,          // rows a date filter could not answer for; see refresh()
   loading: true,
   ready: false,
   railCollapsed: window.matchMedia('(max-width: 760px)').matches,
@@ -86,6 +88,21 @@ const countFilters = () => ({
 
 /* ---------------------------------------------------------------- actions */
 
+/**
+ * A new query means a different set of observations, so nothing about the old one holds:
+ * not the marks, not what was committed, not the pins. Shared by every filter action
+ * because forgetting one of these lines is how a mark from a previous filter reappears
+ * on an unrelated page.
+ */
+function resetForNewQuery() {
+  state.page = 1;
+  state.marks = new Map();
+  state.touched = new Set();
+  state.outcomes = new Map();
+  state.pageMembers = page.clearPins();
+  state.committedPages.clear();
+}
+
 export const actions = {
   async init() {
     await MarpData.load();
@@ -132,6 +149,14 @@ export const actions = {
         (row) => existingState(state.mode, row) === exception);
     }
     if (!pinned) { state.total = res.total; state.pageCount = res.pageCount; }
+
+    /* How many observations the date filter had to exclude for having no date. The whole
+       point of R5 is that the reviewer is told -- `data.js` counted it and `ui/rail.js`
+       drew it, but nothing carried it between them, so the note was always hidden. A
+       filter that silently omits is worse than no filter, and it looked correct at every
+       tier that cannot see the screen. A pinned page keeps the last count: it is not
+       running the filter, so it has nothing new to say about it. */
+    if (!pinned) state.excludedForNoDate = res.excludedForNoDate || 0;
     state.loading = false;
     notify();
     actions._chaseQueuedThumbnails();
@@ -393,6 +418,43 @@ export const actions = {
     /* `actions.refresh`, not a bare `refresh` -- these are object methods, not closures,
        and the bare call threw ReferenceError where nothing caught it, so the button
        looked inert. */
+    return actions.refresh();
+  },
+
+  /**
+   * Add or remove one value of a set dimension.
+   *
+   * The reachable map comes from the data layer, so removing a project keeps the dives
+   * that still apply instead of clearing them all -- only `data.js` knows which dives
+   * belong to which project.
+   */
+  toggleDimension(key, value) {
+    const toggled = filters.toggleValue(state.filters, key, value);
+    state.filters = filters.applyFilter(
+      toggled, key, toggled[key], MarpData.reachableUnder(toggled));
+    resetForNewQuery();
+    fire('toggleDimension', { key, value });
+    notify();
+    return actions.refresh();
+  },
+
+  /** Stop filtering on a dimension. Empty means "not filtering", never "match nothing". */
+  clearDimension(key) {
+    const cleared = { ...state.filters, [key]: dimensions.emptyValue(dimensions.DIMENSION[key]) };
+    state.filters = filters.applyFilter(
+      cleared, key, cleared[key], MarpData.reachableUnder(cleared));
+    resetForNewQuery();
+    fire('clearDimension', { key });
+    notify();
+    return actions.refresh();
+  },
+
+  /** Set both ends of a range or a time window. Either end may be null. */
+  setSpan(key, from, to) {
+    state.filters = { ...state.filters, [key]: (from == null && to == null) ? null : { from, to } };
+    resetForNewQuery();
+    fire('setSpan', { key, from, to });
+    notify();
     return actions.refresh();
   },
 

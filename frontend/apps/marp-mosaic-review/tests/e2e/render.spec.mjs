@@ -238,9 +238,9 @@ test.describe('the filter rail', () => {
       /* the filters are behind the rail, which is collapsed by default on a phone */
       if (await page.evaluate(() => document.body.classList.contains('rail-collapsed'))) {
         await page.locator('#railbtn').click();
-        await expect(page.locator('#selSpeciesBtn')).toBeVisible();
+        await expect(page.locator('[data-dim="species"]')).toBeVisible();
       }
-      await page.locator('#selSpeciesBtn').click();
+      await page.locator('[data-dim="species"]').click();
 
       const menu = page.locator('.menu');
       await expect(menu).toBeVisible();
@@ -506,14 +506,40 @@ test.describe('a judged tile steps back', () => {
 });
 
 test.describe('filtering by where the observation came from', () => {
-  test('the rail reads project, dive, line, species, model', async ({ page }) => {
+  test('the rail is grouped by the question each filter answers', async ({ page }) => {
     await page.goto('./');
     await ready(page);
     await openRail(page);
-    const labels = await page.locator('.rail-body .lbl').allInnerTexts();
-    /* The rail uppercases its labels in CSS; the order is what this asserts. */
-    expect(labels.slice(0, 5).map((t) => t.toLowerCase()))
-      .toEqual(['project', 'dive', 'line', 'species', 'model']);
+
+    /* Ten controls in one column is a list, not a rail. This used to assert five labels
+       in order; the order still matters, but the grouping is what makes ten findable. */
+    const groups = await page.locator('.railgroup__title').allInnerTexts();
+    expect(groups.map((t) => t.toLowerCase()))
+      .toEqual(['where it came from', 'what it is', 'when', 'who']);
+
+    /* Order within a group still matters: where it came from narrows outward-in, and a
+       line means nothing before its dive. The confidence label carries its current range
+       as well, so this compares the beginning of each label rather than the whole of it. */
+    const first = await page.locator('.railgroup').first().locator('.lbl').allInnerTexts();
+    const expected = ['project', 'dive', 'line', 'session', 'session type'];
+    expect(first.length).toBe(expected.length);
+    expected.forEach((label, i) => {
+      expect(first[i].toLowerCase().trim().startsWith(label)).toBe(true);
+    });
+  });
+
+  test('every declared dimension actually reaches the rail', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    const declared = await page.evaluate(async () => {
+      const m = await import('./src/model/dimensions.js');
+      return m.DIMENSIONS.map((d) => d.key);
+    });
+    for (const key of declared) {
+      const control = page.locator(`[data-dim="${key}"], [data-span="${key}"]`);
+      await expect(control, `${key} is declared but nothing draws it`).toHaveCount(1);
+    }
   });
 
   test('dive is a dropdown, and choosing one narrows the mosaic', async ({ page }) => {
@@ -522,12 +548,13 @@ test.describe('filtering by where the observation came from', () => {
     await openRail(page);
     const before = Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
 
-    await page.locator('#selDiveBtn').click();
+    await page.locator('[data-dim="dive"]').click();
     await expect(page.locator('.menu')).toBeVisible();
     await page.locator('.menu [data-v]').nth(1).click();      // nth(0) is "All dives"
     await ready(page);
 
-    await expect(page.locator('#selDive')).not.toHaveText('All dives');
+    /* The button says what is chosen; the label span it used to write into is gone. */
+    await expect(page.locator('[data-dim="dive"]')).not.toContainText('All dives');
     const after = Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
     expect(after).toBeLessThan(before);
   });
@@ -537,36 +564,127 @@ test.describe('filtering by where the observation came from', () => {
     await ready(page);
     await openRail(page);
 
-    await page.locator('#selLineBtn').click();
+    await page.locator('[data-dim="line"]').click();
     const allLines = await page.locator('.menu [data-v]').count();
     await page.keyboard.press('Escape');
 
-    await page.locator('#selDiveBtn').click();
+    await page.locator('[data-dim="dive"]').click();
     await page.locator('.menu [data-v]').nth(1).click();
     await ready(page);
 
-    await page.locator('#selLineBtn').click();
+    await page.locator('[data-dim="line"]').click();
     const scoped = await page.locator('.menu [data-v]').count();
     expect(scoped, 'one dive offers no more lines than every dive together')
       .toBeLessThanOrEqual(allLines);
   });
 
-  test('changing the dive clears the line under it', async ({ page }) => {
+  test('R7: changing the dive drops only the lines that no longer apply', async ({ page }) => {
     await page.goto('./');
     await ready(page);
     await openRail(page);
 
-    await page.locator('#selLineBtn').click();
+    await page.locator('[data-dim="line"]').click();
     await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
     await ready(page);
-    await expect(page.locator('#selLine')).not.toHaveText('All lines');
+    await expect(page.locator('[data-dim="line"]')).not.toContainText('All lines');
 
-    await page.locator('#selDiveBtn').click();
+    await page.locator('[data-dim="dive"]').click();
     await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
     await ready(page);
-    /* Line 2 of one dive is not line 2 of another, so it cannot survive. */
-    await expect(page.locator('#selLine')).toHaveText('All lines');
+
+    /* This used to assert the line was cleared outright. #77 changed that deliberately:
+       a line still reachable under the new dive is kept, and only one that is not gets
+       dropped -- otherwise a careful multi-line selection is lost because one dive
+       changed. Either outcome is correct here depending on the fixture, so what this
+       asserts is the invariant: whatever survives must still be offered. */
+    /* The first span carries the summary; the second is the chevron glyph. */
+    const shown = await page.locator('[data-dim="line"] span').first().innerText();
+    await page.locator('[data-dim="line"]').click();
+    const offered = (await page.locator('.menu [data-v]').allInnerTexts())
+      .map((t) => t.trim()).filter(Boolean);
+    await page.keyboard.press('Escape');
+
+    if (!shown.includes('All lines')) {
+      const chosen = shown.replace(/\s+/g, ' ').trim();
+      expect(offered.some((o) => o.trim() === chosen)).toBe(true);
+    }
   });
+});
+
+test.describe('filtering by when it happened, and how sure the model was', () => {
+  /** Type into one end of a two-ended control and let the rail's change handler run. */
+  async function setSpan(page, key, end, value) {
+    await page.locator(`[data-span="${key}"] [data-end="${end}"]`).fill(value);
+    await ready(page);
+  }
+
+  const total = async (page) =>
+    Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
+
+  test('R2: the confidence slider narrows the mosaic', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    const before = await total(page);
+
+    /* The arithmetic is unit-tested. What is not is that the slider reaches it — a
+       control wired to nothing passes every check that cannot see the screen. */
+    const from = page.locator('[data-span="confidence"] [data-end="from"]');
+    await from.evaluate((el) => {
+      el.value = '0.9';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await ready(page);
+
+    expect(await total(page)).toBeLessThan(before);
+    await expect(page.locator('[data-span="confidence"]')).toBeVisible();
+  });
+
+  test('R4: a time window that wraps past midnight returns both sides of it',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      /* Evening first, with no wrap: the fixture runs from midnight to just before
+         seven, so this is the late end of it on its own. */
+      await setSpan(page, 'timeOfDay', 'from', '05:00');
+      await setSpan(page, 'timeOfDay', 'to', '06:59');
+      const oneSide = await total(page);
+      expect(oneSide).toBeGreaterThan(0);
+
+      /* Now wrap it past midnight. Written as an AND rather than an OR — the usual way
+         this goes wrong — a wrapped window returns nothing at all. */
+      await setSpan(page, 'timeOfDay', 'to', '01:00');
+      const wrapped = await total(page);
+      expect(wrapped).toBeGreaterThan(oneSide);
+    });
+
+  test('R5: the date filter says how many observations it could not see',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      const note = page.locator('[data-note="date"]');
+      await expect(note).toBeHidden();          // nothing to say until a date is asked for
+
+      /* No observation in the fixture carries a date on its `tc`, which is the production
+         case this exists for: the clock was never synced. The filter therefore excludes
+         everything, and the ONLY thing standing between the reviewer and an empty mosaic
+         they cannot explain is this line. It was drawn by the rail and counted by the data
+         layer, and nothing carried the number between them, so it never appeared. */
+      await setSpan(page, 'date', 'from', '2019-01-01');
+
+      await expect(note).toBeVisible();
+      const said = await note.innerText();
+      expect(said).toMatch(/\d+/);
+      expect(Number(said.replace(/\D/g, ''))).toBeGreaterThan(0);
+      expect(said.toLowerCase()).toContain('no recorded date');
+    });
 });
 
 test.describe('the commit button reports on itself', () => {
@@ -893,7 +1011,7 @@ test.describe('keyboard shortcuts', () => {
        until it is opened. The shortcut rule is the same either way; getting to the
        input is what differs. */
     await openRail(page);
-    await page.locator('#selSpeciesBtn').click();
+    await page.locator('[data-dim="species"]').click();
     await page.locator('.menu input').first().fill('no');
     await page.waitForTimeout(500);
 
