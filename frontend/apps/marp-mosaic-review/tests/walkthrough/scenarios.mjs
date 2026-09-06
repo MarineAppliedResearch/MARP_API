@@ -82,8 +82,11 @@ export const scenarios = {
         caption: 'The badge opens the panel',
         say: "If you want to say why, click the flag badge itself. That opens this panel. "
            + "The reason is optional — the flag already counts on its own.",
-        async act({ page, expect }) {
-          await page.locator('[data-badge]').first().click();
+        async act({ page, expect, store }) {
+          const badge = page.locator('[data-badge]').first();
+          store.correctedId = await badge.locator('xpath=ancestor::*[@data-id][1]')
+            .getAttribute('data-id');
+          await badge.click();
           await expect(page.locator('.pick')).toBeVisible();
         }
       },
@@ -109,12 +112,20 @@ export const scenarios = {
       {
         caption: 'Click anywhere to close',
         say: "Click anywhere outside to close the panel. That click only dismisses — it won't "
-           + "unflag whatever happens to be underneath it. The tile now shows what it used to "
-           + "be, so you can see at a glance that you changed it.",
-        async act({ page, expect }) {
+           + "unflag whatever happens to be underneath it. And because this page is showing one "
+           + "predicted species, the one you just corrected is no longer one of them, so it "
+           + "leaves. The other two flags stay exactly where they were.",
+        async act({ page, expect, store }) {
           await page.locator('#field').click({ position: { x: 6, y: 6 } });
           await expect(page.locator('.pick')).toHaveCount(0);
-          await expect(page.locator('.tile.marked')).toHaveCount(3);
+
+          /* This asserted three marks and failed on `develop` before #77 ever existed: the
+             page filters to one predicted species, so correcting a tile's species takes it
+             out of the filter and off the page. The old narration claimed the tile stayed
+             and showed what it used to be, which is exactly the kind of line the doctrine
+             warns about -- a scene that says one thing while the app does another. */
+          await expect(page.locator(`.tile[data-id="${store.correctedId}"]`)).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(2);
         }
       },
       {
@@ -321,12 +332,12 @@ export const scenarios = {
            + "project, dive, line, species \u2014 and the mosaic is built from whatever you ask for.",
         async act({ page, expect, settled }) {
           /* Opened first and left up, so the list is on screen while it is described. */
-          await page.locator('#selDiveBtn').click();
+          await page.locator('[data-dim="dive"]').click();
           await expect(page.locator('.menu')).toBeVisible();
           await page.waitForTimeout(5200);
           await page.locator('.menu [data-v]').nth(1).click();
           await settled();
-          await expect(page.locator('#selDive')).not.toHaveText('All dives');
+          await expect(page.locator('[data-dim="dive"]')).not.toContainText('All dives');
         }
       },
       {

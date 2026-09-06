@@ -5,16 +5,25 @@
  * one, so switching modes must not leave the other mode's status filter applied.
  */
 import { MODES, statusDimensions } from './modes.js';
+import { DIMENSIONS, DIMENSION, KIND, isActive, emptyValue } from './dimensions.js';
+export { applyDimension, toggleValue } from './match.js';
 
-/** The rail's order, narrowest scope last: where it was, then what it is. */
-export const FILTER_KEYS = ['project', 'dive', 'line', 'species'];
+/**
+ * The rail's keys, in rail order.
+ *
+ * Read from the declaration rather than listed here: a dimension that existed in
+ * `DIMENSIONS` and was forgotten from this array would filter but not count towards the
+ * collapsed rail's badge, which is the kind of half-wired dimension the refactor removed.
+ */
+export const FILTER_KEYS = DIMENSIONS.map((d) => d.key);
 
+/** Nothing selected anywhere: every dimension starts not filtering. */
 export const DEFAULT_FILTERS = {
-  species: 'Bat Star',
-  project: null,
-  dive: null,
-  line: null,
-  minConfidence: 0.5,
+  ...Object.fromEntries(DIMENSIONS.map((d) => [d.key, emptyValue(d)])),
+  /* One exception, and it is the fixture's rather than the rail's: opening on every
+     species at once is a wall of unrelated animals, and the mosaic's whole premise is
+     that a page holds one predicted species. */
+  species: ['Bat Star'],
   reviewStatus: MODES.scientific.defaultStatus.slice(),
   trainingDisposition: MODES.training.defaultStatus.slice()
 };
@@ -51,16 +60,11 @@ export function queryFilters(mode, filters, { excludeIds } = {}) {
 /**
  * Set one filter, and drop anything it invalidates.
  *
- * Project, dive and line nest: a line number only means something inside a dive, and
- * a dive inside a project. Leaving the narrower one set after changing the wider one
- * produces an empty mosaic and no explanation for it.
+ * Delegates to `match.applyDimension`, which drops only what no longer applies rather
+ * than clearing every narrower dimension outright -- see the note there. Kept as a name
+ * because callers outside the model use it.
  */
-export function applyFilter(filters, key, value) {
-  const out = { ...filters, [key]: value };
-  if (key === 'project') { out.dive = null; out.line = null; }
-  if (key === 'dive') out.line = null;
-  return out;
-}
+export { applyDimension as applyFilter } from './match.js';
 
 /** Toggle one value of a multi-select status filter. */
 export function toggleStatus(filters, key, value) {
@@ -104,5 +108,5 @@ export function defaultStatusFor(mode, filters) {
 
 /** How many filters are narrowing the results, for the collapsed rail's badge. */
 export const activeFilterCount = (mode, filters) =>
-  FILTER_KEYS.filter((k) => filters[k]).length
+  DIMENSIONS.filter((d) => isActive(d, filters[d.key])).length
   + statusDimensions(mode).filter((d) => (filters[d.key] || []).length).length;

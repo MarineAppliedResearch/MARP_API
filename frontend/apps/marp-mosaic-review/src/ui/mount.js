@@ -9,10 +9,11 @@ import { $ } from './dom.js';
 import { renderGrid, computeLayout } from './grid.js';
 import { renderPicker } from './picker.js';
 import { renderConfirm, wireConfirm } from './confirm.js';
+import { renderRail, wireRail } from './rail.js';
 import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import {
-  closeMenus, isMenuOpen, speciesMenu, projectMenu, diveMenu, lineMenu,
+  closeMenus, isMenuOpen,
   modelMenu, sortMenu, userMenu
 } from './menus.js';
 
@@ -70,16 +71,16 @@ function wirePager() {
 }
 
 function wireMenus() {
-  const anchor = (id, open) => $(id).addEventListener('click', (e) => {
+  /* Null-safe: one missing control used to throw here during wiring, which aborted the
+     rest of mount() and left the whole application blank. A missing button should cost
+     that button, not the app. */
+  const anchor = (id, open) => $(id)?.addEventListener('click', (e) => {
     e.stopPropagation();
     if (isMenuOpen()) { closeMenus(); return; }     // a second click closes it
     open(e.currentTarget);
   });
-  anchor('#selSpeciesBtn', speciesMenu);
-  anchor('#selProjectBtn', projectMenu);
-  anchor('#selDiveBtn', diveMenu);
-  anchor('#selLineBtn', lineMenu);
-  anchor('#selModelBtn', modelMenu);
+  /* The dimension buttons are drawn by ui/rail.js and wired there, because they do not
+     exist until it has run. Only the fixed controls are anchored here. */
   anchor('#sortBtn', sortMenu);
   anchor('#userBtn', userMenu);
 }
@@ -174,6 +175,7 @@ export function mount() {
   wirePager();
   wireMenus();
   wireConfirm();
+  wireRail();
   wireDismissal();
   wireLayout();
 
@@ -185,6 +187,7 @@ export function mount() {
     renderGrid();
     renderPicker();
     renderConfirm();
+    renderRail();
     requestAnimationFrame(computeLayout);
   });
   onLog(renderLog);

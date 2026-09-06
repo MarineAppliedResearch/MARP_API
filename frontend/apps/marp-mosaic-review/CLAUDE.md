@@ -47,8 +47,14 @@ the database. `src/data.js` is the seam where that arrives, in phase 8.
 The user reviews changes by using the app, and reports what they see. That has been far
 more effective at finding defects than the suite, so:
 
-- **Run `npm run test:unit` after every change.** It is about a second, and it includes
+- **Run `npm run test:unit` after every change.** It is sixty milliseconds, and it includes
   the parse check.
+- **Which tier, and when, is in *Running tests while you work* below.** The short of it:
+  unit after every change, browser once at the end, walkthroughs only when asked.
+- **Coverage is never traded for speed.** The browser tier runs every test at desktop
+  *and* phone width, deliberately, and that stays. If a run is too slow the answer is to
+  make it run faster — the fixture is per-browser-context, so the tests parallelise — and
+  never to stop running some of them.
 - **Every reported defect gets a named test at the tier that can actually see it**
   before it is called fixed. Several were reported twice because the first fix was
   verified at a tier that structurally could not observe the bug.
@@ -305,8 +311,36 @@ choosing the wrong one is how bugs ship.
 
 `npm test` runs all of them. `npm run test:unit` runs the parse check first.
 
-**Run the unit tier after every change.** It is about a second including the parse
-check, and it is the tier that would have caught most of what has been reported by hand.
+### Running tests while you work
+
+Two commands, and the difference between them is the difference between a working loop
+and a person watching a progress bar.
+
+```bash
+npm run test:unit     # 60 ms.  After every single change. This is the loop.
+npm run test:e2e      # minutes. Once, when the work is finished.
+```
+
+**`npm run test:unit` after every change, without asking.** Parse check plus every rule
+in `model/`. It is fast enough that there is never a reason to skip it, and it is the tier
+that would have caught most of what has been reported by hand.
+
+**`npm run test:e2e` is not part of the loop.** It drives real Chromium across two
+viewports and takes minutes. Run it when the work is done, before saying it is done —
+not between edits, and not to check a change you just made. A rule you are iterating on
+belongs in a unit test where you can run it fifty times.
+
+**Never run a bare `playwright test` during development** and never leave a dev server
+behind: a stale one holding the port makes the next run fail outright, by design.
+
+**The walkthroughs are neither.** `npm run demo:narrated -- <scenario>` records a video to
+show the user that a finished feature works. Only when asked. See *The narrated
+walkthroughs* below.
+
+Where a new test goes follows the same split. **"Add a test for that" means
+`tests/unit/`** — a rule proved in `model/` costs nothing to run and so actually gets run.
+The browser tier is where a completed feature earns its place; it is not where the working
+loop lives.
 
 **Every rendering defect so far passed the store-level checks.** A badge never drawn, a
 panel positioned off-screen, a grid re-querying itself, a tick rendered at four times its
@@ -346,7 +380,22 @@ The user watches these to confirm behaviour, so they are a review surface, not a
 report — but they assert as they go, so a broken app fails and writes no video rather
 than producing a convincing film of something that does not work.
 
-**Record them when asked, not as part of the loop.**
+**Record them when asked, not as part of the loop.** They are not a tier and they are not
+in `npm test`. `playwright.config.mjs` leaves the `walkthrough` project out of the run
+entirely unless something names it — a bare `playwright test` used to pull it in, which
+turned a ninety-second loop into four and a half minutes and recorded videos nobody had
+asked for.
+
+**A walkthrough must never be the only thing asserting a behaviour.** Its job is to show
+the user that a new feature works; every claim a scene makes has to already be proved by
+the unit, contract or render tier, which run constantly. When a walkthrough is the only
+witness to something, that behaviour is unwatched between recordings — and recordings
+happen on request, which may be weeks apart. This is not hypothetical: a species
+correction taking a row off a species-filtered page was asserted only in a scene, while
+the contract check covering the same ground cleared the filter to sidestep it and returned
+`'skipped'` when it hit the case anyway. A skipped branch looks green. **If a walkthrough
+scene catches something, the fix is a named test at a real tier first, and the scene
+second.**
 
 ```bash
 npm run demo:narrated -- verify-modes     # one scenario, spoken

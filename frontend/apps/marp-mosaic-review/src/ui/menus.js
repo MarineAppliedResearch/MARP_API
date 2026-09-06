@@ -8,6 +8,7 @@
 import { state, actions } from '../store.js';
 import { MarpData } from '../data.js';
 import { SORTS } from '../model/filters.js';
+import { DIMENSION } from '../model/dimensions.js';
 import { el, ICON, ME } from './dom.js';
 
 let openMenuEl = null;
@@ -60,8 +61,22 @@ export function menu(anchor, items, { align = 'left', search = false } = {}) {
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       const item = picks().find((i) => String(i.value) === b.dataset.v);
+      if (!item) return;
+
+      /* A multi-select menu stays open: choosing three dives should be three clicks,
+         not three round trips through the rail. The tick redraws in place so the menu
+         keeps saying what is chosen. */
+      if (item.keepOpen) {
+        item.on = !item.on;
+        item.onPick(item.value);
+        b.classList.toggle('on', item.on);
+        const tick = b.querySelector('.tick');
+        if (tick) tick.innerHTML = item.on ? ICON.tick : '';
+        return;
+      }
+
       closeMenus();
-      if (item && item.onPick) item.onPick(item.value);
+      if (item.onPick) item.onPick(item.value);
     }));
   bind();
 
@@ -84,44 +99,45 @@ export function menu(anchor, items, { align = 'left', search = false } = {}) {
 
 /* ------------------------------------------------------------- the menus */
 
-/** A filter menu over a list, with an "all" entry that clears the filter. */
-function filterMenu(anchor, { head, allLabel, key, options, labelOf }) {
-  const items = [{ head },
-    { value: '', label: allLabel, on: !state.filters[key],
-      onPick: () => actions.setFilter(key, null) }];
-  options.forEach((o) => {
-    const label = labelOf(o);
+/**
+ * A menu for one set dimension, read from its declaration.
+ *
+ * Multi-select: picking a value toggles it and the menu stays open, because choosing
+ * three dives should be three clicks rather than three round trips. "All" clears the
+ * selection, which means the dimension stops filtering rather than matching nothing.
+ *
+ * There is one of these rather than one per dimension. Adding a dimension is an entry in
+ * `model/dimensions.js` and nothing here.
+ */
+export function dimensionMenu(anchor, key) {
+  const dimension = DIMENSION[key];
+  if (!dimension) return;
+
+  const chosen = state.filters[key] || [];
+  const options = MarpData.optionsFor(key, state.filters);
+
+  /* Scoped dimensions say what they are scoped by, so an empty dive list reads as
+     "this project has none" rather than as a broken control. */
+  const head = dimension.nestsUnder && (state.filters[dimension.nestsUnder] || []).length
+    ? `${dimension.label} · ${(state.filters[dimension.nestsUnder] || []).join(', ')}`
+    : dimension.label;
+
+  const items = [{ head }, {
+    value: '', label: dimension.all, on: !chosen.length,
+    onPick: () => actions.clearDimension(key),
+  }];
+
+  options.forEach((value) => {
     items.push({
-      value: label, label, on: state.filters[key] === label,
-      onPick: (v) => actions.setFilter(key, v)
+      value: String(value), label: dimension.one(value), on: chosen.includes(value),
+      keepOpen: true,
+      onPick: () => actions.toggleDimension(key, value),
     });
   });
-  menu(anchor, items, { search: true });
+
+  if (!options.length) items.push({ head: 'nothing under the current filters' });
+  menu(anchor, items, { search: Boolean(dimension.searchable) });
 }
-
-export const speciesMenu = (anchor) => filterMenu(anchor, {
-  head: 'Species', allLabel: 'All species', key: 'species',
-  options: MarpData.species(), labelOf: (s) => s.comname
-});
-
-export const projectMenu = (anchor) => filterMenu(anchor, {
-  head: 'Project', allLabel: 'All projects', key: 'project',
-  options: MarpData.projects(), labelOf: (p) => p.name
-});
-
-/* Dive and line are scoped by what is already chosen, so the list never offers a
-   combination that returns nothing. */
-export const diveMenu = (anchor) => filterMenu(anchor, {
-  head: 'Dive', allLabel: 'All dives', key: 'dive',
-  options: MarpData.dives({ project: state.filters.project }), labelOf: (d) => d
-});
-
-export const lineMenu = (anchor) => filterMenu(anchor, {
-  head: state.filters.dive ? `Line \u00b7 ${state.filters.dive}` : 'Line',
-  allLabel: 'All lines', key: 'line',
-  options: MarpData.lines({ project: state.filters.project, dive: state.filters.dive }),
-  labelOf: (l) => String(l)
-});
 
 /** No column links an observation to the model that produced it — see #68. */
 export const modelMenu = (anchor) => menu(anchor, [

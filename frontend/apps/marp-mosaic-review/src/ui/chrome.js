@@ -33,10 +33,7 @@ export function renderChrome() {
     + 'Decisions already recorded against these observations are shown on the tiles, '
     + 'and are not counted here.';
 
-  $('#selSpecies').textContent = state.filters.species || 'All species';
-  $('#selProject').textContent = state.filters.project || 'All projects';
-  $('#selDive').textContent = state.filters.dive || 'All dives';
-  $('#selLine').textContent = state.filters.line ? `Line ${state.filters.line}` : 'All lines';
+  /* The dimension labels belong to ui/rail.js, which draws the controls they sit on. */
   $('#sortLabel').textContent = sortLabel(state.sort);
   $('#fcount').textContent = activeFilterCount(state.mode, state.filters);
 

@@ -40,22 +40,10 @@
       <span class="fcount" id="fcount">0</span>
 
       <div class="rail-body">
-        <div class="lbl">Project</div>
-        <div class="menuwrap"><button class="sel" id="selProjectBtn" title="Filter by project">
-          <span id="selProject">&hellip;</span><span>&#9662;</span></button></div>
-        <div class="lbl">Dive</div>
-        <div class="menuwrap"><button class="sel" id="selDiveBtn" title="Filter by dive">
-          <span id="selDive">&hellip;</span><span>&#9662;</span></button></div>
-        <div class="lbl">Line</div>
-        <div class="menuwrap"><button class="sel" id="selLineBtn" title="Filter by line within the dive">
-          <span id="selLine">&hellip;</span><span>&#9662;</span></button></div>
-        <div class="lbl">Species</div>
-        <div class="menuwrap"><button class="sel" id="selSpeciesBtn" title="Filter by species">
-          <span id="selSpecies">&hellip;</span><span>&#9662;</span></button></div>
-        <div class="lbl">Model</div>
-        <div class="menuwrap"><button class="sel" id="selModelBtn"
-          title="No model provenance exists on observations yet — see MARP_API#68">
-          <span>BatStarNet v3.2</span><span>&#9662;</span></button></div>
+        <!-- The dimensions are drawn from model/dimensions.js. Adding one is an entry
+             there and nothing here; that is the whole point of the declaration. -->
+        <div id="railDimensions"></div>
+
         <div class="lbl" id="statusLbl">Review status</div>
         <div id="statusFilters"></div>
         <div class="prog">
@@ -147,7 +135,7 @@
       unsub();
       const target = state.rows.find((r) => r.thumbnail_status === 'ready');
       const id = target.observation_id;
-      if (demo === 'menu') { document.getElementById('selSpeciesBtn').click(); return; }
+      if (demo === 'menu') { document.querySelector('[data-dim=\"species\"]')?.click(); return; }
       if (demo === 'persist') {
         /* flag three with reasons, commit, leave, come back */
         const three = state.rows.filter((r) => r.thumbnail_status === 'ready').slice(0, 3);

@@ -90,9 +90,18 @@ for (let i = 0; i < TOTAL; i++) {
     dive: 'D0' + (4 + (i % 3)),
     line: String(1 + (i % 6)),
     lineId: `L${1 + (i % 6)}-${400 + (i % 12)}`,
-    session_type: pick(['ROV', 'ROV', 'Drop Cam']),
+    session_type: pick(['ROV', 'ROV', 'Drop Cam']),      // sessions.type
     user_id: user.user_id,
     processor_name: user.name,
+
+    /* No column links an observation to the model that produced it yet -- that is Phase 3
+       of #68. Simulated here anyway, because simulating the schema the client is being
+       designed against is exactly what this fixture is for: a control that cannot be
+       exercised cannot be judged, and the point of the prototype is to judge it.
+       Weighted so most observations came from the current model and a tail from the
+       previous one, which is what a real deployment looks like mid-upgrade. */
+    model_name: pick(['BatStarNet v3.2', 'BatStarNet v3.2', 'BatStarNet v3.2',
+                      'BatStarNet v3.1', 'KelpNet v1.4']),
 
     species_id: sp.species_id,
     taxserial: sp.taxserial,

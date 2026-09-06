@@ -32,8 +32,10 @@ async function reset(mode = 'scientific') {
   await MarpData.reload();
   state.mode = mode;
   state.page = 1;
-  state.filters.species = 'Bat Star';
-  state.filters.project = null;
+  /* Arrays now: every set dimension is multi-select, and an empty one means the
+     dimension is not filtering rather than matching nothing. */
+  state.filters.species = ['Bat Star'];
+  state.filters.project = [];
   state.filters.reviewStatus = ['unreviewed', 'flagged'];
   state.filters.trainingDisposition = ['undecided'];
   state.outcomes.clear();
@@ -424,7 +426,7 @@ test('Training data review',
 test('Correcting an observation',
   'a species correction is still visible on the tile after returning', async () => {
     await reset();
-    state.filters.species = null;            // a correction moves the row out of a species filter
+    state.filters.species = [];              // a correction moves the row out of a species filter
     await actions.refresh();
     const id = state.rows[0].observation_id;
     const was = state.rows[0].comname;
@@ -435,9 +437,39 @@ test('Correcting an observation',
     actions.goToPage(1);
     await new Promise((r) => setTimeout(r, 350));
     const row = state.rows.find((r) => r.observation_id === id);
-    if (!row) return 'skipped — the corrected row left the current filter';
+    ok(row, 'with no species filter set, the corrected row cannot have left the page');
     eq(row.comname, 'Sunflower Star', 'the correction persists');
     eq(row.previous_comname, was, 'and what it was before is still recorded');
+  });
+
+/* The case the one above sidesteps by clearing the species filter, and the reason this
+   check exists at all: for a while the only thing asserting it was a narrated walkthrough,
+   which is a review surface and is recorded on request -- so between recordings nothing
+   watched this. A skipped branch looks green, which is exactly how it hid. */
+test('Correcting an observation',
+  'a correction under a species filter takes the row off the page, and the other marks stay',
+  async () => {
+    await reset();
+    const species = state.rows[0].comname;
+    state.filters.species = [species];       // the mosaic's premise: one predicted species
+    await actions.refresh();
+
+    const [a, b, c] = state.rows.slice(0, 3).map((r) => r.observation_id);
+    ok(c != null, 'this check needs three rows of one species to be meaningful');
+    for (const id of [a, b, c]) actions.toggleMark(id);
+    eq(state.marks.size, 3, 'three marked before the correction');
+
+    /* Sunflower Star is deliberately not the species being filtered on. */
+    await actions.changeSpecies(a, 45);
+    await actions.refresh();
+
+    ok(!state.rows.some((r) => r.observation_id === a),
+       'the corrected row no longer matches the filter, so it must leave the page');
+    ok(state.rows.some((r) => r.observation_id === b)
+       && state.rows.some((r) => r.observation_id === c),
+       'the two the reviewer did not touch must still be there');
+    ok(state.marks.has(b) && state.marks.has(c),
+       'and their flags are untouched -- correcting one tile is not a decision about another');
   });
 
 /* Reported 2026-09-04: choosing a species made the panel vanish and immediately
@@ -798,7 +830,7 @@ test('The states never rendered',
   'R1: clearing the filters from an empty result actually re-queries', async () => {
     await reset('scientific');
     /* A combination that matches nothing. */
-    state.filters.species = 'No Such Species';
+    state.filters.species = ['No Such Species'];
     await actions.refresh();
     eq(state.rows.length, 0, 'the filter must really empty the page');
 
@@ -809,7 +841,7 @@ test('The states never rendered',
 test('The states never rendered',
   'R4: a result smaller than a page does not invent a second one', async () => {
     await reset('scientific');
-    state.filters.species = 'No Such Species';
+    state.filters.species = ['No Such Species'];
     await actions.refresh();
     eq(state.total, 0);
     eq(state.rows.length, 0);
