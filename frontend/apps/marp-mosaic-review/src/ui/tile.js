@@ -81,7 +81,10 @@ function corner(row, id, { marked, changed, existing, outcome }) {
  */
 function body(row) {
   if (row.thumbnail_status === 'ready') {
-    return `<img src="./fixtures/thumbs/t${String(row.thumb).padStart(2, '0')}.jpg" alt="${row.comname}">`;
+    /* `thumb` is the file, named for the species it shows. It used to be an index into a
+       flat pile of pictures, with two of them reserved by hand so the label and the image
+       could not disagree -- which worked only for as long as somebody remembered. */
+    return `<img src="./fixtures/thumbs/${row.thumb}" alt="${row.comname}" loading="lazy">`;
   }
   if (row.thumbnail_status === 'queued') {
     return `<span class="fallback"><img src="./fixtures/thumbs/marp-mark.png" alt="">
