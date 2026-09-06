@@ -19,9 +19,19 @@ const PORT = Number(process.env.MARP_TEST_PORT)
   || 8100 + (parseInt(createHash('sha1')
        .update(fileURLToPath(import.meta.url)).digest('hex').slice(0, 6), 16) % 700);
 
-/** Did the caller actually ask for the narrated walkthroughs? See the projects list. */
-const WALKTHROUGH = process.argv.some((a) => a === 'walkthrough' || a.endsWith('=walkthrough'))
-  || process.env.MARP_WALKTHROUGH === '1';
+/**
+ * Did the caller actually ask for the narrated walkthroughs? See the projects list.
+ *
+ * The environment variable is not an alternative to the argv check, it is how the argv
+ * check survives. Playwright loads this config again inside each worker process, and a
+ * worker's argv does not carry `--project=walkthrough` -- so an argv-only test defined the
+ * project in the parent and not in the worker, and every run died with *Project
+ * "walkthrough" not found in the worker process*. Setting the variable here, in the
+ * parent, before any worker is spawned means the worker inherits the same answer.
+ */
+const WALKTHROUGH = process.env.MARP_WALKTHROUGH === '1'
+  || process.argv.some((a) => a === 'walkthrough' || a.endsWith('=walkthrough'));
+if (WALKTHROUGH) process.env.MARP_WALKTHROUGH = '1';
 
 export default defineConfig({
   testDir: './tests',

@@ -14,6 +14,16 @@
 
 const tilesIn = (page) => page.locator('.tile:not(.failed):not(.queued)');
 
+/** How many observations the current filters match, read off the chrome. */
+const totalShown = async (page) =>
+  Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
+
+/** Type into one end of a two-ended filter and let the rail's change handler run. */
+async function setEnd(page, key, end, value, settled) {
+  await page.locator(`[data-span="${key}"] [data-end="${end}"]`).fill(value);
+  await settled();
+}
+
 /* A page arrives with its existing flags already marked, so a scenario that wants to
    demonstrate marking has to start from a tile nobody has decided about yet. */
 const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.marked)');
@@ -443,6 +453,153 @@ export const scenarios = {
      cancelling really does nothing, and that confirming really does delete. Every line
      asserts what it claims -- a scene that narrates a result without asserting it can
      lie, and this is the one workflow where that would matter most. */
+  /* ------------------------------------------------- verifying: the filters */
+  'verify-filters': {
+    title: 'Verifying: the filter rail',
+    scenes: [
+      {
+        caption: 'Ten filters, grouped by question',
+        say: "The rail used to be five filters in a column. It is ten now, and ten identical "
+           + "dropdowns stacked up is a list, not a rail — so they are grouped by the question "
+           + "each one answers. Where it came from, what it is, when, and who.",
+        async act({ page, expect }) {
+          const titles = await page.locator('.railgroup__title').allInnerTexts();
+          expect(titles.map((t) => t.trim()))
+            .toEqual(['Where it came from', 'What it is', 'When', 'Who']);
+        }
+      },
+      {
+        caption: 'More than one at a time',
+        say: "The first thing that changed is that you are no longer stuck with one. "
+           + "Watch the dive filter — I am picking two dives, and the menu stays open, "
+           + "because picking several is the normal case and not a special one.",
+        async act({ page, expect, settled, store }) {
+          store.all = await totalShown(page);
+          await page.locator('[data-dim="dive"]').click();
+          await expect(page.locator('.menu')).toBeVisible();
+
+          await page.locator('.menu [data-v]').nth(1).click();   // nth(0) clears
+          await page.waitForTimeout(500);
+          await page.locator('.menu [data-v]').nth(2).click();
+          await page.keyboard.press('Escape');
+          await settled();
+
+          /* Two chosen, and the mosaic is genuinely narrower for it. Two names still fit
+             on the button, so it lists them; a third would collapse to a count. */
+          await expect(page.locator('[data-dim="dive"]')).toHaveText(/Dive .+,\s*Dive .+/);
+          store.twoDives = await totalShown(page);
+          expect(store.twoDives).toBeLessThan(store.all);
+        }
+      },
+      {
+        caption: 'Dropping one keeps the other',
+        say: "And taking one back off leaves the other exactly where it was. That sounds "
+           + "obvious, but the old rail cleared everything underneath whenever you touched "
+           + "anything above it — so a selection you had spent a minute assembling vanished "
+           + "because you changed your mind about one dive.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('[data-dim="dive"]').click();
+          await page.locator('.menu [data-v]').nth(2).click();   // untoggle the second
+          await page.keyboard.press('Escape');
+          await settled();
+
+          await expect(page.locator('[data-dim="dive"]')).not.toContainText('All dives');
+          const oneDive = await totalShown(page);
+          expect(oneDive).toBeLessThan(store.twoDives);
+        }
+      },
+      {
+        caption: 'How sure the model was',
+        say: "Confidence is a range now, with both ends. Pull the top end down and you get "
+           + "the calls the model was least sure about — which is exactly where the mistakes "
+           + "are, so that is usually the page worth looking at first.",
+        async act({ page, expect, settled }) {
+          const before = await totalShown(page);
+          const to = page.locator('[data-span="confidence"] [data-end="to"]');
+          /* A range input is dragged, not typed into, so drive it the way the browser
+             would and let the rail's own change handler do the rest. */
+          await to.evaluate((el) => {
+            el.value = '0.7';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          await settled();
+          expect(await totalShown(page)).toBeLessThan(before);
+          await expect(page.locator('[data-span="confidence"]')).toBeVisible();
+        }
+      },
+      {
+        caption: 'Clearing it again',
+        say: "Before the next one, let us put confidence back. An empty filter means it is "
+           + "not filtering. It never means show me nothing.",
+        async act({ page, expect, settled }) {
+          const narrow = await totalShown(page);
+          const to = page.locator('[data-span="confidence"] [data-end="to"]');
+          await to.evaluate((el) => {
+            el.value = '1';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          await settled();
+          expect(await totalShown(page)).toBeGreaterThan(narrow);
+        }
+      },
+      {
+        caption: 'Time of day',
+        say: "Every observation carries a time of day, so this one always works. Here is the "
+           + "tail end of the night. Five in the morning until just before seven.",
+        async act({ page, expect, settled, store }) {
+          await setEnd(page, 'timeOfDay', 'from', '05:00', settled);
+          await setEnd(page, 'timeOfDay', 'to', '06:59', settled);
+          store.oneSide = await totalShown(page);
+          expect(store.oneSide).toBeGreaterThan(0);
+        }
+      },
+      {
+        caption: 'And it wraps past midnight',
+        say: "Now watch the count. I am moving the end of that window round to one in the "
+           + "morning, so it starts at five and finishes after midnight. A dive that runs "
+           + "from dusk into the small hours is one night, not two — and written the obvious "
+           + "way, a window like that matches nothing at all.",
+        async act({ page, expect, settled, store }) {
+          await setEnd(page, 'timeOfDay', 'to', '01:00', settled);
+          const wrapped = await totalShown(page);
+          /* The whole claim: the far side of midnight is included, so this is bigger
+             rather than empty. */
+          expect(wrapped).toBeGreaterThan(store.oneSide);
+        }
+      },
+      {
+        caption: 'Dates, and what it cannot see',
+        say: "The date filter is the one that cannot always answer. A time code only carries "
+           + "a date where the clock was synced, and plenty of the record was never synced. "
+           + "So watch what appears underneath it when I ask for a date range.",
+        async act({ page, expect, settled }) {
+          await setEnd(page, 'timeOfDay', 'from', '', settled);
+          await setEnd(page, 'timeOfDay', 'to', '', settled);
+          await setEnd(page, 'date', 'from', '2019-01-01', settled);
+
+          const note = page.locator('[data-note="date"]');
+          await expect(note).toBeVisible();
+          const said = await note.innerText();
+          expect(Number(said.replace(/\D/g, ''))).toBeGreaterThan(0);
+        }
+      },
+      {
+        caption: 'It says what it left out',
+        say: "It tells you how many it had to leave out. Until an hour ago it did not. "
+           + "The number was counted, and the line was written to show it, and nothing "
+           + "carried the one to the other — so the mosaic simply emptied and said nothing, "
+           + "which looks exactly like there being no data. A filter that quietly omits is "
+           + "worse than no filter at all.",
+        async act({ page, expect }) {
+          const said = await page.locator('[data-note="date"]').innerText();
+          expect(said.toLowerCase()).toContain('no recorded date');
+        }
+      }
+    ]
+  },
+
   'verify-delete-confirmation': {
     title: 'Verifying: nothing is deleted without confirming',
     scenes: [
