@@ -575,6 +575,10 @@ test.describe('filtering by where the observation came from', () => {
 
     await page.locator('[data-dim="dive"]').click();
     await page.locator('.menu [data-v]').nth(1).click();
+    /* A multi-select menu stays open after a pick, and it hangs over the line button
+       below it. Dismiss it the way a reviewer would before reaching for the next one —
+       this used to pass only because the taller rail pushed the menu upwards instead. */
+    await page.keyboard.press('Escape');
     await ready(page);
 
     await page.locator('[data-dim="line"]').click();

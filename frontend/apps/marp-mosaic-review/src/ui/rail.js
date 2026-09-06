@@ -46,8 +46,12 @@ function control(dimension) {
   /* One row: a label, and a button saying what is chosen. Everything except the slider
      is drawn this way, including the two-ended time and date filters -- their controls
      live in the popover the button opens. Two native inputs each did not fit side by side
-     in the rail column, so they wrapped and took three rows between them. #81 L5. */
-  if (dimension.kind !== KIND.RANGE || dimension.key === 'date') {
+     in the rail column, so they wrapped and took three rows between them. #81 L5.
+
+     A range with declared bounds is what can be a slider; one without them is not, which
+     is the difference between confidence and date. Asking the declaration rather than
+     naming `date` is what keeps a dimension one entry there and nothing here. */
+  if (dimension.kind !== KIND.RANGE || !dimension.bounds) {
     return `
       <div class="lbl">${dimension.label}</div>
       <div class="menuwrap"><button class="sel${active ? ' on' : ''}"
@@ -104,9 +108,9 @@ function spanPanel(dimension) {
   return `
     <div class="mhead">${dimension.label}</div>
     <div class="span" data-span="${dimension.key}">
-      <input type="date" data-end="from" value="${from}" aria-label="date from">
+      <input type="date" data-end="from" value="${from}" aria-label="${dimension.label} from">
       <span class="dash">&ndash;</span>
-      <input type="date" data-end="to" value="${to}" aria-label="date to">
+      <input type="date" data-end="to" value="${to}" aria-label="${dimension.label} to">
     </div>`;
 }
 
@@ -128,10 +132,15 @@ export function renderRail() {
     if (back) back.focus();
   }
 
-  const note = host.querySelector('[data-note="date"]');
-  if (note) {
+  /* A dimension that says it cannot always answer reports what it had to leave out. Only
+     the date does today, and it is found through the declaration rather than by name --
+     naming it here would be the second place a dimension lives. The count itself is still
+     date-shaped, in `state.excludedForNoDate`; see #76. */
+  for (const dimension of DIMENSIONS.filter((d) => d.reportsExclusions)) {
+    const note = host.querySelector(`[data-note="${dimension.key}"]`);
+    if (!note) continue;
     const n = state.excludedForNoDate || 0;
-    note.hidden = !n || !isActive(DIMENSION.date, state.filters.date);
+    note.hidden = !n || !isActive(dimension, state.filters[dimension.key]);
     note.textContent = n
       ? `${n} observation${n === 1 ? '' : 's'} have no recorded date and are not shown.`
       : '';
@@ -154,7 +163,7 @@ function sameSpan(key, from, to) {
 function applySpan(span) {
   const key = span.dataset.span;
   const dimension = DIMENSION[key];
-  const numeric = dimension.kind === KIND.RANGE && key !== 'date';
+  const numeric = dimension.kind === KIND.RANGE && Boolean(dimension.bounds);
 
   const read = (end) => {
     const box = span.querySelector(`[data-end="${end}"]`);

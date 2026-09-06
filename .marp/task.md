@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#81
 repos: [MARP_API]
-status: implementing
+status: verifying
 needs: []
 ---
 
@@ -160,5 +160,5 @@ See `.marp/verification.md`.
 
 ## Status
 
-- **Gate:** implementing
+- **Gate:** verifying
 - **Notes:** branched from `79-resumability`, not from `develop`, per #81.
