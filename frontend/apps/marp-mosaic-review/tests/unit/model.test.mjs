@@ -8,6 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
   pendingException, statusDimensions, commitIsDestructive,
@@ -631,4 +632,37 @@ test('every dimension records where its data really comes from', () => {
   }
   assert.match(dimensions.DIMENSION.model.source, /NOTHING YET/,
     'the missing link from an observation to its model is the point, and must stay visible');
+});
+
+/* ---------------------------------------------------------------- the fixture */
+
+const fixture = () => JSON.parse(
+  readFileSync(new URL('../../fixtures/observations.json', import.meta.url), 'utf8'));
+
+/**
+ * #81 D1. The fixture invented `ROV` and `Drop Cam`, which are platforms and are not in
+ * the `session_type` column at all, so the session-type filter was exercised against
+ * values that do not exist. The real five are below, inconsistent casing included --
+ * `Fish_GULF` beside `INVERTS_GULF` is what the database holds, and a fixture that spells
+ * them more neatly tests a query nobody will ever run.
+ */
+test('D1: the fixture uses the session types the database really holds', () => {
+  const seen = [...new Set(fixture().observations.map((r) => r.session_type))].sort();
+  assert.deepEqual(seen,
+    ['Fish', 'Fish_GULF', 'Habitat', 'INVERTS_GULF', 'Inverts'],
+    'these are the five values, spelled the way the column spells them');
+});
+
+test('D1: a session has one type, because sessions.type is one column on one row', () => {
+  const types = new Map();
+  for (const r of fixture().observations) {
+    const had = types.get(r.session_id);
+    if (had && had !== r.session_type) {
+      assert.fail(`session ${r.session_id} carries both ${had} and ${r.session_type}`);
+    }
+    types.set(r.session_id, r.session_type);
+  }
+  /* And why it matters: L2 says the type narrows which sessions are available, which is
+     only true if the two are correlated at all. Rolled per observation, they were not. */
+  assert.ok(new Set(types.values()).size > 1, 'more than one type across the sessions');
 });
