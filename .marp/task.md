@@ -12,10 +12,10 @@ needs: []
 A reviewer opens the rail and can see all of it. The dropdowns behave the way every other
 dropdown on every other platform behaves — a second click on the button closes the menu,
 and choosing a specific project stops "All projects" claiming to be selected. Times read
-in 24-hour, the way MARP writes them everywhere else. The rail carries eight filters
-rather than ten plus four headings, so the status filters and the progress bar are on
-screen instead of clipped off the bottom. Sorting can be steered by field and by
-direction independently, and says which is applied.
+in 24-hour, the way MARP writes them everywhere else. The rail carries ten filters in one
+row each, rather than eleven plus four headings and three rows spent on time and date, so
+the status filters and the progress bar are on screen instead of clipped off the bottom.
+Sorting can be steered by field and by direction independently, and says which is applied.
 
 ## What is already true
 
@@ -115,7 +115,7 @@ implemented and why. Each is one sentence to overrule.
   narrows which sessions are available, and the offered list already narrows; this makes
   the selection follow.
 - [x] **A6 · product/UI · non-blocking** — decided 2026-09-06: **the rail body scrolls.**
-  L7 says to say so if something has to give. Nothing had to give in the end — the eight
+  L7 says to say so if something has to give. Nothing had to give in the end — the ten
   filters fit at 1600x900 — but the rail was clipping its own status filters before this
   work, and a rail that silently hides controls at a shorter viewport is the same bug
   waiting for a smaller screen.

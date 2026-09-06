@@ -663,6 +663,40 @@ test('Q1: the model dimension stays, until Phase 3 gives it a column', () => {
   assert.ok(dimensions.DIMENSION.model, 'the Model filter stays for now');
 });
 
+/* ---------------------------------------------------------------- sorting */
+
+test('M1: the field and the direction are independent', () => {
+  /* Five fixed pairs meant three of the four fields could be read only one way. Every
+     field now offers both, which is eight orders where there were five. */
+  for (const s of filters.SORT_FIELDS) {
+    for (const dir of filters.SORT_DIRS) {
+      assert.ok(filters.isSort(s.field, dir), `${s.field} ${dir} should be offerable`);
+    }
+  }
+  assert.equal(filters.SORT_FIELDS.length * filters.SORT_DIRS.length, 8);
+});
+
+test('M1: what is applied reads as both halves, not as one phrase', () => {
+  assert.equal(filters.sortLabel({ field: 'confidence', dir: 'asc' }),
+    'Confidence ↑ low first');
+  assert.equal(filters.sortLabel({ field: 'keyframe_count', dir: 'desc' }),
+    'Track length ↓ longest first');
+
+  /* Each field words its own directions, because "longest" says something about a track
+     length that "descending" does not. */
+  assert.notEqual(filters.sortField({ field: 'keyframe_count' }).desc,
+    filters.sortField({ field: 'updatedAt' }).desc);
+});
+
+test('M1: a sort nobody could have chosen falls back rather than throwing', () => {
+  assert.equal(filters.isSort('cuteness', 'asc'), false);
+  assert.equal(filters.isSort('confidence', 'sideways'), false);
+  /* The address is edited by hand and truncated by chat clients, so the label has to
+     survive nonsense rather than blanking the sub-bar. */
+  assert.equal(filters.sortField({ field: 'cuteness' }).field, filters.DEFAULT_SORT.field);
+  assert.match(filters.sortLabel({ field: 'cuteness', dir: 'sideways' }), /Confidence/);
+});
+
 test('dependents are found through the whole chain', () => {
   assert.deepEqual(dimensions.dependentsOf('project').sort(), ['dive', 'line']);
   assert.deepEqual(dimensions.dependentsOf('dive'), ['line']);

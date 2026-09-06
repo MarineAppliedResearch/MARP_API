@@ -30,16 +30,50 @@ export const DEFAULT_FILTERS = {
 
 export const DEFAULT_SORT = { field: 'confidence', dir: 'asc' };
 
-export const SORTS = [
-  { field: 'confidence', dir: 'asc', label: 'Confidence (low first)' },
-  { field: 'confidence', dir: 'desc', label: 'Confidence (high first)' },
-  { field: 'keyframe_count', dir: 'desc', label: 'Track length (longest)' },
-  { field: 'updatedAt', dir: 'desc', label: 'Recently updated' },
-  { field: 'obsID', dir: 'asc', label: 'Observation number' }
+/**
+ * What the mosaic can be ordered by, and what each direction means on that field.
+ *
+ * This was five fixed pairs of a field and a direction, which is what #81 M1 called not
+ * good enough: three of the four fields could only be read one way, and "Confidence (low
+ * first)" told you what was applied only if you read the whole phrase. Field and direction
+ * are two questions, so they are two choices, and each field names its own two directions
+ * -- "longest" says something about a track length that "descending" does not.
+ *
+ * Every field keeps `observation_id` as its tie-breaker in the query, which is what makes
+ * a re-query return the same page. That is not optional and not declared here.
+ */
+export const SORT_FIELDS = [
+  { field: 'confidence', label: 'Confidence', asc: 'low first', desc: 'high first' },
+  { field: 'keyframe_count', label: 'Track length', asc: 'shortest first', desc: 'longest first' },
+  { field: 'updatedAt', label: 'Last updated', asc: 'oldest first', desc: 'newest first' },
+  { field: 'obsID', label: 'Observation number', asc: 'lowest first', desc: 'highest first' }
 ];
 
-export const sortLabel = (sort) =>
-  (SORTS.find((s) => s.field === sort.field && s.dir === sort.dir) || SORTS[0]).label;
+export const SORT_DIRS = ['asc', 'desc'];
+
+/** The declared field a sort names, or the default when it names nothing recognisable. */
+export const sortField = (sort) =>
+  SORT_FIELDS.find((s) => s.field === (sort && sort.field))
+  || SORT_FIELDS.find((s) => s.field === DEFAULT_SORT.field);
+
+/** Is this a sort the rail could have produced? What the address checks against. */
+export const isSort = (field, dir) =>
+  SORT_DIRS.includes(dir) && SORT_FIELDS.some((s) => s.field === field);
+
+/** Which way an arrow points for a direction. Ascending is up, everywhere. */
+export const sortArrow = (dir) => (dir === 'desc' ? '↓' : '↑');
+
+/**
+ * What is applied, in words, for the sub-bar.
+ *
+ * Both halves, always. The whole complaint was that a single label made the applied order
+ * something to work out rather than something to read.
+ */
+export function sortLabel(sort) {
+  const s = sortField(sort);
+  const dir = SORT_DIRS.includes(sort && sort.dir) ? sort.dir : DEFAULT_SORT.dir;
+  return `${s.label} ${sortArrow(dir)} ${s[dir]}`;
+}
 
 /**
  * The filters actually sent for a mode: the reviewer's choices, with the other

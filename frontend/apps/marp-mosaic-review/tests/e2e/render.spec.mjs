@@ -1406,6 +1406,54 @@ test.describe('the filter rail, cleaned up', () => {
     await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
   });
 
+  test('M1: the field and the direction are chosen separately, and both are on screen',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      /* The sub-bar says both halves without anything being opened. It used to carry one
+         phrase from a fixed list, so which way the mosaic was ordered was something to
+         work out rather than something to read. */
+      await expect(page.locator('#sortLabel')).toHaveText('Confidence ↑ low first');
+
+      await page.locator('#sortBtn').click();
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(page.locator('.menu .mhead').first()).toHaveText('Sort by');
+
+      /* Change the field. The menu stays open, and its direction entries reword
+         themselves for the field that is now chosen. */
+      await page.locator('.menu [data-v="keyframe_count"]').click();
+      await ready(page);
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(page.locator('.menu [data-v="keyframe_count"]')).toHaveClass(/on/);
+      await expect(page.locator('.menu [data-v="desc"]')).toContainText('Longest first');
+      await expect(page.locator('#sortLabel')).toHaveText('Track length ↑ shortest first');
+
+      /* And the direction on its own, keeping the field. */
+      await page.locator('.menu [data-v="desc"]').click();
+      await ready(page);
+      await expect(page.locator('.menu [data-v="desc"]')).toHaveClass(/on/);
+      await expect(page.locator('.menu [data-v="asc"]')).not.toHaveClass(/on/);
+      await expect(page.locator('#sortLabel')).toHaveText('Track length ↓ longest first');
+
+      await page.keyboard.press('Escape');
+      /* It is a real order, not just a label: the address carries it and a reload keeps it. */
+      expect(page.url()).toContain('sort=keyframe_count.desc');
+    });
+
+  test('M1: the order actually applied changes when the direction does', async ({ page }) => {
+    await page.goto('./?sort=confidence.asc');
+    await ready(page);
+    const lowest = await page.locator('.tile').first().getAttribute('data-id');
+
+    await page.goto('./?sort=confidence.desc');
+    await ready(page);
+    const highest = await page.locator('.tile').first().getAttribute('data-id');
+
+    /* A menu that reorders nothing would pass every assertion above. */
+    expect(highest).not.toBe(lowest);
+  });
+
   test('B4: a status filter draws one control, not two', async ({ page }) => {
     await page.goto('./');
     await ready(page);

@@ -15,7 +15,7 @@
 
 import { DIMENSIONS, KIND, emptyValue, isActive } from './dimensions.js';
 import { isMode, statusDimensions } from './modes.js';
-import { DEFAULT_FILTERS, DEFAULT_SORT, SORTS, defaultStatusFor } from './filters.js';
+import { DEFAULT_FILTERS, DEFAULT_SORT, isSort, defaultStatusFor } from './filters.js';
 
 /* The two ends of a range, and the separator between them. A time carries colons and a
    date carries hyphens, so the separator has to be something neither of them contains. */
@@ -245,7 +245,7 @@ export function fromQuery(search) {
     const dot = raw.lastIndexOf('.');
     const field = dot === -1 ? raw : raw.slice(0, dot);
     const dir = dot === -1 ? '' : raw.slice(dot + 1);
-    if (SORTS.some((s) => s.field === field && s.dir === dir)) sort = { field, dir };
+    if (isSort(field, dir)) sort = { field, dir };
   }
 
   let page = 1;

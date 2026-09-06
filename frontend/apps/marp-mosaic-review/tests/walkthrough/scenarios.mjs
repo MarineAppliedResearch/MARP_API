@@ -45,7 +45,12 @@ const totalShown = async (page) =>
 
 /** Type into one end of a two-ended filter and let the rail's change handler run. */
 async function setEnd(page, key, end, value, settled) {
-  await page.locator(`[data-span="${key}"] [data-end="${end}"]`).fill(value);
+  const box = page.locator(`[data-span="${key}"] [data-end="${end}"]`);
+  /* Time and date live behind a summary button since #81, so open the popover first. */
+  if (!(await box.count())) await page.locator(`[data-dim="${key}"]`).click();
+  await box.fill(value);
+  /* `fill` raises `input` and not `change`, and the rail waits for `change`. */
+  await box.press('Enter');
   await settled();
 }
 
@@ -483,14 +488,16 @@ export const scenarios = {
     title: 'Verifying: the filter rail',
     scenes: [
       {
-        caption: 'Ten filters, grouped by question',
-        say: "The rail used to be five filters in a column. It is ten now, and ten identical "
-           + "dropdowns stacked up is a list, not a rail — so they are grouped by the question "
-           + "each one answers. Where it came from, what it is, when, and who.",
+        caption: 'Ten filters, one list',
+        say: "The rail used to be five filters in a column. It is ten now. They were "
+           + "briefly grouped under four headings, and the headings cost more room than "
+           + "they bought — without them the whole rail fits on screen.",
         async act({ page, expect }) {
-          const titles = await page.locator('.railgroup__title').allInnerTexts();
-          expect(titles.map((t) => t.trim()))
-            .toEqual(['Where it came from', 'What it is', 'When', 'Who']);
+          const labels = await page.locator('#railDimensions .lbl').allInnerTexts();
+          expect(labels.length).toBe(10);
+          expect(await page.locator('.railgroup__title').count()).toBe(0);
+          /* And the point of removing them: the bottom of the rail is reachable. */
+          await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
         }
       },
       {

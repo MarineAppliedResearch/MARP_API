@@ -7,7 +7,7 @@
  */
 import { state, actions } from '../store.js';
 import { MarpData } from '../data.js';
-import { SORTS } from '../model/filters.js';
+import { SORT_FIELDS, SORT_DIRS, sortField, sortArrow } from '../model/filters.js';
 import { DIMENSION } from '../model/dimensions.js';
 import { el, ICON, ME } from './dom.js';
 
@@ -33,6 +33,10 @@ export const isMenuOpenFor = (anchor) =>
 export function closeMenus() {
   if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; openAnchorKey = null; }
 }
+
+/* The direction phrases read as part of a sentence in the model ("longest first") and as
+   a label of their own in the menu, so the capital belongs here rather than there. */
+const sentence = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function itemMarkup(items, filter) {
   const f = (filter || '').trim().toLowerCase();
@@ -219,12 +223,36 @@ export const modelMenu = (anchor) => menu(anchor, [
   { value: 'any', label: 'Any model', onPick: () => {} }
 ], { search: true });
 
-export const sortMenu = (anchor) => menu(anchor,
-  [{ head: 'Sort by' }].concat(SORTS.map((s) => ({
-    value: `${s.field}:${s.dir}`, label: s.label,
-    on: state.sort.field === s.field && state.sort.dir === s.dir,
-    onPick: (v) => { const [f, d] = v.split(':'); actions.setSort(f, d); }
-  }))), { align: 'right' });
+/**
+ * The sort, as two questions rather than one list.
+ *
+ * A field and a direction are chosen independently -- #81 M1 -- and the menu stays open
+ * between them, because picking a field and then reading it the other way is one thought.
+ * The direction entries are worded for the field that is chosen, so the pair reads as a
+ * sentence: Track length, longest first.
+ */
+export const sortMenu = (anchor) => {
+  const build = () => {
+    const field = sortField(state.sort);
+    const items = [{ head: 'Sort by' }];
+
+    SORT_FIELDS.forEach((s) => items.push({
+      value: s.field, label: s.label, on: s.field === field.field, keepOpen: true,
+      /* Picking what is already applied is not a new question, so it does not re-query. */
+      onPick: () => { if (s.field !== state.sort.field) actions.setSort(s.field, state.sort.dir); },
+    }));
+
+    items.push({ hr: true }, { head: `${field.label}, in which order` });
+    SORT_DIRS.forEach((dir) => items.push({
+      value: dir, label: `${sortArrow(dir)} ${sentence(field[dir])}`,
+      on: state.sort.dir === dir, keepOpen: true,
+      onPick: () => { if (dir !== state.sort.dir) actions.setSort(state.sort.field, dir); },
+    }));
+
+    return items;
+  };
+  menu(anchor, build(), { align: 'right', rebuild: build });
+};
 
 export const userMenu = (anchor) => menu(anchor, [
   { head: `Signed in as ${ME}` },
