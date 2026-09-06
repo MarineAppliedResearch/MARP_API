@@ -1,115 +1,127 @@
 ---
-task: MarineAppliedResearch/MARP_API#77
+task: MarineAppliedResearch/MARP_API#79
 repos: [MARP_API]
-status: design
+status: implementing
 needs: []
 ---
 
-# Filter rail: the remaining dimensions, and multi-select
+# Resumability: the question survives a reload
 
 ## Goal
 
-A reviewer can ask for the irregular combinations the work actually requires — two dives
-from one project and one from another, the model's uncertain calls only, the night dives —
-instead of one project, one dive, one line at a time.
+A reviewer can close the tab and come back to the work they were doing, without
+reassembling ten filters from memory — and can send somebody else exactly what they are
+looking at.
 
 ## What is already true
 
-Read from the code and the database, not assumed:
+Read from the code and from #68, not assumed:
 
-- **The rail is five controls**, each a `.sel` button opening `menu()` from `ui/menus.js`.
-  Adding a dimension today means touching `model/filters.js`, `data.js` twice, `index.html`,
-  `ui/menus.js`, `ui/chrome.js` and `ui/mount.js` — the notes say so, and that is the cost
-  this task should not multiply by five.
-- **`applyFilter` nests bluntly**: setting `project` clears `dive` and `line`; setting
-  `dive` clears `line`. That rule exists because a line only means something inside a dive.
-- **`toggleStatus` already does multi-select** for the status dimensions. Project, dive and
-  line are the single-select ones.
-- **`tc` is .NET TimeSpan text with an optional day group.** `db/timecode.js` parses
-  `(?:(\d+)\.)?(\d{1,2}):(\d{2}):(\d{2})`, so a dive crossing midnight reads `1.00:15:33`
-  and `21:57:22` is day 0. The parser already handles it; nothing here re-implements it.
-- **The fixture has `session_id` (12), `session_type` (ROV / Drop Cam) and
-  `processor_name` (3).** `confidence` runs 0.50–0.99. There is no model field.
-- **The fixture's `video_source` values carry no date** (`dive4_line1.mp4`), unlike
-  production (`20190712_215503_Fwd`). Nothing here depends on that; see #76.
+- **Nothing persists.** `grep -rn "localStorage\|sessionStorage\|location.search"
+  frontend/apps/marp-mosaic-review/src/` returns nothing. Mode, filters, sort, page, marks
+  and outcomes are all fields on the in-memory `state` object in `src/store.js`.
+- **#68 already ruled out session restoration.** Resumability there comes from durable
+  observation-level decisions: the commit writes them, the default status filter excludes
+  completed work, and re-running the query returns what is left. It says explicitly that
+  the exact page, the scroll position and an open video need *not* be restored.
+- **#68 accepts losing uncommitted marks.** "If the application closes before a page is
+  committed, undecided items from that page may appear again. This is acceptable."
+- **The filter state is already serialisable.** After #77 every dimension is declared in
+  `model/dimensions.js` with a `kind`, and a value is an array, a `{from,to}`, or null.
+  Nothing in `state.filters` is a function, a Map or a DOM reference.
+- **`state.railCollapsed` is derived from a media query**, not a preference, so it is not
+  part of this.
+- **Two status dimensions are mode-scoped.** `reviewStatus` and `trainingDisposition` both
+  live in `state.filters`, and `queryFilters` drops whichever the mode does not own.
 
 ## Requirements
 
-- **R1** — Session, session type and processor are filterable.
-- **R2** — Confidence filters by a range, both ends, replacing `minConfidence`.
-- **R3** — Time of day filters every observation, whether or not `tc` carries a date.
-- **R4** — A time-of-day range may wrap past midnight, and observations either side of it
-  are one window. A dive from 22:00 to 02:00 is one night.
-- **R5** — Date filters where `tc` carries one, and **says how many observations it had to
-  exclude for having none**. A filter that silently omits is worse than no filter.
-- **R6** — Project, dive and line accept several values.
-- **R7** — Removing one value from a wider dimension drops only what no longer applies.
-  Removing a project takes its dives with it and leaves the others.
-- **R8** — An empty selection in a dimension means that dimension is not filtering.
-- **R9** — The dive and line lists still offer only what the chosen filters can return.
+Numbered so tests can name them.
+
+- **R1** — The mode, the filters, the sort and the page live in the URL, and a reload asks
+  the same question.
+- **R2** — Nothing transient survives: marks, outcomes, pinned pages and committed-page
+  counts all start clean. #68 says losing them is acceptable, and pretending otherwise
+  would show a reviewer decisions the record does not have.
+- **R3** — Restoring must never produce a state the rail could not have produced. A stored
+  value naming a dimension that no longer exists, or a value outside a dimension's bounds,
+  is discarded rather than applied.
+- **R4** — Opening the application with a bare address behaves exactly as it does today.
+- **R5** — A reviewer can get back to the default question in one gesture, without clearing
+  ten filters by hand.
+- **R6** — The address is a link. Sending it to somebody else puts them on the same
+  question, in the same mode, on the same page.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — answered 2026-09-05: confidence is one slider with
-      two handles, replacing the one-ended `minConfidence`.
-- [x] **A2 · product/UI · blocking** — answered 2026-09-05: a time-of-day range may wrap
-      past midnight, and `tc`'s day component is how that shows up in the data.
-- [x] **A3 · product/UI · blocking** — answered 2026-09-05: an empty selection means the
-      dimension is not filtering, matching how the status filters already behave. Clearing
-      a dimension widens the result rather than blanking the screen.
-- [x] **A4 · product/UI · non-blocking** — decided rather than asked: the rail's shape at
-      ten controls is mine to show. Grouped by the question each answers — where it came
-      from, what it is, when, who — so the column is scannable rather than ten identical
-      dropdowns.
+- [x] **A1 · product/UI · blocking** — answered 2026-09-06: **the URL, and only the URL.**
+      No local storage. The address is the whole of the persistence, which makes a filter
+      shareable and the back button meaningful, and means there is exactly one place the
+      question can live rather than two that can disagree.
 
-- [x] **A5 · architectural · blocking** — answered 2026-09-05: refactor first. A dimension
-      becomes one declaration, the way `MODES` already works for the status filters. Adding
-      the sixth then costs almost nothing, and the seven-file dance stops being a trap for
-      whoever comes next.
+- [x] **A2 · product/UI · blocking** — answered 2026-09-06: **yes, restore the page**, and
+      keep it in the URL along with everything else. Once the address carries the question,
+      carrying the page too costs nothing and makes a link land where the sender was.
+
+- [x] **A3 · behavioural · blocking** — answered 2026-09-06: **do what #68 said.** Marks
+      are not persisted. Undecided items from an uncommitted page may appear again, and
+      that is accepted.
+
+- [x] **A4 · destructive operations · blocking** — answered 2026-09-06: **Delete Mode
+      resumes like any other mode**, and a link into it is fine. The reasoning is that
+      deletion is already permanent: something deleted stays deleted, so returning to a
+      Delete Mode address cannot re-destroy anything or show a decision that has not
+      already happened. No special guard.
+
+- [x] **A5 · security/permissions · non-blocking** — answered 2026-09-06: a restored filter
+      naming something the viewer cannot see simply returns nothing for it. The filter is
+      applied as written; the rows do not come back. No error, no special case. Nothing to
+      build now — there is no user in the fixture — recorded so phase 8 does not meet it as
+      a surprise.
+
+- [x] **A6 · architectural · non-blocking** — decided rather than asked: persistence is a
+      client concern and does not touch `src/data.js`. The seam where the API arrives stays
+      exactly as it is.
 
 ## Decisions
 
-- **2026-09-05** — Fixture-backed. `src/data.js` stays the seam.
-- **2026-09-05** — The refactor comes first and is judged by one test: adding a dimension
-  is one entry in a declaration and nothing else. If it ends up being two places, it has
-  not worked, and the five dimensions should wait rather than be built on a half-refactor.
-- **2026-09-05** — Parsing `tc` goes through `db/timecode.js` when this reaches the API.
-  The client's own parsing must agree with it exactly, including the day group, or the same
-  observation lands in two different hours depending on who asked.
-- **2026-09-05** — Model stays a placeholder. There is no data behind it until Phase 3, and
-  a control that filters nothing is worse than one that is visibly not ready.
+- **2026-09-06** — Fixture-backed. Nothing here needs the API.
+- **2026-09-06** — This is not session restoration. #68 settled that resumability comes
+  from durable decisions; this task only makes *re-running the same query* something a
+  person can do without rebuilding it from memory.
+- **2026-09-06** — The URL is the single source of the question. There is no second store,
+  deliberately: two places that can disagree about where the reviewer was is a bug waiting
+  to be written.
+- **2026-09-06** — Deletion being permanent is what makes resuming Delete Mode safe. That
+  is the load-bearing half of A4, and it is why no guard is needed.
 
 ## Plan
 
-A1-A5 answered. The steps, refactor first:
+A1-A6 answered. The steps:
 
-0. `model/filters.js` grows a `DIMENSIONS` declaration — key, label, where the values come
-   from, what it nests under, single or multi. The rail, the query, the counts, the labels
-   and the collapsed-rail badge all read it, the way they already read `statusDimensions()`.
-   **The five new dimensions are added only after adding one is a single entry.**
-1. `model/filters.js` — multi-select, the nesting rule that drops only what no longer
-   applies, and the time-of-day window including the wrap.
-2. `data.js` — the new dimensions in `query` and `counts`, and the count of rows excluded
-   for having no date.
-3. The rail, grouped.
-4. Tests at all three tiers, then a walkthrough.
+1. `src/model/query-url.js`, pure — read and write the address from the `DIMENSIONS`
+   declaration and the mode's own status dimensions, so adding a dimension is still one
+   entry and nothing else. Rejecting an impossible stored state is arithmetic and string
+   handling, so it is unit-testable without a browser.
+2. `store.js` — read the address at `init()`, write it with `replaceState` whenever the
+   question changes, and listen for `popstate` so the back button works.
+3. R5's reset gesture, if the existing clear-filters control does not already cover it.
+4. Tests: the round trip and every rejection rule in `tests/unit/`; the reload itself in
+   the render tier, because reloading is the one thing a unit test cannot do.
 
 ## Acceptance criteria
 
-- Two dives from one project and one from another can be reviewed together.
-- Removing a project keeps the dives that still apply.
-- A 22:00–02:00 window returns both sides of midnight.
-- The date filter states its exclusions.
-- `marp verify run` green.
+- Set several filters, reload, and the same question is being asked.
+- Copy the address into a fresh tab and land on the same page of the same question.
+- A stored value that no longer makes sense is dropped, not applied.
+- Opening the application on a bare address is unchanged.
+- Marks do not come back.
 
 ## Test plan
 
-Filled in at G3. The nesting rule and the midnight wrap belong in `model/` as unit tests —
-the wrap especially, because it is arithmetic and a browser proves nothing about it. What
-the query returns belongs in the contract tier. The rail's grouping and the exclusion
-notice belong in Playwright.
+Filled in at G3.
 
 ## Status
 
-- **Gate:** G3 — implementation complete, verification plan written and awaiting review
-- **Notes:** nothing implemented.
+- **Gate:** G4 — implemented and verified 2026-09-06; awaiting review of the evidence
+- **Notes:** see `.marp/verification.md`. Three pre-existing checks were found asserting a data shape #77 retired.

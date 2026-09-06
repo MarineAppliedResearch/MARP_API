@@ -161,10 +161,13 @@ test('flagged work stays in the default scientific view, because it is still ope
 });
 
 test('the active filter count reflects what is narrowing the results', () => {
+  /* Arrays: every set dimension has held one since #77. These read `'Bat Star'` until
+     2026-09-06 and still passed, because a string has a length -- so the count was right
+     for a shape the application had stopped producing. */
   assert.equal(filters.activeFilterCount('scientific',
-    { species: 'Bat Star', project: null, dive: null, reviewStatus: ['unreviewed'] }), 2);
+    { species: ['Bat Star'], project: [], dive: [], reviewStatus: ['unreviewed'] }), 2);
   assert.equal(filters.activeFilterCount('scientific',
-    { species: null, project: null, dive: null, reviewStatus: [] }), 0);
+    { species: [], project: [], dive: [], reviewStatus: [] }), 0);
 });
 
 /* ------------------------------- the marks are the page's exception set */
@@ -270,7 +273,7 @@ test('entering Delete Mode gives both dimensions a default', () => {
 });
 
 test('both dimensions count towards the collapsed rail badge in Delete Mode', () => {
-  const f = { species: 'Bat Star', project: null, dive: null,
+  const f = { species: ['Bat Star'], project: [], dive: [],
     reviewStatus: ['flagged'], trainingDisposition: ['promoted'] };
   assert.equal(filters.activeFilterCount('delete', f), 3, 'species plus two dimensions');
   assert.equal(filters.activeFilterCount('scientific', f), 2, 'species plus one');
@@ -328,7 +331,7 @@ test('a filter that nothing nests under leaves the rest alone', () => {
 });
 
 test('dive and line each count towards the collapsed rail badge', () => {
-  const f = { project: 'A', dive: 'D04', line: '2', species: null,
+  const f = { project: ['A'], dive: ['D04'], line: ['2'], species: [],
     reviewStatus: [], trainingDisposition: [] };
   assert.equal(filters.activeFilterCount('scientific', f), 3);
 });

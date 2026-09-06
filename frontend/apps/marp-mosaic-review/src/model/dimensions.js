@@ -146,6 +146,11 @@ export function emptyValue(dimension) {
 
 /** Is this dimension narrowing anything? */
 export function isActive(dimension, value) {
-  if (dimension.kind === KIND.SET) return Boolean(value && value.length);
+  /* `Array.isArray`, not a truthy length. A bare string has a length too, so a stray
+     `state.filters.species = 'Bat Star'` used to read as active and then failed only
+     wherever something tried to iterate it -- which was nowhere until the address needed
+     writing, and then it threw inside a refresh. An invalid shape is inert now instead of
+     half-applied. */
+  if (dimension.kind === KIND.SET) return Array.isArray(value) && value.length > 0;
   return Boolean(value && (value.from != null || value.to != null));
 }

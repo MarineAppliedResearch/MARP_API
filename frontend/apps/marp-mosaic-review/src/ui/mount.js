@@ -158,6 +158,7 @@ export function mount() {
   document.querySelectorAll('.seg button').forEach((b) =>
     b.addEventListener('click', () => actions.setMode(b.dataset.mode)));
 
+  $('#railReset').addEventListener('click', () => actions.clearFilters());
   $('#railbtn').addEventListener('click', () => actions.toggleRail());
   $('#markAll').addEventListener('click', () => actions.markAllOnPage());
   $('#clearMarks').addEventListener('click', () => actions.clearMarks());

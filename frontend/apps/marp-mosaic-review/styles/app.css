@@ -112,6 +112,11 @@ body.rail-collapsed .rail-body { display: none; }
 .railhead .t { font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
 body.rail-collapsed .railhead { display: block; margin: 0; }
 body.rail-collapsed .railhead .t { display: none; }
+.railreset { border: 1px solid var(--mode-line); border-radius: 4px; background: none;
+             color: var(--muted); font-size: 9px; letter-spacing: .07em; text-transform: uppercase;
+             padding: 2px 7px; margin-left: auto; margin-right: 6px; }
+.railreset:hover { color: var(--cyan-300); border-color: var(--cyan-500); }
+body.rail-collapsed .railreset { display: none; }
 .railbtn { width: 20px; height: 20px; display: grid; place-items: center;
            border: 1px solid var(--mode-line); border-radius: 4px; color: var(--cyan-300);
            font-size: 10px; line-height: 1; background: none; }

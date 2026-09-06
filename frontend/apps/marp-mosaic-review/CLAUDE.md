@@ -263,7 +263,7 @@ irreversible action that is not otherwise gated.
 | Adding | Touch |
 | --- | --- |
 | a mode | `model/modes.js` (rules), `styles/app.css` (`body[data-mode]` hue), `index.html` (the selector) |
-| a filter | `model/filters.js` (add to `FILTER_KEYS`), `data.js` query and counts, `index.html` rail, `ui/menus.js`, `ui/chrome.js` label, `ui/mount.js` anchor |
+| a filter | one entry in `model/dimensions.js`. Nothing else — the rail, the query, the counts, the collapsed-rail badge and the address all read the declaration. If it ever needs a second place, the refactor has regressed |
 | a gesture | `ui/mount.js` listener → new action in `store.js` → rule in `model/` |
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
 | a keyboard shortcut | one entry in `SHORTCUTS` in `model/keys.js`, then a case in `runShortcut` in `ui/mount.js`. The hint draws itself on any control the id matches |
@@ -476,9 +476,17 @@ Pick a voice with `NARRATE_VOICE`, e.g. `NARRATE_VOICE=en-US-AriaNeural`.
 **Not a list of what is unbuilt** — #68 is that, and a second copy here drifts. What
 follows is what the code itself cannot tell you.
 
-- **Nothing persists across a reload.** Marks, the page you were on and the filters are
-  all in memory. Resumability is on the plan; until then, a refresh is a fresh start.
+- **The question persists; the work in progress does not.** The mode, the filters, the
+  sort and the page live in the URL and survive a reload — and the address is a link, so
+  it can be sent to somebody else. Marks, outcomes and pinned pages are deliberately not
+  persisted: #68 says undecided items from an uncommitted page may appear again, and a
+  restored mark is indistinguishable on screen from a committed one while the record
+  agrees with neither. `model/query-url.js` is the whole of it, and a bare address means
+  the default question while any other address is read literally — which is why clearing
+  the species filter survives a reload instead of being handed back.
 - **`src/data.js` is a fixture, not an API.** Everything above it is written as though the
   API already existed, which is the point — but no claim in this file about latency,
   ordering or failure modes has been tested against a real server.
-- **The Model selector has no data behind it** and stays a placeholder until Phase 3.
+- **The Model dimension filters simulated data.** The fixture generates `model_name`,
+  because a control nobody can exercise is a control nobody can judge — but no column
+  links an observation to a model in the real schema. That is Phase 3 of #68.

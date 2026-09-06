@@ -11,6 +11,7 @@ import { MODES, isMode, commitCount, pendingException, existingState,
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
+import { toQuery, fromQuery } from './model/query-url.js';
 
 export { MODES };
 
@@ -103,15 +104,66 @@ function resetForNewQuery() {
   state.committedPages.clear();
 }
 
+/**
+ * Write the question into the address bar.
+ *
+ * `replaceState` rather than `pushState`: a slider fires a change per drag and a rail full
+ * of filters would bury the reviewer's real history under dozens of entries they never
+ * chose to make. The address is here so a reload lands in the same place and so a link can
+ * be sent, not to be a navigation stack.
+ */
+function rememberQuery() {
+  if (typeof window === 'undefined' || !window.history) return;
+  const search = toQuery({
+    mode: state.mode, filters: state.filters, sort: state.sort, page: state.page
+  });
+  const here = window.location.pathname + window.location.search + window.location.hash;
+  const next = window.location.pathname + search + window.location.hash;
+  if (next !== here) window.history.replaceState(null, '', next);
+}
+
+/**
+ * Adopt a question read back from an address.
+ *
+ * Nothing transient comes with it. #68 is explicit that undecided items from an
+ * uncommitted page may appear again, and restoring marks would be worse than losing them:
+ * a flag that was never committed is indistinguishable on screen from one that was, and
+ * the record would not agree with either.
+ */
+function adoptQuery(q) {
+  resetForNewQuery();
+  state.mode = q.mode;
+  state.filters = q.filters;
+  state.sort = q.sort;
+  state.page = q.page;              // after resetForNewQuery, which sends it back to 1
+}
+
 export const actions = {
   async init() {
     await MarpData.load();
+    adoptQuery(fromQuery(typeof window === 'undefined' ? '' : window.location.search));
     state.ready = true;
     fire('init');
+
+    /* Nothing here pushes history, but the reviewer can still arrive by the back button
+       from somewhere else, or edit the address by hand. Read it again when that happens
+       rather than showing a screen the address no longer describes. */
+    if (typeof window !== 'undefined') {
+      window.addEventListener('popstate', () => {
+        adoptQuery(fromQuery(window.location.search));
+        fire('restoreQuery', { page: state.page, mode: state.mode });
+        notify();
+        actions.refresh();
+      });
+    }
     await actions.refresh();
   },
 
   async refresh() {
+    /* Every action that changes the question ends here, so this is the one place the
+       address has to be kept up to date. */
+    rememberQuery();
+
     /* Requests can overlap — a page change during a page-size change, say — and the
        slower one must not win. Only the newest response is allowed to land. */
     const token = ++reqSeq;
@@ -157,6 +209,15 @@ export const actions = {
        tier that cannot see the screen. A pinned page keeps the last count: it is not
        running the filter, so it has nothing new to say about it. */
     if (!pinned) state.excludedForNoDate = res.excludedForNoDate || 0;
+
+    /* An address can name a page the question no longer reaches -- a link to page seven
+       of a filter that has since been reviewed down to three. Land on the last real page
+       rather than on an empty grid that looks like the filter matched nothing. */
+    if (!pinned && state.pageCount >= 1 && state.page > state.pageCount) {
+      state.page = state.pageCount;
+      return actions.refresh();
+    }
+
     state.loading = false;
     notify();
     actions._chaseQueuedThumbnails();

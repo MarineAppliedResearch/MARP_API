@@ -687,6 +687,134 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
     });
 });
 
+test.describe('the question survives a reload', () => {
+  test('R1: a filter is in the address, and comes back after a reload', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('[data-dim="dive"]').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
+    await ready(page);
+
+    const chosen = await page.locator('[data-dim="dive"] span').first().innerText();
+    const narrowed = await page.locator('#total').innerText();
+    expect(page.url()).toContain('dive=');
+
+    await page.reload();
+    await ready(page);
+    await openRail(page);
+
+    /* The same question, not merely a page that loaded. */
+    await expect(page.locator('[data-dim="dive"] span').first()).toHaveText(chosen);
+    await expect(page.locator('#total')).toHaveText(narrowed);
+  });
+
+  test('R6: the address is a link — a fresh visit lands on the same question and page',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      await page.locator('[data-dim="dive"]').click();
+      await page.locator('.menu [data-v]').nth(1).click();
+      await page.keyboard.press('Escape');
+      await ready(page);
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+
+      const link = page.url();
+      expect(link).toContain('page=2');
+      const total = await page.locator('#total').innerText();
+
+      /* Arriving cold at the address, the way somebody sent it would. */
+      await page.goto(link);
+      await ready(page);
+
+      /* The question and the page number, not which observations are on it. How many
+         tiles fit is measured from the window, so page two of the same question is
+         honestly a different handful on a narrower screen -- and the page size is
+         deliberately not in the address. Asserting membership here passed on a desktop and
+         failed on a phone for a reason that has nothing to do with whether the link works. */
+      await expect(page.locator('#total')).toHaveText(total);
+      expect(page.url()).toContain('page=2');
+      expect(await page.evaluate(() => window.MARP.state.page)).toBe(2);
+      expect(await page.locator('.tile').count()).toBeGreaterThan(0);
+    });
+
+  test('R2: marks do not come back, because the record does not have them',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+      await tile.click();
+      await expect(page.locator('.tile.marked')).toHaveCount(1);
+
+      await page.reload();
+      await ready(page);
+      /* #68 is explicit that undecided items from an uncommitted page may appear again.
+         Restoring the mark would be worse than losing it: on screen it is indistinguishable
+         from one that was committed, and the record agrees with neither. */
+      await expect(page.locator('.tile.marked')).toHaveCount(0);
+    });
+
+  test('R3: an address that makes no sense still opens the application', async ({ page }) => {
+    const errors = watchErrors(page);
+    /* Every one of these is wrong in a different way: a mode that does not exist, a
+       confidence outside its own bounds, a page that is not a page, a parameter naming
+       no dimension. None of them may cost the reviewer a working screen. */
+    await page.goto('./?mode=archaeology&confidence=5..9&page=0&utm_source=email');
+    await ready(page);
+
+    expect(await page.locator('.tile').count()).toBeGreaterThan(0);
+    await expect(page.locator('.seg button.on')).toContainText('Scientific');
+    expect(errors).toEqual([]);
+  });
+
+  test('R5: Reset restores the default question in one gesture', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    const before = await page.locator('#total').innerText();
+
+    await page.locator('[data-dim="dive"]').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
+    await ready(page);
+    expect(page.url()).toContain('dive=');
+
+    await page.locator('#railReset').click();
+    await ready(page);
+
+    await expect(page.locator('[data-dim="dive"]')).toContainText('All dives');
+    await expect(page.locator('#total')).toHaveText(before);
+    /* Back to the default question is back to the bare address. */
+    expect(page.url()).not.toContain('dive=');
+  });
+
+  test('R5: Reset keeps the mode the reviewer is working in', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('[data-dim="dive"]').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
+    await ready(page);
+
+    await page.locator('#railReset').click();
+    await ready(page);
+
+    /* Clearing the filters is not leaving the workflow. */
+    await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
+    expect(page.url()).toContain('mode=training');
+  });
+});
+
 test.describe('the commit button reports on itself', () => {
   test('it spins while saving, then confirms', async ({ page }) => {
     await page.goto('./');
@@ -874,7 +1002,9 @@ test.describe('the states never rendered', () => {
     await ready(page);
     await page.evaluate(async () => {
       const { state, actions } = await import('./src/store.js');
-      state.filters.species = 'No Such Species';
+      /* An array: every set dimension has held one since #77. This was a bare string,
+         which happened to produce an empty result for the wrong reason. */
+      state.filters.species = ['No Such Species'];
       await actions.refresh();
     });
   }
