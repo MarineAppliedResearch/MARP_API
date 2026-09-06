@@ -506,27 +506,32 @@ test.describe('a judged tile steps back', () => {
 });
 
 test.describe('filtering by where the observation came from', () => {
-  test('the rail is grouped by the question each filter answers', async ({ page }) => {
-    await page.goto('./');
-    await ready(page);
-    await openRail(page);
+  test('L1, L2, L3: the rail is one list, in order, with no processor in it',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
 
-    /* Ten controls in one column is a list, not a rail. This used to assert five labels
-       in order; the order still matters, but the grouping is what makes ten findable. */
-    const groups = await page.locator('.railgroup__title').allInnerTexts();
-    expect(groups.map((t) => t.toLowerCase()))
-      .toEqual(['where it came from', 'what it is', 'when', 'who']);
+      /* The four group headings went in #81. They cost four rows of a rail that was
+         already drawing its status filters below the fold. */
+      await expect(page.locator('.railgroup__title')).toHaveCount(0);
 
-    /* Order within a group still matters: where it came from narrows outward-in, and a
-       line means nothing before its dive. The confidence label carries its current range
-       as well, so this compares the beginning of each label rather than the whole of it. */
-    const first = await page.locator('.railgroup').first().locator('.lbl').allInnerTexts();
-    const expected = ['project', 'dive', 'line', 'session', 'session type'];
-    expect(first.length).toBe(expected.length);
-    expected.forEach((label, i) => {
-      expect(first[i].toLowerCase().trim().startsWith(label)).toBe(true);
+      /* The order is the whole of the arrangement now, so it is worth asserting all of
+         it. `session type` before `session`, because the type narrows the sessions. The
+         confidence label carries its current range too, so this compares the beginning of
+         each label rather than the whole of it. */
+      const labels = await page.locator('#railDimensions .lbl').allInnerTexts();
+      const expected = ['project', 'dive', 'line', 'session type', 'session',
+                        'species', 'confidence', 'time of day', 'date', 'model'];
+      expect(labels.length).toBe(expected.length);
+      expected.forEach((label, i) => {
+        expect(labels[i].toLowerCase().trim().startsWith(label),
+          `rail row ${i} should start with "${label}", and reads "${labels[i]}"`).toBe(true);
+      });
+
+      await expect(page.locator('[data-dim="processor"], [data-span="processor"]'))
+        .toHaveCount(0);
     });
-  });
 
   test('every declared dimension actually reaches the rail', async ({ page }) => {
     await page.goto('./');

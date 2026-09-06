@@ -1,15 +1,15 @@
 /**
  * The filter rail, drawn from `model/dimensions.js`.
  *
- * Ten controls in one column is a list, not a rail, so they are grouped by the question
- * each answers — where it came from, what it is, when, who. A reviewer looking for the
- * dive filter reads one group heading rather than ten labels.
+ * One control per dimension, in declared order, and nothing else. #77 grouped them under
+ * four headings; #81 dropped the headings, because four heading rows in a rail that was
+ * already clipping its own status filters is the crowding rather than a cure for it.
  *
  * Nothing here names a dimension. Adding one is an entry in the declaration; this file
  * draws whatever is there.
  */
 
-import { DIMENSIONS, DIMENSION, KIND, dimensionGroups, isActive } from '../model/dimensions.js';
+import { DIMENSIONS, DIMENSION, KIND, isActive } from '../model/dimensions.js';
 import { state, actions } from '../store.js';
 import { $, el } from './dom.js';
 import { dimensionMenu, closeMenus, isMenuOpenFor } from './menus.js';
@@ -95,11 +95,7 @@ export function renderRail() {
     ? { key: typing.closest('[data-span]').dataset.span, end: typing.dataset.end }
     : null;
 
-  host.innerHTML = dimensionGroups().map((group) => `
-    <div class="railgroup">
-      <div class="railgroup__title">${group.title}</div>
-      ${group.dimensions.map(control).join('')}
-    </div>`).join('');
+  host.innerHTML = DIMENSIONS.map(control).join('');
 
   if (held) {
     const back = host.querySelector(`[data-span="${held.key}"] [data-end="${held.end}"]`);

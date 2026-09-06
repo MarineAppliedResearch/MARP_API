@@ -609,11 +609,39 @@ test('R6: several values of one dimension are an OR', () => {
   assert.equal(match.matchesDimension(d, chosen, { dive: 'D05' }), false);
 });
 
-test('the rail groups by the question each dimension answers', () => {
-  const groups = dimensions.dimensionGroups();
-  assert.ok(groups.length >= 3, 'ten dropdowns in one column is a list, not a rail');
-  const total = groups.reduce((n, g) => n + g.dimensions.length, 0);
-  assert.equal(total, dimensions.DIMENSIONS.length, 'every dimension lands in a group');
+test('L1: the rail carries no group headings, and no field nobody reads', () => {
+  /* #77 grouped the dimensions under four headings; #81 dropped them. `group` left the
+     declaration with them, because a field carried and never read is a trap for whoever
+     adds the next dimension and dutifully fills it in. */
+  assert.equal(dimensions.dimensionGroups, undefined,
+    'dimensionGroups() has no caller and should not exist');
+  for (const d of dimensions.DIMENSIONS) {
+    assert.equal(d.group, undefined, `${d.key} still declares a group`);
+  }
+});
+
+test('L2: session type comes before session, and session nests under it', () => {
+  const order = dimensions.dimensionKeys();
+  assert.ok(order.indexOf('sessionType') < order.indexOf('session'),
+    'the type narrows which sessions are available, so it is asked first');
+  assert.equal(dimensions.DIMENSION.session.nestsUnder, 'sessionType');
+  assert.deepEqual(dimensions.dependentsOf('sessionType'), ['session']);
+});
+
+test('L3: there is no processor dimension anywhere', () => {
+  /* Querying by who did the annotation does not match how the work is structured. It has
+     to leave the declaration rather than be hidden, because the rail, the query, the
+     counts and the address all read from here -- a hidden one would still be in the URL. */
+  assert.equal(dimensions.DIMENSION.processor, undefined);
+  assert.ok(!dimensions.dimensionKeys().includes('processor'));
+  assert.ok(!filters.FILTER_KEYS.includes('processor'));
+  assert.ok(!Object.keys(filters.DEFAULT_FILTERS).includes('processor'));
+});
+
+test('Q1: the model dimension stays, until Phase 3 gives it a column', () => {
+  /* #81 left this open rather than settling it. Left in place deliberately, and named
+     here so removing it is a decision somebody makes rather than one that drifts in. */
+  assert.ok(dimensions.DIMENSION.model, 'the Model filter stays for now');
 });
 
 test('dependents are found through the whole chain', () => {
