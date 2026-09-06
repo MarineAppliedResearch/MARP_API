@@ -140,9 +140,18 @@ const rows = [];
 const MIX = IMAGED_SPECIES.flatMap((name) =>
   Array(name === 'Bat Star' ? 8 : 3).fill(name));
 
-/* How often the label is wrong. The same rate for every species, so there is something to
-   find whichever one you filter to. */
-const WRONG_RATE = 0.07;
+/**
+ * How often the label is wrong. The same rate for every species, so there is something to
+ * find whichever one you filter to.
+ *
+ * Three per cent, which is about two wrong on a page of sixty. Tuned from use rather than
+ * chosen: seven per cent was reported as "way way more than that". A page has to read as a
+ * page of bat stars with a couple of intruders, because the whole premise is that the
+ * wrong one pops out — and it cannot pop out of a crowd of other wrong ones.
+ *
+ * This is the one number to turn if the practice set feels too easy or too busy.
+ */
+const WRONG_RATE = 0.03;
 
 for (let i = 0; i < TOTAL; i++) {
   /**

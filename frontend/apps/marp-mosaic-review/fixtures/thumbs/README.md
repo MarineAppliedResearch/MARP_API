@@ -60,8 +60,9 @@ left `ui/tile.js` pointing at nothing for every queued tile. Leave it alone.
 there**. Where they disagree, that row is a misclassification — and it stays on a page of
 Bat Stars precisely because the label is wrong, which is why it is there to be caught.
 
-About 7% of every species' rows are like that, deliberately and evenly: filtering to Rock
-Crab gives pages of crabs with a few wrong ones among them, exactly as Bat Star does.
+About 3% of every species' rows are like that — roughly two on a page of sixty —
+deliberately and evenly, so filtering to Rock Crab gives pages of crabs with a couple of
+intruders, exactly as Bat Star does.
 Otherwise four of the five species would lead somewhere with nothing to practise on. See
 `WRONG_RATE` and `MIX` in `tools/make-fixture.mjs`.
 
