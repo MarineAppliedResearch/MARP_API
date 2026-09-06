@@ -1182,6 +1182,88 @@ test.describe('keyboard shortcuts', () => {
  * rail declared every dimension it was asked to. None of that is what the reviewer saw.
  */
 test.describe('the filter rail, cleaned up', () => {
+  /** The entry that clears a set dimension, by the text it carries. */
+  const allEntry = (page, label) => page.locator('.menu [data-v=""]', { hasText: label });
+
+  test('B1: choosing a project unticks "All projects" while the menu is open',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      await page.locator('[data-dim="project"]').click();
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(allEntry(page, 'All projects')).toHaveClass(/on/);
+
+      /* The menu deliberately stays open, so the reviewer is looking at both entries at
+         once. Before the fix only the clicked entry restated itself, and the menu claimed
+         "All projects" and one project simultaneously. */
+      await page.locator('.menu [data-v]').nth(1).click();
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(allEntry(page, 'All projects')).not.toHaveClass(/on/);
+      await expect(allEntry(page, 'All projects').locator('.tick')).toBeEmpty();
+
+      /* And back again: taking the last specific value off means the dimension is not
+         filtering, which is what "All projects" says. */
+      await page.locator('.menu [data-v]').nth(1).click();
+      await expect(allEntry(page, 'All projects')).toHaveClass(/on/);
+    });
+
+  test('B1: the dive and line menus behave the same way', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    for (const [key, label] of [['dive', 'All dives'], ['line', 'All lines']]) {
+      await page.locator(`[data-dim="${key}"]`).click();
+      await expect(allEntry(page, label)).toHaveClass(/on/);
+      await page.locator('.menu [data-v]').nth(1).click();
+      await expect(allEntry(page, label), `${key} still claims ${label}`)
+        .not.toHaveClass(/on/);
+      await page.keyboard.press('Escape');
+      await ready(page);
+    }
+  });
+
+  test('B2: clicking the button that opened a menu closes it', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    const project = page.locator('[data-dim="project"]');
+    await project.click();
+    await expect(page.locator('.menu')).toHaveCount(1);
+
+    /* It used to close and immediately reopen, so the button read as inert. */
+    await project.click();
+    await expect(page.locator('.menu')).toHaveCount(0);
+
+    /* And a click on a different button moves the menu rather than only dismissing. */
+    await project.click();
+    await expect(page.locator('.menu')).toHaveCount(1);
+    await page.locator('[data-dim="species"]').click();
+    await expect(page.locator('.menu')).toHaveCount(1);
+    await expect(page.locator('.menu .mhead')).toContainText('species');
+  });
+
+  test('B2: it still closes after a pick has redrawn the rail underneath it',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      /* The rail is redrawn from state on every change, so the button that opened the
+         menu is replaced by an identical one while the menu is still up. Holding the
+         element rather than its name would make this second click open a new menu. */
+      const project = page.locator('[data-dim="project"]');
+      await project.click();
+      await page.locator('.menu [data-v]').nth(1).click();
+      await ready(page);
+
+      await project.click();
+      await expect(page.locator('.menu')).toHaveCount(0);
+    });
+
   test('B4: a status filter draws one control, not two', async ({ page }) => {
     await page.goto('./');
     await ready(page);

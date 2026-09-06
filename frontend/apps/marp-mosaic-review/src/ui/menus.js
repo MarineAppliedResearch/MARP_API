@@ -12,10 +12,26 @@ import { DIMENSION } from '../model/dimensions.js';
 import { el, ICON, ME } from './dom.js';
 
 let openMenuEl = null;
+let openAnchorKey = null;
+
+/**
+ * Which control a menu belongs to, by name rather than by node.
+ *
+ * The rail is redrawn from state on every change, so the button that opened a menu is
+ * routinely replaced by an identical one while the menu is still up. Holding the element
+ * would make the second click on that button read as a click on a different control.
+ */
+const anchorKey = (el) =>
+  (el && (el.dataset.dim || el.dataset.span || el.id)) || null;
 
 export const isMenuOpen = () => Boolean(openMenuEl);
+
+/** Is the open menu this control's own? A second click on it closes it — #81 B2. */
+export const isMenuOpenFor = (anchor) =>
+  Boolean(openMenuEl) && anchorKey(anchor) != null && anchorKey(anchor) === openAnchorKey;
+
 export function closeMenus() {
-  if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; }
+  if (openMenuEl) { openMenuEl.remove(); openMenuEl = null; openAnchorKey = null; }
 }
 
 function itemMarkup(items, filter) {
@@ -46,9 +62,14 @@ function place(menuEl, anchor, align) {
     ? below : Math.max(EDGE, a.top - h - 6)) + 'px';
 }
 
-export function menu(anchor, items, { align = 'left', search = false } = {}) {
+/**
+ * `rebuild` returns a fresh item list, and is what makes a menu that stays open honest.
+ * See the note on the redraw below — without it, only the clicked entry restates itself.
+ */
+export function menu(anchor, items, { align = 'left', search = false, rebuild = null } = {}) {
   closeMenus();
-  const picks = () => items.filter((i) => !i.head && !i.hr);
+  let list = items;
+  const picks = () => list.filter((i) => !i.head && !i.hr);
 
   const m = el(`<div class="menu">
       ${search ? '<input class="msearch" placeholder="Type to filter&hellip;" autocomplete="off">' : ''}
@@ -57,6 +78,30 @@ export function menu(anchor, items, { align = 'left', search = false } = {}) {
   document.body.appendChild(m);
   place(m, anchor, align);
 
+  const filterText = () => {
+    const box = m.querySelector('.msearch');
+    return box ? box.value : '';
+  };
+
+  /**
+   * Redraw the whole body from the current list.
+   *
+   * The scroll position and the focused entry are carried across, because a long
+   * taxonomy list that jumped back to the top on every pick would be worse than the
+   * bug this fixes.
+   */
+  const draw = (keepFocus) => {
+    const body = m.querySelector('.mbody');
+    const top = body.scrollTop;
+    body.innerHTML = itemMarkup(list, filterText());
+    body.scrollTop = top;
+    bind();
+    if (keepFocus != null) {
+      const back = body.querySelector(`[data-v="${CSS.escape(keepFocus)}"]`);
+      if (back) back.focus();
+    }
+  };
+
   const bind = () => m.querySelectorAll('[data-v]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -64,14 +109,16 @@ export function menu(anchor, items, { align = 'left', search = false } = {}) {
       if (!item) return;
 
       /* A multi-select menu stays open: choosing three dives should be three clicks,
-         not three round trips through the rail. The tick redraws in place so the menu
-         keeps saying what is chosen. */
+         not three round trips through the rail. */
       if (item.keepOpen) {
         item.on = !item.on;
         item.onPick(item.value);
-        b.classList.toggle('on', item.on);
-        const tick = b.querySelector('.tick');
-        if (tick) tick.innerHTML = item.on ? ICON.tick : '';
+        /* Every entry restates itself, not just the one that was clicked. Toggling the
+           clicked tick in place left the "All …" entry wearing the tick it was built
+           with, so the menu claimed "All projects" and one project at the same time --
+           #81 B1. The list is rebuilt from state where the caller can supply it. */
+        if (rebuild) list = rebuild();
+        draw(b.dataset.v);
         return;
       }
 
@@ -83,10 +130,7 @@ export function menu(anchor, items, { align = 'left', search = false } = {}) {
   const input = m.querySelector('.msearch');
   if (input) {
     input.addEventListener('click', (e) => e.stopPropagation());
-    input.addEventListener('input', () => {
-      m.querySelector('.mbody').innerHTML = itemMarkup(items, input.value);
-      bind();
-    });
+    input.addEventListener('input', () => draw());
     input.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       const first = m.querySelector('[data-v]');
@@ -95,6 +139,7 @@ export function menu(anchor, items, { align = 'left', search = false } = {}) {
     setTimeout(() => input.focus(), 0);
   }
   openMenuEl = m;
+  openAnchorKey = anchorKey(anchor);
 }
 
 /* ------------------------------------------------------------- the menus */
@@ -113,30 +158,36 @@ export function dimensionMenu(anchor, key) {
   const dimension = DIMENSION[key];
   if (!dimension) return;
 
-  const chosen = state.filters[key] || [];
-  const options = MarpData.optionsFor(key, state.filters);
+  /* Built from state each time it is asked for, so a pick that stays open can restate
+     the whole list -- including the "All …" entry, which is what B1 was about. */
+  const build = () => {
+    const chosen = state.filters[key] || [];
+    const options = MarpData.optionsFor(key, state.filters);
 
-  /* Scoped dimensions say what they are scoped by, so an empty dive list reads as
-     "this project has none" rather than as a broken control. */
-  const head = dimension.nestsUnder && (state.filters[dimension.nestsUnder] || []).length
-    ? `${dimension.label} · ${(state.filters[dimension.nestsUnder] || []).join(', ')}`
-    : dimension.label;
+    /* Scoped dimensions say what they are scoped by, so an empty dive list reads as
+       "this project has none" rather than as a broken control. */
+    const head = dimension.nestsUnder && (state.filters[dimension.nestsUnder] || []).length
+      ? `${dimension.label} · ${(state.filters[dimension.nestsUnder] || []).join(', ')}`
+      : dimension.label;
 
-  const items = [{ head }, {
-    value: '', label: dimension.all, on: !chosen.length,
-    onPick: () => actions.clearDimension(key),
-  }];
+    const items = [{ head }, {
+      value: '', label: dimension.all, on: !chosen.length,
+      onPick: () => actions.clearDimension(key),
+    }];
 
-  options.forEach((value) => {
-    items.push({
-      value: String(value), label: dimension.one(value), on: chosen.includes(value),
-      keepOpen: true,
-      onPick: () => actions.toggleDimension(key, value),
+    options.forEach((value) => {
+      items.push({
+        value: String(value), label: dimension.one(value), on: chosen.includes(value),
+        keepOpen: true,
+        onPick: () => actions.toggleDimension(key, value),
+      });
     });
-  });
 
-  if (!options.length) items.push({ head: 'nothing under the current filters' });
-  menu(anchor, items, { search: Boolean(dimension.searchable) });
+    if (!options.length) items.push({ head: 'nothing under the current filters' });
+    return items;
+  };
+
+  menu(anchor, build(), { search: Boolean(dimension.searchable), rebuild: build });
 }
 
 /** No column links an observation to the model that produced it — see #68. */

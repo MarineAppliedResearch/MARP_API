@@ -12,7 +12,7 @@
 import { DIMENSIONS, DIMENSION, KIND, dimensionGroups, isActive } from '../model/dimensions.js';
 import { state, actions } from '../store.js';
 import { $, el } from './dom.js';
-import { dimensionMenu } from './menus.js';
+import { dimensionMenu, closeMenus, isMenuOpenFor } from './menus.js';
 
 /** What the button says: the selection, or the dimension's "all" text. */
 function summarise(dimension, value) {
@@ -124,6 +124,10 @@ export function wireRail() {
     const button = e.target.closest('[data-dim]');
     if (!button) return;
     e.stopPropagation();
+    /* A second click on the button that opened the menu closes it, the way every other
+       dropdown on every other platform does. It used to close and immediately reopen,
+       which reads as the button doing nothing at all -- #81 B2. */
+    if (isMenuOpenFor(button)) { closeMenus(); return; }
     dimensionMenu(button, button.dataset.dim);
   });
 

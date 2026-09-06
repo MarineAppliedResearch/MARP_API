@@ -13,7 +13,7 @@ import { renderRail, wireRail } from './rail.js';
 import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import {
-  closeMenus, isMenuOpen,
+  closeMenus, isMenuOpenFor,
   modelMenu, sortMenu, userMenu
 } from './menus.js';
 
@@ -76,7 +76,10 @@ function wireMenus() {
      that button, not the app. */
   const anchor = (id, open) => $(id)?.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (isMenuOpen()) { closeMenus(); return; }     // a second click closes it
+    /* A second click on *this* control closes its menu. It used to close whichever menu
+       was open and stop there, so clicking the sort button while the species list was up
+       did nothing visible either -- the other half of #81 B2. */
+    if (isMenuOpenFor(e.currentTarget)) { closeMenus(); return; }
     open(e.currentTarget);
   });
   /* The dimension buttons are drawn by ui/rail.js and wired there, because they do not
