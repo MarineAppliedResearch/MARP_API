@@ -32,6 +32,20 @@ broken rather than which selector moved.
 | Q1 | `Q1: the model dimension stays, until Phase 3 gives it a column` | unit | left in place deliberately, so removing it is a decision somebody makes |
 | P1 | `no file that draws the rail knows a dimension by name` | unit | no renderer special-cases a dimension key, which is how the #77 property decays |
 | P1 | `every declared dimension actually reaches the rail` | render | and nothing declared is silently undrawn |
+| M2 | `M2: a secondary term is applied where the primary ties` | unit | `sortTerms` returns one term or two, in order |
+| M2 | `M2: observation_id is never one of the terms` | unit | the final tie-break is appended by the query, not declared, so no caller can reorder or drop it |
+| M2 | `M2: a secondary that can never be reached is not a term` | unit | the same field twice, and a field that does not exist |
+| M2 | `M2: choosing a primary that is already the secondary clears the secondary` | unit | and a primary change that leaves the secondary reachable keeps it |
+| M2 | `M2: the secondary can be set and cleared on its own` | unit | `withSortThen`, including the refusal to accept the primary |
+| M2 | `M2: what is applied names both terms` | unit | the sub-bar text |
+| M2 | `M2: the secondary term survives the address` | unit | `?sort=confidence.asc,keyframe_count.desc` round-trips |
+| M2 | `M2: a malformed secondary does not cost the reviewer the primary` | unit | three malformed forms |
+| M2 | `M2: a secondary naming the primary is not a term, and is not written` | unit | it is dropped on the way in and on the way out |
+| M2 | `M2: the default sort still writes a bare address` | unit | #79's whole claim: a bare address is the default question |
+| M2 | `M2: a secondary sort is chosen in the same menu, and reaches the address` | render | the menu, its rewording, the sub-bar, the URL, and a reload |
+| M2 | `M2: the tie-break really breaks ties, and the primary still governs` | render | the page really reorders, and confidence never goes backwards |
+| M3 | `M3: a phone sorts with the same control, at the same size` | render | whole control inside the viewport, computed type and padding identical to the desktop's, and the secondary sort driven end to end at phone width |
+| — | `no dimension key can be mistaken for a control id` | unit | the namespaces `anchorKey()` merges cannot collide |
 
 **Each of B1–B4 was shown to fail before it was fixed.** The defect was reintroduced from
 a file copy, the test run, and the copy restored — never `git checkout --` on a file with
@@ -83,6 +97,11 @@ None. Every id in #81 has at least one named test above.
 - **Nothing checks the rail at a viewport shorter than 900px.** The rail body scrolls now,
   so it should hold, but the assertion is written against the desktop and phone projects
   the suite already runs.
+- **The secondary sort is one term deep, not a stack.** Nothing offers a third, and
+  `sortTerms` would need a shape change rather than a loop to grow one.
+- **`src/data.js` still filters the two status dimensions with hand-written `includes`
+  checks**, outside `matchesFilters` — the duplication #77 removed for the rail dimensions,
+  surviving in the status ones. Deliberately not touched here; it wants its own issue.
 
 ## Manual steps
 
@@ -189,4 +208,68 @@ $ npm run test:e2e          # again, to see whether the R7 flake recurs. It did 
 The one skip is deliberate and pre-existing: `it survives on a phone, where the trailing
 words do not` calls `test.skip(info.project.name !== 'phone')`, so it runs once, on the
 phone project, and reports itself skipped on the desktop one.
+
+## Round two — the secondary sort, the phone, and the README
+
+### What was shown to fail first
+
+The secondary sort is a feature rather than a reported bug, so the thing worth proving is
+that its test can tell a working tie-break from a recorded one. `sortTerms` was made to
+drop the second term — one `false &&` — and the render test failed on exactly the claim it
+is there to make:
+
+```
+✘ M2: the tie-break really breaks ties, and the primary still governs
+  Error: reversing the tie-break must reorder the page
+  Expected: not "100173,100356,100013,100121,100199,100203,100345,100394,…"
+```
+
+Every other M2 assertion — the menu, the ticks, the sub-bar wording, the address — passed
+while the secondary sorted nothing. That is precisely the failure mode the doctrine warns
+about, and it is why that test reads the tile order rather than the menu.
+
+### Two existing tests needed changing, and why
+
+- `R1: mode, filters, sort and page all survive the round trip` and `R3: a sort nobody
+  offers is ignored` compared the sort object exactly, so they failed on the new `then:
+  null`. The shape changed; the assertions were updated rather than loosened.
+
+### The final run
+
+```
+$ npm run test:unit
+ℹ tests 112
+ℹ pass 112
+ℹ fail 0
+
+$ npm run test:e2e          # desktop and phone
+  2 skipped
+  158 passed (1.1m)
+
+$ npm run test:e2e          # again
+  1 failed
+    [desktop] › keyboard shortcuts › R7: Ctrl+Enter on a page that cannot be committed says so
+  2 skipped
+  157 passed (1.1m)
+
+$ npx playwright test --project=desktop -g "R7: Ctrl.Enter on a page"
+  1 passed (2.1s)
+
+$ npm run test:e2e          # a third time
+  2 skipped
+  158 passed (1.1m)
+```
+
+**The one failure is a flake and is named rather than explained away.** It passed alone
+immediately, and in the runs either side of it. Both flakes seen across five full runs are
+in tests that break every thumbnail on the page and then wait on the commit button — fifty
+retries behind a simulated 900 ms latency, against a seven-second expectation, with six
+workers competing. Neither is in code this branch touched. If it recurs often enough to
+matter, the fix is for those two tests to wait on the store's own signal rather than on a
+timeout, and that is worth an issue rather than a patch here.
+
+**Both skips are the same deliberate pattern**, and neither hides anything: each is a
+phone-layout test guarded by `test.skip(info.project.name !== 'phone')`, so it runs exactly
+once — on the phone project — and reports itself skipped on the desktop one. `M3` is the
+new one.
 
