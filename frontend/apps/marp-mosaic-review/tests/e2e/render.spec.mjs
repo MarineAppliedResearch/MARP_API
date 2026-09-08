@@ -554,17 +554,20 @@ test.describe('Delete Mode shows the scientific record', () => {
     await expect(page.locator('#commit')).toContainText('nothing to do');
   });
 
-  test('it offers both status dimensions, and only Delete does', async ({ page }) => {
+  test('it offers both status dimensions, and now so does everything else', async ({ page }) => {
+    /* This asserted that *only* Delete offered both, which is the decision #89 reversed:
+       Delete's rail is the one the review modes were given. What is still Delete's own is
+       the *default* — it owns the training dimension, so all three values arrive ticked,
+       where a review mode borrows it and it arrives narrowing nothing. That distinction is
+       asserted in the #89 block at the end of this file. */
     await page.goto('./');
     await ready(page);
     await openRail(page);
-    /* One dimension in the review modes... */
-    await expect(page.locator('#statusFilters .lbl.sub')).toHaveCount(0);
-    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(0);
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(3);
 
     await page.locator('.seg button', { hasText: 'Delete' }).click();
     await ready(page);
-    /* ...both in Delete, each under its own heading. */
     await expect(page.locator('#statusLbl')).toHaveText('Review status');
     await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
     await expect(page.locator('#statusFilters [data-statuskey="reviewStatus"]')).toHaveCount(3);
@@ -1891,16 +1894,70 @@ test.describe('the filter rail, cleaned up', () => {
 
     /* The rail was `overflow: hidden` over content taller than it, so the status filters
        and the progress bar were drawn below the fold and could not be reached at all.
-       A rail that hides controls silently is worse than one that scrolls. */
-    const rail = await page.locator('.rail').boundingBox();
-    for (const sel of ['#statusFilters [data-status="unreviewed"]',
-                       '#statusFilters [data-status="reviewed"]', '.prog']) {
-      const box = await page.locator(sel).boundingBox();
-      expect(box, `${sel} is drawn`).not.toBeNull();
-      expect(box.y + box.height, `${sel} is inside the rail`)
-        .toBeLessThanOrEqual(rail.y + rail.height + 1);
+       A rail that hides controls silently is worse than one that scrolls.
+       `.rail-body` is what scrolls, so *reachable* is the claim, not "fits without
+       scrolling" — that proxy held only while the rail had three status boxes in it. Since
+       #89 gave every mode six, Scientific's rail scrolls the way Delete's always has, and
+       asserting the proxy would have meant weakening the rail rather than the test.
+       Checked in every mode now, which is the gap the old version left: Delete Mode has
+       had two dimensions since #71 and was never asked this question.
+
+       **`scrollIntoView` is not the test, and that mistake was made here first.**
+       `overflow: hidden` is still scrollable *programmatically*, so a version of this that
+       scrolled each control into view and measured it passed with the original bug put
+       back. What a person can reach is decided by the container: it has to be scrollable
+       whenever its content is taller than it is. */
+    for (const mode of ['Scientific Data Review', 'Training Data Review', 'Delete']) {
+      await page.locator('.seg button', { hasText: mode }).click();
+      await ready(page);
+      await openRail(page);
+
+      /* Measured in one evaluate, because doing it across several Playwright calls raced
+         the rail's own re-render and failed once in three runs on desktop for that and
+         nothing else. A flaky rail test teaches people to re-run rather than look. */
+      const rail = await page.evaluate(() => {
+        const body = document.querySelector('.rail-body');
+        const style = getComputedStyle(body);
+        return {
+          overflowY: style.overflowY,
+          overflows: body.scrollHeight > body.clientHeight + 1
+        };
+      });
+
+      /* The bug: content taller than a container nobody can scroll. */
+      if (rail.overflows) {
+        expect(['auto', 'scroll'], `the rail overflows in ${mode} and must scroll`)
+          .toContain(rail.overflowY);
+      }
+
+      for (const sel of ['#statusFilters [data-status="unreviewed"]',
+                         '#statusFilters [data-status="reviewed"]', '.prog']) {
+        await expect(page.locator(sel), `${sel} is drawn in ${mode}`).toHaveCount(1);
+        const box = await page.evaluate((s) => {
+          const el = document.querySelector(s);
+          const body = document.querySelector('.rail-body');
+          if (!el) return null;
+          const a = el.getBoundingClientRect();
+          const b = body.getBoundingClientRect();
+          /* Where it sits in the scrollable content, not on screen — so an element below
+             the fold of a rail that scrolls is reachable, and one outside the content box
+             of a rail that does not scroll is not. */
+          return {
+            height: a.height,
+            top: (a.top - b.top) + body.scrollTop,
+            bottom: (a.bottom - b.top) + body.scrollTop,
+            reachable: body.scrollHeight
+          };
+        }, sel);
+
+        expect(box, `${sel} is drawn in ${mode}`).not.toBeNull();
+        expect(box.height, `${sel} has a size in ${mode}`).toBeGreaterThan(0);
+        expect(box.top, `${sel} is above the rail's content in ${mode}`)
+          .toBeGreaterThanOrEqual(-1);
+        expect(box.bottom, `${sel} is past the end of the rail's content in ${mode}`)
+          .toBeLessThanOrEqual(box.reachable + 1);
+      }
     }
-    await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
   });
 
   test('M1: the field and the direction are chosen separately, and both are on screen',

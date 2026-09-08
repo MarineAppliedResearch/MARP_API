@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#89
 repos: [MARP_API]
-status: implementing
+status: verified
 needs: []
 ---
 
@@ -167,11 +167,24 @@ sentence.
 
 ## Test plan
 
-Filled in at G3 — see `.marp/verification.md`.
+See `.marp/verification.md` — which test proves which requirement, the measured before and
+after counts, and what is not covered.
 
 ## Status
 
-- **Gate:** implementing
+- **Gate:** verifying — evidence recorded, waiting on a human. No PR opened.
 - **Notes:** branched from `89-per-mode-session-work`, which is ahead of `develop` with the
   per-mode session parking and the page-scoped mark count. Baseline on that branch: 120 unit
-  tests passing, default result total 1083.
+  tests passing, default result total 1083. Now 127 unit tests and 206 browser tests pass,
+  and the default result total is still 1083.
+
+  Two existing tests had to change rather than pass, and both are judgement calls worth
+  overruling if they are wrong:
+
+  - `render.spec.mjs` asserted that *only* Delete offered both dimensions. That is the rule
+    reversed, so it now asserts what is still Delete's own — the default.
+  - `L7: nothing in the rail is drawn where it cannot be reached` asserted that the rail's
+    contents fit without scrolling. Six status boxes plus a sub-heading no longer fit, so
+    Scientific's rail scrolls the way Delete's already did. The test now asserts the
+    container is scrollable whenever it overflows, in all three modes. The alternative was
+    to shorten the rail, which is a design change #89 did not ask for.
