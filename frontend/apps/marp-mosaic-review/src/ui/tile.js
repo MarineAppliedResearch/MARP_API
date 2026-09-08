@@ -6,7 +6,7 @@
  * what the last commit did. Everything here is derived; nothing is stored.
  */
 import { state, MODES } from '../store.js';
-import { existingState, decidedBy, pendingException } from '../model/modes.js';
+import { existingState, decidedBy, pendingException, borrowedTags } from '../model/modes.js';
 import { ICON, ME } from './dom.js';
 
 export const markIcon = (mode = state.mode) =>
@@ -44,6 +44,36 @@ function existingBadge(existing, row, id, byMe) {
       ? `<span class="badge b-out">${ICON.tick}REVIEWED &middot; you</span>`
       : `<span class="badge b-oth">${ICON.eye}${row.reviewed_by || 'REVIEWED'}</span>`;
   }
+}
+
+/* What a record tag looks like, whichever mode is reading it. The same class and icon
+   the owning workflow uses for its own badge, so PROMOTED is violet and a flag is amber
+   wherever they appear. */
+const TAG_CLASS = { flagged: 'b-flag', reviewed: 'b-out', promoted: 'b-pro', excluded: 'b-exc' };
+const TAG_ICON = { flagged: ICON.flag, reviewed: ICON.tick, promoted: ICON.pro, excluded: ICON.exc };
+
+/**
+ * The tags other workflows have put on this record (#85).
+ *
+ * Every mode shows them, because whenever somebody looks at an observation they should
+ * see what every workflow has said about it. They are drawn in their own slot below the
+ * primary badge's corner and never in it: `.badge` is what *this* mode says, and letting a
+ * record tag reach that slot would let it outrank a mark, which is how a click on a
+ * committed tile comes to look like it did nothing.
+ *
+ * No workflow label on the face of the tile: FLAGGED and REVIEWED can only be scientific,
+ * PROMOTED and EXCLUDED can only be training, and colour reinforces it. The tooltip names
+ * the workflow, the reason and the person. If that turns out to be unclear in use, the
+ * prefix form (`TRN · EXCLUDED`) is this one template string.
+ */
+function borrowed(row) {
+  const tags = borrowedTags(state.mode, row);
+  if (!tags.length) return '';
+  return `<span class="rtags">${tags.map((t) => {
+    const title = [`${t.workflow}: ${t.value}`, t.reason, t.by].filter(Boolean).join(' — ');
+    return `<span class="rtag ${TAG_CLASS[t.value] || 'b-oth'}" data-rtag="${t.key}"
+      title="${title}">${TAG_ICON[t.value] || ''}${t.value.toUpperCase()}</span>`;
+  }).join('')}</span>`;
 }
 
 /** The top-right chip: track length in training, otherwise the reason or correction. */
@@ -143,5 +173,5 @@ export function tile(row) {
 
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}">
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      <span class="cap">${row.comname}</span></button>`;
+      ${borrowed(row)}<span class="cap">${row.comname}</span></button>`;
 }

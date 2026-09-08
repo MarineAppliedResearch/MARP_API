@@ -1,217 +1,231 @@
 ---
-task: MarineAppliedResearch/MARP_API#81
+task: MarineAppliedResearch/MARP_API#85
 repos: [MARP_API]
 status: verifying
 needs: []
 ---
 
-# The filter rail: the reported bugs, and the crowding
+# Every mode shows every workflow's tags on an observation
 
 ## Goal
 
-A reviewer opens the rail and can see all of it. The dropdowns behave the way every other
-dropdown on every other platform behaves — a second click on the button closes the menu,
-and choosing a specific project stops "All projects" claiming to be selected. Times read
-in 24-hour, the way MARP writes them everywhere else. The rail carries ten filters in one
-row each, rather than eleven plus four headings and three rows spent on time and date, so
-the status filters and the progress bar are on screen instead of clipped off the bottom.
-Sorting can be steered by field and by direction independently, and says which is applied.
+A reviewer looking at an observation sees what *every* workflow has said about it, whatever
+mode they are in. In Scientific Data Review a tile that training has already excluded says
+so; in Training Data Review a tile science has already flagged or reviewed says so; Delete
+Mode shows both, as it half does today. What the reviewer can *do* to the observation does
+not change at all — the active mode still owns the mark, the commit and the filters. This
+is only about what the record is allowed to say out loud.
 
 ## What is already true
 
-Read from the code on `79-resumability`, not assumed:
+Read from the code on `85-tags-across-modes` (branched from `develop` at `3069411`), not
+assumed:
 
-- **A dimension is one entry in `src/model/dimensions.js`.** The rail, the query, the
-  counts, the collapsed-rail badge and the address all read that declaration. #77 built
-  that property and #79 extended it to the URL; protecting it is a constraint on this
-  work, not a goal of it.
-- **`ui/` never writes state.** Every gesture calls a named action on `store.js`.
-- **The rail clips.** `.rail` is `overflow: hidden` and `.rail-body` does not scroll, so at
-  a 1600x900 desktop viewport the review-status filters and the progress bar are drawn
-  below the fold and cannot be reached at all. This was not reported as its own item but
-  it is the sharpest form of L7.
-- **`renderStatusFilters()` writes `data-key="${dim.key}"`** on each status checkbox, and
-  `styles/app.css` has `[data-key]::after { content: attr(data-key) }` for the keyboard
-  shortcut badges added by #74. The two meanings of `data-key` collide, so every status
-  checkbox draws a grey pill reading `reviewStatus` beside its label. **That is B4.**
-- **A native `<input type="time">` cannot be forced to 24-hour.** Chrome renders it from
-  the browser locale; `lang="en-GB"` was tried in a real Chromium and still drew
-  `01:30 PM`. So B3 cannot be fixed with an attribute.
-- **The rail dimension buttons are wired in `ui/rail.js`, not in `ui/mount.js`.**
-  `mount.js`'s `anchor()` helper already closes an open menu on a second click; the rail's
-  own handler calls `dimensionMenu()` unconditionally, which closes and immediately
-  reopens. **That is B2.**
-- **A multi-select menu item redraws only its own tick.** `menus.js` toggles the clicked
-  button's tick in place and never restates the others, so the "All …" entry keeps the
-  tick it was built with. **That is B1.**
-- **`session_type` in the fixture is `pick(['ROV','ROV','Drop Cam'])` per observation**, so
-  it is both wrong (D1) and uncorrelated with `session_id`, which makes "the type narrows
-  which sessions are available" (L2) untrue in the fixture.
-- **Sorting is `SORTS`, five fixed `{field, dir, label}` rows** in `model/filters.js`, read
-  by the sub-bar label, the menu and `query-url.js`.
+- **`existingState(mode, row)` is mode-scoped and does three jobs, not one.** It feeds the
+  tile's record badge (`ui/tile.js`), the seeding of the page's exception set
+  (`store.js:refresh` → `page.seedMarks`), and the `deleteImpact` breakdown. Only the first
+  of those three is about visibility. Widening this one function would silently widen the
+  other two — a training exclusion would start seeding a *scientific* mark.
+- **The mode declarations already carry two dimensions for Delete** (`statusKey` plus
+  `alsoStatusKey`), and `statusDimensions()` returns a list so the rail, the query, the
+  defaults and the collapsed-rail badge stay ignorant of which mode is the exception. That
+  list is about **filtering**, and every caller of it is a filter caller.
+- **No table maps a status dimension to its row column.** `reviewStatus` →
+  `review_status` and `trainingDisposition` → `training_disposition` is spelled out by
+  hand in `data.js` (counts, filtering, commit) and again inside `existingState`. Reading
+  both dimensions off a row in one place needs that mapping to exist once.
+- **`takingBack` in `ui/tile.js` already requires `state.touched.has(id)`** as well as the
+  record or the outcome carrying *this mode's* exception. So the derivation #82 is about is
+  not widened by this change, provided `existingState` stays mode-scoped. See *#82* below.
+- **Colour already carries most of the distinction.** `b-flag` amber and `b-out` green are
+  scientific; `b-exc` grey and `b-pro` violet are training, and violet is training's own
+  mode hue. `--accept` follows the mode, but `b-pro` is violet outright *because* promotion
+  means promotion wherever it appears (recorded in the app's `CLAUDE.md`).
+- **The vocabularies are disjoint.** FLAGGED and REVIEWED can only be scientific;
+  PROMOTED and EXCLUDED can only be training. Nothing reads both ways.
+- **`.badge` is one absolutely-positioned element at the tile's top left**, and several
+  render tests do `expect(tile.locator('.badge')).toContainText(...)`. A second element
+  carrying the same class would make those locators resolve two elements and fail on strict
+  mode — so the record's other-workflow tags need their own class, which is honest anyway:
+  `.badge` means *what this mode says about this tile*.
+- **The fixture already carries every cross-workflow combination**, so the render tier
+  needs no commit to reach them: 236 rows `unreviewed/excluded` and 179
+  `unreviewed/promoted` (visible in Scientific's default view), and 214
+  `reviewed/undecided` (visible in Training's default view). 23 are `reviewed/excluded`.
+- **No row in the fixture starts `flagged`.** A flag only exists after a commit, so
+  "flagged in Scientific is visible in Training" has to commit first, which also proves
+  the record — not the outcome — is what travelled.
+- **The legend is the pager swatch only.** There is no badge legend to extend.
 
 ## Requirements
 
-Numbered so tests can name them. The ids follow #81.
-
-- **B1** — Choosing a specific value in a set menu clears the menu's "All …" entry
-  immediately, while the menu is still open. Removing the last specific value ticks it
-  again.
-- **B2** — Clicking the button that opened a menu closes that menu. Clicking a different
-  button moves the menu to it.
-- **B3** — Every time-of-day control renders 24-hour. No AM/PM appears anywhere in the rail.
-- **B4** — A status filter draws one control: a checkbox and its label. No second pill, no
-  shortcut badge, nothing whose purpose has to be guessed at.
-- **D1** — The fixture's `session_type` values are exactly `Fish`, `Fish_GULF`, `Inverts`,
-  `INVERTS_GULF`, `Habitat`, spelled as the database spells them, and each session has one
-  type rather than one per observation.
-- **L1** — The rail draws no group headings.
-- **L2** — Session type is drawn above Session, and choosing a type narrows the sessions
-  offered.
-- **L3** — There is no Processor filter, anywhere: not in the rail, not in the query, not
-  in the address.
-- **L4** — Confidence is one track carrying two handles.
-- **L5** — Time of day and date each occupy one row of the rail.
-- **L6** — The reset control is the first control in the rail, above every filter, and
-  costs no more room than the collapse button beside it.
-- **L7** — Every part of the rail is reachable at a 1600x900 desktop viewport: nothing is
-  clipped off the bottom.
-- **M1** — The sort field and the sort direction are chosen independently, and what is
-  applied is legible without opening the menu.
-- **Q1** — The Model filter stays. Left in place deliberately; see the assumptions.
-- **P1** — The property #77 built survives: adding, removing or reordering a dimension is
-  one edit in `src/model/dimensions.js` and nothing else.
-
-### Round two — answered 2026-09-06
-
-The first round's judgement calls were put to the user. L5, the native date ends, the
-session nesting and the P1 hardening all stand. Three things changed, and are numbered
-here so tests can name them too.
-
-- **M2** — **The sort takes a secondary field and direction**, applied when the primary
-  ties. Two constraints, both from #68 rather than from taste: `observation_id` stays the
-  **final** word in every comparison, because page membership is query-derived and a
-  re-query has to return the same page; and the secondary survives the address, because
-  `79-resumability` is underneath this branch and a question that is half in the URL is
-  worse than one that is not in it at all.
-- **M3** — **A phone sorts the same way as everything else**: the same control and the
-  same menu, reachable and usable at phone width. Not a shrunken variant — the first
-  round gave the phone a smaller font and smaller padding, which is exactly that.
-- **R1** — `README.md`'s *Known gaps* says four things that are no longer true. The whole
-  section is checked, not only those four.
+- **R1** — In every mode, a tile shows the tags the record carries in the status dimensions
+  that are **not** the active mode's own: scientific `flagged` / `reviewed` while in
+  Training, training `promoted` / `excluded` while in Scientific, and the training
+  dimension while in Delete.
+- **R2** — The active mode's own statement keeps the primary badge, and its precedence is
+  unchanged: **a mark outranks an outcome, which outranks the record**, all three read in
+  the mode's own dimension. A tag from another workflow can never occupy that slot and can
+  never displace a mark.
+- **R3** — Another workflow's tag is context, never a selection. Clicking a tile that
+  carries one marks it for the active mode exactly as before; nothing about it changes what
+  a mark means, what arrives marked, or what the commit acts on.
+- **R4** — A commit still writes only the active mode's dimension: a scientific commit
+  writes `review_status` and nothing else.
+- **R5** — `state.outcomes` stays scoped to the mode and `setMode` still clears it. A tag
+  visible in another mode after a commit is the **record** read back through that mode, not
+  an outcome that travelled. Nothing gains an outcome badge in a mode that did not commit.
+- **R6** — The imagery stays a quiet zone. Another workflow's tag adds a badge and nothing
+  else: the tile outline, the dimming and the grayscale keep meaning the *active* mode's own
+  state, so a picture a scientist is judging is not greyed out because training excluded it.
+- **R7** — Two tags on one tile must not bury the picture or overflow it, at desktop and at
+  phone width. The tile is square with a 132px floor; the caption owns the bottom strip and
+  the corner chip owns the top right.
+- **R8** — A reviewer can tell which workflow a tag came from. **How** is A1, below.
+- **R9** — The app's `CLAUDE.md` paragraph that asserts the opposite rule is rewritten to
+  say what the code now does and that this reversed on 2026-09-08, and any test encoding the
+  old rule is rewritten with the same note rather than deleted.
+- **R10** — The status *filters* are untouched: a mode's rail still offers its own
+  dimension only, and the address gains no parameter. (See A2.)
 
 ## Open assumptions
 
-None blocking. Everything below is a choice #81 left open, with the default that is being
-implemented and why. Each is one sentence to overrule.
+- [x] **A1 · product/UI · blocking** — answered 2026-09-08: **(a), no label on the tile
+  face.** The vocabularies are disjoint, colour already reinforces it, and it costs no width
+  on a 132px tile. The workflow, the reason and the person go in the tooltip. Both
+  sub-recommendations accepted too: the tag sits **bottom left above the caption, growing
+  upward**, and a borrowed REVIEWED tag **does not name the reviewer**.
 
-- [x] **A1 · product/UI · non-blocking** — answered 2026-09-06 by the issue itself (Q1):
-  the Model filter stays. It filters simulated data until Phase 3 of #68.
-- [x] **A2 · product/UI · non-blocking** — decided 2026-09-06: **L5 becomes a summary
-  button per dimension, opening a small popover holding the two ends.** Both the time pair
-  and the date pair drop from two or three rail rows to one, the rail reads as one list of
-  identical controls rather than a list with two odd ones in it, and the popover has the
-  width the controls actually need — which a 137px rail column does not. The alternative
-  considered was shrinking the native inputs to fit side by side: a date pair cannot be
-  made to fit, and it would have left time and date looking different from each other.
-- [x] **A3 · product/UI · non-blocking** — decided 2026-09-06: **the time ends become
-  24-hour text fields (`HH:MM`), not native time inputs.** Verified in real Chromium that
-  a native time input renders 12-hour regardless of `lang`; there is no attribute for
-  this. The date ends stay native `<input type="date">`, because the calendar picker is
-  worth keeping and nobody reported the date format. If the US `mm/dd/yyyy` order is also
-  wrong, say so and both ends become `YYYY-MM-DD` text.
-- [x] **A4 · product/UI · non-blocking** — decided 2026-09-06: **M1 is a field list plus a
-  direction pair in one menu, with the direction phrased for the chosen field** ("low
-  first" / "high first" for confidence, "shortest" / "longest" for track length). The
-  sub-bar shows `Confidence · low first` with an arrow, so what is applied is readable
-  without opening anything. A sort *stack* (secondary keys) was considered and rejected:
-  nothing asked for it, and the deterministic `observation_id` tie-breaker already makes
-  the order stable.
-- [x] **A5 · behavioural · non-blocking** — decided 2026-09-06: **Session nests under
-  Session type** (`nestsUnder: 'sessionType'`), so changing the type drops sessions that
-  no longer apply, the way a dive drops its lines. L2's stated reason is that the type
-  narrows which sessions are available, and the offered list already narrows; this makes
-  the selection follow.
-- [x] **A6 · product/UI · non-blocking** — decided 2026-09-06: **the rail body scrolls.**
-  L7 says to say so if something has to give. Nothing had to give in the end — the ten
-  filters fit at 1600x900 — but the rail was clipping its own status filters before this
-  work, and a rail that silently hides controls at a shorter viewport is the same bug
-  waiting for a smaller screen.
+  *Does the reviewer need to be able to tell which
+  workflow a tag came from, spelled out on the tile face?* The issue's own open question.
+  Three answers are available and they are not cosmetic variants of each other:
 
-### Round two — open assumptions
+  **(a) No label — vocabulary, colour and a separate slot carry it.** FLAGGED/REVIEWED are
+  scientific words and PROMOTED/EXCLUDED are training words; nothing reads both ways.
+  Amber/green versus grey/violet reinforces it, and violet is already training's mode hue.
+  Another workflow's tags sit in their own quieter slot, so they read as *what somebody
+  else's workflow said* rather than as this mode's answer, and the tooltip names the
+  workflow, the reason and the person. **Recommended.** It costs no width on a 132px tile,
+  it does not touch `.badge`, and it keeps the primary slot unambiguous — which is what
+  protects R2.
 
-None blocking. The three below were weighed against the test in `AGENTS.md` — *would a
-different reasonable answer change the behaviour, the schema, the interface, or the data?*
-— and each is settled by a pattern already in this repository rather than by preference,
-so each is recorded and none stops the work. Any of them is one sentence to overrule.
+  **(b) A short prefix on the tag — `SCI · REVIEWED`, `TRN · EXCLUDED`.** Unambiguous with
+  no learning, but at 8.5px it roughly doubles the tag's width, and two abbreviations are a
+  vocabulary of their own to learn. Available as a cheap follow-up if (a) proves unclear in
+  use — it is one template string.
 
-- [x] **A7 · behavioural · non-blocking** — decided 2026-09-06: **there is no secondary
-  sort by default.** Not a free choice: `79-resumability` requires a bare address to be
-  the default question, so a default secondary would have to be written into
-  `defaultBare()` and every existing link would stop round-tripping.
-- [x] **A8 · API contract · non-blocking** — decided 2026-09-06: **the address carries
-  both terms in the one `sort` parameter, comma-separated** —
-  `?sort=confidence.asc,keyframe_count.desc`. A comma is already the list separator for
-  every multi-select in `query-url.js`, and sort fields are drawn from a closed list that
-  cannot contain one. The alternative weighed was a second parameter (`&then=`); it splits
-  one question across two keys, which `toQuery` does nowhere else.
-- [x] **A9 · product/UI · non-blocking** — decided 2026-09-06: **the secondary cannot name
-  the primary's field**, and the menu does not offer it. The rail already refuses to offer
-  a filter combination that returns nothing; a sort term that can never be reached is the
-  same thing. Choosing a primary that is already the secondary clears the secondary rather
-  than swapping them, because a silent swap changes an order the reviewer did not ask to
-  change.
+  **(c) An icon that means the workflow rather than the state.** The badge icon is currently
+  the *state* (flag, star, tick, circle-slash), which is more informative; replacing it with
+  a workflow mark trades information for provenance and would also change the badges the
+  active mode draws.
+
+  A second, smaller half of the same question: where the tag sits. Recommended **bottom
+  left, just above the caption, growing upward** — the top left stays "what this mode says",
+  the bottom left becomes "what the record carries", nothing overlaps the corner chip, and
+  `.badge`'s CSS is not touched. The alternative is stacking directly under the primary
+  badge at the top left, which is tighter but puts two different kinds of statement in one
+  column.
+
+  And whether a REVIEWED tag from science should name the reviewer the way the in-mode badge
+  does (`b-oth` draws `row.reviewed_by`). Recommended **no** — from another workflow the
+  useful fact is *science has accepted this*, not who; the name goes in the tooltip, and it
+  keeps the tag short for R7.
+
+- [x] **A2 · product/UI · blocking** — answered 2026-09-08: **badges only.** The filters,
+  the query and the address are untouched. Filtering across workflows, if reviewers turn out
+  to want it, is its own issue with its own defaults decided deliberately.
+
+  *Does this change the filters as well as the
+  badges?* The issue is written about what is visible on an observation and never mentions
+  filtering, but `statusDimensions()` is named as "the shape to generalise", and that
+  function is what drives the rail, the query and the address. Recommended **no**: badges
+  only. Giving Scientific Review a training-disposition filter would change the default
+  query — which observations appear at all — add a rail section and a URL parameter, and
+  `trainingDisposition` defaults to `undecided`, so a careless default would hide the very
+  promoted and excluded rows this issue wants seen. One line to confirm; if the answer is
+  yes it is a separate requirement and probably a separate issue.
+
+- [x] **A3 · product/UI** — settled by the code, not material: **only dimensions other than
+  the active mode's own are drawn as record tags.** The mode's own dimension already has the
+  primary badge and its full precedence, and a page arrives with its existing exceptions
+  marked — so drawing the own-dimension record tag as well would put FLAGGED (the mark) and
+  FLAGGED (the record) on the same tile. Follows the existing pattern; not treated as an
+  open question.
 
 ## Decisions
 
-- **2026-09-06** — `data-key` on a status checkbox is renamed to `data-statuskey`.
-  `data-key` belongs to the keyboard-shortcut badge (#74) and is claimed by a CSS rule
-  that draws its value on screen; two meanings for one attribute is what produced B4.
-- **2026-09-06** — `group` leaves `dimensions.js` entirely rather than being kept and
-  ignored. A field the declaration carries and nothing reads is a trap for the next
-  person; the order of the array is the only ordering the rail needs.
+- **2026-09-08** — `existingState(mode, row)` stays mode-scoped and keeps all three of its
+  current callers. Visibility is a **new** derivation over the record, so that seeding the
+  exception set and the precedence chain cannot be widened by accident. This reverses the
+  visibility half of the note in the app's `CLAUDE.md`; the independence half stands.
+- **2026-09-08** — the status dimension → row column mapping becomes one declaration in
+  `model/modes.js` rather than a second hand-written pair.
+- **2026-09-08** — a borrowed tag carries **no workflow label** on the tile face. The
+  vocabularies are disjoint, colour reinforces them, and the tooltip names the workflow, the
+  reason and the person. If that proves unclear in use, the prefix form (`TRN · EXCLUDED`)
+  is **one template string** in `ui/tile.js` — nobody needs to rediscover that.
+- **2026-09-08** — the filters, the query and the address are out of scope. Handing
+  Scientific Review a training-disposition filter would change which observations appear at
+  all, and `trainingDisposition` defaults to `undecided` — so a careless default would hide
+  the very promoted and excluded rows this issue exists to surface. Filtering across
+  workflows is its own issue if it is ever wanted.
+- **2026-09-08** — `.badge` stays exactly one element per tile and the borrowed tag gets its
+  own class: the render tests rely on it, and it is the honest reading — `.badge` means what
+  *this* mode says about this tile.
 
 ## Plan
 
-1. `.marp/task.md` (this file).
-2. **D1** — fixture generator: session type per session, real values; regenerate.
-3. **B4** — rename the colliding attribute; test the badge is gone.
-4. **B2** — menus remember their anchor; a second click on it closes.
-5. **B1** — a multi-select pick restates the whole menu rather than one tick.
-6. **L1 · L2 · L3 · Q1 · A5** — the declaration: drop `group`, drop `processor`, reorder,
-   nest session under session type. Delete `dimensionGroups()` and the group markup.
-7. **L4** — confidence on one track with two handles.
-8. **B3 · L5** — time and date as one-row summary buttons over a popover, 24-hour.
-9. **L6** — the reset control as an icon.
-10. **L7** — the rail body scrolls; confirm nothing is clipped.
-11. **M1** — field and direction, independently.
-12. Unit tier after every step; browser tier once at the end.
-
-Round two:
-
-13. **M2** — the sort model takes a second term; `sortTerms()` is the one place a
-    comparison order is decided, and `observation_id` is appended by the query itself.
-14. **M2** — the address carries both terms; a malformed second term is discarded without
-    costing the first.
-15. **M2** — one menu, two sections, the second worded for whichever field it names.
-16. **M3** — the phone loses its `.sortbox` override entirely and is measured at phone
-    width rather than assumed.
-17. **R1** — `README.md`'s *Known gaps*, checked against the code rather than trimmed.
+1. `model/modes.js` — declare each status dimension once (filter key, row column, neutral
+   value, reason column, workflow label), express `existingState` through it unchanged, and
+   add the new derivation: the tags a record carries in dimensions other than the mode's
+   own. Unit tests first.
+2. `ui/tile.js` — draw those tags in their own slot, leaving the mark / outcome / record
+   precedence and every class it sets exactly as they are.
+3. `styles/app.css` — the slot and the quieter treatment, from tokens, pointer-events off.
+4. `tests/unit/model.test.mjs` — the new rules; annotate the mode-scoped `existingState`
+   test with why it still holds.
+5. `tests/e2e/render.spec.mjs` — the five rendering claims from the issue, plus overflow at
+   phone width.
+6. `frontend/apps/marp-mosaic-review/CLAUDE.md` — rewrite the paragraph.
 
 ## Acceptance criteria
 
-- Every requirement above has a named test at a tier that can observe it: a rule in
-  `tests/unit/`, anything drawn in `tests/e2e/render.spec.mjs`.
-- Each of B1–B4 has a test that was shown to fail against the current behaviour before
-  the fix.
-- `npm run test:unit` and `npm run test:e2e` both green, at desktop and phone.
-- `src/model/dimensions.js` is still the only place a dimension is declared.
+- An observation flagged in Scientific shows that flag in Training and in Delete.
+- One excluded in Training shows that in Scientific and in Delete.
+- A scientific commit still writes only `review_status`.
+- Clicking a tile that carries another workflow's tag still marks it for *this* mode.
+- A mark still outranks everything on the record; a committed tile clicked once still
+  visibly changes.
+- Switching modes still leaves no outcome badge behind.
+- No tile overflows or hides its picture at desktop or phone width, and the console stays
+  clean.
 
 ## Test plan
 
-See `.marp/verification.md`.
+G3. Filled in before anything is run.
 
 ## Status
 
-- **Gate:** verifying
-- **Notes:** branched from `79-resumability`, not from `develop`, per #81.
+- **Gate:** verifying — implemented, and the whole suite run. G5 not requested.
+- **Notes:** the fixture is known to reach every case. #82 checked: it does not conflict —
+  see below, and it is deliberately left alone.
+
+## #82, and whether the two interact
+
+They do not, as planned here — but they would under the obvious implementation.
+
+`takingBack` is derived as `!marked && exception && state.touched.has(id) && (outcome ===
+exception || existing === exception)`, where `exception` is `pendingException(state.mode)`
+and `existing` is `existingState(state.mode, row)`. Keeping `existingState` mode-scoped
+leaves that expression byte-identical, so #82's symptom is neither fixed nor broadened.
+
+Had `existingState` been widened to return every tag instead, `existing === exception` would
+have started matching another workflow's value, and TAKING BACK — which #82 shows already
+appears on exclusions nobody touched — would have begun appearing in modes that cannot even
+act on the tag. That is the trap, and it is why the decision above is written down.
+
+One thing worth handing to whoever takes #82: its leading suspect looks right. `clearMarks`
+and `markAllOnPage` in `store.js` both do `state.rows.forEach((r) =>
+state.touched.add(r.observation_id))`, and `touched` is never re-seeded — so one press of
+`C` marks every row on the page as hand-decided for the rest of the session. Not reproduced
+in a browser here; this task did not run it.
