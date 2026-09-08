@@ -15,29 +15,42 @@
   --field: #17191c;
   --tile-bd: #2a2d32;
 
-  /* What "this workflow accepted it" looks like. Scientific review and training
-     review are independent decisions about the same observation, and they were
-     wearing the same green — so a promoted track and a reviewed observation were
-     indistinguishable at a glance. Training takes the violet it already uses as
-     its mode hue. Delete has no accepted state; its commit removes things. */
-  --accept: var(--green-400);
-  --accept-pale: var(--green-300);
-  --accept-soft: rgba(167, 236, 53, .55);
-  --accept-line: rgba(167, 236, 53, .42);
-  --accept-ink: #0d1a02;
+  /* What this mode's commit does, and what a page it has already been run on looks
+     like afterwards. It follows the mode, because the three commits are not the same
+     act: scientific review and training review are independent decisions about the
+     same observation, and they were wearing the same green — so a promoted track and
+     a reviewed observation were indistinguishable at a glance. Training takes the
+     violet it already uses as its mode hue.
+
+     This was called `--accept` and was green everywhere, which made a page committed
+     in Delete Mode read as accepted when the commit had destroyed it — #93. Delete has
+     no accepted state, so the family is named for the commit rather than for
+     acceptance, and Delete takes the red it already wears elsewhere. */
+  --commit: var(--green-400);
+  --commit-pale: var(--green-300);
+  --commit-soft: rgba(167, 236, 53, .55);
+  --commit-line: rgba(167, 236, 53, .42);
+  --commit-ink: #0d1a02;
 }
 body[data-mode="training"] {
-  --accept: var(--violet-400);
-  --accept-pale: var(--violet-300);
-  --accept-soft: rgba(155, 124, 240, .55);
-  --accept-line: rgba(155, 124, 240, .42);
-  --accept-ink: #150c2b;
+  --commit: var(--violet-400);
+  --commit-pale: var(--violet-300);
+  --commit-soft: rgba(155, 124, 240, .55);
+  --commit-line: rgba(155, 124, 240, .42);
+  --commit-ink: #150c2b;
   --mode: var(--violet-500);
   --mode-line: rgba(155, 124, 240, .30);
   --chrome: #17102b;
   --chrome-rail: #120c22;
 }
 body[data-mode="delete"] {
+  /* Red, because a Delete commit destroys — the same red-500/red-400 pair the mode
+     already uses for its note, a marked tile's outline and its commit button. */
+  --commit: var(--red-500);
+  --commit-pale: var(--red-400);
+  --commit-soft: rgba(224, 97, 107, .55);
+  --commit-line: rgba(224, 97, 107, .42);
+  --commit-ink: var(--white);
   --mode: var(--red-500);
   --mode-line: rgba(224, 97, 107, .34);
   --chrome: #1d0d12;
@@ -110,7 +123,7 @@ body[data-mode="delete"] .mode-note { color: var(--red-400); font-weight: 600; }
    collapse to nothing on the desktop row it was meant to share. */
 .bar { width: 116px; flex: none; height: 4px; border-radius: 2px;
        background: var(--navy-800); overflow: hidden; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--accept)); }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--commit)); }
 .small { font-size: 9.5px; color: var(--faint); }
 /* This row is 30px with `overflow: hidden`, so what runs past the right edge is clipped
    and not scrolled -- and #sortBtn is what sits there. Carrying progress as well, the row
@@ -347,7 +360,7 @@ body[data-mode="scientific"] .tile.marked img { filter: brightness(.66) saturate
 .ghost { height: 34px; display: flex; align-items: center; padding: 0 14px; border-radius: 6px;
          border: 1px solid var(--border); color: var(--muted); font-size: 12px;
          background: none; flex: none; }
-.ghost.go { border-color: var(--accept-soft); color: var(--accept-pale); font-weight: 600; }
+.ghost.go { border-color: var(--commit-soft); color: var(--commit-pale); font-weight: 600; }
 
 /* ---------------------------------------------------------------- footer */
 .foot { display: flex; align-items: center; gap: 8px; padding: 0 12px;
@@ -359,23 +372,24 @@ body[data-mode="scientific"] .tile.marked img { filter: brightness(.66) saturate
       border: 1px solid var(--mode-line); border-radius: 4px; font-size: 11px; font-weight: 600;
       color: var(--text); background: none; }
 .pg.nav { padding: 0 9px; color: var(--muted); }
-.pg.done { color: var(--accept-pale); border-color: var(--accept-line);
-           box-shadow: inset 0 -3px 0 -1px var(--accept); }
+.pg.done { color: var(--commit-pale); border-color: var(--commit-line);
+           box-shadow: inset 0 -3px 0 -1px var(--commit); }
 input.pg { width: 38px; padding: 0; background: var(--navy-1000); border: 1px solid var(--cyan-400);
            color: var(--cyan-300); font-weight: 700; text-align: center; font-family: inherit;
            font-size: 11.5px; }
 .gap { color: var(--faint); padding: 0 3px; font-size: 11px; }
 .legend { display: flex; align-items: center; gap: 6px; margin-left: 14px; white-space: nowrap; flex: none;
           font-size: 10px; color: var(--faint); }
-.swatch { width: 16px; height: 4px; border-radius: 1px; background: var(--accept); }
+.swatch { width: 16px; height: 4px; border-radius: 1px; background: var(--commit); }
 .markall { display: flex; gap: 5px; margin-left: 16px; padding-left: 16px;
            border-left: 1px solid var(--line); }
 .count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--amber-300); }
-.commit { background: var(--accept); color: var(--accept-ink); border: 0; border-radius: 5px;
+.commit { background: var(--commit); color: var(--commit-ink); border: 0; border-radius: 5px;
           padding: 7px 18px; font-size: 12px; font-weight: 700; margin-left: 26px;
           display: flex; align-items: center; gap: 7px; }
-body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
-                                   border: 1px solid var(--red-400); }
+/* The red now comes from `--commit` like every other mode's hue; the outline is the one
+   thing this rule still contributes, lifting a dark red button off the dark red chrome. */
+body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 
 /* ---------------------------------------------------------------- action log */
 .logbtn { position: fixed; right: 12px; bottom: 56px; z-index: 20; border: 1px solid var(--border);
@@ -454,7 +468,7 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .commit { min-width: 172px; justify-content: center; }
 .commit svg { width: 13px; height: 13px; display: block; flex: none; }
 .commit[disabled] { cursor: progress; opacity: .92; }
-.commit.ok  { background: var(--accept); color: var(--accept-ink); }
+.commit.ok  { background: var(--commit); color: var(--commit-ink); }
 .commit.bad { background: var(--red-500); color: #fff; }
 .commit .spin {
   width: 12px; height: 12px; border-radius: 50%;

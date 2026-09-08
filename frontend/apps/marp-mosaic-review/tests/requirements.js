@@ -5,7 +5,7 @@
  * These drive the same actions the UI drives, so they check behaviour rather than
  * markup — a rendering change should not break them, and a behaviour change should.
  */
-import { state, actions, MODES } from '../src/store.js';
+import { state, actions, MODES, subscribe } from '../src/store.js';
 import { pendingException, statusDimensions } from '../src/model/modes.js';
 import { MarpData } from '../src/data.js';
 
@@ -827,6 +827,31 @@ test('The states never rendered',
     await actions.retryThumbnail(id);
     eq(state.rows.find((r) => r.observation_id === id).thumbnail_status, 'ready',
       'a retry that succeeds puts the imagery back');
+  });
+
+test('The states never rendered',
+  'R7: retrying a page costs two renders, not two per tile', async () => {
+    /* Rendering here is a full re-render from state, deliberately -- so the cost of an
+       action is the number of times it notifies. `retryFailedThumbnails` called
+       `retryThumbnail` per row, and each of those notifies twice: a page of fifty cost a
+       hundred full re-renders, each rebuilding all fifty tiles. Measured at 972 ms idle,
+       and enough under parallel test workers to blow a twenty-second timeout, which is
+       what made two browser tests flaky. Two paints: one to show the page queued, one when
+       the answers are in. */
+    await reset('scientific');
+    const ids = state.rows.map((r) => r.observation_id);
+    MarpData.breakThumbnails(ids);
+    await actions.refresh();
+
+    let renders = 0;
+    const off = subscribe(() => { renders++; });
+    await actions.retryFailedThumbnails();
+    off();
+
+    ok(renders <= 4,
+      `a page-level retry must not re-render per tile: ${ids.length} tiles cost ${renders} renders`);
+    ok(state.rows.every((r) => r.thumbnail_status === 'ready'),
+      'and every tile still comes back');
   });
 
 test('The states never rendered',

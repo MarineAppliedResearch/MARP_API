@@ -376,13 +376,26 @@ organism looks, and #68 treats the image field as a quiet zone. Dimming a tile t
 reviewer has already judged is the one accepted exception: flagged, excluded and doomed
 tiles all step back, flagged the least because it stays in view to be resolved.
 
-**`--accept` is what "this workflow accepted it" looks like, and it follows the mode.**
-Green for scientific review, violet for training — the same violet training already uses
-as its mode hue. They were both green, which made two independent decisions read as the
-same answer. Everything that means *accepted by the current mode* takes this variable:
-the commit button, the pager's committed pages, the legend swatch, the progress bar. The
+**`--commit` is what this mode's commit does, and it follows the mode.** Green for
+scientific review, violet for training — the same violet training already uses as its mode
+hue — and red for Delete. Scientific and training were both green, which made two
+independent decisions read as the same answer. Everything that reports what a commit does
+or did takes this variable: the commit button and its success state, the pager's committed
+pages, the legend swatch that explains that hue, the progress bar counting them. The
 PROMOTED badge is violet outright rather than through the variable, because it means
 promotion wherever it appears.
+
+**It was called `--accept` and it had no Delete value**, so a page committed in Delete Mode
+inherited the root green and the one place recording what you did to a page said you had
+accepted what you had in fact destroyed (#93). The family is named for the commit rather
+than for acceptance because Delete has no accepted state — the alternative, a red
+`--accept`, would have been a lie sitting in the stylesheet. `.ghost.go` in the flag panel
+still reads it and is the one consumer that is not about a commit; it never appears in
+Delete Mode, because `renderPicker` returns early there.
+
+**A hue that means something in one mode must be given a value in all three.** The bug was
+not a wrong colour but a missing one: `body[data-mode="delete"]` set the chrome variables
+and stopped, so everything else silently fell through to `:root`.
 
 Palette comes from `frontend/shared/assets/css/tokens.css`. Do not add hex values to
 `styles/app.css`; add a token.

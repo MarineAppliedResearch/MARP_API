@@ -70,8 +70,22 @@ test.describe('the mosaic renders and stays settled', () => {
   test('an unavailable thumbnail still shows its species and stays markable', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const noImage = page.locator('.tile.failed').first();
-    if (await noImage.count() === 0) test.skip(true, 'no unavailable thumbnail on this page');
+    /* Break one deliberately rather than hoping the fixture put a failed tile on this
+       page. It skipped whenever it did not, on both viewports — and a skipped test reports
+       green while proving nothing, which is the one thing the doctrine here is emphatic
+       about. */
+    const id = await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      const { MarpData } = await import('./src/data.js');
+      const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+      MarpData.breakThumbnails([target.observation_id]);
+      await actions.refresh();
+      return target.observation_id;
+    });
+    await ready(page);
+
+    const noImage = page.locator(`.tile[data-id="${id}"]`);
+    await expect(noImage).toHaveClass(/failed/);
     await expect(noImage.locator('.cap')).not.toBeEmpty();
     await noImage.click();
     await expect(noImage).toHaveClass(/marked/);
@@ -680,7 +694,159 @@ test.describe('the two workflows do not wear the same colour', () => {
 
     expect(sci[1], 'Mark Page Reviewed is green').toBeGreaterThan(sci[2]);
     expect(tra[2], 'Promote Page is violet').toBeGreaterThan(tra[1]);
+
+    /* #93: Delete Marked is red. It always was — `body[data-mode="delete"] .commit`
+       outranked the accept family — but nothing asserted it, so the family could be
+       renamed out from under it without a test noticing. */
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    const del = (await read()).match(/\d+/g).map(Number);
+    expect(del[0], `Delete Marked is red, got rgb(${del.join(',')})`).toBeGreaterThan(del[1] + 40);
+    expect(del[0], 'and not violet').toBeGreaterThan(del[2]);
   });
+});
+
+/* ---------------------------------- what a commit did to this page (#93) */
+
+test.describe('a committed page wears the hue of the commit that did it', () => {
+  /**
+   * A computed colour, polled until it parses.
+   *
+   * Same trap as `commitAndReadBadge` above: rendering is a full re-render, so a handle
+   * taken the instant an element appears can be detached before `getComputedStyle` runs,
+   * and a detached node returns an empty string. `''.match(/\d+/g)` is null, and the test
+   * then dies saying nothing about colour.
+   */
+  async function readColour(locator, prop) {
+    let value = '';
+    await expect.poll(async () => {
+      value = await locator.evaluate((el, p) => getComputedStyle(el)[p], prop).catch(() => '');
+      return /rgba?\(/.test(value) ? 'read' : `not a colour yet: ${JSON.stringify(value)}`;
+    }, { message: `never got ${prop} off the element` }).toBe('read');
+    /* The last colour in the value: the progress bar is a gradient running from cyan to
+       the mode's own hue, and it is the far end that carries the meaning. */
+    const colours = value.match(/rgba?\([^)]*\)/g);
+    return colours[colours.length - 1].match(/[\d.]+/g).map(Number);
+  }
+
+  /** Commit the current page, whichever mode is active, and wait for it to land. */
+  async function commitPage(page, mode) {
+    if (mode === 'delete') {
+      for (let i = 0; i < 2; i++) {
+        const id = await page.locator('.tile:not(.marked):not(.failed)').first()
+          .getAttribute('data-id');
+        await page.locator(`.tile[data-id="${id}"]`).click();
+      }
+      await expect(page.locator('.tile.marked')).toHaveCount(2);
+      await page.locator('#commit').click();
+      await page.locator('[data-confirm="go"]').click();
+      await expect(page.locator('.tile.out-deleted')).toHaveCount(2);
+    } else {
+      await page.locator('#commit').click();
+      await expect(page.locator('.tile .badge',
+        { hasText: mode === 'training' ? 'PROMOTED' : 'REVIEWED' }).first()).toBeVisible();
+    }
+    /* The page you are standing on is a text input, not a chip, so the committed chip
+       only exists once you have moved off it — which is also when a reviewer sees it. */
+    await page.locator('[data-page="next"]').click();
+    await ready(page);
+    await expect(page.locator('.pg.done').first()).toBeAttached();
+  }
+
+  /** Into `mode`, commit a page, and report the chip's and the swatch's colours. */
+  async function committedIn(page, mode) {
+    if (mode !== 'scientific') {
+      await page.locator('.seg button', { hasText: mode === 'training' ? 'Training Data Review' : 'Delete' })
+        .click();
+      await ready(page);
+    }
+    await commitPage(page, mode);
+    return {
+      chip: await readColour(page.locator('.pg.done').first(), 'color'),
+      swatch: await readColour(page.locator('.swatch'), 'backgroundColor')
+    };
+  }
+
+  const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+  test('R1/R2/R5: Delete is red, and nowhere near the green or the violet',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      /* One load, three modes: each mode parks its own committed pages, so the pager
+         starts empty again on arrival rather than showing the previous mode's work. */
+      const sci = await committedIn(page, 'scientific');
+      const tra = await committedIn(page, 'training');
+      const del = await committedIn(page, 'delete');
+
+      /* The reported defect: this chip was the root green, in the mode whose commit had
+         just destroyed those observations permanently. */
+      expect(del.chip[0], `the chip should be red, got rgb(${del.chip.join(',')})`)
+        .toBeGreaterThan(del.chip[1] + 40);
+      expect(del.chip[0], 'and not violet').toBeGreaterThan(del.chip[2]);
+
+      /* Unchanged, and asserted here so a shared variable cannot move them quietly. */
+      expect(sci.chip[1], `scientific stays green, got rgb(${sci.chip.join(',')})`)
+        .toBeGreaterThan(sci.chip[0]);
+      expect(tra.chip[2], `training stays violet, got rgb(${tra.chip.join(',')})`)
+        .toBeGreaterThan(tra.chip[1]);
+      expect(tra.chip[0], 'and reddish rather than cyan').toBeGreaterThan(tra.chip[1]);
+
+      /* Different is not enough: a person glancing at the pager has to be able to tell
+         which of the three they are looking at. */
+      expect(far(del.chip, sci.chip),
+        `too close to green: rgb(${del.chip.join(',')}) vs rgb(${sci.chip.join(',')})`)
+        .toBeGreaterThan(120);
+      expect(far(del.chip, tra.chip),
+        `too close to violet: rgb(${del.chip.join(',')}) vs rgb(${tra.chip.join(',')})`)
+        .toBeGreaterThan(120);
+
+      /* R2: the swatch is the legend for that chip, so it cannot disagree with it. */
+      expect(del.swatch[0], `the swatch should be red, got rgb(${del.swatch.join(',')})`)
+        .toBeGreaterThan(del.swatch[1] + 40);
+      expect(sci.swatch[1], 'the swatch stays green in scientific').toBeGreaterThan(sci.swatch[0]);
+      expect(tra.swatch[2], 'and violet in training').toBeGreaterThan(tra.swatch[1]);
+    });
+
+  test('R3: the progress bar fills with the hue of the mode filling it', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    const bar = page.locator('#progBar');
+    const sci = await readColour(bar, 'backgroundImage');
+    expect(sci[1], `scientific progress is green, got rgb(${sci.join(',')})`)
+      .toBeGreaterThan(sci[0]);
+
+    /* The rail overlays the mosaic on a phone, so put it away before touching a tile. */
+    await page.locator('#railbtn').click();
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    await openRail(page);
+    const del = await readColour(bar, 'backgroundImage');
+    expect(del[0], `deleting does not fill a bar with green, got rgb(${del.join(',')})`)
+      .toBeGreaterThan(del[1] + 40);
+  });
+
+  test('R4: the commit button says the delete succeeded without saying it was accepted',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Delete' }).click();
+      await ready(page);
+
+      const id = await page.locator('.tile:not(.marked):not(.failed)').first()
+        .getAttribute('data-id');
+      await page.locator(`.tile[data-id="${id}"]`).click();
+      const commit = page.locator('#commit');
+      await commit.click();
+      await page.locator('[data-confirm="go"]').click();
+
+      await expect(commit).toHaveClass(/ok/);
+      const ok = await readColour(commit, 'backgroundColor');
+      expect(ok[0], `the tick state should be red, got rgb(${ok.join(',')})`)
+        .toBeGreaterThan(ok[1] + 40);
+    });
 });
 
 test.describe('a judged tile steps back', () => {
