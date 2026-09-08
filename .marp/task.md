@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#85
 repos: [MARP_API]
-status: design
+status: implementing
 needs: []
 ---
 
@@ -90,7 +90,13 @@ assumed:
 
 ## Open assumptions
 
-- [ ] **A1 · product/UI · blocking** — *Does the reviewer need to be able to tell which
+- [x] **A1 · product/UI · blocking** — answered 2026-09-08: **(a), no label on the tile
+  face.** The vocabularies are disjoint, colour already reinforces it, and it costs no width
+  on a 132px tile. The workflow, the reason and the person go in the tooltip. Both
+  sub-recommendations accepted too: the tag sits **bottom left above the caption, growing
+  upward**, and a borrowed REVIEWED tag **does not name the reviewer**.
+
+  *Does the reviewer need to be able to tell which
   workflow a tag came from, spelled out on the tile face?* The issue's own open question.
   Three answers are available and they are not cosmetic variants of each other:
 
@@ -125,7 +131,11 @@ assumed:
   useful fact is *science has accepted this*, not who; the name goes in the tooltip, and it
   keeps the tag short for R7.
 
-- [ ] **A2 · product/UI · blocking** — *Does this change the filters as well as the
+- [x] **A2 · product/UI · blocking** — answered 2026-09-08: **badges only.** The filters,
+  the query and the address are untouched. Filtering across workflows, if reviewers turn out
+  to want it, is its own issue with its own defaults decided deliberately.
+
+  *Does this change the filters as well as the
   badges?* The issue is written about what is visible on an observation and never mentions
   filtering, but `statusDimensions()` is named as "the shape to generalise", and that
   function is what drives the rail, the query and the address. Recommended **no**: badges
@@ -150,6 +160,18 @@ assumed:
   visibility half of the note in the app's `CLAUDE.md`; the independence half stands.
 - **2026-09-08** — the status dimension → row column mapping becomes one declaration in
   `model/modes.js` rather than a second hand-written pair.
+- **2026-09-08** — a borrowed tag carries **no workflow label** on the tile face. The
+  vocabularies are disjoint, colour reinforces them, and the tooltip names the workflow, the
+  reason and the person. If that proves unclear in use, the prefix form (`TRN · EXCLUDED`)
+  is **one template string** in `ui/tile.js` — nobody needs to rediscover that.
+- **2026-09-08** — the filters, the query and the address are out of scope. Handing
+  Scientific Review a training-disposition filter would change which observations appear at
+  all, and `trainingDisposition` defaults to `undecided` — so a careless default would hide
+  the very promoted and excluded rows this issue exists to surface. Filtering across
+  workflows is its own issue if it is ever wanted.
+- **2026-09-08** — `.badge` stays exactly one element per tile and the borrowed tag gets its
+  own class: the render tests rely on it, and it is the honest reading — `.badge` means what
+  *this* mode says about this tile.
 
 ## Plan
 
@@ -184,9 +206,9 @@ G3. Filled in before anything is run.
 
 ## Status
 
-- **Gate:** design — **stopped at G1** with A1 and A2 open. Nothing implemented.
-- **Notes:** investigation complete; the plan above is costed and the fixture is known to
-  reach every case. #82 checked: it does not conflict — see below.
+- **Gate:** implementing — A1 and A2 answered 2026-09-08, both as recommended.
+- **Notes:** the fixture is known to reach every case. #82 checked: it does not conflict —
+  see below, and it is deliberately left alone.
 
 ## #82, and whether the two interact
 

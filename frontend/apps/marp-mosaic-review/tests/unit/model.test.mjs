@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
-  pendingException, statusDimensions, commitIsDestructive,
+  pendingException, statusDimensions, commitIsDestructive, borrowedTags,
   deleteImpact, commitOutcome, pageState } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
@@ -57,16 +57,88 @@ test('observations without imagery are not eligible for a commit', () => {
   assert.equal(commitCount({ mode: 'scientific', rows, marks: new Map() }), 1);
 });
 
-test('the state a record carries is read per mode', () => {
+/* This test used to encode the rule #85 reversed -- that a mode sees only its own
+   dimension, on the tile as well as in the marks. What #85 changed is *visibility*, which
+   is `borrowedTags` below. `existingState` itself stays mode-scoped on purpose, because
+   `page.seedMarks` and `deleteImpact` also ask it: widening it would make a training
+   exclusion seed a scientific mark. Rewritten with that reason on 2026-09-08 rather than
+   deleted, since the property it protects is now more load-bearing, not less. */
+test('the state a record carries for a mode is still read per mode', () => {
   const flagged = row(1, { review_status: 'flagged' });
   assert.equal(existingState('scientific', flagged), 'flagged');
-  assert.equal(existingState('training', flagged), null, 'review status is not a training state');
+  assert.equal(existingState('training', flagged), null,
+    'review status is not what training acts on -- it is drawn as a borrowed tag instead');
 
   const excluded = row(2, { training_disposition: 'excluded' });
   assert.equal(existingState('training', excluded), 'excluded');
   assert.equal(existingState('scientific', excluded), null);
 
   assert.equal(existingState('scientific', row(3)), null, 'unreviewed carries no state');
+  /* Delete acts on neither dimension, and reads the scientific one for its primary badge. */
+  assert.equal(existingState('delete', flagged), 'flagged');
+});
+
+/* ---------------------------------------------- every workflow's tags, in every mode */
+
+test('R1: a tag another workflow recorded is carried into every other mode', () => {
+  const excluded = row(1, { training_disposition: 'excluded', exclusion_reason: 'Occluded' });
+  assert.deepEqual(borrowedTags('scientific', excluded).map((t) => t.value), ['excluded']);
+  assert.deepEqual(borrowedTags('delete', excluded).map((t) => t.value), ['excluded']);
+
+  const flagged = row(2, { review_status: 'flagged', flag_reason: 'Duplicate' });
+  assert.deepEqual(borrowedTags('training', flagged).map((t) => t.value), ['flagged']);
+
+  const reviewed = row(3, { review_status: 'reviewed' });
+  assert.deepEqual(borrowedTags('training', reviewed).map((t) => t.value), ['reviewed']);
+
+  const promoted = row(4, { training_disposition: 'promoted' });
+  assert.deepEqual(borrowedTags('scientific', promoted).map((t) => t.value), ['promoted']);
+});
+
+test('R1: a tag carries the workflow, the reason and the person for its tooltip', () => {
+  const [tag] = borrowedTags('scientific', row(1, {
+    training_disposition: 'excluded', exclusion_reason: 'Too small', excluded_by: 'A. Other'
+  }));
+  assert.equal(tag.key, 'trainingDisposition');
+  assert.equal(tag.workflow, 'Training data review');
+  assert.equal(tag.reason, 'Too small');
+  assert.equal(tag.by, 'A. Other');
+});
+
+test('R2: a mode never borrows its own dimension, so no tag can duplicate the badge', () => {
+  const flagged = row(1, { review_status: 'flagged' });
+  assert.deepEqual(borrowedTags('scientific', flagged), [],
+    'scientific already draws its own flag as the primary badge');
+
+  const excluded = row(2, { training_disposition: 'excluded' });
+  assert.deepEqual(borrowedTags('training', excluded), []);
+
+  /* Delete's primary badge is the scientific dimension, so that is the one it never
+     borrows -- the training one it does. */
+  assert.deepEqual(borrowedTags('delete', flagged), []);
+});
+
+test('R1: a record that carries nothing lends nothing', () => {
+  for (const mode of ['scientific', 'training', 'delete']) {
+    assert.deepEqual(borrowedTags(mode, row(1)), [], `${mode} has nothing to borrow`);
+  }
+});
+
+test('R1: both dimensions decided means the other one is still borrowed, once', () => {
+  const both = row(1, { review_status: 'reviewed', training_disposition: 'excluded' });
+  assert.deepEqual(borrowedTags('scientific', both).map((t) => t.value), ['excluded']);
+  assert.deepEqual(borrowedTags('training', both).map((t) => t.value), ['reviewed']);
+  assert.deepEqual(borrowedTags('delete', both).map((t) => t.value), ['excluded']);
+});
+
+test('R6: a borrowed tag is not this mode\'s exception, so it cannot seed a mark', () => {
+  /* `seedMarks` asks whether the record carries *this mode's* exception. A training
+     exclusion must not arrive marked in scientific review, or the next scientific commit
+     would flag it. */
+  const excluded = row(1, { training_disposition: 'excluded' });
+  const isEx = (r) => existingState('scientific', r) === pendingException('scientific');
+  const marks = page.seedMarks(new Map(), new Set(), [excluded], isEx);
+  assert.equal(marks.size, 0, 'a training exclusion is context in scientific review');
 });
 
 test('who decided is found wherever the decision was recorded', () => {

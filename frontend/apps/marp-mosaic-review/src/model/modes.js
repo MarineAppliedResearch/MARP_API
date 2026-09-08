@@ -207,13 +207,94 @@ export function pageState({ rows, loading, total }) {
   return 'ready';
 }
 
-/** The state a record carries for this mode, or null when it carries none. */
-export function existingState(mode, row) {
-  if (mode === 'training') {
-    return row.training_disposition && row.training_disposition !== 'undecided'
-      ? row.training_disposition : null;
+/**
+ * The status dimensions a record carries, declared once.
+ *
+ * A mode's `statusKey` names one of these. The filter key, the row column and the value
+ * that means "nothing has been decided" were spelled out by hand in several places --
+ * `data.js` counts and filters on the columns, `existingState` read them again -- and
+ * reading *both* dimensions off one row needed the mapping to exist somewhere.
+ *
+ * `workflow` is what the tooltip calls the decision. It is not drawn on the tile face:
+ * the vocabularies are disjoint, so FLAGGED can only be scientific and EXCLUDED can only
+ * be training. See the app's CLAUDE.md.
+ */
+export const STATUS_DIMENSIONS = {
+  reviewStatus: {
+    key: 'reviewStatus',
+    column: 'review_status',
+    /* The value that means nobody has decided yet, and so carries no tag. */
+    neutral: 'unreviewed',
+    workflow: 'Scientific data review',
+    reasonColumn: 'flag_reason',
+    byColumns: ['reviewed_by', 'flagged_by']
+  },
+  trainingDisposition: {
+    key: 'trainingDisposition',
+    column: 'training_disposition',
+    neutral: 'undecided',
+    workflow: 'Training data review',
+    reasonColumn: 'exclusion_reason',
+    byColumns: ['training_approved_by', 'excluded_by']
   }
-  return row.review_status && row.review_status !== 'unreviewed' ? row.review_status : null;
+};
+
+/** The state a record carries in one dimension, or null when it carries none. */
+export function dimensionState(key, row) {
+  const dim = STATUS_DIMENSIONS[key];
+  if (!dim) return null;
+  const value = row[dim.column];
+  return value && value !== dim.neutral ? value : null;
+}
+
+/**
+ * The state a record carries for this mode, or null when it carries none.
+ *
+ * **Deliberately mode-scoped, and it has to stay that way.** This answers "what does the
+ * dimension this mode acts on say", and three different things ask it: the tile's primary
+ * badge and its mark/outcome/record precedence, `store.refresh` seeding the page's
+ * exception set through `page.seedMarks`, and `deleteImpact`. Widening it to return every
+ * tag -- which is what #85 looks like it wants -- would make a *training* exclusion seed a
+ * *scientific* mark, and would let another workflow's value satisfy the `takingBack`
+ * derivation in `ui/tile.js`. Showing every workflow's tags is `borrowedTags` instead.
+ */
+export function existingState(mode, row) {
+  const m = MODES[mode];
+  return m ? dimensionState(m.statusKey, row) : null;
+}
+
+/**
+ * Every tag the record carries from a workflow other than this mode's own (#85).
+ *
+ * Whenever a reviewer looks at an observation they should see what every workflow has
+ * said about it — flagged, reviewed, promoted, excluded — whichever mode they are in.
+ * Hiding the other workflow's answer was the earlier decision and it was wrong: Delete
+ * Mode already read both dimensions, and its reasoning generalises. The decisions stay
+ * independent; only the concealment goes.
+ *
+ * The mode's own dimension is left out because it already has the primary badge and its
+ * full precedence — and since a page arrives with its existing exceptions marked,
+ * including it would draw FLAGGED the mark beside FLAGGED the record.
+ *
+ * These are context, never a selection: nothing here changes what a mark means, what
+ * arrives marked, or what a commit writes.
+ */
+export function borrowedTags(mode, row) {
+  const own = MODES[mode] && MODES[mode].statusKey;
+  return Object.values(STATUS_DIMENSIONS)
+    .filter((dim) => dim.key !== own)
+    .map((dim) => {
+      const value = dimensionState(dim.key, row);
+      if (!value) return null;
+      return {
+        key: dim.key,
+        value,
+        workflow: dim.workflow,
+        reason: row[dim.reasonColumn] || null,
+        by: dim.byColumns.map((c) => row[c]).find(Boolean) || null
+      };
+    })
+    .filter(Boolean);
 }
 
 /** Whose decision it was, when the record carries one. */
