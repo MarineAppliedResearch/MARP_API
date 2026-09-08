@@ -1417,6 +1417,73 @@ test.describe('how many pages are done', () => {
   });
 });
 
+/* ------------------------------------------- where progress lives (#91) */
+
+test.describe('progress is not in the rail', () => {
+  /* The header row, said precisely. A second status dimension draws its heading as
+     `.lbl sub` inside the rail, so a bare `.sub` locator resolves two elements and
+     every strict-mode call on it throws -- and since #89 that heading is in every
+     mode, not just Delete. */
+  const HEADER = '.app > .sub';
+
+  test('it rides the sub bar, on the sort control\'s row', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+
+    /* The rail collapses, resets and scrolls, and progress belongs to the whole review
+       rather than to the filters — so none of those three may be able to take it off
+       screen. Since #89 gave every mode six status boxes the rail scrolls in all of
+       them, which is what made this the wrong home rather than an unlucky one.
+       The ancestry is the assertion: a coordinate check would still pass with the bar
+       back inside the rail on a tall enough window. */
+    await expect(page.locator(HEADER + ' .prog')).toBeVisible();
+    await expect(page.locator('.rail .prog')).toHaveCount(0);
+
+    /* Same row as the sort, and in front of it. The sort is still the end of the row. */
+    const prog = await page.locator(HEADER + ' .prog').boundingBox();
+    const sort = await page.locator('#sortBtn').boundingBox();
+    expect(Math.abs((prog.y + prog.height / 2) - (sort.y + sort.height / 2)),
+      'progress and the sort share a row').toBeLessThan(2);
+    expect(prog.x + prog.width, 'the sort stays at the end').toBeLessThanOrEqual(sort.x + 1);
+
+    /* `.sub` is a fixed-height band, so a second line is clipped rather than shown:
+       three stacked divs moved into it wholesale would have been invisible. */
+    const sub = await page.locator(HEADER).boundingBox();
+    expect(sub.height).toBeLessThan(40);
+  });
+
+  test('the updater still reaches all three ids', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await expect(page.locator('#progPct')).toHaveText('0%');
+
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+
+    /* The move kept `progPct`, `progBar` and `progText` precisely so the `subscribe`
+       block in index.html did not have to change. This is what proves it did not. */
+    await expect(page.locator('#progPct')).not.toHaveText('0%');
+    await expect(page.locator('#progText')).toContainText(' of ');
+    expect(await page.locator('#progBar').evaluate((el) => el.style.width)).not.toBe('0%');
+  });
+
+  test('a phone keeps the bar and the percentage, and the sort with them',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone', 'about the phone layout');
+      await page.goto('./');
+      await ready(page);
+
+      /* The row scrolls sideways here, so what progress spends on words is width the
+         sort control has to be hunted past. The answer stays; the wording goes. */
+      await expect(page.locator(HEADER + ' .bar')).toBeVisible();
+      await expect(page.locator('#progPct')).toBeVisible();
+      await expect(page.locator('.prog-word')).toBeHidden();
+      await expect(page.locator('#progText')).toBeHidden();
+      const sub = await page.locator(HEADER).boundingBox();
+      expect(sub.height).toBeLessThan(40);
+    });
+});
+
 /* ------------------------------------------- the delete confirmation (#71) */
 
 test.describe('the delete confirmation', () => {
@@ -1893,8 +1960,11 @@ test.describe('the filter rail, cleaned up', () => {
     await openRail(page);
 
     /* The rail was `overflow: hidden` over content taller than it, so the status filters
-       and the progress bar were drawn below the fold and could not be reached at all.
-       A rail that hides controls silently is worse than one that scrolls.
+       were drawn below the fold and could not be reached at all. A rail that hides
+       controls silently is worse than one that scrolls. The progress bar was the other
+       thing lost that way, and #91 took it out of the rail altogether rather than
+       leaving it to be rescued by the scrolling — it is asserted where it lives now, in
+       `progress is not in the rail` above.
        `.rail-body` is what scrolls, so *reachable* is the claim, not "fits without
        scrolling" — that proxy held only while the rail had three status boxes in it. Since
        #89 gave every mode six, Scientific's rail scrolls the way Delete's always has, and
@@ -1931,7 +2001,7 @@ test.describe('the filter rail, cleaned up', () => {
       }
 
       for (const sel of ['#statusFilters [data-status="unreviewed"]',
-                         '#statusFilters [data-status="reviewed"]', '.prog']) {
+                         '#statusFilters [data-status="reviewed"]']) {
         await expect(page.locator(sel), `${sel} is drawn in ${mode}`).toHaveCount(1);
         const box = await page.evaluate((s) => {
           const el = document.querySelector(s);

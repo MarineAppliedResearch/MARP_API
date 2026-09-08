@@ -27,6 +27,16 @@
     <span>Showing <b id="shown">0</b> of <b id="total">0</b> matching</span>
     <span class="sep">|</span>
     <span id="markedLabel"><span class="marked-word">Marked this page </span><b id="markedCount">0</b></span>
+    <span class="sep">|</span>
+    <!-- Progress is a property of the whole review, not of the filters, so it does not
+         belong in a panel that collapses, resets, and scrolls. In the rail it was drawn
+         below the fold at a 900px desktop and could not be reached at all — #91. -->
+    <span class="prog" title="How much of this question has been committed">
+      <span class="prog-word">Progress</span>
+      <span class="bar"><i id="progBar" style="width:0%"></i></span>
+      <b id="progPct">0%</b>
+      <span class="small" id="progText">&mdash;</span>
+    </span>
     <span class="menuwrap" style="margin-left:auto"><button class="sortbox" id="sortBtn" title="Change the sort order">Sort: <span id="sortLabel">&hellip;</span> &#9662;</button></span>
   </div>
 
@@ -50,12 +60,6 @@
 
         <div class="lbl" id="statusLbl">Review status</div>
         <div id="statusFilters"></div>
-        <div class="prog">
-          <div style="display:flex;justify-content:space-between;font-size:10.5px">
-            <span>Progress</span><b id="progPct" style="color:#f7fbff">0%</b></div>
-          <div class="bar"><i id="progBar" style="width:0%"></i></div>
-          <div class="small" id="progText">&mdash;</div>
-        </div>
       </div>
     </aside>
 
