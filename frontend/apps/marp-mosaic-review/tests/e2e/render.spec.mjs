@@ -393,8 +393,16 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
 
       const tile = page.locator(`.tile[data-id="${id}"]`);
       await tile.click();
-      await page.locator('#commit').click();
       await expect(tile.locator('.badge')).toContainText('FLAGGED');
+      await page.locator('#commit').click();
+
+      /* Wait for the commit to *land*, not for the badge on our own tile: that already
+         said FLAGGED as a mark, so waiting on it proves nothing and leaves the page
+         mid-commit. `commitPage` is async and writes `state.outcomes` when it resolves,
+         so switching mode first has the outcomes arrive after `setMode` cleared them --
+         which paints this commit's answers across Training. That is a real race in
+         `store.js`, found by this test on 2026-09-08 and not fixed here. */
+      await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
 
       await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
       await ready(page);

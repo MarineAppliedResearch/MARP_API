@@ -644,6 +644,33 @@ test('Scientific review and training review are independent',
     eq(state.marks.size, 0, 'nor its marks');
   });
 
+/* #85 made every workflow's tags visible from every mode, which makes this the check that
+   the *decisions* stayed independent: seeing that something is excluded from training must
+   not let a scientific commit write a training disposition. Added 2026-09-08. */
+test('Scientific review and training review are independent',
+  'a scientific commit writes only the review status', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && r.review_status === 'unreviewed');
+    ok(target, 'page 1 should contain an unreviewed row with imagery');
+    const id = target.observation_id;
+    /* What the whole page said about training before the scientific commit. */
+    const before = new Map(state.rows.map((r) => [r.observation_id, r.training_disposition]));
+
+    actions.toggleMark(id);                        // flag this one, accept the rest
+    await actions.commitPage();
+
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_status, 'flagged', 'the flag is written');
+    ok(state.outcomes.size > 1, 'the rest of the page was accepted, so this is not vacuous');
+
+    const drifted = state.rows
+      .filter((r) => r.training_disposition !== before.get(r.observation_id))
+      .map((r) => r.observation_id);
+    eq(drifted.length, 0,
+       `no scientific decision may write a training disposition, changed: ${drifted}`);
+  });
+
 test('Moving through pages',
   'an observation pinned to a committed page does not also appear on a later page', async () => {
     await reset();

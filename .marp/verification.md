@@ -1,275 +1,195 @@
-# Verification — MARP_API#81, the filter rail
+# Verification — MARP_API#85, every mode shows every workflow's tags
 
 ## What each test proves
 
-Every test names its requirement in its own title, so a failure says which item of #81 has
-broken rather than which selector moved.
-
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| B1 | `B1: choosing a project unticks "All projects" while the menu is open` | render | the "All …" entry restates itself the moment a specific value is picked, and ticks again when the last one is removed |
-| B1 | `B1: the dive and line menus behave the same way` | render | the same, on the two other menus #81 names |
-| B2 | `B2: clicking the button that opened a menu closes it` | render | a second click closes; a click on another button moves the menu rather than only dismissing |
-| B2 | `B2: it still closes after a pick has redrawn the rail underneath it` | render | the menu remembers its control by name, so a full rail re-render between the two clicks does not break the toggle |
-| B3 | `B3: a typed time becomes 24-hour, or nothing at all` | unit | `normaliseClock` — `930` is half nine, `9:30 PM` is not a time, `24:00` is not a time |
-| B3 | `B3: the time controls are 24-hour, with no AM or PM anywhere` | render | what is actually drawn: a text field holding `13:30`, no AM/PM in the panel, and the rail button saying the same back |
-| B4 | `B4: a status filter draws one control, not two` | render | the `::after` badge is gone from a status checkbox and still present on the commit button |
-| D1 | `D1: the fixture uses the session types the database really holds` | unit | exactly the five real values, casing included |
-| D1 | `D1: a session has one type, because sessions.type is one column on one row` | unit | the type is a property of the session, which is what makes L2's narrowing true |
-| L1, L2, L3 | `L1, L2, L3: the rail is one list, in order, with no processor in it` | render | no group headings; all ten labels in the declared order; no processor control |
-| L1 | `L1: the rail carries no group headings, and no field nobody reads` | unit | `group` and `dimensionGroups()` are gone from the declaration rather than left unused |
-| L2 | `L2: session type comes before session, and session nests under it` | unit | the order, and the nesting that makes the narrowing follow the selection |
-| L3 | `L3: there is no processor dimension anywhere` | unit | not in `DIMENSIONS`, not in `FILTER_KEYS`, not in `DEFAULT_FILTERS` — so not in the query and not in the address |
-| L4 | `L4: confidence is one track carrying two handles` | render | both inputs share a top, a left and a width; one track element; the fill follows a handle that moves |
-| L5 | `L5: time and date take one rail row each` | render | no span control in the rail itself, one button each, and both ends present in the popover |
-| L6 | `L6: the reset is the first control in the rail, and costs almost nothing` | render | above every filter, no wider than the collapse button, and still named for a screen reader |
-| L7 | `L7: nothing in the rail is drawn where it cannot be reached` | render | both ends of the status filters and the progress block are inside the rail's own box |
-| M1 | `M1: the field and the direction are independent` | unit | eight orders where there were five |
-| M1 | `M1: what is applied reads as both halves, not as one phrase` | unit | the sub-bar text, and that each field words its own directions |
-| M1 | `M1: a sort nobody could have chosen falls back rather than throwing` | unit | an edited address does not blank the sub-bar |
-| M1 | `M1: the field and the direction are chosen separately, and both are on screen` | render | the menu, the rewording, the sub-bar, and the address |
-| M1 | `M1: the order actually applied changes when the direction does` | render | the mosaic really reorders — a menu that reordered nothing would pass every other M1 test |
-| Q1 | `Q1: the model dimension stays, until Phase 3 gives it a column` | unit | left in place deliberately, so removing it is a decision somebody makes |
-| P1 | `no file that draws the rail knows a dimension by name` | unit | no renderer special-cases a dimension key, which is how the #77 property decays |
-| P1 | `every declared dimension actually reaches the rail` | render | and nothing declared is silently undrawn |
-| M2 | `M2: a secondary term is applied where the primary ties` | unit | `sortTerms` returns one term or two, in order |
-| M2 | `M2: observation_id is never one of the terms` | unit | the final tie-break is appended by the query, not declared, so no caller can reorder or drop it |
-| M2 | `M2: a secondary that can never be reached is not a term` | unit | the same field twice, and a field that does not exist |
-| M2 | `M2: choosing a primary that is already the secondary clears the secondary` | unit | and a primary change that leaves the secondary reachable keeps it |
-| M2 | `M2: the secondary can be set and cleared on its own` | unit | `withSortThen`, including the refusal to accept the primary |
-| M2 | `M2: what is applied names both terms` | unit | the sub-bar text |
-| M2 | `M2: the secondary term survives the address` | unit | `?sort=confidence.asc,keyframe_count.desc` round-trips |
-| M2 | `M2: a malformed secondary does not cost the reviewer the primary` | unit | three malformed forms |
-| M2 | `M2: a secondary naming the primary is not a term, and is not written` | unit | it is dropped on the way in and on the way out |
-| M2 | `M2: the default sort still writes a bare address` | unit | #79's whole claim: a bare address is the default question |
-| M2 | `M2: a secondary sort is chosen in the same menu, and reaches the address` | render | the menu, its rewording, the sub-bar, the URL, and a reload |
-| M2 | `M2: the tie-break really breaks ties, and the primary still governs` | render | the page really reorders, and confidence never goes backwards |
-| M3 | `M3: a phone sorts with the same control, at the same size` | render | whole control inside the viewport, computed type and padding identical to the desktop's, and the secondary sort driven end to end at phone width |
-| — | `no dimension key can be mistaken for a control id` | unit | the namespaces `anchorKey()` merges cannot collide |
-
-**Each of B1–B4 was shown to fail before it was fixed.** The defect was reintroduced from
-a file copy, the test run, and the copy restored — never `git checkout --` on a file with
-uncommitted work. The four failures are recorded under *Results*.
+| R1 | `R1: a tag another workflow recorded is carried into every other mode` | unit | every combination of dimension and mode lends the right tag |
+| R1 | `R1: a tag carries the workflow, the reason and the person for its tooltip` | unit | the tooltip has something to say, since the face carries no label |
+| R1 | `R1: a record that carries nothing lends nothing` | unit | an untouched observation gains no tag in any mode |
+| R1 | `R1: both dimensions decided means the other one is still borrowed, once` | unit | no duplication when the record carries two decisions |
+| R1 | `R1: a training exclusion is drawn while reviewing science` | render | the tag is actually on the tile — the store was right every previous time a badge never appeared |
+| R1 | `R1: a training promotion is drawn while reviewing science` | render | the other training value, in the other direction |
+| R1 | `R1: a scientific review is drawn while reviewing training data` | render | the reverse direction, plus the tooltip naming the workflow |
+| R1 | `R1: Delete Mode shows the training tags it used to hide` | render | the sharpest case in the issue: an exclusion visible before a permanent delete |
+| R2 | `R2: a mode never borrows its own dimension, so no tag can duplicate the badge` | unit | the primary slot's dimension is excluded at the source |
+| R2, R3 | `R2/R3: a mark still outranks the record, and the tag does not swallow the click` | render | clicking a tagged tile — on the tag itself — marks it for this mode and the badge changes |
+| R4 | `a scientific commit writes only the review status` (new, `tests/requirements.js`) | contract | no row on the page changes its training disposition when science commits |
+| R5 | `R1/R5: a committed flag reaches training as the record, not as an outcome` | render | the tag appears in the other mode while the primary badge stays silent, so it was the record and not a travelling outcome |
+| R5 | `a scientific commit leaves no badge behind in training or delete` (existing) | render | outcomes still do not travel; comment updated to say what that means now |
+| R6 | `R6: a borrowed tag is not this mode's exception, so it cannot seed a mark` | unit | a training exclusion cannot arrive marked in scientific review |
+| R6 | asserted inside `R1: a training exclusion is drawn while reviewing science` | render | no `has-excluded` class and `filter: none` on the image — the picture is not dimmed by another workflow |
+| R7 | `R7: the tag stays inside the tile and clear of the caption` | render | measured box: inside the tile, above the caption, in the lower half, and the page does not scroll sideways. Run at desktop *and* phone width |
+| R9 | `the state a record carries for a mode is still read per mode` | unit | the old rule's test rewritten with the date and the reason, not deleted |
+| R10 | `the mode keeps its own status filter, and ignores the other mode's` (existing) | unit | the rail and the query are unchanged |
 
 ## Requirements with no test
 
-None. Every id in #81 has at least one named test above.
+- **R8** — "a reviewer can tell which workflow a tag came from" is a legibility claim about
+  a person, and no tier can assert it. What is testable is asserted: the tooltip names the
+  workflow (render), and the tag wears the owning workflow's colour class. Whether the
+  distinction actually reads is for the user in the app.
 
 ## Edge cases
 
-- **A pick that redraws the rail under an open menu.** The rail is re-rendered from state
-  on every change, so the button that opened a menu is replaced while the menu is up. The
-  menu therefore keys on the control's *name*, not the node. Covered by the second B2 test.
-- **A typed time that is not a time.** `noon`, `24:00`, `12:60` all leave that end unset
-  and clear the field, so nothing sits on screen looking as though it were applied.
-- **A time typed and then clicked away from.** The popover is dismissed by that click and
-  the element is removed, so `change` on blur never arrives. The panel listens for
-  `focusout` and Enter as well, and `applySpan` ignores a pair it has already been given so
-  the overlap costs nothing. Not separately tested — see *Known gaps*.
-- **Two slider handles dragged past each other.** Swapped rather than refused; the
-  pre-existing behaviour, kept.
-- **An address naming a sort that no longer exists.** `isSort` rejects it and the default
-  applies, which matters because #81 removed five sort labels and added an eighth order.
+- **A record carrying both decisions** — covered in the unit tier. Without the
+  own-dimension exclusion this draws the same word twice, because a page arrives with its
+  existing exceptions already marked.
+- **A tile with no imagery** — the render helper picks rows with a ready thumbnail, so the
+  claim about the image not being dimmed has an image to make it about.
+- **Clicking the tag itself** rather than the tile around it, which is the click most
+  likely to be swallowed by a new element.
+- **Phone width** — every render test runs at both viewports. A 96px tile is where a second
+  label would bury the picture.
 
 ## Regression coverage
 
-- **B4 was an attribute collision**, not a stray element: `data-key` meant the status
-  dimension in `chrome.js` and the keyboard-shortcut badge in `app.css`. The test asserts
-  the pseudo-element is absent on the checkbox *and* still present on the commit button, so
-  a fix by deleting the badge feature would fail it.
-- **The R4 wrapped-window test was reading the total too early.** Both windows return more
-  than a page, so the tile count `ready()` watches is identical either side of the change.
-  It now polls the number that actually moves. Found while regenerating the fixture.
+- **The precedence that produced the most reported defects in this app** — a mark outranks
+  an outcome, which outranks the record. `.badge` is kept as exactly one element per tile so
+  a record tag structurally cannot reach that slot, and the render test clicks a tagged,
+  committed tile to prove the click still does something.
+- **`page.seedMarks` seeding from the wrong dimension** — the reason `existingState` was
+  not widened. Named unit test.
+- **Outcomes wearing another mode's answer** — the existing test stands, and the new one
+  proves the thing that now travels is the record.
 
 ## Known gaps
 
-- **The click-away flush is not covered by a test.** The `focusout` path is exercised by
-  every popover interaction in the suite, but no test asserts specifically that typing a
-  time and clicking into the mosaic applies it.
-- **The date ends are still native `<input type="date">`,** so they render in the
-  browser's locale order — `mm/dd/yyyy` here. B3 is about the clock and nobody reported
-  the date format, so this is deliberate and untested.
-- **`state.excludedForNoDate` is still date-shaped.** The rail now finds the note through
-  `reportsExclusions` rather than by name, but the count and its wording are the date's.
-  A second dimension that could not always answer would need the store generalised too.
-- **`model/match.js` and `model/query-url.js` still name the date dimension**, because a
-  date range compares differently from a number range. Pre-existing, and out of scope here.
-- **Nothing checks the rail at a viewport shorter than 900px.** The rail body scrolls now,
-  so it should hold, but the assertion is written against the desktop and phone projects
-  the suite already runs.
-- **The secondary sort is one term deep, not a stack.** Nothing offers a third, and
-  `sortTerms` would need a shape change rather than a loop to grow one.
-- **`src/data.js` still filters the two status dimensions with hand-written `includes`
-  checks**, outside `matchesFilters` — the duplication #77 removed for the rail dimensions,
-  surviving in the status ones. Deliberately not touched here; it wants its own issue.
+- **`src/data.js` is a fixture.** The tags read back are the ones the fixture holds and the
+  ones a commit writes to it. No claim here has been made against a real API or schema.
+- **Only two dimensions exist.** The slot stacks with `column-reverse` so a third would
+  grow upward, but nothing has ever drawn two borrowed tags at once, so that layout is
+  unexercised.
+- **#82 is untouched.** TAKING BACK on exclusions nobody touched is not fixed or broken
+  here; see `.marp/task.md`.
+- **The colour contrast of a tag over a photograph** has not been measured; it carries a
+  dark hairline ring rather than a measured contrast ratio.
 
 ## Manual steps
 
-None. Everything here is reachable from the two automated tiers.
+None. Everything above runs in `npm run test:unit` and `npm run test:e2e`.
 
 ## Walkthrough videos
 
-Not recorded. They are a review surface the user asks for, and #81 did not. The existing
-`verify-filters` scenario was updated so it still passes and still asserts: its first scene
-now checks that there are no group headings and that the bottom of the rail is reachable,
-and its `setEnd` helper opens the popover the time and date ends now live in.
+None recorded. Not requested, and every claim above is asserted at a tier that runs
+constantly.
+
+---
 
 ## Results
 
-Recorded verbatim, including what failed on the way.
+Run on 2026-09-08 in the `85-tags-across-modes` worktree, Node 24.11.1, real Chromium at
+desktop and phone widths.
 
-### The four bugs, failing before they were fixed
-
-```
-✘ B4: a status filter draws one control, not two
-  Error: expect(received).toBe(expected)   // a status checkbox draws no badge of any kind
-  Expected: "none"   Received: "\"reviewStatus\""
-
-✘ B1: choosing a project unticks "All projects" while the menu is open
-  Error: expect(locator).not.toHaveClass(expected) failed
-      18 × locator resolved to <button data-v="" class="on">…</button>
-         - unexpected value "on"
-✘ B1: the dive and line menus behave the same way
-  Error: dive still claims All dives
-✘ B2: clicking the button that opened a menu closes it
-  Error: expect(locator).toHaveCount(expected) failed
-      18 × locator resolved to 1 element   - unexpected value "1"
-✘ B2: it still closes after a pick has redrawn the rail underneath it
-  Error: expect(locator).toHaveCount(expected) failed
-      18 × locator resolved to 1 element   - unexpected value "1"
-
-✘ B3: the time controls are 24-hour, with no AM or PM anywhere
-  Error: expect(locator).toHaveAttribute(expected) failed
-  Expected: "text"   Received: "time"      // with lang="en-GB" set, which changes nothing
-
-✘ D1: the fixture uses the session types the database really holds
-  AssertionError: + 'Drop Cam', + 'ROV'
-✘ D1: a session has one type, because sessions.type is one column on one row
-  AssertionError: session 400 carries both ROV and Drop Cam
-```
-
-### Failures found and fixed during the work
+### Unit tier — `npm run test:unit`, after every change
 
 ```
-✘ R4: a time window that wraps past midnight returns both sides of it
-  Error: expect(received).toBeGreaterThan(expected)   Expected: > 88   Received: 88
-```
-
-Two causes, both real. `page.fill()` raises `input` and not `change`, so a value typed
-into a text field was never committed until focus left it — which the app now handles
-through `focusout` and Enter, and the test drives with Enter. And both windows return more
-than a page, so `ready()` could not see the result change; the test polls the total.
-
-### Two more failures, on the first full browser run
-
-```
-✘ [desktop] the line list is scoped to the chosen dive
-✘ [phone]   the line list is scoped to the chosen dive
-  Error: locator.click: Test timeout of 30000ms exceeded.
-    - waiting for locator('[data-dim="line"]')
-    - <button class="" data-v="">…</button> from <div class="menu">…</div> subtree
-      intercepts pointer events
-```
-
-Real, and caused by this work rather than uncovered by it. A multi-select menu stays open
-after a pick and hangs over the control below it. The dive menu used to open *upwards*,
-because the taller rail left no room beneath it; the compact rail leaves room, so it opens
-downwards and covers the line button. The test now dismisses the menu before reaching for
-the next control, which is what a reviewer does.
-
-```
-✘ [desktop] R7: the banner offers to ask for the imagery again
-  1074 | await expect(page.locator('#commit')).toBeEnabled();
-```
-
-A flake, not a defect: it passed alone immediately afterwards, and passed in both
-subsequent full runs. It retries fifty thumbnails, each behind a simulated 900 ms latency,
-against a seven-second expectation — six parallel workers are enough to push it over.
-Not chased further; noted so that it is not a surprise if it recurs.
-
-### The final run
-
-```
-$ npm run test:unit
-ℹ tests 101
-ℹ pass 101
+ℹ tests 119
+ℹ suites 0
+ℹ pass 119
 ℹ fail 0
-ℹ duration_ms 68.5716
-
-$ npm run test:e2e          # desktop and phone
-  1 skipped
-  153 passed (1.1m)
-
-$ npm run test:e2e          # again, to see whether the R7 flake recurs. It did not.
-  1 skipped
-  153 passed (1.1m)
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87.5515
 ```
 
-The one skip is deliberate and pre-existing: `it survives on a phone, where the trailing
-words do not` calls `test.skip(info.project.name !== 'phone')`, so it runs once, on the
-phone project, and reports itself skipped on the desktop one.
+113 before this task, 119 after: six new rules.
 
-## Round two — the secondary sort, the phone, and the README
-
-### What was shown to fail first
-
-The secondary sort is a feature rather than a reported bug, so the thing worth proving is
-that its test can tell a working tie-break from a recorded one. `sortTerms` was made to
-drop the second term — one `false &&` — and the render test failed on exactly the claim it
-is there to make:
+### Render tier — the #85 block, `npm run test:e2e -- -g "every workflow"`
 
 ```
-✘ M2: the tie-break really breaks ties, and the primary still governs
-  Error: reversing the tie-break must reorder the page
-  Expected: not "100173,100356,100013,100121,100199,100203,100345,100394,…"
+  14 passed (6.2s)
 ```
 
-Every other M2 assertion — the menu, the ticks, the sub-bar wording, the address — passed
-while the secondary sorted nothing. That is precisely the failure mode the doctrine warns
-about, and it is why that test reads the tile order rather than the menu.
+Seven tests at two viewports.
 
-### Two existing tests needed changing, and why
+### Proving the render tests can see the defect
 
-- `R1: mode, filters, sort and page all survive the round trip` and `R3: a sort nobody
-  offers is ignored` compared the sort object exactly, so they failed on the new `then:
-  null`. The shape changed; the assertions were updated rather than loosened.
-
-### The final run
+The `${borrowed(row)}` call was removed from `ui/tile.js` (after `cp` to a scratch copy,
+restored from it afterwards) and the same command re-run:
 
 ```
-$ npm run test:unit
-ℹ tests 112
-ℹ pass 112
-ℹ fail 0
-
-$ npm run test:e2e          # desktop and phone
-  2 skipped
-  158 passed (1.1m)
-
-$ npm run test:e2e          # again
-  1 failed
-    [desktop] › keyboard shortcuts › R7: Ctrl+Enter on a page that cannot be committed says so
-  2 skipped
-  157 passed (1.1m)
-
-$ npx playwright test --project=desktop -g "R7: Ctrl.Enter on a page"
-  1 passed (2.1s)
-
-$ npm run test:e2e          # a third time
-  2 skipped
-  158 passed (1.1m)
+  ✘  [desktop] R1: a training exclusion is drawn while reviewing science
+  ✘  [desktop] R1: a training promotion is drawn while reviewing science
+  ✘  [desktop] R1: a scientific review is drawn while reviewing training data
+  ✘  [desktop] R1: Delete Mode shows the training tags it used to hide
+  ✘  [desktop] R1/R5: a committed flag reaches training as the record, not as an outcome
+  ✘  [desktop] R2/R3: a mark still outranks the record, and the tag does not swallow the click
+  ✘  [desktop] R7: the tag stays inside the tile and clear of the caption
+  ✘  [phone] ... the same seven
 ```
 
-**The one failure is a flake and is named rather than explained away.** It passed alone
-immediately, and in the runs either side of it. Both flakes seen across five full runs are
-in tests that break every thumbnail on the page and then wait on the commit button — fifty
-retries behind a simulated 900 ms latency, against a seven-second expectation, with six
-workers competing. Neither is in code this branch touched. If it recurs often enough to
-matter, the fix is for those two tests to wait on the store's own signal rather than on a
-timeout, and that is worth an issue rather than a patch here.
+All 14 fail with the rendering removed and the model layer intact — which is the point:
+the unit tier stayed green throughout that run.
 
-**Both skips are the same deliberate pattern**, and neither hides anything: each is a
-phone-layout test guarded by `test.skip(info.project.name !== 'phone')`, so it runs exactly
-once — on the phone project — and reports itself skipped on the desktop one. `M3` is the
-new one.
+### Contract tier — `npm run test:e2e -- -g "requirement checks"`
 
+```
+  ✓  2 [desktop] the requirement checks in tests.html all pass (38.8s)
+  ✓  1 [phone]   the requirement checks in tests.html all pass (38.8s)
+  2 passed (40.0s)
+```
+
+R4's check is new, and it was also shown to catch the defect: with
+`row.training_disposition = 'excluded'` added to the *scientific* branch of `commitPage`
+in `src/data.js` (again via `cp`, restored afterwards), it failed at both widths:
+
+```
+Error: contract checks failed:
+no scientific decision may write a training disposition, changed: 100129 expected 0, got 1
+```
+
+### Whole suite — `npm run test:e2e`, run twice
+
+**First run:** `1 failed / 4 skipped / 169 passed (1.2m)`. **Second run**, after fixing my
+own test: `1 failed / 4 skipped / 169 passed (1.1m)` — a *different* test, and a different
+flake. **Third run**, after adding R4's contract check:
+
+```
+  4 skipped
+  170 passed (1.1m)
+```
+
+Green. The two failures above are flakes under six parallel workers, each passing alone,
+and neither is in this change's path — see below. The 4 skips are pre-existing conditional
+skips in tests written before this task.
+
+**A test of mine was wrong first.** `R1/R5` failed at both widths on the first run:
+
+```
+Error: expect(locator).toHaveCount(expected) failed
+Locator:  locator('.tile[data-id="100129"]').locator('.badge')
+Expected: 0
+Received: 1
+```
+
+It waited on its own tile's badge, which already read FLAGGED as a *mark*, and so switched
+mode while the commit was still in flight. `commitPage` then resolved and wrote
+`state.outcomes` after `setMode` had cleared them, painting the scientific commit's answers
+across Training. The test now waits for the commit to land. **The race is real and lives in
+`store.js`, not in the test** — reported, deliberately not fixed here.
+
+**Flake 1 — the contract checks, phone only, first run:**
+
+```
+Error: contract checks failed:
+an observation without ready imagery is skipped, and does not block the batch
+unavailable imagery must be skipped
+```
+
+Passes alone at both widths (38.0s / 38.3s). The check takes any row whose thumbnail is
+not `ready` and requires the commit to skip it, but a `queued` thumbnail can resolve to
+ready before the commit runs. Nothing in this change is in that path: `tests.html` imports
+`store.js`, `model/modes.js` and `data.js` only — never `ui/tile.js` or the stylesheet.
+
+**Flake 2 — the TAKING BACK colour test, desktop only, second run:**
+
+```
+TypeError: Cannot read properties of null (reading 'map')
+```
+
+Passes alone at both widths (1.4s / 1.5s). It reads `getComputedStyle` once on a badge that
+a full re-render can detach, and `''.match(/\d+/g)` is null. The helper immediately below
+it in the same file carries a comment describing exactly this and polls instead; this test
+was never given the same treatment. Pre-existing, and unrelated to this change.

@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#85
 repos: [MARP_API]
-status: implementing
+status: verifying
 needs: []
 ---
 
@@ -206,7 +206,7 @@ G3. Filled in before anything is run.
 
 ## Status
 
-- **Gate:** implementing — A1 and A2 answered 2026-09-08, both as recommended.
+- **Gate:** verifying — implemented, and the whole suite run. G5 not requested.
 - **Notes:** the fixture is known to reach every case. #82 checked: it does not conflict —
   see below, and it is deliberately left alone.
 
