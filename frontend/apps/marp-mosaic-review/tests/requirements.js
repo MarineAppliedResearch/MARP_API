@@ -6,7 +6,7 @@
  * markup — a rendering change should not break them, and a behaviour change should.
  */
 import { state, actions, MODES } from '../src/store.js';
-import { pendingException } from '../src/model/modes.js';
+import { pendingException, statusDimensions } from '../src/model/modes.js';
 import { MarpData } from '../src/data.js';
 
 const results = [];
@@ -574,7 +574,8 @@ test('Delete mode',
 
     actions.setMode('delete');
     await new Promise((r) => setTimeout(r, 500));
-    eq(MODES.delete.statusLabel, 'Review status', 'Delete filters on review status');
+    eq(statusDimensions('delete')[0].label, 'Review status',
+       'Delete leads on review status');
     const row = state.rows.find((r) => r.observation_id === id);
     ok(row, 'the flagged observation is still in the delete-mode results');
     eq(row.review_status, 'flagged', 'and it still carries its flag');
