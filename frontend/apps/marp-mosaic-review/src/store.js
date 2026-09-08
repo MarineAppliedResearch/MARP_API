@@ -441,11 +441,38 @@ export const actions = {
     notify();
   },
 
+  /**
+   * Retry every failed thumbnail on the page, in two paints rather than two per tile.
+   *
+   * This used to call `retryThumbnail` once per row, and each of those notifies twice — so
+   * a page of fifty cost **a hundred full re-renders**, each rebuilding all fifty tiles.
+   * Measured at 972 ms on an idle machine, and enough under parallel test workers to blow
+   * a twenty-second timeout, which is what made two browser tests flaky.
+   *
+   * Rendering here is a full re-render from state by design, and that is worth keeping —
+   * so the fix is to stop asking for a hundred of them, not to make rendering incremental.
+   * One paint to show the page queued, one when the answers are in.
+   */
   async retryFailedThumbnails() {
     const failed = state.rows.filter((r) => r.thumbnail_status === 'failed');
     if (!failed.length) return;
     fire('thumbnail:retry-page', { count: failed.length });
-    await Promise.all(failed.map((r) => actions.retryThumbnail(r.observation_id)));
+
+    for (const row of failed) row.thumbnail_status = 'queued';
+    notify();
+
+    const settled = await Promise.all(failed.map(async (r) => [
+      r.observation_id, await MarpData.retryThumbnail(r.observation_id)
+    ]));
+
+    for (const [id, status] of settled) {
+      /* The row may have gone -- a filter change, a new page -- while this was in flight. */
+      const still = state.rows.find((r) => r.observation_id === id);
+      if (!still) continue;
+      still.thumbnail_status = status || 'failed';
+      fire('thumbnail:retried', { id, status: still.thumbnail_status });
+    }
+    notify();
   },
 
   /**
