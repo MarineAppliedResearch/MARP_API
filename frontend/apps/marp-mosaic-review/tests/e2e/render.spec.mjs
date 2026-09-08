@@ -1149,6 +1149,114 @@ test.describe('a page resets, and a commit stays in its own mode', () => {
   });
 });
 
+test.describe('a mode keeps its own session work', () => {
+  /** Commit the page we are on, and wait for it to land. */
+  async function commitAndSettle(page) {
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+    await ready(page);
+  }
+
+  const mode = (page) => page.evaluate(() => window.MARP.state.mode);
+  const session = (page) => page.evaluate(() => ({
+    pins: window.MARP.state.pageMembers.size,
+    committed: window.MARP.state.committedPages.size,
+    outcomes: window.MARP.state.outcomes.size,
+    marks: window.MARP.state.marks.size
+  }));
+
+  test('R1: what was reviewed is still there after a trip through another mode',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await commitAndSettle(page);
+      await page.locator('[data-page="next"]').click();
+      await ready(page);                          // step off it, so its chip is drawn
+      const before = await session(page);
+      const chipsBefore = await page.locator('.pg.done').count();
+      expect(before.committed).toBe(1);
+      expect(chipsBefore).toBe(1);
+
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+      await ready(page);
+
+      /* `setMode` used to throw the pins, the committed pages and the outcomes away. That
+         stopped one mode wearing another's answers and discarded the reviewer's session
+         with it: three pages reviewed, one glance at Training, and no way back to what had
+         been submitted. Reported 2026-09-08. */
+      const after = await session(page);
+      expect(after.pins).toBe(before.pins);
+      expect(after.committed).toBe(before.committed);
+      expect(after.outcomes).toBe(before.outcomes);
+      /* `setMode` lands on page 1, which is the committed one, so it is already on screen. */
+      await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+
+      /* Step off it to see its chip: the current page is a typable input rather than a
+         chip, so it carries neither `data-page` nor the committed class. */
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+      expect(await page.locator('.pg.done').count()).toBe(chipsBefore);
+    });
+
+  test('R2: uncommitted marks do not travel', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+
+    const before = (await session(page)).marks;
+    await page.locator('.tile:not(.failed):not(.queued):not(.marked)').first().click();
+    expect((await session(page)).marks).toBe(before + 1);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+    await ready(page);
+
+    /* An uncommitted mark is a pending intention the reviewer walked away from. Only
+       what reached the record comes back — and the record's own exceptions re-seed, which
+       is why this compares against the arrival count rather than zero. */
+    expect((await session(page)).marks).toBe(before);
+  });
+
+  test('R3: the other mode still sees none of this mode\'s outcomes', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await commitAndSettle(page);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+
+    /* The isolation the clearing was protecting has to survive the parking. `.badge` is
+       what this mode says; a REVIEWED tag from the record may legitimately appear as an
+       `.rtag` under #85, and that is a different element on purpose. */
+    expect(await mode(page)).toBe('training');
+    expect((await session(page)).outcomes).toBe(0);
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+  });
+
+  test('R4: changing the question drops every mode\'s pinned pages', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await commitAndSettle(page);
+    expect((await session(page)).committed).toBe(1);
+
+    await openRail(page);                       // collapsed by default on a phone
+    await page.locator('#railReset').click();
+    await ready(page);
+
+    /* A different question means a different result, so page 2 is not the same page 2.
+       Parked pins would restore pages the filter no longer returns. */
+    expect(await page.evaluate(() => window.MARP.state.parked.size)).toBe(0);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+    await ready(page);
+    expect((await session(page)).committed).toBe(0);
+  });
+});
+
 test.describe('the commit button reports on itself', () => {
   test('it spins while saving, then confirms', async ({ page }) => {
     await page.goto('./');

@@ -158,10 +158,25 @@ and all three were bugs before they were rules:
   the next commit would have accepted them. TAKING BACK now appears only where somebody
   clicked an individual tile, which is what it means.
 
-**`state.outcomes` is scoped to a mode, and `setMode` clears it.** Left standing, a
-scientific commit painted REVIEWED badges across Training and Delete — two independent
-decisions wearing each other's answer. Nothing is lost: what was committed is on the
-record, and the next query reads it back through this mode's own status dimension.
+**Each mode keeps its own session work, and `setMode` parks it rather than clearing it.**
+`state.outcomes`, `state.committedPages` and `state.pageMembers` all belong to the mode
+that made them — left shared, a scientific commit painted REVIEWED badges across Training
+and Delete, two independent decisions wearing each other's answer. They used to be cleared
+on every mode switch for that reason, which also discarded the reviewer's session: review
+three pages, glance at Training, come back, and there was no way to see what had been
+submitted, because the pins are the only thing that keeps a committed page visible past a
+filter that no longer matches it. `state.parked` holds them per mode instead, so the
+isolation and the session both survive. Reported 2026-09-08.
+
+**Uncommitted marks do not travel.** `marks` and `touched` are still cleared by `setMode`.
+An uncommitted mark is a pending intention in one workflow and the reviewer walked away
+from it; a committed page is on the record, and parking only affects how it is displayed.
+
+**A different question drops every mode's parked work**, not just the active one's — a new
+filter or a new sort means page 2 is not the same page 2, so restoring those pins would
+resurrect pages the query no longer returns. `resetForNewQuery()` and `reorder()` are where
+that happens, and `clearFilters` was writing those six lines out by hand until it missed
+this and was routed through the helper.
 
 A mark is not a decision. **Committing is what writes it to the record** — that is why a
 flag survives leaving the page, the session, and the reviewer, and why "my flags
