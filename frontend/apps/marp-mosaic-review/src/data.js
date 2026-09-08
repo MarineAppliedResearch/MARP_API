@@ -31,6 +31,7 @@ let db = null;
 /* Testing affordance: the fixture cannot fail on its own, but the API will, and the
    button has to show it. Nothing in the application calls this. */
 let failNext = false;
+let slowNext = 0;
 
 export const MarpData = {
   async load() {
@@ -51,6 +52,16 @@ export const MarpData = {
    */
   /** Make the next commit fail, so the failed path can be exercised. */
   failNextCommit() { failNext = true; },
+
+  /**
+   * Hold the next commit open for a while, so what happens *during* one can be driven.
+   *
+   * A testing affordance like `failNextCommit`. Without it, anything about a commit still
+   * being in flight has to be raced against a 260 ms fixture latency, and a test that
+   * races is a test that reports the wrong thing about one run in ten. #86 is the case
+   * that needed it: a mode switch landing between the request and the response.
+   */
+  slowNextCommit(ms = 3000) { slowNext = Math.max(0, ms); },
 
   /**
    * Break the imagery for a set of observations, so the states a reviewer meets on a bad
@@ -251,7 +262,10 @@ export const MarpData = {
    * available for correction rather than disappearing.
    */
   async commitPage({ mode, observationIds, marks }) {
-    await delay(LATENCY.commit);
+    /* `slowNextCommit` holds this one open; it applies once and then forgets itself, the
+       same way `failNextCommit` does. */
+    const held = slowNext; slowNext = 0;
+    await delay(held || LATENCY.commit);
     if (failNext) { failNext = false; throw new Error('the commit could not be saved'); }
     const reviewed = [], flagged = [], skipped = [], reverted = [];
 

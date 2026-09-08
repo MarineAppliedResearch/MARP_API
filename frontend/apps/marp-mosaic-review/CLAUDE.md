@@ -150,7 +150,13 @@ and all three were bugs before they were rules:
   marked, so the page stays editable and a click still means what it meant a moment
   ago. Delete Mode keeps nothing marked — a deleted row is not a pending intention.
 - `state.touched` holds what the reviewer decided by hand. Those ids are never
-  re-seeded, so taking a flag off and paging away does not put it back.
+  re-seeded, so taking a flag off and paging away does not put it back. **Clear resets the
+  page instead of emptying it** — it drops the reviewer's marks *and* their take-backs on
+  this page and lets the record's exceptions seed again, so the page looks as it did on
+  arrival. Clearing used to empty the marks and add every row to `touched`, which silently
+  staged the reversal of every exception the record carried: they read as TAKING BACK and
+  the next commit would have accepted them. TAKING BACK now appears only where somebody
+  clicked an individual tile, which is what it means.
 
 **`state.outcomes` is scoped to a mode, and `setMode` clears it.** Left standing, a
 scientific commit painted REVIEWED badges across Training and Delete — two independent
@@ -219,6 +225,13 @@ you remove one.
 tiles shrink → an extra row fits → overflow → repeat. The grid never settles, "page 1"
 holds different observations on each visit, and marks appear to vanish. `scrollbar-gutter:
 stable` plus a flap guard closes the rest of that loop.
+
+**The commit carries the mode it started in.** `commitPage` reads `state.mode` and
+`state.page` once, and everything after the `await` is checked against those. Writing the
+outcomes back unconditionally meant a commit landing after a mode switch put them straight
+back after `setMode` had cleared them — a whole page of scientific badges displayed in
+Training. The commit already happened and the record is written; what is dropped is this
+mode's display of it, and the next query reads the record back.
 
 **Every query carries a sequencing token.** `const token = ++reqSeq; … if (token !== reqSeq) return;`
 Overlapping queries land out of order otherwise, and the screen shows an older result
