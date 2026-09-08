@@ -91,6 +91,7 @@
 <script type="module">
   import { actions, state, subscribe } from './src/store.js';
   import { mount } from './src/ui/mount.js';
+  import { MarpData } from './src/data.js';
 
   /* Surface failures rather than swallowing them — an async render error is
      otherwise invisible, which cost real time during the first build. */
@@ -178,7 +179,10 @@
        served over HTTP rather than opened from the filesystem.</span></div>`;
   });
 
-  window.MARP = { state, actions };   // handy from the console
+  /* `data` is here so the testing affordances can be reached by hand: `failNextCommit`,
+     `breakThumbnails` and `slowNextCommit` all exist to reach states the fixture is too
+     healthy or too fast to produce on its own. */
+  window.MARP = { state, actions, data: MarpData };   // handy from the console
 </script>
 </body>
 </html>
