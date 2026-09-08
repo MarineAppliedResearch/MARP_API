@@ -117,9 +117,16 @@ export const pendingException = (modeId) =>
  * "What counts as reviewed".
  */
 export function commitCount({ mode, rows, marks }) {
+  /* Delete acts on what is marked, imagery or not -- `data.js` only skips a row with no
+     picture when it is *unmarked*, so a marked one is destroyed either way. Filtering here
+     first made this under-count in Delete Mode, and it agreed with `deleteImpact`, which
+     had the same fault: the two were consistent with each other and wrong about what the
+     commit does. Fixed 2026-09-06. */
+  if (commitActsOnMarked(mode)) {
+    return rows.filter((r) => marks.has(r.observation_id)).length;
+  }
   const eligible = rows.filter((r) => r.thumbnail_status === 'ready');
-  const marked = eligible.filter((r) => marks.has(r.observation_id)).length;
-  return commitActsOnMarked(mode) ? marked : eligible.length - marked;
+  return eligible.filter((r) => !marks.has(r.observation_id)).length;
 }
 
 /**
@@ -144,8 +151,12 @@ export const commitIsDestructive = (modeId) => modeId === 'delete';
  * is not a reason to keep an observation; being promoted is.
  */
 export function deleteImpact({ rows, marks }) {
-  const targets = rows.filter(
-    (r) => r.thumbnail_status === 'ready' && marks.has(r.observation_id));
+  /* Everything marked, imagery or not -- the same rule `commitOutcome` and the commit
+     itself use. This filtered on `thumbnail_status === 'ready'` until 2026-09-06, so
+     marking two rows where one had no picture put "1 observation" on the dialog and then
+     destroyed two. Deletion is irreversible and this count is the only thing in front of
+     it, so it has to be the number that actually gets deleted. */
+  const targets = rows.filter((r) => marks.has(r.observation_id));
 
   return {
     count: targets.length,

@@ -444,7 +444,19 @@ test.describe('the two workflows do not wear the same colour', () => {
     await page.locator('#commit').click();
     const badge = page.locator('.tile .badge', { hasText: label }).first();
     await expect(badge).toBeVisible();
-    const rgb = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    /* Poll rather than read once. Rendering here is a full re-render from state, and the
+       commit is async -- so a handle taken the instant the badge appears can be detached
+       by the next render before it is read, and `getComputedStyle` on a detached node
+       returns an empty string. `''.match(/\d+/g)` is null, and the test died with
+       "Cannot read properties of null" instead of saying anything about colour. */
+    let rgb = null;
+    await expect.poll(async () => {
+      rgb = await badge.evaluate((el) => getComputedStyle(el).backgroundColor)
+        .catch(() => '');
+      return /^rgba?\(/.test(rgb) ? 'read' : `not a colour yet: ${JSON.stringify(rgb)}`;
+    }, { message: `never got a colour off the ${label} badge` }).toBe('read');
+
     return rgb.match(/\d+/g).map(Number);
   }
 

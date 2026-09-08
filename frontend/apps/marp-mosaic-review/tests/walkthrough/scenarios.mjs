@@ -774,6 +774,258 @@ export const scenarios = {
     ]
   },
 
+  /* ------------------------------------------------- verifying: the rail rebuilt */
+  'verify-rail': {
+    title: 'Verifying: the filter rail, rebuilt',
+    scenes: [
+      {
+        caption: 'One list, not four groups',
+        say: "The rail had become crowded and buggy, so it has been rebuilt. The four "
+           + "group headings are gone, the processor filter is gone, and there is a reset "
+           + "in the corner. What is left is one ordered list you can read down.",
+        async act({ page, expect }) {
+          await expect(page.locator('.railgroup__title')).toHaveCount(0);
+          await expect(page.locator('#railReset')).toBeVisible();
+          await expect(page.locator('[data-dim="processor"]')).toHaveCount(0);
+          /* L7: the rail was clipping. The status filters live below the dimensions and
+             were being drawn off the bottom where nobody could reach them. */
+          await expect(page.locator('#statusFilters [data-statuskey]').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Choosing one unticks "all"',
+        say: "Here is the first bug. Open a filter and pick a value: All projects unticks "
+           + "the moment you choose one, rather than staying ticked until you close the "
+           + "menu and wonder which of the two you are actually filtering by.",
+        async act({ page, expect }) {
+          await page.locator('[data-dim="project"]').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toBeVisible();
+          const all = menu.locator('[data-v]').first();
+          await expect(all).toHaveClass(/on/);          // "All projects" starts ticked
+
+          await menu.locator('[data-v]').nth(1).click();
+          await page.waitForTimeout(500);
+          await expect(menu.locator('[data-v]').first()).not.toHaveClass(/on/);
+          await expect(menu.locator('[data-v]').nth(1)).toHaveClass(/on/);
+        }
+      },
+      {
+        caption: 'And its own button closes it',
+        say: "Second bug. Clicking the button that opened a menu now closes it, which is "
+           + "what every dropdown anywhere does. It used to do nothing, because the rail "
+           + "redraws itself and the button holding the menu open was no longer the same "
+           + "button by the time you clicked it.",
+        async act({ page, expect, settled }) {
+          await page.locator('[data-dim="project"]').click();
+          await expect(page.locator('.menu')).toHaveCount(0);
+          await settled();
+        }
+      },
+      {
+        caption: 'The stray label beside each status',
+        say: "Third. Every status filter was drawing a second grey pill next to it reading "
+           + "reviewStatus. It was not a control at all — the keyboard shortcut badges are "
+           + "drawn from a data attribute, and the status filters happened to use the same "
+           + "attribute name for something else. They now use their own.",
+        async act({ page, expect }) {
+          await expect(page.locator('#statusFilters [data-key]')).toHaveCount(0);
+          await expect(page.locator('#statusFilters [data-statuskey]').first()).toBeVisible();
+        }
+      },
+      {
+        caption: 'Session type narrows the sessions',
+        say: "Session type sits above session now, and it is not only cosmetic — a session "
+           + "belongs to a type, so choosing the type narrows which sessions are even on "
+           + "offer. These are the real values from the database, inconsistent capitals and "
+           + "all.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('[data-dim="session"]').click();
+          store.allSessions = await page.locator('.menu [data-v]').count();
+          await page.keyboard.press('Escape');
+
+          await page.locator('[data-dim="sessionType"]').click();
+          const types = await page.locator('.menu [data-v]').allInnerTexts();
+          expect(types.join(' ')).toContain('Fish_GULF');
+          await page.locator('.menu [data-v]').nth(1).click();
+          await page.keyboard.press('Escape');
+          await settled();
+
+          await page.locator('[data-dim="session"]').click();
+          const narrowed = await page.locator('.menu [data-v]').count();
+          await page.keyboard.press('Escape');
+          expect(narrowed).toBeLessThan(store.allSessions);
+        }
+      },
+      {
+        caption: 'One track, two handles',
+        say: "Confidence was two separate sliders stacked up. It is one track with two "
+           + "handles now, which is what a range actually looks like. Watch the count as I "
+           + "pull the top end down.",
+        async act({ page, expect, settled }) {
+          await page.locator('#railReset').click();
+          await settled();
+          const before = await totalShown(page);
+
+          const dual = page.locator('.dual[data-span="confidence"]');
+          await expect(dual).toBeVisible();
+          await expect(dual.locator('input[type="range"]')).toHaveCount(2);
+
+          await dual.locator('[data-end="to"]').evaluate((el) => {
+            el.value = '0.8';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          await settled();
+          expect(await totalShown(page)).toBeLessThan(before);
+        }
+      },
+      {
+        caption: 'Time of day, in 24-hour',
+        say: "Time and date were four boxes wedged into the rail. Each is one row now, "
+           + "opening a small panel. And the clock is twenty-four hour — a native time "
+           + "field takes its format from the browser, and there is no way to make it "
+           + "behave, so these are plain text fields that understand what you type.",
+        async act({ page, expect, settled }) {
+          await page.locator('#railReset').click();
+          await settled();
+          await page.locator('[data-dim="timeOfDay"], [data-panel="timeOfDay"]').first().click();
+          const panel = page.locator('.menu');
+          await expect(panel).toBeVisible();
+          await expect(panel.locator('.clock').first()).toHaveAttribute('type', 'text');
+          await expect(panel).toContainText('24-hour');
+
+          await panel.locator('[data-end="from"]').fill('22:00');
+          await panel.locator('[data-end="to"]').fill('02:00');
+          await panel.locator('[data-end="to"]').press('Enter');
+          await page.keyboard.press('Escape');
+          await settled();
+        }
+      },
+      {
+        caption: 'Sorting, with a tie-break',
+        say: "And sorting. There were five fixed orders in a list. Now you choose the "
+           + "field and the direction separately — and then what to do where that field "
+           + "ties, which is the part that was missing. Watch the order of the tiles when "
+           + "I set the tie-break.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('#railReset').click();
+          await settled();
+          store.before = await page.locator('.tile').evaluateAll(
+            (els) => els.map((e) => e.dataset.id).join(','));
+
+          await page.locator('#sortBtn').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toContainText('Then, where that ties');
+          await menu.locator('[data-v="then:keyframe_count"]').click();
+          await page.waitForTimeout(400);
+          await menu.locator('[data-v="then:desc"]').click();
+          await page.keyboard.press('Escape');
+          await settled();
+
+          /* The claim is that the tie-break actually reorders, not merely that the menu
+             remembered the click. */
+          const after = await page.locator('.tile').evaluateAll(
+            (els) => els.map((e) => e.dataset.id).join(','));
+          expect(after).not.toBe(store.before);
+          await expect(page.locator('#sortLabel')).toContainText('Track length');
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------ verifying: the demo imagery */
+  'verify-imagery': {
+    title: 'Verifying: the demo data',
+    scenes: [
+      {
+        caption: 'Real photographs, five species',
+        say: "The mosaic is running on real pictures now — fifty-eight of them across five "
+           + "species, reused across three thousand observations. Reuse costs nothing here: "
+           + "you are judging the organism against the name it was given, not whether you "
+           + "have seen this exact frame before.",
+        async act({ page, expect }) {
+          const srcs = await page.locator('.tile img').evaluateAll(
+            (els) => els.map((e) => e.getAttribute('src')));
+          const real = srcs.filter((s) => s && !s.includes('marp-mark'));
+          expect(real.length).toBeGreaterThan(30);
+          expect(real.every((s) => s.endsWith('.jpg'))).toBe(true);
+        }
+      },
+      {
+        caption: 'A couple on every page are wrong',
+        say: "And this is what the tool is for. Every tile here claims to be a bat star. "
+           + "About two on each page are not — the label is what the model said, and the "
+           + "picture is what is really there. Those two things being different is the "
+           + "whole job.",
+        async act({ page, expect }) {
+          const caps = await page.locator('.tile .cap').allInnerTexts();
+          expect(caps.every((c) => c.trim() === 'Bat Star')).toBe(true);
+          expect(caps.length).toBeGreaterThan(20);
+        }
+      },
+      {
+        caption: 'Whichever species you ask for',
+        say: "It is not only bat stars. Every species carries the same rate, so filtering "
+           + "to rock crabs gives you pages of crabs with a couple of intruders — because "
+           + "four of the five species used to lead somewhere with nothing to practise on.",
+        async act({ page, expect, settled }) {
+          await page.locator('[data-dim="species"]').click();
+          await page.locator('.menu .msearch').fill('Rock Crab');
+          await page.waitForTimeout(400);
+          await page.locator('.menu [data-v]').first().click();
+          await page.locator('.menu .msearch').fill('Bat Star');
+          await page.waitForTimeout(400);
+          await page.locator('.menu [data-v]').first().click();
+          await page.keyboard.press('Escape');
+          await settled();
+
+          const caps = await page.locator('.tile .cap').allInnerTexts();
+          expect(caps.length).toBeGreaterThan(10);
+          expect(caps.every((c) => c.trim() === 'Rock Crab')).toBe(true);
+        }
+      },
+      {
+        caption: 'Deleting counts what it will destroy',
+        say: "One last thing, and it is the serious one. In delete mode, a tile whose "
+           + "picture never arrived can still be marked — and the commit really does delete "
+           + "it. The confirmation was leaving those out of its count, so it would say one "
+           + "observation and then destroy two. It counts everything it is about to "
+           + "destroy now.",
+        async act({ page, expect, settled }) {
+          await page.locator('#railReset').click();
+          await settled();
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+
+          /* Break one deliberately rather than hoping the page happens to hold one. A
+             scene that quietly returns when its subject is absent narrates a claim it
+             never checked, which is the one thing a walkthrough must never do. */
+          const brokenId = await page.evaluate(async () => {
+            const { state, actions } = await import('./src/store.js');
+            const { MarpData } = await import('./src/data.js');
+            const id = state.rows[2].observation_id;
+            MarpData.breakThumbnails([id]);
+            await actions.refresh();
+            return id;
+          });
+          await settled();
+          await expect(page.locator(`.tile[data-id="${brokenId}"]`)).toHaveClass(/failed/);
+          await page.locator(`.tile[data-id="${brokenId}"]`).click();
+          const good = page.locator('.tile:not(.failed):not(.queued)').first();
+          await good.click();
+          await expect(page.locator('.tile.marked')).toHaveCount(2);
+
+          await page.locator('#commit').click();
+          await expect(page.locator('.confirm__box')).toBeVisible();
+          /* Two marked, two named. The one with no picture is not quietly left out. */
+          await expect(page.locator('.confirm__title')).toContainText('2 observations');
+          await page.keyboard.press('Escape');
+        }
+      }
+    ]
+  },
+
   'verify-delete-confirmation': {
     title: 'Verifying: nothing is deleted without confirming',
     scenes: [
