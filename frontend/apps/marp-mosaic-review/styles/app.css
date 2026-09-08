@@ -527,6 +527,23 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .tile.out-excluded { outline: 2px dashed var(--grey-400); }
 .tile.out-excluded img { filter: grayscale(.55) brightness(.62); }
 
+/* Tags another workflow put on the record, shown in every mode (#85).
+   Bottom left, above the caption and clear of the corner chip, so the top left keeps
+   meaning "what this mode says about this tile" and a record tag can never be mistaken
+   for -- or drawn over -- the mark. `column-reverse` grows a second tag upward into the
+   image rather than down through the caption. */
+.rtags { position: absolute; left: 4px; bottom: 22px; z-index: 3;
+         display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 3px; }
+/* The colour comes from the owning workflow's own badge class, so a flag is amber and a
+   promotion violet wherever it appears. A ring rather than a size change keeps it legible
+   over a photograph while still reading as secondary. The imagery itself is untouched:
+   dimming means *this* mode has judged the tile, and another workflow's opinion must not
+   grey out the picture somebody is judging. */
+.rtag { display: flex; align-items: center; gap: 3px; padding: 1.5px 5px 1.5px 4px;
+        border-radius: 2px; font-size: 8.5px; font-weight: 700; opacity: .92;
+        box-shadow: 0 0 0 1px rgba(6, 10, 16, .5); }
+.rtag svg { width: 8px; height: 8px; display: block; flex: none; }
+
 /* --- The delete confirmation ------------------------------------------------
    The only modal here. Everything else is one gesture with no dialog, because a
    reviewer repeats it thousands of times; this one is rare and irreversible, so

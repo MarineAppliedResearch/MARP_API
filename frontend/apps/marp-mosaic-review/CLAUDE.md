@@ -120,16 +120,17 @@ Four things follow from that, all of them load-bearing:
 
 `window.MARP` exposes `{ state, actions }` for the console.
 
-## Three things a tile shows at once, and they are different
+## Four things a tile shows at once, and they are different
 
 This is the single most confused area of the code, and the source of several reported
-bugs. `ui/tile.js` derives all three; none of them is stored on the row.
+bugs. `ui/tile.js` derives all four; none of them is stored on the row.
 
 | | What it is | Lives in |
 | --- | --- | --- |
 | **marked** | what this reviewer has marked but not committed | `state.marks`, transient |
 | **existing** | what the record already carried before this reviewer arrived | the row's own status columns |
 | **outcome** | what the last commit just did | `state.outcomes`, per commit, per mode |
+| **borrowed** | what another workflow's dimension says about the same observation | the row's other status column, drawn as `.rtag` |
 
 Their precedence in `tile.js` is fixed and load-bearing: **a mark outranks an outcome,
 which outranks the record.** Once the reviewer touches a committed tile they are
@@ -160,18 +161,50 @@ A mark is not a decision. **Committing is what writes it to the record** — tha
 flag survives leaving the page, the session, and the reviewer, and why "my flags
 disappeared when I came back" was a real defect rather than a misunderstanding.
 
-`model/modes.js:existingState()` is what decides which status dimension a mode reads.
-Scientific review reads `review_status`; training reads `training_disposition`. **They
-are independent decisions about the same observation** — #68 is explicit about this, and
-conflating them breaks the science, not just the UI.
+**Every mode shows every workflow's tags, and this reversed on 2026-09-08** (#85). Whenever
+somebody looks at an observation they see what every workflow has said about it — flagged,
+reviewed, promoted, excluded — whichever mode they are in. This file used to say the
+opposite: that a mode showed only the dimension it reads. The decisions *are* independent,
+and that part stands; hiding one of them was the wrong way to express it. Delete Mode
+already read both, and its reasoning generalises — *deleting is irreversible, so the useful
+question is not what one workflow thinks but whether anything on the record says stop* — and
+the same is true of a reviewer deciding anything at all. An observation already excluded
+from training looked untouched to the person deciding whether to destroy it.
 
-**Delete Mode is the deliberate exception, and reads both.** `statusDimensions()`
-returns one dimension for the review modes and two for Delete. Deleting is
-irreversible, so the useful question is not what one workflow thinks but whether
-*anything* on the record says stop — it was flagged, it was accepted for science, it is
-already teaching a model. Those badges and filters are context, never a selection:
-`pendingException('delete')` is null, so nothing in Delete ever arrives marked, and the
-commit acts only on what the reviewer picked in this sitting.
+Two derivations, and the distinction is the whole fix:
+
+- **`existingState(mode, row)` is mode-scoped and must stay that way.** It answers "what
+  does the dimension this mode acts on say", and three things ask it: the tile's primary
+  badge with its mark/outcome/record precedence, `store.refresh` seeding the page's
+  exception set through `page.seedMarks`, and `deleteImpact`. Widening it would make a
+  training exclusion seed a *scientific* mark, and would let another workflow's value
+  satisfy the `takingBack` derivation. It is not a display function.
+- **`borrowedTags(mode, row)` is the visibility one.** It returns what the record carries in
+  every dimension *except* the mode's own — which already has the badge — as
+  `{ key, value, workflow, reason, by }`. `ui/tile.js` draws these as `.rtag` in their own
+  slot at the tile's bottom left. **`.badge` stays exactly one element per tile**: it is
+  what *this* mode says, and a record tag that could reach that slot could outrank a mark,
+  which is how clicking a committed tile comes to look like it did nothing.
+
+A borrowed tag carries **no workflow label on the tile face**. FLAGGED and REVIEWED can only
+be scientific, PROMOTED and EXCLUDED can only be training, and colour reinforces it; the
+tooltip names the workflow, the reason and the person. If that proves unclear in use, the
+prefix form (`TRN · EXCLUDED`) is one template string in `tile.js`.
+
+It adds a badge and **nothing else**. Outline, dimming and grayscale keep meaning the active
+mode's own state — a picture a scientist is judging must not be greyed out because training
+excluded it.
+
+**The filters did not change with it.** A mode's rail still offers its own dimension only,
+and the address gained no parameter: `trainingDisposition` defaults to `undecided`, so
+handing Scientific that filter with a careless default would hide the very promoted and
+excluded rows #85 exists to surface. Filtering across workflows is its own issue if it is
+ever wanted.
+
+**Delete Mode is still the exception in what it *filters* on.** `statusDimensions()` returns
+one dimension for the review modes and two for Delete, and those filters are context, never
+a selection: `pendingException('delete')` is null, so nothing in Delete ever arrives marked,
+and the commit acts only on what the reviewer picked in this sitting.
 
 Adding a dimension to a mode means editing `MODES` and nothing else — the rail, the
 query, the defaults and the collapsed-rail badge all go through `statusDimensions()`.
@@ -268,6 +301,7 @@ irreversible action that is not otherwise gated.
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
 | a keyboard shortcut | one entry in `SHORTCUTS` in `model/keys.js`, then a case in `runShortcut` in `ui/mount.js`. The hint draws itself on any control the id matches |
 | a page state | `pageState` in `model/modes.js`, then `ui/grid.js` |
+| a record tag another workflow owns | `STATUS_DIMENSIONS` in `model/modes.js`, then the `TAG_CLASS` / `TAG_ICON` pair in `ui/tile.js` |
 
 Mode colour is **chrome only**. Never tint the imagery — the reviewer is judging how the
 organism looks, and #68 treats the image field as a quiet zone. Dimming a tile the

@@ -253,6 +253,10 @@ test.describe('the filter rail', () => {
 });
 
 test.describe('the modes do not wear each other\'s answers', () => {
+  /* Still true after #85, and worth being precise about what it means now: an *outcome*
+     never travels between modes, because it is what the last commit did here. What the
+     record carries does travel, as a borrowed `.rtag` — see the #85 block below. `.badge`
+     is this mode's own answer, and that is what this checks. */
   test('a scientific commit leaves no badge behind in training or delete', async ({ page }) => {
     await page.goto('./');
     await ready(page);
@@ -278,6 +282,167 @@ test.describe('the modes do not wear each other\'s answers', () => {
     await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
     await ready(page);
     await expect(page.locator('.tile.marked')).toHaveCount(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- #85
+   Every mode shows every workflow's tags. These are here rather than in the unit tier
+   because they are claims about what is drawn on a tile, and every rendering defect in
+   this app so far passed the store-level checks. */
+
+/**
+ * A tile on screen whose record carries `value` in `column`, paging forward if this page
+ * holds none.
+ *
+ * The fixture guarantees these rows exist — 236 excluded, 179 promoted, 214 reviewed out
+ * of 3000 — but not that one lands on page 1 at every viewport, and a phone page holds a
+ * fraction of a desktop one. So it pages rather than skipping: a skipped check looks green.
+ */
+async function tileCarrying(page, column, value, pages = 6) {
+  for (let i = 0; i < pages; i++) {
+    /* With imagery, so the claims about the picture not being dimmed have a picture. */
+    const id = await page.evaluate(([c, v]) => {
+      const row = (window.MARP.state.rows || [])
+        .find((r) => r[c] === v && r.thumbnail_status === 'ready');
+      return row ? row.observation_id : null;
+    }, [column, value]);
+    /* Pinned by id, because a locator describing a state stops matching once it changes. */
+    if (id !== null) return page.locator(`.tile[data-id="${id}"]`);
+    await page.locator('[data-page="next"]').click();
+    await ready(page);
+  }
+  throw new Error(`no observation with ${column}=${value} in the first ${pages} pages`);
+}
+
+/** Page forward until the tile for one known observation is on screen. */
+async function tileById(page, id, pages = 6) {
+  for (let i = 0; i < pages; i++) {
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+    if (await tile.count()) return tile;
+    await page.locator('[data-page="next"]').click();
+    await ready(page);
+  }
+  throw new Error(`observation ${id} is not in the first ${pages} pages`);
+}
+
+test.describe('every workflow\'s tags are visible from every mode', () => {
+  test('R1: a training exclusion is drawn while reviewing science', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('./');
+    await ready(page);
+
+    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tag = tile.locator('.rtag');
+    await expect(tag).toBeVisible();
+    await expect(tag).toContainText('EXCLUDED');
+    /* R6: another workflow's opinion must not grey out the picture being judged. */
+    await expect(tile).not.toHaveClass(/has-excluded/);
+    await expect(tile.locator('img')).toHaveCSS('filter', 'none');
+    expect(errors).toEqual([]);
+  });
+
+  test('R1: a training promotion is drawn while reviewing science', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const tile = await tileCarrying(page, 'training_disposition', 'promoted');
+    await expect(tile.locator('.rtag')).toContainText('PROMOTED');
+    await expect(tile).not.toHaveClass(/has-promoted/);
+  });
+
+  test('R1: a scientific review is drawn while reviewing training data', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+
+    const tile = await tileCarrying(page, 'review_status', 'reviewed');
+    const tag = tile.locator('.rtag');
+    await expect(tag).toBeVisible();
+    await expect(tag).toContainText('REVIEWED');
+    /* The borrowed tag says what happened, not who: the name is in the tooltip. */
+    await expect(tag).toHaveAttribute('title', /Scientific data review: reviewed/);
+  });
+
+  test('R1: Delete Mode shows the training tags it used to hide', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+
+    /* Delete always read the scientific dimension — the training one is what was missing,
+       and it is the sharpest case in #85: an observation already excluded from training
+       looked untouched at the moment somebody was deciding whether to destroy it. */
+    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    await expect(tile.locator('.rtag')).toContainText('EXCLUDED');
+    expect(errors).toEqual([]);
+  });
+
+  test('R1/R5: a committed flag reaches training as the record, not as an outcome',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      /* An undecided row, so training's own default filter still shows it afterwards. */
+      const id = await page.evaluate(() => {
+        const row = window.MARP.state.rows.find((r) => r.thumbnail_status === 'ready'
+          && r.training_disposition === 'undecided');
+        return row ? row.observation_id : null;
+      });
+      expect(id, 'the first page must hold a ready, undecided row').not.toBeNull();
+
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+      await tile.click();
+      await page.locator('#commit').click();
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      const moved = await tileById(page, id);
+
+      await expect(moved.locator('.rtag')).toContainText('FLAGGED');
+      /* R5: `setMode` cleared the outcomes, so the only thing that could have drawn this
+         is the record read back. Training's own answer — the primary badge — is silent. */
+      await expect(moved.locator('.badge')).toHaveCount(0);
+    });
+
+  test('R2/R3: a mark still outranks the record, and the tag does not swallow the click',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+
+      /* Clicking the tag itself, which is the click most likely to be swallowed. */
+      await tile.locator('.rtag').click();
+      await expect(tile).toHaveClass(/marked/);
+      /* R2: the primary badge is this mode's mark. If a record tag could reach that slot,
+         clicking a tile would appear to do nothing. */
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+      /* R1 still holds while marked: the exclusion is on the record either way. */
+      await expect(tile.locator('.rtag')).toContainText('EXCLUDED');
+    });
+
+  test('R7: the tag stays inside the tile and clear of the caption', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+
+    const tileBox = await tile.boundingBox();
+    const tagBox = await tile.locator('.rtag').boundingBox();
+    const capBox = await tile.locator('.cap').boundingBox();
+
+    expect(tagBox.x).toBeGreaterThanOrEqual(tileBox.x - 1);
+    expect(tagBox.x + tagBox.width).toBeLessThanOrEqual(tileBox.x + tileBox.width + 1);
+    expect(tagBox.y).toBeGreaterThanOrEqual(tileBox.y - 1);
+    /* Above the caption, not through it — the species name is what names the tile. */
+    expect(tagBox.y + tagBox.height).toBeLessThanOrEqual(capBox.y + 1);
+    /* And the image field stays mostly a quiet zone: the tag is in its bottom strip. */
+    expect(tagBox.y).toBeGreaterThan(tileBox.y + tileBox.height / 2);
+
+    /* The page must not scroll sideways because a tile grew a second label. */
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
   });
 });
 
