@@ -70,8 +70,22 @@ test.describe('the mosaic renders and stays settled', () => {
   test('an unavailable thumbnail still shows its species and stays markable', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const noImage = page.locator('.tile.failed').first();
-    if (await noImage.count() === 0) test.skip(true, 'no unavailable thumbnail on this page');
+    /* Break one deliberately rather than hoping the fixture put a failed tile on this
+       page. It skipped whenever it did not, on both viewports — and a skipped test reports
+       green while proving nothing, which is the one thing the doctrine here is emphatic
+       about. */
+    const id = await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      const { MarpData } = await import('./src/data.js');
+      const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+      MarpData.breakThumbnails([target.observation_id]);
+      await actions.refresh();
+      return target.observation_id;
+    });
+    await ready(page);
+
+    const noImage = page.locator(`.tile[data-id="${id}"]`);
+    await expect(noImage).toHaveClass(/failed/);
     await expect(noImage.locator('.cap')).not.toBeEmpty();
     await noImage.click();
     await expect(noImage).toHaveClass(/marked/);
