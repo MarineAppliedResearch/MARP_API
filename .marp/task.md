@@ -112,5 +112,11 @@ copy taken before the edit and watching the test fail.
 
 ## Status
 
-- **Gate:** implementing
-- **Notes:** —
+- **Gate:** verifying
+- **Notes:** Done and verified — 127 unit, 214 render passing (208 before), and the two new
+  assertions were shown to fail against the pre-change stylesheet with the reported green.
+  Two things found and deliberately left alone: the commit button's success and failure
+  states are the same red in Delete Mode, which was already true and is distinguished by
+  the tick or cross rather than by colour; and nothing mechanically checks that a mode
+  declaring `--mode` also declares the commit family, which is the shape of this defect and
+  is currently only a sentence in the app's `CLAUDE.md`.

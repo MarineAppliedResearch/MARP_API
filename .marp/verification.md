@@ -1,162 +1,124 @@
+# Verification — MARP_API#93, a committed page in Delete Mode is coloured as if accepted
+
+## What each test proves
+
+| Requirement | Test | Tier | Proves |
+| --- | --- | --- | --- |
+| R1 | `R1/R2/R5: Delete is red, and nowhere near the green or the violet` | render | The committed-page chip's own computed colour in Delete Mode has red dominant, and is more than 120 in RGB distance from both Scientific's and Training's chips |
+| R2 | the same test | render | The legend swatch is read in all three modes and carries the same hue family as the chip it explains |
+| R3 | `R3: the progress bar fills with the hue of the mode filling it` | render | The far end of the progress gradient is green in Scientific and red in Delete |
+| R4 | `R4: the commit button says the delete succeeded without saying it was accepted`, and `the commit button follows the mode that owns the decision` extended to Delete | render | The commit button and its success state are red in Delete Mode — a regression guard, since both were already correct |
+| R5 | `R1/R2/R5: …` | render | Scientific's chip and swatch stay green, Training's stay violet |
+| R6 | read by hand over the diff | — | No hex added to `styles/app.css`; Delete's values are `var(--red-500)`, `var(--red-400)`, `var(--white)` and two `rgba()` of the existing red, matching how `:root`, Training and `--mode-line` are already written |
+| R7 | read by hand | — | The stylesheet comment, the variable names and the app's `CLAUDE.md` section agree |
+
+Colour is a rendering claim, so every automated assertion is at the render tier. The unit
+tier structurally cannot see a computed style, and no rule in `model/` changed.
+
+## Requirements with no test
+
+R6 and R7 are properties of the source text, not of a running application; both were read
+by hand over the diff. Nothing else is untested.
+
+## Edge cases
+
+- **The page you are standing on has no chip.** `renderPager` draws an `<input>` for the
+  current page, so `.pg.done` only exists after paging away — which is also the moment a
+  reviewer sees it. The test pages forward before reading. The first draft did not, and
+  failed with "element(s) not found" rather than saying anything about colour.
+- **Colours are polled, never read once.** Rendering is a full re-render, so a handle taken
+  the instant an element appears can be detached before `getComputedStyle` runs and returns
+  an empty string. `readColour` polls until the value parses, following `commitAndReadBadge`.
+- **The rail overlays the mosaic on a phone.** The progress-bar test opens the rail to read
+  it and closes it again before switching mode and touching a tile.
+- **Far apart, not merely different.** The chip assertions require an RGB distance over 120
+  from each of the other two modes, because the property that matters to a person glancing
+  at a pager is telling the three apart, not that the numbers differ.
+
+## Regression coverage
+
+- `.commit` and `.commit.ok` in Delete Mode were **already** red, by a specificity accident:
+  `body[data-mode="delete"] .commit` (0,2,1) outranked both. Nothing asserted it, so the
+  accept family could be renamed out from under them silently. Both are now asserted.
+- Scientific green and Training violet are asserted in the same test as Delete's red, so a
+  shared variable cannot move one of them without a failure.
+
+## Known gaps
+
+- **The success and failure states of the commit button are the same red in Delete Mode.**
+  `--commit` is `--red-500` and `.commit.bad` is `--red-500`, so a delete that succeeded and
+  one that failed differ only by the tick or cross glyph and the label. This is unchanged by
+  this task — it was already true — and no state is encoded by colour alone, so it is
+  recorded rather than fixed here.
+- Nothing checks that a mode declaring `--mode` also declares the commit family. That is the
+  shape of the original defect and it is currently a sentence in `CLAUDE.md`, not a check.
+
+## Manual steps
+
+None. Everything here runs in the browser tier.
+
+## Walkthrough videos
+
+None recorded — the user did not ask for one, and every claim above is asserted at the
+render tier, which runs constantly.
+
 ---
-task: MarineAppliedResearch/MARP_API#89
-repos: [MARP_API]
-status: verified
----
 
-# Verification — every mode filters on both workflow statuses
+## Results
 
-Run from `frontend/apps/marp-mosaic-review`. Branch `89-status-filters-everywhere`, from
-`89-per-mode-session-work`.
-
-## What was tested, and which requirement it proves
-
-| Tier | Test | Proves |
-| --- | --- | --- |
-| unit | `R3: the default question carries no training-disposition narrowing` | R3 (the rule) |
-| unit | `R1: every mode filters on both dimensions, its own first` | R1 |
-| unit | `R2: a borrowed dimension arrives not filtering; an owned one at its default` | R2 |
-| unit | `R2: entering a mode gives its own dimension a default and clears the borrowed one` | R2, A3 |
-| unit | `R4: every mode sends both status dimensions, and drops neither` | R4 |
-| unit | `R4: a borrowed dimension nobody touched sends nothing at all` | R4, R3 |
-| unit | `R4/R8: the query keeps every dimension the reviewer narrowed, in every mode` | R4, R8 |
-| unit | `R6: the collapsed rail badge counts a borrowed dimension only when it narrows` | R6 |
-| unit | `R9: filtering on a borrowed dimension changes nothing about the mark or the commit` | R9 |
-| unit | `R7: a borrowed status filter round-trips, and absence means not filtering` | R7 |
-| unit | `R3/R7: a bare address is still the default question, with nothing borrowed applied` | R7, R3 |
-| render | `R3: Scientific opens with no training narrowing, and its total does not move` | **R3 (the count)** |
-| render | `R1: Scientific's rail draws both dimensions, its own first` | R1, R5 |
-| render | `R1: Training's rail leads on its own dimension and borrows review status` | R1 |
-| render | `R9: ticking Excluded in Scientific narrows to excluded observations` | R9 |
-| render | `R7: a borrowed filter arrives from the address and stays in it` | R7 |
-| render | `R6: the collapsed rail badge counts a borrowed dimension only once it narrows` | R6 |
-| render | `R8: Delete Mode is unchanged — both dimensions, both defaults` | R8 |
-| render | `L7: nothing in the rail is drawn where it cannot be reached` (rewritten) | the rail still reaches every control, in every mode |
-| contract | `Delete Mode shows what the scientific record already says` (adjusted) | R8 |
-
-R10 is a documentation change and carries no test; `frontend/apps/marp-mosaic-review/CLAUDE.md`
-was rewritten in the same commit as the tests.
-
-## The measured default result count
-
-Through the app's own code path — `defaultQuery()` → `queryFilters()` → `MarpData.query()`
-against the fixture.
-
-| | `filters.trainingDisposition` | default result total |
-| --- | --- | --- |
-| before, on `89-per-mode-session-work` | `["undecided"]` (dropped by `queryFilters`) | **1083** |
-| after | `[]` | **1083** |
-| after, with the trap injected | `["undecided"]` (sent) | **932** |
-
-Under the default question the fixture holds 932 undecided, 66 promoted and 85 excluded
-Bat Star observations — so the trap costs 151 rows, silently.
-
-## Real results
+`npm run test:unit` — after every change, and last run on the finished branch:
 
 ```
-npm run test:unit
-✓ 32 files parse
 ℹ tests 127
+ℹ suites 0
 ℹ pass 127
 ℹ fail 0
-ℹ duration_ms 88.7
-
-npm run test:e2e          (desktop + phone)
-4 skipped
-206 passed (1.3m)
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 95.5769
 ```
 
-The 4 skips are pre-existing and viewport-conditional, unchanged by this work: the
-unavailable-thumbnail test at both viewports (no failed thumbnail on page 1) and two
-`test.skip(info.project.name !== ...)` guards.
-
-## What failed on the way
-
-The first full browser run failed 4 (2 tests × 2 viewports), and both were real:
-
-1. **`Delete Mode shows the scientific record › it offers both status dimensions, and only
-   Delete does`** — an existing render test asserting `#statusFilters .lbl.sub` has count 0
-   in the review modes. That is the rule #89 reverses, so the test was rewritten to assert
-   what is still Delete's own: the *default*, not the dimension.
-
-2. **`the filter rail, cleaned up › L7: nothing in the rail is drawn where it cannot be
-   reached`** — a real consequence of the change, not a stale assertion. Six status boxes
-   plus a sub-heading make Scientific's rail taller than its container, so `.prog` is below
-   the fold; on the phone by 94px. `.rail-body` scrolls, so it is reachable, but L7's
-   assertion was the stricter "fits without scrolling", which held only while a review mode
-   had three boxes. Rewritten to assert what its own comment says — that the container is
-   scrollable whenever its content overflows — and now run in all three modes, which closes
-   the gap that let Delete Mode's two-dimension rail go unasked since #71.
-
-## Proving each test catches its bug
-
-Each bug was injected into a `cp` copy of the file and restored from that copy.
-
-**Trap A — a borrowed dimension takes the owning mode's default** (in `statusDimensions`):
+`npm run test:e2e` — once, on the finished branch (208 passing and 2 skipped before this
+task; the six new cases are three tests across the desktop and phone projects):
 
 ```
-✖ R4: a borrowed dimension nobody touched sends nothing at all
-✖ R3: the default question carries no training-disposition narrowing
-✖ R2: a borrowed dimension arrives not filtering; an owned one at its default
-✖ R2: entering a mode gives its own dimension a default and clears the borrowed one
-✖ R6: the collapsed rail badge counts a borrowed dimension only when it narrows
-✖ R7: a borrowed status filter round-trips, and absence means not filtering
-✖ R3/R7: a bare address is still the default question, with nothing borrowed applied
-ℹ pass 120  ℹ fail 7
+  2 skipped
+  214 passed (1.4m)
 ```
 
-And the render tier, with the count assertion moved ahead of the others so it is the one
-that fires — the point being that the *number* catches it, not just the filter shape:
+### Proving the tests catch the defect
+
+`styles/app.css` was restored from a copy taken before the edit — a file copy, not
+`git checkout` — and the four colour tests re-run against it:
 
 ```
-Error: TEMP the default result set must not move: 151 rows are at stake
-Expected: 1083
-Received: 932
-2 failed  (desktop and phone)
+  ✘ [desktop] R1/R2/R5: Delete is red, and nowhere near the green or the violet
+  ✘ [phone]   R1/R2/R5: Delete is red, and nowhere near the green or the violet
+  ✘ [desktop] R3: the progress bar fills with the hue of the mode filling it
+  ✘ [phone]   R3: the progress bar fills with the hue of the mode filling it
+  ✓ [desktop] R4: the commit button says the delete succeeded without saying it was accepted
+  ✓ [phone]   R4: the commit button says the delete succeeded without saying it was accepted
+  ✓ [desktop] the commit button follows the mode that owns the decision
+  ✓ [phone]   the commit button follows the mode that owns the decision
+  4 failed
+  4 passed (7.1s)
 ```
 
-**Trap B — `queryFilters` still drops the dimension the mode does not own:**
+The two failures name the defect exactly:
 
 ```
-✖ R4: every mode sends both status dimensions, and drops neither
-✖ R4: a borrowed dimension nobody touched sends nothing at all
-✖ R4/R8: the query keeps every dimension the reviewer narrowed, in every mode
-ℹ pass 124  ℹ fail 3
-
-render, R9: expect(locator).toHaveCount(expected) failed
-  Expected: 50   Received: 3     (desktop)
-  Expected: 7    Received: 0     (phone)
+Error: the chip should be red, got rgb(199,255,98)
+Error: deleting does not fill a bar with green, got rgb(167,236,53)
 ```
 
-**Trap C — `.rail-body { overflow-y: hidden }`, the original #81 L7 bug:**
+`rgb(199,255,98)` is `--green-300` and `rgb(167,236,53)` is `--green-400` — the root
+values Delete Mode was inheriting.
 
-```
-Error: the rail overflows in Scientific Data Review and must scroll
-Expected value: "hidden"
-Received array: ["auto", "scroll"]
-2 failed  (desktop and phone)
-```
+The two that passed against the old stylesheet are the honest result: `.commit` and
+`.commit.ok` were already red in Delete Mode, and those assertions are regression guards
+rather than proof of a fix.
 
-An earlier draft of the rewritten L7 used `scrollIntoViewIfNeeded` and **passed with this
-bug in place** — `overflow: hidden` is still scrollable programmatically, so scrolling
-proves nothing about what a person can reach. That draft was discarded; the note is in the
-test so nobody writes it again.
+### Also run
 
-## Flake found and fixed
-
-The rewritten L7 failed once in three desktop runs while measuring the rail's box and the
-control's box in separate Playwright calls — the rail was measured from before a mode
-switch redrew it. Both are read in one `page.evaluate` now, and it ran three times clean.
-
-## Not covered
-
-- **Nothing was run against MARP_API.** The app is still on its fixture; `src/data.js` is
-  the seam. The claim that the API will filter on both status dimensions the same way is
-  untested, as every claim about that seam is.
-- **No walkthrough was recorded.** They are on request, and this change has no scene.
-- **The rail's height is now tighter in every mode, and that is not asserted as a
-  design property**, only as reachability. Whether a reviewer minds scrolling for the
-  progress bar in Scientific is a question for use, not for a test.
-- **The counts beside a borrowed status can exceed the result total** — they already could
-  in Delete, and A1 records why that is the answer rather than a defect. No test asserts a
-  relationship between the two numbers, because there is deliberately none.
+Nothing else. No walkthrough was recorded and no bare `playwright test` was run.
