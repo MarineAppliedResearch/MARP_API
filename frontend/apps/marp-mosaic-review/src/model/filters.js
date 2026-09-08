@@ -28,18 +28,114 @@ export const DEFAULT_FILTERS = {
   trainingDisposition: MODES.training.defaultStatus.slice()
 };
 
-export const DEFAULT_SORT = { field: 'confidence', dir: 'asc' };
+/**
+ * The default order, and the shape every sort has.
+ *
+ * `then` is the secondary term, applied where the primary ties, and it is null by default.
+ * That is not a preference: `model/query-url.js` requires a bare address to mean the
+ * default question, so a default secondary would have to be written into `defaultBare()`
+ * and every link anybody has already sent would stop round-tripping.
+ */
+export const DEFAULT_SORT = { field: 'confidence', dir: 'asc', then: null };
 
-export const SORTS = [
-  { field: 'confidence', dir: 'asc', label: 'Confidence (low first)' },
-  { field: 'confidence', dir: 'desc', label: 'Confidence (high first)' },
-  { field: 'keyframe_count', dir: 'desc', label: 'Track length (longest)' },
-  { field: 'updatedAt', dir: 'desc', label: 'Recently updated' },
-  { field: 'obsID', dir: 'asc', label: 'Observation number' }
+/**
+ * What the mosaic can be ordered by, and what each direction means on that field.
+ *
+ * This was five fixed pairs of a field and a direction, which is what #81 M1 called not
+ * good enough: three of the four fields could only be read one way, and "Confidence (low
+ * first)" told you what was applied only if you read the whole phrase. Field and direction
+ * are two questions, so they are two choices, and each field names its own two directions
+ * -- "longest" says something about a track length that "descending" does not.
+ *
+ * A sort names one of these or two of them; `sortTerms` below is what turns a sort into
+ * the comparisons a query makes, and says what happens after them.
+ */
+export const SORT_FIELDS = [
+  { field: 'confidence', label: 'Confidence', asc: 'low first', desc: 'high first' },
+  { field: 'keyframe_count', label: 'Track length', asc: 'shortest first', desc: 'longest first' },
+  { field: 'updatedAt', label: 'Last updated', asc: 'oldest first', desc: 'newest first' },
+  { field: 'obsID', label: 'Observation number', asc: 'lowest first', desc: 'highest first' }
 ];
 
-export const sortLabel = (sort) =>
-  (SORTS.find((s) => s.field === sort.field && s.dir === sort.dir) || SORTS[0]).label;
+export const SORT_DIRS = ['asc', 'desc'];
+
+/** The declared field a sort names, or the default when it names nothing recognisable. */
+export const sortField = (sort) =>
+  SORT_FIELDS.find((s) => s.field === (sort && sort.field))
+  || SORT_FIELDS.find((s) => s.field === DEFAULT_SORT.field);
+
+/** Is this a sort the rail could have produced? What the address checks against. */
+export const isSort = (field, dir) =>
+  SORT_DIRS.includes(dir) && SORT_FIELDS.some((s) => s.field === field);
+
+/** Which way an arrow points for a direction. Ascending is up, everywhere. */
+export const sortArrow = (dir) => (dir === 'desc' ? '↓' : '↑');
+
+const dirOf = (term) =>
+  (term && SORT_DIRS.includes(term.dir)) ? term.dir : DEFAULT_SORT.dir;
+
+/**
+ * The comparisons a query makes, in order, and nothing else.
+ *
+ * One term, or two once a secondary is chosen. **`observation_id` is not in here**: it is
+ * appended by whatever does the comparing, always and unconditionally, because #68 makes
+ * page membership query-derived and a comparator that can return zero for two different
+ * rows means page one holds different observations on each visit. Declaring it as a term
+ * would make it something a caller could reorder or drop.
+ */
+export function sortTerms(sort) {
+  const primary = sortField(sort);
+  const terms = [{ field: primary.field, dir: dirOf(sort) }];
+
+  const then = sort && sort.then;
+  /* A second term on the same field can never be reached, so it is not a term. */
+  if (then && isSort(then.field, then.dir) && then.field !== primary.field) {
+    terms.push({ field: then.field, dir: then.dir });
+  }
+  return terms;
+}
+
+/** One term, in words: `Confidence ↑ low first`. */
+function termLabel(term) {
+  const s = sortField(term);
+  return `${s.label} ${sortArrow(term.dir)} ${s[term.dir]}`;
+}
+
+/**
+ * What is applied, in words, for the sub-bar.
+ *
+ * Every term, always. The whole complaint was that a single label made the applied order
+ * something to work out rather than something to read, and a secondary term nobody can
+ * see is the same complaint one level down.
+ */
+export function sortLabel(sort) {
+  const [primary, secondary] = sortTerms(sort);
+  return secondary
+    ? `${termLabel(primary)}, then ${termLabel(secondary)}`
+    : termLabel(primary);
+}
+
+/**
+ * Set the primary term, keeping the secondary unless it has become unreachable.
+ *
+ * Choosing a primary that is already the secondary clears the secondary rather than
+ * swapping the two. A swap changes an order the reviewer did not ask to change, and they
+ * are one click from setting it again.
+ */
+export function withSort(sort, field, dir) {
+  const then = sort && sort.then;
+  return {
+    field, dir,
+    then: then && then.field !== field ? { ...then } : null
+  };
+}
+
+/** Set or clear the secondary term. A null field means there is no secondary. */
+export function withSortThen(sort, field, dir) {
+  const primary = sortField(sort);
+  if (!field || field === primary.field) return { ...sort, then: null };
+  return { ...sort, then: { field, dir } };
+}
 
 /**
  * The filters actually sent for a mode: the reviewer's choices, with the other

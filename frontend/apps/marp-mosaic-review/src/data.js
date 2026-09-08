@@ -14,6 +14,10 @@ const ME = 'I. Travers';
 
 import { matchesFilters, unanswerable } from './model/match.js';
 import { DIMENSIONS, DIMENSION, KIND } from './model/dimensions.js';
+/* Same reason as `matchesFilters`: which comparisons a query makes, in which order, is a
+   rule, and a second copy of it here is a second place for the fixture and the API to
+   disagree about what a sort means. */
+import { sortTerms } from './model/filters.js';
 
 const LATENCY = { query: 140, commit: 260, species: 180, thumb: 900 };
 
@@ -212,11 +216,18 @@ export const MarpData = {
       rows = rows.filter((r) => filters.trainingDisposition.includes(r.training_disposition));
     }
 
-    const dir = sort.dir === 'desc' ? -1 : 1;
+    /* Every term the reviewer asked for, in order, and then `observation_id` -- always,
+       and not because anything asked for it. Page membership is query-derived, so a
+       comparator that can return zero for two different rows means page one holds
+       different observations on each visit. `sortTerms` deliberately does not include it,
+       so it cannot be reordered away or dropped. */
+    const terms = sortTerms(sort);
     rows = rows.slice().sort((a, b) => {
-      const x = a[sort.field], y = b[sort.field];
-      if (x === y) return a.observation_id - b.observation_id;
-      return (x > y ? 1 : -1) * dir;
+      for (const term of terms) {
+        const x = a[term.field], y = b[term.field];
+        if (x !== y) return (x > y ? 1 : -1) * (term.dir === 'desc' ? -1 : 1);
+      }
+      return a.observation_id - b.observation_id;
     });
 
     const total = rows.length;

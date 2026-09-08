@@ -387,15 +387,15 @@ test.describe('Delete Mode shows the scientific record', () => {
     await openRail(page);
     /* One dimension in the review modes... */
     await expect(page.locator('#statusFilters .lbl.sub')).toHaveCount(0);
-    await expect(page.locator('#statusFilters [data-key="trainingDisposition"]')).toHaveCount(0);
+    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(0);
 
     await page.locator('.seg button', { hasText: 'Delete' }).click();
     await ready(page);
     /* ...both in Delete, each under its own heading. */
     await expect(page.locator('#statusLbl')).toHaveText('Review status');
     await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
-    await expect(page.locator('#statusFilters [data-key="reviewStatus"]')).toHaveCount(3);
-    await expect(page.locator('#statusFilters [data-key="trainingDisposition"]')).toHaveCount(3);
+    await expect(page.locator('#statusFilters [data-statuskey="reviewStatus"]')).toHaveCount(3);
+    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(3);
   });
 
   test('a training filter actually narrows the results in Delete Mode', async ({ page }) => {
@@ -407,7 +407,7 @@ test.describe('Delete Mode shows the scientific record', () => {
     const before = await page.locator('#total').innerText();
 
     /* Untick Undecided: what is left is only what a model was already taught with. */
-    await page.locator('#statusFilters [data-key="trainingDisposition"][data-status="undecided"]').click();
+    await page.locator('#statusFilters [data-statuskey="trainingDisposition"][data-status="undecided"]').click();
     await ready(page);
     await expect(page.locator('#total')).not.toHaveText(before);
   });
@@ -506,27 +506,32 @@ test.describe('a judged tile steps back', () => {
 });
 
 test.describe('filtering by where the observation came from', () => {
-  test('the rail is grouped by the question each filter answers', async ({ page }) => {
-    await page.goto('./');
-    await ready(page);
-    await openRail(page);
+  test('L1, L2, L3: the rail is one list, in order, with no processor in it',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
 
-    /* Ten controls in one column is a list, not a rail. This used to assert five labels
-       in order; the order still matters, but the grouping is what makes ten findable. */
-    const groups = await page.locator('.railgroup__title').allInnerTexts();
-    expect(groups.map((t) => t.toLowerCase()))
-      .toEqual(['where it came from', 'what it is', 'when', 'who']);
+      /* The four group headings went in #81. They cost four rows of a rail that was
+         already drawing its status filters below the fold. */
+      await expect(page.locator('.railgroup__title')).toHaveCount(0);
 
-    /* Order within a group still matters: where it came from narrows outward-in, and a
-       line means nothing before its dive. The confidence label carries its current range
-       as well, so this compares the beginning of each label rather than the whole of it. */
-    const first = await page.locator('.railgroup').first().locator('.lbl').allInnerTexts();
-    const expected = ['project', 'dive', 'line', 'session', 'session type'];
-    expect(first.length).toBe(expected.length);
-    expected.forEach((label, i) => {
-      expect(first[i].toLowerCase().trim().startsWith(label)).toBe(true);
+      /* The order is the whole of the arrangement now, so it is worth asserting all of
+         it. `session type` before `session`, because the type narrows the sessions. The
+         confidence label carries its current range too, so this compares the beginning of
+         each label rather than the whole of it. */
+      const labels = await page.locator('#railDimensions .lbl').allInnerTexts();
+      const expected = ['project', 'dive', 'line', 'session type', 'session',
+                        'species', 'confidence', 'time of day', 'date', 'model'];
+      expect(labels.length).toBe(expected.length);
+      expected.forEach((label, i) => {
+        expect(labels[i].toLowerCase().trim().startsWith(label),
+          `rail row ${i} should start with "${label}", and reads "${labels[i]}"`).toBe(true);
+      });
+
+      await expect(page.locator('[data-dim="processor"], [data-span="processor"]'))
+        .toHaveCount(0);
     });
-  });
 
   test('every declared dimension actually reaches the rail', async ({ page }) => {
     await page.goto('./');
@@ -570,6 +575,10 @@ test.describe('filtering by where the observation came from', () => {
 
     await page.locator('[data-dim="dive"]').click();
     await page.locator('.menu [data-v]').nth(1).click();
+    /* A multi-select menu stays open after a pick, and it hangs over the line button
+       below it. Dismiss it the way a reviewer would before reaching for the next one —
+       this used to pass only because the taller rail pushed the menu upwards instead. */
+    await page.keyboard.press('Escape');
     await ready(page);
 
     await page.locator('[data-dim="line"]').click();
@@ -616,7 +625,15 @@ test.describe('filtering by where the observation came from', () => {
 test.describe('filtering by when it happened, and how sure the model was', () => {
   /** Type into one end of a two-ended control and let the rail's change handler run. */
   async function setSpan(page, key, end, value) {
-    await page.locator(`[data-span="${key}"] [data-end="${end}"]`).fill(value);
+    const box = page.locator(`[data-span="${key}"] [data-end="${end}"]`);
+    /* Time and date live behind a summary button since #81 L5, so the popover holding
+       their ends has to be opened first. The confidence track is in the rail itself. */
+    if (!(await box.count())) await page.locator(`[data-dim="${key}"]`).click();
+    await box.fill(value);
+    /* `fill` raises `input` and not `change`, and the rail waits for `change` — text
+       sitting in a field is not a value anybody has committed to yet. Enter is what a
+       person presses, and it is one of the three events the panel listens for. */
+    await box.press('Enter');
     await ready(page);
   }
 
@@ -657,10 +674,13 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
       expect(oneSide).toBeGreaterThan(0);
 
       /* Now wrap it past midnight. Written as an AND rather than an OR — the usual way
-         this goes wrong — a wrapped window returns nothing at all. */
+         this goes wrong — a wrapped window returns nothing at all.
+
+         Polled rather than read once: both windows return more than a page, so the tile
+         count `ready()` watches is the same either side of the change and cannot say when
+         the new result has landed. The number that moves is the one to wait on. */
       await setSpan(page, 'timeOfDay', 'to', '01:00');
-      const wrapped = await total(page);
-      expect(wrapped).toBeGreaterThan(oneSide);
+      await expect.poll(() => total(page)).toBeGreaterThan(oneSide);
     });
 
   test('R5: the date filter says how many observations it could not see',
@@ -685,6 +705,134 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
       expect(Number(said.replace(/\D/g, ''))).toBeGreaterThan(0);
       expect(said.toLowerCase()).toContain('no recorded date');
     });
+});
+
+test.describe('the question survives a reload', () => {
+  test('R1: a filter is in the address, and comes back after a reload', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('[data-dim="dive"]').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
+    await ready(page);
+
+    const chosen = await page.locator('[data-dim="dive"] span').first().innerText();
+    const narrowed = await page.locator('#total').innerText();
+    expect(page.url()).toContain('dive=');
+
+    await page.reload();
+    await ready(page);
+    await openRail(page);
+
+    /* The same question, not merely a page that loaded. */
+    await expect(page.locator('[data-dim="dive"] span').first()).toHaveText(chosen);
+    await expect(page.locator('#total')).toHaveText(narrowed);
+  });
+
+  test('R6: the address is a link — a fresh visit lands on the same question and page',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      await page.locator('[data-dim="dive"]').click();
+      await page.locator('.menu [data-v]').nth(1).click();
+      await page.keyboard.press('Escape');
+      await ready(page);
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+
+      const link = page.url();
+      expect(link).toContain('page=2');
+      const total = await page.locator('#total').innerText();
+
+      /* Arriving cold at the address, the way somebody sent it would. */
+      await page.goto(link);
+      await ready(page);
+
+      /* The question and the page number, not which observations are on it. How many
+         tiles fit is measured from the window, so page two of the same question is
+         honestly a different handful on a narrower screen -- and the page size is
+         deliberately not in the address. Asserting membership here passed on a desktop and
+         failed on a phone for a reason that has nothing to do with whether the link works. */
+      await expect(page.locator('#total')).toHaveText(total);
+      expect(page.url()).toContain('page=2');
+      expect(await page.evaluate(() => window.MARP.state.page)).toBe(2);
+      expect(await page.locator('.tile').count()).toBeGreaterThan(0);
+    });
+
+  test('R2: marks do not come back, because the record does not have them',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+      await tile.click();
+      await expect(page.locator('.tile.marked')).toHaveCount(1);
+
+      await page.reload();
+      await ready(page);
+      /* #68 is explicit that undecided items from an uncommitted page may appear again.
+         Restoring the mark would be worse than losing it: on screen it is indistinguishable
+         from one that was committed, and the record agrees with neither. */
+      await expect(page.locator('.tile.marked')).toHaveCount(0);
+    });
+
+  test('R3: an address that makes no sense still opens the application', async ({ page }) => {
+    const errors = watchErrors(page);
+    /* Every one of these is wrong in a different way: a mode that does not exist, a
+       confidence outside its own bounds, a page that is not a page, a parameter naming
+       no dimension. None of them may cost the reviewer a working screen. */
+    await page.goto('./?mode=archaeology&confidence=5..9&page=0&utm_source=email');
+    await ready(page);
+
+    expect(await page.locator('.tile').count()).toBeGreaterThan(0);
+    await expect(page.locator('.seg button.on')).toContainText('Scientific');
+    expect(errors).toEqual([]);
+  });
+
+  test('R5: Reset restores the default question in one gesture', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+    const before = await page.locator('#total').innerText();
+
+    await page.locator('[data-dim="dive"]').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
+    await ready(page);
+    expect(page.url()).toContain('dive=');
+
+    await page.locator('#railReset').click();
+    await ready(page);
+
+    await expect(page.locator('[data-dim="dive"]')).toContainText('All dives');
+    await expect(page.locator('#total')).toHaveText(before);
+    /* Back to the default question is back to the bare address. */
+    expect(page.url()).not.toContain('dive=');
+  });
+
+  test('R5: Reset keeps the mode the reviewer is working in', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('[data-dim="dive"]').click();
+    await page.locator('.menu [data-v]').nth(1).click();
+    await page.keyboard.press('Escape');
+    await ready(page);
+
+    await page.locator('#railReset').click();
+    await ready(page);
+
+    /* Clearing the filters is not leaving the workflow. */
+    await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
+    expect(page.url()).toContain('mode=training');
+  });
 });
 
 test.describe('the commit button reports on itself', () => {
@@ -874,7 +1022,9 @@ test.describe('the states never rendered', () => {
     await ready(page);
     await page.evaluate(async () => {
       const { state, actions } = await import('./src/store.js');
-      state.filters.species = 'No Such Species';
+      /* An array: every set dimension has held one since #77. This was a bare string,
+         which happened to produce an empty result for the wrong reason. */
+      state.filters.species = ['No Such Species'];
       await actions.refresh();
     });
   }
@@ -1040,5 +1190,395 @@ test.describe('keyboard shortcuts', () => {
     await page.keyboard.press('Control+Enter');
     await expect(page.locator('#commit')).toHaveClass(/nudge/);
     await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+  });
+});
+
+/**
+ * #81 — the reported bugs and the crowding.
+ *
+ * All of these are about what is on the screen, which is why they are here rather than in
+ * `tests/unit/`. Four were reported from use, and the store was right for every one of
+ * them: the menus held the right values, the status filter held the right key, and the
+ * rail declared every dimension it was asked to. None of that is what the reviewer saw.
+ */
+test.describe('the filter rail, cleaned up', () => {
+  /** The entry that clears a set dimension, by the text it carries. */
+  const allEntry = (page, label) => page.locator('.menu [data-v=""]', { hasText: label });
+
+  test('B1: choosing a project unticks "All projects" while the menu is open',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      await page.locator('[data-dim="project"]').click();
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(allEntry(page, 'All projects')).toHaveClass(/on/);
+
+      /* The menu deliberately stays open, so the reviewer is looking at both entries at
+         once. Before the fix only the clicked entry restated itself, and the menu claimed
+         "All projects" and one project simultaneously. */
+      await page.locator('.menu [data-v]').nth(1).click();
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(allEntry(page, 'All projects')).not.toHaveClass(/on/);
+      await expect(allEntry(page, 'All projects').locator('.tick')).toBeEmpty();
+
+      /* And back again: taking the last specific value off means the dimension is not
+         filtering, which is what "All projects" says. */
+      await page.locator('.menu [data-v]').nth(1).click();
+      await expect(allEntry(page, 'All projects')).toHaveClass(/on/);
+    });
+
+  test('B1: the dive and line menus behave the same way', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    for (const [key, label] of [['dive', 'All dives'], ['line', 'All lines']]) {
+      await page.locator(`[data-dim="${key}"]`).click();
+      await expect(allEntry(page, label)).toHaveClass(/on/);
+      await page.locator('.menu [data-v]').nth(1).click();
+      await expect(allEntry(page, label), `${key} still claims ${label}`)
+        .not.toHaveClass(/on/);
+      await page.keyboard.press('Escape');
+      await ready(page);
+    }
+  });
+
+  test('B2: clicking the button that opened a menu closes it', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    const project = page.locator('[data-dim="project"]');
+    await project.click();
+    await expect(page.locator('.menu')).toHaveCount(1);
+
+    /* It used to close and immediately reopen, so the button read as inert. */
+    await project.click();
+    await expect(page.locator('.menu')).toHaveCount(0);
+
+    /* And a click on a different button moves the menu rather than only dismissing. */
+    await project.click();
+    await expect(page.locator('.menu')).toHaveCount(1);
+    await page.locator('[data-dim="species"]').click();
+    await expect(page.locator('.menu')).toHaveCount(1);
+    await expect(page.locator('.menu .mhead')).toContainText('species');
+  });
+
+  test('B2: it still closes after a pick has redrawn the rail underneath it',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      /* The rail is redrawn from state on every change, so the button that opened the
+         menu is replaced by an identical one while the menu is still up. Holding the
+         element rather than its name would make this second click open a new menu. */
+      const project = page.locator('[data-dim="project"]');
+      await project.click();
+      await page.locator('.menu [data-v]').nth(1).click();
+      await ready(page);
+
+      await project.click();
+      await expect(page.locator('.menu')).toHaveCount(0);
+    });
+
+  test('B3: the time controls are 24-hour, with no AM or PM anywhere', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await page.locator('[data-dim="timeOfDay"]').click();
+    const from = page.locator('[data-span="timeOfDay"] [data-end="from"]');
+    await expect(from).toBeVisible();
+
+    /* A native `<input type="time">` draws 12-hour from the browser locale and there is
+       no attribute that changes it -- `lang="en-GB"` was tried in this same Chromium and
+       still drew `01:30 PM`. So these are text fields, and what the field holds is
+       exactly what is on the screen, which is what makes this assertable at all. */
+    await expect(from).toHaveAttribute('type', 'text');
+    await from.fill('13:30');
+    await from.press('Enter');
+    await expect(from).toHaveValue('13:30');
+
+    const panel = await page.locator('.menu--panel').innerText();
+    expect(panel.toLowerCase()).not.toMatch(/\b(am|pm)\b/);
+    expect(panel).toContain('24-hour');
+
+    /* And the summary on the rail button says the same thing back, in the same clock. */
+    await expect(page.locator('[data-dim="timeOfDay"]')).toContainText('13:30');
+
+    /* A time that is not a time does not become a filter, and does not sit in the field
+       looking as though it did. */
+    await from.fill('noon');
+    await from.press('Enter');
+    await expect(from).toHaveValue('');
+
+    /* Shorthand is read the way it is meant, and the field says what was understood. */
+    await from.fill('930');
+    await from.press('Enter');
+    await expect(from).toHaveValue('09:30');
+  });
+
+  test('L4: confidence is one track carrying two handles', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    const from = page.locator('[data-span="confidence"] [data-end="from"]');
+    const to = page.locator('[data-span="confidence"] [data-end="to"]');
+    const a = await from.boundingBox();
+    const b = await to.boundingBox();
+
+    /* Two stacked sliders is what this replaced, so the assertion is that they occupy
+       the same strip: same top, same left, same width. Stacked, the second sat a row
+       below the first and the pair read as two independent numbers. */
+    expect(Math.round(a.y)).toBe(Math.round(b.y));
+    expect(Math.round(a.x)).toBe(Math.round(b.x));
+    expect(Math.round(a.width)).toBe(Math.round(b.width));
+    await expect(page.locator('[data-span="confidence"] .dual__track')).toHaveCount(1);
+
+    /* And the fill between the handles follows them, which is the only thing that makes
+       one track legible as a range rather than as two dots. */
+    await from.evaluate((el) => {
+      el.value = '0.4';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(page.locator('[data-span="confidence"]'))
+      .toHaveAttribute('style', /--from:\s*40%/);
+    await expect(page.locator('.span-val')).toContainText('0.40');
+  });
+
+  test('L5: time and date take one rail row each', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    /* Two native inputs each did not fit side by side in the rail column, so they
+       wrapped, and the pair took three rows between them. Behind a summary button they
+       take one row each, and the popover has the width the controls need. */
+    for (const key of ['timeOfDay', 'date']) {
+      await expect(page.locator(`#railDimensions [data-span="${key}"]`)).toHaveCount(0);
+      await expect(page.locator(`[data-dim="${key}"]`)).toHaveCount(1);
+    }
+
+    const one = await page.locator('[data-dim="timeOfDay"]').boundingBox();
+    const two = await page.locator('[data-dim="date"]').boundingBox();
+    expect(two.y - one.y).toBeLessThan(60);      // label plus control, and nothing more
+
+    await page.locator('[data-dim="date"]').click();
+    await expect(page.locator('.menu--panel [data-span="date"] [data-end="from"]'))
+      .toBeVisible();
+    await expect(page.locator('.menu--panel [data-span="date"] [data-end="to"]'))
+      .toBeVisible();
+  });
+
+  test('L6: the reset is the first control in the rail, and costs almost nothing',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      const reset = await page.locator('#railReset').boundingBox();
+      const collapse = await page.locator('#railbtn').boundingBox();
+      const firstFilter = await page.locator('#railDimensions .lbl').first().boundingBox();
+
+      expect(reset.y).toBeLessThan(firstFilter.y);
+      expect(reset.width).toBeLessThanOrEqual(collapse.width + 1);
+      /* It says what it is to a screen reader and on hover; it does not spend a word on
+         saying it in the rail. */
+      await expect(page.locator('#railReset')).toHaveAttribute('aria-label', /reset/i);
+    });
+
+  test('L7: nothing in the rail is drawn where it cannot be reached', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    /* The rail was `overflow: hidden` over content taller than it, so the status filters
+       and the progress bar were drawn below the fold and could not be reached at all.
+       A rail that hides controls silently is worse than one that scrolls. */
+    const rail = await page.locator('.rail').boundingBox();
+    for (const sel of ['#statusFilters [data-status="unreviewed"]',
+                       '#statusFilters [data-status="reviewed"]', '.prog']) {
+      const box = await page.locator(sel).boundingBox();
+      expect(box, `${sel} is drawn`).not.toBeNull();
+      expect(box.y + box.height, `${sel} is inside the rail`)
+        .toBeLessThanOrEqual(rail.y + rail.height + 1);
+    }
+    await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
+  });
+
+  test('M1: the field and the direction are chosen separately, and both are on screen',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      /* The sub-bar says both halves without anything being opened. It used to carry one
+         phrase from a fixed list, so which way the mosaic was ordered was something to
+         work out rather than something to read. */
+      await expect(page.locator('#sortLabel')).toHaveText('Confidence ↑ low first');
+
+      await page.locator('#sortBtn').click();
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(page.locator('.menu .mhead').first()).toHaveText('Sort by');
+
+      /* Change the field. The menu stays open, and its direction entries reword
+         themselves for the field that is now chosen. */
+      await page.locator('.menu [data-v="keyframe_count"]').click();
+      await ready(page);
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(page.locator('.menu [data-v="keyframe_count"]')).toHaveClass(/on/);
+      await expect(page.locator('.menu [data-v="desc"]')).toContainText('Longest first');
+      await expect(page.locator('#sortLabel')).toHaveText('Track length ↑ shortest first');
+
+      /* And the direction on its own, keeping the field. */
+      await page.locator('.menu [data-v="desc"]').click();
+      await ready(page);
+      await expect(page.locator('.menu [data-v="desc"]')).toHaveClass(/on/);
+      await expect(page.locator('.menu [data-v="asc"]')).not.toHaveClass(/on/);
+      await expect(page.locator('#sortLabel')).toHaveText('Track length ↓ longest first');
+
+      await page.keyboard.press('Escape');
+      /* It is a real order, not just a label: the address carries it and a reload keeps it. */
+      expect(page.url()).toContain('sort=keyframe_count.desc');
+    });
+
+  test('M2: a secondary sort is chosen in the same menu, and reaches the address',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      await page.locator('#sortBtn').click();
+      await expect(page.locator('.menu [data-v="then:none"]')).toHaveClass(/on/);
+      /* The primary's own field is not offered as the tie-break: a term that can never be
+         reached is not a sort. */
+      await expect(page.locator('.menu [data-v="then:confidence"]')).toHaveCount(0);
+
+      await page.locator('.menu [data-v="then:keyframe_count"]').click();
+      await ready(page);
+
+      /* The menu stays open and grows a direction pair worded for the field just chosen. */
+      await expect(page.locator('.menu')).toBeVisible();
+      await expect(page.locator('.menu [data-v="then:keyframe_count"]')).toHaveClass(/on/);
+      await expect(page.locator('.menu [data-v="then:desc"]')).toContainText('Longest first');
+      await expect(page.locator('#sortLabel'))
+        .toHaveText('Confidence ↑ low first, then Track length ↑ shortest first');
+
+      await page.locator('.menu [data-v="then:desc"]').click();
+      await ready(page);
+      await expect(page.locator('#sortLabel'))
+        .toHaveText('Confidence ↑ low first, then Track length ↓ longest first');
+
+      await page.keyboard.press('Escape');
+      expect(page.url()).toContain('sort=confidence.asc,keyframe_count.desc');
+
+      /* And it survives the reload, which is the whole of #79's claim about this branch. */
+      await page.reload();
+      await ready(page);
+      await expect(page.locator('#sortLabel'))
+        .toHaveText('Confidence ↑ low first, then Track length ↓ longest first');
+    });
+
+  test('M2: the tie-break really breaks ties, and the primary still governs',
+    async ({ page }) => {
+      /* Confidence carries two decimal places over four hundred-odd rows, so the primary
+         ties constantly and the secondary has real work to do. A menu that recorded a
+         secondary and ordered nothing by it would pass every other M2 assertion. */
+      const idsFor = async (sort) => {
+        await page.goto(`./?sort=${sort}`);
+        await ready(page);
+        return page.locator('.tile').evaluateAll((els) => els.map((e) => e.dataset.id));
+      };
+
+      const up = await idsFor('confidence.asc,keyframe_count.asc');
+      const down = await idsFor('confidence.asc,keyframe_count.desc');
+
+      expect(up.length).toBeGreaterThan(10);
+      expect(down.length).toBe(up.length);
+      expect(down.join(','), 'reversing the tie-break must reorder the page')
+        .not.toBe(up.join(','));
+
+      /* The primary is still the first word: whatever the tie-break does, confidence never
+         goes backwards. Read from the store, because a tile does not draw its confidence. */
+      const climbing = await page.evaluate(async () => {
+        const { state } = await import('./src/store.js');
+        return state.rows.every((r, i) => i === 0 || r.confidence >= state.rows[i - 1].confidence);
+      });
+      expect(climbing, 'the secondary must only break ties, never reorder across them')
+        .toBe(true);
+    });
+
+  test('M3: a phone sorts with the same control, at the same size', async ({ page }, info) => {
+    test.skip(info.project.name !== 'phone', 'about the phone layout');
+    await page.goto('./');
+    await ready(page);
+
+    const button = page.locator('#sortBtn');
+    await expect(button).toBeVisible();
+
+    /* Reachable without hunting: the whole control is inside the viewport, rather than
+       pushed off the end of a bar that happens to scroll. */
+    const box = await button.boundingBox();
+    const width = await page.evaluate(() => window.innerWidth);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+
+    /* And the same control, not a smaller one. It was hidden here once, and then given a
+       smaller font and less padding, which is the same answer in a politer form. */
+    const style = (el) => el.evaluate((e) => {
+      const s = getComputedStyle(e);
+      return `${s.fontSize} ${s.paddingTop} ${s.paddingLeft}`;
+    });
+    const onPhone = await style(button);
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await ready(page);
+    expect(onPhone, 'the phone gets the same control as the desktop')
+      .toBe(await style(button));
+
+    /* Usable, not merely present: the whole secondary sort is driven at phone width. */
+    await page.setViewportSize({ width, height: 839 });
+    await ready(page);
+    await button.click();
+    await page.locator('.menu [data-v="then:updatedAt"]').click();
+    await ready(page);
+    await page.locator('.menu [data-v="then:desc"]').click();
+    await ready(page);
+    await expect(page.locator('#sortLabel'))
+      .toHaveText('Confidence ↑ low first, then Last updated ↓ newest first');
+  });
+
+  test('M1: the order actually applied changes when the direction does', async ({ page }) => {
+    await page.goto('./?sort=confidence.asc');
+    await ready(page);
+    const lowest = await page.locator('.tile').first().getAttribute('data-id');
+
+    await page.goto('./?sort=confidence.desc');
+    await ready(page);
+    const highest = await page.locator('.tile').first().getAttribute('data-id');
+
+    /* A menu that reorders nothing would pass every assertion above. */
+    expect(highest).not.toBe(lowest);
+  });
+
+  test('B4: a status filter draws one control, not two', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    /* The second control was a keyboard-shortcut badge. `renderStatusFilters` wrote
+       `data-key="reviewStatus"` to name the status dimension, and #74's
+       `[data-key]::after { content: attr(data-key) }` drew that value beside the label as
+       a grey pill. Two meanings for one attribute, and the pill read `reviewStatus`. */
+    const unreviewed = page.locator('#statusFilters [data-status="unreviewed"]');
+    await expect(unreviewed).toBeVisible();
+    const badge = await unreviewed.evaluate((el) => getComputedStyle(el, '::after').content);
+    expect(badge, 'a status checkbox draws no badge of any kind').toBe('none');
+
+    /* And the badge still works where it belongs, so this is not a fix by deletion. */
+    const commit = await page.locator('#commit').evaluate(
+      (el) => getComputedStyle(el, '::after').content);
+    expect(commit).not.toBe('none');
   });
 });

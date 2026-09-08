@@ -47,6 +47,12 @@ const PROJECTS  = [{ project_id: 7, name: 'Deep Reef Survey 2025' },
                    { project_id: 9, name: 'Outer Bank Transects' }];
 const USERS     = [{ user_id: 3, name: 'J. Marsh' }, { user_id: 5, name: 'I. Travers' },
                    { user_id: 8, name: 'R. Okafor' }];
+/* The five values the database actually holds. The casing really is inconsistent --
+   `Fish_GULF` beside `INVERTS_GULF` -- and it is not tidied here, because a fixture that
+   spells things more neatly than production tests a filter nobody will ever run. The
+   fixture used to invent `ROV` and `Drop Cam`, which are platforms rather than session
+   types and do not appear in the column at all. See #81 D1. */
+const SESSION_TYPES = ['Fish', 'Fish_GULF', 'Inverts', 'INVERTS_GULF', 'Habitat'];
 const SEXES     = [null, 'U', 'U', 'U', 'M', 'F'];
 const NOTES     = [null, null, null, null, null, null,
                    'partially occluded by kelp', 'on vertical rock face',
@@ -90,7 +96,11 @@ for (let i = 0; i < TOTAL; i++) {
     dive: 'D0' + (4 + (i % 3)),
     line: String(1 + (i % 6)),
     lineId: `L${1 + (i % 6)}-${400 + (i % 12)}`,
-    session_type: pick(['ROV', 'ROV', 'Drop Cam']),      // sessions.type
+    /* A property of the session, not of the observation: `sessions.type` is one column on
+       one row, so every observation of a session carries the same value. Rolling it per
+       observation made "the type narrows which sessions are available" untrue, and the
+       rail says it narrows them. */
+    session_type: SESSION_TYPES[(i % 12) % SESSION_TYPES.length],
     user_id: user.user_id,
     processor_name: user.name,
 

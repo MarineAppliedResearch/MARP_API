@@ -71,3 +71,54 @@ test('the rail mount point exists, since everything else hangs off it', () => {
   assert.ok(inMarkup.has('railDimensions'),
     'ui/rail.js draws every filter into #railDimensions; without it the rail is silently empty');
 });
+
+/**
+ * Two controls must not answer to the same name.
+ *
+ * `menus.js` identifies the control a menu belongs to by `data-dim`, `data-span` or `id`,
+ * in that order — by name rather than by node, because the rail is redrawn from state
+ * while a menu is open and the node it was opened from is routinely replaced. That only
+ * works while the three namespaces cannot collide: a dimension whose key happened to equal
+ * an element id would make the sort menu close when a filter button was clicked, and the
+ * reverse.
+ *
+ * A sentence would not have caught it, and a browser test would only catch the collision
+ * that exists rather than the one somebody is about to add.
+ */
+test('no dimension key can be mistaken for a control id', async () => {
+  const { DIMENSIONS } = await import('../../src/model/dimensions.js');
+  const clashes = DIMENSIONS.map((d) => d.key).filter((key) => inMarkup.has(key));
+  assert.deepEqual(clashes, [],
+    'a dimension key that is also an id makes two controls share one menu identity');
+});
+
+/**
+ * P1: a dimension is one entry in the declaration and nothing else.
+ *
+ * #77 built that property and #81 is the first change to lean on it — removing the
+ * Processor filter, reordering two, and nesting a third were all one edit each. The way
+ * it decays is a `if (key === 'date')` appearing in a renderer, so this looks for exactly
+ * that: any dimension key written as a string literal in the layer that draws them.
+ *
+ * The check is on `ui/` alone. `model/match.js` and `model/query-url.js` do still name
+ * the date dimension, because a date range compares differently from a number range, and
+ * that predates this. Widening the check is worth doing when that is fixed, not before —
+ * a test that has to be argued with is a test people learn to ignore.
+ */
+test('no file that draws the rail knows a dimension by name', async () => {
+  const { DIMENSIONS } = await import('../../src/model/dimensions.js');
+  const offences = [];
+
+  for (const [file, source] of Object.entries(uiSource)) {
+    for (const d of DIMENSIONS) {
+      /* Single quotes only: JavaScript string literals here are single-quoted, while the
+         markup inside a template literal uses double quotes -- so `type="date"`, which is
+         an input type and not this dimension, is correctly left alone. */
+      if (source.includes(`'${d.key}'`)) {
+        offences.push(`${file} names the ${d.key} dimension; the declaration should decide`);
+      }
+    }
+  }
+
+  assert.deepEqual(offences, []);
+});

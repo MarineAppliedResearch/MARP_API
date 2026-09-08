@@ -1,115 +1,217 @@
 ---
-task: MarineAppliedResearch/MARP_API#77
+task: MarineAppliedResearch/MARP_API#81
 repos: [MARP_API]
-status: design
+status: verifying
 needs: []
 ---
 
-# Filter rail: the remaining dimensions, and multi-select
+# The filter rail: the reported bugs, and the crowding
 
 ## Goal
 
-A reviewer can ask for the irregular combinations the work actually requires — two dives
-from one project and one from another, the model's uncertain calls only, the night dives —
-instead of one project, one dive, one line at a time.
+A reviewer opens the rail and can see all of it. The dropdowns behave the way every other
+dropdown on every other platform behaves — a second click on the button closes the menu,
+and choosing a specific project stops "All projects" claiming to be selected. Times read
+in 24-hour, the way MARP writes them everywhere else. The rail carries ten filters in one
+row each, rather than eleven plus four headings and three rows spent on time and date, so
+the status filters and the progress bar are on screen instead of clipped off the bottom.
+Sorting can be steered by field and by direction independently, and says which is applied.
 
 ## What is already true
 
-Read from the code and the database, not assumed:
+Read from the code on `79-resumability`, not assumed:
 
-- **The rail is five controls**, each a `.sel` button opening `menu()` from `ui/menus.js`.
-  Adding a dimension today means touching `model/filters.js`, `data.js` twice, `index.html`,
-  `ui/menus.js`, `ui/chrome.js` and `ui/mount.js` — the notes say so, and that is the cost
-  this task should not multiply by five.
-- **`applyFilter` nests bluntly**: setting `project` clears `dive` and `line`; setting
-  `dive` clears `line`. That rule exists because a line only means something inside a dive.
-- **`toggleStatus` already does multi-select** for the status dimensions. Project, dive and
-  line are the single-select ones.
-- **`tc` is .NET TimeSpan text with an optional day group.** `db/timecode.js` parses
-  `(?:(\d+)\.)?(\d{1,2}):(\d{2}):(\d{2})`, so a dive crossing midnight reads `1.00:15:33`
-  and `21:57:22` is day 0. The parser already handles it; nothing here re-implements it.
-- **The fixture has `session_id` (12), `session_type` (ROV / Drop Cam) and
-  `processor_name` (3).** `confidence` runs 0.50–0.99. There is no model field.
-- **The fixture's `video_source` values carry no date** (`dive4_line1.mp4`), unlike
-  production (`20190712_215503_Fwd`). Nothing here depends on that; see #76.
+- **A dimension is one entry in `src/model/dimensions.js`.** The rail, the query, the
+  counts, the collapsed-rail badge and the address all read that declaration. #77 built
+  that property and #79 extended it to the URL; protecting it is a constraint on this
+  work, not a goal of it.
+- **`ui/` never writes state.** Every gesture calls a named action on `store.js`.
+- **The rail clips.** `.rail` is `overflow: hidden` and `.rail-body` does not scroll, so at
+  a 1600x900 desktop viewport the review-status filters and the progress bar are drawn
+  below the fold and cannot be reached at all. This was not reported as its own item but
+  it is the sharpest form of L7.
+- **`renderStatusFilters()` writes `data-key="${dim.key}"`** on each status checkbox, and
+  `styles/app.css` has `[data-key]::after { content: attr(data-key) }` for the keyboard
+  shortcut badges added by #74. The two meanings of `data-key` collide, so every status
+  checkbox draws a grey pill reading `reviewStatus` beside its label. **That is B4.**
+- **A native `<input type="time">` cannot be forced to 24-hour.** Chrome renders it from
+  the browser locale; `lang="en-GB"` was tried in a real Chromium and still drew
+  `01:30 PM`. So B3 cannot be fixed with an attribute.
+- **The rail dimension buttons are wired in `ui/rail.js`, not in `ui/mount.js`.**
+  `mount.js`'s `anchor()` helper already closes an open menu on a second click; the rail's
+  own handler calls `dimensionMenu()` unconditionally, which closes and immediately
+  reopens. **That is B2.**
+- **A multi-select menu item redraws only its own tick.** `menus.js` toggles the clicked
+  button's tick in place and never restates the others, so the "All …" entry keeps the
+  tick it was built with. **That is B1.**
+- **`session_type` in the fixture is `pick(['ROV','ROV','Drop Cam'])` per observation**, so
+  it is both wrong (D1) and uncorrelated with `session_id`, which makes "the type narrows
+  which sessions are available" (L2) untrue in the fixture.
+- **Sorting is `SORTS`, five fixed `{field, dir, label}` rows** in `model/filters.js`, read
+  by the sub-bar label, the menu and `query-url.js`.
 
 ## Requirements
 
-- **R1** — Session, session type and processor are filterable.
-- **R2** — Confidence filters by a range, both ends, replacing `minConfidence`.
-- **R3** — Time of day filters every observation, whether or not `tc` carries a date.
-- **R4** — A time-of-day range may wrap past midnight, and observations either side of it
-  are one window. A dive from 22:00 to 02:00 is one night.
-- **R5** — Date filters where `tc` carries one, and **says how many observations it had to
-  exclude for having none**. A filter that silently omits is worse than no filter.
-- **R6** — Project, dive and line accept several values.
-- **R7** — Removing one value from a wider dimension drops only what no longer applies.
-  Removing a project takes its dives with it and leaves the others.
-- **R8** — An empty selection in a dimension means that dimension is not filtering.
-- **R9** — The dive and line lists still offer only what the chosen filters can return.
+Numbered so tests can name them. The ids follow #81.
+
+- **B1** — Choosing a specific value in a set menu clears the menu's "All …" entry
+  immediately, while the menu is still open. Removing the last specific value ticks it
+  again.
+- **B2** — Clicking the button that opened a menu closes that menu. Clicking a different
+  button moves the menu to it.
+- **B3** — Every time-of-day control renders 24-hour. No AM/PM appears anywhere in the rail.
+- **B4** — A status filter draws one control: a checkbox and its label. No second pill, no
+  shortcut badge, nothing whose purpose has to be guessed at.
+- **D1** — The fixture's `session_type` values are exactly `Fish`, `Fish_GULF`, `Inverts`,
+  `INVERTS_GULF`, `Habitat`, spelled as the database spells them, and each session has one
+  type rather than one per observation.
+- **L1** — The rail draws no group headings.
+- **L2** — Session type is drawn above Session, and choosing a type narrows the sessions
+  offered.
+- **L3** — There is no Processor filter, anywhere: not in the rail, not in the query, not
+  in the address.
+- **L4** — Confidence is one track carrying two handles.
+- **L5** — Time of day and date each occupy one row of the rail.
+- **L6** — The reset control is the first control in the rail, above every filter, and
+  costs no more room than the collapse button beside it.
+- **L7** — Every part of the rail is reachable at a 1600x900 desktop viewport: nothing is
+  clipped off the bottom.
+- **M1** — The sort field and the sort direction are chosen independently, and what is
+  applied is legible without opening the menu.
+- **Q1** — The Model filter stays. Left in place deliberately; see the assumptions.
+- **P1** — The property #77 built survives: adding, removing or reordering a dimension is
+  one edit in `src/model/dimensions.js` and nothing else.
+
+### Round two — answered 2026-09-06
+
+The first round's judgement calls were put to the user. L5, the native date ends, the
+session nesting and the P1 hardening all stand. Three things changed, and are numbered
+here so tests can name them too.
+
+- **M2** — **The sort takes a secondary field and direction**, applied when the primary
+  ties. Two constraints, both from #68 rather than from taste: `observation_id` stays the
+  **final** word in every comparison, because page membership is query-derived and a
+  re-query has to return the same page; and the secondary survives the address, because
+  `79-resumability` is underneath this branch and a question that is half in the URL is
+  worse than one that is not in it at all.
+- **M3** — **A phone sorts the same way as everything else**: the same control and the
+  same menu, reachable and usable at phone width. Not a shrunken variant — the first
+  round gave the phone a smaller font and smaller padding, which is exactly that.
+- **R1** — `README.md`'s *Known gaps* says four things that are no longer true. The whole
+  section is checked, not only those four.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — answered 2026-09-05: confidence is one slider with
-      two handles, replacing the one-ended `minConfidence`.
-- [x] **A2 · product/UI · blocking** — answered 2026-09-05: a time-of-day range may wrap
-      past midnight, and `tc`'s day component is how that shows up in the data.
-- [x] **A3 · product/UI · blocking** — answered 2026-09-05: an empty selection means the
-      dimension is not filtering, matching how the status filters already behave. Clearing
-      a dimension widens the result rather than blanking the screen.
-- [x] **A4 · product/UI · non-blocking** — decided rather than asked: the rail's shape at
-      ten controls is mine to show. Grouped by the question each answers — where it came
-      from, what it is, when, who — so the column is scannable rather than ten identical
-      dropdowns.
+None blocking. Everything below is a choice #81 left open, with the default that is being
+implemented and why. Each is one sentence to overrule.
 
-- [x] **A5 · architectural · blocking** — answered 2026-09-05: refactor first. A dimension
-      becomes one declaration, the way `MODES` already works for the status filters. Adding
-      the sixth then costs almost nothing, and the seven-file dance stops being a trap for
-      whoever comes next.
+- [x] **A1 · product/UI · non-blocking** — answered 2026-09-06 by the issue itself (Q1):
+  the Model filter stays. It filters simulated data until Phase 3 of #68.
+- [x] **A2 · product/UI · non-blocking** — decided 2026-09-06: **L5 becomes a summary
+  button per dimension, opening a small popover holding the two ends.** Both the time pair
+  and the date pair drop from two or three rail rows to one, the rail reads as one list of
+  identical controls rather than a list with two odd ones in it, and the popover has the
+  width the controls actually need — which a 137px rail column does not. The alternative
+  considered was shrinking the native inputs to fit side by side: a date pair cannot be
+  made to fit, and it would have left time and date looking different from each other.
+- [x] **A3 · product/UI · non-blocking** — decided 2026-09-06: **the time ends become
+  24-hour text fields (`HH:MM`), not native time inputs.** Verified in real Chromium that
+  a native time input renders 12-hour regardless of `lang`; there is no attribute for
+  this. The date ends stay native `<input type="date">`, because the calendar picker is
+  worth keeping and nobody reported the date format. If the US `mm/dd/yyyy` order is also
+  wrong, say so and both ends become `YYYY-MM-DD` text.
+- [x] **A4 · product/UI · non-blocking** — decided 2026-09-06: **M1 is a field list plus a
+  direction pair in one menu, with the direction phrased for the chosen field** ("low
+  first" / "high first" for confidence, "shortest" / "longest" for track length). The
+  sub-bar shows `Confidence · low first` with an arrow, so what is applied is readable
+  without opening anything. A sort *stack* (secondary keys) was considered and rejected:
+  nothing asked for it, and the deterministic `observation_id` tie-breaker already makes
+  the order stable.
+- [x] **A5 · behavioural · non-blocking** — decided 2026-09-06: **Session nests under
+  Session type** (`nestsUnder: 'sessionType'`), so changing the type drops sessions that
+  no longer apply, the way a dive drops its lines. L2's stated reason is that the type
+  narrows which sessions are available, and the offered list already narrows; this makes
+  the selection follow.
+- [x] **A6 · product/UI · non-blocking** — decided 2026-09-06: **the rail body scrolls.**
+  L7 says to say so if something has to give. Nothing had to give in the end — the ten
+  filters fit at 1600x900 — but the rail was clipping its own status filters before this
+  work, and a rail that silently hides controls at a shorter viewport is the same bug
+  waiting for a smaller screen.
+
+### Round two — open assumptions
+
+None blocking. The three below were weighed against the test in `AGENTS.md` — *would a
+different reasonable answer change the behaviour, the schema, the interface, or the data?*
+— and each is settled by a pattern already in this repository rather than by preference,
+so each is recorded and none stops the work. Any of them is one sentence to overrule.
+
+- [x] **A7 · behavioural · non-blocking** — decided 2026-09-06: **there is no secondary
+  sort by default.** Not a free choice: `79-resumability` requires a bare address to be
+  the default question, so a default secondary would have to be written into
+  `defaultBare()` and every existing link would stop round-tripping.
+- [x] **A8 · API contract · non-blocking** — decided 2026-09-06: **the address carries
+  both terms in the one `sort` parameter, comma-separated** —
+  `?sort=confidence.asc,keyframe_count.desc`. A comma is already the list separator for
+  every multi-select in `query-url.js`, and sort fields are drawn from a closed list that
+  cannot contain one. The alternative weighed was a second parameter (`&then=`); it splits
+  one question across two keys, which `toQuery` does nowhere else.
+- [x] **A9 · product/UI · non-blocking** — decided 2026-09-06: **the secondary cannot name
+  the primary's field**, and the menu does not offer it. The rail already refuses to offer
+  a filter combination that returns nothing; a sort term that can never be reached is the
+  same thing. Choosing a primary that is already the secondary clears the secondary rather
+  than swapping them, because a silent swap changes an order the reviewer did not ask to
+  change.
 
 ## Decisions
 
-- **2026-09-05** — Fixture-backed. `src/data.js` stays the seam.
-- **2026-09-05** — The refactor comes first and is judged by one test: adding a dimension
-  is one entry in a declaration and nothing else. If it ends up being two places, it has
-  not worked, and the five dimensions should wait rather than be built on a half-refactor.
-- **2026-09-05** — Parsing `tc` goes through `db/timecode.js` when this reaches the API.
-  The client's own parsing must agree with it exactly, including the day group, or the same
-  observation lands in two different hours depending on who asked.
-- **2026-09-05** — Model stays a placeholder. There is no data behind it until Phase 3, and
-  a control that filters nothing is worse than one that is visibly not ready.
+- **2026-09-06** — `data-key` on a status checkbox is renamed to `data-statuskey`.
+  `data-key` belongs to the keyboard-shortcut badge (#74) and is claimed by a CSS rule
+  that draws its value on screen; two meanings for one attribute is what produced B4.
+- **2026-09-06** — `group` leaves `dimensions.js` entirely rather than being kept and
+  ignored. A field the declaration carries and nothing reads is a trap for the next
+  person; the order of the array is the only ordering the rail needs.
 
 ## Plan
 
-A1-A5 answered. The steps, refactor first:
+1. `.marp/task.md` (this file).
+2. **D1** — fixture generator: session type per session, real values; regenerate.
+3. **B4** — rename the colliding attribute; test the badge is gone.
+4. **B2** — menus remember their anchor; a second click on it closes.
+5. **B1** — a multi-select pick restates the whole menu rather than one tick.
+6. **L1 · L2 · L3 · Q1 · A5** — the declaration: drop `group`, drop `processor`, reorder,
+   nest session under session type. Delete `dimensionGroups()` and the group markup.
+7. **L4** — confidence on one track with two handles.
+8. **B3 · L5** — time and date as one-row summary buttons over a popover, 24-hour.
+9. **L6** — the reset control as an icon.
+10. **L7** — the rail body scrolls; confirm nothing is clipped.
+11. **M1** — field and direction, independently.
+12. Unit tier after every step; browser tier once at the end.
 
-0. `model/filters.js` grows a `DIMENSIONS` declaration — key, label, where the values come
-   from, what it nests under, single or multi. The rail, the query, the counts, the labels
-   and the collapsed-rail badge all read it, the way they already read `statusDimensions()`.
-   **The five new dimensions are added only after adding one is a single entry.**
-1. `model/filters.js` — multi-select, the nesting rule that drops only what no longer
-   applies, and the time-of-day window including the wrap.
-2. `data.js` — the new dimensions in `query` and `counts`, and the count of rows excluded
-   for having no date.
-3. The rail, grouped.
-4. Tests at all three tiers, then a walkthrough.
+Round two:
+
+13. **M2** — the sort model takes a second term; `sortTerms()` is the one place a
+    comparison order is decided, and `observation_id` is appended by the query itself.
+14. **M2** — the address carries both terms; a malformed second term is discarded without
+    costing the first.
+15. **M2** — one menu, two sections, the second worded for whichever field it names.
+16. **M3** — the phone loses its `.sortbox` override entirely and is measured at phone
+    width rather than assumed.
+17. **R1** — `README.md`'s *Known gaps*, checked against the code rather than trimmed.
 
 ## Acceptance criteria
 
-- Two dives from one project and one from another can be reviewed together.
-- Removing a project keeps the dives that still apply.
-- A 22:00–02:00 window returns both sides of midnight.
-- The date filter states its exclusions.
-- `marp verify run` green.
+- Every requirement above has a named test at a tier that can observe it: a rule in
+  `tests/unit/`, anything drawn in `tests/e2e/render.spec.mjs`.
+- Each of B1–B4 has a test that was shown to fail against the current behaviour before
+  the fix.
+- `npm run test:unit` and `npm run test:e2e` both green, at desktop and phone.
+- `src/model/dimensions.js` is still the only place a dimension is declared.
 
 ## Test plan
 
-Filled in at G3. The nesting rule and the midnight wrap belong in `model/` as unit tests —
-the wrap especially, because it is arithmetic and a browser proves nothing about it. What
-the query returns belongs in the contract tier. The rail's grouping and the exclusion
-notice belong in Playwright.
+See `.marp/verification.md`.
 
 ## Status
 
-- **Gate:** G3 — implementation complete, verification plan written and awaiting review
-- **Notes:** nothing implemented.
+- **Gate:** verifying
+- **Notes:** branched from `79-resumability`, not from `develop`, per #81.

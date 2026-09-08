@@ -104,7 +104,15 @@ body[data-mode="delete"] .mode-note { color: var(--red-400); font-weight: 600; }
 .body { display: grid; grid-template-columns: 158px 1fr; min-height: 0; }
 body.rail-collapsed .body { grid-template-columns: 34px 1fr; }
 .rail { background: var(--chrome-rail); border-right: 1px solid var(--line);
-        padding: 10px; overflow: hidden; }
+        padding: 10px; overflow: hidden;
+        /* The head stays put and the filters scroll under it. Without this the rail was
+           `overflow: hidden` over content taller than it, so at a 900px desktop the
+           status filters and the progress bar were drawn below the fold and could not be
+           reached at all -- the sharpest form of #81 L7. */
+        display: flex; flex-direction: column; }
+.rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin;
+             /* Reserve it, so appearing does not shuffle the controls sideways. */
+             scrollbar-gutter: stable; }
 body.rail-collapsed .rail { padding: 8px 0; display: flex; flex-direction: column;
                             align-items: center; gap: 9px; }
 body.rail-collapsed .rail-body { display: none; }
@@ -112,6 +120,15 @@ body.rail-collapsed .rail-body { display: none; }
 .railhead .t { font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
 body.rail-collapsed .railhead { display: block; margin: 0; }
 body.rail-collapsed .railhead .t { display: none; }
+/* An icon, not a word. It sits at the very top of the rail where #81 L6 wants it, and at
+   twenty pixels square it costs the same as the collapse button beside it -- "Reset" in
+   uppercase took twice the width for a control that is pressed rarely. */
+.railreset { width: 20px; height: 20px; display: grid; place-items: center;
+             border: 1px solid var(--mode-line); border-radius: 4px; background: none;
+             color: var(--muted); font-size: 12px; line-height: 1;
+             padding: 0; margin-left: auto; margin-right: 6px; }
+.railreset:hover { color: var(--cyan-300); border-color: var(--cyan-500); }
+body.rail-collapsed .railreset { display: none; }
 .railbtn { width: 20px; height: 20px; display: grid; place-items: center;
            border: 1px solid var(--mode-line); border-radius: 4px; color: var(--cyan-300);
            font-size: 10px; line-height: 1; background: none; }
@@ -136,6 +153,57 @@ body.rail-collapsed .fcount { display: grid; }
 .box.on { background: var(--cyan-400); border-color: var(--cyan-400); position: relative; }
 .box.on::after { content: ""; position: absolute; left: 2.8px; top: .2px; width: 3.4px; height: 6.6px;
                  border: solid #02121a; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+/* ------------------------------------------------- confidence: one track, two handles */
+/* Two stacked sliders said the same thing in twice the height, and read as two
+   independent numbers rather than as one range. #81 L4. */
+.span-val { color: var(--cyan-300); font-weight: 700; margin-left: 4px; }
+.dual { position: relative; height: 20px; margin: 1px 0 2px; }
+.dual__track { position: absolute; left: 6px; right: 6px; top: 8px; height: 4px;
+               border-radius: 2px; background: var(--navy-800); }
+/* The two ends come from ui/rail.js as percentages, so nothing here has to measure. */
+.dual__fill { position: absolute; top: 0; bottom: 0; border-radius: 2px;
+              left: var(--from, 0%); right: calc(100% - var(--to, 100%));
+              background: var(--cyan-500); }
+.dual input[type="range"] {
+  position: absolute; inset: 0; width: 100%; height: 20px; margin: 0;
+  -webkit-appearance: none; appearance: none; background: none;
+  /* Both inputs cover the whole track, so only their thumbs may take the pointer --
+     otherwise the one drawn on top swallows every drag meant for the other. */
+  pointer-events: none;
+}
+.dual input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto;
+  width: 12px; height: 12px; border-radius: 50%; cursor: grab;
+  background: var(--cyan-300); border: 2px solid var(--chrome-rail);
+}
+.dual input[type="range"]::-moz-range-thumb {
+  pointer-events: auto; box-sizing: border-box;
+  width: 12px; height: 12px; border-radius: 50%; cursor: grab;
+  background: var(--cyan-300); border: 2px solid var(--chrome-rail);
+}
+/* The input itself is invisible, so the focus ring has to land on the thumb. */
+.dual input[type="range"]:focus-visible { outline: none; }
+.dual input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--cyan-300); outline-offset: 2px;
+}
+.dual input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--cyan-300); outline-offset: 2px;
+}
+
+/* ------------------------------------------------- the two-ended filters, in a popover */
+.span { display: flex; align-items: center; gap: 6px; }
+.span .dash { color: var(--faint); }
+.span input { height: 26px; padding: 0 6px; border-radius: 4px; color: var(--white);
+              background: var(--navy-1000); border: 1px solid var(--border);
+              font: inherit; font-size: 12px; }
+/* 24-hour text rather than a native time input, which renders from the browser locale
+   and cannot be told otherwise -- #81 B3. Five characters, so it needs very little. */
+.span input.clock { width: 58px; text-align: center; letter-spacing: .04em; }
+.mnote { margin-top: 6px; font-size: 9.5px; color: var(--faint); line-height: 1.45; }
+/* Sits under the date button in the rail, and must stay visible with the popover shut:
+   a filter that silently omits looks complete and is not. */
+.span-note { margin-top: 4px; font-size: 9.5px; color: var(--amber-300); line-height: 1.45; }
+
 .prog { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .bar { height: 4px; border-radius: 2px; background: var(--navy-800); overflow: hidden; margin: 6px 0 4px; }
 .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--accept)); }
@@ -330,6 +398,9 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
 .menu .mhead { font-size: 9px; letter-spacing: .09em; text-transform: uppercase;
                color: var(--faint); padding: 5px 9px 3px; }
+/* A panel of controls rather than a list of choices: the two ends of a time or date
+   window. Padded a little more, because inputs sitting flush to a border read as cramped. */
+.menu--panel { padding: 8px 10px 10px; }
 .sel, .sortbox, .who { cursor: pointer; }
 .sel:hover, .sortbox:hover { border-color: var(--border-strong); }
 
@@ -419,7 +490,13 @@ body[data-mode="delete"] .commit { background: var(--red-500); color: #fff;
   /* Nothing in the bars may wrap: they are fixed-height rows, so a second line
      is simply clipped. Anything that cannot fit is dropped instead. */
   .hdr > *, .sub > *, .foot > * { white-space: nowrap; flex: none; }
-  .sortbox { display: none; }                  /* sort lives in the rail on a phone */
+  /* The sort is the same control here as anywhere else — same size, same menu. It was
+     hidden on a phone under a comment saying it lived in the rail instead; it never did,
+     so a phone had no way to reorder the mosaic at all. A shrunken variant was the next
+     wrong answer: sorting is not a lesser question on a smaller screen. The only thing
+     that changes is that it stops being pushed to the far right of a bar that scrolls,
+     so it is on screen without hunting for it. */
+  .sortbox { margin-left: 0; }
   .sub .marked-word { display: none; }
 
   .foot { gap: 4px; padding: 0 6px; }

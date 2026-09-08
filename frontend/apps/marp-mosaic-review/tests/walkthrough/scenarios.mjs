@@ -14,13 +14,43 @@
 
 const tilesIn = (page) => page.locator('.tile:not(.failed):not(.queued)');
 
+/**
+ * Draw the current address into the page, for the video only.
+ *
+ * A recorded viewport has no browser chrome in it, so the address bar — which is the whole
+ * subject of the resumability walkthrough — cannot be seen. This paints it across the top
+ * instead. It is scaffolding for the camera and belongs to no test and to no part of the
+ * application; nothing outside this file knows it exists.
+ */
+async function showAddress(page) {
+  await page.evaluate(() => {
+    let strip = document.getElementById('demoAddress');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'demoAddress';
+      strip.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;'
+        + 'font:12px/1.9 ui-monospace,Consolas,monospace;padding:0 10px;'
+        + 'background:#0b1b24;color:#7fe3ff;border-bottom:1px solid #17414f;'
+        + 'pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      document.body.appendChild(strip);
+    }
+    const url = new URL(window.location.href);
+    strip.textContent = decodeURIComponent(url.pathname + url.search) || url.pathname;
+  });
+}
+
 /** How many observations the current filters match, read off the chrome. */
 const totalShown = async (page) =>
   Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
 
 /** Type into one end of a two-ended filter and let the rail's change handler run. */
 async function setEnd(page, key, end, value, settled) {
-  await page.locator(`[data-span="${key}"] [data-end="${end}"]`).fill(value);
+  const box = page.locator(`[data-span="${key}"] [data-end="${end}"]`);
+  /* Time and date live behind a summary button since #81, so open the popover first. */
+  if (!(await box.count())) await page.locator(`[data-dim="${key}"]`).click();
+  await box.fill(value);
+  /* `fill` raises `input` and not `change`, and the rail waits for `change`. */
+  await box.press('Enter');
   await settled();
 }
 
@@ -458,14 +488,16 @@ export const scenarios = {
     title: 'Verifying: the filter rail',
     scenes: [
       {
-        caption: 'Ten filters, grouped by question',
-        say: "The rail used to be five filters in a column. It is ten now, and ten identical "
-           + "dropdowns stacked up is a list, not a rail — so they are grouped by the question "
-           + "each one answers. Where it came from, what it is, when, and who.",
+        caption: 'Ten filters, one list',
+        say: "The rail used to be five filters in a column. It is ten now. They were "
+           + "briefly grouped under four headings, and the headings cost more room than "
+           + "they bought — without them the whole rail fits on screen.",
         async act({ page, expect }) {
-          const titles = await page.locator('.railgroup__title').allInnerTexts();
-          expect(titles.map((t) => t.trim()))
-            .toEqual(['Where it came from', 'What it is', 'When', 'Who']);
+          const labels = await page.locator('#railDimensions .lbl').allInnerTexts();
+          expect(labels.length).toBe(10);
+          expect(await page.locator('.railgroup__title').count()).toBe(0);
+          /* And the point of removing them: the bottom of the rail is reachable. */
+          await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
         }
       },
       {
@@ -595,6 +627,148 @@ export const scenarios = {
         async act({ page, expect }) {
           const said = await page.locator('[data-note="date"]').innerText();
           expect(said.toLowerCase()).toContain('no recorded date');
+        }
+      }
+    ]
+  },
+
+  /* -------------------------------------------- verifying: coming back to it */
+  'verify-resume': {
+    title: 'Verifying: the question survives a reload',
+    scenes: [
+      {
+        caption: 'The address is the whole memory',
+        say: "Everything you ask the reviewer for now lives in the address. Nothing is "
+           + "stored anywhere else — no hidden settings, no local storage. I have painted "
+           + "the address across the top of the page, because a recording does not capture "
+           + "the browser's own address bar. Watch it change as I go.",
+        async act({ page, expect }) {
+          await showAddress(page);
+          await expect(page.locator('#demoAddress')).toBeVisible();
+          /* The default question is a bare address, which is what makes a plain link to
+             the tool still mean "everything". */
+          expect(await page.locator('#demoAddress').innerText()).not.toContain('?');
+        }
+      },
+      {
+        caption: 'Two dives at once',
+        say: "Start with a couple of dives. Two at a time, which the rail could not do "
+           + "before. Watch the top of the screen — the dives appear in the address as I "
+           + "pick them.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('[data-dim="dive"]').click();
+          await page.locator('.menu [data-v]').nth(1).click();
+          await page.waitForTimeout(450);
+          await page.locator('.menu [data-v]').nth(2).click();
+          await page.keyboard.press('Escape');
+          await settled();
+          await showAddress(page);
+
+          await expect(page.locator('#demoAddress')).toContainText('dive=');
+          store.dives = await page.locator('[data-dim="dive"] span').first().innerText();
+        }
+      },
+      {
+        caption: 'A range, not a single value',
+        say: "Now a different kind of filter altogether. Confidence is a range with two "
+           + "ends, and it goes into the address as a range — the two numbers with a pair "
+           + "of dots between them.",
+        async act({ page, expect, settled }) {
+          const to = page.locator('[data-span="confidence"] [data-end="to"]');
+          await to.evaluate((el) => {
+            el.value = '0.95';
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          await settled();
+          await showAddress(page);
+          await expect(page.locator('#demoAddress')).toContainText('confidence=');
+        }
+      },
+      {
+        caption: 'And a time of day',
+        say: "And a third kind — a window of time, which reads in the address exactly the "
+           + "way you would say it out loud. Three in the morning until two, which is a "
+           + "window that wraps past midnight, and it survives being written down as one.",
+        async act({ page, expect, settled, store }) {
+          await setEnd(page, 'timeOfDay', 'from', '03:00', settled);
+          await setEnd(page, 'timeOfDay', 'to', '02:00', settled);
+          await showAddress(page);
+
+          await expect(page.locator('#demoAddress')).toContainText('timeOfDay=03:00..02:00');
+          store.total = await totalShown(page);
+          expect(store.total).toBeGreaterThan(0);
+          /* The next scene pages forward, so the filters have to leave somewhere to go.
+             They once left a single page and 'Next' was a silent no-op. */
+          expect(await page.evaluate(() => window.MARP.state.pageCount)).toBeGreaterThan(1);
+        }
+      },
+      {
+        caption: 'Where you are, too',
+        say: "The page you are on goes in as well. Move to the second page and the address "
+           + "picks it up, so a link lands somebody exactly where you were rather than back "
+           + "at the beginning.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('[data-page="next"]').click();
+          await settled();
+          await showAddress(page);
+
+          await expect(page.locator('#demoAddress')).toContainText('page=2');
+          store.link = page.url();
+          expect(await page.evaluate(() => window.MARP.state.page)).toBe(2);
+        }
+      },
+      {
+        caption: 'Flag something first',
+        say: "Before I close it, let me flag a tile — because what comes back matters as "
+           + "much as what does. Watch this one.",
+        async act({ page, expect, settled }) {
+          await settled();
+          const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+          await tile.click();
+          await expect(page.locator('.tile.marked')).toHaveCount(1);
+        }
+      },
+      {
+        caption: 'Now come back to it cold',
+        say: "This is the bookmark. I am throwing the whole page away and opening that "
+           + "address again from nothing, the way you would tomorrow morning. Two dives, "
+           + "the confidence range, the time window, and the second page — all of it back.",
+        async act({ page, expect, settled, store }) {
+          await page.goto(store.link);
+          await settled();
+          await showAddress(page);
+
+          await expect(page.locator('[data-dim="dive"] span').first()).toHaveText(store.dives);
+          await expect(page.locator('#demoAddress')).toContainText('confidence=');
+          await expect(page.locator('#demoAddress')).toContainText('timeOfDay=03:00..02:00');
+          expect(await page.evaluate(() => window.MARP.state.page)).toBe(2);
+          expect(await totalShown(page)).toBe(store.total);
+        }
+      },
+      {
+        caption: 'The flag did not come back',
+        say: "The flag did not. That is deliberate, not a gap. A mark is not a decision "
+           + "until the page is committed, and a flag that came back would look exactly "
+           + "like one that had been written to the record while the record knew nothing "
+           + "about it. The question comes back; work you never submitted does not.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+        }
+      },
+      {
+        caption: 'And one gesture puts it all back',
+        say: "Last thing. Clearing ten filters one at a time is not a gesture, so there is "
+           + "a Reset in the corner of the rail. It puts you back to the default question "
+           + "and empties the address with it — but it leaves you in the mode you were "
+           + "working in, because clearing your filters is not the same as leaving the job.",
+        async act({ page, expect, settled }) {
+          await page.locator('#railReset').click();
+          await settled();
+          await showAddress(page);
+
+          await expect(page.locator('[data-dim="dive"]')).toContainText('All dives');
+          expect(await page.locator('#demoAddress').innerText()).not.toContain('?');
         }
       }
     ]

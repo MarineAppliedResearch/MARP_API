@@ -8,6 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
   pendingException, statusDimensions, commitIsDestructive,
@@ -161,10 +162,13 @@ test('flagged work stays in the default scientific view, because it is still ope
 });
 
 test('the active filter count reflects what is narrowing the results', () => {
+  /* Arrays: every set dimension has held one since #77. These read `'Bat Star'` until
+     2026-09-06 and still passed, because a string has a length -- so the count was right
+     for a shape the application had stopped producing. */
   assert.equal(filters.activeFilterCount('scientific',
-    { species: 'Bat Star', project: null, dive: null, reviewStatus: ['unreviewed'] }), 2);
+    { species: ['Bat Star'], project: [], dive: [], reviewStatus: ['unreviewed'] }), 2);
   assert.equal(filters.activeFilterCount('scientific',
-    { species: null, project: null, dive: null, reviewStatus: [] }), 0);
+    { species: [], project: [], dive: [], reviewStatus: [] }), 0);
 });
 
 /* ------------------------------- the marks are the page's exception set */
@@ -270,7 +274,7 @@ test('entering Delete Mode gives both dimensions a default', () => {
 });
 
 test('both dimensions count towards the collapsed rail badge in Delete Mode', () => {
-  const f = { species: 'Bat Star', project: null, dive: null,
+  const f = { species: ['Bat Star'], project: [], dive: [],
     reviewStatus: ['flagged'], trainingDisposition: ['promoted'] };
   assert.equal(filters.activeFilterCount('delete', f), 3, 'species plus two dimensions');
   assert.equal(filters.activeFilterCount('scientific', f), 2, 'species plus one');
@@ -328,7 +332,7 @@ test('a filter that nothing nests under leaves the rest alone', () => {
 });
 
 test('dive and line each count towards the collapsed rail badge', () => {
-  const f = { project: 'A', dive: 'D04', line: '2', species: null,
+  const f = { project: ['A'], dive: ['D04'], line: ['2'], species: [],
     reviewStatus: [], trainingDisposition: [] };
   assert.equal(filters.activeFilterCount('scientific', f), 3);
 });
@@ -573,6 +577,25 @@ test('R5: the excluded rows are counted, not silently dropped', () => {
     'nothing is excluded when the dimension is not filtering');
 });
 
+test('B3: a typed time becomes 24-hour, or nothing at all', () => {
+  /* The ends of a time window are text fields, because a native time input renders from
+     the browser locale and no attribute overrides it. This is where what somebody typed
+     becomes a value the filter can use. */
+  assert.equal(match.normaliseClock('9:30'), '09:30');
+  assert.equal(match.normaliseClock('0930'), '09:30');
+  assert.equal(match.normaliseClock('22:00'), '22:00');
+  assert.equal(match.normaliseClock(' 07:05 '), '07:05');
+
+  /* Not a time of day: that end is simply not set. Never a filter half-understood, and
+     never a 12-hour reading of something written in 24-hour. */
+  assert.equal(match.normaliseClock('9:30 PM'), null);
+  assert.equal(match.normaliseClock('24:00'), null);
+  assert.equal(match.normaliseClock('12:60'), null);
+  assert.equal(match.normaliseClock('half nine'), null);
+  assert.equal(match.normaliseClock(''), null);
+  assert.equal(match.normaliseClock(null), null);
+});
+
 test('R3: time of day works on every observation, dated or not', () => {
   const d = dimensions.DIMENSION.timeOfDay;
   const night = { from: '22:00', to: '02:00' };
@@ -605,11 +628,134 @@ test('R6: several values of one dimension are an OR', () => {
   assert.equal(match.matchesDimension(d, chosen, { dive: 'D05' }), false);
 });
 
-test('the rail groups by the question each dimension answers', () => {
-  const groups = dimensions.dimensionGroups();
-  assert.ok(groups.length >= 3, 'ten dropdowns in one column is a list, not a rail');
-  const total = groups.reduce((n, g) => n + g.dimensions.length, 0);
-  assert.equal(total, dimensions.DIMENSIONS.length, 'every dimension lands in a group');
+test('L1: the rail carries no group headings, and no field nobody reads', () => {
+  /* #77 grouped the dimensions under four headings; #81 dropped them. `group` left the
+     declaration with them, because a field carried and never read is a trap for whoever
+     adds the next dimension and dutifully fills it in. */
+  assert.equal(dimensions.dimensionGroups, undefined,
+    'dimensionGroups() has no caller and should not exist');
+  for (const d of dimensions.DIMENSIONS) {
+    assert.equal(d.group, undefined, `${d.key} still declares a group`);
+  }
+});
+
+test('L2: session type comes before session, and session nests under it', () => {
+  const order = dimensions.dimensionKeys();
+  assert.ok(order.indexOf('sessionType') < order.indexOf('session'),
+    'the type narrows which sessions are available, so it is asked first');
+  assert.equal(dimensions.DIMENSION.session.nestsUnder, 'sessionType');
+  assert.deepEqual(dimensions.dependentsOf('sessionType'), ['session']);
+});
+
+test('L3: there is no processor dimension anywhere', () => {
+  /* Querying by who did the annotation does not match how the work is structured. It has
+     to leave the declaration rather than be hidden, because the rail, the query, the
+     counts and the address all read from here -- a hidden one would still be in the URL. */
+  assert.equal(dimensions.DIMENSION.processor, undefined);
+  assert.ok(!dimensions.dimensionKeys().includes('processor'));
+  assert.ok(!filters.FILTER_KEYS.includes('processor'));
+  assert.ok(!Object.keys(filters.DEFAULT_FILTERS).includes('processor'));
+});
+
+test('Q1: the model dimension stays, until Phase 3 gives it a column', () => {
+  /* #81 left this open rather than settling it. Left in place deliberately, and named
+     here so removing it is a decision somebody makes rather than one that drifts in. */
+  assert.ok(dimensions.DIMENSION.model, 'the Model filter stays for now');
+});
+
+/* ---------------------------------------------------------------- sorting */
+
+test('M1: the field and the direction are independent', () => {
+  /* Five fixed pairs meant three of the four fields could be read only one way. Every
+     field now offers both, which is eight orders where there were five. */
+  for (const s of filters.SORT_FIELDS) {
+    for (const dir of filters.SORT_DIRS) {
+      assert.ok(filters.isSort(s.field, dir), `${s.field} ${dir} should be offerable`);
+    }
+  }
+  assert.equal(filters.SORT_FIELDS.length * filters.SORT_DIRS.length, 8);
+});
+
+test('M1: what is applied reads as both halves, not as one phrase', () => {
+  assert.equal(filters.sortLabel({ field: 'confidence', dir: 'asc' }),
+    'Confidence ↑ low first');
+  assert.equal(filters.sortLabel({ field: 'keyframe_count', dir: 'desc' }),
+    'Track length ↓ longest first');
+
+  /* Each field words its own directions, because "longest" says something about a track
+     length that "descending" does not. */
+  assert.notEqual(filters.sortField({ field: 'keyframe_count' }).desc,
+    filters.sortField({ field: 'updatedAt' }).desc);
+});
+
+test('M2: a secondary term is applied where the primary ties', () => {
+  const sort = { field: 'confidence', dir: 'asc', then: { field: 'keyframe_count', dir: 'desc' } };
+  assert.deepEqual(filters.sortTerms(sort), [
+    { field: 'confidence', dir: 'asc' },
+    { field: 'keyframe_count', dir: 'desc' }
+  ]);
+  assert.deepEqual(filters.sortTerms({ field: 'confidence', dir: 'asc', then: null }),
+    [{ field: 'confidence', dir: 'asc' }]);
+});
+
+test('M2: observation_id is never one of the terms', () => {
+  /* It is the final word in every comparison and it is appended by whatever does the
+     comparing -- not declared as a term, because a term is something a caller can
+     reorder or drop, and page membership is query-derived. A comparator that can return
+     zero for two different rows means page one holds different observations each visit. */
+  const every = [{ field: 'confidence', dir: 'asc', then: null },
+                 { field: 'obsID', dir: 'desc', then: { field: 'updatedAt', dir: 'asc' } }];
+  for (const sort of every) {
+    for (const term of filters.sortTerms(sort)) {
+      assert.notEqual(term.field, 'observation_id');
+    }
+  }
+  assert.ok(!filters.SORT_FIELDS.some((s) => s.field === 'observation_id'));
+});
+
+test('M2: a secondary that can never be reached is not a term', () => {
+  const same = { field: 'confidence', dir: 'asc', then: { field: 'confidence', dir: 'desc' } };
+  assert.equal(filters.sortTerms(same).length, 1, 'the same field twice is one comparison');
+
+  const junk = { field: 'confidence', dir: 'asc', then: { field: 'cuteness', dir: 'asc' } };
+  assert.equal(filters.sortTerms(junk).length, 1);
+});
+
+test('M2: choosing a primary that is already the secondary clears the secondary', () => {
+  /* Rather than swapping them. A swap changes an order the reviewer did not ask to
+     change, and setting it again is one click. */
+  const sort = { field: 'confidence', dir: 'asc', then: { field: 'obsID', dir: 'desc' } };
+  assert.equal(filters.withSort(sort, 'obsID', 'asc').then, null);
+
+  /* A primary change that leaves the secondary reachable keeps it. */
+  const kept = filters.withSort(sort, 'updatedAt', 'desc');
+  assert.deepEqual(kept.then, { field: 'obsID', dir: 'desc' });
+});
+
+test('M2: the secondary can be set and cleared on its own', () => {
+  const sort = { field: 'confidence', dir: 'asc', then: null };
+  const withThen = filters.withSortThen(sort, 'updatedAt', 'desc');
+  assert.deepEqual(withThen, { field: 'confidence', dir: 'asc', then: { field: 'updatedAt', dir: 'desc' } });
+  assert.equal(filters.withSortThen(withThen, null).then, null);
+  assert.equal(filters.withSortThen(withThen, 'confidence', 'asc').then, null,
+    'the primary is not offerable as the secondary');
+});
+
+test('M2: what is applied names both terms', () => {
+  assert.equal(
+    filters.sortLabel({ field: 'confidence', dir: 'asc', then: { field: 'keyframe_count', dir: 'desc' } }),
+    'Confidence ↑ low first, then Track length ↓ longest first');
+  assert.equal(filters.sortLabel({ field: 'confidence', dir: 'asc', then: null }),
+    'Confidence ↑ low first');
+});
+
+test('M1: a sort nobody could have chosen falls back rather than throwing', () => {
+  assert.equal(filters.isSort('cuteness', 'asc'), false);
+  assert.equal(filters.isSort('confidence', 'sideways'), false);
+  /* The address is edited by hand and truncated by chat clients, so the label has to
+     survive nonsense rather than blanking the sub-bar. */
+  assert.equal(filters.sortField({ field: 'cuteness' }).field, filters.DEFAULT_SORT.field);
+  assert.match(filters.sortLabel({ field: 'cuteness', dir: 'sideways' }), /Confidence/);
 });
 
 test('dependents are found through the whole chain', () => {
@@ -628,4 +774,37 @@ test('every dimension records where its data really comes from', () => {
   }
   assert.match(dimensions.DIMENSION.model.source, /NOTHING YET/,
     'the missing link from an observation to its model is the point, and must stay visible');
+});
+
+/* ---------------------------------------------------------------- the fixture */
+
+const fixture = () => JSON.parse(
+  readFileSync(new URL('../../fixtures/observations.json', import.meta.url), 'utf8'));
+
+/**
+ * #81 D1. The fixture invented `ROV` and `Drop Cam`, which are platforms and are not in
+ * the `session_type` column at all, so the session-type filter was exercised against
+ * values that do not exist. The real five are below, inconsistent casing included --
+ * `Fish_GULF` beside `INVERTS_GULF` is what the database holds, and a fixture that spells
+ * them more neatly tests a query nobody will ever run.
+ */
+test('D1: the fixture uses the session types the database really holds', () => {
+  const seen = [...new Set(fixture().observations.map((r) => r.session_type))].sort();
+  assert.deepEqual(seen,
+    ['Fish', 'Fish_GULF', 'Habitat', 'INVERTS_GULF', 'Inverts'],
+    'these are the five values, spelled the way the column spells them');
+});
+
+test('D1: a session has one type, because sessions.type is one column on one row', () => {
+  const types = new Map();
+  for (const r of fixture().observations) {
+    const had = types.get(r.session_id);
+    if (had && had !== r.session_type) {
+      assert.fail(`session ${r.session_id} carries both ${had} and ${r.session_type}`);
+    }
+    types.set(r.session_id, r.session_type);
+  }
+  /* And why it matters: L2 says the type narrows which sessions are available, which is
+     only true if the two are correlated at all. Rolled per observation, they were not. */
+  assert.ok(new Set(types.values()).size > 1, 'more than one type across the sessions');
 });

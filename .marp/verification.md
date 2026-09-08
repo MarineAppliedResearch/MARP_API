@@ -1,145 +1,275 @@
----
-task: MarineAppliedResearch/MARP_API#77
-repos: [MARP_API]
-status: verified
----
+# Verification — MARP_API#81, the filter rail
 
-# Verification plan — filter rail: the remaining dimensions, and multi-select
+## What each test proves
 
-**This is the plan, not the results.** G4 fills in what actually happened, verbatim,
-failures included.
+Every test names its requirement in its own title, so a failure says which item of #81 has
+broken rather than which selector moved.
 
-## What each requirement is proved by, and where
-
-The tier matters more than the count. A rule about *meaning* is proved in `model/`; a
-claim about what a reviewer can *see* is proved in the browser, because the store was
-correct every time a rendering defect shipped here.
-
-| Req | Claim | Tier | Named test |
+| Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | session, session type and processor are filterable | render | `every declared dimension actually reaches the rail` |
-| R2 | confidence filters on both ends | unit | `R2: confidence filters on both ends` |
-| R2 | the slider actually narrows the mosaic | render | **to add** — `R2: the confidence slider narrows the mosaic` |
-| R3 | time of day works on every observation, dated or not | unit | `R3: time of day works on every observation, dated or not` |
-| R4 | `tc` is read with its day group, exactly as `db/timecode.js` reads it | unit | `R4: tc is read with its day group, exactly as db/timecode.js reads it` |
-| R4 | a window may wrap past midnight, and both sides are one night | unit | `R4: a time window may wrap past midnight, and both sides are one night` |
-| R4 | an ordinary window does not wrap | unit | `R4: an ordinary window does not wrap` |
-| R5 | a row whose `tc` carries no date cannot answer a date filter | unit | `R5: a row whose tc carries no date cannot answer a date filter` |
-| R5 | the excluded rows are counted, not silently dropped | unit | `R5: the excluded rows are counted, not silently dropped` |
-| R5 | **the reviewer is told the number** | render | **to add** — `R5: the date filter says how many it could not see` |
-| R6 | several values of one dimension are an OR | unit | `R6: several values of one dimension are an OR` |
-| R6 | the rail is whatever the declaration says, in its order | unit | `R6: the rail is whatever the declaration says, in its order` |
-| R7 | removing a project keeps the dives that still apply | unit | `R7: removing a project keeps the dives that still apply` |
-| R7 | a dependent with nothing left over stops filtering | unit | `R7: a dependent with nothing left over falls back to not filtering` |
-| R7 | with no reachability known, the old blunt rule still applies | unit | `R7: with no reachability known, the old blunt rule still applies` |
-| R7 | it behaves that way in the browser | render | `R7: changing the dive drops only the lines that no longer apply` |
-| R8 | an empty selection means the dimension is not filtering | unit | `R8: an empty selection means the dimension is not filtering` |
-| R9 | the line list is scoped to the chosen dive | render | `the line list is scoped to the chosen dive` |
-| A4 | the rail is grouped by the question each answers | render | `the rail is grouped by the question each filter answers` |
+| B1 | `B1: choosing a project unticks "All projects" while the menu is open` | render | the "All …" entry restates itself the moment a specific value is picked, and ticks again when the last one is removed |
+| B1 | `B1: the dive and line menus behave the same way` | render | the same, on the two other menus #81 names |
+| B2 | `B2: clicking the button that opened a menu closes it` | render | a second click closes; a click on another button moves the menu rather than only dismissing |
+| B2 | `B2: it still closes after a pick has redrawn the rail underneath it` | render | the menu remembers its control by name, so a full rail re-render between the two clicks does not break the toggle |
+| B3 | `B3: a typed time becomes 24-hour, or nothing at all` | unit | `normaliseClock` — `930` is half nine, `9:30 PM` is not a time, `24:00` is not a time |
+| B3 | `B3: the time controls are 24-hour, with no AM or PM anywhere` | render | what is actually drawn: a text field holding `13:30`, no AM/PM in the panel, and the rail button saying the same back |
+| B4 | `B4: a status filter draws one control, not two` | render | the `::after` badge is gone from a status checkbox and still present on the commit button |
+| D1 | `D1: the fixture uses the session types the database really holds` | unit | exactly the five real values, casing included |
+| D1 | `D1: a session has one type, because sessions.type is one column on one row` | unit | the type is a property of the session, which is what makes L2's narrowing true |
+| L1, L2, L3 | `L1, L2, L3: the rail is one list, in order, with no processor in it` | render | no group headings; all ten labels in the declared order; no processor control |
+| L1 | `L1: the rail carries no group headings, and no field nobody reads` | unit | `group` and `dimensionGroups()` are gone from the declaration rather than left unused |
+| L2 | `L2: session type comes before session, and session nests under it` | unit | the order, and the nesting that makes the narrowing follow the selection |
+| L3 | `L3: there is no processor dimension anywhere` | unit | not in `DIMENSIONS`, not in `FILTER_KEYS`, not in `DEFAULT_FILTERS` — so not in the query and not in the address |
+| L4 | `L4: confidence is one track carrying two handles` | render | both inputs share a top, a left and a width; one track element; the fill follows a handle that moves |
+| L5 | `L5: time and date take one rail row each` | render | no span control in the rail itself, one button each, and both ends present in the popover |
+| L6 | `L6: the reset is the first control in the rail, and costs almost nothing` | render | above every filter, no wider than the collapse button, and still named for a screen reader |
+| L7 | `L7: nothing in the rail is drawn where it cannot be reached` | render | both ends of the status filters and the progress block are inside the rail's own box |
+| M1 | `M1: the field and the direction are independent` | unit | eight orders where there were five |
+| M1 | `M1: what is applied reads as both halves, not as one phrase` | unit | the sub-bar text, and that each field words its own directions |
+| M1 | `M1: a sort nobody could have chosen falls back rather than throwing` | unit | an edited address does not blank the sub-bar |
+| M1 | `M1: the field and the direction are chosen separately, and both are on screen` | render | the menu, the rewording, the sub-bar, and the address |
+| M1 | `M1: the order actually applied changes when the direction does` | render | the mosaic really reorders — a menu that reordered nothing would pass every other M1 test |
+| Q1 | `Q1: the model dimension stays, until Phase 3 gives it a column` | unit | left in place deliberately, so removing it is a decision somebody makes |
+| P1 | `no file that draws the rail knows a dimension by name` | unit | no renderer special-cases a dimension key, which is how the #77 property decays |
+| P1 | `every declared dimension actually reaches the rail` | render | and nothing declared is silently undrawn |
+| M2 | `M2: a secondary term is applied where the primary ties` | unit | `sortTerms` returns one term or two, in order |
+| M2 | `M2: observation_id is never one of the terms` | unit | the final tie-break is appended by the query, not declared, so no caller can reorder or drop it |
+| M2 | `M2: a secondary that can never be reached is not a term` | unit | the same field twice, and a field that does not exist |
+| M2 | `M2: choosing a primary that is already the secondary clears the secondary` | unit | and a primary change that leaves the secondary reachable keeps it |
+| M2 | `M2: the secondary can be set and cleared on its own` | unit | `withSortThen`, including the refusal to accept the primary |
+| M2 | `M2: what is applied names both terms` | unit | the sub-bar text |
+| M2 | `M2: the secondary term survives the address` | unit | `?sort=confidence.asc,keyframe_count.desc` round-trips |
+| M2 | `M2: a malformed secondary does not cost the reviewer the primary` | unit | three malformed forms |
+| M2 | `M2: a secondary naming the primary is not a term, and is not written` | unit | it is dropped on the way in and on the way out |
+| M2 | `M2: the default sort still writes a bare address` | unit | #79's whole claim: a bare address is the default question |
+| M2 | `M2: a secondary sort is chosen in the same menu, and reaches the address` | render | the menu, its rewording, the sub-bar, the URL, and a reload |
+| M2 | `M2: the tie-break really breaks ties, and the primary still governs` | render | the page really reorders, and confidence never goes backwards |
+| M3 | `M3: a phone sorts with the same control, at the same size` | render | whole control inside the viewport, computed type and padding identical to the desktop's, and the secondary sort driven end to end at phone width |
+| — | `no dimension key can be mistaken for a control id` | unit | the namespaces `anchorKey()` merges cannot collide |
 
-Plus the architectural claim the whole refactor is judged by (A5, and the decision of
-2026-09-05):
+**Each of B1–B4 was shown to fail before it was fixed.** The defect was reintroduced from
+a file copy, the test run, and the copy restored — never `git checkout --` on a file with
+uncommitted work. The four failures are recorded under *Results*.
 
-| Claim | Tier | Named test |
-| --- | --- | --- |
-| adding a dimension is one entry and nothing else | unit | `every dimension records where its data really comes from` |
-| dependents are found through the whole chain | unit | `dependents are found through the whole chain` |
-| nothing the interface looks up is undrawn | unit | `every id the interface looks up is drawn by something` |
+## Requirements with no test
 
-## Three tests this plan adds before it runs
+None. Every id in #81 has at least one named test above.
 
-They are the ones where the tier that can observe the claim is not yet the tier that
-tests it:
+## Edge cases
 
-1. **`R2: the confidence slider narrows the mosaic`** — drag the lower handle up and
-   assert the total falls. Proved in `model/` today; nobody has proved the slider is
-   wired to it.
-2. **`R5: the date filter says how many it could not see`** — set a date range and assert
-   `[data-note="date"]` is visible and names a number. R5's whole point is that the
-   reviewer is *told*, and a hidden note satisfies the unit test perfectly.
-3. **`R4: a wrapped time window returns both sides of midnight`** — set 22:00–02:00 in the
-   rail itself and assert a non-zero total. The arithmetic is unit-tested; that the two
-   `<input type="time">` ends reach it in that order is not.
+- **A pick that redraws the rail under an open menu.** The rail is re-rendered from state
+  on every change, so the button that opened a menu is replaced while the menu is up. The
+  menu therefore keys on the control's *name*, not the node. Covered by the second B2 test.
+- **A typed time that is not a time.** `noon`, `24:00`, `12:60` all leave that end unset
+  and clear the field, so nothing sits on screen looking as though it were applied.
+- **A time typed and then clicked away from.** The popover is dismissed by that click and
+  the element is removed, so `change` on blur never arrives. The panel listens for
+  `focusout` and Enter as well, and `applySpan` ignores a pair it has already been given so
+  the overlap costs nothing. Not separately tested — see *Known gaps*.
+- **Two slider handles dragged past each other.** Swapped rather than refused; the
+  pre-existing behaviour, kept.
+- **An address naming a sort that no longer exists.** `isSort` rejects it and the default
+  applies, which matters because #81 removed five sort labels and added an eighth order.
 
-## What will be run
+## Regression coverage
+
+- **B4 was an attribute collision**, not a stray element: `data-key` meant the status
+  dimension in `chrome.js` and the keyboard-shortcut badge in `app.css`. The test asserts
+  the pseudo-element is absent on the checkbox *and* still present on the commit button, so
+  a fix by deleting the badge feature would fail it.
+- **The R4 wrapped-window test was reading the total too early.** Both windows return more
+  than a page, so the tile count `ready()` watches is identical either side of the change.
+  It now polls the number that actually moves. Found while regenerating the fixture.
+
+## Known gaps
+
+- **The click-away flush is not covered by a test.** The `focusout` path is exercised by
+  every popover interaction in the suite, but no test asserts specifically that typing a
+  time and clicking into the mosaic applies it.
+- **The date ends are still native `<input type="date">`,** so they render in the
+  browser's locale order — `mm/dd/yyyy` here. B3 is about the clock and nobody reported
+  the date format, so this is deliberate and untested.
+- **`state.excludedForNoDate` is still date-shaped.** The rail now finds the note through
+  `reportsExclusions` rather than by name, but the count and its wording are the date's.
+  A second dimension that could not always answer would need the store generalised too.
+- **`model/match.js` and `model/query-url.js` still name the date dimension**, because a
+  date range compares differently from a number range. Pre-existing, and out of scope here.
+- **Nothing checks the rail at a viewport shorter than 900px.** The rail body scrolls now,
+  so it should hold, but the assertion is written against the desktop and phone projects
+  the suite already runs.
+- **The secondary sort is one term deep, not a stack.** Nothing offers a third, and
+  `sortTerms` would need a shape change rather than a loop to grow one.
+- **`src/data.js` still filters the two status dimensions with hand-written `includes`
+  checks**, outside `matchesFilters` — the duplication #77 removed for the rail dimensions,
+  surviving in the status ones. Deliberately not touched here; it wants its own issue.
+
+## Manual steps
+
+None. Everything here is reachable from the two automated tiers.
+
+## Walkthrough videos
+
+Not recorded. They are a review surface the user asks for, and #81 did not. The existing
+`verify-filters` scenario was updated so it still passes and still asserts: its first scene
+now checks that there are no group headings and that the bottom of the rail is reachable,
+and its `setEnd` helper opens the popover the time and date ends now live in.
+
+## Results
+
+Recorded verbatim, including what failed on the way.
+
+### The four bugs, failing before they were fixed
 
 ```
-npm run test:unit     parse + 69 unit tests          ~1s
-npm run test:e2e      desktop + phone, 112 tests     ~90s
+✘ B4: a status filter draws one control, not two
+  Error: expect(received).toBe(expected)   // a status checkbox draws no badge of any kind
+  Expected: "none"   Received: "\"reviewStatus\""
+
+✘ B1: choosing a project unticks "All projects" while the menu is open
+  Error: expect(locator).not.toHaveClass(expected) failed
+      18 × locator resolved to <button data-v="" class="on">…</button>
+         - unexpected value "on"
+✘ B1: the dive and line menus behave the same way
+  Error: dive still claims All dives
+✘ B2: clicking the button that opened a menu closes it
+  Error: expect(locator).toHaveCount(expected) failed
+      18 × locator resolved to 1 element   - unexpected value "1"
+✘ B2: it still closes after a pick has redrawn the rail underneath it
+  Error: expect(locator).toHaveCount(expected) failed
+      18 × locator resolved to 1 element   - unexpected value "1"
+
+✘ B3: the time controls are 24-hour, with no AM or PM anywhere
+  Error: expect(locator).toHaveAttribute(expected) failed
+  Expected: "text"   Received: "time"      // with lang="en-GB" set, which changes nothing
+
+✘ D1: the fixture uses the session types the database really holds
+  AssertionError: + 'Drop Cam', + 'ROV'
+✘ D1: a session has one type, because sessions.type is one column on one row
+  AssertionError: session 400 carries both ROV and Drop Cam
 ```
 
-The narrated walkthroughs are **not** part of this and are not run unless asked for. They
-are a review surface, recorded on request. `playwright.config.mjs` now leaves that project
-out unless something names it — a bare `playwright test` used to pull it in, which is why
-a routine run was taking four and a half minutes.
-
-## What this does NOT cover, and why
-
-- **Nothing is proved against a real database or a real API.** This app runs entirely on
-  `src/data.js`'s fixture. Every claim here is a claim about the client's rules and the
-  fixture's data; Phase 8 of #68 is where they meet a server.
-- **The `model` dimension filters simulated data.** The fixture generates `model_name`
-  because a control nobody can exercise is a control nobody can judge — but no column
-  links an observation to a model in the real schema. That is Phase 3 of #68.
-- **The date dimension is proved on fixture dates, not production ones.** Production's
-  `tc` carries dates only where the clock was synced; the exclusion count is exactly the
-  mechanism for that, and #76 is where recovering the missing ones is decided.
-- **No performance claim.** The fixture is small and paging is client-side here.
-- **Nothing verifies the phone rail is usable**, only that it renders and the filters
-  work at that width. Judging a ten-control rail on a phone needs a person.
-
-## A defect found on the way, and it is not this task's
-
-`tests/walkthrough/scenarios.mjs` asserted that three marks survive a species correction.
-It fails on `origin/develop` too — verified by stashing this branch and running it — because
-the page filters to one predicted species, so a corrected tile leaves the page. The scene's
-narration claimed the opposite of what the app does, which is the exact failure the testing
-doctrine warns about. Fixed here rather than left broken: it now asserts that the corrected
-tile leaves and the other two marks stay.
-
-## Results — 2026-09-05
-
-Verbatim, failures included.
+### Failures found and fixed during the work
 
 ```
-npm run test:unit     69 passed, 0 failed          60 ms
-npm run test:e2e     115 passed, 3 skipped         58.0 s   (desktop + phone)
+✘ R4: a time window that wraps past midnight returns both sides of it
+  Error: expect(received).toBeGreaterThan(expected)   Expected: > 88   Received: 88
 ```
 
-The 3 skipped are one render check that needs a failed thumbnail on the first page and
-does not always get one. That is a weakness in the check, not a pass — noted, not fixed
-here.
+Two causes, both real. `page.fill()` raises `input` and not `change`, so a value typed
+into a text field was never committed until focus left it — which the app now handles
+through `focusout` and Enter, and the test drives with Enter. And both windows return more
+than a page, so `ready()` could not see the result change; the test polls the total.
 
-### The three tests this plan added
+### Two more failures, on the first full browser run
 
-All three now exist and pass. One of them found a real defect:
+```
+✘ [desktop] the line list is scoped to the chosen dive
+✘ [phone]   the line list is scoped to the chosen dive
+  Error: locator.click: Test timeout of 30000ms exceeded.
+    - waiting for locator('[data-dim="line"]')
+    - <button class="" data-v="">…</button> from <div class="menu">…</div> subtree
+      intercepts pointer events
+```
 
-- **`R2: the confidence slider narrows the mosaic`** — passed first time. The slider was
-  wired correctly.
-- **`R4: a time window that wraps past midnight returns both sides of it`** — passed first
-  time. Asserted by comparing a 05:00–06:59 window against 05:00–01:00 and requiring the
-  wrapped one to be larger, so it exercises both sides of midnight rather than only
-  proving a non-zero result.
-- **`R5: the date filter says how many observations it could not see`** — **failed, and
-  found a real defect.** `data.js` computed the exclusion count and `ui/rail.js` drew it,
-  but `store.js` never carried it between them, so `state.excludedForNoDate` was always
-  undefined and the note was permanently hidden. R5's entire requirement — that the
-  reviewer is *told* — was not met, and every tier that cannot see the screen passed.
-  Fixed in `store.js`; **the fix was proved by reintroducing the bug and confirming the
-  test fails** (`expect(locator).toBeVisible() failed / Received: hidden`).
+Real, and caused by this work rather than uncovered by it. A multi-select menu stays open
+after a pick and hangs over the control below it. The dive menu used to open *upwards*,
+because the taller rail left no room beneath it; the compact rail leaves room, so it opens
+downwards and covers the line button. The test now dismisses the menu before reaching for
+the next control, which is what a reviewer does.
 
-### One further check added, unplanned
+```
+✘ [desktop] R7: the banner offers to ask for the imagery again
+  1074 | await expect(page.locator('#commit')).toBeEnabled();
+```
 
-`a correction under a species filter takes the row off the page, and the other marks stay`,
-in the contract tier. The behaviour was asserted only by a narrated walkthrough, and the
-contract check nearest to it cleared the species filter to sidestep the case and returned
-`'skipped'` when it hit it anyway. A skipped branch looks green.
+A flake, not a defect: it passed alone immediately afterwards, and passed in both
+subsequent full runs. It retries fifty thumbnails, each behind a simulated 900 ms latency,
+against a seven-second expectation — six parallel workers are enough to push it over.
+Not chased further; noted so that it is not a surprise if it recurs.
 
-### An accident worth recording
+### The final run
 
-While proving the R5 test catches its bug, `git checkout --` was used to undo a
-temporarily reintroduced defect. `src/store.js` held uncommitted #77 work, and the
-checkout discarded all of it. It was recovered in full from an unreachable stash object
-(`git fsck --unreachable`), the two later edits were re-applied, and both tiers were
-re-run green. Nothing was lost — but the work is committed now rather than left in the
-working tree, which is what should have been true before any experiment like that.
+```
+$ npm run test:unit
+ℹ tests 101
+ℹ pass 101
+ℹ fail 0
+ℹ duration_ms 68.5716
+
+$ npm run test:e2e          # desktop and phone
+  1 skipped
+  153 passed (1.1m)
+
+$ npm run test:e2e          # again, to see whether the R7 flake recurs. It did not.
+  1 skipped
+  153 passed (1.1m)
+```
+
+The one skip is deliberate and pre-existing: `it survives on a phone, where the trailing
+words do not` calls `test.skip(info.project.name !== 'phone')`, so it runs once, on the
+phone project, and reports itself skipped on the desktop one.
+
+## Round two — the secondary sort, the phone, and the README
+
+### What was shown to fail first
+
+The secondary sort is a feature rather than a reported bug, so the thing worth proving is
+that its test can tell a working tie-break from a recorded one. `sortTerms` was made to
+drop the second term — one `false &&` — and the render test failed on exactly the claim it
+is there to make:
+
+```
+✘ M2: the tie-break really breaks ties, and the primary still governs
+  Error: reversing the tie-break must reorder the page
+  Expected: not "100173,100356,100013,100121,100199,100203,100345,100394,…"
+```
+
+Every other M2 assertion — the menu, the ticks, the sub-bar wording, the address — passed
+while the secondary sorted nothing. That is precisely the failure mode the doctrine warns
+about, and it is why that test reads the tile order rather than the menu.
+
+### Two existing tests needed changing, and why
+
+- `R1: mode, filters, sort and page all survive the round trip` and `R3: a sort nobody
+  offers is ignored` compared the sort object exactly, so they failed on the new `then:
+  null`. The shape changed; the assertions were updated rather than loosened.
+
+### The final run
+
+```
+$ npm run test:unit
+ℹ tests 112
+ℹ pass 112
+ℹ fail 0
+
+$ npm run test:e2e          # desktop and phone
+  2 skipped
+  158 passed (1.1m)
+
+$ npm run test:e2e          # again
+  1 failed
+    [desktop] › keyboard shortcuts › R7: Ctrl+Enter on a page that cannot be committed says so
+  2 skipped
+  157 passed (1.1m)
+
+$ npx playwright test --project=desktop -g "R7: Ctrl.Enter on a page"
+  1 passed (2.1s)
+
+$ npm run test:e2e          # a third time
+  2 skipped
+  158 passed (1.1m)
+```
+
+**The one failure is a flake and is named rather than explained away.** It passed alone
+immediately, and in the runs either side of it. Both flakes seen across five full runs are
+in tests that break every thumbnail on the page and then wait on the commit button — fifty
+retries behind a simulated 900 ms latency, against a seven-second expectation, with six
+workers competing. Neither is in code this branch touched. If it recurs often enough to
+matter, the fix is for those two tests to wait on the store's own signal rather than on a
+timeout, and that is worth an issue rather than a patch here.
+
+**Both skips are the same deliberate pattern**, and neither hides anything: each is a
+phone-layout test guarded by `test.skip(info.project.name !== 'phone')`, so it runs exactly
+once — on the phone project — and reports itself skipped on the desktop one. `M3` is the
+new one.
+
