@@ -359,9 +359,39 @@ test('delete is the only mode whose commit destroys something', () => {
   assert.equal(commitIsDestructive('training'), false);
 });
 
-test('R2: deleteImpact counts only the marked rows a commit would act on', () => {
-  /* A marked tile whose thumbnail never arrived is not deleted, so it must not be
-     counted -- otherwise the dialog promises to destroy something it will not. */
+test('R2: the delete confirmation counts every row the commit will destroy', () => {
+  /* Reported 2026-09-06, found when new fixture imagery put a thumbnail-less row near the
+     top of a delete page. `deleteImpact` filtered to `thumbnail_status === 'ready'` while
+     `commitOutcome` and the commit itself act on everything marked -- so marking two rows
+     where one had no picture showed "1 observation" in the dialog and then permanently
+     deleted two.
+
+     Deletion is the one irreversible action in this application, and the count on the
+     dialog is the only thing standing in front of it. It has to be the number that gets
+     destroyed. */
+  const rows = [
+    { observation_id: 1, thumbnail_status: 'ready',  review_status: 'unreviewed', training_disposition: 'undecided' },
+    { observation_id: 2, thumbnail_status: 'failed', review_status: 'unreviewed', training_disposition: 'undecided' },
+    { observation_id: 3, thumbnail_status: 'queued', review_status: 'unreviewed', training_disposition: 'undecided' }
+  ];
+  const marks = new Map([[1, {}], [2, {}]]);
+
+  const impact = deleteImpact({ rows, marks });
+  const outcome = commitOutcome({ mode: 'delete', rows, marks });
+
+  assert.equal(impact.count, 2,
+    'the dialog must count the marked row that has no imagery, because the commit deletes it');
+  assert.equal(impact.count, outcome.deletes,
+    'the number on the dialog and the number destroyed are the same number');
+});
+
+test('R2: deleteImpact counts every marked row, and agrees with the commit', () => {
+  /* This asserted the opposite until 2026-09-06 -- that a marked tile whose thumbnail
+     never arrived "is not deleted, so it must not be counted". It is deleted: `data.js`
+     skips a row with no picture only when it is *unmarked*, and a marked one falls
+     straight through to `row.deleted = true`. The test and `commitCount` agreed with each
+     other and both disagreed with what the commit actually destroys, which is the worst
+     shape a test can take around an irreversible action. */
   const rows = [
     row(1), row(2), row(3),
     row(4, { thumbnail_status: 'failed' }),
@@ -369,9 +399,11 @@ test('R2: deleteImpact counts only the marked rows a commit would act on', () =>
   const marks = new Map([[1, {}], [2, {}], [4, {}]]);
 
   const impact = deleteImpact({ rows, marks });
-  assert.equal(impact.count, 2);
+  assert.equal(impact.count, 3, 'the row with no imagery is marked, so it will be deleted');
   assert.equal(impact.count, commitCount({ mode: 'delete', rows, marks }),
     'the dialog must show the number the commit acts on');
+  assert.equal(impact.count, commitOutcome({ mode: 'delete', rows, marks }).deletes,
+    'and the same number the outcome says will be destroyed');
 });
 
 test('A3: the breakdown counts reviewed and promoted rows, and ignores excluded', () => {

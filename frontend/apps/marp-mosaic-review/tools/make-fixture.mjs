@@ -7,12 +7,13 @@
  *
  * Deterministic: same seed in, same file out. Run with `node tools/make-fixture.mjs`.
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, '..', 'fixtures', 'observations.json');
+const THUMBS = join(HERE, '..', 'fixtures', 'thumbs');
 
 /* mulberry32 — small deterministic PRNG so the fixture never shifts under us */
 function rng(seed) {
@@ -27,6 +28,60 @@ const rand = rng(20260903);
 const pick = (a) => a[Math.floor(rand() * a.length)];
 const between = (lo, hi) => lo + Math.floor(rand() * (hi - lo + 1));
 
+/**
+ * The imagery, read from `fixtures/thumbs/manifest.json`.
+ *
+ * **The manifest says which species a picture shows, not the filename.** Deriving it from
+ * the name would work right up until a file is renamed, and then the fixture would quietly
+ * claim a crab was a sea star — which is the single mistake this whole application exists
+ * to catch, so it is a poor one to build in at the source.
+ *
+ * An observation may only claim a species that has pictures. The point of the mosaic is
+ * judging what is *shown* against what is *claimed*, and a tile labelled urchin with no
+ * urchin behind it teaches a reviewer nothing.
+ *
+ * The taxonomy below stays longer than this list on purpose: the correction panel has to
+ * offer species that are not on the page, or fixing a mistake is a choice between the five
+ * things already in front of you.
+ */
+const MANIFEST = JSON.parse(readFileSync(join(THUMBS, 'manifest.json'), 'utf8'));
+
+/** Species name -> its pictures, sorted, so the fixture is reproducible. */
+const PICTURES = (() => {
+  const out = {};
+  for (const [file, meta] of Object.entries(MANIFEST)) {
+    if (!meta || !meta.species) continue;
+    (out[meta.species] = out[meta.species] || []).push(file);
+  }
+  for (const list of Object.values(out)) list.sort();
+  return out;
+})();
+
+const IMAGED_SPECIES = Object.keys(PICTURES);
+if (!IMAGED_SPECIES.length) {
+  throw new Error('fixtures/thumbs/manifest.json lists no species. See that folder README.');
+}
+
+/**
+ * One of a species' pictures.
+ *
+ * `n` is the row's own index, so a row always gets the same picture and re-running this
+ * changes nothing. A handful of pictures spread over three thousand rows repeat heavily,
+ * which is expected and fine — a reviewer is judging the organism against the name, not
+ * whether they have seen this exact frame before.
+ */
+function pictureFor(species, n) {
+  const files = PICTURES[species];
+  if (!files) throw new Error('No pictures for "' + species + '" in manifest.json');
+  return files[n % files.length];
+}
+
+/**
+ * The taxonomy the correction panel offers.
+ *
+ * Deliberately longer than the five species that have pictures: correcting a mistake has
+ * to be a real choice, not a pick from the same five already on the page.
+ */
 const SPECIES = [
   { species_id: 41, taxserial: 157213, comname: 'Bat Star',          species: 'Patiria miniata' },
   { species_id: 42, taxserial: 157220, comname: 'Leather Star',      species: 'Dermasterias imbricata' },
@@ -67,14 +122,66 @@ function timecode(totalSeconds, frac) {
   return `${h}:${m}:${s}.${String(frac).padStart(2, '0')}`;
 }
 
-const TOTAL = 540;
+/**
+ * Enough rows to page through properly.
+ *
+ * 540 fitted on a handful of pages, so paging, the pager's window, the committed-page
+ * count and anything that only goes wrong deep into a result set were all being judged on
+ * a set small enough to hide the problem.
+ */
+const TOTAL = 3000;
 const rows = [];
 
+/**
+ * How the claimed species are spread.
+ *
+ * Every species gets enough observations to be worth reviewing, not just the one the
+ * default filter opens on. Filtering to Rock Crab has to give pages of crabs with a few
+ * wrong ones among them, exactly as filtering to Bat Star does — otherwise four of the
+ * five species lead somewhere that cannot be practised on.
+ *
+ * Bat Star stays the largest because it is what the fixture opens on, and a first page
+ * should be full.
+ */
+const MIX = IMAGED_SPECIES.flatMap((name) =>
+  Array(name === 'Bat Star' ? 8 : 3).fill(name));
+
+/**
+ * How often the label is wrong. The same rate for every species, so there is something to
+ * find whichever one you filter to.
+ *
+ * Three per cent, which is about two wrong on a page of sixty. Tuned from use rather than
+ * chosen: seven per cent was reported as "way way more than that". A page has to read as a
+ * page of bat stars with a couple of intruders, because the whole premise is that the
+ * wrong one pops out — and it cannot pop out of a crowd of other wrong ones.
+ *
+ * This is the one number to turn if the practice set feels too easy or too busy.
+ */
+const WRONG_RATE = 0.03;
+
 for (let i = 0; i < TOTAL; i++) {
-  /* Weighted so most of a page is the queried species and outliers are genuinely rare,
-     which is what makes the mosaic's pop-out premise testable. */
-  const isOutlier = rand() < 0.06;
-  const sp = isOutlier ? pick(SPECIES.slice(5)) : SPECIES[0];
+  /**
+   * What the model said, and what is actually in the picture.
+   *
+   * These are two different things, and keeping them apart is the entire point of the
+   * mosaic. `comname` is the model's claim -- it is what the filter matches and what the
+   * caption says. The picture is the truth. A **misclassification** is a row claiming Bat
+   * Star with a crab in the frame, and that is what the reviewer is hunting: it survives
+   * the species filter precisely because the label is wrong, which is why it is on the
+   * page at all.
+   *
+   * An earlier version gave every outlier a different label *and* a matching picture. That
+   * produced correctly-classified other species, which the species filter then removed --
+   * so a page of Bat Stars was three hundred correct Bat Stars and there was nothing to
+   * find. The tool looked like it worked and demonstrated nothing.
+   */
+  const claimedName = pick(MIX);
+  const isMisclassified = rand() < WRONG_RATE;
+  const shownName = isMisclassified
+    ? pick(IMAGED_SPECIES.filter((n) => n !== claimedName))
+    : claimedName;
+
+  const sp = SPECIES.find((x) => x.comname === claimedName);   // what the model claimed
 
   const project = PROJECTS[i % 3 === 0 ? 0 : (i % 5 === 0 ? 1 : 0)];
   const user = pick(USERS);
@@ -119,6 +226,28 @@ for (let i = 0; i < TOTAL; i++) {
     scientific_name: sp.species,
     taxReview: null,
 
+    /* A wrong call tends to be a less certain one. Weighting it that way is what makes the
+       confidence filter worth having -- sorting by least-certain-first should genuinely
+       bring the mistakes forward, and it should be possible to see that it does. */
+    /* A wrong call tends to be a less certain one, so sorting by least-certain-first
+       genuinely brings mistakes forward. The bands overlap heavily on purpose: a first
+       attempt gave errors 0.50-0.78 against correct 0.62-0.99, and since the default sort
+       is confidence ascending, page one came back with no correct observations on it at
+       all. A page has to read as mostly right for the wrong one to pop out -- that is the
+       premise the whole tool rests on, and separating the bands cleanly destroyed it. */
+    /**
+     * Confidence is independent of whether the label is right.
+     *
+     * It was not, for a while: a wrong call was given a lower confidence so that sorting
+     * by least-certain-first would bring mistakes forward. That is realistic and it ruined
+     * the fixture, because the default sort *is* confidence ascending — so page one
+     * collected the mistakes and ran at three times the underlying rate. Reported from use
+     * as "on a page of 60 bat stars I had to flag 20".
+     *
+     * Whether low confidence really predicts error is an empirical question about a model,
+     * not something to bake into demo data. Uniform here means every page carries roughly
+     * the same few wrong ones, wherever you are in the result and however you sort it.
+     */
     confidence: Number((0.50 + rand() * 0.49).toFixed(2)),
 
     tc: timecode(start, between(0, 24)),
@@ -143,11 +272,11 @@ for (let i = 0; i < TOTAL; i++) {
     training_approved_by: null,
 
     thumbnail_status,
-    /* Thumb must agree with the label. t08 is the rockfish crop and t17 the purple
-       leather star; everything else reads as a bat star, so those two are reserved. */
-    thumb: sp.comname === 'Rockfish' ? 8
-         : sp.comname === 'Leather Star' ? 17
-         : (() => { let t = i % 28; while (t === 8 || t === 17) t = (t + 5) % 28; return t; })(),
+    /* The picture is what is really there, which is not always what the label says. Fifty
+       drawings are reused across three thousand rows, and that is the point -- a reviewer
+       is judging the organism against the name, not whether they have seen this exact
+       picture before. */
+    thumb: pictureFor(shownName, i),
 
     createdAt: '2026-08-' + String(10 + (i % 20)).padStart(2, '0') + 'T09:00:00Z',
     updatedAt: '2026-09-0' + (1 + (i % 3)) + 'T14:' + String(10 + (i % 50)).padStart(2, '0') + ':00Z',
@@ -156,8 +285,16 @@ for (let i = 0; i < TOTAL; i++) {
 }
 
 /* a couple of guaranteed cases so the prototype always has them to show */
-rows[3]  = { ...rows[3],  comname: 'Rockfish', scientific_name: 'Sebastes sp.', species_id: 61, thumb: 8, confidence: 0.61 };
-rows[9]  = { ...rows[9],  comname: 'Leather Star', scientific_name: 'Dermasterias imbricata', species_id: 42, thumb: 17 };
+/* Two guaranteed misclassifications near the top of the first page, so the prototype
+   always has something to find without waiting on the dice. Both claim Bat Star, which is
+   what keeps them past the species filter; the pictures say otherwise. */
+const batStar = SPECIES.find((x) => x.comname === 'Bat Star');
+for (const [at, shows] of [[3, 'Rockfish'], [9, 'Rock Crab']]) {
+  rows[at] = { ...rows[at], comname: batStar.comname, scientific_name: batStar.species,
+               species_id: batStar.species_id, taxserial: batStar.taxserial,
+               thumb: pictureFor(shows, at), thumbnail_status: 'ready',
+               confidence: at === 3 ? 0.54 : 0.57 };
+}
 rows[20] = { ...rows[20], review_status: 'reviewed', reviewed_by: 'J. Marsh' };
 rows[28] = { ...rows[28], thumbnail_status: 'queued' };
 rows[38] = { ...rows[38], thumbnail_status: 'failed' };
