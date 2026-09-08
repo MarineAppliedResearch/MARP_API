@@ -2075,3 +2075,202 @@ test.describe('the filter rail, cleaned up', () => {
     expect(commit).not.toBe('none');
   });
 });
+
+/* -------------------------------------------------------------------------- #89
+   Every mode filters on both workflow statuses, the way Delete already does.
+
+   These are here rather than in the unit tier because the rail is what the reviewer sees,
+   and because the claim that matters most — that Scientific's default result set did not
+   move — is only true end to end. The store has been correct every time a rendering
+   defect shipped here. */
+
+/** What the store is filtering on, and how many rows the question returns. */
+const question = (page) => page.evaluate(() => ({
+  total: window.MARP.state.total,
+  reviewStatus: window.MARP.state.filters.reviewStatus,
+  trainingDisposition: window.MARP.state.filters.trainingDisposition
+}));
+
+/**
+ * The default result count worked out from the fixture itself, independently of the app.
+ *
+ * Deliberately not "whatever the app said last time": a test that compares the app to
+ * itself cannot tell that the borrowed dimension started narrowing. This counts the rows
+ * the default question is *meant* to return — one species, unreviewed or flagged, every
+ * training disposition — and reports the promoted and excluded share, which is exactly
+ * what a careless `defaultStatusFor` would silently remove.
+ */
+const expectedDefault = (page) => page.evaluate(async () => {
+  const res = await fetch('./fixtures/observations.json');
+  const db = await res.json();
+  const rows = db.observations.filter((r) => !r.deleted
+    && r.comname === 'Bat Star'
+    && ['unreviewed', 'flagged'].includes(r.review_status));
+  return {
+    total: rows.length,
+    decided: rows.filter((r) => r.training_disposition !== 'undecided').length
+  };
+});
+
+test.describe('every mode filters on both workflow statuses', () => {
+  test('R3: Scientific opens with no training narrowing, and its total does not move',
+    async ({ page }) => {
+      const errors = watchErrors(page);
+      await page.goto('./');
+      await ready(page);
+
+      const want = await expectedDefault(page);
+      /* If this were zero the check below would pass while narrowing everything, so the
+         fixture's own shape is asserted before it is relied on. */
+      expect(want.decided,
+        'the fixture must hold promoted or excluded rows in the default view, or this proves nothing')
+        .toBeGreaterThan(0);
+
+      const got = await question(page);
+      expect(got.trainingDisposition,
+        'the borrowed dimension must arrive not filtering, not at its owner\'s default')
+        .toEqual([]);
+      expect(got.reviewStatus).toEqual(['unreviewed', 'flagged']);
+      expect(got.total,
+        `the default result set must not move: ${want.decided} promoted/excluded rows are at stake`)
+        .toBe(want.total);
+
+      /* And the default question is still the bare address. */
+      expect(new URL(page.url()).search).toBe('');
+      expect(errors).toEqual([]);
+    });
+
+  test('R1: Scientific\'s rail draws both dimensions, its own first', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await expect(page.locator('#statusLbl')).toHaveText('Review status');
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+
+    /* Six boxes, and the borrowed three unticked. The tick is the whole claim: a group
+       drawn with all three ticked is what would have hidden the rows. */
+    await expect(page.locator('#statusFilters [data-status]')).toHaveCount(6);
+    for (const value of ['undecided', 'promoted', 'excluded']) {
+      await expect(page.locator(
+        `#statusFilters [data-statuskey="trainingDisposition"][data-status="${value}"] .box`))
+        .not.toHaveClass(/\bon\b/);
+    }
+    for (const value of ['unreviewed', 'flagged']) {
+      await expect(page.locator(
+        `#statusFilters [data-statuskey="reviewStatus"][data-status="${value}"] .box`))
+        .toHaveClass(/\bon\b/);
+    }
+
+    /* Every box carries a count. They come from the same query Delete's do, over the
+       non-status filters only, so a borrowed count can exceed the result total. */
+    const counts = await page.locator('#statusFilters [data-status] .n').allTextContents();
+    expect(counts).toHaveLength(6);
+    expect(counts.every((c) => /^[\d,]+$/.test(c.trim()))).toBe(true);
+  });
+
+  test('R1: Training\'s rail leads on its own dimension and borrows review status',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      await openRail(page);
+
+      await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
+      await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Review status');
+      await expect(page.locator('#statusFilters [data-status]')).toHaveCount(6);
+
+      const got = await question(page);
+      expect(got.trainingDisposition).toEqual(['undecided']);
+      expect(got.reviewStatus, 'borrowed, so it arrives narrowing nothing').toEqual([]);
+    });
+
+  test('R9: ticking Excluded in Scientific narrows to excluded observations',
+    async ({ page }) => {
+      const errors = watchErrors(page);
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      await page.locator(
+        '#statusFilters [data-statuskey="trainingDisposition"][data-status="excluded"]').click();
+      await ready(page);
+
+      await expect(page.locator(
+        '#statusFilters [data-statuskey="trainingDisposition"][data-status="excluded"] .box'))
+        .toHaveClass(/\bon\b/);
+
+      /* Drawn, not merely stored: every tile on the page wears the borrowed EXCLUDED tag,
+         which is the visible consequence of the filter having been applied. */
+      const tiles = await page.locator('.tile').count();
+      expect(tiles).toBeGreaterThan(0);
+      await expect(page.locator('.tile .rtag', { hasText: 'EXCLUDED' })).toHaveCount(tiles);
+
+      const only = await page.evaluate(() =>
+        window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+      expect(only, 'the borrowed filter must actually narrow the query').toBe(true);
+
+      /* Still Scientific: what a tap records is the mode's own, not the borrowed one. */
+      await expect(page.locator('#statusLbl')).toHaveText('Review status');
+      expect(errors).toEqual([]);
+    });
+
+  test('R7: a borrowed filter arrives from the address and stays in it', async ({ page }) => {
+    await page.goto('./?trainingDisposition=excluded');
+    await ready(page);
+
+    const got = await question(page);
+    expect(got.trainingDisposition).toEqual(['excluded']);
+    const only = await page.evaluate(() =>
+      window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+    expect(only).toBe(true);
+
+    /* The app must not rewrite the address it was given into something else. */
+    expect(new URL(page.url()).search).toContain('trainingDisposition=excluded');
+  });
+
+  test('R6: the collapsed rail badge counts a borrowed dimension only once it narrows',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      const badge = page.locator('#fcount');
+      const before = Number(await badge.textContent());
+
+      const promoted = page.locator(
+        '#statusFilters [data-statuskey="trainingDisposition"][data-status="promoted"]');
+      await promoted.click();
+      await ready(page);
+      expect(Number(await badge.textContent()),
+        'a narrowing borrowed dimension is one more active filter').toBe(before + 1);
+
+      await promoted.click();
+      await ready(page);
+      expect(Number(await badge.textContent()),
+        'and unticking puts it back, because it holds nothing again').toBe(before);
+    });
+
+  test('R8: Delete Mode is unchanged — both dimensions, both defaults', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    await openRail(page);
+
+    await expect(page.locator('#statusLbl')).toHaveText('Review status');
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+
+    /* All three training values ticked on arrival: Delete owns the dimension, and there it
+       is context rather than a filter. This is what must NOT become "not filtering". */
+    for (const value of ['undecided', 'promoted', 'excluded']) {
+      await expect(page.locator(
+        `#statusFilters [data-statuskey="trainingDisposition"][data-status="${value}"] .box`))
+        .toHaveClass(/\bon\b/);
+    }
+    const got = await question(page);
+    expect(got.trainingDisposition).toEqual(['undecided', 'promoted', 'excluded']);
+    expect(got.reviewStatus).toEqual(['unreviewed', 'flagged']);
+  });
+});
