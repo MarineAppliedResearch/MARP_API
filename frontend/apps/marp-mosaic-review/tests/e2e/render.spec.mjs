@@ -554,17 +554,20 @@ test.describe('Delete Mode shows the scientific record', () => {
     await expect(page.locator('#commit')).toContainText('nothing to do');
   });
 
-  test('it offers both status dimensions, and only Delete does', async ({ page }) => {
+  test('it offers both status dimensions, and now so does everything else', async ({ page }) => {
+    /* This asserted that *only* Delete offered both, which is the decision #89 reversed:
+       Delete's rail is the one the review modes were given. What is still Delete's own is
+       the *default* — it owns the training dimension, so all three values arrive ticked,
+       where a review mode borrows it and it arrives narrowing nothing. That distinction is
+       asserted in the #89 block at the end of this file. */
     await page.goto('./');
     await ready(page);
     await openRail(page);
-    /* One dimension in the review modes... */
-    await expect(page.locator('#statusFilters .lbl.sub')).toHaveCount(0);
-    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(0);
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+    await expect(page.locator('#statusFilters [data-statuskey="trainingDisposition"]')).toHaveCount(3);
 
     await page.locator('.seg button', { hasText: 'Delete' }).click();
     await ready(page);
-    /* ...both in Delete, each under its own heading. */
     await expect(page.locator('#statusLbl')).toHaveText('Review status');
     await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
     await expect(page.locator('#statusFilters [data-statuskey="reviewStatus"]')).toHaveCount(3);
@@ -1149,6 +1152,185 @@ test.describe('a page resets, and a commit stays in its own mode', () => {
   });
 });
 
+test.describe('a mode keeps its own session work', () => {
+  /** Commit the page we are on, and wait for it to land. */
+  async function commitAndSettle(page) {
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+    await ready(page);
+  }
+
+  const mode = (page) => page.evaluate(() => window.MARP.state.mode);
+  const session = (page) => page.evaluate(() => ({
+    pins: window.MARP.state.pageMembers.size,
+    committed: window.MARP.state.committedPages.size,
+    outcomes: window.MARP.state.outcomes.size,
+    marks: window.MARP.state.marks.size
+  }));
+
+  test('R1: what was reviewed is still there after a trip through another mode',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await commitAndSettle(page);
+      await page.locator('[data-page="next"]').click();
+      await ready(page);                          // step off it, so its chip is drawn
+      const before = await session(page);
+      const chipsBefore = await page.locator('.pg.done').count();
+      expect(before.committed).toBe(1);
+      expect(chipsBefore).toBe(1);
+
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+      await ready(page);
+
+      /* `setMode` used to throw the pins, the committed pages and the outcomes away. That
+         stopped one mode wearing another's answers and discarded the reviewer's session
+         with it: three pages reviewed, one glance at Training, and no way back to what had
+         been submitted. Reported 2026-09-08. */
+      const after = await session(page);
+      expect(after.pins).toBe(before.pins);
+      expect(after.committed).toBe(before.committed);
+      expect(after.outcomes).toBe(before.outcomes);
+      /* `setMode` lands on page 1, which is the committed one, so it is already on screen. */
+      await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+
+      /* Step off it to see its chip: the current page is a typable input rather than a
+         chip, so it carries neither `data-page` nor the committed class. */
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+      expect(await page.locator('.pg.done').count()).toBe(chipsBefore);
+    });
+
+  test('R2: uncommitted marks do not travel', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+
+    const before = (await session(page)).marks;
+    await page.locator('.tile:not(.failed):not(.queued):not(.marked)').first().click();
+    expect((await session(page)).marks).toBe(before + 1);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+    await ready(page);
+
+    /* An uncommitted mark is a pending intention the reviewer walked away from. Only
+       what reached the record comes back — and the record's own exceptions re-seed, which
+       is why this compares against the arrival count rather than zero. */
+    expect((await session(page)).marks).toBe(before);
+  });
+
+  test('R3: the other mode still sees none of this mode\'s outcomes', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await commitAndSettle(page);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+
+    /* The isolation the clearing was protecting has to survive the parking. `.badge` is
+       what this mode says; a REVIEWED tag from the record may legitimately appear as an
+       `.rtag` under #85, and that is a different element on purpose. */
+    expect(await mode(page)).toBe('training');
+    expect((await session(page)).outcomes).toBe(0);
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+  });
+
+  test('R4: changing the question drops every mode\'s pinned pages', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await commitAndSettle(page);
+    expect((await session(page)).committed).toBe(1);
+
+    await openRail(page);                       // collapsed by default on a phone
+    await page.locator('#railReset').click();
+    await ready(page);
+
+    /* A different question means a different result, so page 2 is not the same page 2.
+       Parked pins would restore pages the filter no longer returns. */
+    expect(await page.evaluate(() => window.MARP.state.parked.size)).toBe(0);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+    await ready(page);
+    expect((await session(page)).committed).toBe(0);
+  });
+});
+
+test.describe('"Marked this page" means this page', () => {
+  const counter = (page) => page.locator('#markedCount');
+
+  test('R1: a page you have not touched reads zero, and counts only its own marks',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      /* Mark two here, then walk to a page nobody has touched. `state.marks` spans the
+         session by design, so the counter read the session total and only ever went up —
+         a fresh page showed the marks left behind on the last one. Reported 2026-09-08. */
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+      const here = Number(await counter(page).innerText());
+      expect(here).toBeGreaterThanOrEqual(2);
+
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+      const fresh = Number(await counter(page).innerText());
+      const seeded = await page.locator('.tile.marked').count();
+      expect(fresh, 'a new page counts what is marked on it, not what was left behind')
+        .toBe(seeded);
+      expect(fresh).toBeLessThan(here);
+
+      /* And marking here moves it by one, from the page's own number. */
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').first().click();
+      expect(Number(await counter(page).innerText())).toBe(fresh + 1);
+    });
+
+  test('R2: going back to a page shows its own count again', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+    await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+    const first = Number(await counter(page).innerText());
+
+    await page.locator('[data-page="next"]').click();
+    await ready(page);
+    await page.locator('[data-page="prev"]').click();
+    await ready(page);
+
+    /* The marks themselves must still be there — this is a display fix, not a change to
+       what a mark survives. */
+    expect(Number(await counter(page).innerText())).toBe(first);
+    expect(await page.locator('.tile.marked').count()).toBe(first);
+  });
+
+  test('R3: Delete Mode names the number on this page, before destroying anything',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').first().click();
+
+      await page.locator('.seg button', { hasText: 'Delete' }).click();
+      await ready(page);
+      await page.locator('.tile:not(.failed):not(.queued)').first().click();
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+
+      /* The dangerous one. This note said "Permanently deletes the N marked tiles" with N
+         being a session total, in front of an irreversible action. */
+      const marked = await page.locator('.tile.marked').count();
+      expect(Number(await counter(page).innerText())).toBe(marked);
+      const note = await page.locator('#commitNote, #modeNote').first().innerText()
+        .catch(() => '');
+      if (/Permanently deletes the (\d+)/.test(note)) {
+        expect(Number(note.match(/Permanently deletes the (\d+)/)[1])).toBe(marked);
+      }
+    });
+});
+
 test.describe('the commit button reports on itself', () => {
   test('it spins while saving, then confirms', async ({ page }) => {
     await page.goto('./');
@@ -1712,16 +1894,70 @@ test.describe('the filter rail, cleaned up', () => {
 
     /* The rail was `overflow: hidden` over content taller than it, so the status filters
        and the progress bar were drawn below the fold and could not be reached at all.
-       A rail that hides controls silently is worse than one that scrolls. */
-    const rail = await page.locator('.rail').boundingBox();
-    for (const sel of ['#statusFilters [data-status="unreviewed"]',
-                       '#statusFilters [data-status="reviewed"]', '.prog']) {
-      const box = await page.locator(sel).boundingBox();
-      expect(box, `${sel} is drawn`).not.toBeNull();
-      expect(box.y + box.height, `${sel} is inside the rail`)
-        .toBeLessThanOrEqual(rail.y + rail.height + 1);
+       A rail that hides controls silently is worse than one that scrolls.
+       `.rail-body` is what scrolls, so *reachable* is the claim, not "fits without
+       scrolling" — that proxy held only while the rail had three status boxes in it. Since
+       #89 gave every mode six, Scientific's rail scrolls the way Delete's always has, and
+       asserting the proxy would have meant weakening the rail rather than the test.
+       Checked in every mode now, which is the gap the old version left: Delete Mode has
+       had two dimensions since #71 and was never asked this question.
+
+       **`scrollIntoView` is not the test, and that mistake was made here first.**
+       `overflow: hidden` is still scrollable *programmatically*, so a version of this that
+       scrolled each control into view and measured it passed with the original bug put
+       back. What a person can reach is decided by the container: it has to be scrollable
+       whenever its content is taller than it is. */
+    for (const mode of ['Scientific Data Review', 'Training Data Review', 'Delete']) {
+      await page.locator('.seg button', { hasText: mode }).click();
+      await ready(page);
+      await openRail(page);
+
+      /* Measured in one evaluate, because doing it across several Playwright calls raced
+         the rail's own re-render and failed once in three runs on desktop for that and
+         nothing else. A flaky rail test teaches people to re-run rather than look. */
+      const rail = await page.evaluate(() => {
+        const body = document.querySelector('.rail-body');
+        const style = getComputedStyle(body);
+        return {
+          overflowY: style.overflowY,
+          overflows: body.scrollHeight > body.clientHeight + 1
+        };
+      });
+
+      /* The bug: content taller than a container nobody can scroll. */
+      if (rail.overflows) {
+        expect(['auto', 'scroll'], `the rail overflows in ${mode} and must scroll`)
+          .toContain(rail.overflowY);
+      }
+
+      for (const sel of ['#statusFilters [data-status="unreviewed"]',
+                         '#statusFilters [data-status="reviewed"]', '.prog']) {
+        await expect(page.locator(sel), `${sel} is drawn in ${mode}`).toHaveCount(1);
+        const box = await page.evaluate((s) => {
+          const el = document.querySelector(s);
+          const body = document.querySelector('.rail-body');
+          if (!el) return null;
+          const a = el.getBoundingClientRect();
+          const b = body.getBoundingClientRect();
+          /* Where it sits in the scrollable content, not on screen — so an element below
+             the fold of a rail that scrolls is reachable, and one outside the content box
+             of a rail that does not scroll is not. */
+          return {
+            height: a.height,
+            top: (a.top - b.top) + body.scrollTop,
+            bottom: (a.bottom - b.top) + body.scrollTop,
+            reachable: body.scrollHeight
+          };
+        }, sel);
+
+        expect(box, `${sel} is drawn in ${mode}`).not.toBeNull();
+        expect(box.height, `${sel} has a size in ${mode}`).toBeGreaterThan(0);
+        expect(box.top, `${sel} is above the rail's content in ${mode}`)
+          .toBeGreaterThanOrEqual(-1);
+        expect(box.bottom, `${sel} is past the end of the rail's content in ${mode}`)
+          .toBeLessThanOrEqual(box.reachable + 1);
+      }
     }
-    await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
   });
 
   test('M1: the field and the direction are chosen separately, and both are on screen',
@@ -1894,5 +2130,204 @@ test.describe('the filter rail, cleaned up', () => {
     const commit = await page.locator('#commit').evaluate(
       (el) => getComputedStyle(el, '::after').content);
     expect(commit).not.toBe('none');
+  });
+});
+
+/* -------------------------------------------------------------------------- #89
+   Every mode filters on both workflow statuses, the way Delete already does.
+
+   These are here rather than in the unit tier because the rail is what the reviewer sees,
+   and because the claim that matters most — that Scientific's default result set did not
+   move — is only true end to end. The store has been correct every time a rendering
+   defect shipped here. */
+
+/** What the store is filtering on, and how many rows the question returns. */
+const question = (page) => page.evaluate(() => ({
+  total: window.MARP.state.total,
+  reviewStatus: window.MARP.state.filters.reviewStatus,
+  trainingDisposition: window.MARP.state.filters.trainingDisposition
+}));
+
+/**
+ * The default result count worked out from the fixture itself, independently of the app.
+ *
+ * Deliberately not "whatever the app said last time": a test that compares the app to
+ * itself cannot tell that the borrowed dimension started narrowing. This counts the rows
+ * the default question is *meant* to return — one species, unreviewed or flagged, every
+ * training disposition — and reports the promoted and excluded share, which is exactly
+ * what a careless `defaultStatusFor` would silently remove.
+ */
+const expectedDefault = (page) => page.evaluate(async () => {
+  const res = await fetch('./fixtures/observations.json');
+  const db = await res.json();
+  const rows = db.observations.filter((r) => !r.deleted
+    && r.comname === 'Bat Star'
+    && ['unreviewed', 'flagged'].includes(r.review_status));
+  return {
+    total: rows.length,
+    decided: rows.filter((r) => r.training_disposition !== 'undecided').length
+  };
+});
+
+test.describe('every mode filters on both workflow statuses', () => {
+  test('R3: Scientific opens with no training narrowing, and its total does not move',
+    async ({ page }) => {
+      const errors = watchErrors(page);
+      await page.goto('./');
+      await ready(page);
+
+      const want = await expectedDefault(page);
+      /* If this were zero the check below would pass while narrowing everything, so the
+         fixture's own shape is asserted before it is relied on. */
+      expect(want.decided,
+        'the fixture must hold promoted or excluded rows in the default view, or this proves nothing')
+        .toBeGreaterThan(0);
+
+      const got = await question(page);
+      expect(got.trainingDisposition,
+        'the borrowed dimension must arrive not filtering, not at its owner\'s default')
+        .toEqual([]);
+      expect(got.reviewStatus).toEqual(['unreviewed', 'flagged']);
+      expect(got.total,
+        `the default result set must not move: ${want.decided} promoted/excluded rows are at stake`)
+        .toBe(want.total);
+
+      /* And the default question is still the bare address. */
+      expect(new URL(page.url()).search).toBe('');
+      expect(errors).toEqual([]);
+    });
+
+  test('R1: Scientific\'s rail draws both dimensions, its own first', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await openRail(page);
+
+    await expect(page.locator('#statusLbl')).toHaveText('Review status');
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+
+    /* Six boxes, and the borrowed three unticked. The tick is the whole claim: a group
+       drawn with all three ticked is what would have hidden the rows. */
+    await expect(page.locator('#statusFilters [data-status]')).toHaveCount(6);
+    for (const value of ['undecided', 'promoted', 'excluded']) {
+      await expect(page.locator(
+        `#statusFilters [data-statuskey="trainingDisposition"][data-status="${value}"] .box`))
+        .not.toHaveClass(/\bon\b/);
+    }
+    for (const value of ['unreviewed', 'flagged']) {
+      await expect(page.locator(
+        `#statusFilters [data-statuskey="reviewStatus"][data-status="${value}"] .box`))
+        .toHaveClass(/\bon\b/);
+    }
+
+    /* Every box carries a count. They come from the same query Delete's do, over the
+       non-status filters only, so a borrowed count can exceed the result total. */
+    const counts = await page.locator('#statusFilters [data-status] .n').allTextContents();
+    expect(counts).toHaveLength(6);
+    expect(counts.every((c) => /^[\d,]+$/.test(c.trim()))).toBe(true);
+  });
+
+  test('R1: Training\'s rail leads on its own dimension and borrows review status',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      await openRail(page);
+
+      await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
+      await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Review status');
+      await expect(page.locator('#statusFilters [data-status]')).toHaveCount(6);
+
+      const got = await question(page);
+      expect(got.trainingDisposition).toEqual(['undecided']);
+      expect(got.reviewStatus, 'borrowed, so it arrives narrowing nothing').toEqual([]);
+    });
+
+  test('R9: ticking Excluded in Scientific narrows to excluded observations',
+    async ({ page }) => {
+      const errors = watchErrors(page);
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      await page.locator(
+        '#statusFilters [data-statuskey="trainingDisposition"][data-status="excluded"]').click();
+      await ready(page);
+
+      await expect(page.locator(
+        '#statusFilters [data-statuskey="trainingDisposition"][data-status="excluded"] .box'))
+        .toHaveClass(/\bon\b/);
+
+      /* Drawn, not merely stored: every tile on the page wears the borrowed EXCLUDED tag,
+         which is the visible consequence of the filter having been applied. */
+      const tiles = await page.locator('.tile').count();
+      expect(tiles).toBeGreaterThan(0);
+      await expect(page.locator('.tile .rtag', { hasText: 'EXCLUDED' })).toHaveCount(tiles);
+
+      const only = await page.evaluate(() =>
+        window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+      expect(only, 'the borrowed filter must actually narrow the query').toBe(true);
+
+      /* Still Scientific: what a tap records is the mode's own, not the borrowed one. */
+      await expect(page.locator('#statusLbl')).toHaveText('Review status');
+      expect(errors).toEqual([]);
+    });
+
+  test('R7: a borrowed filter arrives from the address and stays in it', async ({ page }) => {
+    await page.goto('./?trainingDisposition=excluded');
+    await ready(page);
+
+    const got = await question(page);
+    expect(got.trainingDisposition).toEqual(['excluded']);
+    const only = await page.evaluate(() =>
+      window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+    expect(only).toBe(true);
+
+    /* The app must not rewrite the address it was given into something else. */
+    expect(new URL(page.url()).search).toContain('trainingDisposition=excluded');
+  });
+
+  test('R6: the collapsed rail badge counts a borrowed dimension only once it narrows',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await openRail(page);
+
+      const badge = page.locator('#fcount');
+      const before = Number(await badge.textContent());
+
+      const promoted = page.locator(
+        '#statusFilters [data-statuskey="trainingDisposition"][data-status="promoted"]');
+      await promoted.click();
+      await ready(page);
+      expect(Number(await badge.textContent()),
+        'a narrowing borrowed dimension is one more active filter').toBe(before + 1);
+
+      await promoted.click();
+      await ready(page);
+      expect(Number(await badge.textContent()),
+        'and unticking puts it back, because it holds nothing again').toBe(before);
+    });
+
+  test('R8: Delete Mode is unchanged — both dimensions, both defaults', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+    await openRail(page);
+
+    await expect(page.locator('#statusLbl')).toHaveText('Review status');
+    await expect(page.locator('#statusFilters .lbl.sub')).toHaveText('Training disposition');
+
+    /* All three training values ticked on arrival: Delete owns the dimension, and there it
+       is context rather than a filter. This is what must NOT become "not filtering". */
+    for (const value of ['undecided', 'promoted', 'excluded']) {
+      await expect(page.locator(
+        `#statusFilters [data-statuskey="trainingDisposition"][data-status="${value}"] .box`))
+        .toHaveClass(/\bon\b/);
+    }
+    const got = await question(page);
+    expect(got.trainingDisposition).toEqual(['undecided', 'promoted', 'excluded']);
+    expect(got.reviewStatus).toEqual(['unreviewed', 'flagged']);
   });
 });

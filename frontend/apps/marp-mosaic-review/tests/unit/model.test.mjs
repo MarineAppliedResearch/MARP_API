@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
   pendingException, statusDimensions, commitIsDestructive, borrowedTags,
-  deleteImpact, commitOutcome, pageState } from '../../src/model/modes.js';
+  deleteImpact, commitOutcome, pageState, markedOnPage } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 import { resolveKey, hintFor, SHORTCUTS } from '../../src/model/keys.js';
@@ -34,7 +34,13 @@ test('every mode names what a mark is and what the commit does', () => {
     assert.ok(isMode(id));
     const m = MODES[id];
     assert.ok(m.mark && m.verb && m.commit, `${id} must be fully described`);
-    assert.ok(m.statusKey && m.statuses.length, `${id} must filter on a status dimension`);
+    /* `statusKey` is the dimension the mode *acts on*; `statusDimensions` is what it may
+       filter on, and since #89 that is every dimension. The label and the value list live
+       on `STATUS_DIMENSIONS` now rather than being copied into each mode. */
+    assert.ok(m.statusKey && m.defaultStatus.length, `${id} must act on a status dimension`);
+    for (const dim of statusDimensions(id)) {
+      assert.ok(dim.label && dim.statuses.length, `${id}/${dim.key} must be drawable`);
+    }
   }
 });
 
@@ -209,10 +215,37 @@ test('page numbers clamp to the available range', () => {
 
 /* ---------------------------------------------------------------- filters */
 
-test('each mode sends only its own status dimension', () => {
-  const f = { reviewStatus: ['unreviewed'], trainingDisposition: ['undecided'] };
-  assert.equal(filters.queryFilters('scientific', f).trainingDisposition, null);
-  assert.equal(filters.queryFilters('training', f).reviewStatus, null);
+test('R4: every mode sends both status dimensions, and drops neither', () => {
+  /* The reverse of what this asserted until #89. `queryFilters` used to null out whichever
+     dimension the mode did not own, which is what made a borrowed filter impossible: the
+     rail could offer it and the query would throw it away. */
+  const f = { reviewStatus: ['unreviewed'], trainingDisposition: ['excluded'] };
+  assert.deepEqual(filters.queryFilters('scientific', f).trainingDisposition, ['excluded']);
+  assert.deepEqual(filters.queryFilters('training', f).reviewStatus, ['unreviewed']);
+});
+
+test('R4: a borrowed dimension nobody touched sends nothing at all', () => {
+  /* Empty, not `['undecided']`. `data.js` only filters on a status array with a length, so
+     an untouched borrowed dimension has to hold nothing rather than hold a default. */
+  const opened = filters.defaultStatusFor('scientific', { ...filters.DEFAULT_FILTERS });
+  const sent = filters.queryFilters('scientific', opened);
+  assert.deepEqual(sent.trainingDisposition, [], 'training must not narrow scientific review');
+  assert.deepEqual(sent.reviewStatus, ['unreviewed', 'flagged'], 'its own default still applies');
+
+  const inTraining = filters.defaultStatusFor('training', { ...filters.DEFAULT_FILTERS });
+  assert.deepEqual(filters.queryFilters('training', inTraining).reviewStatus, []);
+  assert.deepEqual(inTraining.trainingDisposition, ['undecided']);
+});
+
+test('R3: the default question carries no training-disposition narrowing', () => {
+  /* The whole trap of #89, at the tier that can see it in a millisecond. Under the default
+     question the fixture holds 1083 Bat Star observations that are unreviewed or flagged,
+     of which 151 are promoted or excluded — so a borrowed dimension arriving at
+     `['undecided']` would silently drop 151 rows with nothing on screen saying so. This
+     asserts the rule; `render.spec.mjs` asserts the count that follows from it. */
+  assert.deepEqual(filters.DEFAULT_FILTERS.trainingDisposition, [],
+    'DEFAULT_FILTERS is copied straight into defaultQuery(), with no defaultStatusFor pass');
+  assert.deepEqual(filters.DEFAULT_FILTERS.reviewStatus, ['unreviewed', 'flagged']);
 });
 
 test('pinned observations are excluded from the pages still to be done', () => {
@@ -307,17 +340,50 @@ test('a deleted observation is not a pending intention', () => {
   assert.equal(page.marksAfterCommit(new Map(), outcomes, [1], pendingException('delete')).size, 0);
 });
 
-/* ------------------------------ Delete Mode reads both status dimensions */
+/* ------------------------- every mode filters on both status dimensions (#89) */
 
-test('every mode filters on its own dimension; Delete filters on both', () => {
-  assert.deepEqual(statusDimensions('scientific').map((d) => d.key), ['reviewStatus']);
-  assert.deepEqual(statusDimensions('training').map((d) => d.key), ['trainingDisposition']);
+test('R1: every mode filters on both dimensions, its own first', () => {
+  assert.deepEqual(statusDimensions('scientific').map((d) => d.key),
+    ['reviewStatus', 'trainingDisposition']);
+  assert.deepEqual(statusDimensions('training').map((d) => d.key),
+    ['trainingDisposition', 'reviewStatus'], 'the mode\'s own dimension leads');
   /* Deleting is irreversible, so anything already on the record is a reason to stop. */
   assert.deepEqual(statusDimensions('delete').map((d) => d.key),
     ['reviewStatus', 'trainingDisposition']);
 });
 
-test('the query keeps every dimension the mode filters on, and drops the rest', () => {
+test('R2: a borrowed dimension arrives not filtering; an owned one at its default', () => {
+  /* The distinction the whole change turns on. A borrowed dimension carrying the owning
+     mode's default would take every promoted and excluded row out of Scientific's view. */
+  const own = (mode) => statusDimensions(mode).filter((d) => d.own).map((d) => d.key);
+  const borrowed = (mode) => statusDimensions(mode).filter((d) => !d.own);
+
+  assert.deepEqual(own('scientific'), ['reviewStatus']);
+  assert.deepEqual(own('training'), ['trainingDisposition']);
+  assert.deepEqual(own('delete'), ['reviewStatus', 'trainingDisposition'],
+    'Delete owns both, so it has no borrowed dimension');
+
+  assert.deepEqual(borrowed('scientific').map((d) => d.defaults), [[]]);
+  assert.deepEqual(borrowed('training').map((d) => d.defaults), [[]]);
+  assert.deepEqual(borrowed('delete'), []);
+
+  for (const dim of statusDimensions('scientific')) {
+    if (dim.own) assert.ok(dim.defaults.length, `${dim.key} is owned and needs a default`);
+  }
+});
+
+test('R2: entering a mode gives its own dimension a default and clears the borrowed one', () => {
+  const sci = filters.defaultStatusFor('scientific',
+    { reviewStatus: ['reviewed'], trainingDisposition: ['promoted'] });
+  assert.deepEqual(sci.reviewStatus, ['unreviewed', 'flagged']);
+  assert.deepEqual(sci.trainingDisposition, [], 'never the other mode\'s default');
+
+  const tra = filters.defaultStatusFor('training', sci);
+  assert.deepEqual(tra.trainingDisposition, ['undecided']);
+  assert.deepEqual(tra.reviewStatus, []);
+});
+
+test('R4/R8: the query keeps every dimension the reviewer narrowed, in every mode', () => {
   const f = {
     ...filters.DEFAULT_FILTERS,
     reviewStatus: ['flagged'],
@@ -325,15 +391,30 @@ test('the query keeps every dimension the mode filters on, and drops the rest', 
   };
   const sci = filters.queryFilters('scientific', f);
   assert.deepEqual(sci.reviewStatus, ['flagged']);
-  assert.equal(sci.trainingDisposition, null, 'training must not narrow scientific review');
+  assert.deepEqual(sci.trainingDisposition, ['promoted'], 'borrowed, and asked for');
 
   const tra = filters.queryFilters('training', f);
-  assert.equal(tra.reviewStatus, null);
+  assert.deepEqual(tra.reviewStatus, ['flagged']);
   assert.deepEqual(tra.trainingDisposition, ['promoted']);
 
   const del = filters.queryFilters('delete', f);
   assert.deepEqual(del.reviewStatus, ['flagged'], 'Delete keeps review status');
   assert.deepEqual(del.trainingDisposition, ['promoted'], 'and training disposition');
+});
+
+test('R9: filtering on a borrowed dimension changes nothing about the mark or the commit', () => {
+  /* The rule #85 named and #89 must not break: seeing — and now narrowing by — another
+     workflow's answer must not make it markable or committable from the wrong mode. */
+  assert.equal(MODES.scientific.statusKey, 'reviewStatus');
+  assert.equal(MODES.training.statusKey, 'trainingDisposition');
+  assert.equal(pendingException('scientific'), 'flagged');
+  assert.equal(pendingException('training'), 'excluded');
+  assert.equal(pendingException('delete'), null);
+
+  /* A row excluded from training seeds no scientific mark, whatever the rail is filtering. */
+  const excluded = row(1, { training_disposition: 'excluded' });
+  assert.equal(existingState('scientific', excluded), null);
+  assert.equal(existingState('training', excluded), 'excluded');
 });
 
 test('entering Delete Mode gives both dimensions a default', () => {
@@ -345,11 +426,18 @@ test('entering Delete Mode gives both dimensions a default', () => {
   assert.deepEqual(out.trainingDisposition, ['undecided', 'promoted', 'excluded']);
 });
 
-test('both dimensions count towards the collapsed rail badge in Delete Mode', () => {
-  const f = { species: ['Bat Star'], project: [], dive: [],
+test('R6: the collapsed rail badge counts a borrowed dimension only when it narrows', () => {
+  const both = { species: ['Bat Star'], project: [], dive: [],
     reviewStatus: ['flagged'], trainingDisposition: ['promoted'] };
-  assert.equal(filters.activeFilterCount('delete', f), 3, 'species plus two dimensions');
-  assert.equal(filters.activeFilterCount('scientific', f), 2, 'species plus one');
+  assert.equal(filters.activeFilterCount('delete', both), 3, 'species plus two dimensions');
+  assert.equal(filters.activeFilterCount('scientific', both), 3,
+    'the borrowed dimension is narrowing, so it counts');
+
+  /* Opening Scientific: the borrowed dimension holds nothing, so the badge is unchanged
+     from before #89 — species plus review status. */
+  const opened = filters.defaultStatusFor('scientific',
+    { species: ['Bat Star'], project: [], dive: [] });
+  assert.equal(filters.activeFilterCount('scientific', opened), 2, 'species plus its own');
 });
 
 /* ------------------------------- project, dive and line nest */
@@ -429,6 +517,21 @@ test('delete is the only mode whose commit destroys something', () => {
   assert.equal(commitIsDestructive('delete'), true);
   assert.equal(commitIsDestructive('scientific'), false);
   assert.equal(commitIsDestructive('training'), false);
+});
+
+test('markedOnPage counts this page, not the whole session', () => {
+  /* `state.marks` spans the session on purpose: a mark made on page one survives paging
+     to page four and back. So `marks.size` is never "how many are marked here", and the
+     chrome used it for three labels that all said "this page" — including Delete Mode's
+     note, which put a cross-page total in front of a permanent deletion. 2026-09-08. */
+  const rows = [row(1), row(2), row(3)];
+  const marks = new Map([[1, {}], [3, {}], [99, {}], [100, {}]]);   // 99 and 100 elsewhere
+
+  assert.equal(markedOnPage({ rows, marks }), 2,
+    'only the marks belonging to rows on this page count');
+  assert.equal(markedOnPage({ rows, marks: new Map() }), 0);
+  assert.equal(markedOnPage({ rows: [], marks }), 0,
+    'a page with no rows has nothing marked on it, whatever the session holds');
 });
 
 test('R2: the delete confirmation counts every row the commit will destroy', () => {

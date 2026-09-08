@@ -76,8 +76,11 @@ export function toQuery({ mode, filters, sort, page }) {
     if (written) parts.push(`${dimension.key}=${written}`);
   }
 
-  /* Status filters belong to the mode rather than to the rail, so only the mode's own are
-     written, and only when they differ from that mode's default. */
+  /* Status filters belong to the mode rather than to the rail, so they are written against
+     what *this* mode opens at: a dimension the mode owns is written only when it differs
+     from that mode's default, and a borrowed one whenever it is narrowing at all, since it
+     opens at nothing. That is what makes absence mean "not filtering" for a borrowed
+     dimension rather than "use the other workflow's default". */
   for (const { key, defaults } of statusDimensions(mode || 'scientific')) {
     const chosen = filters[key];
     if (!chosen || !chosen.length) continue;
@@ -230,9 +233,11 @@ export function fromQuery(search) {
     if (value != null) filters[dimension.key] = value;
   }
 
-  /* A mode's status filter, and only its own. An address carrying the other mode's
-     dimension is ignored rather than applied, because `queryFilters` drops it anyway and a
-     filter that shows in the rail without narrowing anything is a lie. */
+  /* Every status dimension the mode filters on, which is now both of them (#89). An
+     address carrying the other workflow's dimension used to be ignored, because
+     `queryFilters` dropped it and a filter shown in the rail that narrows nothing is a lie.
+     It narrows something now, so it is applied — a link into Training carrying
+     `reviewStatus=flagged` means what it says. */
   for (const { key, statuses } of statusDimensions(mode)) {
     if (!params.has(key)) continue;
     const allowed = new Set(statuses.map(([k]) => k));

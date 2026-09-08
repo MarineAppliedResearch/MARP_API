@@ -5,7 +5,7 @@
  * the organisms look.
  */
 import { state, actions, MODES, getLog } from '../store.js';
-import { commitCount, statusDimensions, commitOutcome, pageState } from '../model/modes.js';
+import { commitCount, statusDimensions, commitOutcome, pageState, markedOnPage } from '../model/modes.js';
 import { hintFor } from '../model/keys.js';
 import { pageWindow } from '../model/page.js';
 import { sortLabel, activeFilterCount } from '../model/filters.js';
@@ -20,7 +20,7 @@ export function renderChrome() {
   document.querySelectorAll('.seg button').forEach((b) =>
     b.classList.toggle('on', b.dataset.mode === state.mode));
 
-  const markedCount = state.marks.size;
+  const markedCount = markedOnPage({ rows: state.rows, marks: state.marks });
   const eligible = state.rows.filter((r) => r.thumbnail_status === 'ready').length;
   const willAct = commitCount({ mode: state.mode, rows: state.rows, marks: state.marks });
 

@@ -206,16 +206,46 @@ test('a half-escaped address does not throw', () => {
   assert.deepEqual(fromQuery('?species=%&dive=D04').filters.dive, ['D04']);
 });
 
-test('the mode keeps its own status filter, and ignores the other mode\'s', () => {
+test('R7: the mode\'s own status filter round-trips', () => {
   const q = base();
   q.filters.reviewStatus = ['reviewed'];
   const back = round(q);
   assert.deepEqual(back.filters.reviewStatus, ['reviewed']);
+});
 
-  /* Training's dimension in a scientific address narrows nothing — `queryFilters` drops
-     it — so showing it in the rail would be a filter that lies. */
-  const stray = fromQuery('?trainingDisposition=promoted&dive=D04');
-  assert.deepEqual(stray.filters.trainingDisposition, DEFAULT_FILTERS.trainingDisposition);
+test('R7: a borrowed status filter round-trips, and absence means not filtering', () => {
+  /* The reverse of what this asserted until #89: a scientific address carrying training
+     disposition used to be discarded, because `queryFilters` dropped the dimension and a
+     filter drawn in the rail that narrows nothing is a lie. It narrows something now. */
+  const asked = fromQuery('?trainingDisposition=promoted,excluded&dive=D04');
+  assert.equal(asked.mode, 'scientific');
+  assert.deepEqual(asked.filters.trainingDisposition, ['promoted', 'excluded']);
+  assert.deepEqual(asked.filters.dive, ['D04']);
+  assert.equal(toQuery(asked).includes('trainingDisposition=promoted,excluded'), true);
+
+  /* Absent means not filtering, never "use the owning mode's default" — the same rule that
+     stops a cleared species filter coming back on reload. */
+  const bare = fromQuery('?dive=D04');
+  assert.deepEqual(bare.filters.trainingDisposition, [],
+    'a borrowed dimension the address does not mention narrows nothing');
+
+  /* And into Training the other way round: a link carrying review status means what it
+     says, while training disposition stays at Training\'s own default. */
+  const intoTraining = fromQuery('?mode=training&reviewStatus=flagged');
+  assert.deepEqual(intoTraining.filters.reviewStatus, ['flagged']);
+  assert.deepEqual(intoTraining.filters.trainingDisposition, ['undecided']);
+  assert.equal(toQuery(intoTraining).includes('reviewStatus=flagged'), true);
+  assert.equal(toQuery(intoTraining).includes('trainingDisposition'), false,
+    'a mode\'s own dimension at its own default is not written');
+});
+
+test('R3/R7: a bare address is still the default question, with nothing borrowed applied', () => {
+  /* If the default question ever carried `trainingDisposition=undecided` it would both
+     narrow Scientific's opening page and stop the default writing a bare address. */
+  assert.equal(toQuery(defaultQuery()), '');
+  const back = fromQuery('');
+  assert.deepEqual(back.filters.trainingDisposition, []);
+  assert.deepEqual(back.filters.reviewStatus, ['unreviewed', 'flagged']);
 });
 
 test('R3: an unrecognised status value leaves the mode default in place', () => {

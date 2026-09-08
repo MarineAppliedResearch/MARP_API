@@ -20,9 +20,8 @@ export const MODES = {
     /** What a marked tile becomes when the page is committed. */
     marks: 'flagged',
     note: 'Commit accepts unflagged tiles for scientific use',
+    /** The dimension this mode acts on. What it may *filter* on is `statusDimensions`. */
     statusKey: 'reviewStatus',
-    statusLabel: 'Review status',
-    statuses: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']],
     /** Flagged work is still open work, so it stays in the default view. */
     defaultStatus: ['unreviewed', 'flagged'],
     /* 'No imagery' is here so a flag raised because nobody could see the observation
@@ -43,8 +42,6 @@ export const MODES = {
     marks: 'excluded',
     note: 'Commit promotes unmarked tracks to training data — it does not change scientific status',
     statusKey: 'trainingDisposition',
-    statusLabel: 'Training disposition',
-    statuses: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']],
     defaultStatus: ['undecided'],
     reasons: ['Bounding box too loose', 'Occluded', 'Too small', 'Ambiguous ID', 'Other / unsure']
   },
@@ -60,21 +57,19 @@ export const MODES = {
     accepts: null,
     marks: 'deleted',
     note: 'Commit permanently deletes the marked tiles — unmarked tiles are untouched',
-    /* Delete Mode reads BOTH status dimensions, and it is the only mode that does.
-       Deleting is irreversible, so the useful question before removing an observation
-       is not "what does this one workflow think" but "what does anything on the record
-       say" — that it was flagged, that it was accepted for science, that it is already
-       teaching a model. All of those are reasons to stop.
+    /* Delete Mode *owns* both status dimensions, and it is the only mode that does — every
+       mode now filters on both (#89), but only here does the second one arrive with a
+       default of its own. Deleting is irreversible, so the useful question before removing
+       an observation is not "what does this one workflow think" but "what does anything on
+       the record say" — that it was flagged, that it was accepted for science, that it is
+       already teaching a model. All of those are reasons to stop, so all three training
+       values are ticked on arrival rather than left not filtering.
 
        They are context, not this mode's own decision: Delete records nothing until the
        commit, so nothing here ever arrives marked. */
     statusKey: 'reviewStatus',
-    statusLabel: 'Review status',
-    statuses: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']],
     defaultStatus: ['unreviewed', 'flagged'],
     alsoStatusKey: 'trainingDisposition',
-    alsoStatusLabel: 'Training disposition',
-    alsoStatuses: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']],
     alsoDefaultStatus: ['undecided', 'promoted', 'excluded'],
     reasons: []
   }
@@ -85,19 +80,46 @@ export const isMode = (id) => Object.prototype.hasOwnProperty.call(MODES, id);
 /**
  * The status dimensions a mode filters on, in the order the rail shows them.
  *
- * Every mode has one, except Delete, which has both — see the note on that mode.
- * Returning a list rather than a key is what lets the rail, the query and the
- * defaults all stay ignorant of which mode is the exception.
+ * **Every mode filters on both, and this reversed on 2026-09-08** (#89). Delete Mode
+ * already offered both, and its reasoning generalises: choosing what to review is the same
+ * question as choosing what to destroy — not what one workflow thinks, but what anything on
+ * the record says. So a reviewer who can now *see* that an observation is excluded from
+ * training (#85) can also ask for only those.
+ *
+ * `own` is the distinction the whole change turns on:
+ *
+ * - an **own** dimension is one the mode acts on, and it arrives at that mode's default;
+ * - a **borrowed** one arrives **not filtering at all** — `defaults: []` — and narrows only
+ *   once the reviewer picks something.
+ *
+ * That is not tidiness. `trainingDisposition` defaults to `['undecided']`, so letting the
+ * borrowed dimension take a default would drop every promoted and excluded row out of
+ * Scientific's opening page: 151 of 1083 in the fixture, silently, with nothing on screen
+ * saying so — and those are the exact rows #85 exists to surface.
+ *
+ * Returning a list rather than a key is still what lets the rail, the query, the defaults,
+ * the collapsed-rail badge and the address stay ignorant of which mode owns what.
  */
 export function statusDimensions(modeId) {
   const m = MODES[modeId];
-  const dims = [{ key: m.statusKey, label: m.statusLabel,
-                  statuses: m.statuses, defaults: m.defaultStatus }];
+  const dims = [{ key: m.statusKey, defaults: m.defaultStatus, own: true }];
   if (m.alsoStatusKey) {
-    dims.push({ key: m.alsoStatusKey, label: m.alsoStatusLabel,
-                statuses: m.alsoStatuses, defaults: m.alsoDefaultStatus });
+    dims.push({ key: m.alsoStatusKey, defaults: m.alsoDefaultStatus, own: true });
   }
-  return dims;
+  /* Then everything the mode does not own, borrowed and not filtering. Read from the
+     declaration rather than listed per mode, so a third dimension would arrive in every
+     mode's rail by adding one entry to `STATUS_DIMENSIONS`. */
+  for (const dim of Object.values(STATUS_DIMENSIONS)) {
+    if (dims.some((d) => d.key === dim.key)) continue;
+    dims.push({ key: dim.key, defaults: [], own: false });
+  }
+  /* The label and the value list describe the dimension, not the mode — they were copied
+     into each mode and the copies were identical. See `STATUS_DIMENSIONS`. */
+  return dims.map((d) => ({
+    ...d,
+    label: STATUS_DIMENSIONS[d.key].label,
+    statuses: STATUS_DIMENSIONS[d.key].statuses
+  }));
 }
 
 /** Delete Mode inverts the commit: it acts on what was marked, not what was left. */
@@ -116,6 +138,20 @@ export const pendingException = (modeId) =>
  * the reviewer marked. Only observations with imagery are eligible, per
  * "What counts as reviewed".
  */
+/**
+ * How many of *this page's* tiles are marked.
+ *
+ * `state.marks` spans the session, not the page: a mark made on page one is still there
+ * when the reviewer is on page four, deliberately, so paging away and back does not lose
+ * it. So `marks.size` is never the answer to "how many are marked here" -- the chrome used
+ * it for three separate labels that all say "this page", and the count only ever went up.
+ * Worst of the three was Delete Mode's note, which put a cross-page total in front of a
+ * permanent deletion. Reported 2026-09-08.
+ */
+export function markedOnPage({ rows, marks }) {
+  return rows.filter((r) => marks.has(r.observation_id)).length;
+}
+
 export function commitCount({ mode, rows, marks }) {
   /* Delete acts on what is marked, imagery or not -- `data.js` only skips a row with no
      picture when it is *unmarked*, so a marked one is destroyed either way. Filtering here
@@ -218,6 +254,17 @@ export function pageState({ rows, loading, total }) {
  * `workflow` is what the tooltip calls the decision. It is not drawn on the tile face:
  * the vocabularies are disjoint, so FLAGGED can only be scientific and EXCLUDED can only
  * be training. See the app's CLAUDE.md.
+ *
+ * `label` and `statuses` moved here from `MODES` with #89. Every mode filters on every
+ * dimension now, so a per-mode copy of the rail's heading and its three boxes was
+ * describing the dimension rather than the mode — and the copies were identical anyway,
+ * `scientific.statuses` word for word the same as `delete.statuses`. A borrowed dimension
+ * also has to get its label from somewhere that is not another mode's declaration. What
+ * stays per mode is which dimensions it owns, and with what defaults.
+ *
+ * The two vocabularies must stay disjoint. `ui/chrome.js` reads `state.counts[value]` by
+ * value alone, so a value appearing in both dimensions would show one dimension's count
+ * beside the other's box.
  */
 export const STATUS_DIMENSIONS = {
   reviewStatus: {
@@ -226,6 +273,8 @@ export const STATUS_DIMENSIONS = {
     /* The value that means nobody has decided yet, and so carries no tag. */
     neutral: 'unreviewed',
     workflow: 'Scientific data review',
+    label: 'Review status',
+    statuses: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']],
     reasonColumn: 'flag_reason',
     byColumns: ['reviewed_by', 'flagged_by']
   },
@@ -234,6 +283,8 @@ export const STATUS_DIMENSIONS = {
     column: 'training_disposition',
     neutral: 'undecided',
     workflow: 'Training data review',
+    label: 'Training disposition',
+    statuses: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']],
     reasonColumn: 'exclusion_reason',
     byColumns: ['training_approved_by', 'excluded_by']
   }

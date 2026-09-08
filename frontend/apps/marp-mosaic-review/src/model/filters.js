@@ -1,10 +1,10 @@
 /**
  * Building the query a mode asks for.
  *
- * No DOM, no network. Each mode filters on its own status dimension and only that
- * one, so switching modes must not leave the other mode's status filter applied.
+ * No DOM, no network. Every mode filters on both status dimensions (#89); which of them
+ * the mode *owns* decides what arrives at a default and what arrives not filtering.
  */
-import { MODES, statusDimensions } from './modes.js';
+import { statusDimensions } from './modes.js';
 import { DIMENSIONS, DIMENSION, KIND, isActive, emptyValue } from './dimensions.js';
 export { applyDimension, toggleValue } from './match.js';
 
@@ -24,8 +24,14 @@ export const DEFAULT_FILTERS = {
      species at once is a wall of unrelated animals, and the mosaic's whole premise is
      that a page holds one predicted species. */
   species: ['Bat Star'],
-  reviewStatus: MODES.scientific.defaultStatus.slice(),
-  trainingDisposition: MODES.training.defaultStatus.slice()
+  /* The status filters of the *default question*, which is Scientific's — so review status
+     opens at Scientific's default and training disposition opens **not filtering**.
+     `trainingDisposition: MODES.training.defaultStatus` was safe only while `queryFilters`
+     dropped the dimension the mode did not own. Now that it is sent, `['undecided']` here
+     would take every promoted and excluded row out of Scientific's opening page and write
+     itself into the address, so the default question would stop being the bare one. #89. */
+  ...Object.fromEntries(
+    statusDimensions('scientific').map((d) => [d.key, d.defaults.slice()]))
 };
 
 /**
@@ -138,17 +144,23 @@ export function withSortThen(sort, field, dir) {
 }
 
 /**
- * The filters actually sent for a mode: the reviewer's choices, with the other
- * mode's status dimension dropped so it cannot silently narrow the results.
+ * The filters actually sent for a mode: the reviewer's choices, as they are.
+ *
+ * **Nothing is dropped for being the other workflow's dimension any more** (#89). This
+ * used to null out whichever status dimension the mode did not own, which is what made a
+ * borrowed filter impossible — the rail could have offered it and the query would have
+ * thrown it away.
+ *
+ * What stops a borrowed dimension narrowing anything is that it *holds nothing*:
+ * `statusDimensions` gives it `defaults: []`, and `data.js` only filters on a status
+ * dimension whose array has a length. So an untouched borrowed dimension sends nothing,
+ * and a chosen one sends exactly what the reviewer chose.
+ *
+ * `mode` is kept in the signature deliberately: this is "the query this mode asks for", and
+ * it is the seam Phase 8 sends to the API. Nothing in the body needs it today.
  */
 export function queryFilters(mode, filters, { excludeIds } = {}) {
   const out = { ...filters };
-  /* Drop every status dimension this mode does not filter on, so the other mode's
-     selection cannot silently narrow the results. Delete keeps both. */
-  const mine = new Set(statusDimensions(mode).map((d) => d.key));
-  for (const key of ['reviewStatus', 'trainingDisposition']) {
-    if (!mine.has(key)) out[key] = null;
-  }
   if (excludeIds && excludeIds.size) out.excludeIds = excludeIds;
   return out;
 }
@@ -171,7 +183,12 @@ export function toggleStatus(filters, key, value) {
   };
 }
 
-/** Entering a mode with nothing selected on a dimension falls back to its default. */
+/**
+ * Entering a mode with nothing selected on a dimension falls back to its default.
+ *
+ * A borrowed dimension has no default, so it stays not filtering — which is the whole of
+ * #89's rule expressed through `statusDimensions`.
+ */
 export function ensureStatusFor(mode, filters) {
   let out = filters;
   for (const { key, defaults } of statusDimensions(mode)) {
@@ -182,7 +199,8 @@ export function ensureStatusFor(mode, filters) {
 }
 
 /**
- * Entering a mode puts every dimension it owns back to that mode's default.
+ * Entering a mode puts every status dimension back to what that mode opens at: its own
+ * default for a dimension the mode owns, and **not filtering** for a borrowed one.
  *
  * Carrying a selection across is worse than it sounds, because the modes do not mean
  * the same thing by a dimension. Training narrows training disposition to *undecided*
@@ -191,8 +209,14 @@ export function ensureStatusFor(mode, filters) {
  * the narrowing and hid every observation the reviewer had just promoted — exactly the
  * rows most worth seeing before deleting something.
  *
- * `setMode` already discards marks, outcomes and pins, so a mode opening at its own
- * default is the consistent behaviour rather than a new one.
+ * That is also why the borrowed dimension must arrive empty rather than at the owning
+ * mode's default. Handing Scientific `trainingDisposition: ['undecided']` — which is what
+ * this function did before `statusDimensions` distinguished own from borrowed — would hide
+ * every promoted and excluded observation from the mode whose whole job is judging them.
+ *
+ * `setMode` already discards marks and take-backs, so a mode opening at its own default is
+ * the consistent behaviour rather than a new one; a borrowed selection does not survive a
+ * mode switch either.
  */
 export function defaultStatusFor(mode, filters) {
   let out = filters;
@@ -202,7 +226,12 @@ export function defaultStatusFor(mode, filters) {
   return out;
 }
 
-/** How many filters are narrowing the results, for the collapsed rail's badge. */
+/**
+ * How many filters are narrowing the results, for the collapsed rail's badge.
+ *
+ * A status dimension counts when it holds a selection, which is what makes a borrowed
+ * dimension count only once the reviewer has narrowed it — it arrives holding nothing.
+ */
 export const activeFilterCount = (mode, filters) =>
   DIMENSIONS.filter((d) => isActive(d, filters[d.key])).length
   + statusDimensions(mode).filter((d) => (filters[d.key] || []).length).length;

@@ -6,8 +6,7 @@
  * a named action, which is the seam an API call will eventually sit behind.
  */
 import { MarpData } from './data.js';
-import { MODES, isMode, commitCount, pendingException, existingState,
-         commitIsDestructive, deleteImpact, commitOutcome, pageState } from './model/modes.js';
+import { MODES, isMode, commitCount, pendingException, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
@@ -41,6 +40,17 @@ export const state = {
   outcomes: new Map(),     // id -> what the last commit did
   committedPages: new Set(),
   pageMembers: new Map(),  // page -> the ids it was committed with
+  /**
+   * The three above, parked per mode while another mode is in front.
+   *
+   * They are this reviewer's *session* work — which pages they committed, with which
+   * observations, and what each commit did — and it belongs to the mode that did it.
+   * `setMode` used to throw all of it away, which stopped one mode wearing another's
+   * answers and took the session with it: review three pages, glance at Training, come
+   * back, and there was no way to see what had been submitted. Parked and restored
+   * instead, so the isolation holds and the work survives.
+   */
+  parked: new Map(),       // mode -> { pageMembers, committedPages, outcomes }
   picker: null,            // { id, correcting }
   lastCommit: null,
   /* What the commit button is doing. A page commit is the one action here that can
@@ -96,6 +106,9 @@ const countFilters = () => ({
 function reorder() {
   state.pageMembers = page.clearPins();
   state.committedPages.clear();
+  /* Every mode's pinned pages were pinned under the old order, so page 2 is not the same
+     page 2 any more. Parking them would restore pins that describe a result that is gone. */
+  state.parked = new Map();
 }
 
 /* ---------------------------------------------------------------- actions */
@@ -113,6 +126,9 @@ function resetForNewQuery() {
   state.outcomes = new Map();
   state.pageMembers = page.clearPins();
   state.committedPages.clear();
+  /* A different question means the other modes' pinned pages are about a result set that
+     no longer exists, so parking them would resurrect pages the filter no longer returns. */
+  state.parked = new Map();
 }
 
 /**
@@ -147,6 +163,30 @@ function adoptQuery(q) {
   state.filters = q.filters;
   state.sort = q.sort;
   state.page = q.page;              // after resetForNewQuery, which sends it back to 1
+}
+
+/** This mode's session work, lifted out so another mode can have the three fields. */
+function park(mode) {
+  state.parked.set(mode, {
+    pageMembers: state.pageMembers,
+    committedPages: state.committedPages,
+    outcomes: state.outcomes
+  });
+}
+
+/**
+ * Put a mode's session work back, or start it fresh.
+ *
+ * Marks and take-backs are deliberately *not* parked. An uncommitted mark is a pending
+ * intention in one workflow, and carrying it across a mode switch would restore a decision
+ * the reviewer had walked away from. A committed page is different: it is on the record,
+ * and this is only how it is displayed.
+ */
+function resume(mode) {
+  const held = state.parked.get(mode);
+  state.pageMembers = held ? held.pageMembers : page.clearPins();
+  state.committedPages = held ? held.committedPages : new Set();
+  state.outcomes = held ? held.outcomes : new Map();
 }
 
 export const actions = {
@@ -247,18 +287,23 @@ export const actions = {
 
   setMode(mode) {
     if (!isMode(mode) || state.mode === mode) return;
+
+    /* Park this mode's session work before the next one takes the fields.
+       Outcomes, committed pages and pins belong to the mode that made them — left
+       standing, a scientific commit painted REVIEWED badges across Training and Delete,
+       two independent decisions wearing each other's answer. They used to be cleared for
+       that reason, which also discarded the reviewer's session: three pages reviewed, one
+       glance at Training, and no way back to what had been submitted. Parking keeps both
+       properties. */
+    park(state.mode);
     state.mode = mode;
+    resume(mode);
+
+    /* Marks and take-backs do not travel. An uncommitted mark is a pending intention in
+       one workflow, and the reviewer walked away from it. */
     state.marks.clear();
     state.picker = null;
     state.page = 1;
-    state.pageMembers = page.clearPins();
-    state.committedPages.clear();
-    /* Outcomes belong to a mode's session of work, not to the observation. Left
-       standing, a scientific commit painted REVIEWED badges across Training and
-       Delete — two independent decisions wearing each other's answer. Nothing is
-       lost by clearing them: what was committed is on the record, and the next
-       query reads it back through this mode's own status dimension. */
-    state.outcomes = new Map();
     state.touched = new Set();
     state.lastCommit = null;
     state.filters = filters.defaultStatusFor(mode, state.filters);
@@ -355,7 +400,9 @@ export const actions = {
    * individual tile, which is the rule the user stated.
    */
   clearMarks() {
-    const n = state.marks.size;
+    /* What is being cleared *here*. `marks` spans the session, so its size is not the
+       page's count -- see `markedOnPage`. */
+    const n = markedOnPage({ rows: state.rows, marks: state.marks });
     const ids = state.rows.map((r) => r.observation_id);
 
     for (const id of ids) { state.marks.delete(id); state.touched.delete(id); }
@@ -531,12 +578,10 @@ export const actions = {
   clearFilters() {
     const base = { ...filters.DEFAULT_FILTERS };
     state.filters = filters.defaultStatusFor(state.mode, base);
-    state.page = 1;
-    state.marks = new Map();
-    state.touched = new Set();
-    state.outcomes = new Map();
-    state.pageMembers = page.clearPins();
-    state.committedPages.clear();
+    /* One helper rather than the same six lines again. Written out inline here, it missed
+       the parked per-mode work when that was added -- which is exactly the drift the
+       helper exists to prevent. */
+    resetForNewQuery();
     fire('clearFilters', {});
     notify();
     /* `actions.refresh`, not a bare `refresh` -- these are object methods, not closures,

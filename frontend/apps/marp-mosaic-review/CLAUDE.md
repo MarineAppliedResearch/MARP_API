@@ -158,10 +158,25 @@ and all three were bugs before they were rules:
   the next commit would have accepted them. TAKING BACK now appears only where somebody
   clicked an individual tile, which is what it means.
 
-**`state.outcomes` is scoped to a mode, and `setMode` clears it.** Left standing, a
-scientific commit painted REVIEWED badges across Training and Delete — two independent
-decisions wearing each other's answer. Nothing is lost: what was committed is on the
-record, and the next query reads it back through this mode's own status dimension.
+**Each mode keeps its own session work, and `setMode` parks it rather than clearing it.**
+`state.outcomes`, `state.committedPages` and `state.pageMembers` all belong to the mode
+that made them — left shared, a scientific commit painted REVIEWED badges across Training
+and Delete, two independent decisions wearing each other's answer. They used to be cleared
+on every mode switch for that reason, which also discarded the reviewer's session: review
+three pages, glance at Training, come back, and there was no way to see what had been
+submitted, because the pins are the only thing that keeps a committed page visible past a
+filter that no longer matches it. `state.parked` holds them per mode instead, so the
+isolation and the session both survive. Reported 2026-09-08.
+
+**Uncommitted marks do not travel.** `marks` and `touched` are still cleared by `setMode`.
+An uncommitted mark is a pending intention in one workflow and the reviewer walked away
+from it; a committed page is on the record, and parking only affects how it is displayed.
+
+**A different question drops every mode's parked work**, not just the active one's — a new
+filter or a new sort means page 2 is not the same page 2, so restoring those pins would
+resurrect pages the query no longer returns. `resetForNewQuery()` and `reorder()` are where
+that happens, and `clearFilters` was writing those six lines out by hand until it missed
+this and was routed through the helper.
 
 A mark is not a decision. **Committing is what writes it to the record** — that is why a
 flag survives leaving the page, the session, and the reviewer, and why "my flags
@@ -201,19 +216,59 @@ It adds a badge and **nothing else**. Outline, dimming and grayscale keep meanin
 mode's own state — a picture a scientist is judging must not be greyed out because training
 excluded it.
 
-**The filters did not change with it.** A mode's rail still offers its own dimension only,
-and the address gained no parameter: `trainingDisposition` defaults to `undecided`, so
-handing Scientific that filter with a careless default would hide the very promoted and
-excluded rows #85 exists to surface. Filtering across workflows is its own issue if it is
-ever wanted.
+**Every mode filters on both dimensions too, and this reversed on 2026-09-08** (#89). #85
+deliberately left the filters alone, and this is that decision reversed rather than two
+notes contradicting each other. The reason #85 gave was sound and is now spent: it named
+the risk that "handing Scientific that filter with a careless default would hide the very
+promoted and excluded rows #85 exists to surface", and #89 addresses that risk head on
+instead of avoiding it by leaving the filter out. Delete's rail is the one the other two
+now have.
 
-**Delete Mode is still the exception in what it *filters* on.** `statusDimensions()` returns
-one dimension for the review modes and two for Delete, and those filters are context, never
-a selection: `pendingException('delete')` is null, so nothing in Delete ever arrives marked,
-and the commit acts only on what the reviewer picked in this sitting.
+**A mode's *own* dimension and the dimensions it *filters on* are different things**, and
+conflating them again is how a training exclusion comes to seed a scientific mark:
 
-Adding a dimension to a mode means editing `MODES` and nothing else — the rail, the
-query, the defaults and the collapsed-rail badge all go through `statusDimensions()`.
+- **`MODES[mode].statusKey` is what the mode acts on.** One dimension per mode. It drives
+  `existingState`, the tile's primary badge and its precedence, the seeding of the page's
+  exception set, and what a commit writes. Untouched by #89.
+- **`statusDimensions(mode)` is what the mode may filter on**, which is now every
+  dimension. It drives the rail, the query, the defaults, the collapsed-rail badge and the
+  address. Each entry carries `own`.
+
+**A borrowed dimension arrives not filtering at all, and that is the whole difficulty.**
+`trainingDisposition` defaults to `['undecided']`, so a borrowed dimension taking its
+owner's default would drop every promoted and excluded row out of Scientific's opening page
+— 151 of 1083 in the fixture, silently, with nothing on screen saying so. So
+`statusDimensions` gives a borrowed dimension `defaults: []`, `defaultStatusFor` therefore
+sets only the mode's own dimensions, and `DEFAULT_FILTERS` derives its status entries from
+`statusDimensions('scientific')` rather than naming `MODES.training.defaultStatus` — that
+second one is the route the trap arrives by even when the first is right, because
+`defaultQuery()` copies `DEFAULT_FILTERS` straight out with no `defaultStatusFor` pass.
+`render.spec.mjs` measures the default total against the fixture for exactly this reason;
+a test that compares the app to itself cannot see the count move.
+
+**In the address, absence of a borrowed dimension means "not filtering"** — never "use the
+owning mode's default". That is the same distinction that stops a cleared species filter
+coming back on reload, and `queryFilters` no longer drops a status dimension for belonging
+to another workflow.
+
+**Delete Mode is still the exception in what it *owns*.** It is the only mode with two own
+dimensions, so it is the only one where the second arrives with all three values ticked
+rather than empty; deleting is irreversible, so anything already on the record is a reason
+to stop. Those filters are context, never a selection: `pendingException('delete')` is
+null, so nothing in Delete ever arrives marked, and the commit acts only on what the
+reviewer picked in this sitting.
+
+The status counts are unchanged and are **not** conditioned on either status dimension:
+`store.countFilters()` sends `{ species, project, dive }`, `data.js:counts()` returns all
+six values, and `ui/chrome.js` reads `state.counts[value]` by value alone. So a borrowed
+count can exceed the result total, exactly as it already could in Delete — and the two
+vocabularies have to stay disjoint, or one dimension's count would appear beside the
+other's box.
+
+Adding a dimension to a mode means editing `MODES` and nothing else; adding a *new*
+dimension means one entry in `STATUS_DIMENSIONS`, which now also holds the rail label and
+the value list. The rail, the query, the defaults, the collapsed-rail badge and the address
+all go through `statusDimensions()`.
 
 ## Invariants that will bite
 
@@ -314,7 +369,7 @@ irreversible action that is not otherwise gated.
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
 | a keyboard shortcut | one entry in `SHORTCUTS` in `model/keys.js`, then a case in `runShortcut` in `ui/mount.js`. The hint draws itself on any control the id matches |
 | a page state | `pageState` in `model/modes.js`, then `ui/grid.js` |
-| a record tag another workflow owns | `STATUS_DIMENSIONS` in `model/modes.js`, then the `TAG_CLASS` / `TAG_ICON` pair in `ui/tile.js` |
+| a record tag another workflow owns | `STATUS_DIMENSIONS` in `model/modes.js` — which also carries its rail label and its values — then the `TAG_CLASS` / `TAG_ICON` pair in `ui/tile.js` |
 
 Mode colour is **chrome only**. Never tint the imagery — the reviewer is judging how the
 organism looks, and #68 treats the image field as a quiet zone. Dimming a tile the

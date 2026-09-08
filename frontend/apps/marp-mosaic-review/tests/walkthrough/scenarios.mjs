@@ -1026,6 +1026,141 @@ export const scenarios = {
     ]
   },
 
+  /* --------------------------------- verifying: both workflows in every rail */
+  'verify-status-filters': {
+    title: 'Verifying: filtering on either workflow',
+    scenes: [
+      {
+        caption: 'Both workflows, in every mode',
+        say: "Until now, scientific review could only filter on scientific review, and "
+           + "training could only filter on training. Delete could do both. Delete's rail "
+           + "is the one the other two have now — six status boxes, two workflows, "
+           + "whichever mode you are in.",
+        async act({ page, expect }) {
+          const boxes = page.locator('#statusFilters [data-statuskey]');
+          await expect(boxes).toHaveCount(6);
+          const keys = await boxes.evaluateAll(
+            (els) => [...new Set(els.map((e) => e.dataset.statuskey))].sort());
+          expect(keys).toEqual(['reviewStatus', 'trainingDisposition']);
+        }
+      },
+      {
+        caption: 'And the default view did not move',
+        say: "This is the part that mattered most, and it is the part you cannot see. "
+           + "Training disposition defaults to undecided. If that default had been applied "
+           + "here, scientific review would silently have lost every promoted and every "
+           + "excluded observation — about a hundred and fifty of them — and nothing on "
+           + "screen would have said so. A borrowed filter arrives switched off.",
+        async act({ page, expect, store }) {
+          store.total = await totalShown(page);
+          expect(store.total).toBeGreaterThan(1000);
+
+          /* Nothing borrowed is narrowing: the two training boxes are all unticked. */
+          const on = await page.locator('#statusFilters [data-statuskey="trainingDisposition"] .box.on')
+            .count();
+          expect(on).toBe(0);
+        }
+      },
+      {
+        caption: 'Filtering scientific review by a training decision',
+        say: "So now you can ask a question that crosses the two. Show me, in scientific "
+           + "review, only the observations training has already excluded. Watch the count "
+           + "collapse.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('#statusFilters [data-statuskey="trainingDisposition"]',
+            { hasText: 'Excluded' }).click();
+          await settled();
+
+          const narrowed = await totalShown(page);
+          expect(narrowed).toBeGreaterThan(0);
+          expect(narrowed).toBeLessThan(store.total);
+          store.narrowed = narrowed;
+        }
+      },
+      {
+        caption: 'And every tile says why it is here',
+        say: "Every tile on this page carries the excluded tag, from the training workflow, "
+           + "while you are standing in scientific review. That is the pair working "
+           + "together — the tags told you what had happened to an observation, and now the "
+           + "filter lets you go and find them.",
+        async act({ page, expect }) {
+          const tags = page.locator('.tile .rtag, .tile .badge').filter({ hasText: 'EXCLUDED' });
+          expect(await tags.count()).toBeGreaterThan(0);
+        }
+      },
+      {
+        caption: 'Switch it off and you are back',
+        say: "Untick it and the count comes straight back to where it started. Nothing was "
+           + "left applied behind the scenes.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('#statusFilters [data-statuskey="trainingDisposition"]',
+            { hasText: 'Excluded' }).click();
+          await settled();
+          expect(await totalShown(page)).toBe(store.total);
+        }
+      },
+      {
+        caption: 'It works the other way too',
+        say: "And it is symmetrical. Over in training data review, you can filter by what "
+           + "science decided — show me the ones a scientist already flagged, so I do not "
+           + "promote something that is under question.",
+        async act({ page, expect, settled }) {
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await expect(page.locator('#statusFilters [data-statuskey]')).toHaveCount(6);
+
+          const before = await totalShown(page);
+          await page.locator('#statusFilters [data-statuskey="reviewStatus"]',
+            { hasText: 'Flagged' }).click();
+          await settled();
+          expect(await totalShown(page)).not.toBe(before);
+        }
+      },
+      {
+        caption: 'Coming back to what you already reviewed',
+        say: "Two other fixes are on this branch. First: review a page, wander off to "
+           + "another workflow, and come back. What you submitted is still there. Switching "
+           + "mode used to throw the whole session away, so three reviewed pages became "
+           + "unfindable the moment you glanced at training.",
+        async act({ page, expect, settled, store }) {
+          await page.locator('#railReset').click();
+          await settled();
+          await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+          await settled();
+
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          await settled();
+
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+          await settled();
+
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          expect(await page.evaluate(() => window.MARP.state.committedPages.size)).toBe(1);
+        }
+      },
+      {
+        caption: 'And the count means this page',
+        say: "Second: marked this page now counts this page. It was counting every mark you "
+           + "had made anywhere in the session, so it only ever went up — and delete mode "
+           + "put that same running total in front of a permanent deletion.",
+        async act({ page, expect, settled }) {
+          await page.locator('[data-page="next"]').click();
+          await settled();
+
+          const shown = Number(await page.locator('#markedCount').innerText());
+          const marked = await page.locator('.tile.marked').count();
+          expect(shown).toBe(marked);
+
+          await page.locator('.tile:not(.failed):not(.queued):not(.marked)').first().click();
+          expect(Number(await page.locator('#markedCount').innerText())).toBe(shown + 1);
+        }
+      }
+    ]
+  },
+
   'verify-delete-confirmation': {
     title: 'Verifying: nothing is deleted without confirming',
     scenes: [
