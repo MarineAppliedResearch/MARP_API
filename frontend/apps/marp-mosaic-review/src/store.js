@@ -333,15 +333,42 @@ export const actions = {
 
   markAllOnPage() {
     state.marks = page.markAll(state.marks, state.rows);
+    /* Marking the page *is* a decision on every row of it, so every row is hand-decided
+       now and must not be re-seeded behind the reviewer. Clear is what undoes it. */
     state.rows.forEach((r) => state.touched.add(r.observation_id));
     fire('markAllOnPage', { count: state.rows.length, scope: 'page' });
     notify();
   },
 
+  /**
+   * Put this page back the way it arrived.
+   *
+   * Clearing used to empty the marks outright and add every row on the page to `touched`,
+   * which is never re-seeded. So one press of Clear silently staged the reversal of every
+   * exception the record already carried on that page: they lost their mark, began reading
+   * as TAKING BACK, and the next commit would have promoted or accepted them. Reported
+   * 2026-09-08 as exclusions tagging themselves taking back without being clicked.
+   *
+   * "Reset this page" is the meaning worth having. It undoes the reviewer's own marks *and*
+   * their own take-backs, then lets the record's exceptions seed again — so the page looks
+   * exactly as it did on arrival, and TAKING BACK appears only where somebody clicked an
+   * individual tile, which is the rule the user stated.
+   */
   clearMarks() {
     const n = state.marks.size;
-    state.marks = new Map(); state.picker = null;
-    state.rows.forEach((r) => state.touched.add(r.observation_id));
+    const ids = state.rows.map((r) => r.observation_id);
+
+    for (const id of ids) { state.marks.delete(id); state.touched.delete(id); }
+    state.marks = new Map(state.marks);          // a new Map, so subscribers see the change
+    state.picker = null;
+
+    /* Seed straight away rather than waiting for a query: this page is already loaded, and
+       a re-query would be a different page under a filter that has not changed. */
+    const exception = pendingException(state.mode);
+    if (exception) {
+      state.marks = page.seedMarks(state.marks, state.touched, state.rows,
+        (row) => existingState(state.mode, row) === exception);
+    }
     fire('clearMarks', { count: n });
     notify();
   },
@@ -413,9 +440,13 @@ export const actions = {
 
     const ids = state.rows.map((r) => r.observation_id);
     const marks = new Map(state.marks);
+    /* Which mode and page this commit belongs to, read once. Everything after the await
+       is checked against these rather than against whatever `state` says by then. */
+    const startedIn = state.mode;
+    const startedPage = state.page;
     fire('commitPage:request', {
-      mode: state.mode, page: state.page,
-      willAct: commitCount({ mode: state.mode, rows: state.rows, marks })
+      mode: startedIn, page: startedPage,
+      willAct: commitCount({ mode: startedIn, rows: state.rows, marks })
     });
 
     state.commit = { busy: true, status: null };
@@ -423,7 +454,7 @@ export const actions = {
 
     let res;
     try {
-      res = await MarpData.commitPage({ mode: state.mode, observationIds: ids, marks });
+      res = await MarpData.commitPage({ mode: startedIn, observationIds: ids, marks });
     } catch (err) {
       /* Nothing is applied. The marks are untouched, so the reviewer can try again
          without redoing the page. */
@@ -436,6 +467,27 @@ export const actions = {
 
     state.commit = { busy: false, status: 'ok' };
     clearCommitStatus();
+
+    /**
+     * The mode may have moved on while this was in flight.
+     *
+     * Outcomes, committed pages and pins all belong to the mode that committed, and
+     * `setMode` clears them for exactly that reason. Writing them here unconditionally
+     * meant a commit landing after a mode switch put them straight back — a whole page of
+     * scientific FLAGGED and REVIEWED badges displayed in Training Data Review, which is
+     * the defect `setMode` exists to prevent, coming back through a door the fix did not
+     * cover.
+     *
+     * The commit itself already happened and the record is written; what is dropped here is
+     * only this mode's *display* of it, and the next query reads the record back. Every
+     * query in this file is guarded the same way, with a token; the commit path never was.
+     */
+    if (state.mode !== startedIn) {
+      fire('commitPage:discarded', { startedIn, now: state.mode, page: startedPage });
+      notify();
+      return;
+    }
+
     state.committedPages.add(state.page);
     state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
     state.outcomes = page.applyCommit(state.outcomes, res);

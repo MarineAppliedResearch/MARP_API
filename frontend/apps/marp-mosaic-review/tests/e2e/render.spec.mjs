@@ -602,7 +602,18 @@ test.describe('taking a decision back reads as heading towards accepted', () => 
 
     const badge = tile.locator('.badge');
     await expect(badge).toContainText('TAKING BACK');
-    const colour = await badge.evaluate((el) => getComputedStyle(el).backgroundColor);
+    /* Polled, not read once. Rendering is a full re-render from state, so a handle taken
+       the moment a badge appears can be detached before it is read, and `getComputedStyle`
+       on a detached node returns an empty string — which failed as "Cannot read properties
+       of null" rather than saying anything about colour. `commitAndReadBadge` below already
+       does this; this test never got the same treatment, and it was one of the flakes
+       making full runs noisy. */
+    let colour = '';
+    await expect.poll(async () => {
+      colour = await badge.evaluate((el) => getComputedStyle(el).backgroundColor)
+        .catch(() => '');
+      return /^rgba?\(/.test(colour) ? 'read' : `not a colour yet: ${JSON.stringify(colour)}`;
+    }, { message: 'never got a colour off the TAKING BACK badge' }).toBe('read');
     const [r, g, b] = colour.match(/\d+/g).map(Number);
     expect(g, `green channel should dominate, got ${colour}`).toBeGreaterThan(r + 40);
     expect(g, `and it should not be the amber it used to be, got ${colour}`).toBeGreaterThan(b);
@@ -1017,6 +1028,124 @@ test.describe('the question survives a reload', () => {
     /* Clearing the filters is not leaving the workflow. */
     await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
     expect(page.url()).toContain('mode=training');
+  });
+});
+
+test.describe('a page resets, and a commit stays in its own mode', () => {
+  /**
+   * Training, with an exclusion genuinely on the record and in view.
+   *
+   * The exclusion is *made* rather than looked for. Waiting for the fixture to happen to
+   * put one on the first page worked on a desktop and skipped on a phone, where fewer
+   * tiles fit — and a skipped test reports green while proving nothing.
+   */
+  async function trainingWithExclusions(page) {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+
+    /* Exclude one and commit, so the record carries it. Then it seeds as a mark on every
+       later visit, which is the state both of these tests are about. */
+    await page.locator('.tile:not(.failed):not(.queued)').first().click();
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'PROMOTED' }).first()).toBeVisible();
+
+    await openRail(page);                       // collapsed by default on a phone
+    await page.locator('#statusFilters [data-statuskey]', { hasText: 'Excluded' }).click();
+    await ready(page);
+
+    /* Re-query so the exclusion arrives from the record rather than sitting in the marks
+       the commit left behind — otherwise these tests would pass on session state. */
+    await page.evaluate(async () => {
+      const { state, actions } = await import('./src/store.js');
+      state.marks = new Map();
+      state.touched = new Set();
+      state.outcomes = new Map();
+      state.pageMembers = new Map();
+      state.committedPages.clear();
+      await actions.refresh();
+    });
+    await ready(page);
+
+    /* Give the mosaic the screen back. On a phone the rail is an overlay, so leaving it
+       open makes every tile present but covered — Playwright reports the element as
+       resolved and never visible, which reads like a missing tile and is not one. */
+    if (await page.evaluate(() => !document.body.classList.contains('rail-collapsed')
+        && window.innerWidth < 760)) {
+      await page.locator('#railbtn').click();
+      await ready(page);
+    }
+    await expect(page.locator('.tile .badge', { hasText: 'EXCLUDED' }).first()).toBeVisible();
+  }
+
+  test('R1: Clear puts the page back as it arrived, and tags nothing taking back',
+    async ({ page }) => {
+      await trainingWithExclusions(page);
+
+      const excluded = page.locator('.tile .badge', { hasText: 'EXCLUDED' });
+      const before = await excluded.count();
+
+      await page.keyboard.press('c');
+      await page.waitForTimeout(600);
+
+      /* Clearing used to empty the marks and mark every row on the page as hand-decided,
+         which is never re-seeded — so the record's exceptions lost their mark, read as
+         TAKING BACK, and the next commit would have promoted them. Reported 2026-09-08. */
+      await expect(page.locator('.tile .badge', { hasText: 'TAKING BACK' })).toHaveCount(0);
+      await expect(excluded).toHaveCount(before);
+      expect(await page.evaluate(() => window.MARP.state.touched.size)).toBe(0);
+    });
+
+  test('R2: TAKING BACK still appears when the reviewer clicks an exclusion',
+    async ({ page }) => {
+      await trainingWithExclusions(page);
+      const tagged = page.locator('.tile', { has: page.locator('.badge', { hasText: 'EXCLUDED' }) });
+
+      /* The rule the fix must not break: one click on an excluded tile is exactly when
+         taking back is meant to show. */
+      const id = await tagged.first().getAttribute('data-id');
+      await page.locator(`.tile[data-id="${id}"]`).click();
+      await expect(page.locator(`.tile[data-id="${id}"] .badge`)).toContainText('TAKING BACK');
+    });
+
+  test('R3: a commit landing after a mode switch paints nothing in the new mode',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      /* Hold the commit open so the switch lands in the middle of it, rather than racing
+         a 260 ms fixture latency and reporting the wrong thing one run in ten. */
+      await page.evaluate(async () => {
+        const { MarpData } = await import('./src/data.js');
+        MarpData.slowNextCommit(4000);
+      });
+
+      await page.locator('.tile:not(.failed):not(.queued)').first().click();
+      await page.locator('#commit').click();
+      await page.waitForTimeout(300);
+
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      await page.waitForTimeout(4200);              // let the scientific commit land
+
+      /* `setMode` clears the outcomes for a reason: two independent decisions must not
+         wear each other's answer. The commit path wrote them back unconditionally, so a
+         whole page of scientific badges appeared in Training. */
+      await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+      await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' })).toHaveCount(0);
+      expect(await page.evaluate(() => window.MARP.state.outcomes.size)).toBe(0);
+      expect(await page.evaluate(() => window.MARP.state.committedPages.size)).toBe(0);
+    });
+
+  test('R4: a commit that stays in its own mode still applies', async ({ page }) => {
+    /* The other half. A guard that discarded every commit would pass R3 and be useless. */
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.tile:not(.failed):not(.queued)').first().click();
+    await page.locator('#commit').click();
+    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+    expect(await page.evaluate(() => window.MARP.state.committedPages.size)).toBe(1);
   });
 });
 
