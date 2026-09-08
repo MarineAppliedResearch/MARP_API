@@ -116,6 +116,20 @@ export const pendingException = (modeId) =>
  * the reviewer marked. Only observations with imagery are eligible, per
  * "What counts as reviewed".
  */
+/**
+ * How many of *this page's* tiles are marked.
+ *
+ * `state.marks` spans the session, not the page: a mark made on page one is still there
+ * when the reviewer is on page four, deliberately, so paging away and back does not lose
+ * it. So `marks.size` is never the answer to "how many are marked here" -- the chrome used
+ * it for three separate labels that all say "this page", and the count only ever went up.
+ * Worst of the three was Delete Mode's note, which put a cross-page total in front of a
+ * permanent deletion. Reported 2026-09-08.
+ */
+export function markedOnPage({ rows, marks }) {
+  return rows.filter((r) => marks.has(r.observation_id)).length;
+}
+
 export function commitCount({ mode, rows, marks }) {
   /* Delete acts on what is marked, imagery or not -- `data.js` only skips a row with no
      picture when it is *unmarked*, so a marked one is destroyed either way. Filtering here

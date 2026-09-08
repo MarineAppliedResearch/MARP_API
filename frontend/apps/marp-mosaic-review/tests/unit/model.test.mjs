@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, decidedBy,
   pendingException, statusDimensions, commitIsDestructive, borrowedTags,
-  deleteImpact, commitOutcome, pageState } from '../../src/model/modes.js';
+  deleteImpact, commitOutcome, pageState, markedOnPage } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 import { resolveKey, hintFor, SHORTCUTS } from '../../src/model/keys.js';
@@ -429,6 +429,21 @@ test('delete is the only mode whose commit destroys something', () => {
   assert.equal(commitIsDestructive('delete'), true);
   assert.equal(commitIsDestructive('scientific'), false);
   assert.equal(commitIsDestructive('training'), false);
+});
+
+test('markedOnPage counts this page, not the whole session', () => {
+  /* `state.marks` spans the session on purpose: a mark made on page one survives paging
+     to page four and back. So `marks.size` is never "how many are marked here", and the
+     chrome used it for three labels that all said "this page" — including Delete Mode's
+     note, which put a cross-page total in front of a permanent deletion. 2026-09-08. */
+  const rows = [row(1), row(2), row(3)];
+  const marks = new Map([[1, {}], [3, {}], [99, {}], [100, {}]]);   // 99 and 100 elsewhere
+
+  assert.equal(markedOnPage({ rows, marks }), 2,
+    'only the marks belonging to rows on this page count');
+  assert.equal(markedOnPage({ rows, marks: new Map() }), 0);
+  assert.equal(markedOnPage({ rows: [], marks }), 0,
+    'a page with no rows has nothing marked on it, whatever the session holds');
 });
 
 test('R2: the delete confirmation counts every row the commit will destroy', () => {

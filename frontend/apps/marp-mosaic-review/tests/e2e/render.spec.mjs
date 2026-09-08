@@ -1257,6 +1257,77 @@ test.describe('a mode keeps its own session work', () => {
   });
 });
 
+test.describe('"Marked this page" means this page', () => {
+  const counter = (page) => page.locator('#markedCount');
+
+  test('R1: a page you have not touched reads zero, and counts only its own marks',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      /* Mark two here, then walk to a page nobody has touched. `state.marks` spans the
+         session by design, so the counter read the session total and only ever went up —
+         a fresh page showed the marks left behind on the last one. Reported 2026-09-08. */
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+      const here = Number(await counter(page).innerText());
+      expect(here).toBeGreaterThanOrEqual(2);
+
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+      const fresh = Number(await counter(page).innerText());
+      const seeded = await page.locator('.tile.marked').count();
+      expect(fresh, 'a new page counts what is marked on it, not what was left behind')
+        .toBe(seeded);
+      expect(fresh).toBeLessThan(here);
+
+      /* And marking here moves it by one, from the page's own number. */
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').first().click();
+      expect(Number(await counter(page).innerText())).toBe(fresh + 1);
+    });
+
+  test('R2: going back to a page shows its own count again', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+    await page.locator('.tile:not(.failed):not(.queued):not(.marked)').nth(0).click();
+    const first = Number(await counter(page).innerText());
+
+    await page.locator('[data-page="next"]').click();
+    await ready(page);
+    await page.locator('[data-page="prev"]').click();
+    await ready(page);
+
+    /* The marks themselves must still be there — this is a display fix, not a change to
+       what a mark survives. */
+    expect(Number(await counter(page).innerText())).toBe(first);
+    expect(await page.locator('.tile.marked').count()).toBe(first);
+  });
+
+  test('R3: Delete Mode names the number on this page, before destroying anything',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.tile:not(.failed):not(.queued):not(.marked)').first().click();
+
+      await page.locator('.seg button', { hasText: 'Delete' }).click();
+      await ready(page);
+      await page.locator('.tile:not(.failed):not(.queued)').first().click();
+      await page.locator('[data-page="next"]').click();
+      await ready(page);
+
+      /* The dangerous one. This note said "Permanently deletes the N marked tiles" with N
+         being a session total, in front of an irreversible action. */
+      const marked = await page.locator('.tile.marked').count();
+      expect(Number(await counter(page).innerText())).toBe(marked);
+      const note = await page.locator('#commitNote, #modeNote').first().innerText()
+        .catch(() => '');
+      if (/Permanently deletes the (\d+)/.test(note)) {
+        expect(Number(note.match(/Permanently deletes the (\d+)/)[1])).toBe(marked);
+      }
+    });
+});
+
 test.describe('the commit button reports on itself', () => {
   test('it spins while saving, then confirms', async ({ page }) => {
     await page.goto('./');

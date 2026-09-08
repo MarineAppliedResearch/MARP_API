@@ -6,8 +6,7 @@
  * a named action, which is the seam an API call will eventually sit behind.
  */
 import { MarpData } from './data.js';
-import { MODES, isMode, commitCount, pendingException, existingState,
-         commitIsDestructive, deleteImpact, commitOutcome, pageState } from './model/modes.js';
+import { MODES, isMode, commitCount, pendingException, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
@@ -401,7 +400,9 @@ export const actions = {
    * individual tile, which is the rule the user stated.
    */
   clearMarks() {
-    const n = state.marks.size;
+    /* What is being cleared *here*. `marks` spans the session, so its size is not the
+       page's count -- see `markedOnPage`. */
+    const n = markedOnPage({ rows: state.rows, marks: state.marks });
     const ids = state.rows.map((r) => r.observation_id);
 
     for (const id of ids) { state.marks.delete(id); state.touched.delete(id); }
