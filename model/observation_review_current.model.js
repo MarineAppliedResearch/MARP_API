@@ -8,22 +8,23 @@
  *
  * Because it is derived it is part of the data contract rather than a cache. A
  * writer that appends to the log without maintaining this is data loss, not
- * staleness. The definition of "current" -- the earliest claiming reviewer's
- * latest decision -- and the SQL that rebuilds this table from the log live in
- * `migrations/20260909120200-create-observation-review-current.js`, in one place
- * deliberately, and `tests/observation-review-current.test.js` asserts this
- * table equals that derivation.
+ * staleness. The definition of "current" -- the latest decision per observation
+ * and purpose, ignoring anything a correction has superseded -- and the SQL that
+ * rebuilds this table from the log live in the **newest** migration carrying a
+ * `-- rebuild:` block, currently
+ * `migrations/20260909120600-redefine-observation-review-current-last-write-wins.js`.
+ * `tests/observation-review-current.test.js` finds that file rather than naming
+ * one, and asserts this table equals its derivation.
  *
  * `decision` is never "withdrawn": a withdrawal deletes the row, because
  * undecided is the absence of a row and the mosaic's default filter is exactly
  * that anti-join. A CHECK in the database enforces it.
  *
- * The composite primary key is what makes first-valid-wins enforceable at write
- * time -- Phase 5's `ON CONFLICT (observation_id, purpose) DO UPDATE ... WHERE
- * reviewer_id = :me` keeps the original reviewer and timestamp rather than
- * re-deriving the rule on every read.
+ * The composite primary key is what keeps "at most one current decision per
+ * observation per purpose" true at write time: the upsert is unconditional, so
+ * the last commit wins, and the key is what makes that one row rather than two.
  *
- * Refs #103.
+ * Refs #103, #111.
  *
  * @fileoverview Sequelize model for the observation_review_current projection.
  * @author Isaac Travers
@@ -103,14 +104,11 @@ module.exports = (sequelize, DataTypes) => {
             },
             reviewer_id: {
                 // Mirrored from the log, which holds the foreign key to users.
+                // Not an owner: under last-write-wins it moves whenever somebody
+                // else decides later.
                 type: DataTypes.INTEGER,
                 allowNull: false,
-                comment: 'The reviewer who owns this record -- the earliest claiming reviewer.',
-            },
-            first_decided_at: {
-                type: DataTypes.DATE,
-                allowNull: false,
-                comment: 'When the claiming reviewer first decided. Preserved when they revise.',
+                comment: 'Who made the current decision.',
             },
             decided_at: {
                 type: DataTypes.DATE,
@@ -128,10 +126,10 @@ module.exports = (sequelize, DataTypes) => {
             modelName: 'observation_review_current',
             tableName: 'observation_review_current',
             schema: 'public',
-            // No created_at/updated_at: this table is derived, and
-            // first_decided_at and decided_at already carry the only timing
-            // that means anything. Its own timestamps would duplicate them and
-            // the rebuild would have to invent values for them.
+            // No created_at/updated_at: this table is derived, and decided_at
+            // already carries the only timing that means anything. Its own
+            // timestamps would duplicate it and the rebuild would have to invent
+            // values for them.
             timestamps: false,
             comment: 'Derived projection of the decision currently in force for an observation and a purpose. Rebuilt from observation_reviews; see the migration that creates it for the definition of "current".',
             indexes: [
