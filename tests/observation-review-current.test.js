@@ -60,8 +60,24 @@ function extractRebuildBlock(source) {
 
 describe('observation_review_current (#103 D1, R6)', () => {
 
-    /** @type {string} */
-    const migrationSource = fs.readFileSync(MIGRATION_PATH, 'utf8');
+    /**
+     * The migration's own source, with line endings normalised.
+     *
+     * Normalising is deliberate and not cosmetic. **ECMAScript normalises CRLF to LF
+     * inside a template literal**, so `CURRENT_DERIVATION_SQL` always holds LF however
+     * the file is stored — while the same file read off disk holds whatever git checked
+     * out, which on Windows with `core.autocrlf` is CRLF. The two could then never match.
+     *
+     * This failed on `develop` the moment the merges caused a fresh checkout, having
+     * passed on the branch it was written on, and it passes in CI regardless because CI
+     * is Linux and checks out LF. A comparison of SQL should be about the SQL.
+     *
+     * @type {string}
+     */
+    const migrationSource = fs
+        .readFileSync(MIGRATION_PATH, 'utf8')
+        .split('\r\n')
+        .join('\n');
 
     /** @type {string} */
     const fileBlock = extractRebuildBlock(migrationSource);
