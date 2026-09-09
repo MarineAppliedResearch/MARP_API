@@ -103,6 +103,7 @@ const registerTokensRoutes = require('./routes/v2_tokens.routes');
 // require position here is unconstrained.
 const registerJellyfinRoutes = require('./routes/jellyfin.routes');
 const registerTimecodeSyncRoutes = require('./routes/timecode_sync.routes');
+const registerMosaicRoutes = require('./routes/mosaic.routes');
 const { configureAuthentication } = require('./auth/auth.setup');
 
 
@@ -329,6 +330,7 @@ registerTimecodeSyncRoutes(app);
 registerAuthRoutes(app);
 registerUsersRoutes(app);
 registerTokensRoutes(app);
+registerMosaicRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 
