@@ -319,7 +319,7 @@ were found by this research; each changes the contract, the permissions or the d
 `blocking`. **Every recommendation is a recommendation. Nothing is implemented while one is
 open.**
 
-- [ ] **D1 · API contract · blocking** — **How does the client tell the server which version it
+- [x] **D1 · API contract · blocking** — **How does the client tell the server which version it
   saw?** This is the one that decides whether `conflicted` exists at all, and the human has just
   made `conflicted` central by choosing per-observation outcomes.
   Two facts collide. Phase 4's row shape returns no `version`
@@ -351,7 +351,7 @@ open.**
   the requirement explicitly and where being wrong is irreversible — and defer them on `review`
   and `training` to Phase 8. Say so and it is one line either way.
 
-- [ ] **D2 · scientific or data-meaning · blocking** — **Does a decision that did not take
+- [x] **D2 · scientific or data-meaning · blocking** — **Does a decision that did not take
   effect get a log row?** A reviewer commits and is told `conflicted`. Is that decision written
   to `observation_reviews` anyway, as a record that they said it?
   **Recommendation: no, for both causes of a conflict — and for the version cause it is not a
@@ -376,7 +376,7 @@ open.**
   logging both and relying on the derivation, because it is correct only until the first
   rebuild.
 
-- [ ] **D3 · API contract · blocking** — **What request expresses a withdrawal, given no client
+- [x] **D3 · API contract · blocking** — **What request expresses a withdrawal, given no client
   gesture produces one?** #106 requires a withdrawal test — *"the projection row is gone, the
   log still holds every decision"* — so the endpoint must support one. But the client's
   take-back of a flag commits as `reviewed`, not as a withdrawal (`data.js:773`, and #68's
@@ -397,7 +397,7 @@ open.**
   **What a different answer changes:** the request shape on two routes, and whether `reverted`
   is the only withdrawal-shaped outcome this phase can return.
 
-- [ ] **D4 · security/permissions · blocking** — **What happens when a commit arrives on a
+- [x] **D4 · security/permissions · blocking** — **What happens when a commit arrives on a
   service token?** `observation_reviews.reviewer_id` is `NOT NULL` and references
   `users(user_id)`. A bearer-token principal's `id` is a `service_clients.service_client_id`
   (`repository/v2_tokens.repository.js:483`), and the repository already carries a helper that
@@ -452,6 +452,61 @@ open.**
   8 ruling that the endpoint's names follow the schema; and **`applyCommit` and
   `marksAfterCommit` must learn `conflicted`** (`page.js:58`, `:97`), or a conflicted tile draws
   no badge and loses its mark. **Not fixed here — this phase does not touch `frontend/`.**
+
+## Answered, 2026-09-09
+
+The human was unsure on D1 and delegated it; D2, D3 and D4 were settled on the
+recommendation. All four are recorded with the reasoning, because three of them are
+enforced by constraints and the fourth guards the scientific record.
+
+- **D1 — `version` goes into the mosaic row, and all three commit routes require
+  `[{observation_id, version}]`.** Full, not delete-only, and the reasoning that decided it
+  is worth keeping: **the middle option saves nothing.** For a client to send a version on
+  delete, the version has to be in the row it received — so Phase 4's row shape changes
+  either way, and "delete-only" buys no reduction in cost while leaving review and training
+  on silent last-write-wins. So the real choice was full or nothing, and nothing makes
+  #68's *Concurrent review* section unimplementable: `conflicted` could never fire,
+  `observations.version` would be a token nobody reads, and that is the exact mirror of
+  #103's D5 finding that a token some writers do not increment is worse than no token.
+  **What this costs, and it is owed to #105 rather than to this phase:** one entry in
+  `ROW_COLUMNS` (`repository/mosaic.repository.js:140`), the R13 snapshot test that names
+  the row's exact keys, and a regenerated `docs/openapi.generated.json`. #105 is unmerged,
+  so this is a correction to it rather than a revision of something shipped. **Do it as
+  part of this phase and say so in the commit**, so the two stay consistent — a row shape
+  that cannot support the commit route beside it is not a finished read path.
+  An **absent** version is a `400`, never an implicit overwrite: a client that forgets is
+  the failure mode an optional field hides.
+- **D2 — a decision that did not take effect is not logged.** For the version cause this is
+  correctness rather than preference, and the argument is the one to keep: a
+  version-conflicted commit can occur **with nobody having claimed the row** — the
+  annotation changed, no one reviewed it. Log it and the `-- rebuild:` derivation in
+  `migrations/20260909120200-create-observation-review-current.js` makes that reviewer the
+  earliest claimant, so **the next rebuild resurrects a decision the server refused**, and
+  #103's projection-equals-derivation test is what discovers it, long afterwards. Claim
+  conflicts are derivation-safe to log, but #68 says the second reviewer *"is reported as
+  already completed"* — reported, not recorded, and one rule is better than two.
+  The trade, named: #68's later "explicit validation mode" starts from no data about
+  refused attempts.
+- **D3 — a withdrawal is an explicit `withdraw` list of ids, on review and training only.**
+  Accepted knowing it builds a path the mosaic does not yet call: the client's take-back of
+  a flag commits as `reviewed`, so `withdrawn` is unreachable from the app as built. It is
+  recommended anyway because the `CHECK` refusing `withdrawn` in the projection is the
+  load-bearing half of #103's D1 design, and #106 requires a withdrawal test — one `DELETE`
+  away from being verified at the tier that can see it, rather than asserted in prose.
+- **D4 — all three routes refuse a non-user principal with `403`, before any write.** This
+  is the finding that most justified the gate, and it is a data-integrity matter rather than
+  a permissions preference. `observation_reviews.reviewer_id` is `NOT NULL → users(user_id)`,
+  while a bearer principal's `id` is a `service_clients.service_client_id`
+  (`repository/v2_tokens.repository.js:483`). Both sequences start at 1, so they collide —
+  and the failure is not an error but **a review silently attributed to an unrelated person
+  in the scientific record.** The helper that refuses this already exists
+  (`routes/v2_tokens.routes.js:59`) precisely because of the same trap.
+  And the part that matters beyond this phase: the **`annotation-gui` token preset holds
+  `observations:write`** (`scripts/create-application-token.js:47`), so under the settled
+  single-key answer that token would otherwise authorize **permanent bulk deletion**.
+  `/delete` records no reviewer, so refusing it there is a deliberate choice rather than a
+  consequence of the foreign key — and it is the right one: a service token should not be
+  able to destroy the scientific record unattended.
 
 ## Decisions
 
