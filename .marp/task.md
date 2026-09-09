@@ -180,17 +180,23 @@ Numbered so a test can cite one.
 
 **Deletion provenance**
 
-- **R11** — A new table records the deletion of an observation and **survives it**. It
-  therefore carries `observation_id` as a plain integer with **no foreign key** — a
-  deliberate exception, commented as one, and invisible to `db/data-integrity.js`, which
-  discovers foreign keys from the catalogue.
-- **R12** — It records at minimum: the deleted observation's id, the actor, the time, the
-  originating model or processing run where known, the operation, an optional reason, and
-  the authorization scope the actor held (#68, *Authorization*).
-- **R13** — It does **not** retain the observation, its keyframes or its imagery (#68, *What
-  deletion removes*).
+- **R11** — A new table records **each delete action, not each deleted observation.**
+  One row per commit, whatever its size. Corrected by the human 2026-09-09: the models
+  under test may produce hundreds of millions of erroneous observations and Delete Mode is
+  how they are cleaned up, so a row per observation makes the log outgrow the data it
+  describes. It therefore carries **no `observation_id`** and no foreign key to
+  `observations`.
+- **R12** — It records at minimum: the actor, the time, **how many observations were
+  destroyed**, the question that was on screen (the mosaic address, which #79 already made
+  a serialisable string), the operation, an optional reason, and the authorization scope the
+  actor held (#68, *Authorization*). Project and session scope where the action was narrowed
+  to one.
+- **R13** — It does **not** retain the observations, their ids, their keyframes or their
+  imagery (#68, *What deletion removes*). The consequence is deliberate and is stated in
+  the decisions log: *"what happened to observation 384,201"* is not answerable from this
+  table.
 - **R14** — Nothing in this phase deletes anything. The table is created empty and stays
-  empty until Phase 7 writes to it.
+  empty until Phase 5 writes to it.
 
 **Referential integrity**
 
@@ -526,24 +532,60 @@ thing holding G1 — it changes what a reviewer sees on screen, so it is the hum
 
   **So the deletion-provenance row must record the dataset memberships that went with the
   observation.** This is the ordering dependency the research called out, and it applies
-  only under this answer: `observation_deletions` gains the dataset ids (and the membership
-  detail worth keeping — `inclusion_type`, `selection_method`, `weight`) captured *before*
-  the cascade fires. Without that, a delete quietly makes a training set smaller with no
-  record anywhere that it happened, which is exactly the loss `AGENTS.md` counts even when
-  the application still works.
+  only under this answer: the deletion record was to gain the dataset ids captured *before*
+  the cascade fires. **That was withdrawn the same day** — it has the same per-observation
+  shape that makes a deletion log outgrow the data, so it is not built. See the decisions
+  log, and D12 for the gap it leaves.
 
-  Two consequences to carry forward:
+  One consequence to carry forward:
 
-  - **Phase 5's commit writes provenance before it deletes**, in the same transaction. The
-    cascade destroys the rows the provenance is about, so reading them afterwards is not an
-    option.
+  - **Phase 5's commit writes the provenance row before it deletes**, in the same
+    transaction — the count has to be known and the action recorded before the rows go.
   - **`subset_observations` and `subset_keyframes` are a second, unconstrained path** to the
     same problem — physical tables holding copies of observation columns, found during this
     research and outside #100's scope. They are not addressed here, and a cascade on
     `dataset_observations` does not touch them. Named so Phase 7 does not meet it as a
     surprise.
 
+- [ ] **D12 · scientific or data-meaning · non-blocking** — With deletion provenance
+  aggregated per action, a cascade on `dataset_observations` can reduce a published model's
+  training set with no record of *which* observations left it. Does that matter? It is
+  non-blocking because nothing in this phase depends on the answer and
+  `dataset_observations` holds 0 rows today, and because both remedies are additive later:
+  capture membership only for observations that are actually in a dataset (rare, so bounded),
+  or refuse those rows in Delete Mode. **Recommendation: leave it, and revisit when
+  `dataset_observations` is non-empty on production.** Recorded so the gap is a decision
+  rather than an oversight.
+
 ## Decisions
+
+- **2026-09-09 — Deletion provenance is per *action*, not per observation.** Corrected by
+  the human, and it overrides both #68's wording and D3's answer above where they conflict.
+
+  **Why:** the models under test may produce hundreds of millions of erroneous
+  observations, and Delete Mode is how they get cleaned up. A row per deleted observation
+  makes the log outgrow the data it describes. That is not a tuning problem, it is the
+  wrong shape.
+
+  **So `observation_deletions` holds one row per delete commit:** the reviewer, the
+  timestamp, the count destroyed, and the question that was on screen (the mosaic address,
+  which #79 already made a serialisable string). No observation ids, and **no per-row
+  dataset-membership capture** — that was added under D3 an hour ago and is withdrawn here,
+  because it has exactly the same unbounded shape.
+
+  **What this gives up, stated plainly so nobody assumes otherwise:** *"what happened to
+  observation 384,201"* becomes unanswerable. The record says a reviewer destroyed 4,812
+  observations matching a particular question at a particular time; it cannot say which
+  ones. Anything in a later phase that needs per-observation deletion history is asking for
+  something this design does not keep.
+
+  **The training-set risk from D3 therefore stands unmitigated**, and honestly: a cascade
+  can shrink a published model's training set with only an aggregate record that a delete
+  happened. Two ways to close that if it ever matters, neither built now — record
+  memberships only for the rare observation that was in a dataset, or make Delete Mode
+  refuse those rows after all. **Left open deliberately rather than solved cheaply**; see
+  D12.
+
 
 - **2026-09-09** — The basis is the live development database read through
   `information_schema`/`pg_constraint`, plus the repository's files. **No measurement**: the
@@ -600,21 +642,31 @@ definition of "current", and it is how drift is detected rather than assumed abs
 
 ### `observation_deletions` — deletion provenance (R11–R14)
 
+**One row per delete action.** Not per observation — see the decisions log. So this
+table grows with review sessions, thousands of rows, and not with the detections a model
+under test produced.
+
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | `bigint` PK, `autoIncrement` | |
-| `observation_id` | `integer NOT NULL` | **No foreign key, deliberately** — the row it names is gone. Commented, and invisible to `db/data-integrity.js` by design |
-| `project_id`, `session_id` | `integer NULL` | Scope, for finding a deletion later. `ON DELETE SET NULL` where the parent still exists |
 | `deleted_by` | `integer NOT NULL` → `users(user_id)` | `ON DELETE RESTRICT`, same reasoning as `reviewer_id` |
 | `deleted_at` | `timestamptz NOT NULL DEFAULT now()` | |
-| `ml_model_id` | `integer NULL` → `ml_models(id)` | `ON DELETE SET NULL`. The originating model, where known |
+| `observation_count` | `integer NOT NULL` | How many were destroyed. The only quantity kept |
+| `question` | `text NOT NULL` | The mosaic address that produced the page — mode, filters, sort, page. #79 already makes this one serialisable string, so it needs no schema of its own |
+| `project_id`, `session_id` | `integer NULL` | Scope, where the action was narrowed to one. `ON DELETE SET NULL` |
+| `ml_model_id` | `integer NULL` → `ml_models(id)` | `ON DELETE SET NULL`. The originating model, where the question named one |
 | `operation` | `varchar(64) NOT NULL` | e.g. `mosaic-delete-mode` |
 | `reason` | `varchar(255) NULL` | |
 | `authorized_scope` | `varchar(64) NOT NULL` | Project-scoped or global (#68, *Authorization*) |
 | `created_at` | `timestamptz NOT NULL DEFAULT now()` | |
 
-Index `(observation_id)` and `(deleted_at DESC)`. **Nothing about the observation's content
-is stored** (R13).
+Index `(deleted_at DESC)`. **No observation ids, and nothing about their content** (R13) —
+so there is no index on `observation_id` because there is no such column, and the
+deliberate no-foreign-key exception this table used to need is gone with it.
+
+**`question` is what makes an aggregate row useful.** Without it the record says only that
+somebody destroyed 4,812 rows; with it, it says which query they were looking at when they
+did, which is the difference between an audit trail and a counter.
 
 ### New columns on `observations`
 
