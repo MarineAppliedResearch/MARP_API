@@ -481,7 +481,41 @@ slides onto a different one. Read `data-id` first and pin the tile:
 were right.
 
 **The commit race.** `commitPage` is async and re-seeds the marks when it lands. A click
-sent before it finishes is overwritten. Wait for the outcome badge, not a timeout.
+sent before it finishes is overwritten. Wait for the outcome badge, not a timeout. When you
+need to drive what happens *during* a commit, `MarpData.slowNextCommit(ms)` holds one open —
+racing a 260 ms latency reports the wrong thing about one run in ten.
+
+**On a phone the rail overlays the mosaic.** It is collapsed by default there, so a test
+touching a filter must open it — and then collapse it again before clicking tiles, or every
+tile is present and covered. Playwright reports that as resolved-and-never-visible, which
+reads like a missing tile and is not one. Three tests learned this separately.
+
+**The page you are standing on is an `<input>`, not a chip.** `renderPager` draws a typable
+box for the current page, so it carries neither `data-page` nor the committed marker. A
+committed page only shows as committed once you have paged away from it, which is also when
+a reviewer sees it. Two tests tripped on this.
+
+**`page.fill()` raises `input` but not `change`.** Anything the rail commits on `change` —
+which is everything two-ended, deliberately, so a slider does not re-query per pixel — is
+never applied by a bare `fill`. That is a real user path too, not only a test artefact:
+typing a time and clicking into the mosaic removes the element before it can blur, which is
+why the rail also listens on `focusout` and Enter.
+
+**Read a computed colour by polling for a value that parses.** Rendering is a full
+re-render, so a handle taken the instant an element appears can be detached before
+`getComputedStyle` runs — and that returns an empty string, so `.match(/\d+/g)` is null and
+the test dies with "Cannot read properties of null" without saying anything about colour.
+`commitAndReadBadge` is the pattern.
+
+**Reintroduce a defect with a file copy, never `git checkout --`.** Proving a test fails
+against the old behaviour is the right instinct, and `git checkout -- <file>` on a file
+holding uncommitted work discards all of it. `cp` it first and restore from the copy.
+
+**The cost of an action is the number of times it notifies.** Rendering is a full re-render
+from state, deliberately — so an action that notifies per row costs a full rebuild of the
+grid per row. `retryFailedThumbnails` did that and cost a hundred renders for one button
+press, which is what made two browser tests flaky under parallel workers. A contract check
+now fails if a page-level retry re-renders per tile.
 
 ## The narrated walkthroughs
 
@@ -588,6 +622,9 @@ Pick a voice with `NARRATE_VOICE`, e.g. `NARRATE_VOICE=en-US-AriaNeural`.
 
 ## Known gaps
 
+- **Adjacent-page prefetching is the last Phase 1 item.** Page N+1 is not fetched while
+  the reviewer works, so every page change waits on a query. Fixture-side; it does not need
+  the API. See #68.
 **Not a list of what is unbuilt** — #68 is that, and a second copy here drifts. What
 follows is what the code itself cannot tell you.
 
