@@ -369,9 +369,18 @@ function predicates(filters, bind, { status = true } = {}) {
     const set = (key, expression, cast) => {
         const values = setValue(filters[key], key);
 
-        if (values) {
-            where.push(`${expression} = ANY(${bind.add(values)}::${cast})`);
+        if (!values) {
+            return;
         }
+
+        // An id dimension given names rather than ids is a rejected request, not
+        // a database type error surfacing as a 500 -- and not a filter that
+        // silently matches nothing either, which is the worse of the two.
+        if (cast === 'int[]' && values.some((value) => !Number.isInteger(value))) {
+            throw new MosaicRequestError(`filters.${key} takes integer ids, not ${JSON.stringify(values[0])}`);
+        }
+
+        where.push(`${expression} = ANY(${bind.add(values)}::${cast})`);
     };
 
     set('project', 'p.name', 'varchar[]');
@@ -561,6 +570,10 @@ function buildPageSetQuery({ filters = {}, sort, pageSize, pages, exclude, inclu
     const excluded = setValue(exclude != null ? exclude : filters.excludeIds, 'exclude');
 
     if (excluded) {
+        if (excluded.some((id) => !Number.isInteger(id))) {
+            throw new MosaicRequestError('exclude takes observation ids as integers');
+        }
+
         // Suppression at serve time rather than in the cache key: the pinned set
         // grows on every commit, and in the key every commit would discard the
         // whole client cache (#99 A4).
