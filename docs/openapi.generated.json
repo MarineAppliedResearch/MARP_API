@@ -2519,6 +2519,328 @@
           }
         ]
       },
+      "MosaicQueryFilters": {
+        "type": "object",
+        "description": "The mosaic rail, as a query. **An absent or empty value means not filtering**, never \"apply the reviewing mode's default\" -- both status dimensions are sent on every query and both may be empty. `date` is rejected rather than served: no column holds the date an observation was made, and a filter that silently omits is worse than no filter. See #76.",
+        "properties": {
+          "project": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Deep Reef Survey 2025"
+            ],
+            "description": "projects.name, reached through observations.project_id."
+          },
+          "dive": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "D04"
+            ],
+            "description": "sessions.dive."
+          },
+          "line": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "1"
+            ],
+            "description": "sessions.line."
+          },
+          "sessionType": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Fish"
+            ],
+            "description": "sessions.type. Aliased on the way out as session_type, because a bare `type` on an observation says type of what."
+          },
+          "session": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              400
+            ],
+            "description": "observations.session_id."
+          },
+          "species": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              41
+            ],
+            "description": "observations.species_id, and only species_id. It finds the organism; `comname` finds rows whose label text matches a name that may since have moved."
+          },
+          "model": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [],
+            "description": "observations.ml_model_id."
+          },
+          "confidence": {
+            "type": "object",
+            "nullable": true,
+            "description": "observations.confidence, inclusive at both ends. Either end may be null.",
+            "properties": {
+              "from": {
+                "type": "number",
+                "nullable": true,
+                "example": 0
+              },
+              "to": {
+                "type": "number",
+                "nullable": true,
+                "example": 0.8
+              }
+            }
+          },
+          "timeOfDay": {
+            "type": "object",
+            "nullable": true,
+            "description": "Time of day from observations.tc, inclusive. **May wrap past midnight**: 22:00 to 02:00 is one night. A row whose tc carries no readable clock is excluded.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "nullable": true,
+                "example": "22:00"
+              },
+              "to": {
+                "type": "string",
+                "nullable": true,
+                "example": "02:00"
+              }
+            }
+          },
+          "reviewStatus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "unreviewed",
+                "flagged",
+                "reviewed"
+              ]
+            },
+            "example": [
+              "unreviewed",
+              "flagged"
+            ],
+            "description": "Current scientific review state. `unreviewed` is the absence of a review record, not a stored value."
+          },
+          "trainingDisposition": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "undecided",
+                "promoted",
+                "excluded"
+              ]
+            },
+            "example": [],
+            "description": "Current training disposition. `undecided` is the absence of a review record, not a stored value."
+          }
+        }
+      },
+      "MosaicRow": {
+        "type": "object",
+        "description": "One mosaic tile. Exactly what the tile renders: `processor_name` and `lineId` are deliberately absent because nothing draws either, and who annotated something is what the permission catalog gates separately from observations:read. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.",
+        "properties": {
+          "observation_id": {
+            "type": "integer",
+            "example": 100123
+          },
+          "obsID": {
+            "type": "integer",
+            "nullable": true,
+            "example": 4412,
+            "description": "The annotator-facing observation number. A distinct column from observation_id."
+          },
+          "confidence": {
+            "type": "number",
+            "nullable": true,
+            "example": 0.42,
+            "description": "Nullable. Nulls sort last ascending, so unscored rows land on the last pages of the default question."
+          },
+          "comname": {
+            "type": "string",
+            "nullable": true,
+            "example": "Bat Star",
+            "description": "What the species entry was called when the observation was recorded. Never dropped: it is what makes the drift from species_id auditable."
+          },
+          "tc": {
+            "type": "string",
+            "nullable": true,
+            "example": "21:57:22",
+            "description": "Recorded clock time, as .NET TimeSpan text."
+          },
+          "dive": {
+            "type": "string",
+            "nullable": true,
+            "example": "D04"
+          },
+          "line": {
+            "type": "string",
+            "nullable": true,
+            "example": "1"
+          },
+          "session_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "Fish"
+          },
+          "project_name": {
+            "type": "string",
+            "nullable": true,
+            "example": "Deep Reef Survey 2025",
+            "description": "Null where the observation records no project. Both joins are outer, so a row is never silently dropped for want of one."
+          },
+          "review_decision": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "reviewed",
+              "flagged",
+              null
+            ],
+            "example": null,
+            "description": "Current scientific decision, or null for unreviewed -- which is the absence of a record."
+          },
+          "flag_reason": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "training_decision": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "promoted",
+              "excluded",
+              null
+            ],
+            "example": null,
+            "description": "Current training decision, or null for undecided."
+          },
+          "exclusion_reason": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "keyframe_count": {
+            "type": "integer",
+            "example": 8,
+            "description": "How many keyframes the observation carries. Computed per returned row, not over the matching set, unless the sort names it."
+          },
+          "first_framenum": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3457
+          }
+        }
+      },
+      "MosaicPageSet": {
+        "type": "object",
+        "description": "A set of pages for one question, answered in one pass over the matching set. Carries an entry for **every** page asked for, in ascending page order, so the caller never has to work out which came back.",
+        "properties": {
+          "pageSize": {
+            "type": "integer",
+            "example": 45
+          },
+          "total": {
+            "type": "integer",
+            "example": 2656,
+            "description": "Rows matching the question. Present only when includeTotal was true."
+          },
+          "pageCount": {
+            "type": "integer",
+            "example": 60,
+            "description": "Present only when includeTotal was true."
+          },
+          "pages": {
+            "type": "array",
+            "description": "One entry per requested page, ascending. A page past the end is rows: [] with rowCount 0, not an error -- a prefetcher asks for the tail before it knows the count.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "example": 1
+                },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MosaicRow"
+                  }
+                },
+                "rowCount": {
+                  "type": "integer",
+                  "example": 45
+                }
+              }
+            }
+          },
+          "excludedForNoDate": {
+            "type": "integer",
+            "example": 0,
+            "description": "How many observations a date filter could not answer for. Always 0 while the date dimension is rejected rather than served."
+          },
+          "servedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-09T11:04:22.113Z",
+            "description": "Diagnostic. Nothing depends on it."
+          }
+        }
+      },
+      "MosaicStatusCounts": {
+        "type": "object",
+        "description": "How the non-status-filtered set divides across the two status dimensions. **`total` here is over a different and larger set than the page query's `total`** -- this one applies no status filter at all -- and the two are never substituted for one another.",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "example": 12480
+          },
+          "unreviewed": {
+            "type": "integer",
+            "example": 9800
+          },
+          "reviewed": {
+            "type": "integer",
+            "example": 2100
+          },
+          "flagged": {
+            "type": "integer",
+            "example": 580
+          },
+          "undecided": {
+            "type": "integer",
+            "example": 11900
+          },
+          "promoted": {
+            "type": "integer",
+            "example": 420
+          },
+          "excluded": {
+            "type": "integer",
+            "example": 160
+          }
+        }
+      },
       "Artifact": {
         "type": "object",
         "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
@@ -10848,6 +11170,169 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/pages": {
+      "post": {
+        "summary": "Fetch a set of mosaic pages for one question",
+        "description": "Answers a filtered, sorted, paged question about observations in **one pass** over the matching set. A discontiguous page set -- the head, the tail and the neighbourhood of the current page -- costs what one page costs, and page 9,780 costs what page 1 costs, because the cost is proportional to the matching set rather than to the offset. **The ordering always ends with `observation_id`, appended by the server whatever the client sent**: page membership is query-derived, so a comparator that can return zero for two different rows would put different observations on page one each visit. A page past the end is `rows: []` rather than an error. Over 12 pages or 600 rows is rejected with 400, never truncated -- a caller that quietly gets fewer pages than it asked for believes it holds a set it does not. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "pages"
+                ],
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  },
+                  "sort": {
+                    "type": "array",
+                    "description": "One or two terms, each naming a field from the closed list. A field outside it is rejected rather than quietly replaced by the default. `observation_id` is not a term here -- the server appends it, always.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "enum": [
+                            "confidence",
+                            "keyframe_count",
+                            "updatedAt",
+                            "obsID"
+                          ],
+                          "example": "confidence"
+                        },
+                        "dir": {
+                          "type": "string",
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "example": "asc"
+                        }
+                      }
+                    }
+                  },
+                  "pageSize": {
+                    "type": "integer",
+                    "example": 45,
+                    "description": "Rows per page. Follows the reviewer's viewport, so it is not a constant."
+                  },
+                  "pages": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "example": [
+                      1,
+                      2,
+                      3,
+                      47,
+                      48,
+                      9779
+                    ],
+                    "description": "1-based page numbers. **May be discontiguous.** De-duplicated and sorted server-side."
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "example": [
+                      100123,
+                      100456
+                    ],
+                    "description": "Observation ids the caller already holds pinned to a committed page. Optional."
+                  },
+                  "includeTotal": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true the response carries total and pageCount. Ask once per question, never on a prefetch."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every page asked for, in ascending page order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicPageSet"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/counts": {
+      "post": {
+        "summary": "Count how a mosaic question divides across the review states",
+        "description": "Applies the **non-status** filters only and returns all six status counts plus a total, in one pass, with no sort and no row numbering. Deliberately not conditioned on either status dimension, because the rail shows a count beside every status box whether or not that status is currently selected -- so a count here may exceed the number of rows the page query returns. **Its `total` is a different number over a different set from the page query's `total`** and the two must never be substituted for one another. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  }
+                },
+                "description": "The same filters object the page query takes. `reviewStatus` and `trainingDisposition` are ignored here rather than rejected, so one serialiser can feed both routes."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The six status counts and the total they divide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicStatusCounts"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
