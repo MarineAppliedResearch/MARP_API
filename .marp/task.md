@@ -174,6 +174,13 @@ hour if discovered while implementing.
 
 ## Requirements
 
+- **R0** — **Every route this phase creates is served under `/api/v2/`.** Stated by the
+  human 2026-09-09. There is no V1 to opt into — `AGENTS.md` says "There are no V1 routes" —
+  and the only supported way to get there is `registerVersionedRoute`, which also attaches
+  the permission. So a route is declared *without* the prefix and mounted *with* it; a route
+  hand-mounted beside the helper to dodge the throw would arrive without its
+  `requirePermission` wrapper, which is the real risk here rather than the URL.
+
 - **R1** — `POST /api/v2/mosaic/observations/pages` accepts #99's request body unchanged
   and returns #99's envelope unchanged: `pageSize`, `pages[]` with an entry for **every**
   page asked for in ascending order, `total` and `pageCount` only when `includeTotal`,
