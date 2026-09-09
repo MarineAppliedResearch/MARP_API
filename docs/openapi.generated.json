@@ -2685,7 +2685,13 @@
             "type": "string",
             "nullable": true,
             "example": "Bat Star",
-            "description": "What the species entry was called when the observation was recorded. Never dropped: it is what makes the drift from species_id auditable."
+            "description": "What the species entry was called when the observation was recorded. Never dropped and never rewritten, including by a species correction: it is what makes the drift from species_id auditable."
+          },
+          "species_comname": {
+            "type": "string",
+            "nullable": true,
+            "example": "Ochre Star",
+            "description": "The **current** common name of the species the observation is now classified as, joined from species. Distinct from comname, which stays the annotator own choice: a species correction changes species_id and never the label the annotator saw, so without this field a corrected tile would render the old animal for ever while the species filter matched the new one. The pair is also what the \"was Bat Star\" indicator draws from. Null where the observation has no species -- about 4% of rows legitimately do not."
           },
           "tc": {
             "type": "string",
