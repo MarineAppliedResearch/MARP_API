@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#106
 repos: [marp-api]
-status: design
+status: verify
 needs: []
 ---
 
@@ -686,21 +686,36 @@ drops it — so nothing is logged for it, which is what keeps R13 true across a 
 
 ## Test plan
 
-Filled in at G3, before anything is run. It has to name, per requirement, the tier that can
-observe it — and four of them are only observable against the real PostgreSQL: the concurrent
-claim, the version conflict, the withdrawal's `CHECK`, and the delete cascade. A unit test on a
-repository method cannot see any of the four.
+`.marp/verification.md`, written at G3 and carrying the results at G4. It names, per
+requirement, the tier that can observe it — and four are only observable against the real
+PostgreSQL: the concurrent claim, the version conflict, the withdrawal's `CHECK`, and the
+delete cascade. A unit test on a repository method cannot see any of the four.
+
+Phase 4's `.marp/verification.md` was renamed to `.marp/verification-105-mosaic-query.md`
+rather than overwritten, the way its `task.md` was.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** G1. The three questions #106 named are answered by the human and recorded as
-  settled. **Four blocking assumptions found by this research are open** — D1 the version
-  transport, which decides whether `conflicted` can exist at all; D2 whether a refused decision
-  is logged, where the version case is a correctness requirement rather than a preference; D3
-  what request expresses a withdrawal, since no client gesture produces one; D4 what happens
-  when a commit arrives on a service token, which today would either violate a foreign key or
-  attribute a review to the wrong person. Nothing is implemented.
+- **Gate:** verified. G5, the pull request, is the human's.
+- **Notes:** G1 closed 2026-09-09 — the human answered D1 through D4 and the three questions
+  #106 named, all recorded above with the reasoning. G2 implemented the settled spec:
+  `repository/mosaic-commit.repository.js`, `routes/mosaic-commit.routes.js`, and `version`
+  added to `ROW_COLUMNS` as the change owed to #105. G3 and G4 are `.marp/verification.md`:
+  31 tests for this phase, 348 in the suite, all passing, with the concurrency test proved
+  able to fail by removing the row lock.
+- **One departure from *The shape* above, and it is the only one:** claim is decided against
+  the **log** — the derivation's earliest claiming reviewer, restricted to the requested ids
+  and computed inside the log insert — rather than against the presence of a projection row,
+  and the observation rows are locked `FOR NO KEY UPDATE` first. The sketch's *a row this
+  reviewer does not own updates nothing and comes back in no RETURNING* detects a claim only
+  **after** the log row is written, which contradicts D2; and the projection's presence is not
+  the derivation's rule once a withdrawal exists — a claimer who has withdrawn still owns the
+  observation while its projection row is absent, so a second reviewer's projection write
+  would put the projection out of step with the derivation and break R13. The lock is what
+  makes the log-based test safe rather than merely current at snapshot time: without it two
+  reviewers arriving together both pass it and the loser is left logged. R11's conditional
+  write is kept in place regardless, and a shortfall against it is treated as R8's unexpected
+  failure — the request rolls back and reports a failed commit.
 
 ## Findings left alone
 
