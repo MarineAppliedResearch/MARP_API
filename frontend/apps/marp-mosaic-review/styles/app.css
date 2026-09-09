@@ -130,6 +130,13 @@ body[data-mode="delete"] .mode-note { color: var(--red-400); font-weight: 600; }
    wants about 1100px once the sort label names two terms, so below that progress keeps
    the bar and the percentage and drops the wording. Same trade the marked count already
    makes on a phone, made earlier because the sort must stay reachable. */
+/* The progress block used to end the rail and carried its own top border, which was the
+   only thing keeping the last status box off the fold. With it gone to `.sub` (#91) the
+   pad has to be stated -- but only where the rail is a column. On a phone the rail is an
+   overlay with its own metrics, and padding it there moved the confidence control enough
+   to fail L4, so this stops at the phone breakpoint. */
+@media (min-width: 761px) { .rail-body { padding-bottom: 10px; } }
+
 @media (max-width: 1100px) {
   .prog-word, .prog .small { display: none; }
   .bar { width: 74px; }
@@ -148,12 +155,7 @@ body.rail-collapsed .body { grid-template-columns: 34px 1fr; }
         display: flex; flex-direction: column; }
 .rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin;
              /* Reserve it, so appearing does not shuffle the controls sideways. */
-             scrollbar-gutter: stable;
-             /* The progress block used to end the rail and carried its own top border,
-                which was the only thing keeping the last status box off the fold. With
-                it gone to `.sub` (#91) the pad has to be stated: a box flush against the
-                bottom edge of a scroll container reads as cut off rather than scrollable. */
-             padding-bottom: 10px; }
+             scrollbar-gutter: stable; }
 body.rail-collapsed .rail { padding: 8px 0; display: flex; flex-direction: column;
                             align-items: center; gap: 9px; }
 body.rail-collapsed .rail-body { display: none; }
@@ -507,6 +509,13 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 
   .sub { gap: 10px; padding: 0 8px; font-size: 11px; }
   .sub .sep { display: none; }
+
+  /* Progress leaves the row entirely at this width. Below 1100px it had already shed
+     its wording, but even the bar and the percentage cost width the sort control has to
+     be hunted past -- and this row scrolls, so the cost is not a smaller control but a
+     control off the end of it, which M3 exists to refuse. Progress is the item this row
+     can do without; the sort is not. */
+  .prog { display: none; }
 
   /* the rail collapses to its strip and opens over the mosaic rather than beside it */
   .body { grid-template-columns: 30px minmax(0, 1fr); }

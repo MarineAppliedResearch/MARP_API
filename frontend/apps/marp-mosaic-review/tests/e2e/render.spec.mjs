@@ -1592,7 +1592,8 @@ test.describe('progress is not in the rail', () => {
      mode, not just Delete. */
   const HEADER = '.app > .sub';
 
-  test('it rides the sub bar, on the sort control\'s row', async ({ page }) => {
+  test('it rides the sub bar, on the sort control\'s row', async ({ page }, info) => {
+    test.skip(info.project.name === 'phone', 'the phone drops progress; see the phone test below');
     await page.goto('./');
     await ready(page);
 
@@ -1633,20 +1634,30 @@ test.describe('progress is not in the rail', () => {
     expect(await page.locator('#progBar').evaluate((el) => el.style.width)).not.toBe('0%');
   });
 
-  test('a phone keeps the bar and the percentage, and the sort with them',
+  test('a phone drops progress rather than pushing the sort off the row',
     async ({ page }, info) => {
       test.skip(info.project.name !== 'phone', 'about the phone layout');
       await page.goto('./');
       await ready(page);
 
-      /* The row scrolls sideways here, so what progress spends on words is width the
-         sort control has to be hunted past. The answer stays; the wording goes. */
-      await expect(page.locator(HEADER + ' .bar')).toBeVisible();
+      /* The first version of this asserted the opposite -- bar and percentage kept, only
+         the wording dropped -- and it cost M3, which requires the whole sort control to
+         sit inside the viewport. This row scrolls sideways here, so anything progress
+         spends on width is not a smaller sort but a sort past the end of the row. Between
+         the two, progress is the item this row can do without. */
+      await expect(page.locator(HEADER + ' .prog')).toBeHidden();
+
+      const sort = await page.locator('#sortBtn').boundingBox();
+      const width = await page.evaluate(() => window.innerWidth);
+      expect(sort.x, 'the sort starts inside the viewport').toBeGreaterThanOrEqual(0);
+      expect(sort.x + sort.width, 'and ends inside it, unscrolled')
+        .toBeLessThanOrEqual(width + 1);
+
+      /* Desktop still has it, so this is a width concession and not a removal. */
+      await page.setViewportSize({ width: 1600, height: 900 });
+      await ready(page);
+      await expect(page.locator(HEADER + ' .prog')).toBeVisible();
       await expect(page.locator('#progPct')).toBeVisible();
-      await expect(page.locator('.prog-word')).toBeHidden();
-      await expect(page.locator('#progText')).toBeHidden();
-      const sub = await page.locator(HEADER).boundingBox();
-      expect(sub.height).toBeLessThan(40);
     });
 });
 
