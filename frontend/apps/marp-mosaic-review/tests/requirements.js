@@ -45,7 +45,7 @@ async function reset(mode = 'scientific') {
    * costs one extra query per check, which is the price of each check starting from the
    * same place.
    */
-  state.filters.species = ['\u0000 no species'];
+  state.filters.species = ['no such species'];
   await actions.refresh();
 
   state.mode = mode;
