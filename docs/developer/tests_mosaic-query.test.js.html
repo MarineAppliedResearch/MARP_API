@@ -1066,6 +1066,14 @@ describe('the mosaic query (#105)', () => {
                 'project_name',
                 'review_decision',
                 'session_type',
+                // Owed to #111, not wanted by the tile either: `comname` above
+                // is the annotator's frozen label and a species correction never
+                // rewrites it, so without this the row can only report the old
+                // animal and a corrected tile renders it for ever. **Moved into
+                // this list rather than the list being loosened** -- naming the
+                // exact keys is the tripwire, and relaxing it would disable the
+                // tripwire permanently to admit one field.
+                'species_comname',
                 'tc',
                 'training_decision',
                 // Owed to #106's D1, not wanted by the tile: the commit routes

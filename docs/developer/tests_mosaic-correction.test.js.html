@@ -791,6 +791,65 @@ describe('the mosaic species correction (#111)', () => {
         });
     });
 
+    describe('what the mosaic row shows afterwards (R19)', () => {
+
+        it('serves the new species name while comname still serves the old label', async () => {
+            const [a] = await addObservations(1, speciesFrom);
+            const before = await observationRow(a);
+
+            await alice.post(CORRECT)
+                .send({ observation_id: a, version: before.version, species_id: speciesTo });
+
+            // Read through the full-permission fixture agent: the pages route
+            // takes observations:read and these reviewers hold only write, which
+            // is right for them and beside the point here.
+            const res = await global.api.post('/api/v2/mosaic/observations/pages').send({
+                filters: { dive: [`JEST-CORRECT-${runId}`] },
+                pageSize: 45,
+                pages: [1],
+            });
+
+            expect(res.status).toBe(200);
+
+            const row = res.body.pages[0].rows.find((r) => r.observation_id === a);
+
+            expect(row).toBeDefined();
+
+            const [to] = await q('SELECT comname FROM species WHERE id = :id', { id: speciesTo });
+
+            // **The pairing is the whole point.** The row carries both, and the
+            // difference between them is what #68's "was Bat Star" indicator
+            // draws from. Without `species_comname` a corrected tile would show
+            // the old animal for ever, on every reload -- while the species
+            // filter is `o.species_id`, so filtering for the new species would
+            // return a tile labelled as the old one.
+            expect(row.species_comname).toBe(to.comname);
+            expect(row.comname).toBe(before.comname);
+            expect(row.species_comname).not.toBe(row.comname);
+        });
+
+        it('serves a null species name where the observation has no species', async () => {
+            const [a] = await addObservations(1, null);
+
+            // Read through the full-permission fixture agent: the pages route
+            // takes observations:read and these reviewers hold only write, which
+            // is right for them and beside the point here.
+            const res = await global.api.post('/api/v2/mosaic/observations/pages').send({
+                filters: { dive: [`JEST-CORRECT-${runId}`] },
+                pageSize: 45,
+                pages: [1],
+            });
+
+            const row = res.body.pages[0].rows.find((r) => r.observation_id === a);
+
+            // About 4% of production rows carry no species_id. The join is outer,
+            // so the row is never dropped for want of one.
+            expect(row).toBeDefined();
+            expect(row.species_comname).toBeNull();
+            expect(row.comname).toBe(`Jest Correction ${runId}`);
+        });
+    });
+
     describe('who may correct (R13, R14)', () => {
 
         it('refuses an anonymous caller with 401', async () => {

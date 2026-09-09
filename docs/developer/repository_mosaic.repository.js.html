@@ -180,6 +180,15 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  * same lateral that produces `keyframe_count`, and Phase 6 needs it to address a
  * thumbnail.
  *
+ * **`species_comname` is owed to #111** the way `version` is owed to #106, and for
+ * a defect rather than a preference. A species correction changes `species_id` and
+ * deliberately never rewrites `comname`, which stays the label the list entry
+ * carried when the annotator chose it. Without a second field the row can only
+ * report the annotator label, so a corrected tile renders the **old animal**, for
+ * ever, on every reload -- while the species *filter* is `o.species_id`, so
+ * filtering for one species returns tiles labelled as another. Both are here, and
+ * the difference between them is what #68's "was Bat Star" indicator draws from.
+ *
  * `version` is here and is **owed to Phase 5** (#106's D1) rather than wanted by
  * the tile. It is the only channel by which the reviewer's client can learn the
  * version it saw, and the three commit routes reject a request that omits one --
@@ -200,6 +209,7 @@ const ROW_COLUMNS = `
         o."obsID",
         o.confidence,
         o.comname,
+        sp.comname AS species_comname,
         o.tc,
         s.dive,
         s.line,
@@ -685,6 +695,7 @@ SELECT t.total,
   LEFT JOIN observations o ON o.observation_id = m.observation_id
   LEFT JOIN sessions s ON s.session_id = o.session_id
   LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN species sp ON sp.id = o.species_id
   LEFT JOIN observation_review_current rc
          ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
   LEFT JOIN observation_review_current rt

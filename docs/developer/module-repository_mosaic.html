@@ -403,13 +403,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The row the tile renders, and nothing more (R13, A6).`processor_name` and `lineId` are deliberately absent: nothing draws either, and`processor_name` is exactly the "who did how much work" the permission catalogseparates from `observations:read` -- carrying it would stop this being an`observations:read` route (A7). `scientific_name` is out because whether themosaic shows scientific names is still open in #68, and adding a field later isadditive where removing one is not. `first_framenum` stays: it is free from thesame lateral that produces `keyframe_count`, and Phase 6 needs it to address athumbnail.`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted bythe tile. It is the only channel by which the reviewer's client can learn theversion it saw, and the three commit routes reject a request that omits one --so without it `conflicted` could never fire and `observations.version` would bea token nobody reads. A read path whose row cannot support the commit routebeside it is not a finished read path. Delete-only would have saved nothing:the version has to be in the row either way.The column list is written out rather than `o.*` so that a column added to`observations` does not silently join the payload.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The row the tile renders, and nothing more (R13, A6).`processor_name` and `lineId` are deliberately absent: nothing draws either, and`processor_name` is exactly the "who did how much work" the permission catalogseparates from `observations:read` -- carrying it would stop this being an`observations:read` route (A7). `scientific_name` is out because whether themosaic shows scientific names is still open in #68, and adding a field later isadditive where removing one is not. `first_framenum` stays: it is free from thesame lateral that produces `keyframe_count`, and Phase 6 needs it to address athumbnail.**`species_comname` is owed to #111** the way `version` is owed to #106, and fora defect rather than a preference. A species correction changes `species_id` anddeliberately never rewrites `comname`, which stays the label the list entrycarried when the annotator chose it. Without a second field the row can onlyreport the annotator label, so a corrected tile renders the **old animal**, forever, on every reload -- while the species *filter* is `o.species_id`, sofiltering for one species returns tiles labelled as another. Both are here, andthe difference between them is what #68's "was Bat Star" indicator draws from.`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted bythe tile. It is the only channel by which the reviewer's client can learn theversion it saw, and the three commit routes reject a request that omits one --so without it `conflicted` could never fire and `observations.version` would bea token nobody reads. A read path whose row cannot support the commit routebeside it is not a finished read path. Delete-only would have saved nothing:the version has to be in the row either way.The column list is written out rather than `o.*` so that a column added to`observations` does not silently join the payload.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line148">line 148</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line157">line 157</a>
     </li></ul></dd>
     
 
@@ -449,7 +449,7 @@
 
 
 <div class="description usertext">
-    The row the tile renders, and nothing more (R13, A6).`processor_name` and `lineId` are deliberately absent: nothing draws either, and`processor_name` is exactly the "who did how much work" the permission catalogseparates from `observations:read` -- carrying it would stop this being an`observations:read` route (A7). `scientific_name` is out because whether themosaic shows scientific names is still open in #68, and adding a field later isadditive where removing one is not. `first_framenum` stays: it is free from thesame lateral that produces `keyframe_count`, and Phase 6 needs it to address athumbnail.`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted bythe tile. It is the only channel by which the reviewer's client can learn theversion it saw, and the three commit routes reject a request that omits one --so without it `conflicted` could never fire and `observations.version` would bea token nobody reads. A read path whose row cannot support the commit routebeside it is not a finished read path. Delete-only would have saved nothing:the version has to be in the row either way.The column list is written out rather than `o.*` so that a column added to`observations` does not silently join the payload.
+    The row the tile renders, and nothing more (R13, A6).`processor_name` and `lineId` are deliberately absent: nothing draws either, and`processor_name` is exactly the "who did how much work" the permission catalogseparates from `observations:read` -- carrying it would stop this being an`observations:read` route (A7). `scientific_name` is out because whether themosaic shows scientific names is still open in #68, and adding a field later isadditive where removing one is not. `first_framenum` stays: it is free from thesame lateral that produces `keyframe_count`, and Phase 6 needs it to address athumbnail.**`species_comname` is owed to #111** the way `version` is owed to #106, and fora defect rather than a preference. A species correction changes `species_id` anddeliberately never rewrites `comname`, which stays the label the list entrycarried when the annotator chose it. Without a second field the row can onlyreport the annotator label, so a corrected tile renders the **old animal**, forever, on every reload -- while the species *filter* is `o.species_id`, sofiltering for one species returns tiles labelled as another. Both are here, andthe difference between them is what #68's "was Bat Star" indicator draws from.`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted bythe tile. It is the only channel by which the reviewer's client can learn theversion it saw, and the three commit routes reject a request that omits one --so without it `conflicted` could never fire and `observations.version` would bea token nobody reads. A read path whose row cannot support the commit routebeside it is not a finished read path. Delete-only would have saved nothing:the version has to be in the row either way.The column list is written out rather than `o.*` so that a column added to`observations` does not silently join the payload.
 </div>
 
 
@@ -643,7 +643,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line186">line 186</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line196">line 196</a>
     </li></ul></dd>
     
 
@@ -731,7 +731,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line288">line 288</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line298">line 298</a>
     </li></ul></dd>
     
 
@@ -839,7 +839,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line665">line 665</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line676">line 676</a>
     </li></ul></dd>
     
 
@@ -1077,7 +1077,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line570">line 570</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line580">line 580</a>
     </li></ul></dd>
     
 
@@ -1489,7 +1489,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line259">line 259</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line269">line 269</a>
     </li></ul></dd>
     
 
@@ -1704,7 +1704,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line772">line 772</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line783">line 783</a>
     </li></ul></dd>
     
 
@@ -1892,7 +1892,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line198">line 198</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line208">line 208</a>
     </li></ul></dd>
     
 
@@ -2050,7 +2050,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line546">line 546</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line556">line 556</a>
     </li></ul></dd>
     
 
@@ -2208,7 +2208,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line376">line 376</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line386">line 386</a>
     </li></ul></dd>
     
 
@@ -2542,7 +2542,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line719">line 719</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line730">line 730</a>
     </li></ul></dd>
     
 
@@ -2730,7 +2730,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line234">line 234</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line244">line 244</a>
     </li></ul></dd>
     
 
@@ -2945,7 +2945,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line696">line 696</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line707">line 707</a>
     </li></ul></dd>
     
 
@@ -3133,7 +3133,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line477">line 477</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line487">line 487</a>
     </li></ul></dd>
     
 
@@ -3345,7 +3345,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line214">line 214</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line224">line 224</a>
     </li></ul></dd>
     
 
@@ -3560,7 +3560,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line511">line 511</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line521">line 521</a>
     </li></ul></dd>
     
 
@@ -3748,7 +3748,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line325">line 325</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line335">line 335</a>
     </li></ul></dd>
     
 
