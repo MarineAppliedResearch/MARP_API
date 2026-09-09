@@ -292,17 +292,21 @@ not in the schema and could not have been inferred from it.
   or writes them.
   **A follow-on question this raises, deliberately not answered here — see A9.**
 
-## Deferred out of this task
+## Answered after the gate
 
-- [ ] **A9 · scientific or data-meaning · non-blocking, and not #99's to settle** — Now
+- [x] **A9 · scientific or data-meaning · answered 2026-09-08** — Now
   that A7 has established `taxReview` and `sizereview` are former review flags, should the
   mosaic **display** that historical intent? An observation whose species was already
   flagged for checking years ago is precisely what a reviewer would want to see, and #85
   settled the general principle that every mode shows every workflow's tags. Leaving the
   columns vestigial is a decision about *writing* them; whether anything *reads* them is a
   separate question and belongs to the phase that builds the review surface. Recorded here
-  so the answer to A7 does not quietly lose it; carry it to #68 rather than resolving it in
-  this task. **Nothing in #99 depends on it.**
+  so the answer to A7 did not quietly lose it.
+  **Answered 2026-09-08: no. Leave them alone entirely.** The mosaic will read the new
+  columns that arrive with the new endpoints, and nothing in it reads `taxReview` or
+  `sizereview`. So the two columns are vestigial in both directions — not written, and not
+  read — and the review surface is built only on the review records #68 settled. Nothing
+  in #99 depended on this either way.
 
 ## Decisions
 
