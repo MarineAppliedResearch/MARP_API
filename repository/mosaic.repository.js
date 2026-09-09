@@ -131,6 +131,14 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  * same lateral that produces `keyframe_count`, and Phase 6 needs it to address a
  * thumbnail.
  *
+ * `version` is here and is **owed to Phase 5** (#106's D1) rather than wanted by
+ * the tile. It is the only channel by which the reviewer's client can learn the
+ * version it saw, and the three commit routes reject a request that omits one --
+ * so without it `conflicted` could never fire and `observations.version` would be
+ * a token nobody reads. A read path whose row cannot support the commit route
+ * beside it is not a finished read path. Delete-only would have saved nothing:
+ * the version has to be in the row either way.
+ *
  * The column list is written out rather than `o.*` so that a column added to
  * `observations` does not silently join the payload.
  *
@@ -139,6 +147,7 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  */
 const ROW_COLUMNS = `
         o.observation_id,
+        o.version,
         o."obsID",
         o.confidence,
         o.comname,

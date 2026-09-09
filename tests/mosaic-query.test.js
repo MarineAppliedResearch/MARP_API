@@ -1015,6 +1015,10 @@ describe('the mosaic query (#105)', () => {
                 'session_type',
                 'tc',
                 'training_decision',
+                // Owed to #106's D1, not wanted by the tile: the commit routes
+                // require the version the reviewer saw, and this row is the only
+                // channel that can carry it.
+                'version',
             ]);
         });
 

@@ -1,353 +1,262 @@
-# Verification — MarineAppliedResearch/MARP_API#105
+# Verification — MarineAppliedResearch/MARP_API#106
 
-Phase 4, the mosaic query and its counts. Written at G3, before the verification run, from
-*Correctness verification, now* in `.marp/task.md`.
+Phase 5, the page commit. The plan was written from the requirements in `.marp/task.md`
+before the run; the results below are appended verbatim, including what failed on the way.
 
-#103's verification is not gone: it was renamed to
-`.marp/verification-103-review-state-schema.md` in the same commit as this file, for the
-same reason its spec was renamed — this file has to be what a reader and the harness find
-for the phase in flight, and #103's branch is unmerged so its evidence has to survive.
-Phase 3's spec flagged that whoever wrote Phase 4's verification would face the choice; this
-is that choice, made the same way.
+#105's verification is not gone: it was renamed to `.marp/verification-105-mosaic-query.md`
+in the same commit as this file, the same way #103's was renamed when #105 arrived. Three
+phases sit unmerged on this branch, so each phase's evidence has to survive while this file
+stays what a reader and the harness find for the phase in flight.
 
-**The tier that matters here is the HTTP tier against a real PostgreSQL**, and for two
-reasons rather than one. The obvious one is that this phase is a SQL query and a route:
-nothing about a semi-join, an anti-join or a `row_number()` band is observable from a unit
-test. The less obvious one is that **every route requires a permission**, so a suite that
-calls the API through `request(app)` gets 401 and nothing else — these go through
-`tests/setup/authenticated-agent.js`, which leaves an authenticated agent holding every
-catalog permission on `global.api`.
+**The tier that matters here is the HTTP tier against a real PostgreSQL**, and four of the
+requirements are observable at no other tier: the concurrent claim, the version conflict,
+the withdrawal's `CHECK`, and the delete cascade. A unit test on a repository method cannot
+see any of them — it cannot see two transactions racing, it cannot see a constraint refuse a
+value, and it cannot see what four foreign keys did on the way out. Everything runs through
+`npm test`, never `npx jest`, because the suite shares one PostgreSQL and `package.json`
+passes `--runInBand` for that reason.
 
-**Two requirements are deliberately verified against something other than rows**, because
-no row count on this database can see them:
-
-- **R9** — that `keyframe_count` is not computed over the whole matching set for a request
-  that does not sort by it. With one observation, the aggregate and the lateral return the
-  same answer at the same speed. So `buildPageSetQuery` is exported and the test asserts
-  against the **emitted SQL**: no keyframe aggregate inside the `matched` CTE for the three
-  sorts that do not name it, and one inside it for the sort that does.
-- **R13** — the row's key set. A payload that grows by a column nothing renders is not a
-  failure any assertion about *values* can catch, so the test snapshots the **exact key
-  set** and fails on an addition as loudly as on a removal.
-
-**Nothing here measures speed, and a green run does not mean this phase passes.** #68 is
-blunt: *"a correct endpoint that takes two seconds fails this phase."* The database holds
-**1 observation**. The timing checklist is carried forward as **owed**, in full, below.
+**The database holds one observation.** Every test seeds its own rows, committed rather than
+in a rolled-back transaction, because an HTTP request cannot see an uncommitted one. Nothing
+is benchmarked and no number is claimed: one row answers "fast" to every question. Cleanup
+is asserted rather than assumed — `afterAll` counts what is left under this run's marker and
+throws if it is not zero, because a previous phase left fixtures behind and a cleanup that
+silently removed nothing looks exactly like a cleanup that worked.
 
 ## What each test proves
 
-All tests are in `tests/mosaic-query.test.js` unless named otherwise. Tier `http+db` means
-Supertest through the real Express app against the real development PostgreSQL; `sql` means
-an assertion against the statement the builder emits.
+`tests/mosaic-commit.test.js` unless another file is named.
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R0 | *the routes* › are served under `/api/v2/` and nowhere else | http+db | Both paths answer under `/api/v2/`, and the declared `/api/mosaic/...` path is **not** registered — so the prefix came from `registerVersionedRoute` rather than being written by hand |
-| R0, R12 | *the routes* › require `observations:read` rather than a new key | http+db | An agent with no permissions gets 403 from both routes; the permission catalog holds no key mentioning the mosaic or review |
-| R1 | *the envelope* › returns an entry for every page asked for, ascending | http+db | Five discontiguous pages asked for out of order come back as five entries in ascending page order, with `pageSize`, `excludedForNoDate` and `servedAt` present |
-| R1 | *the envelope* › carries `total` and `pageCount` only when `includeTotal` | http+db | Both keys present with `includeTotal: true`, both **absent** without it — absent, not null |
-| R1, R5 | *the envelope* › carries `total` for a page set entirely past the end | http+db | The count survives a request whose every band is empty. This is the case a bare projection loses: the scheduler asks for the tail before it knows the count, and would then get no total to clamp against |
-| R2 | *deterministic ordering* › puts tied rows in the same order on every call | http+db | Six seeded rows with **identical `confidence`** are paged at `pageSize` 2; the three pages hold the same ids in the same order across two identical calls, and the order is by `observation_id` |
-| R2 | *deterministic ordering* › appends `observation_id` even when the client sorts on something else | http+db | Rows tied on `updatedAt` come back in `observation_id` order; a sort naming only `updatedAt` still gets the tie-break |
-| R2 | *deterministic ordering* › appends `observation_id` when the client already sent it | sql | A client that names `observation_id` itself does not get it twice in the `ORDER BY` — the field is not in the closed sort list, so it is rejected, and the appended term is the only one |
-| R3 | *one pass* › returns for `[1,3,5]` exactly what pages 1, 3 and 5 return singly | http+db | The discontiguous set is not a different question from three single-page questions. Membership, order and `rowCount` all compared |
-| R4 | *one pass* › numbers a deep page from the same ordering as a shallow one | http+db | With 6 seeded rows at `pageSize` 1, page 6 holds what the sixth row of the full ordering holds. **This proves the addressing is offset-consistent, not that it is fast** — flatness in *cost* is measurement 2 in the deferred checklist and is not claimed here |
-| R5 | *the cap* › rejects 13 pages with 400 | http+db | 13 pages → 400, and the body is the error envelope, not a truncated result |
-| R5 | *the cap* › rejects more than 600 rows with 400 | http+db | 12 pages at `pageSize` 51 → 612 rows → 400. The row cap binds before the page cap on a wide viewport |
-| R5 | *the cap* › rejects a page number that is not one | http+db | `0`, `-1` and `1.5` each → 400 |
-| R5 | *the cap* › returns an empty page rather than an error past the end | http+db | `rows: []`, `rowCount: 0`, HTTP 200 |
-| R6, R7 | *the status filter* › selects exactly the right ids for each set | http+db | Three rows seeded — one `reviewed`, one `flagged`, one with **no projection row** — and every set asserted by id: `['unreviewed']`, `['flagged']`, `['reviewed']`, `['unreviewed','flagged']`, `['reviewed','flagged']`, all three, and `[]`. **The mixed set is the one that catches a `coalesce` regression**, so it is not optional |
-| R6, R7 | *the status filter* › is a semi-join or an anti-join, never a `coalesce` | sql | The emitted SQL contains `NOT EXISTS` for a set including the absent value, `EXISTS` for one excluding it, no predicate at all for a set covering the domain, and **no `coalesce` anywhere** |
-| R6 | *the status filter* › reads the projection and never the log | sql | `observation_review_current` appears; `observation_reviews` does not appear at all |
-| R7 | *the status filter* › filters both dimensions independently | http+db | A row `flagged` for `scientific` and `promoted` for `training` is found by a question naming both, and excluded by a question naming either wrongly |
-| R8 | *not filtering* › treats an empty status array as no filter, not as the mode's default | http+db | `reviewStatus: []` returns the `reviewed` row too — the row `['unreviewed','flagged']` would drop |
-| R8 | *not filtering* › treats an empty or absent value as no filter on every dimension | sql | An empty array, a null range and an absent key each emit no `WHERE` term, for all ten dimensions |
-| R9 | *the keyframe aggregate* › stays out of the matching set for every sort but its own | sql | For `confidence`, `updatedAt` and `obsID`, the `matched` CTE contains no `keyframes` aggregate; the lateral appears only after `FROM tally` |
-| R9 | *the keyframe aggregate* › moves into the matching set for the track-length sort | sql | For `keyframe_count`, the CTE does carry the lateral — the cost the human accepted, asserted rather than assumed, so a later "optimisation" that silently drops the sort fails here |
-| R9 | *the keyframe aggregate* › is served on every row | http+db | `keyframe_count` and `first_framenum` are the real numbers for a seeded observation with three keyframes |
-| R10 | *the counts* › returns all six counts and a total in one pass | http+db | Six seeded rows with a known status distribution; all seven numbers asserted exactly |
-| R10 | *the counts* › applies the non-status filters and ignores the status ones | http+db | The same call with `reviewStatus: ['flagged']` added returns **identical** numbers; narrowing a non-status filter changes them |
-| R10 | *the counts* › needs no sort and no row numbering | sql | The emitted SQL contains no `row_number` and no `ORDER BY` |
-| R11 | *the counts* › total is over a larger set than the page query's total | http+db | For one seeded set, the counts total strictly exceeds the page query's total when a status filter narrows, and both are asserted to their own correct values |
-| A5 | *the outer joins* › returns an observation with a null `session_id` | http+db | Seeded with no session. It appears, with null `dive`, `line` and `session_type`. **This is the test that fails if somebody restores the inner join** |
-| A5 | *the outer joins* › returns an observation with a null `project_id` | http+db | Seeded with a session but no project. It appears, with null `project_name` |
-| A5 | *the outer joins* › excludes it only when the reviewer filters on that dimension | http+db | The same null-session row is absent from a `dive`-filtered question and present in an unfiltered one — so a null is not silently a match either |
-| A4 | *the species filter* › matches `species_id` and not `comname` | http+db | Two rows sharing a `comname` and differing in `species_id`; filtering by id returns one. A `comname` value passed as `species` is rejected as not an integer rather than silently matching nothing |
-| A3 | *the date dimension* › rejects an active date filter with 400 | http+db | `date: { from: '2026-08-01' }` → 400, naming #76. `date: null` and `date: { from: null, to: null }` are **not** rejected, because the client sends every dimension on every query |
-| A3 | *the time-of-day dimension* › is served from `tc` | http+db | A row at `21:57:22` is inside `21:00`–`22:00`, outside `01:00`–`02:00`, and inside the wrapped window `21:00`–`02:00`; a row with a day-rollover `tc` of `1.00:15:33` is inside `00:00`–`01:00`, because the day component says the dive rolled over rather than which hour it was |
-| R13 | *the row shape* › is exactly the agreed key set | http+db | A snapshot of the 15 keys. `processor_name`, `lineId` and `scientific_name` asserted **absent** by name, so restoring one is a failing test rather than a silent payload — and A7 turns on `processor_name` staying out |
-| R14 | *no duplicate rows* › returns one row for an observation with many keyframes | http+db | An observation with eight keyframes appears once, with `keyframe_count` 8. This is the Sequelize `hasMany`-plus-`limit` defect the raw query exists to avoid |
-| R15 | `git status` after `npm run docs:build`, recorded in *Results* | review | The generated contract carries both new operations and is committed |
-| R16 | This file, and *Deferred, and why* | review | Correctness is verified by Jest; timing is not verified in this phase, and this file says so rather than implying otherwise |
+| R1 | *are served under /api/v2/ and nowhere else* | http+db | All three answer at `/api/v2/mosaic/observations/{review,training,delete}`, and the declared path is `404` — so the prefix was derived by `registerVersionedRoute` and not written by hand beside it, which would have got the URL and lost the permission wrapper. |
+| R2 | *accepts what is unmarked and flags what is marked* | http+db | The marks are the exception set: unmarked rows are accepted, marked rows are flagged with their reason. |
+| R2 | *promotes on the training route and leaves the scientific decision alone* | http+db | The same request shape on the training route, and the two purposes are independent decisions. |
+| R2, R18 | *destroys only the marked observations and their dependents* | http+db | Delete inverts the rule: the marked row goes, the unmarked one is untouched. |
+| R3 | *keys every entry by observation_id, never by id or by position* | http | Every response entry is found by `observation_id`; the fixture's `id` key is not what the endpoint emits. |
+| R4 | *answers conflicted with reason version…* and *gives the record to the first reviewer…* | http+db | The two causes of a conflict are told apart by reason: `version` for the annotation moving, `claimed` for another reviewer getting there first. |
+| R4 | *gives the record to the first reviewer and reports the second* | http | The conflict entry names no reviewer — showing who belongs to the read path, under the key that gates identity. |
+| R5 | *reports a flag that takes back an acceptance in flagged and reverted both* | http | The arrays are not a partition: one id, two arrays. |
+| R5 | *destroys only the marked observations…* | http | A delete request's unmarked id appears in **none** of the five arrays. |
+| R5 | *skips an id that is no longer an observation, and skips it for that reason only* | http+db | `skipped` carries `not-found` and nothing else. No test asserts an imagery skip, because this phase cannot produce one. |
+| R6 | *accepts what is unmarked and flags what is marked* | http | `atomicity` is `per-observation` — a value, so a later change is expressible without a rename. |
+| R7 | *answers conflicted with reason version, and writes no log row for it* | db | The log row and the projection change are one unit: the refused observation has neither. Its enforcement is the invariant check in the write path, which rolls the request back rather than leaving a log row unprojected. |
+| R8 | *answers conflicted with reason version…* | http+db | Ineligibility rolls nothing back: the conflicted row comes back conflicted while the rest of the page lands. |
+| R9 | *require observations:write, and seed no new permission key* | http+db | A caller holding nothing gets `403` on all three; a caller holding only `observations:write` gets `200`; and the catalog has no key matching mosaic, review or delete. |
+| R10 | — | — | No test. See *Requirements with no test*. |
+| R11 | *gives the record to the first reviewer and reports the second* | http+db | First valid review wins: the second reviewer is `conflicted: claimed`, the reviewer and `first_decided_at` do not move, and the second decision is **not** in the log. |
+| R11 | *lets the claiming reviewer revise without moving first_decided_at* | http+db | The claiming reviewer may revise; `decided_at` moves and `first_decided_at` does not. |
+| R11 | *lets two reviewers hold the two purposes independently* | http+db | The claim is per `(observation_id, purpose)`, not per observation. |
+| R11, R12 | *serializes two commits arriving together, and logs only the winner* | http+db | Two commits genuinely in flight together over the same observation: exactly one log row, exactly one projection row, and they agree on the reviewer. **Proved to be observable**: with the row lock removed this is the one test that fails. |
+| R13 | asserted at the end of eight tests | db | The projection equals the `-- rebuild:` derivation read off the committed migration, after a version conflict, after a losing claim, after a concurrent commit, after a revision, after a withdrawal, and after a delete. |
+| R14 | *leaves no projection row and every decision* | http+db | A withdrawal deletes the projection row — the `CHECK` refuses `withdrawn` there, so a delete is the only legal expression of it — and the log still holds `reviewed`, `flagged`, `withdrawn` in order. |
+| R14 | *refuses to withdraw a decision another reviewer owns* | http+db | It deletes only when the withdrawing reviewer owns the row. |
+| R15 | *fingerprints the annotation server-side at decision time* | http+db | The keyframe count and `max(keyframes."updatedAt")` on the log row are what the database held, computed server-side; the client is not asked for them. |
+| R16 | *fingerprints the annotation server-side at decision time* | db | `representative_keyframe_id` is `NULL`, recorded as owed to Phase 6 rather than guessed. |
+| R17 | four tests under *the request is refused rather than guessed at* | http | An unknown reason is a `400`; a training reason on the review route is a `400`, because the vocabularies differ; any reason on delete is a `400`, because a delete records none. |
+| D1 | *rejects an absent version rather than overwriting silently* | http | An absent version is a `400`, never an implicit overwrite. |
+| D1 | `tests/mosaic-query.test.js` *the row shape (R13) is exactly the agreed key set* | http+db | The version is in the mosaic row, which is the only channel that can carry it to the client. |
+| R19 | *conflicts a stale delete rather than destroying the row* | http+db | A delete is conditional on the version, and a row that moved is still there afterwards. |
+| R20 | *destroys only the marked observations and their dependents* | http+db | What the delete removes, named and counted: the observation, its keyframes, its `dataset_observations` membership, its log rows and its projection row. What it does not remove, counted in the same query: the dataset, the session, the project, and the unmarked observation. |
+| R21 | `npm run docs:build` | build | The generated contract carries the three routes under `/v2/`, the two new schemas, and `version` on `MosaicRow`. |
+| R22 | the whole suite | http+db | `npm test`, through `tests/setup/authenticated-agent.js`, against the real development PostgreSQL. |
+| R23 | `git diff --stat` | review | No migration, no permission key, nothing under `frontend/`. |
+| D2 | *answers conflicted with reason version, and writes no log row for it* | db | **The decisive one.** A refused decision leaves no log row, so the derivation cannot make that reviewer the earliest claimant and a rebuild cannot resurrect a decision the server refused. |
+| D2 | *gives the record to the first reviewer and reports the second* | db | The same rule for the claim cause: the losing reviewer's decision is reported, not recorded. |
+| D3 | *leaves no projection row and every decision* | http+db | The explicit `withdraw` list is what expresses a withdrawal, and it is accepted on review and training. |
+| D3 | *rejects a withdrawal on the delete route* | http | And refused on delete, which records no decision to take back. |
+| D4 | *answers 403 on all three routes and writes nothing* | http+db | A bearer token holding exactly `observations:write` gets `403` on all three, no log or projection row exists, and the observation it asked to destroy is still there. The token is granted the permission first, so the refusal is provably about the principal and not about the key. |
+| D6 | *emits no UPDATE or DELETE against observation_reviews* | source | The write path is append-only by construction, and this fails the moment somebody adds one. No trigger, because the table's cascade from `observations` means "nothing is ever deleted" is already false by design. |
 
 ## Requirements with no test
 
-- **R4 is only half tested.** The test proves the *addressing* is consistent at depth —
-  page 6 holds the sixth row — which is what correctness means here. It does **not** prove
-  the *cost* is flat, which is the actual requirement. Flatness is measurement 2 in the
-  deferred checklist and one observation cannot observe it. Written down rather than
-  implied, because a green suite plus a requirement id is exactly how a phase comes to be
-  called verified when it is not.
-- **R3 is likewise half tested.** That a discontiguous set returns the same rows as three
-  single-page requests is asserted; that it costs one pass rather than three is a plan
-  reading and a measurement, not a test.
-- **R15 has no automated assertion.** The rebuilt contract is inspected in *Results*.
+- **R10 — per-observation authorization.** `deniedObservationIds()` returns an empty array in
+  this phase and cannot return anything else: all three routes take `observations:write`,
+  which the route has already required, and no scoped key exists to consult. A test would
+  assert that a function returns `[]`, which proves nothing about authorization — it is the
+  *place* that is required now, not behaviour. **The test that belongs here arrives with the
+  scoped key**, and it will be a mixed-project request where some observations are denied and
+  the rest still commit.
+- **R8's unexpected-failure half.** That an unexpected failure rolls the whole request back is
+  a property of `db.sequelize.transaction`, and provoking one honestly — killing a connection
+  mid-statement, forcing a deadlock — is a test that either needs a second live connection
+  harness or a mock that no longer exercises the real thing. The invariant check inside the
+  write path is the part that is asserted, indirectly, by the tests that pass through it.
 
 ## Edge cases
 
-Each traces to a defect or a decision, not to a hunch.
+Each traces to a defect or to a reading of a settled decision:
 
-- **A status set covering the whole domain must emit no predicate.** Delete Mode's
-  `trainingDisposition` arrives with all three values ticked (#89), so the common case of
-  "no filter" arrives as a full set rather than an empty one. A builder that turned it into
-  `EXISTS (… decision = ANY('{undecided,promoted,excluded}'))` would drop every row with no
-  projection row, which is most of them.
-- **A wrapped time window is `OR`, not `AND`.** 22:00 to 02:00 is one night. Written as
-  `AND` it returns nothing at all, and it returns nothing *quietly*.
-- **A `tc` carrying a day rollover.** `1.00:15:33` is quarter past midnight on the second
-  day of a dive. The day component must be ignored, exactly as `timeOfDayMs` ignores it,
-  or the same observation lands in two different hours depending on who asked.
-- **`confidence` is nullable and the default sort is `confidence ASC`.** Nulls sort last,
-  so unscored rows are on the last pages rather than the first. Asserted, because it is
-  invisible until somebody pages to the end.
-- **`includeTotal` on a page set entirely past the end.** Covered above; it is the case
-  that made the count hang off a one-row tally rather than off the page projection.
-- **An unknown sort field, and an unknown status value.** Both rejected with 400. The
-  contract calls the sort list closed, and a client that mistypes `updated_at` would
-  otherwise get the default question answered without being told which question it asked.
+- **A page where one row conflicts and the rest land.** The whole reason for
+  per-observation outcomes, and the case a whole-page rollback would make unreachable.
+- **A flag that replaces an acceptance.** The fixture pushes the same entry into `flagged`
+  *and* `reverted` (`data.js:769`), so the arrays are not a partition and the test asserts
+  the duplication rather than tidying it away.
+- **A delete request's unmarked ids.** They appear in no array at all (`data.js:746`). Asserted
+  as absence from all five, because absence is exactly the thing an assumption glosses over.
+- **A training reason sent to the review route.** The two vocabularies differ and neither is a
+  superset, so a route that accepted the other's list would write a reason nothing can query.
+- **A withdrawal with nothing to withdraw.** Logged as nothing, reported as `withdrawn`. If it
+  were logged, the derivation would make that reviewer the earliest claimant of an observation
+  nobody has decided, and lock every other reviewer out of it permanently.
+- **A withdrawal of somebody else's decision.** `conflicted: claimed`, and their decision
+  untouched.
+- **An id deleted between the fetch and the commit.** `skipped: not-found` on review and on
+  delete both — the same condition, the same reason, so a client does not need two rules.
 
 ## Regression coverage
 
-Nothing has broken in this code yet — it is new. Three tests are nevertheless written as
-regression tests, against defects this repository has already paid for elsewhere:
-
-- **the `coalesce` status filter** — the shape confirmed from the plans to lose the
-  index-only scan. `*the status filter* › is a semi-join or an anti-join` fails if it
-  returns;
-- **`count(*) OVER ()`** — measured to buffer the whole matching set into a second
-  tuplestore and spill. `*the envelope*` asserts the emitted SQL does not contain it;
-- **the inner join to `sessions`** — #99's contract SQL had it, and it drops any
-  observation with a null `session_id`. The two A5 tests fail if it comes back.
+- **The concurrency test was proved to be able to fail.** The lock was removed from
+  `lockObservations` and the suite re-run: *serializes two commits arriving together, and logs
+  only the winner* failed and nothing else did, so the test observes the race rather than
+  narrating it. The lock was restored and the suite re-run green. This is recorded because a
+  concurrency test that passes for the wrong reason is indistinguishable from one that works.
+- **Cleanup is counted, not assumed.** `afterAll` throws if any observation carrying this run's
+  marker survives. A previous phase in this repository left fixtures behind, and the failure
+  mode is a cleanup that ran and removed nothing.
+- **`observations.version` is asserted unchanged** after a review and a training commit, and
+  `model/observation.model.js` is untouched, so `tests/observation-version.test.js` still holds.
 
 ## Known gaps
 
-- **No measurement, at all.** 1 observation. See *Deferred, and why*.
-- **The two recommended sort indexes are not added.** `observations (confidence,
-  observation_id)` and `observations (species_id, confidence, observation_id)` are what
-  *Indexes this phase needs* recommends, and this phase adds **no migration** — the human's
-  answer to A2 says so in those words. They are owed, and they belong with the measurement
-  that justifies each: an index chosen against a real distribution beats one chosen now.
-- **`excludedForNoDate` is always 0** and will stay 0 until #76. It is in the envelope
-  because the envelope is #99's and the client reads it.
-- **The client sends a species *name* and this endpoint takes an id**; it sends
-  `excludeIds` as a `Set`, which does not survive `JSON.stringify`; and it reads
-  `review_status`/`training_disposition` where this returns
-  `review_decision`/`training_decision`. All three are the client-side rename #99 filed as
-  Phase 8's. **So the endpoint is substitutable for `queryPages()` on the request and
-  response envelope, and not yet on the field names inside a row.**
-- **`work_mem` is not set by the endpoint.** A8 recommends `SET LOCAL work_mem` inside the
-  request's own transaction and it is non-blocking; it is a number to tune against real
-  data and it is measurement 8 below.
+Stated plainly, because a gap that is written down is a decision.
 
-## Manual steps
+- **No measurement.** One observation. Nothing here says anything about a page of 600 rows over
+  a production-sized table, and the row lock in particular is unmeasured: it is correct, and how
+  long it holds under real concurrency is not known.
+- **The imagery rule is not tested and cannot be.** The server makes no imagery judgement until
+  Phase 6, so no test asserts a skip for it. Deliberate: a test that cannot fail is worse than
+  no test.
+- **`skipped` for imagery, and the `no-imagery` reason, are Phase 6's.**
+- **The client cannot yet drive any of this.** `marks` is a `Map` and `excludeIds` a `Set`, and
+  neither survives `JSON.stringify`; the fixture keys its entries `id` where the endpoint
+  returns `observation_id`; and `applyCommit`/`marksAfterCommit` do not know `conflicted`, so a
+  conflicted tile would draw no badge and lose its mark. All three are Phase 8's, and nothing
+  here touches `frontend/`.
+- **A withdrawal reserves the observation for its withdrawer, permanently.** That follows from
+  the settled derivation rather than from a choice made here, and it is not covered by a test
+  asserting it is *desirable* — only by tests asserting the projection stays equal to the
+  derivation. Named in the report for a human's decision.
+- **CI runs this suite**, so CI green is not the same as this verification: the whole suite was
+  run locally, which is where the Jellyfin tests are also observable.
 
-None. Every test here runs under `npm test`.
+## Results — 2026-09-09
 
-## Walkthrough videos
+Run on the local development PostgreSQL 18.6, with Node 24.11.1 (see *What surprised the
+run* — the pinned 22.22.1 is not installed on this machine).
 
-None. This phase adds no user-visible surface — the mosaic still runs against its fixture
-until Phase 8 points `data.js` at these routes. A video of an HTTP endpoint would narrate
-without asserting, which is the failure mode the doctrine names.
-
-## The timing check, still owed
-
-**Carried forward verbatim from *The timing check, deferred* in `.marp/task.md`, and not
-one item of it is claimed here.** The data load is expected 2026-09-10. Read-only, never
-against production. `EXPLAIN (ANALYZE, BUFFERS)`, three runs, first discarded, with
-`work_mem` and `shared_buffers` recorded beside every result — the synthetic run showed a
-15% swing from `work_mem` alone, so a number without it is not a result.
-
-1. The typical question, with the two recommended indexes in place.
-2. **Flatness (R4)** — page 1 alone against the last page alone. They should cost the same.
-3. The count, three ways, on the real query — this is what confirms or overturns A1.
-4. Selectivity: the size of the matching set for three questions a reviewer would ask.
-5. The status anti-join with the projection populated to a realistic mix. It is **empty**
-   here, which makes every anti-join free and every plan in this phase optimistic.
-6. `keyframe_count` — the lateral for a 600-row page set, and the sort over the full
-   matching set. A2's whole answer depends on the gap between them.
-7. Nulls: how many observations have a null `session_id`, `project_id`, `confidence` or
-   `species_id`. A4 and A5 are both partly unanswerable without these four numbers.
-8. `work_mem` at the server default and at 64 MB, to size A8's `SET LOCAL`.
-
-The numbers that fail the phase or reopen a decision are listed in `.marp/task.md` and are
-not restated here, so the two cannot come to disagree.
-
-**A benchmark against one observation would report every one of those as passing.** That is
-why none was run.
-
----
-
-## Results
-
-**Run 2026-09-09, `npm test`**, against the development PostgreSQL. `npm test`, not `npx
-jest`: the suite shares one database and `package.json` passes `--runInBand` for that
-reason.
+### `npm test -- tests/mosaic-commit.test.js`
 
 ```
-  Test Suites : 34 passed, 0 failed, 34 total
-  Tests       : 317 passed, 0 failed, 0 skipped, 317 total
-  Duration    : 23.6s
+[mosaic-commit.test.js] the mosaic page commit (#106) > the routes (R1, R9, D5) > are served under /api/v2/ an…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the routes (R1, R9, D5) > require observations:write, …... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > a service token is refused before any write (D4) > ans…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the page commit (R2, R3, R5, R6) > accepts what is unm…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the page commit (R2, R3, R5, R6) > keys every entry by…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the page commit (R2, R3, R5, R6) > promotes on the tra…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the page commit (R2, R3, R5, R6) > reports a flag that…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the page commit (R2, R3, R5, R6) > skips an id that is…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the request is refused rather than guessed at (D1, R17…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > a version conflict is reported and not recorded (D1, D…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > a version conflict is reported and not recorded (D1, D…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > first valid review wins (R11, R13) > gives the record …... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > first valid review wins (R11, R13) > lets the claiming…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > first valid review wins (R11, R13) > lets two reviewer…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > first valid review wins (R11, R13) > serializes two co…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > a withdrawal deletes the projection row and keeps the …... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > a withdrawal deletes the projection row and keeps the …... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > a withdrawal deletes the projection row and keeps the …... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > what the log row records (R15, R16) > fingerprints the…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > what the log row records (R15, R16) > does not write o…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > delete (R18, R19, R20) > destroys only the marked obse…... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > delete (R18, R19, R20) > skips an id that has already …... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > delete (R18, R19, R20) > deletes nothing when nothing …... PASS
+[mosaic-commit.test.js] the mosaic page commit (#106) > the log is append-only by construction (D6) > emits no…... PASS
+
+  Test Suites : 1 passed, 0 failed, 1 total
+  Tests       : 31 passed, 0 failed, 0 skipped, 31 total
+  Duration    : 1.6s
 
   Result: ALL TESTS PASSED
 ```
 
-The suite was **33 suites and 269 tests** before this phase, measured on this branch by
-running with `tests/mosaic-query.test.js` excluded. So the count changed only by addition:
-one suite, 48 tests.
-
-### The 48 new tests, verbatim
+### `npm test` — the whole suite
 
 ```
-the routes > are served under /api/v2/ and nowhere else ......... PASS
-the routes > require observations:read rather than a new perm…... PASS
-the envelope (R1) > returns an entry for every page asked for…... PASS
-the envelope (R1) > carries total and pageCount only when inc…... PASS
-the envelope (R1) > carries total for a page set entirely pas…... PASS
-the envelope (R1) > takes the count from an aggregate and nev…... PASS
-deterministic ordering (R2) > puts tied rows in the same orde…... PASS
-deterministic ordering (R2) > appends observation_id even whe…... PASS
-deterministic ordering (R2) > appends it exactly once, and re…... PASS
-deterministic ordering (R2) > puts null confidence last on th…... PASS
-one pass over the matching set (R3, R4) > returns for [1,3,5]…... PASS
-one pass over the matching set (R3, R4) > numbers a deep page…... PASS
-one pass over the matching set (R3, R4) > asks for one band p…... PASS
-the cap (R5) > rejects 13 pages with 400 ........................ PASS
-the cap (R5) > rejects more than 600 rows with 400 .............. PASS
-the cap (R5) > rejects a page number that is not one ............ PASS
-the cap (R5) > returns an empty page rather than an error pas…... PASS
-the status filter (R6, R7, R8) > selects exactly the right id…... PASS
-the status filter (R6, R7, R8) > filters both dimensions inde…... PASS
-the status filter (R6, R7, R8) > treats an empty status array…... PASS
-the status filter (R6, R7, R8) > rejects a status value outsi…... PASS
-the status filter (R6, R7, R8) > is a semi-join or an anti-jo…... PASS
-the status filter (R6, R7, R8) > reads the projection and nev…... PASS
-the status filter (R6, R7, R8) > emits no WHERE term for an a…... PASS
-the keyframe aggregate (R9) > stays out of the matching set f…... PASS
-the keyframe aggregate (R9) > moves into the matching set for…... PASS
-the keyframe aggregate (R9) > serves the real count and first…... PASS
-the keyframe aggregate (R9) > sorts by track length when aske…... PASS
-no duplicate rows (R14) > returns one row for an observation …... PASS
-the counts (R10, R11) > returns all six counts and a total in…... PASS
-the counts (R10, R11) > applies the non-status filters and ig…... PASS
-the counts (R10, R11) > needs no sort and no row numbering ...... PASS
-the counts (R10, R11) > counts a total over a larger set than…... PASS
-the outer joins (A5) > returns an observation with a null ses…... PASS
-the outer joins (A5) > returns an observation with a null pro…... PASS
-the outer joins (A5) > excludes it only when the reviewer fil…... PASS
-the outer joins (A5) > reaches projects through observations.…... PASS
-the species filter (A4) > matches species_id and not comname .... PASS
-the species filter (A4) > refuses a species name where an id …... PASS
-the date and time-of-day dimensions (A3) > rejects an active …... PASS
-the date and time-of-day dimensions (A3) > does not reject a …... PASS
-the date and time-of-day dimensions (A3) > serves time of day…... PASS
-the date and time-of-day dimensions (A3) > refuses a time of …... PASS
-the excluded set > suppresses ids the caller already holds pi…... PASS
-the excluded set > reads it from filters.excludeIds too, wher…... PASS
-the row shape (R13) > is exactly the agreed key set ............. PASS
-the row shape (R13) > carries no processor_name, lineId or sc…... PASS
-the row shape (R13) > serves the review state as the projecti…... PASS
+  Test Suites : 35 passed, 0 failed, 35 total
+  Tests       : 348 passed, 0 failed, 0 skipped, 348 total
+  Duration    : 24.7s
+
+  Result: ALL TESTS PASSED
 ```
 
-`tests/jellyfin.test.js` ran and passed here — its 17 tests are excluded in CI by name
-because a runner cannot reach the media server. Nothing in this phase touches Jellyfin;
-they are reported because they ran.
+Run locally, so the 17 in `tests/jellyfin.test.js` are included — CI excludes them by name
+and cannot tell you they broke.
 
-## The three failures on the way, and what each was
+### The deliberate failure, to prove the concurrency test can see the race
 
-Recorded because a verification that only shows the green run is not evidence.
-
-**1. `the counts › applies the non-status filters and ignores the status ones` — my
-arithmetic, not the endpoint's.**
+`FOR NO KEY UPDATE` removed from `lockObservations`, everything else unchanged:
 
 ```
-      Error: expect(received).toBe(expected) // Object.is equality
+Test: [mosaic-commit.test.js] the mosaic page commit (#106) > first valid review wins (R11, R13) > serializes two co…... FAIL
 
-      Expected: 3
-      Received: 2
-          at Object.toBe (tests\mosaic-query.test.js:788:41)
+  Tests       : 30 passed, 1 failed, 0 skipped, 31 total
+  Result: FAILURES DETECTED — see below
+  ✗ the mosaic page commit (#106) > first valid review wins (R11, R13) > serializes two commits arriving together, and logs only the winner
 ```
 
-The five review-state rows were seeded with `confidence: 0.1 * (i + 1)`, which produces
-`0.30000000000000004`, and the assertion then asked for `>= 0.35` while expecting three
-rows. Two things were wrong and only one of them was the number: the fixture was generating
-a float it did not mean to. Fixed by seeding `[0.1, 0.2, 0.3, 0.4, 0.5]` literally and
-asking for `>= 0.25`. **The endpoint was right both times.**
+One test failed and only that one, which is what makes it a test of the lock rather than a
+narration of it. The lock was restored and the suite re-run: 31 passed.
 
-**2. The suite reported `48 passed, 0 failed` and `1 suite failed` — an `afterAll` that
-could not run.**
+### Cleanup, counted afterwards
 
-```
-  ● Test suite failed to run
-
-    > 306 |  await db.sequelize.query('DELETE FROM keyframes WHERE observation_id = ANY(:ids)', …
-      at Query.run (node_modules/sequelize/src/dialects/postgres/query.js:76:25)
-```
-
-A Sequelize **named replacement** expands an array to a list literal — `(1,2,3)` — so
-`ANY(:ids)` becomes `ANY((1,2,3))`, which is not an array and is a syntax error. `= ANY($1)`
-with a *bind* parameter, which is what the endpoint itself uses, does take an array; the two
-are not interchangeable and the difference is silent until it is not. Changed to `IN (:ids)`
-in the four cleanup statements.
-
-**Worth naming because it is the interesting part:** for two runs the cleanup did not
-happen, and the fixtures accumulated — 90 observations, 25 sessions, 5 projects, 5 models
-and 10 users left behind. Every assertion still passed, because **every question this suite
-asks is scoped to its own seeded rows**. Had the suite asked one unscoped question about a
-count, it would have gone green on the first run and failed on the second for reasons
-nothing in the test named. The leftovers were removed by hand and the database is back to
-its one observation; the re-run cleans up after itself, verified by counting afterwards.
-
-**3. `docs:build` printed four parse errors, and none of them is this phase's.**
+After the runs above — including the deliberately failed one — the database is back to what
+it started as:
 
 ```
-ERROR: Unable to parse a tag's type expression for source file
-  frontend/apps/marp-mosaic-review/src/model/schedule.js in line 167 with tag title "param"
-  … Invalid type expression "page, ids, lastUsed"
+{"obs":1,"jest_obs":0,"rev":0,"cur":0,"kf":8,"sess":0,"proj":0,"ds":0,"usr":0,"apps":0}
 ```
 
-Two `@param`/`@returns` tags in the mosaic app's `src/model/schedule.js` write a destructured
-shape where jsdoc expects a type. `--lenient` is why the build completes. Pre-existing, in
-the client app, and **left alone** — see the report's findings.
+One observation, eight keyframes, no review rows, and no fixture sessions, projects,
+datasets, users or applications left behind.
 
-## `docs:build`
+### `npm run docs:build`
 
-Run, and both halves committed.
+The generated contract carries the three routes and the two schemas:
 
-- **`docs/openapi.generated.json`: 485 insertions, 0 deletions.** Checked against the trap
-  that caught an earlier agent — this file regenerates with LF where CRLF is committed, so a
-  whole-file line-ending rewrite can look like a real diff. It is not one here: a rewrite
-  would show equal insertions and deletions, and this shows none. The added content is the
-  two operations `/v2/mosaic/observations/pages` and `/v2/mosaic/observations/counts`, both
-  carrying `observations:read`, plus the four schemas `MosaicQueryFilters`, `MosaicRow`,
-  `MosaicPageSet` and `MosaicStatusCounts`.
-- **`docs/developer/`: 470 files.** The jsdoc half rewrites the module sidebar on every
-  existing page, so two new modules change three lines in each of 406 pages, alongside 64
-  genuinely new files. It is tracked in this repository, so leaving it stale would be its
-  own small lie.
+```
+/v2/mosaic/observations/pages
+/v2/mosaic/observations/counts
+/v2/mosaic/observations/review
+/v2/mosaic/observations/training
+/v2/mosaic/observations/delete
+MosaicRow has version: true
+MosaicCommitRequest: true MosaicCommitResult: true
+```
 
-**Both landed in one commit rather than two, and that is a deviation worth stating.** The
-right shape is the contract in its own commit and the jsdoc churn in another, so a reviewer
-has one legible commit and one they can skip. That instruction arrived after the combined
-commit had already been pushed, and splitting it now would mean rewriting published history
-and force-pushing — which `AGENTS.md` puts behind "never without the human present". Left as
-one commit deliberately rather than quietly.
+Each of the three carries `observations:write` in its description, a documented `403`, and
+both security schemes.
 
-## What is still owed
+**`jsdoc` reported four pre-existing errors**, all in
+`frontend/apps/marp-mosaic-review/src/model/schedule.js` (#99), where a `@param` and a
+`@returns` write a destructured object where a type expression is expected. The config runs
+`--lenient`, so the build completes; the errors are not caused by this phase and are not
+fixed by it.
 
-Everything under *The timing check, still owed*. Not one measurement was taken, and none is
-claimed. The database holds **1 observation**; a benchmark against it would report every one
-of those eight as passing.
+## What surprised the run
 
-The two recommended sort indexes are not added either, because this phase adds no migration.
-They are owed with the measurement that justifies each.
+- **Node is 24.11.1 on this machine, not the pinned 22.22.1**, and nvm-windows is not
+  installed at all — `C:\nvm4w` does not exist. `AGENTS.md` and the umbrella's `CLAUDE.md`
+  both describe the nvm setup as current. The suite is green on 24.11.1; the documentation is
+  what is stale. Not changed here, because it is an environment fact for a human to settle.
 
+## Status
+
+- **Gate:** G4 complete, evidence recorded. G5 — the pull request — is the human's.

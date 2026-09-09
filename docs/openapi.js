@@ -2241,9 +2241,10 @@ const buildOpenApiSpec = () => {
                     MosaicRow: {
                         type: 'object',
                         description:
-                            'One mosaic tile. Exactly what the tile renders: `processor_name` and `lineId` are deliberately absent because nothing draws either, and who annotated something is what the permission catalog gates separately from observations:read. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.',
+                            'One mosaic tile: what the tile renders, plus the `version` the commit routes require back. `processor_name` and `lineId` are deliberately absent because nothing draws either, and who annotated something is what the permission catalog gates separately from observations:read. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.',
                         properties: {
                             observation_id: { type: 'integer', example: 100123 },
+                            version: { type: 'integer', example: 3, description: 'The observation row version, maintained by a database trigger. **Send it back on a commit**: the three mosaic commit routes require the version the reviewer saw and refuse a request that omits one, so this is what makes a stale decision detectable rather than silently applied.' },
                             obsID: { type: 'integer', nullable: true, example: 4412, description: 'The annotator-facing observation number. A distinct column from observation_id.' },
                             confidence: { type: 'number', nullable: true, example: 0.42, description: 'Nullable. Nulls sort last ascending, so unscored rows land on the last pages of the default question.' },
                             comname: { type: 'string', nullable: true, example: 'Bat Star', description: 'What the species entry was called when the observation was recorded. Never dropped: it is what makes the drift from species_id auditable.' },
@@ -2282,6 +2283,113 @@ const buildOpenApiSpec = () => {
                             },
                             excludedForNoDate: { type: 'integer', example: 0, description: 'How many observations a date filter could not answer for. Always 0 while the date dimension is rejected rather than served.' },
                             servedAt: { type: 'string', format: 'date-time', example: '2026-09-09T11:04:22.113Z', description: 'Diagnostic. Nothing depends on it.' },
+                        },
+                    },
+                    MosaicCommitRequest: {
+                        type: 'object',
+                        required: ['observations'],
+                        description:
+                            'One shape for all three commit routes: the page as the reviewer saw it, and the marks. **`marks` is the exception set, not a selection** -- `review` flags them, `training` excludes them, and `delete` destroys them and touches nothing else. A row absent from the marks is accepted by review and training and **untouched** by delete.',
+                        properties: {
+                            observations: {
+                                type: 'array',
+                                description: 'The whole page, each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.',
+                                items: {
+                                    type: 'object',
+                                    required: ['observation_id', 'version'],
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100123 },
+                                        version: { type: 'integer', example: 3, description: 'From the mosaic row. Trigger-maintained; never sent back changed.' },
+                                    },
+                                },
+                            },
+                            marks: {
+                                type: 'array',
+                                description: 'The exception set. Every id must be on the page. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. The delete route records no reason and refuses any.',
+                                items: {
+                                    type: 'object',
+                                    required: ['observation_id'],
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100124 },
+                                        reason: { type: 'string', nullable: true, example: 'Wrong species' },
+                                    },
+                                },
+                            },
+                            withdraw: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                                example: [100125],
+                                description: 'Ids whose decision this reviewer is taking back. **Review and training only** -- a delete records no decision to take back. A withdrawal deletes the projection row and leaves every log row, because undecided is the absence of a row. An id that is also marked is a 400.',
+                            },
+                        },
+                    },
+                    MosaicCommitResult: {
+                        type: 'object',
+                        description:
+                            'Per-observation outcomes. **The five arrays are not a partition**: `reverted` co-occurs with `flagged` for the same id when a flag takes back an acceptance, and a delete request\'s unmarked ids appear in none of them. Every entry is found by `observation_id`, never by position.',
+                        properties: {
+                            atomicity: {
+                                type: 'string',
+                                enum: ['per-observation'],
+                                example: 'per-observation',
+                                description: 'What the commit guaranteed. `per-observation` means an ineligible observation is an outcome rather than an error and rolls nothing back, while an unexpected failure rolls the whole request back so a failed commit applied nothing.',
+                            },
+                            reviewed: {
+                                type: 'array',
+                                description: 'What the commit accepted. `outcome` follows the route: `reviewed`, `promoted`, or `deleted`.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100123 },
+                                        outcome: { type: 'string', enum: ['reviewed', 'promoted', 'deleted'], example: 'reviewed' },
+                                    },
+                                },
+                            },
+                            flagged: {
+                                type: 'array',
+                                description: 'What the commit recorded as the exception. `flagged` on review, `excluded` on training. Empty on delete.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100124 },
+                                        outcome: { type: 'string', enum: ['flagged', 'excluded'], example: 'flagged' },
+                                    },
+                                },
+                            },
+                            reverted: {
+                                type: 'array',
+                                description: 'Acceptances taken back. Carries the same entry as `flagged` where a flag replaced an acceptance, and `withdrawn` for an explicit `withdraw`.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100124 },
+                                        outcome: { type: 'string', enum: ['flagged', 'excluded', 'withdrawn'], example: 'withdrawn' },
+                                    },
+                                },
+                            },
+                            skipped: {
+                                type: 'array',
+                                description: 'Left unwritten. **`not-found` is the only reason this API emits today** -- an id that is no longer an observations row. Imagery is not judged by the server until server-generated thumbnails exist, so no skip is ever reported for it.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100126 },
+                                        reason: { type: 'string', enum: ['not-found'], example: 'not-found' },
+                                    },
+                                },
+                            },
+                            conflicted: {
+                                type: 'array',
+                                description: 'Refused, and **not recorded**. `version` means the annotation changed since the page was fetched; `claimed` means another reviewer got there first. Two causes, one outcome value, so the reason is what tells the reviewer which happened. Nothing here names who claimed it: showing who belongs to the read path, under the key that gates identity.',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100127 },
+                                        reason: { type: 'string', enum: ['version', 'claimed'], example: 'claimed' },
+                                    },
+                                },
+                            },
+                            committedAt: { type: 'string', format: 'date-time', example: '2026-09-09T12:00:00.000Z', description: 'When the decisions were recorded, as the record holds it.' },
                         },
                     },
                     MosaicStatusCounts: {
