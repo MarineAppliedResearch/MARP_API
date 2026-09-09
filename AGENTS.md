@@ -496,9 +496,31 @@ why a mark is not a decision). Read it before changing anything structural there
 `README.md` covers running it and recording walkthrough videos.
 
 That app is the MARP Picture Mosaic Reviewer, designed in #68, which also carries the
-phased plan for the schema and endpoints it will need. None of that schema exists yet:
-the app runs entirely against a fixture, and its `src/data.js` is the seam where the
-API will arrive.
+phased plan for the schema and endpoints it will need. The app still runs entirely against
+a fixture, and its `src/data.js` is the seam where the API will arrive.
+
+**#68 is a record of thinking, not a specification, and a line in it is not automatically a
+decision somebody made deliberately.** It has been written and rewritten over months, it
+contradicts itself in places, and it is long enough that nobody reads all of it at once. So
+**a requirement taken from #68 is checked with the human, not inherited** — cite it, quote
+it, and ask.
+
+This is not a style preference; it has cost real work three times:
+
+- A phase built a **deletion provenance table** from one line saying MARP *"retains a
+  lightweight deletion provenance event"*. The answer was that it was never planned — a row
+  per deleted observation would outgrow the data, since the models under test produce
+  hundreds of millions of erroneous detections. The table was removed and #68 corrected in
+  four places.
+- A phase built **first-valid-review-wins** — a row lock, a claimer derivation, a
+  conditional upsert, a rule that refused decisions are never logged, and a concurrency test
+  — from one line in *Concurrent review*. The answer was that the **last commit wins**, and
+  most of that machinery came straight back out.
+- A phase specified `GET /api/v2/observations/mosaic` from *Phase 4*, which a later and more
+  specific issue (#99) had already settled as a `POST`.
+
+Where #68 and a later, more specific issue disagree, **the later decision wins and #68 gets
+the edit** rather than being left to contradict itself.
 
 **The schema decisions are settled** — see *The schema decisions* in #68, answered
 2026-09-05. The ones that change what gets built: a review belongs to the reviewer, so
