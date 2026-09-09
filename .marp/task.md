@@ -220,6 +220,21 @@ Numbered so a test can cite one.
 
 **Out of scope, stated so it is not accidentally in**
 
+- **R22** — **The cascade removes the membership row and never a parent, in both
+  directions, and this is proved rather than assumed.** Settled by the human 2026-09-09:
+  deleting a dataset must not delete its observations, and deleting an observation must not
+  delete a dataset. Both are satisfied because the cascade lives on the join table:
+  `dataset_observations.dataset_id` already carries `ON DELETE CASCADE` to `datasets(id)`
+  (verified on the live database, `dataset_observations_dataset_id_fkey`), and this phase
+  adds the matching action on `observation_id`. So each parent's deletion reaches the join
+  row and stops.
+  **A test asserts all four facts**, because a wrong referential action is silent and this
+  is the one place in the phase where getting it backwards destroys scientific data:
+  delete a dataset and its observations survive; delete an observation and its dataset
+  survives; in each case the membership row is gone. Run against a real database with a
+  dataset, an observation and a membership row seeded — not inferred from the catalogue,
+  since reading `pg_constraint` only proves what was declared, not what happens.
+
 - **R21** — No endpoint, no route, no repository method, no permission key. `subset_observations`
   and `subset_keyframes` are left alone. `taxReview`/`sizereview` are left alone. #76's
   `observed_at` is left alone (D4). #62 is left alone. Nothing is written to any shared or
