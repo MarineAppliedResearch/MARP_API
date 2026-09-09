@@ -100,7 +100,22 @@ module.exports = (sequelize, DataTypes) => {
                 // not go through this model still cannot break the vocabulary.
                 type: DataTypes.STRING(32),
                 allowNull: false,
-                comment: 'What was decided. "reviewed", "flagged" or "withdrawn" for the scientific purpose; "promoted", "excluded" or "withdrawn" for training. There is no "undecided" -- that is the absence of a row.',
+                comment: 'What was decided. "reviewed", "flagged", "withdrawn" or "corrected" for the scientific purpose; "promoted", "excluded" or "withdrawn" for training. There is no "undecided" -- that is the absence of a row.',
+            },
+            previous_species_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: { model: 'species', key: 'id' },
+                comment: 'The species the observation carried before this correction. Null when it had none, and null on every decision that is not a correction.',
+            },
+            corrected_species_id: {
+                // Paired with `decision` by
+                // observation_reviews_corrected_species_check, in both
+                // directions: a correction must carry one and nothing else may.
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: { model: 'species', key: 'id' },
+                comment: 'The species this correction changed the observation to. Set for a correction and null for every other decision.',
             },
             reason: {
                 type: DataTypes.STRING(64),
