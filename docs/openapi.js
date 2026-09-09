@@ -2241,9 +2241,10 @@ const buildOpenApiSpec = () => {
                     MosaicRow: {
                         type: 'object',
                         description:
-                            'One mosaic tile. Exactly what the tile renders: `processor_name` and `lineId` are deliberately absent because nothing draws either, and who annotated something is what the permission catalog gates separately from observations:read. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.',
+                            'One mosaic tile: what the tile renders, plus the `version` the commit routes require back. `processor_name` and `lineId` are deliberately absent because nothing draws either, and who annotated something is what the permission catalog gates separately from observations:read. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.',
                         properties: {
                             observation_id: { type: 'integer', example: 100123 },
+                            version: { type: 'integer', example: 3, description: 'The observation row version, maintained by a database trigger. **Send it back on a commit**: the three mosaic commit routes require the version the reviewer saw and refuse a request that omits one, so this is what makes a stale decision detectable rather than silently applied.' },
                             obsID: { type: 'integer', nullable: true, example: 4412, description: 'The annotator-facing observation number. A distinct column from observation_id.' },
                             confidence: { type: 'number', nullable: true, example: 0.42, description: 'Nullable. Nulls sort last ascending, so unscored rows land on the last pages of the default question.' },
                             comname: { type: 'string', nullable: true, example: 'Bat Star', description: 'What the species entry was called when the observation was recorded. Never dropped: it is what makes the drift from species_id auditable.' },
