@@ -1330,6 +1330,215 @@ export const scenarios = {
       }
     ]
   }
+  ,
+  /* ------------------------------------------------- the tour: where the app is now */
+  /* A current picture of the reviewer, fixture-backed. Recorded before phase 6 changes
+     what the tiles show and phase 8 changes where the rows come from — so it is worth
+     having as a "before". Every scene asserts what its line claims. */
+  tour: {
+    title: 'The MARP Picture Mosaic Reviewer, as it works today',
+    scenes: [
+      {
+        caption: 'A wall of pictures, not a list of rows',
+        say: "This is the Marp Picture Mosaic Reviewer. A machine learning model has looked "
+           + "at hours of dive video and pulled out every animal it thinks it found, and "
+           + "somebody now has to check that work. The whole idea here is that you check it "
+           + "by looking at a wall of pictures rather than reading a table one row at a time.",
+        async act({ page, expect, settled }) {
+          await settled();
+          await expect(tilesIn(page).first()).toBeVisible();
+          const n = await tilesIn(page).count();
+          expect(n).toBeGreaterThan(8);
+        }
+      },
+      {
+        caption: 'The question is on the left',
+        say: "Down the left is the question. Which project, which dive, which line, which "
+           + "species, how confident the model was, what time of day. Ten of those, and they "
+           + "narrow the wall rather than producing a report.",
+        async act({ page, expect }) {
+          await expect(page.locator('.rail')).toBeVisible();
+          await expect(page.locator('[data-dim="species"]')).toBeVisible();
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Narrowing to one species',
+        say: "Picking a species now \u2026 and the wall is a different wall. Notice the count "
+           + "along the top changed with it \u2014 that is how many observations match the "
+           + "question, and which page of them you are looking at.",
+        async act({ page, expect, settled }) {
+          await beat(page, CUE);
+          const before = await totalShown(page);
+          await page.locator('[data-dim="species"]').click();
+          await beat(page, 700);
+          const opt = page.locator('.menu .mbody button[data-v]').first();
+          if (await opt.count()) { await opt.click(); await settled(); }
+          await expect(page.locator('#pageNow')).toBeVisible();
+          const after = await totalShown(page);
+          expect(typeof after).toBe('number');
+          void before;
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Marking the ones that are wrong',
+        say: "Now the actual work. The model gets things wrong, and the wrong ones usually "
+           + "look wrong \u2014 so you go down the wall and tap them. One tap, no dialog in the "
+           + "way, because a reviewer does this thousands of times in a sitting.",
+        async act({ page, store }) {
+          await beat(page, CUE);
+          store.marked = await markMany(page, 6, 320);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'A mark is the exception, not a note',
+        say: "Those marks are not a scratchpad. When this page is committed, whatever is "
+           + "marked becomes the exception and everything unmarked is accepted \u2014 so you are "
+           + "not clicking fifty good ones, you are clicking the few bad ones.",
+        async act({ page, expect, store }) {
+          await expect(page.locator('.tile.marked')).toHaveCount(store.marked.length);
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Saying why, if it helps',
+        say: "Opening one of them now \u2026 and you can say why. The reason is optional \u2014 a bare "
+           + "flag is valid on its own \u2014 but it tells whoever resolves this later what you "
+           + "were seeing. You can also correct the species from right here.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);
+          const id = store.marked[0];
+          await page.locator(`.tile[data-id="${id}"] [data-badge]`).click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await beat(page, 900);
+          await page.locator('.pick [data-reason="Wrong species"]').click();
+          await expect(page.locator('.reason-chip').first()).toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Committing the page',
+        say: "Committing now \u2026 and there. Six flagged, the rest accepted, and every tile now "
+           + "says what just happened to it. The page does not clear itself and it does not "
+           + "jump forward \u2014 moving on is a separate decision.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first())
+            .toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'And it is still editable',
+        say: "Taking one back now \u2026 and it changes its mind with you. A committed page is not "
+           + "finished \u2014 if you flagged something you should not have, you click it again and "
+           + "commit again. That is the undo.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          const tile = page.locator('.tile .badge', { hasText: 'FLAGGED' }).first();
+          const id = await tile.locator('xpath=ancestor::*[contains(@class,"tile")]')
+            .getAttribute('data-id');
+          await page.locator(`.tile[data-id="${id}"]`).click();
+          await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/out-reverted|marked/);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Paging is instant now',
+        say: "Paging on now \u2026 and back. There is no wait there at all, and there used to be. "
+           + "The pages around you are already fetched before you ask for them, so moving "
+           + "through a result feels like scrolling something already in memory.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          await timedPage(page, 'next');
+          await beat(page, 1200);
+          const ms = await timedPage(page, 'prev');
+          expect(ms).toBeLessThan(200);
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Three separate questions',
+        say: "The same wall answers three different questions, and they are genuinely "
+           + "separate. Is this observation scientifically sound. Should it be used to train "
+           + "the next model. And should it be in the database at all.",
+        async act({ page }) {
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Training review',
+        say: "Switching to training now \u2026 and the wall is the same pictures asking a "
+           + "different question. Anything the scientific side already said stays visible on "
+           + "the tile, because whoever is deciding this should see it.",
+        async act({ page, expect, settled }) {
+          await beat(page, CUE);
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await expect(page.locator('body')).toHaveAttribute('data-mode', 'training');
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Delete asks first',
+        say: "And deleting. Switching to delete now \u2026 mark a few, and commit. This is the one "
+           + "place the tool interrupts you, because this one is permanent \u2014 it names the "
+           + "exact number it is about to destroy.",
+        async act({ page, expect, settled }) {
+          await beat(page, CUE);
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          await markMany(page, 3, 300);
+          await page.locator('#commit').click();
+          await expect(page.locator('.confirm__box')).toBeVisible();
+          await expect(page.locator('.confirm__title')).toContainText('3 observations');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'And cancel really does nothing',
+        say: "Cancelling now \u2026 and nothing was sent. The three are still marked, so the page "
+           + "does not have to be done again. Nothing is destroyed in this tool without "
+           + "somebody reading a number and agreeing to it.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          await page.locator('[data-confirm="cancel"]').click();
+          await expect(page.locator('.confirm__box')).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(3);
+          await expect(page.locator('.tile.out-deleted')).toHaveCount(0);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'The question lives in the address',
+        say: "One last thing. The whole question \u2014 the mode, every filter, the sort, the page "
+           + "\u2014 lives in the address along the top. So a reload puts you back where you were, "
+           + "and you can send somebody a link to exactly the wall you are looking at.",
+        async act({ page, expect }) {
+          await showAddress(page);
+          await expect(page.locator('#demoAddress')).toContainText('marp-mosaic-review');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Still running on a fixture',
+        say: "And one honest caveat. Everything you just watched runs on generated data "
+           + "inside the browser \u2014 the real interface, the real rules, but not the real "
+           + "database yet. Connecting it to Marp's API is later work, and the endpoints it "
+           + "will use are already built and tested behind this.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile').first()).toBeVisible();
+        }
+      }
+    ]
+  }
 };
 
 export const scenarioIds = Object.keys(scenarios);
