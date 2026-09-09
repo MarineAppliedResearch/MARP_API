@@ -18,17 +18,22 @@
  *   nothing is the one that fails when somebody adds an UPDATE.
  *
  * **Four of these are meaningless anywhere but against the real database**, which
- * is why they are here and not in a unit test: the concurrent claim, the version
- * conflict, the withdrawal's `CHECK`, and the delete cascade. A unit test on a
- * repository method cannot see any of the four.
+ * is why they are here and not in a unit test: two commits genuinely racing, the
+ * version conflict, the withdrawal's `CHECK`, and the delete cascade. A unit test
+ * on a repository method cannot see any of the four.
  *
  * Every question is scoped to this run's own seeded rows. The database is shared
  * and holds rows this suite did not create, so an unscoped assertion about a count
  * would pass or fail on what somebody else left behind.
  *
- * Refs #106.
+ * **#111 rewrote the last-wins block.** Those tests changed because the rule
+ * changed, not because they broke: the human overruled first-valid-review-wins on
+ * 2026-09-09, so a second reviewer is no longer refused and a withdrawal is no
+ * longer reviewer-scoped.
  *
- * @fileoverview Endpoint, database and source tests for the mosaic page commit (#106).
+ * Refs #106, #111.
+ *
+ * @fileoverview Endpoint, database and source tests for the mosaic page commit (#106, #111).
  * @author Isaac Travers
  * @module tests/mosaic-commit
  */
@@ -50,11 +55,6 @@ const DELETE = '/api/v2/mosaic/observations/delete';
 
 /** The paths the routes are *declared* at. Nothing should answer here. */
 const DECLARED_REVIEW = '/api/mosaic/observations/review';
-
-/** The migration that owns the single definition of "current". */
-const CURRENT_MIGRATION = path.join(
-    __dirname, '..', 'migrations', '20260909120200-create-observation-review-current.js'
-);
 
 /** The write path, read as text for the append-only assertion (D6). */
 const COMMIT_REPOSITORY = path.join(
@@ -86,22 +86,17 @@ function q(sql, replacements = {}) {
 }
 
 /**
- * Pulls the `-- rebuild:` block out of the committed migration file.
+ * The derivation, read off disk once, from whichever migration currently defines
+ * it.
  *
- * The same extraction `tests/observation-review-current.test.js` uses, and for the
- * same reason: the assertion should be about what is committed rather than about
- * what happens to be in memory.
+ * **Found rather than named.** #111 supersedes #103's definition with a second
+ * migration instead of editing an applied one, so a hard-coded path would go on
+ * asserting the projection matches a rule nothing runs. See
+ * `tests/setup/current-derivation.js`, which also normalises line endings.
  *
- * @param {string} source - The migration file's text.
- * @returns {string} Everything between the markers, inclusive.
+ * @type {string}
  */
-function extractRebuildBlock(source) {
-    const match = source.match(/^-- rebuild:begin\r?\n[\s\S]*?^-- rebuild:end$/m);
-    return match ? match[0] : '';
-}
-
-/** The derivation, read off disk once. @type {string} */
-const derivationBlock = extractRebuildBlock(fs.readFileSync(CURRENT_MIGRATION, 'utf8'));
+const { currentDerivationBlock: derivationBlock } = require('./setup/current-derivation');
 
 /**
  * Inserts observations and records them for cleanup.
@@ -180,7 +175,7 @@ function logFor(observationId) {
  */
 function currentFor(observationId) {
     return q(
-        `SELECT purpose, decision, reason, reviewer_id, first_decided_at, decided_at,
+        `SELECT purpose, decision, reason, reviewer_id, decided_at,
                 observation_version
            FROM observation_review_current
           WHERE observation_id = :observationId
@@ -200,7 +195,7 @@ function currentFor(observationId) {
  */
 async function bothSides() {
     const columns = `review_id, observation_id, purpose, decision, reason,
-                     reviewer_id, first_decided_at, decided_at, observation_version`;
+                     reviewer_id, decided_at, observation_version`;
 
     const normalize = (row) => {
         const out = {};
@@ -725,9 +720,9 @@ describe('the mosaic page commit (#106)', () => {
         });
     });
 
-    describe('first valid review wins (R11, R13)', () => {
+    describe('the last commit wins (R11, R13)', () => {
 
-        it('gives the record to the first reviewer and reports the second', async () => {
+        it('gives the record to the second reviewer, and keeps the first in the log', async () => {
             const [a] = await addObservations(1);
             const page = { observations: [await at(a)] };
 
@@ -735,48 +730,46 @@ describe('the mosaic page commit (#106)', () => {
 
             expect(first.body.reviewed).toEqual([{ observation_id: a, outcome: 'reviewed' }]);
 
-            const claimed = await currentFor(a);
-            const firstDecidedAt = claimed[0].first_decided_at;
-
             // Bob commits the same observation, at the same version, without
-            // ever having seen Alice's decision.
+            // ever having seen Alice's decision. **He is not refused.** This
+            // asserted the opposite until #111: the human settled that the last
+            // commit wins, and a reviewer who wants the current state refreshes
+            // and requeries rather than being locked out.
             const second = await bob.post(REVIEW).send({
                 observations: [await at(a)],
                 marks: [{ observation_id: a, reason: 'Wrong species' }],
             });
 
             expect(second.status).toBe(200);
-            expect(second.body.conflicted).toEqual([{ observation_id: a, reason: 'claimed' }]);
-            expect(second.body.flagged).toEqual([]);
-            expect(second.body.reviewed).toEqual([]);
-
-            // Nothing here names who claimed it: showing who belongs to the read
-            // path, under the key that gates identity.
-            expect(second.body.conflicted[0]).not.toHaveProperty('reviewer_id');
+            expect(second.body.conflicted).toEqual([]);
+            expect(second.body.flagged).toEqual([{ observation_id: a, outcome: 'flagged' }]);
 
             const after = await currentFor(a);
 
-            expect(after[0].reviewer_id).toBe(alice.userId);
-            expect(after[0].decision).toBe('reviewed');
-            expect(after[0].first_decided_at).toEqual(firstDecidedAt);
+            expect(after).toHaveLength(1);
+            expect(after[0].reviewer_id).toBe(bob.userId);
+            expect(after[0].decision).toBe('flagged');
+            expect(after[0].reason).toBe('Wrong species');
 
-            // Reported, not recorded: Bob's refused decision is not in the log.
+            // Both decisions are in the log, in order. Alice's is superseded,
+            // not erased -- the per-reviewer history is the record.
             const history = await logFor(a);
 
-            expect(history).toHaveLength(1);
-            expect(history[0].reviewer_id).toBe(alice.userId);
+            expect(history).toHaveLength(2);
+            expect(history.map((row) => [row.reviewer_id, row.decision])).toEqual([
+                [alice.userId, 'reviewed'],
+                [bob.userId, 'flagged'],
+            ]);
 
             const sides = await bothSides();
 
             expect(sides.projection).toEqual(sides.derivation);
         });
 
-        it('lets the claiming reviewer revise without moving first_decided_at', async () => {
+        it('lets a reviewer revise their own decision', async () => {
             const [a] = await addObservations(1);
 
             await alice.post(REVIEW).send({ observations: [await at(a)] });
-
-            const before = (await currentFor(a))[0];
 
             const res = await alice.post(REVIEW).send({
                 observations: [await at(a)],
@@ -790,9 +783,11 @@ describe('the mosaic page commit (#106)', () => {
             expect(after.decision).toBe('flagged');
             expect(after.reason).toBe('Bounding box');
             expect(after.reviewer_id).toBe(alice.userId);
-            expect(after.first_decided_at).toEqual(before.first_decided_at);
 
+            // Two log rows, one projection row. What survives from the deleted
+            // first_decided_at case: revising appends rather than overwrites.
             expect(await logFor(a)).toHaveLength(2);
+            expect(await currentFor(a)).toHaveLength(1);
 
             const sides = await bothSides();
 
@@ -820,14 +815,16 @@ describe('the mosaic page commit (#106)', () => {
             expect(sides.projection).toEqual(sides.derivation);
         });
 
-        it('serializes two commits arriving together, and logs only the winner', async () => {
+        it('lands both commits when two arrive together, and the projection holds one of them', async () => {
             const [a] = await addObservations(1);
             const page = { observations: [await at(a)] };
 
-            // Both requests are in flight before either has finished. This is the
-            // case #68 calls out and the one that is meaningless anywhere but
-            // against the real database: without the row lock both would pass
-            // their own claim test and both would append a log row.
+            // Both requests are in flight before either has finished. Still
+            // meaningless anywhere but against the real database, and still the
+            // case #68 calls out -- but **what it proves changed with the rule**.
+            // It used to assert that one was refused. Under last-write-wins
+            // neither is, and what has to hold instead is that concurrency
+            // leaves a *consistent* end state.
             const [one, two] = await Promise.all([
                 alice.post(REVIEW).send(page),
                 bob.post(REVIEW).send({
@@ -839,22 +836,35 @@ describe('the mosaic page commit (#106)', () => {
             expect(one.status).toBe(200);
             expect(two.status).toBe(200);
 
-            const won = [one, two].filter((res) => res.body.reviewed.length || res.body.flagged.length);
-            const lost = [one, two].filter((res) => res.body.conflicted.length);
+            // Nobody is refused for being second.
+            expect(one.body.conflicted).toEqual([]);
+            expect(two.body.conflicted).toEqual([]);
 
-            expect(won).toHaveLength(1);
-            expect(lost).toHaveLength(1);
-            expect(lost[0].body.conflicted).toEqual([{ observation_id: a, reason: 'claimed' }]);
+            const landed = [one, two].filter((res) => res.body.reviewed.length || res.body.flagged.length);
 
-            // Exactly one decision was recorded, by exactly one reviewer.
+            expect(landed).toHaveLength(2);
+
+            // Both decisions are history; exactly one is current.
             const history = await logFor(a);
 
-            expect(history).toHaveLength(1);
+            expect(history).toHaveLength(2);
+            expect(new Set(history.map((row) => row.reviewer_id)))
+                .toEqual(new Set([alice.userId, bob.userId]));
 
             const current = await currentFor(a);
 
             expect(current).toHaveLength(1);
-            expect(current[0].reviewer_id).toBe(history[0].reviewer_id);
+
+            // The projection points at a real log row and agrees with it about
+            // who decided -- the invariant that would break if the unconditional
+            // upsert and the log insert ever raced apart. **This deliberately
+            // does not assert which reviewer won**: under last-write-wins that
+            // is genuinely undetermined, and asserting it would be flaky rather
+            // than strict.
+            const winner = history.find((row) => row.reviewer_id === current[0].reviewer_id);
+
+            expect(winner).toBeDefined();
+            expect(current[0].decision).toBe(winner.decision);
 
             const sides = await bothSides();
 
@@ -897,23 +907,38 @@ describe('the mosaic page commit (#106)', () => {
             expect(sides.projection).toEqual(sides.derivation);
         });
 
-        it('refuses to withdraw a decision another reviewer owns', async () => {
+        it('lets any reviewer withdraw the decision that is current', async () => {
             const [a] = await addObservations(1);
 
             await alice.post(REVIEW).send({ observations: [await at(a)] });
 
+            // Inverted by #111. This refused Bob with `claimed`, which was the
+            // claim rule wearing a different hat: `releaseWithdrawn` was scoped
+            // to the withdrawing reviewer. Under last-write-wins a withdrawal is
+            // simply the latest decision, and anyone may make it.
             const res = await bob.post(REVIEW).send({
                 observations: [await at(a)],
                 withdraw: [a],
             });
 
-            expect(res.body.conflicted).toEqual([{ observation_id: a, reason: 'claimed' }]);
+            expect(res.status).toBe(200);
+            expect(res.body.conflicted).toEqual([]);
+            expect(res.body.reverted).toEqual([{ observation_id: a, outcome: 'withdrawn' }]);
 
-            const current = await currentFor(a);
+            // Undecided is the absence of a row, and Alice's decision stays in
+            // the log beside Bob's withdrawal.
+            expect(await currentFor(a)).toEqual([]);
 
-            expect(current[0].reviewer_id).toBe(alice.userId);
-            expect(current[0].decision).toBe('reviewed');
-            expect(await logFor(a)).toHaveLength(1);
+            const history = await logFor(a);
+
+            expect(history.map((row) => [row.reviewer_id, row.decision])).toEqual([
+                [alice.userId, 'reviewed'],
+                [bob.userId, 'withdrawn'],
+            ]);
+
+            const sides = await bothSides();
+
+            expect(sides.projection).toEqual(sides.derivation);
         });
 
         it('is a no-op with no log row when there is nothing to withdraw', async () => {
