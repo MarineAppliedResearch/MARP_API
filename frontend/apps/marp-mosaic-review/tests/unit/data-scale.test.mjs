@@ -14,7 +14,7 @@
  * number, and the counts in `tests/requirements.js` and `tests/e2e/render.spec.mjs` are
  * measured against this fixture deliberately.
  */
-import { test } from 'node:test';
+import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -31,6 +31,10 @@ globalThis.fetch = async (url) => {
   if (!String(url).endsWith('observations.json')) throw new Error(`unexpected fetch: ${url}`);
   return { ok: true, status: 200, json: async () => JSON.parse(RAW) };
 };
+
+/* One parse for the reference and the lookups, which never mutate what they read.
+   `reload` still parses fresh rows every time, because that isolation is the point. */
+const PRISTINE = JSON.parse(RAW);
 
 const { MarpData } = await import('../../src/data.js');
 const { matchesFilters, unanswerable } = await import('../../src/model/match.js');
@@ -89,7 +93,7 @@ function reference({ filters = {}, sort, page = 1, pageSize = 45 }, observations
 async function fixtureAt(scale) {
   await MarpData.reload();          // fresh rows, and it drops every simulated edit
   MarpData.setScale(scale);
-  return JSON.parse(RAW).observations;
+  return PRISTINE.observations;
 }
 
 const ids = (rows) => rows.map((r) => r.observation_id);
@@ -102,6 +106,21 @@ const ids = (rows) => rows.map((r) => r.observation_id);
  * the effect of a write, it stays sequential.
  */
 const all = (xs, fn) => Promise.all(xs.map(fn));
+
+/**
+ * The simulated network is off for every check here, and put back on before each one.
+ *
+ * `LATENCY.query` is 140 ms deliberately, and paying it ~180 times made this file eight
+ * seconds of a tier that is supposed to be the working loop. **No assertion was given up
+ * for that**: the calls are the same calls, and what is skipped is the waiting.
+ *
+ * `beforeEach` rather than a one-off at the top, so a check that needs the real latency
+ * turns it off for itself and cannot leave it off for the next one. And it is per test
+ * *file*: `node --test` gives each file its own process, so nothing here can reach
+ * another file — or, because `withoutLatency` refuses to act in a browser, any tier that
+ * has one.
+ */
+beforeEach(() => { MarpData.withoutLatency(); });
 
 /** The questions worth asking, each exercising a different part of the filter set. */
 const QUESTIONS = [
@@ -153,6 +172,30 @@ const QUESTIONS = [
 test('the scale defaults to 1, so nothing that existed sees a different fixture', () => {
   assert.equal(MarpData.scale(), 1,
     'a default above 1 would move every count measured against this fixture');
+});
+
+test('the latency override refuses to act in a browser (R1)', async () => {
+  /* This is the check that makes the no-leak claim a fact rather than a convention.
+     `render.spec.mjs` proves the reviewer does not wait, and it can only prove that
+     against the real 140 ms — so if the override ever reached a browser tier, those tests
+     would pass showing a grid with no spinner because there was nothing to wait for.
+     Green, and proving nothing, and invisible. `typeof window` is the whole gate, so
+     standing a `window` up here exercises exactly the path Playwright would take. */
+  await fixtureAt(1);
+  assert.equal(MarpData.withoutLatency(false), false);
+
+  globalThis.window = {};                       // stand in for any browser tier
+  try {
+    assert.equal(MarpData.withoutLatency(true), false,
+      'it must report that it did nothing rather than let a caller believe it worked');
+
+    const started = Date.now();
+    await MarpData.query({ page: 1 });
+    assert.ok(Date.now() - started >= 130,
+      'and the simulated network must still be there');
+  } finally {
+    delete globalThis.window;
+  }
 });
 
 test('query() answers exactly what it answered before the scale existed', async () => {
@@ -230,9 +273,11 @@ test('the depth costs the fixture, not the virtual set (R13)', async () => {
 
   assert.equal(got.total, 3000 * 400);
   assert.equal(got.rows.length, 45);
-  /* A guard, not a benchmark. An implementation that sorted or indexed the virtual set
-     per query would be seconds here; the fixture's own latency is 140 ms. */
-  assert.ok(took < 900, `a deep page took ${took} ms, which is not the fixture's latency`);
+  /* A guard, not a benchmark — and with the simulated network off, what is left is the
+     synthesis and nothing else, which is what makes the bound worth having. An
+     implementation that sorted or indexed 1.2 million entries per query would be a second
+     or more here. */
+  assert.ok(took < 300, `a deep page cost ${took} ms of synthesis, which is too much`);
 });
 
 test('a deep page is materialised, not handed out as shared references (R13)', async () => {
@@ -390,7 +435,7 @@ test('a species correction against a replica survives (R13)', async () => {
   const open = await MarpData.query({ filters: { species: ['Bat Star'] }, page: 2, pageSize: 4 });
   const target = open.rows[1].observation_id;
 
-  const rockfish = JSON.parse(RAW).species.find((s) => s.comname === 'Rockfish');
+  const rockfish = PRISTINE.species.find((s) => s.comname === 'Rockfish');
   const res = await MarpData.setSpecies(target, rockfish.species_id);
   assert.equal(res.ok, true);
   assert.equal(res.observation.observation_id, target);
@@ -404,7 +449,8 @@ test('a species correction against a replica survives (R13)', async () => {
   assert.equal(back.comname, 'Rockfish');
   assert.equal(back.previous_comname, 'Bat Star');
   assert.equal(bat.total, 1185 * 7 - 1);
-  assert.equal(rock.total, JSON.parse(RAW).observations.filter((r) => r.comname === 'Rockfish').length * 7 + 1);
+  assert.equal(rock.total,
+    PRISTINE.observations.filter((r) => r.comname === 'Rockfish').length * 7 + 1);
 });
 
 test('the status counts scale with the set, and move when work is committed', async () => {
@@ -497,7 +543,14 @@ test('every page asked for comes back, de-duplicated and ascending (R15)', async
   assert.ok(set.servedAt, 'servedAt is diagnostic, and present');
 });
 
-test('a discontiguous set is one request and costs one latency (R15)', async () => {
+test('a discontiguous set is one request and costs one real latency (R15)', async () => {
+  /* **Do not delete this as redundant.** `LATENCY.query` is 140 ms deliberately — high
+     enough that a genuine fetch is plainly visible on screen — and it is what lets
+     `render.spec.mjs` prove the reviewer does not wait. Every other check in this file
+     runs with the simulated network switched off, so this is the only thing left
+     asserting that the real latency is still real, and that a page set costs one of it
+     rather than one per page. */
+  assert.equal(MarpData.withoutLatency(false), false, 'the real thing, for this check');
   await fixtureAt(147);
 
   const started = Date.now();

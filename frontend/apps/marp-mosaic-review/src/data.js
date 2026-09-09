@@ -24,6 +24,18 @@ const LATENCY = { query: 140, commit: 260, species: 180, thumb: 900 };
 /** Pretend the network exists, so loading states are real rather than theoretical. */
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* Whether the simulated network is switched off. See `withoutLatency` for why this can
+   only ever be true under `node --test`, and what would break if it were not. */
+let instant = false;
+
+/**
+ * The ambient cost of a call — the part that stands in for the network.
+ *
+ * Distinct from `delay` deliberately: `slowNextCommit` asks for a specific hold, which is
+ * an instruction rather than scenery, so it goes through `delay` and is never suppressed.
+ */
+const latency = (ms) => (instant ? Promise.resolve() : delay(ms));
+
 let db = null;
 
 /* Testing affordance: the fixture cannot fail on its own, but the API will, and the
@@ -417,6 +429,35 @@ export const MarpData = {
   scale() { return scaleFactor; },
 
   /**
+   * Switch the simulated network off. **The unit tier only, and structurally so.**
+   *
+   * `LATENCY.query` is 140 ms deliberately — high enough that a real fetch is plainly
+   * visible on screen — so that the interface cannot be designed against an instant
+   * backend and `render.spec.mjs` can prove the reviewer does not wait. **If that latency
+   * ever went away under Playwright, the render tests would pass showing a grid with no
+   * spinner because there was nothing to wait for**: green, and proving nothing, and
+   * invisible. That is the worst outcome available here, so this is built to make it
+   * impossible rather than to make it unlikely:
+   *
+   * - **It refuses to do anything in a browser.** `typeof window` is undefined under
+   *   `node --test` and defined in every browser tier there is — the contract checks in
+   *   `tests/requirements.js` included — so no Playwright run can be subject to it however
+   *   it is called.
+   * - **There is no environment variable** a Playwright worker could inherit, and no
+   *   default that a bare `import` turns on. The real latency is what you get unless
+   *   somebody wrote this call.
+   * - **It is module state, and `node --test` gives each test file its own process**, so a
+   *   file that switches it off cannot leave it off for another file.
+   *
+   * Returns whether it took effect, so a caller cannot quietly believe it did.
+   */
+  withoutLatency(on = true) {
+    if (typeof window !== 'undefined') return false;      // never, in a browser
+    instant = Boolean(on);
+    return instant;
+  },
+
+  /**
    * Break the imagery for a set of observations, so the states a reviewer meets on a bad
    * day can be reached deliberately.
    *
@@ -446,7 +487,7 @@ export const MarpData = {
    * has marked permanently broken, so a retry that cannot help does not pretend to.
    */
   async retryThumbnail(id) {
-    await delay(LATENCY.thumb);
+    await latency(LATENCY.thumb);
     const base = baseFor(id);
     if (!base) return null;
     const current = served(base, replicaOf(id));
@@ -520,7 +561,7 @@ export const MarpData = {
 
   /** Free-text search over the taxonomy, as the species chooser needs. */
   async searchSpecies(term) {
-    await delay(60);
+    await latency(60);
     const t = (term || '').trim().toLowerCase();
     if (!t) return db.species.slice(0, 6);
     return db.species.filter(
@@ -534,7 +575,7 @@ export const MarpData = {
    * rather than whatever the filter now matches.
    */
   async byIds(ids) {
-    await delay(LATENCY.query);
+    await latency(LATENCY.query);
     const out = [];
     for (const id of ids) {
       const base = baseFor(id);
@@ -597,7 +638,7 @@ export const MarpData = {
    * can never disagree about what page 7 holds.
    */
   async query({ filters = {}, sort = { field: 'confidence', dir: 'asc' }, page = 1, pageSize = 45 }) {
-    await delay(LATENCY.query);
+    await latency(LATENCY.query);
 
     /* Every rail dimension goes through one rule, declared in model/dimensions.js and
        applied by model/match.js, so the fixture and the API cannot disagree about what a
@@ -642,7 +683,7 @@ export const MarpData = {
   } = {}) {
     /* Before the latency, as a `400` would be: a rejected request never reaches the wire. */
     const wanted = requestedPages(pages, pageSize);
-    await delay(LATENCY.query);
+    await latency(LATENCY.query);
 
     const plan = resolve(filters, termsFor(sort), excludedIds(exclude, filters.excludeIds));
     const total = plan.total;
@@ -678,7 +719,7 @@ export const MarpData = {
     /* `slowNextCommit` holds this one open; it applies once and then forgets itself, the
        same way `failNextCommit` does. */
     const held = slowNext; slowNext = 0;
-    await delay(held || LATENCY.commit);
+    await (held ? delay(held) : latency(LATENCY.commit));
     if (failNext) { failNext = false; throw new Error('the commit could not be saved'); }
     const reviewed = [], flagged = [], skipped = [], reverted = [];
 
@@ -747,7 +788,7 @@ export const MarpData = {
 
   /** A single correction. Returns the authoritative row, as the API will. */
   async setSpecies(observationId, speciesId) {
-    await delay(LATENCY.species);
+    await latency(LATENCY.species);
     /* The species is checked first so a correction that cannot be made writes nothing --
        `editable` materialises a replica the moment it is asked for one. */
     const sp = db.species.find((s) => s.species_id === speciesId);
@@ -767,7 +808,7 @@ export const MarpData = {
 
   /** Stands in for the thumbnail worker finishing a queued image. */
   async awaitThumbnail(observationId) {
-    await delay(LATENCY.thumb);
+    await latency(LATENCY.thumb);
     const row = editable(observationId);
     if (!row) return { ok: false };
     row.thumbnail_status = 'ready';
