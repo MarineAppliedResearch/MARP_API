@@ -64,7 +64,7 @@ model registry are later milestones and are deliberately not built here.
 ## Open assumptions
 
 - [x] **A1 · api contract · blocking** — answered 2026-09-09; the contract is in
-  *The worker contract* below. Ten routes, five of them worker-facing.
+  *The worker contract* below. Eleven routes, five of them worker-facing.
 - [x] **A2 · database/schema · blocking** — answered 2026-09-09: **five tables, not six.**
   Slots are a count on the worker rather than a table, and logs fold into events as a
   `kind`. Shape in *The orchestration schema* below.
@@ -108,11 +108,14 @@ a real choice and is implemented as stated rather than left unsaid.
 
   A human-facing view may still read "frames 0–999" for `[0, 1000)`. That is presentation,
   not the contract.
-- [ ] **A8 · behavioural · non-blocking** — **enrolment is idempotent by worker name.** A
+- [ ] **A8 · behavioural · non-blocking** — **enrolment is idempotent per machine.** A
   machine that reboots and enrols again is the same row with updated hardware, so
   `enrolled_at` means "first seen". The alternative fills the pool view with ghosts and
   makes "which row is the live one?" unanswerable. Re-enrolling also returns a `paused`
   machine to `online`, since re-enrolling is how an operator restarts one they had parked.
+
+  Originally written as "idempotent by worker name", and **superseded by A13**: it is keyed
+  on the machine's durable id, and a re-enrolment deliberately does not overwrite the name.
 - [ ] **A9 · behavioural · non-blocking** — **a machine is never given more concurrent work
   than the `slot_count` it enrolled with**, and a `paused` machine is given none. A2's
   five-tables-not-six reasoning says `slot_count` is what Milestone 1 scheduling needs, and
@@ -134,6 +137,20 @@ a real choice and is implemented as stated rather than left unsaid.
   fixing the vocabulary at four keys. A worker token therefore *can* submit and cancel work.
   That is a smaller power than `models:write` and well short of anything touching survey
   data, but it is not nothing; a fifth key would be the fix if it matters.
+
+- [x] **A13 · database/schema · blocking** — answered 2026-09-09 by Isaac: **a worker must be
+  renameable.** The durable machine-generated id is the identity and the human-readable name
+  is editable metadata, per `MARP_API#104`. Today this is the reverse: `gpu_workers.name` is
+  `UNIQUE` and is the column re-enrolment keys on, and the worker's `local_id` is sent on
+  every enrolment but has no column to be stored in. A rename would therefore fork the pool
+  row on the machine's next enrolment, leaving the old row holding any lease. The fix is a
+  durable-id column that enrolment keys on, `name` no longer unique, and a rename route.
+- [x] **A14 · architectural · blocking** — answered 2026-09-09 by Isaac: **there is no
+  checkpoint resume.** `MARP_API#104` describes an interrupted job resuming from its
+  checkpoint; that is withdrawn. A job runs on one worker start to finish, as settled on
+  `marp-inference-worker#3`. An interrupted piece returns to the queue and is re-run from
+  the start of its range by whichever machine takes it. Ranges are sized so that losing one
+  is cheap, which is what makes re-running it acceptable.
 
 
 ## Decisions
@@ -210,7 +227,8 @@ what is proven, and lists the manual steps for the rest.
 Five new tables. Reuse everywhere else — the ten ML tables already model datasets, runs,
 epochs, hyperparameters, metrics and artifacts.
 
-- **`gpu_workers`** — `id`, `name`, `enrolled_at`, `last_seen_at`, `state`
+- **`gpu_workers`** — `id`, `local_id` (the durable machine-generated identity,
+  unique; A13), `name` (editable metadata, not unique), `enrolled_at`, `last_seen_at`, `state`
   (`online` / `offline` / `paused`), `slot_count`, `worker_version`,
   `capabilities` jsonb (GPUs and VRAM, driver, disk, engines, ranges supported).
   **No host, url or port column** — push must stay unrepresentable (R3).
@@ -246,14 +264,14 @@ ten-hour video straightforward. The dashboard groups by `batch_id`.
 
 ## The worker contract
 
-Ten routes under `/api/v2/gpu/…`, declared in V1 terms because
+Eleven routes under `/api/v2/gpu/…`, declared in V1 terms because
 `registerVersionedRoute` rewrites them and throws on a literal `/api/v2/` path.
 
 **Worker-facing** — five, all outbound from the worker.
 
 | Route | Permission | Carries | Returns |
 |---|---|---|---|
-| `POST /gpu/workers/enrol` | `workers:enrol` | name, `capabilities` | `worker_id`, `heartbeat_seconds` |
+| `POST /gpu/workers/enrol` | `workers:enrol` | `local_id`, name, `capabilities` | `worker_id`, `heartbeat_seconds` |
 | `POST /gpu/poll` | `jobs:execute` | `worker_id`, `capabilities`, free `slot_index`es, `wait_seconds` | `204` when idle, else the job: `job_id`, `attempt_id`, `lease_epoch`, `lease_expires_at`, `kind`, `spec` |
 | `POST /gpu/attempts/:id/heartbeat` | `jobs:execute` | `worker_id`, `lease_epoch`, `state`, `progress {done,total,unit}` | `{action: continue \| cancel \| pause \| abandon}`, `lease_expires_at` |
 | `POST /gpu/attempts/:id/events` | `jobs:write` | batch of `{seq, kind, at, payload}` | accepted count, `next_seq` |
@@ -263,7 +281,8 @@ Artifact hand-off is two steps, outside `bodyParser`:
 `POST /gpu/artifacts/check` with `{sha256, bytes}` answers `{already_have: true}` or a
 short-lived upload target; the upload itself is a raw stream.
 
-**Human-facing** — five: `GET /gpu/workers` (the pool), `GET /gpu/jobs`,
+**Human-facing** — six: `GET /gpu/workers` (the pool), `POST /gpu/workers/:id/rename`,
+`GET /gpu/jobs`,
 `GET /gpu/jobs/:id`, `POST /gpu/jobs` (submit; a video plus a range, or a video plus a
 piece length, which expands into a batch), `POST /gpu/jobs/:id/cancel`.
 
