@@ -544,6 +544,11 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
      so it is on screen without hunting for it. */
   .sortbox { margin-left: 0; }
   .sub .marked-word { display: none; }
+  /* "Page 2 of 24" is the item worth the room here, and it is short. The trailing words
+     of the count go instead — this row scrolls sideways, so anything it spends on width
+     is the sort control pushed past the end of it, which M3 forbids. The page size is
+     still set on the element and still readable on a wider screen. */
+  .sub .match-word, .sub .per-page { display: none; }
   /* Progress is already down to the bar and the percentage by here -- see the 1100px
      query beside `.prog`. Nothing more of it needs dropping. */
 

@@ -11,12 +11,48 @@ import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
 import { toQuery, fromQuery } from './model/query-url.js';
+import { plan } from './model/schedule.js';
+import { createCache, keyFor } from './model/cache.js';
 
 export { MODES };
 
 let reqSeq = 0;
 const listeners = new Set();
 const logListeners = new Set();
+
+/**
+ * What the client already holds for the question it is asking. #99: the reviewer never
+ * waits for data.
+ *
+ * The rules are in `model/cache.js` and `model/schedule.js`; this is the one instance and
+ * the only place that fetches or evicts anything. Three properties are load-bearing and
+ * each is easy to undo by accident:
+ *
+ * - **A hit renders without ever setting `state.loading`.** `renderGrid` draws skeletons
+ *   while it is true and `computeLayout` returns early, so a cache that sets it still
+ *   flashes a loading state — a cache that renders a spinner has failed the task,
+ *   however correct its accounting.
+ * - **A prefetch bypasses `reqSeq` entirely.** A request that can never become the
+ *   visible page needs no sequencing, and giving it a token is how it comes to overwrite
+ *   the visible page. What says a prefetch is still wanted is the cache *key*.
+ * - **A prefetch never calls `notify()` and never asks for a count.** Nothing it fetches
+ *   is on screen, and a full re-render for a page nobody is looking at is the thing
+ *   yielding exists to prevent.
+ */
+const cache = createCache();
+
+/* How long the prefetcher yields for after the visible page has settled, and then the
+   endpoint's own cap on one page-set request: `requestedPages` in data.js rejects a
+   bigger one with a 400 rather than truncating it, so the cap is respected here. */
+const PREFETCH_IDLE = 250;
+const MAX_PAGES = 12;
+const MAX_ROWS = 600;
+
+let prefetchBusy = false;      // at most one prefetch in flight, ever
+let prefetchWait = null;       // the pending yield, recomputed on every page change
+let idleWait = null;           // ...and its requestIdleCallback half
+let shownPage = null;          // the page last put on screen, for the direction of travel
+let travel = 1;                // the sign of the last page movement; forward after a jump
 
 export const state = {
   mode: 'scientific',
@@ -96,6 +132,46 @@ function clearCommitStatus(after = 2400) {
 const countFilters = () => ({
   species: state.filters.species, project: state.filters.project, dive: state.filters.dive
 });
+
+/**
+ * Rows onto the screen, plus the page's exception set.
+ *
+ * Shared by all three branches of `refresh()` — a cache hit, a pinned page and a query —
+ * because seeding the marks is exactly the line a new branch forgets, and forgetting it
+ * silently clears the exceptions the record already carried when the page is committed.
+ */
+function showRows(rows) {
+  state.rows = rows;
+  const exception = pendingException(state.mode);
+  if (exception) {
+    state.marks = page.seedMarks(state.marks, state.touched, rows,
+      (row) => existingState(state.mode, row) === exception);
+  }
+}
+
+/** The last thing every branch of `refresh()` does, in the order it has to happen. */
+function settled() {
+  shownPage = state.page;
+  state.loading = false;
+  notify();
+  actions._chaseQueuedThumbnails();
+  actions._schedulePrefetch();
+}
+
+/**
+ * Drop the pending yield.
+ *
+ * A page change recomputes the prefetch from where the reviewer is *now* rather than
+ * queueing a second one behind where they were.
+ */
+function cancelPrefetchWait() {
+  clearTimeout(prefetchWait);
+  prefetchWait = null;
+  if (idleWait != null && typeof window !== 'undefined' && window.cancelIdleCallback) {
+    window.cancelIdleCallback(idleWait);
+  }
+  idleWait = null;
+}
 
 /**
  * A different order means different pages, so what was pinned is no longer that page.
@@ -215,12 +291,59 @@ export const actions = {
        address has to be kept up to date. */
     rememberQuery();
 
+    /* The cache holds one question at a time, so adopting a different key empties it: a
+       filter, the sort, the mode or the page size each produce a genuinely different
+       result set, and `resetForNewQuery()` already retires the pins and the parked work
+       for that reason. **A commit changes none of them and so invalidates nothing** —
+       paging forward must never discard what is behind, which is the whole of #99. */
+    const holding = cache.rowCount();
+    if (cache.use(keyFor({
+      mode: state.mode, filters: state.filters, sort: state.sort, pageSize: state.pageSize
+    }))) {
+      if (holding) fire('cache:invalidated', { rows: holding });
+      shownPage = null;                    // a new question is travelled forward
+    }
+
+    /* The direction of travel, for the scheduler: the sign of the last page movement, and
+       forward for a jump or a new question. Derived from the movement rather than recorded
+       by each action, because five actions change the page and one of them forgetting
+       would show only as the cache being mysteriously slow backwards. */
+    travel = (shownPage != null && Math.abs(state.page - shownPage) === 1)
+      ? Math.sign(state.page - shownPage) : 1;
+
+    const pinned = state.pageMembers.get(state.page);
+    const pinnedIds = page.pinnedIds(state.pageMembers);
+
+    /**
+     * Already held? Then render now.
+     *
+     * Nothing is awaited between here and the notify, so `state.loading` never becomes
+     * true, no skeleton is drawn and `computeLayout` is not held off — which is the
+     * difference between a cache and a faster spinner.
+     *
+     * A pinned page is served from the row index by id and a cached page from the page
+     * index, and the two are disjoint by construction: this branch asks in that order,
+     * exactly as the fetch below does, so a committed page is never answered by the
+     * question's page 7 and vice versa. `serve` suppresses the pinned ids as it goes,
+     * because the exclusion set grows on every commit and is deliberately not in the key.
+     *
+     * It still takes a sequencing token. A slower visible query already in flight must
+     * not land on top of the page the reviewer is now looking at.
+     */
+    const held = pinned ? cache.rowsFor(pinned) : cache.serve(state.page, pinnedIds);
+    if (held) {
+      reqSeq++;
+      fire(pinned ? 'cache:pinned' : 'cache:hit', { page: state.page, rows: held.length });
+      showRows(held);
+      settled();
+      return;
+    }
+
     /* Requests can overlap — a page change during a page-size change, say — and the
        slower one must not win. Only the newest response is allowed to land. */
     const token = ++reqSeq;
     state.loading = true; notify();
 
-    const pinned = state.pageMembers.get(state.page);
     let res;
 
     if (pinned) {
@@ -231,26 +354,37 @@ export const actions = {
       res = { rows, total: state.total, pageCount: state.pageCount, page: state.page };
     } else {
       const query = filters.queryFilters(state.mode, state.filters,
-        { excludeIds: page.pinnedIds(state.pageMembers) });
+        { excludeIds: pinnedIds });
       fire('query', { page: state.page, sort: state.sort });
       res = await MarpData.query({
         filters: query, sort: state.sort, page: state.page, pageSize: state.pageSize
       });
       if (token !== reqSeq) return;
+
+      /**
+       * The status counts, and the two defects this line used to carry.
+       *
+       * The assignment was **before** the token check, so a superseded response wrote
+       * into state and only then bailed. Nothing redrew at that instant, which is why it
+       * survived; the next `notify()` drew it. The value is read after the guard now, and
+       * a superseded response writes nothing at all — it does not even ask.
+       *
+       * And it ran on **every** refresh, the pinned branch included, which against a real
+       * API is a second full pass over the matching set on every page turn. A pinned page
+       * and a cached page are not running the filter, so they have nothing new to say
+       * about the counts — exactly as they already have nothing new to say about the
+       * total, the page count or `excludedForNoDate`. `commitPage` refreshes them itself
+       * after the one action that actually moves them.
+       */
+      const counts = await MarpData.counts({ filters: countFilters() });
+      if (token !== reqSeq) return;
+      state.counts = counts;
     }
 
-    state.counts = await MarpData.counts({ filters: countFilters() });
-    if (token !== reqSeq) return;
-
-    state.rows = res.rows;
     /* Marks are the page's exception set, so rows that already carry this mode's
        exception arrive marked. Without this, committing a page that held existing
        flags cleared them — the commit accepts everything unmarked. */
-    const exception = pendingException(state.mode);
-    if (exception) {
-      state.marks = page.seedMarks(state.marks, state.touched, res.rows,
-        (row) => existingState(state.mode, row) === exception);
-    }
+    showRows(res.rows);
     if (!pinned) { state.total = res.total; state.pageCount = res.pageCount; }
 
     /* How many observations the date filter had to exclude for having no date. The whole
@@ -269,9 +403,112 @@ export const actions = {
       return actions.refresh();
     }
 
-    state.loading = false;
-    notify();
-    actions._chaseQueuedThumbnails();
+    /* **The visible page goes into the cache too**, and it has to: without it the
+       scheduler sees the one page it can be certain of as missing and chases it, and
+       going back one page would be a fetch. It is put after the clamp, so a page the
+       question no longer reaches is never cached as an empty answer. A pinned page is
+       not put — it is not an answer to the question, and the two indexes are disjoint. */
+    if (!pinned) cache.put(state.page, res.rows);
+
+    settled();
+  },
+
+  /**
+   * Fetch ahead — but only once the visible page has settled, and then only when the
+   * browser is idle.
+   *
+   * The grid re-renders in full on every notify and `computeLayout` returns early while
+   * loading, so a response landing mid-layout would notify again and re-render on top of
+   * the layout pass the reviewer is waiting for. So the prefetcher yields: 250 ms, and
+   * then the first idle moment the browser will give us. `requestIdleCallback` is
+   * platform, so nothing is added to use it, and the timer is the fallback where it is
+   * missing — with a timeout on the idle call so a busy tab cannot starve it forever.
+   */
+  _schedulePrefetch() {
+    cancelPrefetchWait();
+    if (!state.ready) return;
+    prefetchWait = setTimeout(() => {
+      prefetchWait = null;
+      if (typeof window !== 'undefined' && window.requestIdleCallback) {
+        idleWait = window.requestIdleCallback(
+          () => { idleWait = null; actions._prefetch(); }, { timeout: PREFETCH_IDLE * 4 });
+      } else actions._prefetch();
+    }, PREFETCH_IDLE);
+  },
+
+  /**
+   * One page-set request for the pages worth holding, and one sweep of what is not.
+   *
+   * **At most one in flight.** One request carrying twelve pages is strictly better than
+   * twelve requests — under the contract each request pays its own pass over the matching
+   * set — and one already in flight when the reviewer jumps is allowed to land: the rows
+   * answer the same question and may be exactly where they go next. Cancelling would save
+   * the client some bytes and the server nothing. It is never waited on.
+   *
+   * **It takes no sequencing token**, deliberately. The cache key is what says whether
+   * these rows are still an answer to the question being asked, and a token would let a
+   * prefetch land on the visible page.
+   */
+  async _prefetch() {
+    if (prefetchBusy || state.loading || !state.ready) return;
+
+    const pinnedIds = page.pinnedIds(state.pageMembers);
+    const schedule = plan({
+      page: state.page, pageCount: state.pageCount, direction: travel,
+      held: cache.held(), pinnedIds
+    });
+
+    /* Eviction happens here rather than at put time because this is the one place that
+       knows where the reviewer is, and distance from that is the rule. The pinned ids are
+       absolute: a row a committed page needs is never given up, at any distance. */
+    if (schedule.evict.length) {
+      cache.evict(schedule.evict, pinnedIds);
+      fire('cache:evicted', { pages: schedule.evict, rows: cache.rowCount() });
+    }
+
+    /* `fetch` is priority-ordered, so truncating it to the request cap keeps the pages
+       nearest the reviewer. The row cap binds first on a wide desktop, where a page is
+       far more than fifty tiles. */
+    const cap = Math.min(MAX_PAGES, Math.floor(MAX_ROWS / Math.max(1, state.pageSize)));
+    const wanted = schedule.fetch.slice(0, Math.max(0, cap));
+    if (!wanted.length) return;
+
+    const asked = cache.key;
+    prefetchBusy = true;
+    fire('prefetch', { pages: wanted, direction: travel });
+    try {
+      const res = await MarpData.queryPages({
+        filters: filters.queryFilters(state.mode, state.filters, { excludeIds: pinnedIds }),
+        sort: state.sort, pageSize: state.pageSize, pages: wanted, exclude: pinnedIds
+        /* `includeTotal` is deliberately absent. A prefetch never asks for a count: the
+           total is one per question, and asking again is a second pass for a number the
+           client already has. */
+      });
+
+      /* The question may have changed while this was in flight. These rows answer the old
+         one, and the cache holds one question at a time. */
+      if (cache.key !== asked) { fire('prefetch:stale', { pages: wanted }); return; }
+
+      const cached = [];
+      for (const answer of res.pages) {
+        /* An empty answer for a page inside the count means the question moved under the
+           request; caching it would serve an empty page as a hit, and a hole and an empty
+           result look identical on screen while meaning opposite things. */
+        if (!answer.rows.length) continue;
+        cache.put(answer.page, answer.rows);
+        cached.push(answer.page);
+      }
+      /* No `notify()`: none of these pages is on screen. */
+      fire('prefetch:cached', { pages: cached, rows: cache.rowCount() });
+    } catch (err) {
+      /* Speculative work, so a failure is a line in the log and nothing else — the page
+         the reviewer is on was drawn before this started. */
+      fire('prefetch:failed', {
+        pages: wanted, message: String(err && err.message || err)
+      });
+    } finally {
+      prefetchBusy = false;
+    }
   },
 
   /** A queued thumbnail resolves in place, without reordering the mosaic. */
@@ -359,6 +596,29 @@ export const actions = {
     const res = await MarpData.setSpecies(id, speciesId);
     if (!res.ok) { fire('changeSpecies:failed', { id }); return; }
     state.changed.set(id, { from, to: res.observation.comname });
+
+    /**
+     * A correction retires every cached page. Not a commit, and not the same rule.
+     *
+     * A commit invalidates nothing, because a committed page is *pinned* and the ids it
+     * holds are excluded from every later query — the membership is deliberately frozen
+     * and the arithmetic stays honest. A species correction pins nothing: it moves the
+     * row's own value out from under the species filter, so the row genuinely leaves the
+     * result and every page after it shifts by one. #68 requires the corrected row to
+     * leave a species-filtered page on the next query, and a cached page would go on
+     * showing it.
+     *
+     * The pages go; **the rows a committed page needs stay**, exactly as under eviction,
+     * so going back to what was submitted is still free. The cost is one page change at
+     * full latency after a correction, which is what every page change cost before #99.
+     *
+     * Dropping only the visible page was the other candidate and is rejected: page N+1
+     * was cached when this row was still in the set, so it would start with the row that
+     * has just moved onto page N, and the reviewer would meet the same observation twice.
+     * A duplicate tile is worse than a wait.
+     */
+    cache.evict(cache.held().map((entry) => entry.page), page.pinnedIds(state.pageMembers));
+
     /* The correction is what the panel was opened to do, so choosing a species
        finishes it. Leaving the panel up meant it blanked and rebuilt itself, which
        read as a flicker rather than as a result. The mark stays: correcting the

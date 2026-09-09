@@ -24,8 +24,20 @@ export function renderChrome() {
   const eligible = state.rows.filter((r) => r.thumbnail_status === 'ready').length;
   const willAct = commitCount({ mode: state.mode, rows: state.rows, marks: state.marks });
 
+  /* Where the reviewer is, said in words as well as drawn in the pager. The pager's
+     current page is a typable `<input>`, which reads as a control to change the page
+     rather than as a statement of where you are — and once paging is instant you move
+     far more, so the answer to "which page am I on" has to be legible without hunting
+     for the highlighted chip. #99, reported 2026-09-09. */
+  $('#pageNow').textContent = state.page.toLocaleString();
+  $('#pageTotal').textContent = Math.max(1, state.pageCount).toLocaleString();
+
+  /* Rows on screen, not the page size: a cached page suppresses rows now pinned to a
+     committed page, so the last page and a short page both really do hold fewer. The
+     page size is stated separately rather than inferred from this number. */
   $('#shown').textContent = state.loading ? '…' : state.rows.length;
   $('#total').textContent = state.total.toLocaleString();
+  $('#perPage').textContent = state.pageSize;
   $('#markedCount').textContent = markedCount;
   /* This counts marks made here, which is not the same thing as the status filter. */
   $('#markedLabel').title =
