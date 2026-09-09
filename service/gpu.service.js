@@ -650,6 +650,7 @@ class GpuService {
         // The range is always present, even for a whole video, so nothing
         // downstream has to special-case the undivided case -- and the
         // coordinator cannot split a submission it was not given bounds for.
+        // A whole video is [0, frame_count).
         if (!spec.range || typeof spec.range !== 'object') {
             invalid('spec.range is required and must be {start_frame, end_frame}, even for a whole video.');
         }
@@ -661,8 +662,15 @@ class GpuService {
             invalid('spec.range.start_frame must be zero or greater.');
         }
 
-        if (endFrame < startFrame) {
-            invalid('spec.range.end_frame must not be before spec.range.start_frame.');
+        // Strictly greater, because the range is half-open and so
+        // `end_frame == start_frame` is the empty range. Rejected here rather
+        // than queued: a job covering no frames would lease, run, report success
+        // and produce nothing, which looks like a working pipeline losing data.
+        if (endFrame <= startFrame) {
+            invalid(
+                'spec.range.end_frame must be greater than spec.range.start_frame. '
+                + 'The range is half-open -- end_frame is one past the last frame -- so equal bounds cover no frames at all.'
+            );
         }
 
         const priority = optionalInteger(body.priority, 'priority', 0);
@@ -724,16 +732,26 @@ class GpuService {
     // -----------------------------------------------------------------
 
     /**
-     * Cut `[start, end]` into consecutive pieces of at most `pieceFrames`.
+     * Cut `[start, end)` into consecutive pieces of at most `pieceFrames`.
      *
-     * **Both bounds are inclusive**, so a piece length of 100 over frames 0..249
-     * gives 0..99, 100..199 and 200..249. The pieces therefore tile the range
-     * exactly, with no frame processed twice and none missed -- which is the whole
-     * point of splitting, and is why the convention has to be stated rather than
-     * left to be inferred on each side.
+     * **The range is half-open: `start_frame` is included and `end_frame` is one
+     * past the last frame.** A piece length of 300 over `[0, 1000)` gives
+     * `[0, 300)`, `[300, 600)`, `[600, 900)` and `[900, 1000)` -- the last piece
+     * short rather than over-long.
      *
-     * @param {number} start - First frame, inclusive.
-     * @param {number} end - Last frame, inclusive.
+     * Half-open rather than inclusive because of what it costs at every site that
+     * touches a bound. The frame count is `end - start` with no `+1`; tiling is
+     * `[k*n, (k+1)*n)`, so the next piece's start *is* the previous piece's end
+     * and there is no boundary arithmetic to get wrong; and an empty range is
+     * expressible, which is what lets a submission of one be rejected rather than
+     * queued. It also matches where the arithmetic actually happens: the worker is
+     * Python, where `range()` and slicing are half-open natively.
+     *
+     * This is the contract with `marp-inference-worker`, not a presentation
+     * choice -- a dashboard is free to say "frames 0-999".
+     *
+     * @param {number} start - First frame, included.
+     * @param {number} end - One past the last frame, excluded.
      * @param {number|null} pieceFrames - Frames per piece, or null for one piece.
      * @returns {Array<Object>} `{start_frame, end_frame}` entries in order.
      */
@@ -744,10 +762,10 @@ class GpuService {
 
         const ranges = [];
 
-        for (let from = start; from <= end; from += pieceFrames) {
+        for (let from = start; from < end; from += pieceFrames) {
             ranges.push({
                 start_frame: from,
-                end_frame: Math.min(from + pieceFrames - 1, end),
+                end_frame: Math.min(from + pieceFrames, end),
             });
         }
 

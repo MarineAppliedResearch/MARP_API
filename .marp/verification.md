@@ -63,13 +63,25 @@ Two tiers are used, and the split matters:
   silently swallowed by the same `ON CONFLICT DO NOTHING` that makes replay safe.
 - **A success reported after the job was cancelled** — the attempt records its success, the
   job stays cancelled, and nothing is published.
-- **Splitting a range** — asserted to tile `0..249` into `0..99`, `100..199`, `200..249`:
-  no frame processed twice, none missed.
+- **Splitting a range** — `[0, 1000)` in pieces of 300 is asserted to give `[0, 300)`,
+  `[300, 600)`, `[600, 900)`, `[900, 1000)`, with a per-frame tally over the whole range
+  showing every frame covered exactly once, the covered count equal to 1000, and the last
+  piece short rather than over-long. A second case, `[40, 47)` in pieces of 3, covers the
+  uneven remainder and a non-zero base. The tally is there because a gap and an overlap can
+  cancel each other out in a total, so counting alone would not have caught the divergence
+  described below.
 
 ## Regression coverage
 
-Nothing here is a regression yet — this is new surface. Two tests exist specifically
+Nothing here is a regression yet — this is new surface. Three tests exist specifically
 because the implementation got them wrong first, and they are the ones to keep:
+
+- `splits a range into half-open pieces that cover every frame exactly once`, which exists
+  because MARP_API and `marp-inference-worker` had diverged on the frame-range convention:
+  this side read both bounds as inclusive, the worker read the end as exclusive. Each side
+  was self-consistent, so nothing failed — the cost would have been one frame dropped at
+  every piece boundary. Settled half-open, and this test plus the uneven-remainder one are
+  what stop it coming back.
 
 - `does not give a machine more concurrent work than the slots it enrolled with`, which
   caught the `slot_count` default described above.
@@ -191,15 +203,20 @@ drops a column.
 $ npm test
 
   Test Suites : 31 passed, 0 failed, 31 total
-  Tests       : 262 passed, 0 failed, 0 skipped, 262 total
-  Duration    : 99.2s
+  Tests       : 264 passed, 0 failed, 0 skipped, 264 total
+  Duration    : 103.1s
 
   Result: ALL TESTS PASSED
 ```
 
-262 = the 227 that were there plus 35 new (29 orchestration, 6 lease race). The 17
+264 = the 227 that were there plus 37 new (31 orchestration, 6 lease race). The 17
 `tests/jellyfin.test.js` tests, which CI excludes because it cannot reach the media server,
 were run and passed here.
+
+This is the run after the frame-range convention was settled half-open (A7). The run before
+that change was 262 for 262 on the inclusive reading — which is the whole point: each
+reading passes its own tests, so nothing but comparing the two repositories was ever going
+to catch the disagreement.
 
 ### The two new suites, in full
 
@@ -210,7 +227,9 @@ GPU worker enrolment > returns the same worker when the same name enrols again, 
 GPU worker enrolment > refuses an enrolment with no name                                             PASS
 GPU job submission and leasing > queues one job and leases it, in one poll and with no separate claim PASS
 GPU job submission and leasing > answers 204 when there is nothing to do                             PASS
-GPU job submission and leasing > splits a range into pieces that tile it exactly, sharing one batch_id PASS
+GPU job submission and leasing > splits a range into half-open pieces that cover every frame exactly once PASS
+GPU job submission and leasing > divides a range that does not divide evenly without losing or repeating a frame PASS
+GPU job submission and leasing > refuses an empty frame range rather than queueing a job that does nothing PASS
 GPU job submission and leasing > refuses a submission with no frame range, even for a whole video    PASS
 GPU job submission and leasing > refuses a job of an unknown kind                                    PASS
 GPU job submission and leasing > does not give a machine more concurrent work than the slots it enrolled with PASS
@@ -237,7 +256,7 @@ GPU lease expiry > returns an expired lease's job to the queue and tells the old
 GPU pool view > shows the machine, its hardware, and the job it is running                           PASS
 
   Test Suites : 1 passed, 0 failed, 1 total
-  Tests       : 29 passed, 0 failed, 0 skipped, 29 total
+  Tests       : 31 passed, 0 failed, 0 skipped, 31 total
   Result: ALL TESTS PASSED
 ```
 
@@ -272,6 +291,12 @@ Recorded because each was a real defect rather than a flaky test.
    not the code's — the suite leaves earlier leases open — but it is what surfaced defect 1,
    because a two-slot machine holding fourteen attempts is the same bug seen from the other
    side.
+4. **Nothing failed for the frame-range convention, and that is the interesting one.**
+   MARP_API read both bounds as inclusive, `marp-inference-worker` read the end as
+   exclusive, and each side's tests passed against its own reading. It was caught by
+   comparing the two repositories, not by running anything. Settled half-open, changed
+   here, and now covered by two tests that assert the tiling property rather than the
+   shape of one example.
 
 ### Documentation
 
@@ -282,5 +307,6 @@ $ npm run docs:build
 `docs/openapi.generated.json` now carries 11 `/v2/gpu/…` paths (12 operations) and 24
 `Gpu*` component schemas, under the `V2 · GpuCompute` tag. Every operation has 401 and 403
 from `registerVersionedRoute`, and the `Artifact` schema no longer requires
-`training_run_id`. The regenerated `docs/developer/` tree changes one navigation line per
+`training_run_id`. Every description that said the frame bounds were inclusive now says
+half-open, and states both the count and the tiling property. The regenerated `docs/developer/` tree changes one navigation line per
 existing file, plus the new module pages.

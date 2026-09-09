@@ -128,7 +128,8 @@ const extraWorkerIds = [];
 /**
  * A Milestone 1 job spec: inference over a frame range of a Jellyfin video.
  *
- * @param {Object} range - `{start_frame, end_frame}`, both inclusive.
+ * @param {Object} range - `{start_frame, end_frame}`, half-open: the start is
+ * included and the end is one past the last frame.
  * @returns {Object} A spec the submit route accepts.
  */
 function specFor(range) {
@@ -158,7 +159,7 @@ async function submitJob(overrides = {}) {
         .post('/api/v2/gpu/jobs')
         .send({
             kind: 'inference',
-            spec: specFor({ start_frame: 0, end_frame: 99 }),
+            spec: specFor({ start_frame: 0, end_frame: 100 }),
             priority: TEST_PRIORITY + createdJobIds.length,
             ...overrides,
         });
@@ -327,7 +328,7 @@ describe('GPU job submission and leasing', () => {
         expect(polled.body.job_id).toBe(job.id);
         expect(polled.body.lease_epoch).toBe(1);
         expect(polled.body.attempt_id).toEqual(expect.any(Number));
-        expect(polled.body.spec.range).toEqual({ start_frame: 0, end_frame: 99 });
+        expect(polled.body.spec.range).toEqual({ start_frame: 0, end_frame: 100 });
 
         const [after] = await query('SELECT state, attempts_made FROM gpu_jobs WHERE id = :id', { id: job.id });
 
@@ -342,19 +343,59 @@ describe('GPU job submission and leasing', () => {
         expect(polled.body).toEqual({});
     });
 
-    it('splits a range into pieces that tile it exactly, sharing one batch_id', async () => {
+    it('splits a range into half-open pieces that cover every frame exactly once', async () => {
+        const totalFrames = 1000;
+        const pieceFrames = 300;
+
         const submitted = await submitJob({
-            spec: specFor({ start_frame: 0, end_frame: 249 }),
-            piece_frames: 100,
+            spec: specFor({ start_frame: 0, end_frame: totalFrames }),
+            piece_frames: pieceFrames,
         });
 
         expect(submitted.batch_id).toEqual(expect.any(String));
-        expect(submitted.jobs).toHaveLength(3);
-        expect(submitted.jobs.map((job) => job.spec.range)).toEqual([
-            { start_frame: 0, end_frame: 99 },
-            { start_frame: 100, end_frame: 199 },
-            { start_frame: 200, end_frame: 249 },
+        expect(submitted.jobs).toHaveLength(4);
+
+        const ranges = submitted.jobs.map((job) => job.spec.range);
+
+        // The bounds are half-open, so each piece's end is the next piece's
+        // start. The two repositories disagreed about this once -- MARP_API read
+        // both bounds as inclusive while the worker read the end as exclusive --
+        // and the cost was one frame silently dropped at every boundary. This
+        // test exists so that divergence cannot come back unnoticed.
+        expect(ranges).toEqual([
+            { start_frame: 0, end_frame: 300 },
+            { start_frame: 300, end_frame: 600 },
+            { start_frame: 600, end_frame: 900 },
+            { start_frame: 900, end_frame: 1000 },
         ]);
+
+        // The last piece is short rather than over-long: nothing runs past the
+        // end of the video.
+        const last = ranges[ranges.length - 1];
+
+        expect(last.end_frame - last.start_frame).toBe(100);
+        expect(last.end_frame).toBe(totalFrames);
+
+        // The count is the property the convention buys: end - start, with no
+        // +1 anywhere, and the pieces adding up to the whole.
+        const covered = ranges.reduce((sum, range) => sum + (range.end_frame - range.start_frame), 0);
+
+        expect(covered).toBe(totalFrames);
+
+        // And then the frames themselves, one tally per frame across the whole
+        // range. A gap and an overlap can cancel out in a total, so counting is
+        // not enough on its own.
+        const timesCovered = new Array(totalFrames).fill(0);
+
+        for (const range of ranges) {
+            for (let frame = range.start_frame; frame &lt; range.end_frame; frame += 1) {
+                timesCovered[frame] += 1;
+            }
+        }
+
+        expect(timesCovered.filter((times) => times === 0)).toHaveLength(0);
+        expect(timesCovered.filter((times) => times > 1)).toHaveLength(0);
+        expect(new Set(timesCovered)).toEqual(new Set([1]));
 
         // Every piece belongs to the same batch, which is how the dashboard
         // groups them and how a person finds the rest of a split video.
@@ -363,13 +404,55 @@ describe('GPU job submission and leasing', () => {
         const listed = await global.api.get(`/api/v2/gpu/jobs?batch_id=${submitted.batch_id}`);
 
         expect(listed.status).toBe(200);
-        expect(listed.body.total).toBe(3);
+        expect(listed.body.total).toBe(4);
 
         // Leave the queue as this suite found it, so later tests can still
         // assert that a poll finds nothing.
         for (const job of submitted.jobs) {
             await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`);
         }
+    });
+
+    it('divides a range that does not divide evenly without losing or repeating a frame', async () => {
+        // Seven frames into pieces of three, and not starting at zero. The
+        // remainder is where an off-by-one in the piece arithmetic shows up
+        // first, and a non-zero start is where one in the base does.
+        const submitted = await submitJob({
+            spec: specFor({ start_frame: 40, end_frame: 47 }),
+            piece_frames: 3,
+        });
+
+        const ranges = submitted.jobs.map((job) => job.spec.range);
+
+        expect(ranges).toEqual([
+            { start_frame: 40, end_frame: 43 },
+            { start_frame: 43, end_frame: 46 },
+            { start_frame: 46, end_frame: 47 },
+        ]);
+
+        // Starts where the range starts, ends where it ends, and every boundary
+        // is shared rather than adjacent.
+        expect(ranges[0].start_frame).toBe(40);
+        expect(ranges[ranges.length - 1].end_frame).toBe(47);
+
+        for (let index = 1; index &lt; ranges.length; index += 1) {
+            expect(ranges[index].start_frame).toBe(ranges[index - 1].end_frame);
+        }
+
+        expect(ranges.reduce((sum, range) => sum + (range.end_frame - range.start_frame), 0)).toBe(7);
+
+        for (const job of submitted.jobs) {
+            await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`);
+        }
+    });
+
+    it('refuses an empty frame range rather than queueing a job that does nothing', async () => {
+        const response = await global.api
+            .post('/api/v2/gpu/jobs')
+            .send({ kind: 'inference', spec: specFor({ start_frame: 500, end_frame: 500 }) });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/must be greater than/);
     });
 
     it('refuses a submission with no frame range, even for a whole video', async () => {

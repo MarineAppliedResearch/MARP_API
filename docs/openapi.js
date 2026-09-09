@@ -2254,11 +2254,11 @@ const buildOpenApiSpec = () => {
                             },
                             range: {
                                 type: 'object',
-                                description: 'The frames to process. **Both bounds are inclusive**, so consecutive pieces of a split video tile the range exactly with no frame processed twice and none missed.',
+                                description: 'The frames to process. **Half-open: `start_frame` is included and `end_frame` is one past the last frame**, so the frames covered are `end_frame - start_frame` and consecutive pieces of a split video share a bound -- the `end_frame` of one piece is the `start_frame` of the next. Nothing is processed twice and nothing is missed. `end_frame` must be greater than `start_frame`; equal bounds are the empty range and are refused. A whole video is `[0, frame_count)`. This is the contract a worker is built against; a human-facing view may still read "frames 0-999", which is presentation rather than the contract.',
                                 required: ['start_frame', 'end_frame'],
                                 properties: {
-                                    start_frame: { type: 'integer', minimum: 0, example: 0 },
-                                    end_frame: { type: 'integer', minimum: 0, example: 8999 },
+                                    start_frame: { type: 'integer', minimum: 0, example: 0, description: 'First frame to process, included.' },
+                                    end_frame: { type: 'integer', minimum: 1, example: 9000, description: 'One past the last frame to process, excluded. `[0, 9000)` is nine thousand frames.' },
                                 },
                             },
                             params: {
@@ -2690,7 +2690,7 @@ const buildOpenApiSpec = () => {
                                 type: 'integer',
                                 minimum: 1,
                                 example: 9000,
-                                description: 'Split the spec\'s range into pieces of this many frames, each its own job, all sharing one batch_id. Omit for a single job. Both range bounds are inclusive, so the pieces tile the range exactly.',
+                                description: 'Split the spec\'s range into pieces of this many frames, each its own job, all sharing one batch_id. Omit for a single job. Piece k is `[start + k*piece_frames, start + (k+1)*piece_frames)`, clipped to the end of the range -- so the pieces tile the range exactly, consecutive pieces share a bound, and the last piece is short rather than over-long.',
                             },
                         },
                     },

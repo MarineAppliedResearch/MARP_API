@@ -125,7 +125,7 @@ async function queueJobs(count) {
                     engine: 'ultralytics',
                     model: { name: `jest-race-model-${runId}`, sha256: 'c'.repeat(64) },
                     video: { jellyfin_item_id: `jest-race-item-${runId}` },
-                    range: { start_frame: index * 100, end_frame: (index * 100) + 99 },
+                    range: { start_frame: index * 100, end_frame: (index * 100) + 100 },
                 },
             });
 

@@ -81,17 +81,33 @@ model registry are later milestones and are deliberately not built here.
   Jellyfin directly with its own credential, so its MARP token needs no Jellyfin
   permission. Follows from settled decision 5.
 
-Found while implementing the coordinator, 2026-09-09. None is blocking — each is a one-line
-change either way and none moves the schema, the route list or the meaning of a field — but
-each was a real choice and is implemented as stated rather than left unsaid.
+Found while implementing the coordinator, 2026-09-09. Only A7 turned out to matter across
+repositories, and it is answered below; the rest are non-blocking — each a one-line change
+either way, none moving the schema, the route list or the meaning of a field — but each was
+a real choice and is implemented as stated rather than left unsaid.
 
-- [ ] **A7 · cross-repository integration · non-blocking** — **`range.start_frame` and
-  `range.end_frame` are both inclusive.** The contract names the two bounds and does not say
-  which convention they follow, and splitting needs to know: under the inclusive reading
-  consecutive pieces tile the range exactly, under a half-open reading the same arithmetic
-  leaves a one-frame gap at every boundary. Implemented inclusive, which is the natural
-  reading and makes a whole video `[0, frame_count - 1]`. **The worker side must agree**, so
-  this is the one of these six worth confirming across repositories.
+- [x] **A7 · cross-repository integration · blocking in effect** — answered 2026-09-09 by
+  Isaac's delegation, after the two repositories were found to have diverged: **the frame
+  range is half-open, `[start_frame, end_frame)`.** `start_frame` is included; `end_frame`
+  is one past the last frame.
+
+  Raised as non-blocking because it looked like a one-line choice, and it was not: MARP_API
+  had implemented both bounds inclusive while `marp-inference-worker` had implemented
+  half-open (`jobs/job_spec.py:48`, and `iter_frame_range` yields half-open). Left alone,
+  every piece boundary would have silently dropped a frame — with nothing failing, because
+  each side was self-consistent. The lesson is that a convention shared across two
+  repositories is not a local choice however small it looks.
+
+  **The worker's reading stands and MARP_API changed.** The reasoning, which is also in
+  `service/gpu.service.js#splitRange`: the frame arithmetic happens in Python, where
+  `range()` and slicing are half-open natively; the count is `end - start` with no `+1`;
+  tiling is `[k·n, (k+1)·n)`, so the next piece's start *is* the previous piece's end and
+  there is no boundary arithmetic to get wrong; and an empty range is expressible, which is
+  what lets a submission of one be refused rather than queued as a job that does nothing.
+  Inclusive needs a `+1` at every site that touches a bound.
+
+  A human-facing view may still read "frames 0–999" for `[0, 1000)`. That is presentation,
+  not the contract.
 - [ ] **A8 · behavioural · non-blocking** — **enrolment is idempotent by worker name.** A
   machine that reboots and enrols again is the same row with updated hardware, so
   `enrolled_at` means "first seen". The alternative fills the pool view with ghosts and
@@ -260,7 +276,8 @@ piece length, which expands into a batch), `POST /gpu/jobs/:id/cancel`.
 ```
 
 `range` is always present, even for a whole video, so nothing special-cases the
-undivided case. `reduction` is named and versioned per the worker task's R10b.
+undivided case, and it is **half-open** — `[0, frame_count)` for a whole video (A7).
+`reduction` is named and versioned per the worker task's R10b.
 
 **Three rules that are the whole design.** Every state-changing call carries
 `(attempt_id, worker_id, lease_epoch)`, and a mismatch is answered `{action: 'abandon'}`.

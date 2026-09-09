@@ -190,7 +190,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line818">line 818</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line836">line 836</a>
     </li></ul></dd>
     
 
@@ -381,7 +381,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line712">line 712</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line720">line 720</a>
     </li></ul></dd>
     
 
@@ -1356,7 +1356,7 @@ declare itself finished.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line835">line 835</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line853">line 853</a>
     </li></ul></dd>
     
 
@@ -2470,19 +2470,29 @@ between a result that can be opened and one that only looks like it can.</li></u
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Cut `[start, end]` into consecutive pieces of at most `pieceFrames`.
+    <dd class="tag-description"><ul class="dummy"><li>Cut `[start, end)` into consecutive pieces of at most `pieceFrames`.
 
-**Both bounds are inclusive**, so a piece length of 100 over frames 0..249
-gives 0..99, 100..199 and 200..249. The pieces therefore tile the range
-exactly, with no frame processed twice and none missed -- which is the whole
-point of splitting, and is why the convention has to be stated rather than
-left to be inferred on each side.</li></ul></dd>
+**The range is half-open: `start_frame` is included and `end_frame` is one
+past the last frame.** A piece length of 300 over `[0, 1000)` gives
+`[0, 300)`, `[300, 600)`, `[600, 900)` and `[900, 1000)` -- the last piece
+short rather than over-long.
+
+Half-open rather than inclusive because of what it costs at every site that
+touches a bound. The frame count is `end - start` with no `+1`; tiling is
+`[k*n, (k+1)*n)`, so the next piece's start *is* the previous piece's end
+and there is no boundary arithmetic to get wrong; and an empty range is
+expressible, which is what lets a submission of one be rejected rather than
+queued. It also matches where the arithmetic actually happens: the worker is
+Python, where `range()` and slicing are half-open natively.
+
+This is the contract with `marp-inference-worker`, not a presentation
+choice -- a dashboard is free to say "frames 0-999".</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line740">line 740</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line758">line 758</a>
     </li></ul></dd>
     
 
@@ -2571,7 +2581,7 @@ left to be inferred on each side.</li></ul></dd>
 
             
 
-            <td class="description last">First frame, inclusive.</td>
+            <td class="description last">First frame, included.</td>
         </tr>
 
     
@@ -2595,7 +2605,7 @@ left to be inferred on each side.</li></ul></dd>
 
             
 
-            <td class="description last">Last frame, inclusive.</td>
+            <td class="description last">One past the last frame, excluded.</td>
         </tr>
 
     
@@ -3091,7 +3101,7 @@ about the others.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line785">line 785</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line803">line 803</a>
     </li></ul></dd>
     
 
@@ -3287,7 +3297,7 @@ allows.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line770">line 770</a>
+        <a href="service_gpu.service.js.html">service/gpu.service.js</a>, <a href="service_gpu.service.js.html#line788">line 788</a>
     </li></ul></dd>
     
 
