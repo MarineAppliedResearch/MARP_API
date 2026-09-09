@@ -92,6 +92,130 @@ async function markFirstFresh(page) {
   return tile;
 }
 
+/**
+ * Count every instant a loading state is on screen, and record what the store asked for.
+ *
+ * The same instrumentation `render.spec.mjs` uses, and for the same reason: rendering here
+ * is a full re-render, so a skeleton grid is replaced within one notify and any check that
+ * looks *afterwards* cannot see the flash. A MutationObserver sees it.
+ */
+async function watchWaits(page) {
+  await page.evaluate(async () => {
+    const { state, subscribe } = await import('./src/store.js');
+    window.__waits = 0;
+    window.__asks = [];
+    window.addEventListener('marp:action', (e) => {
+      if (e.detail.name === 'query' || e.detail.name === 'query:pinned') {
+        window.__asks.push(e.detail.name);
+      }
+    });
+    const look = () => {
+      if (document.querySelector('.tile.skeleton')
+        || document.querySelector('#field[data-state="loading"]')) window.__waits++;
+    };
+    new MutationObserver(look).observe(document.body, {
+      subtree: true, childList: true, attributes: true,
+      attributeFilter: ['class', 'data-state']
+    });
+    look();
+    void state; void subscribe;
+  });
+}
+
+/** Forget what has happened, so the next scene's numbers are about one page change. */
+const fromHere = (page) => page.evaluate(() => {
+  window.__waits = 0; window.__asks.length = 0;
+});
+
+/**
+ * Paint the measurements across the top of the frame.
+ *
+ * Scaffolding for the camera, exactly like `showAddress`: a millisecond count is the whole
+ * subject of this walkthrough and there is nowhere on screen it would otherwise appear.
+ * Belongs to no test and to no part of the application.
+ */
+async function meter(page, text, tone = 'good') {
+  await page.evaluate(([t, k]) => {
+    let strip = document.getElementById('demoMeter');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'demoMeter';
+      strip.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;'
+        + 'font:13px/2.1 ui-monospace,Consolas,monospace;padding:0 12px;'
+        + 'pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      document.body.appendChild(strip);
+    }
+    strip.style.background = k === 'bad' ? '#2a1414' : '#0b1b24';
+    strip.style.color = k === 'bad' ? '#ffb4b4' : '#7fe3ff';
+    strip.style.borderBottom = `1px solid ${k === 'bad' ? '#5c2626' : '#17414f'}`;
+    strip.textContent = t;
+  }, [text, tone]);
+}
+
+/**
+ * Change page, and answer with how long the new page took to be on screen.
+ *
+ * Resolved by the store's own settled notify rather than by a timeout or a poll, which
+ * would measure the timeout or the poll interval instead of the page change.
+ */
+function timedPage(page, to) {
+  return page.evaluate((want) => new Promise((resolve, reject) => {
+    import('./src/store.js').then(({ actions, state, subscribe }) => {
+      const target = want === 'next' ? state.page + 1
+        : want === 'prev' ? state.page - 1 : want;
+      if (target === state.page) return reject(new Error(`already on page ${target}`));
+      const started = performance.now();
+      const bail = setTimeout(() => reject(new Error('the page never settled')), 20_000);
+      const off = subscribe((s) => {
+        if (s.loading || s.page !== target) return;
+        clearTimeout(bail); off();
+        resolve(performance.now() - started);
+      });
+      actions.goToPage(target);
+    }, reject);
+  }), to);
+}
+
+/** Wait until the scheduler says it has fetched these pages ahead. */
+async function waitPrefetch(page, wanted) {
+  await page.waitForFunction((want) => {
+    const got = new Set();
+    for (const a of (window.__ahead || [])) for (const n of a) got.add(n);
+    return want.every((n) => got.has(n));
+  }, wanted, { timeout: 25_000 });
+}
+
+/** Record which pages the prefetcher has cached, for `waitPrefetch` to read. */
+async function watchAhead(page) {
+  await page.evaluate(() => {
+    window.__ahead = [];
+    window.addEventListener('marp:action', (e) => {
+      if (e.detail.name === 'prefetch:cached') {
+        window.__ahead.push(e.detail.detail.pages || []);
+      }
+    });
+  });
+}
+
+/** Take the fixture to production depth, and answer with the shape that produced. */
+function deepen(page, scale = 147) {
+  return page.evaluate((n) => new Promise((resolve, reject) => {
+    Promise.all([import('./src/data.js'), import('./src/store.js')])
+      .then(([{ MarpData }, { actions, subscribe }]) => {
+        MarpData.setScale(n);
+        const bail = setTimeout(() => reject(new Error('the deep question never settled')), 25_000);
+        const off = subscribe((s) => {
+          if (s.loading) return;
+          clearTimeout(bail); off();
+          resolve({ pageCount: s.pageCount, total: s.total, pageSize: s.pageSize });
+        });
+        /* The scale is invisible to the cache key, so ask a different question in the same
+           breath -- a stale scale-1 page served at depth would look exactly like a defect. */
+        actions.setSort('confidence', 'desc');
+      }, reject);
+  }), scale);
+}
+
 export const scenarios = {
 
   /* ------------------------------------------------------------- review */
@@ -1582,6 +1706,167 @@ export const scenarios = {
           }
           await expect(page.locator('.tile.marked').first()).toBeVisible();
           await expect(page.locator('.reason-chip', { hasText: 'was ' }).first()).toBeVisible();
+        }
+      }
+    ]
+  }
+  ,
+  'verify-prefetch': {
+    title: 'Verifying: the reviewer never waits',
+    scenes: [
+      {
+        caption: 'Before this: every page change waited',
+        say: "Last piece of this issue, and it is about waiting. Until now, every single page "
+           + "change went off and asked for data, and you sat looking at a grey skeleton grid "
+           + "while it did. Watch the strip along the top of the frame: it counts every single "
+           + "moment a loading state is on screen.",
+        async act({ page, settled }) {
+          await watchWaits(page);
+          await watchAhead(page);
+          await settled();
+          await meter(page, 'page changes: 0   loading states drawn: 0   fixture latency: 140 ms');
+        }
+      },
+      {
+        caption: 'Page forward',
+        say: "Page forward. Keep your eye on the tiles, and on that counter. The fixture still "
+           + "takes a hundred and forty milliseconds to answer a real query, so if anything is "
+           + "fetched here you will see it.",
+        async act({ page, expect }) {
+          await fromHere(page);
+          const ms = await timedPage(page, 'next');
+          const asks = await page.evaluate(() => window.__asks.length);
+          const waits = await page.evaluate(() => window.__waits);
+
+          /* The claim in the line is exactly these three things, so assert all three. */
+          expect(asks, 'a held page must not be fetched').toBe(0);
+          expect(waits, 'no loading state may be drawn at any instant').toBe(0);
+          expect(ms, 'a cache hit cannot take a fixture latency').toBeLessThan(60);
+          await expect(page.locator('.tile').first()).toBeVisible();
+
+          await meter(page, `page 2 arrived in ${Math.round(ms)} ms   `
+            + `requests: 0   loading states drawn: 0`);
+        }
+      },
+      {
+        caption: 'And back again',
+        say: "And back. A reviewer moves both ways \u2014 they page on, then they come back to check "
+           + "something \u2014 so the page behind has to be held too, not just the page ahead.",
+        async act({ page, expect }) {
+          /* No wait needed, and deliberately none: page 1 is in the head band the scheduler
+             always holds, and it was the visible page a moment ago. Waiting on a
+             `prefetch:cached` event here would hang, because the runner settles the app
+             before the first scene runs -- so the prefetch that cached these pages fired
+             before any listener of ours existed. */
+          await fromHere(page);
+          const ms = await timedPage(page, 'prev');
+          expect(await page.evaluate(() => window.__asks.length)).toBe(0);
+          expect(await page.evaluate(() => window.__waits)).toBe(0);
+          expect(ms).toBeLessThan(60);
+          await meter(page, `back to page 1 in ${Math.round(ms)} ms   `
+            + `requests: 0   loading states drawn: 0`);
+        }
+      },
+      {
+        caption: 'Commit, page on, come back',
+        say: "Now the one you reported by hand. Commit this page, page on, and come back to it. "
+           + "Committing must not throw away what is behind you \u2014 the work you just did has to "
+           + "still be there, showing what you submitted.",
+        async act({ page, expect }) {
+          const before = await page.locator('.tile').evaluateAll((t) => t.map((x) => x.dataset.id));
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+          await page.waitForTimeout(600);
+
+          await fromHere(page);
+          await timedPage(page, 'next');
+          const ms = await timedPage(page, 'prev');
+
+          /* A committed page is pinned, so returning to it is served by id from the row
+             index -- and it must show what was submitted, not what the filter now matches. */
+          expect(ms, 'coming back to a committed page must not wait').toBeLessThan(60);
+          const after = await page.locator('.tile').evaluateAll((t) => t.map((x) => x.dataset.id));
+          expect(after, 'a committed page keeps its exact membership').toEqual(before);
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
+
+          await meter(page, `committed, paged on, came back in ${Math.round(ms)} ms   `
+            + `the page still shows what was submitted`);
+        }
+      },
+      {
+        caption: 'Thousands of pages: the end is held on purpose',
+        say: "Now the real size. This fixture is a hundred and fifty nine thousand observations "
+           + "now \u2014 thousands of pages. The scheduler deliberately holds the first few pages and "
+           + "the last few, so jump all the way to the end and watch what it costs.",
+        async act({ page, expect }) {
+          const deep = await deepen(page);
+          expect(deep.pageCount, 'the fixture must actually be deep').toBeGreaterThan(1000);
+          await meter(page, `${deep.total.toLocaleString()} observations, `
+            + `${deep.pageCount.toLocaleString()} pages`);
+
+          /* The tail band is prefetched after the question settles, so wait for it rather
+             than racing it -- and then the jump to the very last page is a hit. */
+          await waitPrefetch(page, [deep.pageCount]);
+          await fromHere(page);
+          const last = await timedPage(page, deep.pageCount);
+
+          expect(await page.evaluate(() => window.__asks.length),
+            'the last page is in the tail band, so it is already held').toBe(0);
+          expect(await page.evaluate(() => window.__waits)).toBe(0);
+          expect(last).toBeLessThan(60);
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await meter(page, `page ${deep.pageCount.toLocaleString()} of `
+            + `${deep.pageCount.toLocaleString()} in ${Math.round(last)} ms \u2014 no request`);
+        }
+      },
+      {
+        caption: 'And a page nobody predicted',
+        say: "That one was held on purpose, though, so it is only half the story. Type a page "
+           + "number out in the middle, where nothing could have guessed you were going. That is "
+           + "a real fetch \u2014 and it should cost exactly one request for the whole set of pages, "
+           + "not one request per page.",
+        async act({ page, expect, store }) {
+          const middle = await page.evaluate(async () => {
+            const { state } = await import('./src/store.js');
+            return Math.round(state.pageCount / 2) + 7;
+          });
+          store.middle = middle;
+
+          await fromHere(page);
+          const jump = await timedPage(page, middle);
+          const asks = await page.evaluate(() => window.__asks.length);
+
+          /* One request for the whole set is the point of asking for a set of pages rather
+             than a page: nine pages would otherwise be nine round trips. */
+          expect(asks, 'the jump is one request, not one per page').toBe(1);
+          expect(jump, 'this one really did go to the data layer').toBeGreaterThan(100);
+          await meter(page, `page ${middle.toLocaleString()} fetched in `
+            + `${Math.round(jump)} ms \u2014 one request, not one per page`);
+
+          /* And having gone there, the pages either side come with it. */
+          await waitPrefetch(page, [middle + 1]);
+          await fromHere(page);
+          const beside = await timedPage(page, middle + 1);
+          expect(await page.evaluate(() => window.__asks.length)).toBe(0);
+          expect(await page.evaluate(() => window.__waits)).toBe(0);
+          expect(beside).toBeLessThan(60);
+          await meter(page, `the page beside it: ${Math.round(beside)} ms, `
+            + `no request, no loading state`);
+        }
+      },
+      {
+        caption: 'Two milliseconds, and no spinner',
+        say: "That is the whole thing. A page change was a hundred and forty eight milliseconds "
+           + "and a skeleton grid; it is now two milliseconds and nothing at all. Committing "
+           + "keeps what is behind you. And thousands of pages deep, the end of the result is "
+           + "already held, while a jump into the middle costs one request and then the pages "
+           + "either side of it are free.",
+        async act({ page, expect }) {
+          /* Nothing new is claimed here, so nothing new is asserted -- but the summary must
+             not appear over a broken app, so the tiles have to still be on screen. */
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await meter(page, 'before: 148 ms a page, 4 loading states   '
+            + 'after: 2 ms a page, 1 \u2014 the opening load');
         }
       }
     ]
