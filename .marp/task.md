@@ -409,7 +409,7 @@ next redefinition.
   (`repository/mosaic.repository.js:147-163`) carries `o.comname` and no species join, so a
   reload undoes the display. Whether that field lands here or in Phase 8 is a scoping call,
   and it is raised in *Findings left alone* rather than settled here.
-- [ ] **A5 · scientific or data-meaning · blocking** — which of #68's *Invalidation* list are
+- [x] **A5 · scientific or data-meaning · blocking** — which of #68's *Invalidation* list are
   real requirements? Asked rather than inherited, per `AGENTS.md`. The quoted lines: *"If an
   approved observation changes materially, its active approval is automatically invalidated
   and it must be approved again before being used as approved training data. Material changes
@@ -446,6 +446,39 @@ next redefinition.
   rather than deleted, so nothing is blocked in practice, and `SET NULL` — which
   `observations.species_id` uses — would silently empty an audit row. That column's choice is
   about a live value; this one is about a historical one.
+
+- **A5 — answered 2026-09-09, both halves.**
+
+  **Part 2, the human's answer, and the load-bearing one: a relabel invalidates *both*
+  purposes.** His words: *"yes if someone relabels something it needs to be reapproved."*
+  So a species correction ends the round for the scientific review **and** the training
+  disposition, and the observation returns to unreviewed and undecided for anybody to
+  decide again. The reason is the one that matters scientifically rather than the one #68
+  happens to state: a promoted training sample carrying the wrong label teaches the model
+  the wrong thing, which is worse than not having the sample at all.
+  So the `boundary` CTE stays **unfiltered by purpose**, R9's `DELETE` removes both
+  projection rows, and the acceptance criterion is that a corrected observation is
+  unreviewed for both purposes.
+
+  **Part 1, settled by the coordinator: the other three material changes in #68's
+  *Invalidation* list are out of scope for this phase.** Changing the start or end frame,
+  adding or changing a bounding-box keyframe, and anything else altering the exported
+  frames or boxes — none is built here. Two reasons, both from what is actually in the
+  repository rather than from preference: a keyframe edit **does not move
+  `observations.version` at all**, since keyframes are their own table, so it cannot use
+  this phase's mechanism; and it happens in the annotation GUI's write path, which would
+  have to reach into the review log to record anything. That is a different piece of work
+  with a different risk.
+  **They are deferred, not rejected.** The boundary is a `review_id`-keyed "this round is
+  over" marker precisely so a second cause of invalidation arrives as a second branch of
+  one `SELECT`, and D6 records that a keyframe fingerprint would instead land as a
+  predicate inside `latest`. Neither is foreclosed.
+
+  **And the reason this was asked at all rather than inherited:** `AGENTS.md` now says a
+  requirement taken from #68 is checked with the human, because three phases have built
+  from a single line of it and had to unwind — the deletion provenance table,
+  first-valid-review-wins, and a `GET` that #99 had already settled as a `POST`. *Invalidation*
+  is exactly that kind of section, and this phase's whole mechanism is built to satisfy it.
 
 ## Decisions
 
@@ -669,8 +702,10 @@ case are all meaningless anywhere else.
   and A6. **A6 is the large one**: it overrules first-valid-review-wins in two merged phases
   and is written up as its own piece of work, and it is the one that must become an ADR. A2
   and A4 were not in #111; they were found by working out what A1's answer and the frozen
-  `comname` imply, and both were answered on the same day. **A5 is open and blocking**, and it
-  is the only thing holding G2: `AGENTS.md` now says a #68 requirement is checked rather than
+  `comname` imply, and both were answered on the same day. **A5 was the last thing holding G2 and was answered on
+  2026-09-09** — a relabel invalidates both purposes, and #68's other three material changes
+  are deferred with the boundary shaped to take them later. It was asked rather than
+  inherited because `AGENTS.md` now says a #68 requirement is checked rather than
   inherited, and *Invalidation* — which this phase's whole mechanism is built to satisfy — is
   exactly the kind of section that has already cost three phases an unwind. Nothing is
   implemented.
