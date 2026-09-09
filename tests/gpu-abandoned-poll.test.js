@@ -202,6 +202,43 @@ describe('What a poll says about the machine that made it', () => {
     }, 30000);
 });
 
+describe('Reading one job whose worker has gone quiet', () => {
+    afterEach(drainQueue);
+
+    it('reports the lease as expired without waiting for some other request to sweep', async () => {
+        const workerId = await enrolWorker('quiet');
+        const jobId = await queueJob();
+
+        // Lease it, then never heartbeat: the machine has gone.
+        const lease = await global.api
+            .post('/api/v2/gpu/poll')
+            .send({ worker_id: workerId, slot_indexes: [0], wait_seconds: 0 });
+
+        expect(lease.status).toBe(200);
+        expect(lease.body.job_id).toBe(jobId);
+
+        // Put the lease in the past rather than waiting a minute for it. The
+        // coordinator's clock is what decides expiry, and this is the clock it
+        // reads -- so moving the deadline is the same event as time passing.
+        await db.sequelize.query(
+            `UPDATE gpu_job_attempts
+                SET lease_expires_at = NOW() - INTERVAL '1 second'
+              WHERE id = :attemptId`,
+            { replacements: { attemptId: lease.body.attempt_id } }
+        );
+
+        // One read of this job, and nothing else. Before this swept, the answer
+        // stayed `leased` / `running` until some unrelated request happened to
+        // sweep -- so a page watching one job showed a dead machine as working.
+        const detail = await global.api.get(`/api/v2/gpu/jobs/${jobId}`);
+
+        expect(detail.status).toBe(200);
+        expect(detail.body.job.state).toBe('queued');
+        expect(detail.body.attempts[0].state).toBe('abandoned');
+        expect(detail.body.attempts[0].failure_reason).toMatch(/Lease expired/);
+    }, 30000);
+});
+
 describe('A long poll whose worker has gone away', () => {
     afterEach(drainQueue);
 

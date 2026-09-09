@@ -631,6 +631,18 @@ class GpuService {
      * @throws {ApiError} 404 when there is no such job.
      */
     async getJob(jobId) {
+        // Sweeping here too, for the reason the pool and the list already give:
+        // a read that reports a state the system has already abandoned is worse
+        // than a slightly slower read.
+        //
+        // This was the one read that did not, and it is the read a job's own
+        // page makes. Measured: with the worker killed, `GET /gpu/jobs/:id`
+        // went on answering `leased` / `running` for forty seconds past the
+        // lease deadline, and only changed once some other request happened to
+        // sweep. A page watching one job would show a dead machine as working
+        // indefinitely.
+        await gpuRepository.expireStaleLeases();
+
         const detail = await gpuRepository.getJobDetail(this.jobIdFromPath(jobId));
 
         if (!detail) {
