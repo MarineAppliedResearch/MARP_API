@@ -440,6 +440,18 @@ const buildOpenApiSpec = () => {
                     name: 'V2 · Tokens',
                     description:
                         'V2 service-application endpoints: register applications, issue/revoke/regenerate their bearer tokens, and grant/revoke token permissions from the same catalog used for users. A bearer token satisfies the `admin` permission the same way an admin user session does. Every endpoint requires the `admin` permission.'
+                },
+                {
+                    /**
+                     * Declared as "V2 ·" rather than "V1 ·" because that is what
+                     * the operations actually carry: the route file declares
+                     * `V1 · GpuCompute` in V1 terms, the way every route through
+                     * registerVersionedRoute does, and the helper rewrites it.
+                     * This entry is the group those rewritten operations land in.
+                     */
+                    name: 'V2 · GpuCompute',
+                    description:
+                        'Distributed GPU compute: the pool of enrolled machines, the jobs queued on it, and the five outbound calls a worker makes. Every direction of travel is worker-to-MARP -- there is no route by which MARP contacts a worker, and no field anywhere that could hold a worker\'s address, so cancel and pause are delivered as an action in the heartbeat response. Claiming a job is part of the poll transaction, so two machines polling at the same instant cannot lease one job, and every state-changing call carries (attempt_id, worker_id, lease_epoch) so a worker whose job was reassigned is told to abandon it rather than allowed to corrupt it.'
                 }
             ],
 
@@ -2199,6 +2211,524 @@ const buildOpenApiSpec = () => {
                                 },
                             },
                         ],
+                    },
+
+                    /**
+                     * GPU orchestration schemas (routes/gpu.routes.js).
+                     *
+                     * The worker-facing half of these is a contract with a
+                     * program running on somebody else's machine, so the shapes
+                     * are written out in full rather than left as free-form
+                     * objects -- a worker cannot ask what MARP meant.
+                     */
+                    GpuJobSpec: {
+                        type: 'object',
+                        description:
+                            'The whole of what a worker is being asked to do. `range` is always present, even for a whole video, so nothing has to special-case the undivided case. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.',
+                        required: ['engine', 'video', 'range'],
+                        additionalProperties: true,
+                        properties: {
+                            engine: {
+                                type: 'string',
+                                example: 'ultralytics',
+                                description: 'Which inference engine is to run this.',
+                            },
+                            model: {
+                                type: 'object',
+                                description: 'The weights to run. Named and hashed, so a result can be tied to exactly what produced it.',
+                                additionalProperties: true,
+                                properties: {
+                                    name: { type: 'string', example: 'yolov8-marine-fish-2025' },
+                                    sha256: { type: 'string', example: 'd5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3' },
+                                },
+                            },
+                            video: {
+                                type: 'object',
+                                description: 'Which video, in Jellyfin terms. The worker fetches it from Jellyfin directly with its own credential; MARP never proxies the media.',
+                                required: ['jellyfin_item_id'],
+                                additionalProperties: true,
+                                properties: {
+                                    jellyfin_item_id: { type: 'string', example: 'a1b2c3d4e5f60718293a4b5c6d7e8f90' },
+                                    source_name: { type: 'string', nullable: true, example: 'MARE_2024_Dive07_cam1.mp4' },
+                                },
+                            },
+                            range: {
+                                type: 'object',
+                                description: 'The frames to process. **Both bounds are inclusive**, so consecutive pieces of a split video tile the range exactly with no frame processed twice and none missed.',
+                                required: ['start_frame', 'end_frame'],
+                                properties: {
+                                    start_frame: { type: 'integer', minimum: 0, example: 0 },
+                                    end_frame: { type: 'integer', minimum: 0, example: 8999 },
+                                },
+                            },
+                            params: {
+                                type: 'object',
+                                description: 'Engine parameters, passed through untouched.',
+                                additionalProperties: true,
+                                properties: {
+                                    conf: { type: 'number', example: 0.25 },
+                                    iou: { type: 'number', example: 0.7 },
+                                    imgsz: { type: 'integer', example: 1280 },
+                                    tracker: { type: 'string', nullable: true, example: 'botsort.yaml' },
+                                },
+                            },
+                            reduction: {
+                                type: 'object',
+                                description: 'Which reduction the worker is to apply to its raw detections, named and versioned so two runs can be compared knowing whether they were reduced the same way.',
+                                additionalProperties: true,
+                                properties: {
+                                    name: { type: 'string', example: 'v3_dirpad' },
+                                    version: { type: 'integer', example: 1 },
+                                },
+                            },
+                        },
+                    },
+                    GpuWorker: {
+                        type: 'object',
+                        description:
+                            'One GPU machine enrolled in the compute pool. Deliberately carries no address of any kind: a worker dials out to MARP and MARP never dials a worker, so there is nowhere for a host, port or URL to be recorded.',
+                        properties: {
+                            worker_id: { type: 'integer', example: 3, description: 'Identifier the worker quotes on every later call.' },
+                            name: { type: 'string', example: 'office-3090', description: 'What the machine calls itself. Unique, so a restart is the same row rather than a second one.' },
+                            state: {
+                                type: 'string',
+                                enum: ['online', 'offline', 'paused'],
+                                example: 'online',
+                                description: 'Lifecycle state. `paused` takes a machine out of rotation without un-enrolling it; its running attempt is told to pause at the next heartbeat.',
+                            },
+                            slot_count: { type: 'integer', example: 2, description: 'How many attempts this machine will run at once.' },
+                            worker_version: { type: 'string', nullable: true, example: '0.4.1' },
+                            capabilities: {
+                                type: 'object',
+                                nullable: true,
+                                additionalProperties: true,
+                                description: 'GPUs and VRAM, driver, disk, engines and ranges supported, as the worker reported them. Not verified by MARP.',
+                                example: { gpus: [{ name: 'NVIDIA RTX 3090', vram_mb: 24576 }], driver: '560.94', engines: ['ultralytics'] },
+                            },
+                            enrolled_at: { type: 'string', format: 'date-time', description: 'When this machine was first seen.' },
+                            last_seen_at: { type: 'string', format: 'date-time', nullable: true, description: 'Coordinator clock reading at the last poll or heartbeat.' },
+                        },
+                    },
+                    GpuPoolAttempt: {
+                        type: 'object',
+                        description: 'What one machine is running right now, as the pool view reports it.',
+                        properties: {
+                            attempt_id: { type: 'integer', example: 118 },
+                            state: {
+                                type: 'string',
+                                enum: ['assigned', 'preparing', 'running', 'uploading'],
+                                example: 'running',
+                                description: 'Only live states appear here; a finished attempt is no longer part of the pool view.',
+                            },
+                            slot_index: { type: 'integer', example: 0 },
+                            lease_epoch: { type: 'integer', example: 1 },
+                            lease_expires_at: { type: 'string', format: 'date-time' },
+                            last_heartbeat_at: { type: 'string', format: 'date-time', nullable: true },
+                            progress: {
+                                type: 'object',
+                                description: 'The latest heartbeat\'s progress, overwritten in place rather than accumulated.',
+                                properties: {
+                                    done: { type: 'integer', nullable: true, example: 4210 },
+                                    total: { type: 'integer', nullable: true, example: 9000 },
+                                    unit: { type: 'string', nullable: true, example: 'frames' },
+                                },
+                            },
+                            job: {
+                                type: 'object',
+                                description: 'The job being attempted, in summary.',
+                                properties: {
+                                    job_id: { type: 'integer', example: 41 },
+                                    kind: { type: 'string', example: 'inference' },
+                                    state: { type: 'string', example: 'leased' },
+                                    batch_id: { type: 'string', format: 'uuid', nullable: true },
+                                },
+                            },
+                        },
+                    },
+                    GpuPoolWorker: {
+                        allOf: [
+                            { $ref: '#/components/schemas/GpuWorker' },
+                            {
+                                type: 'object',
+                                properties: {
+                                    activity: {
+                                        type: 'string',
+                                        enum: ['idle', 'busy', 'offline', 'paused'],
+                                        example: 'busy',
+                                        description: 'Derived rather than stored, so it cannot fall out of step with the attempts table. A machine is busy exactly while it holds a live attempt.',
+                                    },
+                                    attempts: {
+                                        type: 'array',
+                                        description: 'The live attempts this machine holds, one per busy slot. Empty for an idle machine.',
+                                        items: { $ref: '#/components/schemas/GpuPoolAttempt' },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                    GpuJob: {
+                        type: 'object',
+                        description:
+                            'One unit of GPU work. This row is the truth about the job; a worker\'s report about it is evidence. Nothing a worker sends sets `state` to `succeeded` directly -- the coordinator decides that when it accepts a terminal result, and `published_attempt_id` records which attempt it accepted.',
+                        properties: {
+                            id: { type: 'integer', example: 41 },
+                            batch_id: {
+                                type: 'string',
+                                format: 'uuid',
+                                nullable: true,
+                                description: 'Groups the pieces of one split video. A split video is N jobs sharing this, not one job with children, so each piece leases, retries and fails independently.',
+                            },
+                            kind: { type: 'string', enum: ['inference', 'tracking', 'training', 'diagnostic'], example: 'inference' },
+                            spec: { $ref: '#/components/schemas/GpuJobSpec' },
+                            state: {
+                                type: 'string',
+                                enum: ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'],
+                                example: 'leased',
+                                description: '`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it.',
+                            },
+                            priority: { type: 'integer', example: 0, description: 'Higher is claimed first.' },
+                            attempts_made: { type: 'integer', example: 1, description: 'How many times this job has been leased; also the current attempt\'s lease epoch.' },
+                            max_attempts: { type: 'integer', example: 3 },
+                            published_attempt_id: {
+                                type: 'integer',
+                                nullable: true,
+                                example: null,
+                                description: 'The attempt whose result was recorded. Set once and never overwritten, so a second attempt cannot replace the first one\'s artifacts.',
+                            },
+                            created_by: { type: 'integer', nullable: true, description: 'User who submitted it. Null when an application token did.' },
+                            created_at: { type: 'string', format: 'date-time' },
+                            updated_at: { type: 'string', format: 'date-time' },
+                        },
+                    },
+                    GpuJobAttempt: {
+                        type: 'object',
+                        description:
+                            'One machine\'s attempt at one job. A job may be attempted more than once; an attempt belongs to exactly one worker and carries the lease that makes its reports believable.',
+                        properties: {
+                            id: { type: 'integer', example: 118 },
+                            job_id: { type: 'integer', example: 41 },
+                            worker_id: { type: 'integer', example: 3 },
+                            slot_index: { type: 'integer', example: 0 },
+                            lease_epoch: {
+                                type: 'integer',
+                                example: 1,
+                                description: 'The job\'s attempt ordinal when this lease was granted. Every state-changing call carries it, and a mismatch is answered `abandon`.',
+                            },
+                            state: {
+                                type: 'string',
+                                enum: ['assigned', 'preparing', 'running', 'uploading', 'succeeded', 'failed', 'cancelled', 'preempted', 'abandoned'],
+                                example: 'running',
+                                description: 'The first four are the worker\'s own report of where it is. The rest are terminal and only the coordinator writes them.',
+                            },
+                            leased_at: { type: 'string', format: 'date-time' },
+                            lease_expires_at: { type: 'string', format: 'date-time', description: 'Compared against the coordinator\'s clock only. A worker\'s idea of the time never decides whether its lease is still good.' },
+                            last_heartbeat_at: { type: 'string', format: 'date-time', nullable: true },
+                            progress_done: { type: 'integer', nullable: true, example: 4210 },
+                            progress_total: { type: 'integer', nullable: true, example: 9000 },
+                            progress_unit: { type: 'string', nullable: true, example: 'frames' },
+                            capabilities_snapshot: {
+                                type: 'object',
+                                nullable: true,
+                                additionalProperties: true,
+                                description: 'What the machine said it had when it took this lease, kept here because the worker row moves on and a result has to stay explainable.',
+                            },
+                            failure_reason: { type: 'string', nullable: true, example: 'CUDA out of memory at frame 5120.' },
+                            finished_at: { type: 'string', format: 'date-time', nullable: true },
+                            worker: {
+                                type: 'object',
+                                description: 'The machine that held it, in summary.',
+                                properties: {
+                                    id: { type: 'integer', example: 3 },
+                                    name: { type: 'string', example: 'office-3090' },
+                                    state: { type: 'string', example: 'online' },
+                                },
+                            },
+                        },
+                    },
+                    GpuWorkerEnrolRequest: {
+                        type: 'object',
+                        description: 'What a machine says about itself when joining the pool.',
+                        required: ['name'],
+                        properties: {
+                            name: { type: 'string', example: 'office-3090', description: 'What the machine calls itself. Enrolling twice under one name updates that machine rather than adding a second.' },
+                            capabilities: {
+                                type: 'object',
+                                additionalProperties: true,
+                                description: 'GPUs and VRAM, driver, disk, engines, ranges supported.',
+                                example: { gpus: [{ name: 'NVIDIA RTX 3090', vram_mb: 24576 }], driver: '560.94', engines: ['ultralytics'] },
+                            },
+                            slot_count: { type: 'integer', minimum: 1, example: 2, description: 'How many attempts it will run at once. Defaults to 1.' },
+                            worker_version: { type: 'string', example: '0.4.1' },
+                        },
+                    },
+                    GpuWorkerEnrolResponse: {
+                        type: 'object',
+                        description: 'The identity to quote on every later call, and the heartbeat interval MARP expects.',
+                        properties: {
+                            worker_id: { type: 'integer', example: 3 },
+                            name: { type: 'string', example: 'office-3090' },
+                            state: { type: 'string', enum: ['online', 'offline', 'paused'], example: 'online' },
+                            slot_count: { type: 'integer', example: 2 },
+                            heartbeat_seconds: {
+                                type: 'integer',
+                                example: 10,
+                                description: 'How often to heartbeat. Set by the coordinator so a fleet can be told to beat faster or slower without touching any machine.',
+                            },
+                            lease_seconds: { type: 'integer', example: 60, description: 'How long a lease survives without a heartbeat.' },
+                        },
+                    },
+                    GpuPollRequest: {
+                        type: 'object',
+                        description: 'A worker asking for work. There is no separate claim call: claiming is part of this request\'s transaction.',
+                        required: ['worker_id'],
+                        properties: {
+                            worker_id: { type: 'integer', example: 3 },
+                            capabilities: {
+                                type: 'object',
+                                additionalProperties: true,
+                                description: 'Current hardware, snapshotted onto whatever attempt this poll opens.',
+                            },
+                            slot_indexes: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                                example: [0, 1],
+                                description: 'Slots the worker has free. The first is recorded on the attempt; which slot runs what is the worker\'s own bookkeeping.',
+                            },
+                            wait_seconds: {
+                                type: 'integer',
+                                minimum: 0,
+                                example: 30,
+                                description: 'How long to hold the request open waiting for work to appear. Capped by the coordinator. Zero answers immediately.',
+                            },
+                        },
+                    },
+                    GpuLease: {
+                        type: 'object',
+                        description: 'A job, and the lease on it. Returned by a poll that found work.',
+                        properties: {
+                            job_id: { type: 'integer', example: 41 },
+                            attempt_id: { type: 'integer', example: 118, description: 'Quote this, with worker_id and lease_epoch, on every later call about this job.' },
+                            lease_epoch: { type: 'integer', example: 1 },
+                            lease_expires_at: { type: 'string', format: 'date-time' },
+                            heartbeat_seconds: { type: 'integer', example: 10 },
+                            slot_index: { type: 'integer', example: 0 },
+                            kind: { type: 'string', enum: ['inference', 'tracking', 'training', 'diagnostic'], example: 'inference' },
+                            batch_id: { type: 'string', format: 'uuid', nullable: true },
+                            spec: { $ref: '#/components/schemas/GpuJobSpec' },
+                        },
+                    },
+                    GpuHeartbeatRequest: {
+                        type: 'object',
+                        description: 'Progress in, control out. The state a worker may claim here is deliberately narrow.',
+                        required: ['worker_id', 'lease_epoch'],
+                        properties: {
+                            worker_id: { type: 'integer', example: 3 },
+                            lease_epoch: { type: 'integer', example: 1 },
+                            state: {
+                                type: 'string',
+                                enum: ['preparing', 'running', 'uploading'],
+                                example: 'running',
+                                description: 'Where the worker says it is. A terminal state is not accepted here: a finished attempt is reported through the result route, which is what decides what it means.',
+                            },
+                            progress: {
+                                type: 'object',
+                                description: 'Small, and overwritten in place. Anything durable belongs in the events route instead.',
+                                properties: {
+                                    done: { type: 'integer', example: 4210 },
+                                    total: { type: 'integer', example: 9000 },
+                                    unit: { type: 'string', example: 'frames' },
+                                },
+                            },
+                        },
+                    },
+                    GpuHeartbeatResponse: {
+                        type: 'object',
+                        description:
+                            'The one channel by which MARP tells a worker to do anything. Cancel, pause and abandon are delivered only here, because there is no route from MARP to a worker.',
+                        properties: {
+                            action: {
+                                type: 'string',
+                                enum: ['continue', 'cancel', 'pause', 'abandon'],
+                                example: 'continue',
+                                description: '`cancel` when the job was cancelled, `pause` when the machine has been paused, `abandon` when this lease is no longer the live one -- stop and discard, the job belongs to somebody else now.',
+                            },
+                            reason: { type: 'string', nullable: true, example: 'lease epoch 1 is stale; this attempt is at epoch 2', description: 'Why, for anything but `continue`. Worth logging on the worker: it is the only explanation it will get.' },
+                            lease_expires_at: { type: 'string', format: 'date-time', nullable: true, description: 'The extended lease. Null when the answer is `abandon`, because there is no longer a lease.' },
+                            heartbeat_seconds: { type: 'integer', example: 10 },
+                        },
+                    },
+                    GpuEventsRequest: {
+                        type: 'object',
+                        description:
+                            'A batch of durable metrics and log lines. Keyed `(attempt_id, seq)`, so resending a batch whose answer was never seen inserts nothing the second time.',
+                        required: ['worker_id', 'lease_epoch', 'events'],
+                        properties: {
+                            worker_id: { type: 'integer', example: 3 },
+                            lease_epoch: { type: 'integer', example: 1 },
+                            events: {
+                                type: 'array',
+                                minItems: 1,
+                                description: 'The batch. Sequence numbers are the worker\'s own counter for this attempt, start at zero, and must not repeat within a batch.',
+                                items: {
+                                    type: 'object',
+                                    required: ['seq', 'kind'],
+                                    properties: {
+                                        seq: { type: 'integer', minimum: 0, example: 17 },
+                                        kind: {
+                                            type: 'string',
+                                            enum: ['metric', 'log'],
+                                            example: 'metric',
+                                            description: 'A worker sends metrics and log lines. `note` is the coordinator\'s own kind and is refused here, so the record of why a lease was taken away stays trustworthy.',
+                                        },
+                                        at: { type: 'string', format: 'date-time', description: 'When the worker says it happened. Evidence, not a clock anything is judged on.' },
+                                        payload: { type: 'object', additionalProperties: true, example: { frames_per_second: 41.2 } },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    GpuEventsResponse: {
+                        type: 'object',
+                        properties: {
+                            action: { type: 'string', enum: ['continue', 'abandon'], example: 'continue', description: '`abandon` when the lease quoted is not the live one, in which case nothing was written.' },
+                            reason: { type: 'string', nullable: true },
+                            accepted: { type: 'integer', example: 12, description: 'How many events were new.' },
+                            duplicates: { type: 'integer', example: 0, description: 'How many were already held. A replay reports every event as a duplicate, which is the expected answer rather than an error.' },
+                            next_seq: { type: 'integer', nullable: true, example: 18, description: 'The sequence number to use next. Null when the batch was refused.' },
+                        },
+                    },
+                    GpuResultRequest: {
+                        type: 'object',
+                        description:
+                            'An attempt\'s terminal report. Idempotent: sending it twice does not produce two results, and every artifact it names must already have been handed over.',
+                        required: ['worker_id', 'lease_epoch', 'outcome'],
+                        properties: {
+                            worker_id: { type: 'integer', example: 3 },
+                            lease_epoch: { type: 'integer', example: 1 },
+                            outcome: {
+                                type: 'string',
+                                enum: ['succeeded', 'failed', 'cancelled'],
+                                example: 'succeeded',
+                                description: 'What the worker says happened. What it means for the job is the coordinator\'s decision: a failure with attempts left requeues the job rather than failing it.',
+                            },
+                            failure_reason: { type: 'string', example: 'CUDA out of memory at frame 5120.' },
+                            artifacts: {
+                                type: 'array',
+                                description: 'What was produced, by hash. Each must already be staged through the check and upload routes, or the report is refused.',
+                                items: {
+                                    type: 'object',
+                                    required: ['sha256'],
+                                    properties: {
+                                        sha256: { type: 'string', example: 'd5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3' },
+                                        role: { type: 'string', example: 'detections', description: 'What this artifact is to the job. Recorded as the artifact type. Defaults to `result`.' },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    GpuResultResponse: {
+                        type: 'object',
+                        description: 'The ack. Safe to receive more than once, and says plainly whether this attempt is the one that published.',
+                        properties: {
+                            action: { type: 'string', enum: ['continue', 'abandon'], example: 'continue' },
+                            accepted: { type: 'boolean', example: true },
+                            idempotent: { type: 'boolean', example: false, description: 'True when this was a replay of a report already recorded, answered from the stored rows rather than reapplied.' },
+                            outcome: { type: 'string', example: 'succeeded' },
+                            job_id: { type: 'integer', example: 41 },
+                            job_state: { type: 'string', example: 'succeeded' },
+                            published: {
+                                type: 'boolean',
+                                example: true,
+                                description: 'Whether this attempt\'s result became the job\'s result. False when another attempt had already published, in which case this attempt still records its own success and the job keeps the first result.',
+                            },
+                            published_attempt_id: { type: 'integer', nullable: true, example: 118 },
+                            artifacts_recorded: { type: 'integer', example: 2 },
+                            reason: { type: 'string', nullable: true },
+                        },
+                    },
+                    GpuArtifactCheckRequest: {
+                        type: 'object',
+                        description: 'The first half of the hand-off: asking whether MARP already holds these bytes.',
+                        required: ['sha256'],
+                        properties: {
+                            sha256: { type: 'string', example: 'd5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3', description: '64 lower-case hexadecimal characters. One spelling only, so two spellings of a hash cannot each get their own copy.' },
+                            bytes: { type: 'integer', minimum: 0, example: 41205310, description: 'How large the file is, as the worker measures it.' },
+                        },
+                    },
+                    GpuArtifactCheckResponse: {
+                        type: 'object',
+                        description: 'Either "already have it" or where to put it.',
+                        properties: {
+                            already_have: { type: 'boolean', example: false, description: 'True when MARP holds these bytes, in which case the upload can be skipped entirely.' },
+                            sha256: { type: 'string' },
+                            bytes: { type: 'integer', nullable: true },
+                            upload_url: { type: 'string', nullable: true, example: '/api/v2/gpu/artifacts/upload/d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3', description: 'Where to stream the bytes. Null when they are already held.' },
+                            path: { type: 'string', nullable: true, example: 'gpu-artifacts/d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3', description: 'Where MARP keeps them, relative to its storage directory. Present only when they are already held.' },
+                        },
+                    },
+                    GpuArtifactUploadResponse: {
+                        type: 'object',
+                        description: 'The bytes arrived and their hash matched.',
+                        properties: {
+                            sha256: { type: 'string' },
+                            bytes: { type: 'integer', example: 41205310, description: 'How many bytes were actually received and hashed.' },
+                            content_type: { type: 'string', nullable: true, example: 'application/json' },
+                            path: { type: 'string', example: 'gpu-artifacts/d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3' },
+                            already_have: { type: 'boolean', example: true },
+                        },
+                    },
+                    GpuJobSubmitRequest: {
+                        type: 'object',
+                        description: 'Queue work. One job, or -- with `piece_frames` -- a batch covering a long video in pieces.',
+                        required: ['kind', 'spec'],
+                        properties: {
+                            kind: { type: 'string', enum: ['inference', 'tracking', 'training', 'diagnostic'], example: 'inference' },
+                            spec: { $ref: '#/components/schemas/GpuJobSpec' },
+                            priority: { type: 'integer', example: 0, description: 'Higher is claimed first. Defaults to 0.' },
+                            max_attempts: { type: 'integer', minimum: 1, example: 3, description: 'How many times a piece may be attempted before a failure or expiry is final. Defaults to 3.' },
+                            piece_frames: {
+                                type: 'integer',
+                                minimum: 1,
+                                example: 9000,
+                                description: 'Split the spec\'s range into pieces of this many frames, each its own job, all sharing one batch_id. Omit for a single job. Both range bounds are inclusive, so the pieces tile the range exactly.',
+                            },
+                        },
+                    },
+                    GpuJobSubmitResponse: {
+                        type: 'object',
+                        properties: {
+                            batch_id: { type: 'string', format: 'uuid', nullable: true, description: 'Null when the submission was a single job; set when it was split, and the way to find the pieces again.' },
+                            jobs: { type: 'array', items: { $ref: '#/components/schemas/GpuJob' } },
+                        },
+                    },
+                    GpuJobList: {
+                        type: 'object',
+                        properties: {
+                            jobs: { type: 'array', items: { $ref: '#/components/schemas/GpuJob' } },
+                            total: { type: 'integer', example: 128, description: 'How many jobs matched, not how many were returned.' },
+                            limit: { type: 'integer', example: 50 },
+                            offset: { type: 'integer', example: 0 },
+                        },
+                    },
+                    GpuJobDetail: {
+                        type: 'object',
+                        description: 'One job, every attempt at it, and everything it produced.',
+                        properties: {
+                            job: { $ref: '#/components/schemas/GpuJob' },
+                            attempts: { type: 'array', items: { $ref: '#/components/schemas/GpuJobAttempt' }, description: 'In lease-epoch order, so the history reads forwards.' },
+                            artifacts: { type: 'array', items: { $ref: '#/components/schemas/Artifact' } },
+                        },
+                    },
+                    GpuJobCancelResponse: {
+                        type: 'object',
+                        properties: {
+                            job: { $ref: '#/components/schemas/GpuJob' },
+                            changed: {
+                                type: 'boolean',
+                                example: true,
+                                description: 'False for a job that had already finished, which is not an error -- cancelling something finished simply does nothing.',
+                            },
+                        },
                     },
                 },
                 responses: {

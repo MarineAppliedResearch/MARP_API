@@ -75,6 +75,10 @@
     {
       "name": "V2 · Tokens",
       "description": "V2 service-application endpoints: register applications, issue/revoke/regenerate their bearer tokens, and grant/revoke token permissions from the same catalog used for users. A bearer token satisfies the `admin` permission the same way an admin user session does. Every endpoint requires the `admin` permission."
+    },
+    {
+      "name": "V2 · GpuCompute",
+      "description": "Distributed GPU compute: the pool of enrolled machines, the jobs queued on it, and the five outbound calls a worker makes. Every direction of travel is worker-to-MARP -- there is no route by which MARP contacts a worker, and no field anywhere that could hold a worker's address, so cancel and pause are delivered as an action in the heartbeat response. Claiming a job is part of the poll transaction, so two machines polling at the same instant cannot lease one job, and every state-changing call carries (attempt_id, worker_id, lease_epoch) so a worker whose job was reassigned is told to abandon it rather than allowed to corrupt it."
     }
   ],
   "security": [
@@ -2519,12 +2523,1113 @@
           }
         ]
       },
+      "GpuJobSpec": {
+        "type": "object",
+        "description": "The whole of what a worker is being asked to do. `range` is always present, even for a whole video, so nothing has to special-case the undivided case. Additional properties are allowed: the engine-specific parts of a spec belong to the worker, and MARP validates only the parts it schedules on.",
+        "required": [
+          "engine",
+          "video",
+          "range"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "engine": {
+            "type": "string",
+            "example": "ultralytics",
+            "description": "Which inference engine is to run this."
+          },
+          "model": {
+            "type": "object",
+            "description": "The weights to run. Named and hashed, so a result can be tied to exactly what produced it.",
+            "additionalProperties": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "example": "yolov8-marine-fish-2025"
+              },
+              "sha256": {
+                "type": "string",
+                "example": "d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3"
+              }
+            }
+          },
+          "video": {
+            "type": "object",
+            "description": "Which video, in Jellyfin terms. The worker fetches it from Jellyfin directly with its own credential; MARP never proxies the media.",
+            "required": [
+              "jellyfin_item_id"
+            ],
+            "additionalProperties": true,
+            "properties": {
+              "jellyfin_item_id": {
+                "type": "string",
+                "example": "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+              },
+              "source_name": {
+                "type": "string",
+                "nullable": true,
+                "example": "MARE_2024_Dive07_cam1.mp4"
+              }
+            }
+          },
+          "range": {
+            "type": "object",
+            "description": "The frames to process. **Both bounds are inclusive**, so consecutive pieces of a split video tile the range exactly with no frame processed twice and none missed.",
+            "required": [
+              "start_frame",
+              "end_frame"
+            ],
+            "properties": {
+              "start_frame": {
+                "type": "integer",
+                "minimum": 0,
+                "example": 0
+              },
+              "end_frame": {
+                "type": "integer",
+                "minimum": 0,
+                "example": 8999
+              }
+            }
+          },
+          "params": {
+            "type": "object",
+            "description": "Engine parameters, passed through untouched.",
+            "additionalProperties": true,
+            "properties": {
+              "conf": {
+                "type": "number",
+                "example": 0.25
+              },
+              "iou": {
+                "type": "number",
+                "example": 0.7
+              },
+              "imgsz": {
+                "type": "integer",
+                "example": 1280
+              },
+              "tracker": {
+                "type": "string",
+                "nullable": true,
+                "example": "botsort.yaml"
+              }
+            }
+          },
+          "reduction": {
+            "type": "object",
+            "description": "Which reduction the worker is to apply to its raw detections, named and versioned so two runs can be compared knowing whether they were reduced the same way.",
+            "additionalProperties": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "example": "v3_dirpad"
+              },
+              "version": {
+                "type": "integer",
+                "example": 1
+              }
+            }
+          }
+        }
+      },
+      "GpuWorker": {
+        "type": "object",
+        "description": "One GPU machine enrolled in the compute pool. Deliberately carries no address of any kind: a worker dials out to MARP and MARP never dials a worker, so there is nowhere for a host, port or URL to be recorded.",
+        "properties": {
+          "worker_id": {
+            "type": "integer",
+            "example": 3,
+            "description": "Identifier the worker quotes on every later call."
+          },
+          "name": {
+            "type": "string",
+            "example": "office-3090",
+            "description": "What the machine calls itself. Unique, so a restart is the same row rather than a second one."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline",
+              "paused"
+            ],
+            "example": "online",
+            "description": "Lifecycle state. `paused` takes a machine out of rotation without un-enrolling it; its running attempt is told to pause at the next heartbeat."
+          },
+          "slot_count": {
+            "type": "integer",
+            "example": 2,
+            "description": "How many attempts this machine will run at once."
+          },
+          "worker_version": {
+            "type": "string",
+            "nullable": true,
+            "example": "0.4.1"
+          },
+          "capabilities": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "GPUs and VRAM, driver, disk, engines and ranges supported, as the worker reported them. Not verified by MARP.",
+            "example": {
+              "gpus": [
+                {
+                  "name": "NVIDIA RTX 3090",
+                  "vram_mb": 24576
+                }
+              ],
+              "driver": "560.94",
+              "engines": [
+                "ultralytics"
+              ]
+            }
+          },
+          "enrolled_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When this machine was first seen."
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Coordinator clock reading at the last poll or heartbeat."
+          }
+        }
+      },
+      "GpuPoolAttempt": {
+        "type": "object",
+        "description": "What one machine is running right now, as the pool view reports it.",
+        "properties": {
+          "attempt_id": {
+            "type": "integer",
+            "example": 118
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "assigned",
+              "preparing",
+              "running",
+              "uploading"
+            ],
+            "example": "running",
+            "description": "Only live states appear here; a finished attempt is no longer part of the pool view."
+          },
+          "slot_index": {
+            "type": "integer",
+            "example": 0
+          },
+          "lease_epoch": {
+            "type": "integer",
+            "example": 1
+          },
+          "lease_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_heartbeat_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "progress": {
+            "type": "object",
+            "description": "The latest heartbeat's progress, overwritten in place rather than accumulated.",
+            "properties": {
+              "done": {
+                "type": "integer",
+                "nullable": true,
+                "example": 4210
+              },
+              "total": {
+                "type": "integer",
+                "nullable": true,
+                "example": 9000
+              },
+              "unit": {
+                "type": "string",
+                "nullable": true,
+                "example": "frames"
+              }
+            }
+          },
+          "job": {
+            "type": "object",
+            "description": "The job being attempted, in summary.",
+            "properties": {
+              "job_id": {
+                "type": "integer",
+                "example": 41
+              },
+              "kind": {
+                "type": "string",
+                "example": "inference"
+              },
+              "state": {
+                "type": "string",
+                "example": "leased"
+              },
+              "batch_id": {
+                "type": "string",
+                "format": "uuid",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "GpuPoolWorker": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/GpuWorker"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "activity": {
+                "type": "string",
+                "enum": [
+                  "idle",
+                  "busy",
+                  "offline",
+                  "paused"
+                ],
+                "example": "busy",
+                "description": "Derived rather than stored, so it cannot fall out of step with the attempts table. A machine is busy exactly while it holds a live attempt."
+              },
+              "attempts": {
+                "type": "array",
+                "description": "The live attempts this machine holds, one per busy slot. Empty for an idle machine.",
+                "items": {
+                  "$ref": "#/components/schemas/GpuPoolAttempt"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "GpuJob": {
+        "type": "object",
+        "description": "One unit of GPU work. This row is the truth about the job; a worker's report about it is evidence. Nothing a worker sends sets `state` to `succeeded` directly -- the coordinator decides that when it accepts a terminal result, and `published_attempt_id` records which attempt it accepted.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 41
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Groups the pieces of one split video. A split video is N jobs sharing this, not one job with children, so each piece leases, retries and fails independently."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "inference",
+              "tracking",
+              "training",
+              "diagnostic"
+            ],
+            "example": "inference"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/GpuJobSpec"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "leased",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "expired"
+            ],
+            "example": "leased",
+            "description": "`expired` is distinct from `failed`: nothing went wrong with the work, MARP simply stopped hearing from every machine that tried it."
+          },
+          "priority": {
+            "type": "integer",
+            "example": 0,
+            "description": "Higher is claimed first."
+          },
+          "attempts_made": {
+            "type": "integer",
+            "example": 1,
+            "description": "How many times this job has been leased; also the current attempt's lease epoch."
+          },
+          "max_attempts": {
+            "type": "integer",
+            "example": 3
+          },
+          "published_attempt_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": null,
+            "description": "The attempt whose result was recorded. Set once and never overwritten, so a second attempt cannot replace the first one's artifacts."
+          },
+          "created_by": {
+            "type": "integer",
+            "nullable": true,
+            "description": "User who submitted it. Null when an application token did."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GpuJobAttempt": {
+        "type": "object",
+        "description": "One machine's attempt at one job. A job may be attempted more than once; an attempt belongs to exactly one worker and carries the lease that makes its reports believable.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 118
+          },
+          "job_id": {
+            "type": "integer",
+            "example": 41
+          },
+          "worker_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "slot_index": {
+            "type": "integer",
+            "example": 0
+          },
+          "lease_epoch": {
+            "type": "integer",
+            "example": 1,
+            "description": "The job's attempt ordinal when this lease was granted. Every state-changing call carries it, and a mismatch is answered `abandon`."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "assigned",
+              "preparing",
+              "running",
+              "uploading",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "preempted",
+              "abandoned"
+            ],
+            "example": "running",
+            "description": "The first four are the worker's own report of where it is. The rest are terminal and only the coordinator writes them."
+          },
+          "leased_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lease_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Compared against the coordinator's clock only. A worker's idea of the time never decides whether its lease is still good."
+          },
+          "last_heartbeat_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "progress_done": {
+            "type": "integer",
+            "nullable": true,
+            "example": 4210
+          },
+          "progress_total": {
+            "type": "integer",
+            "nullable": true,
+            "example": 9000
+          },
+          "progress_unit": {
+            "type": "string",
+            "nullable": true,
+            "example": "frames"
+          },
+          "capabilities_snapshot": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "What the machine said it had when it took this lease, kept here because the worker row moves on and a result has to stay explainable."
+          },
+          "failure_reason": {
+            "type": "string",
+            "nullable": true,
+            "example": "CUDA out of memory at frame 5120."
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "worker": {
+            "type": "object",
+            "description": "The machine that held it, in summary.",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "example": 3
+              },
+              "name": {
+                "type": "string",
+                "example": "office-3090"
+              },
+              "state": {
+                "type": "string",
+                "example": "online"
+              }
+            }
+          }
+        }
+      },
+      "GpuWorkerEnrolRequest": {
+        "type": "object",
+        "description": "What a machine says about itself when joining the pool.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "office-3090",
+            "description": "What the machine calls itself. Enrolling twice under one name updates that machine rather than adding a second."
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "GPUs and VRAM, driver, disk, engines, ranges supported.",
+            "example": {
+              "gpus": [
+                {
+                  "name": "NVIDIA RTX 3090",
+                  "vram_mb": 24576
+                }
+              ],
+              "driver": "560.94",
+              "engines": [
+                "ultralytics"
+              ]
+            }
+          },
+          "slot_count": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 2,
+            "description": "How many attempts it will run at once. Defaults to 1."
+          },
+          "worker_version": {
+            "type": "string",
+            "example": "0.4.1"
+          }
+        }
+      },
+      "GpuWorkerEnrolResponse": {
+        "type": "object",
+        "description": "The identity to quote on every later call, and the heartbeat interval MARP expects.",
+        "properties": {
+          "worker_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "name": {
+            "type": "string",
+            "example": "office-3090"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline",
+              "paused"
+            ],
+            "example": "online"
+          },
+          "slot_count": {
+            "type": "integer",
+            "example": 2
+          },
+          "heartbeat_seconds": {
+            "type": "integer",
+            "example": 10,
+            "description": "How often to heartbeat. Set by the coordinator so a fleet can be told to beat faster or slower without touching any machine."
+          },
+          "lease_seconds": {
+            "type": "integer",
+            "example": 60,
+            "description": "How long a lease survives without a heartbeat."
+          }
+        }
+      },
+      "GpuPollRequest": {
+        "type": "object",
+        "description": "A worker asking for work. There is no separate claim call: claiming is part of this request's transaction.",
+        "required": [
+          "worker_id"
+        ],
+        "properties": {
+          "worker_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Current hardware, snapshotted onto whatever attempt this poll opens."
+          },
+          "slot_indexes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              0,
+              1
+            ],
+            "description": "Slots the worker has free. The first is recorded on the attempt; which slot runs what is the worker's own bookkeeping."
+          },
+          "wait_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 30,
+            "description": "How long to hold the request open waiting for work to appear. Capped by the coordinator. Zero answers immediately."
+          }
+        }
+      },
+      "GpuLease": {
+        "type": "object",
+        "description": "A job, and the lease on it. Returned by a poll that found work.",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "example": 41
+          },
+          "attempt_id": {
+            "type": "integer",
+            "example": 118,
+            "description": "Quote this, with worker_id and lease_epoch, on every later call about this job."
+          },
+          "lease_epoch": {
+            "type": "integer",
+            "example": 1
+          },
+          "lease_expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "heartbeat_seconds": {
+            "type": "integer",
+            "example": 10
+          },
+          "slot_index": {
+            "type": "integer",
+            "example": 0
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "inference",
+              "tracking",
+              "training",
+              "diagnostic"
+            ],
+            "example": "inference"
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "spec": {
+            "$ref": "#/components/schemas/GpuJobSpec"
+          }
+        }
+      },
+      "GpuHeartbeatRequest": {
+        "type": "object",
+        "description": "Progress in, control out. The state a worker may claim here is deliberately narrow.",
+        "required": [
+          "worker_id",
+          "lease_epoch"
+        ],
+        "properties": {
+          "worker_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "lease_epoch": {
+            "type": "integer",
+            "example": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "preparing",
+              "running",
+              "uploading"
+            ],
+            "example": "running",
+            "description": "Where the worker says it is. A terminal state is not accepted here: a finished attempt is reported through the result route, which is what decides what it means."
+          },
+          "progress": {
+            "type": "object",
+            "description": "Small, and overwritten in place. Anything durable belongs in the events route instead.",
+            "properties": {
+              "done": {
+                "type": "integer",
+                "example": 4210
+              },
+              "total": {
+                "type": "integer",
+                "example": 9000
+              },
+              "unit": {
+                "type": "string",
+                "example": "frames"
+              }
+            }
+          }
+        }
+      },
+      "GpuHeartbeatResponse": {
+        "type": "object",
+        "description": "The one channel by which MARP tells a worker to do anything. Cancel, pause and abandon are delivered only here, because there is no route from MARP to a worker.",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "continue",
+              "cancel",
+              "pause",
+              "abandon"
+            ],
+            "example": "continue",
+            "description": "`cancel` when the job was cancelled, `pause` when the machine has been paused, `abandon` when this lease is no longer the live one -- stop and discard, the job belongs to somebody else now."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "example": "lease epoch 1 is stale; this attempt is at epoch 2",
+            "description": "Why, for anything but `continue`. Worth logging on the worker: it is the only explanation it will get."
+          },
+          "lease_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "The extended lease. Null when the answer is `abandon`, because there is no longer a lease."
+          },
+          "heartbeat_seconds": {
+            "type": "integer",
+            "example": 10
+          }
+        }
+      },
+      "GpuEventsRequest": {
+        "type": "object",
+        "description": "A batch of durable metrics and log lines. Keyed `(attempt_id, seq)`, so resending a batch whose answer was never seen inserts nothing the second time.",
+        "required": [
+          "worker_id",
+          "lease_epoch",
+          "events"
+        ],
+        "properties": {
+          "worker_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "lease_epoch": {
+            "type": "integer",
+            "example": 1
+          },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "description": "The batch. Sequence numbers are the worker's own counter for this attempt, start at zero, and must not repeat within a batch.",
+            "items": {
+              "type": "object",
+              "required": [
+                "seq",
+                "kind"
+              ],
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 17
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "metric",
+                    "log"
+                  ],
+                  "example": "metric",
+                  "description": "A worker sends metrics and log lines. `note` is the coordinator's own kind and is refused here, so the record of why a lease was taken away stays trustworthy."
+                },
+                "at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "When the worker says it happened. Evidence, not a clock anything is judged on."
+                },
+                "payload": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "example": {
+                    "frames_per_second": 41.2
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "GpuEventsResponse": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "continue",
+              "abandon"
+            ],
+            "example": "continue",
+            "description": "`abandon` when the lease quoted is not the live one, in which case nothing was written."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "accepted": {
+            "type": "integer",
+            "example": 12,
+            "description": "How many events were new."
+          },
+          "duplicates": {
+            "type": "integer",
+            "example": 0,
+            "description": "How many were already held. A replay reports every event as a duplicate, which is the expected answer rather than an error."
+          },
+          "next_seq": {
+            "type": "integer",
+            "nullable": true,
+            "example": 18,
+            "description": "The sequence number to use next. Null when the batch was refused."
+          }
+        }
+      },
+      "GpuResultRequest": {
+        "type": "object",
+        "description": "An attempt's terminal report. Idempotent: sending it twice does not produce two results, and every artifact it names must already have been handed over.",
+        "required": [
+          "worker_id",
+          "lease_epoch",
+          "outcome"
+        ],
+        "properties": {
+          "worker_id": {
+            "type": "integer",
+            "example": 3
+          },
+          "lease_epoch": {
+            "type": "integer",
+            "example": 1
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "example": "succeeded",
+            "description": "What the worker says happened. What it means for the job is the coordinator's decision: a failure with attempts left requeues the job rather than failing it."
+          },
+          "failure_reason": {
+            "type": "string",
+            "example": "CUDA out of memory at frame 5120."
+          },
+          "artifacts": {
+            "type": "array",
+            "description": "What was produced, by hash. Each must already be staged through the check and upload routes, or the report is refused.",
+            "items": {
+              "type": "object",
+              "required": [
+                "sha256"
+              ],
+              "properties": {
+                "sha256": {
+                  "type": "string",
+                  "example": "d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3"
+                },
+                "role": {
+                  "type": "string",
+                  "example": "detections",
+                  "description": "What this artifact is to the job. Recorded as the artifact type. Defaults to `result`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "GpuResultResponse": {
+        "type": "object",
+        "description": "The ack. Safe to receive more than once, and says plainly whether this attempt is the one that published.",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "continue",
+              "abandon"
+            ],
+            "example": "continue"
+          },
+          "accepted": {
+            "type": "boolean",
+            "example": true
+          },
+          "idempotent": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when this was a replay of a report already recorded, answered from the stored rows rather than reapplied."
+          },
+          "outcome": {
+            "type": "string",
+            "example": "succeeded"
+          },
+          "job_id": {
+            "type": "integer",
+            "example": 41
+          },
+          "job_state": {
+            "type": "string",
+            "example": "succeeded"
+          },
+          "published": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether this attempt's result became the job's result. False when another attempt had already published, in which case this attempt still records its own success and the job keeps the first result."
+          },
+          "published_attempt_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 118
+          },
+          "artifacts_recorded": {
+            "type": "integer",
+            "example": 2
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "GpuArtifactCheckRequest": {
+        "type": "object",
+        "description": "The first half of the hand-off: asking whether MARP already holds these bytes.",
+        "required": [
+          "sha256"
+        ],
+        "properties": {
+          "sha256": {
+            "type": "string",
+            "example": "d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3",
+            "description": "64 lower-case hexadecimal characters. One spelling only, so two spellings of a hash cannot each get their own copy."
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 41205310,
+            "description": "How large the file is, as the worker measures it."
+          }
+        }
+      },
+      "GpuArtifactCheckResponse": {
+        "type": "object",
+        "description": "Either \"already have it\" or where to put it.",
+        "properties": {
+          "already_have": {
+            "type": "boolean",
+            "example": false,
+            "description": "True when MARP holds these bytes, in which case the upload can be skipped entirely."
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "nullable": true
+          },
+          "upload_url": {
+            "type": "string",
+            "nullable": true,
+            "example": "/api/v2/gpu/artifacts/upload/d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3",
+            "description": "Where to stream the bytes. Null when they are already held."
+          },
+          "path": {
+            "type": "string",
+            "nullable": true,
+            "example": "gpu-artifacts/d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3",
+            "description": "Where MARP keeps them, relative to its storage directory. Present only when they are already held."
+          }
+        }
+      },
+      "GpuArtifactUploadResponse": {
+        "type": "object",
+        "description": "The bytes arrived and their hash matched.",
+        "properties": {
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "example": 41205310,
+            "description": "How many bytes were actually received and hashed."
+          },
+          "content_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "application/json"
+          },
+          "path": {
+            "type": "string",
+            "example": "gpu-artifacts/d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3"
+          },
+          "already_have": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "GpuJobSubmitRequest": {
+        "type": "object",
+        "description": "Queue work. One job, or -- with `piece_frames` -- a batch covering a long video in pieces.",
+        "required": [
+          "kind",
+          "spec"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "inference",
+              "tracking",
+              "training",
+              "diagnostic"
+            ],
+            "example": "inference"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/GpuJobSpec"
+          },
+          "priority": {
+            "type": "integer",
+            "example": 0,
+            "description": "Higher is claimed first. Defaults to 0."
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 3,
+            "description": "How many times a piece may be attempted before a failure or expiry is final. Defaults to 3."
+          },
+          "piece_frames": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 9000,
+            "description": "Split the spec's range into pieces of this many frames, each its own job, all sharing one batch_id. Omit for a single job. Both range bounds are inclusive, so the pieces tile the range exactly."
+          }
+        }
+      },
+      "GpuJobSubmitResponse": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null when the submission was a single job; set when it was split, and the way to find the pieces again."
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpuJob"
+            }
+          }
+        }
+      },
+      "GpuJobList": {
+        "type": "object",
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpuJob"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "example": 128,
+            "description": "How many jobs matched, not how many were returned."
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        }
+      },
+      "GpuJobDetail": {
+        "type": "object",
+        "description": "One job, every attempt at it, and everything it produced.",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/GpuJob"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpuJobAttempt"
+            },
+            "description": "In lease-epoch order, so the history reads forwards."
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Artifact"
+            }
+          }
+        }
+      },
+      "GpuJobCancelResponse": {
+        "type": "object",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/GpuJob"
+          },
+          "changed": {
+            "type": "boolean",
+            "example": true,
+            "description": "False for a job that had already finished, which is not an error -- cancelling something finished simply does nothing."
+          }
+        }
+      },
       "Artifact": {
         "type": "object",
         "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
         "required": [
           "id",
-          "training_run_id",
           "artifact_type",
           "path"
         ],
@@ -2536,8 +3641,15 @@
           },
           "training_run_id": {
             "type": "integer",
+            "nullable": true,
             "example": 12,
-            "description": "Foreign key referencing the training run this artifact belongs to (training_runs.id)."
+            "description": "Foreign key referencing the training run this artifact belongs to (training_runs.id). Null for an artifact produced by a GPU job rather than a training run."
+          },
+          "job_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 41,
+            "description": "Foreign key referencing the GPU job that produced this artifact (gpu_jobs.id). Null for an artifact produced by a training run. Exactly one of training_run_id and job_id is always set."
           },
           "artifact_type": {
             "type": "string",
@@ -10833,6 +11945,656 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ServiceToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/enrol": {
+      "post": {
+        "summary": "Enrol a GPU machine into the compute pool",
+        "description": "Registers a GPU machine and returns the identity it quotes on every later call, plus the heartbeat interval MARP expects. Enrolling twice under one name updates that machine rather than adding a second, so a worker that restarts is the same row and the pool view does not fill with ghosts -- which also means `enrolled_at` means \"first seen\". Re-enrolling puts the machine back to `online`, since a machine that is talking is by definition not offline, and a deliberate `paused` is not preserved: re-enrolling is how an operator restarts a worker they had parked. Held by a bootstrap credential with only `workers:enrol`, deliberately separate from `jobs:execute`, so a credential that can join the pool cannot also take work. Requires the `workers:enrol` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuWorkerEnrolRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The machine is enrolled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuWorkerEnrolResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/poll": {
+      "post": {
+        "summary": "Poll for work, and lease it in the same transaction",
+        "description": "Asks for a job and takes the lease on it in one step. There is no separate claim call, and no window in which a job has been chosen but not yet leased: the row is locked with `FOR UPDATE SKIP LOCKED` inside this request's transaction, so two machines polling at the same instant either take different jobs or one is told there is none -- they cannot lease the same one. Answers `204` when there is nothing to do, so a worker distinguishes \"no work\" from \"work\" by status rather than by inspecting a body. `wait_seconds` holds the request open until work appears, capped by the coordinator. Every poll first takes back any lease that has run out, judged on the coordinator's clock, which is what turns a machine that vanished into work somebody else can pick up. A machine is never given more concurrent work than the `slot_count` it enrolled with, and a paused machine is given none -- both answer `204` at once rather than waiting out `wait_seconds`, since nothing appearing in the queue would change either answer. Requires the `jobs:execute` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuPollRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A job, and the lease on it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuLease"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "There is no work for this machine. No body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/attempts/{id}/heartbeat": {
+      "post": {
+        "summary": "Report progress and receive the one control instruction MARP has",
+        "description": "Extends the lease, overwrites the attempt's progress in place, and answers with what to do next. **This is the only channel by which MARP tells a worker anything**, so `cancel`, `pause` and `abandon` are delivered here and nowhere else. `abandon` means the lease quoted is not the live one -- another machine holds the job, or it was taken back and reassigned -- and nothing was written; stop and discard the work. A worker may report `preparing`, `running` or `uploading`; it may not report a terminal state, because the coordinator's row is the truth about a job and what a finished attempt means is decided by the result route. Every deadline here is judged on the coordinator's clock, including the per-attempt cap that ends an attempt which heartbeats faithfully forever while making no progress. Requires the `jobs:execute` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Attempt the worker believes it holds."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuHeartbeatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The heartbeat was recorded, or refused with `abandon`. Both are 200: a refusal is an instruction, not a transport failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuHeartbeatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/attempts/{id}/events": {
+      "post": {
+        "summary": "Append a batch of metrics and log lines",
+        "description": "Records durable numbers and log lines against an attempt. Keyed `(attempt_id, seq)`, so a worker that resends a batch it never saw the answer to inserts nothing the second time and is told how many were duplicates -- which is the expected answer to a replay rather than an error. Per-frame detections never come through here; they are handed over as a hashed artifact, because a stream of events is the wrong shape for hundreds of megabytes. `note` is not an accepted kind: it is the coordinator's own, used for recording why a lease was taken away, and a worker able to write one could muddy that record. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Attempt the events belong to."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuEventsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many events were new, how many were already held, and the sequence number to use next.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuEventsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/attempts/{id}/result": {
+      "post": {
+        "summary": "Report an attempt's terminal outcome",
+        "description": "Records what happened and lets the coordinator decide what it means for the job: a success publishes, a failure with attempts left requeues the job rather than failing it, and a failure with none left ends it. Idempotent -- replaying the report is answered from the stored rows rather than reapplied, so a worker retrying through a network timeout cannot produce two results. The publish is guarded: `published_attempt_id` is set once and never overwritten, so an attempt reporting success after another already published records its own success and leaves the job's result alone. That is what stops a slow machine, whose job was reassigned and finished elsewhere, from replacing a result somebody has already looked at. Every artifact named must already have been handed over, or the report is refused with 409 rather than recorded as pointing at bytes MARP does not hold. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Attempt reporting its outcome."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuResultRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The ack. Safe to receive more than once, and says whether this attempt is the one that published.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuResultResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/artifacts/check": {
+      "post": {
+        "summary": "Ask whether MARP already holds an artifact, by hash",
+        "description": "The first half of the hand-off. Answers `already_have: true` when MARP holds those bytes, which lets a worker retrying after an interrupted transfer skip re-sending hundreds of megabytes, and answers with somewhere to put them when it does not. Addressing by content is what makes the hand-off idempotent: the same bytes are the same artifact however many times they are offered. The upload target is a plain path rather than a signed one -- the upload route is gated on the same permission this call needed and verifies the bytes against the hash before keeping them, so a signature would be a second and weaker credential for the same thing. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuArtifactCheckRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Either that the bytes are already held, or where to stream them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuArtifactCheckResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/artifacts/upload/{sha256}": {
+      "post": {
+        "summary": "Stream an artifact's bytes to MARP",
+        "description": "The second half of the hand-off: the bytes themselves, as a raw request body rather than a form or a JSON field. **Mounted outside the body parsers**, so a multi-gigabyte transfer is never buffered in memory and never subject to a body limit; send them with any content type and MARP will record whatever was declared. The hash is computed over what actually arrives and compared with the one in the path, so a truncated or corrupted transfer is refused here rather than becoming a recorded result that cannot be opened -- and nothing is kept when it does not match. Re-uploading something already held is not an error: the bytes are the same bytes, so the second copy is discarded and the answer is the same. The file lands under the API's storage directory, not in the database. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sha256",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The sha256 the bytes are expected to hash to: 64 lower-case hexadecimal characters."
+          },
+          {
+            "in": "query",
+            "name": "attempt_id",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The attempt handing this over, recorded as provenance. Optional, because the bytes stay addressable by hash whether or not the attempt is known."
+          },
+          {
+            "in": "header",
+            "name": "Content-Type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Recorded as declared, and returned with the artifact later. `application/octet-stream` when there is nothing better to say."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The raw bytes.",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The bytes arrived and their hash matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuArtifactUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "413": {
+            "description": "The bytes exceeded the artifact size limit. Nothing was kept.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers": {
+      "get": {
+        "summary": "Fetch the compute pool",
+        "description": "Returns every enrolled machine, what it says its hardware is, and what it is running right now. `activity` is derived rather than stored, so it cannot fall out of step with the attempts table: a machine is busy exactly while it holds a live attempt. Any lease that has run out is taken back before the pool is read, so this never reports a machine as busy with a job whose lease expired an hour ago -- a read that reports a state the system has already abandoned is worse than a slightly slower read. Nothing here carries an address, because nothing in the schema can. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "responses": {
+          "200": {
+            "description": "The pool, one entry per machine.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GpuPoolWorker"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs": {
+      "get": {
+        "summary": "List GPU jobs",
+        "description": "Returns a page of jobs, newest first, with how many matched in total. Ordered by `created_at` then `id`: the id tie-breaker is not decoration, since a batch's pieces are inserted in one statement and share a timestamp to the microsecond, and without it two pages of the same list could show one piece twice and miss another. Filter by `batch_id` to see the pieces of one split video together. Expired leases are taken back before the list is read, for the same reason as the pool view. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "leased",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "expired"
+              ]
+            },
+            "description": "Only jobs in this state."
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inference",
+                "tracking",
+                "training",
+                "diagnostic"
+              ]
+            },
+            "description": "Only jobs of this kind."
+          },
+          {
+            "in": "query",
+            "name": "batch_id",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Only the pieces of this batch."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 500
+            },
+            "description": "Page size. Defaults to 50, capped at 500."
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0
+            },
+            "description": "Rows to skip."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The page of jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuJobList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "post": {
+        "summary": "Queue GPU work, splitting a long video if asked",
+        "description": "Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. Both range bounds are inclusive, so the pieces tile the range exactly with no frame processed twice and none missed. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuJobSubmitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The jobs created, and the batch they share if there is one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuJobSubmitResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/{id}": {
+      "get": {
+        "summary": "Fetch one job with its attempts and artifacts",
+        "description": "Returns the job, every attempt at it in lease-epoch order so the history reads forwards, and every artifact it produced. A job attempted three times has three attempt rows, each recording which machine held it, how far it got and why it ended -- a job and one machine's attempt at it are deliberately separate records, so a retry does not overwrite the account of what went wrong the first time. Requires the `jobs:read` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the job to fetch."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job, its attempts, and its artifacts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuJobDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a GPU job",
+        "description": "Marks the job cancelled at once. A machine running it finds out at its next heartbeat -- the only channel MARP has for telling it anything -- and then reports a terminal result of its own, so \"cancelled\" here means the coordinator has stopped wanting the work rather than that the machine has already stopped doing it. The lease is still extended while it winds down, so a worker reporting back is not declared expired mid-shutdown. Cancelling a job that has already finished is not an error and changes nothing; the answer says so with `changed: false`. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the job to cancel."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job as it now stands, and whether this call changed it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuJobCancelResponse"
                 }
               }
             }

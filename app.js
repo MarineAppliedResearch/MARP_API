@@ -103,6 +103,14 @@ const registerTokensRoutes = require('./routes/v2_tokens.routes');
 // require position here is unconstrained.
 const registerJellyfinRoutes = require('./routes/jellyfin.routes');
 const registerTimecodeSyncRoutes = require('./routes/timecode_sync.routes');
+
+// GPU orchestration (V2) has the same freedom of require position as Jellyfin:
+// its repository owns only the five orchestration tables and touches none of the
+// circularly-required core controllers. `mountGpuBodyParsing` is separate from
+// the route registration because it has to run before the API-wide body parser
+// -- see where it is called below.
+const registerGpuRoutes = require('./routes/gpu.routes');
+const { mountGpuBodyParsing } = require('./routes/gpu.routes');
 const { configureAuthentication } = require('./auth/auth.setup');
 
 
@@ -163,6 +171,7 @@ const repositoryPaths = [
     './repository/keyframe.repository',
     './repository/dataset.repository',
     './repository/schema.repository',
+    './repository/gpu.repository',
 ];
 
 
@@ -277,6 +286,12 @@ const app = express();
 // Allow browser applications from other origins to access the API.
 app.use(cors());
 
+// The GPU orchestration family needs a larger body limit than the rest of the
+// API, and its artifact upload needs no body parsing at all. Both are
+// path-scoped, and both must be mounted before the API-wide parser below,
+// because the first parser to touch a request is the one whose limit applies.
+mountGpuBodyParsing(app);
+
 // Parse incoming JSON request bodies. Must run before any route (including
 // code-first registries like registerTaskRoutes) that reads req.body.
 app.use(bodyParser.json());
@@ -329,6 +344,7 @@ registerTimecodeSyncRoutes(app);
 registerAuthRoutes(app);
 registerUsersRoutes(app);
 registerTokensRoutes(app);
+registerGpuRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 
