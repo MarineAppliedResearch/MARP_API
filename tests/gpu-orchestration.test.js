@@ -77,7 +77,13 @@ let workerId;
 const extraWorkerIds = [];
 
 /**
- * A Milestone 1 job spec: inference over a frame range of a Jellyfin video.
+ * A Milestone 1 job spec: inference over a frame range of a video.
+ *
+ * The video is a bare `url` rather than a Jellyfin item id, so that nothing in
+ * this suite depends on the media server being reachable. A worker can process
+ * any reachable source, and this is that case. The item-id case needs Jellyfin
+ * resolved at lease time and lives in `tests/gpu-video-resolution.test.js`, where
+ * the resolution is stubbed.
  *
  * @param {Object} range - `{start_frame, end_frame}`, half-open: the start is
  * included and the end is one past the last frame.
@@ -87,7 +93,7 @@ function specFor(range) {
     return {
         engine: 'ultralytics',
         model: { name: `jest-gpu-model-${runId}`, sha256: 'a'.repeat(64) },
-        video: { jellyfin_item_id: `jest-item-${runId}`, source_name: 'jest-gpu.mp4' },
+        video: { url: `http://jest.invalid/media/jest-gpu-${runId}.mp4`, source_name: 'jest-gpu.mp4' },
         range,
         params: { conf: 0.25, iou: 0.7, imgsz: 1280, tracker: null },
         reduction: { name: 'v3_dirpad', version: 1 },

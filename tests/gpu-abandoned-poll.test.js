@@ -96,7 +96,8 @@ async function queueJob() {
             spec: {
                 engine: 'mock',
                 model: { name: `jest-abandoned-model-${runId}`, sha256: 'd'.repeat(64) },
-                video: { jellyfin_item_id: `jest-abandoned-item-${runId}` },
+                // A bare url, so leasing needs nothing from the media server.
+                video: { url: `http://jest.invalid/media/jest-abandoned-${runId}.mp4`, source_name: 'jest-abandoned.mp4' },
                 range: { start_frame: 0, end_frame: 100 },
             },
         });

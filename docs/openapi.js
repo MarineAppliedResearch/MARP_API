@@ -2244,12 +2244,28 @@ const buildOpenApiSpec = () => {
                             },
                             video: {
                                 type: 'object',
-                                description: 'Which video, in Jellyfin terms. The worker fetches it from Jellyfin directly with its own credential; MARP never proxies the media.',
-                                required: ['jellyfin_item_id'],
+                                description:
+                                    'What to process. **A worker is handed a source it can open and knows nothing about MARP or Jellyfin**, so a worker can process any reachable video and not only a Jellyfin item.\n\n'
+                                    + '**On submission, exactly one of `jellyfin_item_id` or `url`.** Both together is refused rather than one silently winning. An item id is resolved to a playable URL when the job is leased -- not when it is queued, because a stream URL carries its own media credential and one minted at submission would rot in the queue -- and the stored spec keeps what was submitted rather than being rewritten. A bare `url` is handed over exactly as it was given.\n\n'
+                                    + '**On a lease, `url` is always present.** That is the coordinator\'s guarantee to the worker. `jellyfin_item_id` travels through to the worker unchanged as opaque provenance for it to echo into its output; a worker never resolves one.',
                                 additionalProperties: true,
                                 properties: {
-                                    jellyfin_item_id: { type: 'string', example: 'a1b2c3d4e5f60718293a4b5c6d7e8f90' },
-                                    source_name: { type: 'string', nullable: true, example: 'MARE_2024_Dive07_cam1.mp4' },
+                                    url: {
+                                        type: 'string',
+                                        example: 'http://media.example.org/Videos/a1b2c3d4e5f60718293a4b5c6d7e8f90/stream?static=true',
+                                        description: 'A source the worker can open. Required on submission when no `jellyfin_item_id` is given, and always present on a leased spec.',
+                                    },
+                                    jellyfin_item_id: {
+                                        type: 'string',
+                                        example: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+                                        description: 'Which Jellyfin item this came from. Provenance only: MARP resolves it, the worker never does.',
+                                    },
+                                    source_name: {
+                                        type: 'string',
+                                        nullable: true,
+                                        example: 'MARE_2024_Dive07_cam1.mp4',
+                                        description: 'What appears as `video_source` on every observation the run produces. Required on submission with a bare `url`, since it cannot be guessed from one; optional with an item id, where the Jellyfin item supplies it.',
+                                    },
                                 },
                             },
                             range: {

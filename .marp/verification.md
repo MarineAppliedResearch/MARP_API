@@ -12,6 +12,13 @@ Two tiers are used, and the split matters:
 - **Transaction tier (`tests/gpu-lease-race.test.js`)** — two database transactions held
   open at once. The lease's concurrency claim is invisible at any other tier: calling the
   claim twice in sequence passes whether or not any locking exists.
+- **HTTP tier with Jellyfin stubbed (`tests/gpu-video-resolution.test.js`)** — the same
+  Supertest setup, with `jellyfinRepository.buildDirectStreamUrl` and `getItem` replaced per
+  test. Still the HTTP tier, because what is being asserted is the leased body a worker
+  receives; the stub is there because CI cannot reach the media server, which is also why
+  `tests/jellyfin.test.js` is excluded there. **What this cannot see: whether Jellyfin
+  actually returns a playable URL for a real item.** That needs the media server and is a
+  manual step below.
 
 ## What each test proves
 
@@ -35,12 +42,25 @@ Two tiers are used, and the split matters:
 | R16 | `npx sequelize-cli db:migrate` and `db:migrate:undo` run clean in both directions; each migration prints its `[label] before/after` integrity lines | schema | Every migration wraps its work in `db/data-integrity.js` and carries a working `down`. |
 | A13 | `keeps the new name when the machine enrols again, and stays one row`, `gives two machines that share a name a row each`, `does not disturb a live lease`, `refuses an empty name, and 404s an unknown machine`, `refuses an enrolment with no durable id, because that is the identity` | HTTP | A worker's identity is the durable id it generated for itself; the name is editable metadata. Enrolment keys on `local_id`, a re-enrolment does not overwrite the name, two machines may share one, and a rename touches neither the row's identity nor its lease. |
 | A13 | `does not echo the durable id back, keeping the identity internal`, and the `local_id` key assertion inside `does not disturb a live lease` | HTTP | The durable id is not in any response. `worker_id` is the handle a dashboard addresses a machine by, so exposing the value enrolment keys on would be an avoidable way to adopt somebody else's pool row. |
+| A15 | `resolves an item id into a url at lease time`, `fills source_name from the Jellyfin item when the submission left it out` | HTTP | The coordinator's guarantee: the spec a worker is handed carries `video.url`. Asserted on the leased body, which is what a worker actually receives -- a check one layer down would pass while the body handed over had no URL in it at all. |
+| A15 | `resolves an item id into a url at lease time` (its closing assertion) and `keeps the stored spec as it was submitted, resolving nothing at submit time` | HTTP | Resolution happens in the poll handler and the job row is not rewritten. A URL carries its own media credential, and one minted at submission would sit in the queue until somebody claimed it -- which is what makes a short-lived per-attempt token possible later. |
+| A15 | `resolves an item id into a url at lease time` asserts `spec.video.jellyfin_item_id` unchanged on the leased body | HTTP | The item id travels through as opaque provenance for the worker to echo into its output. A worker never resolves one. |
+| A15 | `hands a bare url through unchanged, asking Jellyfin nothing` | HTTP | A worker can process any reachable source, not only a Jellyfin item, because a URL is all the contract carries. Also asserts the media server is not touched at all for such a job. |
+| A15 | `refuses a submission carrying both an item id and a url`, `refuses a bare url with no source_name…`, `refuses a video that names neither an item id nor a url`, `refuses an empty url rather than storing one` | HTTP | Exactly one of the two at submit, and `source_name` required with a bare url because it becomes `video_source` on every observation and cannot be guessed from a URL. |
+| A15 | `does not hand out a lease when the video cannot be resolved, and lets the job fail`, `does not hand out a lease when Jellyfin does not have the item` | HTTP | A failure to resolve fails the attempt with the reason rather than handing over a spec with no URL, and spends an attempt so the job exhausts them and lands `failed` instead of being retried forever. Both halves are asserted: `queued` while an attempt remains, `failed` when none does. |
+| A15 | `never hands over an empty url, even from a spec that already holds one` | HTTP | An empty `video.url` is treated as no URL. The worker refuses a spec whose url is missing *or* empty, and a coordinator that resolved nothing is likelier to emit `""` than to omit the key; this asserts MARP emits neither. |
+
 
 ## Requirements with no test
 
 - **R15 (the dashboard app)** — not implemented in this pass, so nothing is verified. It is
   a separate piece of work and needs its own tiers, including one that can see what was
   drawn.
+- **A15's live half** — that a real Jellyfin item resolves to a URL a worker can actually
+  open. Every resolution test stubs the media server, so what is proven is what MARP does
+  with a URL, not that the URL plays. Submitting a job naming a real item and leasing it
+  from a real worker is the manual step, and it is the one that would catch a
+  `buildDirectStreamUrl` that returns something Jellyfin no longer accepts.
 
 ## Edge cases
 

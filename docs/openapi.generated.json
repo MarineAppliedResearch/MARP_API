@@ -2555,20 +2555,24 @@
           },
           "video": {
             "type": "object",
-            "description": "Which video, in Jellyfin terms. The worker fetches it from Jellyfin directly with its own credential; MARP never proxies the media.",
-            "required": [
-              "jellyfin_item_id"
-            ],
+            "description": "What to process. **A worker is handed a source it can open and knows nothing about MARP or Jellyfin**, so a worker can process any reachable video and not only a Jellyfin item.\n\n**On submission, exactly one of `jellyfin_item_id` or `url`.** Both together is refused rather than one silently winning. An item id is resolved to a playable URL when the job is leased -- not when it is queued, because a stream URL carries its own media credential and one minted at submission would rot in the queue -- and the stored spec keeps what was submitted rather than being rewritten. A bare `url` is handed over exactly as it was given.\n\n**On a lease, `url` is always present.** That is the coordinator's guarantee to the worker. `jellyfin_item_id` travels through to the worker unchanged as opaque provenance for it to echo into its output; a worker never resolves one.",
             "additionalProperties": true,
             "properties": {
+              "url": {
+                "type": "string",
+                "example": "http://media.example.org/Videos/a1b2c3d4e5f60718293a4b5c6d7e8f90/stream?static=true",
+                "description": "A source the worker can open. Required on submission when no `jellyfin_item_id` is given, and always present on a leased spec."
+              },
               "jellyfin_item_id": {
                 "type": "string",
-                "example": "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+                "example": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+                "description": "Which Jellyfin item this came from. Provenance only: MARP resolves it, the worker never does."
               },
               "source_name": {
                 "type": "string",
                 "nullable": true,
-                "example": "MARE_2024_Dive07_cam1.mp4"
+                "example": "MARE_2024_Dive07_cam1.mp4",
+                "description": "What appears as `video_source` on every observation the run produces. Required on submission with a bare `url`, since it cannot be guessed from one; optional with an item id, where the Jellyfin item supplies it."
               }
             }
           },
@@ -12039,7 +12043,7 @@
     "/v2/gpu/poll": {
       "post": {
         "summary": "Poll for work, and lease it in the same transaction",
-        "description": "Asks for a job and takes the lease on it in one step. There is no separate claim call, and no window in which a job has been chosen but not yet leased: the row is locked with `FOR UPDATE SKIP LOCKED` inside this request's transaction, so two machines polling at the same instant either take different jobs or one is told there is none -- they cannot lease the same one. Answers `204` when there is nothing to do, so a worker distinguishes \"no work\" from \"work\" by status rather than by inspecting a body. `wait_seconds` holds the request open until work appears, capped by the coordinator. Every poll first takes back any lease that has run out, judged on the coordinator's clock, which is what turns a machine that vanished into work somebody else can pick up. A machine is never given more concurrent work than the `slot_count` it enrolled with, and a paused machine is given none -- both answer `204` at once rather than waiting out `wait_seconds`, since nothing appearing in the queue would change either answer. Requires the `jobs:execute` permission.",
+        "description": "Asks for a job and takes the lease on it in one step. There is no separate claim call, and no window in which a job has been chosen but not yet leased: the row is locked with `FOR UPDATE SKIP LOCKED` inside this request's transaction, so two machines polling at the same instant either take different jobs or one is told there is none -- they cannot lease the same one. Answers `204` when there is nothing to do, so a worker distinguishes \"no work\" from \"work\" by status rather than by inspecting a body. `wait_seconds` holds the request open until work appears, capped by the coordinator. Every poll first takes back any lease that has run out, judged on the coordinator's clock, which is what turns a machine that vanished into work somebody else can pick up. A machine is never given more concurrent work than the `slot_count` it enrolled with, and a paused machine is given none -- both answer `204` at once rather than waiting out `wait_seconds`, since nothing appearing in the queue would change either answer.\n\n**The spec handed back always carries `video.url`.** That is the coordinator's guarantee: a worker is given a source it can open and knows nothing about MARP or Jellyfin. A Jellyfin item id is resolved here rather than when the job was queued, because a stream URL carries its own media credential and one minted at submission would rot in the queue; the job row itself is not rewritten, so the stored spec keeps what was submitted. The item id travels through unchanged as provenance for the worker to echo into its output. If the video cannot be resolved, the attempt is failed with the reason rather than a lease with no URL being handed out, which spends one of the job's attempts -- so an unresolvable video exhausts them and lands the job `failed` instead of being retried forever. Requires the `jobs:execute` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],
@@ -12566,7 +12570,7 @@
       },
       "post": {
         "summary": "Queue GPU work, splitting a long video if asked",
-        "description": "Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting. Requires the `jobs:write` permission.",
+        "description": "Creates one job, or -- given `piece_frames` -- a batch of jobs sharing a `batch_id`, each covering its own piece of the frame range. N independent jobs rather than one job with children, so each piece leases, retries and fails on its own, which is what lets ten machines share a ten-hour video without any of them knowing about the others. The range is half-open -- `start_frame` is included, `end_frame` is one past the last frame -- so the pieces tile it exactly: the `end_frame` of one piece is the `start_frame` of the next, the frames covered are `end_frame - start_frame` with no off-by-one, and no frame is processed twice or missed. The last piece is short rather than over-long. An empty range is refused rather than queued. A range is required even for a whole video, so nothing downstream has to special-case the undivided case. The whole batch is inserted in one transaction: half a batch is worse than none, because somebody would have to work out which pieces were missing before resubmitting.\n\n`spec.video` carries **exactly one** of `jellyfin_item_id` or `url`; both together is refused rather than one silently winning. An item id is resolved to a playable URL when a worker leases the job, not here. A bare `url` is any other reachable source and needs `source_name` with it, because that is what appears as `video_source` on every observation and cannot be guessed from a URL. Requires the `jobs:write` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],

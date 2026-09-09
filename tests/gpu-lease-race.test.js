@@ -75,7 +75,8 @@ async function queueJobs(count) {
                 spec: {
                     engine: 'ultralytics',
                     model: { name: `jest-race-model-${runId}`, sha256: 'c'.repeat(64) },
-                    video: { jellyfin_item_id: `jest-race-item-${runId}` },
+                    // A bare url, so leasing needs nothing from the media server.
+                    video: { url: `http://jest.invalid/media/jest-race-${runId}.mp4`, source_name: 'jest-race.mp4' },
                     range: { start_frame: index * 100, end_frame: (index * 100) + 100 },
                 },
             });

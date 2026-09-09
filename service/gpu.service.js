@@ -24,9 +24,11 @@
 const crypto = require('crypto');
 
 const gpuRepository = require('../repository/gpu.repository');
+const jellyfinRepository = require('../repository/jellyfin.repository');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
     HEARTBEAT_SECONDS,
+    MEDIA_CLIENT_IDENTITY,
     LEASE_SECONDS,
     POLL_MAX_WAIT_SECONDS,
     POLL_RETRY_INTERVAL_MS,
@@ -138,6 +140,28 @@ function requiredEnum(value, field, allowed) {
     }
 
     return value;
+}
+
+/**
+ * The filename part of a path, whichever separator it uses.
+ *
+ * A local copy of the same three lines in `repository/jellyfin.repository.js`
+ * rather than a reach into that module's private helper: Jellyfin's own paths
+ * use `/` and MARP's stored video sources are often old Windows paths, so both
+ * separators have to be tolerated, and Node's `path` module only understands the
+ * host's.
+ *
+ * @param {string} value - Path or bare filename.
+ * @returns {string} The final segment, or '' when there is nothing to take.
+ */
+function fileNameFromPath(value) {
+    if (!value) {
+        return '';
+    }
+
+    const segments = String(value).replace(/\\/g, '/').split('/');
+
+    return segments[segments.length - 1] || '';
 }
 
 /**
@@ -305,6 +329,31 @@ class GpuService {
             });
 
             if (lease) {
+                let spec;
+
+                try {
+                    spec = await this.resolveVideoForLease(lease.job.spec);
+                } catch (error) {
+                    // The lease is given up rather than handed over. Two worse
+                    // options were available: hand out a spec with no URL in it,
+                    // which breaks the coordinator's one guarantee and makes the
+                    // failure the worker's to explain; or put the job straight
+                    // back in the queue, which retries an unresolvable item
+                    // forever and never becomes visible to anybody. Failing the
+                    // attempt spends one of the job's attempts, so a job whose
+                    // video cannot be resolved exhausts them and lands `failed`,
+                    // with the reason on every attempt row.
+                    await gpuRepository.failAttemptUnresolved({
+                        attemptId: lease.attempt.id,
+                        failureReason: `The video could not be resolved for this lease: ${error.message}`,
+                    });
+
+                    // 204, not a retry inside this poll. Looking again at once
+                    // would re-lease the same job and burn every attempt in one
+                    // request, hammering Jellyfin as it went.
+                    return null;
+                }
+
                 return {
                     job_id: lease.job.id,
                     attempt_id: lease.attempt.id,
@@ -314,7 +363,7 @@ class GpuService {
                     slot_index: lease.attempt.slot_index,
                     kind: lease.job.kind,
                     batch_id: lease.job.batch_id,
-                    spec: lease.job.spec,
+                    spec,
                 };
             }
 
@@ -333,6 +382,91 @@ class GpuService {
 
             await sleep(Math.min(POLL_RETRY_INTERVAL_MS, remaining));
         }
+    }
+
+    /**
+     * Turn a stored spec into the one a worker is handed.
+     *
+     * **This is the coordinator's guarantee: the leased spec carries
+     * `video.url`.** A worker knows nothing about MARP or Jellyfin -- it is
+     * handed a source it can open and opens it -- which is also why a worker can
+     * process any reachable source and not only a Jellyfin item. Resolution
+     * therefore belongs to the coordinator, and `jellyfin_item_id` travels
+     * through untouched as provenance for the worker to echo into its output.
+     *
+     * At lease time rather than at job creation, and that placement is the whole
+     * reason this function exists: a stream URL carries its own media credential,
+     * and one minted when the job was queued would sit in the queue rotting until
+     * somebody claimed it. Resolving here is also what makes a short-lived
+     * per-attempt token possible later, which is the fix for handing a media key
+     * to a machine MARP does not control.
+     *
+     * A spec that already carries a URL is passed through as it stands. Nothing
+     * is written back to the job row either way: the stored spec keeps what was
+     * submitted.
+     *
+     * @async
+     * @param {Object} spec - The stored spec, as submitted.
+     * @returns {Promise<Object>} A copy whose `video` carries `url` and `source_name`.
+     * @throws {Error} When the video cannot be resolved. The caller fails the
+     * attempt rather than handing out a lease with no URL in it.
+     */
+    async resolveVideoForLease(spec) {
+        const video = spec && typeof spec === 'object' ? spec.video : null;
+
+        if (!video || typeof video !== 'object') {
+            throw new Error('the job spec carries no video to resolve.');
+        }
+
+        // Already playable. A submission of a bare URL is handed on exactly as it
+        // was given, because the submitter is the only one who knows what that
+        // source is.
+        if (typeof video.url === 'string' && video.url.trim() !== '') {
+            return spec;
+        }
+
+        const itemId = video.jellyfin_item_id;
+
+        if (typeof itemId !== 'string' || itemId.trim() === '') {
+            throw new Error('the job spec carries neither a video.url nor a video.jellyfin_item_id.');
+        }
+
+        // The name only when it was not submitted. It is what appears as
+        // `video_source` on every observation the run produces and cannot be
+        // guessed from a URL, so a leased spec without it would silently produce
+        // unattributable observations.
+        let sourceName = typeof video.source_name === 'string' ? video.source_name.trim() : '';
+
+        if (sourceName === '') {
+            const item = await jellyfinRepository.getItem(itemId, MEDIA_CLIENT_IDENTITY);
+
+            if (!item) {
+                throw new Error(`Jellyfin has no item ${itemId}.`);
+            }
+
+            // The basename of Jellyfin's own path first: a stored `video_source`
+            // is a filename with its extension, and Jellyfin's display name is
+            // usually the stem. The display name is the fallback for a library
+            // that exposes no path.
+            sourceName = fileNameFromPath(item.path) || item.name || '';
+
+            if (sourceName === '') {
+                throw new Error(
+                    `Jellyfin item ${itemId} has neither a path nor a name, so there is nothing to record as video_source.`
+                );
+            }
+        }
+
+        const url = await jellyfinRepository.buildDirectStreamUrl(itemId, MEDIA_CLIENT_IDENTITY);
+
+        if (typeof url !== 'string' || url.trim() === '') {
+            throw new Error(`Jellyfin returned no stream URL for item ${itemId}.`);
+        }
+
+        return {
+            ...spec,
+            video: { ...video, url, source_name: sourceName },
+        };
     }
 
     /**
@@ -769,11 +903,11 @@ class GpuService {
 
         requiredString(spec.engine, 'spec.engine');
 
-        if (!spec.video || typeof spec.video !== 'object') {
+        if (!spec.video || typeof spec.video !== 'object' || Array.isArray(spec.video)) {
             invalid('spec.video is required and must be an object.');
         }
 
-        requiredString(spec.video.jellyfin_item_id, 'spec.video.jellyfin_item_id');
+        this.validateSubmittedVideo(spec.video);
 
         // The range is always present, even for a whole video, so nothing
         // downstream has to special-case the undivided case -- and the
@@ -898,6 +1032,51 @@ class GpuService {
         }
 
         return ranges;
+    }
+
+    /**
+     * Validate the `video` half of a submitted spec.
+     *
+     * **Exactly one of `jellyfin_item_id` and `url`.** A Jellyfin item is
+     * resolved to a URL when the job is leased; a bare URL is any other reachable
+     * source and is handed over as it stands. Both together is refused rather
+     * than one silently winning -- a submitter who sent both means something by
+     * each, and guessing which would be a coin toss over what actually gets
+     * processed.
+     *
+     * `source_name` is what appears as `video_source` on every observation the
+     * run produces. It cannot be guessed from a URL, so it is required with one
+     * and optional with an item id, where the Jellyfin item supplies it.
+     *
+     * @param {Object} video - `spec.video` as supplied.
+     * @returns {void}
+     * @throws {ApiError} 400 when the video cannot be scheduled.
+     */
+    validateSubmittedVideo(video) {
+        const hasItemId = video.jellyfin_item_id !== undefined && video.jellyfin_item_id !== null;
+        const hasUrl = video.url !== undefined && video.url !== null;
+
+        if (hasItemId && hasUrl) {
+            invalid(
+                'spec.video must carry exactly one of jellyfin_item_id or url, not both. '
+                + 'An item id is resolved to a playable URL when the job is leased; a url is used as it stands.'
+            );
+        }
+
+        if (!hasItemId && !hasUrl) {
+            invalid('spec.video must carry either jellyfin_item_id or url.');
+        }
+
+        if (hasItemId) {
+            requiredString(video.jellyfin_item_id, 'spec.video.jellyfin_item_id');
+            return;
+        }
+
+        requiredString(video.url, 'spec.video.url');
+        requiredString(
+            video.source_name,
+            'spec.video.source_name (required with a bare url, because it is what appears as video_source on every observation and cannot be guessed from a URL)'
+        );
     }
 
     /**

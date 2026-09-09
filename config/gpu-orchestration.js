@@ -151,6 +151,20 @@ const ARTIFACT_DIRECTORY = path.join(__dirname, '..', 'storage', 'gpu-artifacts'
 const ARTIFACT_PATH_PREFIX = 'gpu-artifacts';
 
 /**
+ * How MARP identifies itself to Jellyfin when it resolves a video for a lease.
+ *
+ * A constant rather than something read off the poll request: the coordinator is
+ * the Jellyfin client here, not the worker. The worker never speaks to Jellyfin
+ * and holds no media credential -- it is handed a URL it can open -- so
+ * attributing the Jellyfin session to a machine that made no Jellyfin request
+ * would make Jellyfin's own session view wrong.
+ *
+ * @constant
+ * @type {Object}
+ */
+const MEDIA_CLIENT_IDENTITY = { name: 'MARP GPU coordinator' };
+
+/**
  * Worker lifecycle states.
  *
  * @constant
@@ -265,6 +279,7 @@ module.exports = {
     MAX_ARTIFACT_BYTES,
     ARTIFACT_DIRECTORY,
     ARTIFACT_PATH_PREFIX,
+    MEDIA_CLIENT_IDENTITY,
     WORKER_STATES,
     JOB_KINDS,
     JOB_STATES,

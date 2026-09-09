@@ -81,6 +81,11 @@ model registry are later milestones and are deliberately not built here.
   Jellyfin directly with its own credential, so its MARP token needs no Jellyfin
   permission. Follows from settled decision 5.
 
+  **Superseded the same day by A15.** The worker no longer talks to Jellyfin at all. The
+  conclusion survives — a worker's MARP token still needs no Jellyfin permission — but the
+  reason is the opposite one: it holds no media credential because the coordinator resolves
+  the video for it.
+
 Found while implementing the coordinator, 2026-09-09. Only A7 turned out to matter across
 repositories, and it is answered below; the rest are non-blocking — each a one-line change
 either way, none moving the schema, the route list or the meaning of a field — but each was
@@ -152,6 +157,51 @@ a real choice and is implemented as stated rather than left unsaid.
   the start of its range by whichever machine takes it. Ranges are sized so that losing one
   is cheap, which is what makes re-running it acceptable.
 
+- [x] **A15 · cross-repository integration · blocking** — answered 2026-09-09 by Isaac, and
+  it reverses part of A1 and all of A6: **the coordinator resolves the video and hands the
+  worker a playable URL. The worker knows nothing about MARP or Jellyfin.** It does not
+  authenticate to Jellyfin, does not search it by filename, does not score matches and holds
+  no media credential. A worker can therefore process **any** reachable source, because a
+  URL is all the contract carries.
+
+  The `video` object:
+
+  ```
+  video = { url, source_name, jellyfin_item_id }
+  ```
+
+  - **At submit, exactly one of `jellyfin_item_id` or `url`.** Both is a 400 rather than one
+    silently winning; a submitter who sent both means something by each. `source_name` is
+    optional with an item id — the Jellyfin item supplies it — and required with a bare url,
+    because it is what appears as `video_source` on every observation and cannot be guessed
+    from a URL.
+  - **The stored spec keeps what was submitted.** The job row is not rewritten at submit.
+  - **At lease, the spec handed over always carries `video.url`.** That is the coordinator's
+    guarantee, and resolution happens in the poll handler rather than at job creation: a
+    URL will eventually carry an expiring token, and one minted at submission would rot in
+    the queue. Resolving here is also what makes a short-lived per-attempt token possible
+    later, which is the fix for handing a long-lived media key to a machine MARP does not
+    control (the worker task's A9).
+  - `jellyfin_item_id` travels to the worker as **opaque provenance** — the worker echoes it
+    into its output and never resolves it.
+  - **`params` carries no video field.** An undocumented `params.video_source_url` on the
+    worker side let a URL be smuggled through engine parameters, and every test on both
+    sides used it, which is why the missing contract went unnoticed. The URL is first-class
+    in the spec now. Nothing in `MARP_API` ever named that field.
+
+  **If resolution fails at lease time the attempt is failed** with the reason in
+  `failure_reason`, rather than handing over a spec with no URL or leaving the job queued to
+  be retried forever. That spends one of the job's attempts, so an unresolvable video
+  exhausts them and lands the job `failed`, which somebody can see. Reviewed after
+  implementing and it is the right call: the alternatives are a worker being blamed for the
+  coordinator's failure, or a job that never becomes anybody's problem.
+
+  Also settled with the worker half: an observation the worker writes carries
+  `jellyfin_item_id` as a **key present with value `null`** for a bare-url job — never
+  absent, never `""` or a placeholder — so a reader needs no branch for "was this a Jellyfin
+  job", and `video_source` identifies the video. Nothing in `MARP_API` reads that output
+  yet; the note is here for whoever builds the ingest.
+
 
 ## Decisions
 
@@ -207,7 +257,11 @@ control, so the concurrency tests cannot quietly stop testing anything.
 ## Status
 
 Coordinator implemented, 2026-09-09. Migrations 1, models and repository 2, and the route
-family 3 of the plan are done and verified; `npm test` is 262 for 262.
+family 3 of the plan are done and verified; `npm test` was 262 for 262 at that point.
+
+Video resolution moved into the coordinator later the same day (A15): the poll handler now
+resolves a Jellyfin item into a playable URL and the worker is handed that, so it knows
+nothing about Jellyfin. `npm test` is 285 for 285, up from 274 before that change.
 
 Not done, and deliberately:
 
@@ -289,7 +343,8 @@ piece length, which expands into a batch), `POST /gpu/jobs/:id/cancel`.
 **The job spec for Milestone 1** — inference or tracking over a frame range:
 
 ```
-{ engine: "ultralytics", model: {name, sha256}, video: {jellyfin_item_id, source_name},
+{ engine: "ultralytics", model: {name, sha256},
+  video: {url, source_name, jellyfin_item_id},
   range: {start_frame, end_frame}, params: {conf, iou, imgsz, tracker},
   reduction: {name: "v3_dirpad", version: 1} }
 ```
@@ -297,6 +352,9 @@ piece length, which expands into a batch), `POST /gpu/jobs/:id/cancel`.
 `range` is always present, even for a whole video, so nothing special-cases the
 undivided case, and it is **half-open** — `[0, frame_count)` for a whole video (A7).
 `reduction` is named and versioned per the worker task's R10b.
+
+`video` is A15: exactly one of `url` or `jellyfin_item_id` at submit, always a `url` on a
+lease. `params` carries engine parameters and nothing else — there is no video field in it.
 
 **Three rules that are the whole design.** Every state-changing call carries
 `(attempt_id, worker_id, lease_epoch)`, and a mismatch is answered `{action: 'abandon'}`.

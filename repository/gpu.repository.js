@@ -1187,6 +1187,69 @@ class GpuRepository {
     // -----------------------------------------------------------------
 
     /**
+     * Give up a lease the coordinator could not make usable.
+     *
+     * The one caller is the poll handler, when the job's video cannot be resolved
+     * into something a worker could open. The attempt has already been opened by
+     * then -- it is opened in the same transaction that leases the job -- so the
+     * choice is what to do with it, not whether it exists.
+     *
+     * It is failed rather than released, and that costs one of the job's
+     * attempts on purpose. Putting the job back as though nothing had happened
+     * would retry an unresolvable video forever and never show up anywhere; this
+     * way it exhausts its attempts, lands `failed`, and every attempt row carries
+     * the reason.
+     *
+     * @async
+     * @param {Object} params
+     * @param {number} params.attemptId - Attempt to end.
+     * @param {string} params.failureReason - Why, recorded on the attempt.
+     * @returns {Promise<Object|null>} `{attempt_id, job_id, job_state}`, or null
+     * when the attempt has already gone.
+     * @throws {Error} Re-throws after rolling back if anything fails.
+     */
+    async failAttemptUnresolved({ attemptId, failureReason }) {
+        const transaction = await this.db.sequelize.transaction();
+
+        try {
+            const [attempt] = await this.db.sequelize.query(
+                'SELECT * FROM gpu_job_attempts WHERE id = :attemptId FOR UPDATE',
+                { replacements: { attemptId }, type: QueryTypes.SELECT, transaction }
+            );
+
+            if (!attempt) {
+                await transaction.commit();
+                return null;
+            }
+
+            const [job] = await this.db.sequelize.query(
+                'SELECT * FROM gpu_jobs WHERE id = :jobId FOR UPDATE',
+                { replacements: { jobId: attempt.job_id }, type: QueryTypes.SELECT, transaction }
+            );
+
+            const { jobState } = await this.endAttemptAndReleaseJob({
+                attempt,
+                job,
+                attemptState: 'failed',
+                failureReason,
+                note: { note: 'video could not be resolved for the lease', reason: failureReason },
+                // `failed` rather than the default `expired`: nothing timed out,
+                // the coordinator could not produce a spec a worker could run.
+                finalState: 'failed',
+                transaction,
+            });
+
+            await transaction.commit();
+
+            return { attempt_id: attempt.id, job_id: attempt.job_id, job_state: jobState };
+        } catch (error) {
+            await transaction.rollback();
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
      * Look up a staged artifact by hash.
      *
      * A row means MARP holds those bytes, which is the whole answer the check
