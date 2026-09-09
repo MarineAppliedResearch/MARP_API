@@ -217,16 +217,20 @@ function deepen(page, scale = 147) {
 }
 
 /**
- * A beat: let what just happened be seen before the next thing happens.
+ * The beats a scene is built from.
  *
- * The runner starts `act` as soon as the line begins speaking, so an unpaced scene does
- * all its work in the first half second and then sits still for the rest of the sentence
- * — the viewer hears "watch this" about something that already finished. `lead` waits for
- * the words to get to the point; `dwell` holds the result on screen afterwards.
+ * The runner starts `act` the instant the line begins speaking, so the timing of an action
+ * is decided by *where in the sentence its cue falls* — not by a lead you pick. A fixed
+ * lead does not work: park "I am going to page forward" twelve seconds into a paragraph
+ * and the tiles will have changed long before the viewer is told to watch them.
+ *
+ * So the rule is about the words, not the numbers: **an action scene's line opens with its
+ * cue in the first three or four words**, and everything explanatory goes in a scene of its
+ * own with no action in it. `CUE` is then just long enough for those few words to be said.
  */
 const beat = (page, ms) => page.waitForTimeout(ms);
-const LEAD = 2200;      // long enough for "now watch — I'll page forward"
-const DWELL = 1800;     // long enough to see that it landed
+const CUE = 1300;       // "right — paging forward now", spoken
+const DWELL = 2000;     // long enough to see that it landed
 
 export const scenarios = {
 
@@ -1727,13 +1731,14 @@ export const scenarios = {
     title: 'Verifying: the reviewer never waits',
     scenes: [
       {
-        caption: 'Before this: every page change waited',
-        say: "Last piece of this issue, and it is about waiting. Until now, every single page "
+        caption: 'Before this, every page change waited',
+        say: "Last piece of this issue, and it is about waiting. Until now every single page "
            + "change went off and asked for data, and you sat looking at a grey skeleton grid "
-           + "while it did. Watch the strip along the top of the frame — it counts every single "
-           + "moment a loading state is on screen. Right now it is zero, and we have not moved "
-           + "anywhere yet.",
+           + "while it did. The strip along the top of the frame counts every moment a loading "
+           + "state is on screen. It says zero, because we have not moved anywhere yet.",
         async act({ page, settled }) {
+          /* No navigation in this scene at all. It is the explanation, and an action here
+             would happen under a sentence that is not about it. */
           await watchWaits(page);
           await watchAhead(page);
           await settled();
@@ -1741,13 +1746,20 @@ export const scenarios = {
         }
       },
       {
+        caption: 'Watch the tiles',
+        say: "So keep your eye on the tiles, and on that counter. The fixture still takes a "
+           + "hundred and forty milliseconds to answer a real query, so if anything gets "
+           + "fetched here, you will see it happen.",
+        async act({ page }) {
+          await beat(page, 900);                        // nothing to do; just let it be said
+        }
+      },
+      {
         caption: 'Page forward',
-        say: "So let us page forward. The fixture still takes a hundred and forty milliseconds "
-           + "to answer a real query, so if anything gets fetched here, you will see it. "
-           + "Watch the tiles now — I am going to page forward … there. New tiles, straight "
-           + "away. No skeleton, and the counter along the top has not moved.",
+        say: "Paging forward now \u2026 there. New tiles, straight away. No skeleton grid, nothing "
+           + "fetched, and the counter along the top has not moved.",
         async act({ page, expect }) {
-          await beat(page, LEAD);                     // let the line reach "watch the tiles"
+          await beat(page, CUE);                        // "paging forward now"
           await fromHere(page);
           const ms = await timedPage(page, 'next');
 
@@ -1760,20 +1772,28 @@ export const scenarios = {
 
           await meter(page, `page 2 arrived in ${Math.round(ms)} ms   `
             + `requests: 0   loading states drawn: 0`);
-          await beat(page, DWELL);                    // and let it be seen
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'A reviewer moves both ways',
+        say: "A reviewer does not only go forwards, though. They page on, and then they come "
+           + "back to check something. So the page behind has to be held too, not just the page "
+           + "ahead of them.",
+        async act({ page }) {
+          await beat(page, 900);
         }
       },
       {
         caption: 'And back again',
-        say: "A reviewer moves both ways, though. They page on, and then they come back to check "
-           + "something. So the page behind has to be held too, not just the page ahead. Here we "
-           + "go back … and there it is. Same tiles, no wait, nothing fetched.",
+        say: "Going back now \u2026 and there it is. The same tiles, no wait, and again nothing was "
+           + "fetched to get here.",
         async act({ page, expect }) {
-          await beat(page, LEAD);
-          /* No prefetch wait here, deliberately: page 1 is in the head band the scheduler
-             always holds, and it was the visible page a moment ago. Waiting on a
-             `prefetch:cached` event would hang, because the runner settles the app before
-             the first scene runs — so that prefetch fired before any listener existed. */
+          await beat(page, CUE);                        // "going back now"
+          /* No prefetch wait, deliberately: page 1 is in the head band the scheduler always
+             holds, and it was the visible page a moment ago. Waiting on a `prefetch:cached`
+             event would hang, because the runner settles the app before the first scene runs
+             — so that prefetch fired before any listener of ours existed. */
           await fromHere(page);
           const ms = await timedPage(page, 'prev');
 
@@ -1786,37 +1806,52 @@ export const scenarios = {
         }
       },
       {
-        caption: 'Commit this page',
-        say: "Now the one you reported by hand. First, commit this page — accept the work on it, "
-           + "the way a reviewer would before moving on. Watch the badges appear.",
-        async act({ page, expect, store }) {
-          await beat(page, LEAD);
+        caption: 'Now the one you reported',
+        say: "Now the one you reported by hand. Committing a page used to throw away the pages "
+           + "behind it, so you could not go back and look at what you had just submitted. "
+           + "Let us commit this page and then walk back to it.",
+        async act({ page, store }) {
           store.before = await page.locator('.tile')
             .evaluateAll((t) => t.map((x) => x.dataset.id));
-
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Commit the page',
+        say: "Committing now \u2026 and there are the badges. Every tile on this page is accepted, "
+           + "and it is on the record.",
+        async act({ page, expect }) {
+          await beat(page, CUE);                        // "committing now"
           await page.locator('#commit').click();
           await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
             .toBeVisible();
-
-          await meter(page, 'page 1 committed — now page on, and come back to it');
+          await meter(page, 'page 1 committed');
           await beat(page, DWELL);
         }
       },
       {
-        caption: 'Page on, and come back to it',
-        say: "Committing must not throw away what is behind you. So — page on … and now come "
-           + "back … and there. The work is still there, still showing exactly what was "
-           + "submitted, and coming back to it did not wait either.",
-        async act({ page, expect, store }) {
-          await beat(page, LEAD);
+        caption: 'Page on',
+        say: "Paging on now \u2026 there. A fresh page, and the work behind us is still held.",
+        async act({ page }) {
+          await beat(page, CUE);                        // "paging on now"
           await fromHere(page);
           await timedPage(page, 'next');
-          await beat(page, 1400);                     // a clear pause between the two moves
-
+          await meter(page, 'page 2 \u2014 now come back to the committed page');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'And back to the committed page',
+        say: "Going back to it now \u2026 and there. Every badge still there, the same tiles in the "
+           + "same order, showing exactly what was submitted \u2014 and coming back did not wait "
+           + "either.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE + 300);                  // "going back to it now"
+          await fromHere(page);
           const ms = await timedPage(page, 'prev');
 
-          /* A committed page is pinned, so returning to it is served by id from the row
-             index — and it must show what was submitted, not what the filter now matches. */
+          /* A committed page is pinned, so returning is served by id from the row index —
+             and it must show what was submitted, not what the filter now matches. */
           expect(ms, 'coming back to a committed page must not wait').toBeLessThan(60);
           const after = await page.locator('.tile')
             .evaluateAll((t) => t.map((x) => x.dataset.id));
@@ -1824,29 +1859,54 @@ export const scenarios = {
           await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
             .toBeVisible();
 
-          await meter(page, `came back in ${Math.round(ms)} ms — `
+          await meter(page, `came back in ${Math.round(ms)} ms \u2014 `
             + `the page still shows what was submitted`);
           await beat(page, DWELL);
         }
       },
       {
-        caption: 'Thousands of pages: the end is held on purpose',
-        say: "Now the real size. This fixture is a hundred and fifty nine thousand observations "
-           + "now, which is thousands of pages. The scheduler deliberately holds the first few "
-           + "pages and the last few — so watch this. I am going to jump all the way to the very "
-           + "last page … and there. Nothing was fetched at all.",
-        async act({ page, expect }) {
+        caption: 'Now the real size',
+        say: "That is three thousand rows, though, which is not a real test of anything. A "
+           + "prefetcher looks instant when the whole result already fits in memory. So let us "
+           + "make it the size it will really be.",
+        async act({ page }) {
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'A hundred and fifty nine thousand',
+        say: "Growing it now \u2026 and there. A hundred and fifty nine thousand observations, and "
+           + "thousands of pages of them.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "growing it now"
           const deep = await deepen(page);
           expect(deep.pageCount, 'the fixture must actually be deep').toBeGreaterThan(1000);
+          store.deep = deep;
           await meter(page, `${deep.total.toLocaleString()} observations, `
             + `${deep.pageCount.toLocaleString()} pages`);
-          await beat(page, LEAD + 800);               // the numbers deserve reading
-
-          /* The tail band is prefetched once the question settles, so wait for it rather
-             than racing it — then the jump to the very last page is a hit. */
-          await waitPrefetch(page, [deep.pageCount]);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'The end is held on purpose',
+        say: "The scheduler deliberately holds the first few pages and the last few, because a "
+           + "reviewer jumps to the end more often than you would think. So watch what the very "
+           + "last page costs.",
+        async act({ page, store }) {
+          /* Wait for the tail band here rather than in the acting scene, so the action there
+             is not sitting behind a poll of unknown length. */
+          await waitPrefetch(page, [store.deep.pageCount]);
+          await beat(page, 700);
+        }
+      },
+      {
+        caption: 'Jump to the last page',
+        say: "Jumping to the end now \u2026 and there. The last page of thousands, and nothing was "
+           + "fetched at all.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "jumping to the end now"
           await fromHere(page);
-          const last = await timedPage(page, deep.pageCount);
+          const last = await timedPage(page, store.deep.pageCount);
 
           expect(await page.evaluate(() => window.__asks.length),
             'the last page is in the tail band, so it is already held').toBe(0);
@@ -1854,46 +1914,51 @@ export const scenarios = {
           expect(last).toBeLessThan(60);
           await expect(page.locator('.tile').first()).toBeVisible();
 
-          await meter(page, `page ${deep.pageCount.toLocaleString()} of `
-            + `${deep.pageCount.toLocaleString()} in ${Math.round(last)} ms — no request`);
+          await meter(page, `page ${store.deep.pageCount.toLocaleString()} of `
+            + `${store.deep.pageCount.toLocaleString()} in ${Math.round(last)} ms \u2014 no request`);
           await beat(page, DWELL);
         }
       },
       {
-        caption: 'And a page nobody predicted',
-        say: "That one was held on purpose, though, so it is only half the story. Let us type a "
-           + "page number out in the middle, where nothing could have guessed we were going. "
-           + "That is a genuine fetch … there — and notice it cost one request for the whole set "
-           + "of pages, not one request for every page.",
-        async act({ page, expect, store }) {
-          await beat(page, LEAD);
-          const middle = await page.evaluate(async () => {
+        caption: 'But that one was expected',
+        say: "That one was held on purpose, though, so it only proves half of it. The real "
+           + "question is what happens when you go somewhere nobody could have guessed \u2014 so let "
+           + "us type a page number out in the middle.",
+        async act({ page, store }) {
+          store.middle = await page.evaluate(async () => {
             const { state } = await import('./src/store.js');
             return Math.round(state.pageCount / 2) + 7;
           });
-          store.middle = middle;
-
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'A page nobody predicted',
+        say: "Jumping into the middle now \u2026 and that one did wait, because it had to. But it "
+           + "cost one request for the whole set of pages around it, not one request for every "
+           + "page.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE + 300);                  // "jumping into the middle now"
           await fromHere(page);
-          const jump = await timedPage(page, middle);
+          const jump = await timedPage(page, store.middle);
           const asks = await page.evaluate(() => window.__asks.length);
 
           /* One request for the whole set is the point of asking for a set of pages rather
              than a page: nine pages would otherwise be nine round trips. */
           expect(asks, 'the jump is one request, not one per page').toBe(1);
           expect(jump, 'this one really did go to the data layer').toBeGreaterThan(100);
-          await meter(page, `page ${middle.toLocaleString()} fetched in `
-            + `${Math.round(jump)} ms — one request, not one per page`);
+          await meter(page, `page ${store.middle.toLocaleString()} fetched in `
+            + `${Math.round(jump)} ms \u2014 one request, not one per page`);
           await beat(page, DWELL);
         }
       },
       {
-        caption: 'And now its neighbours are free',
-        say: "And having gone there, the pages either side came with it. So stepping on from "
-           + "here … costs nothing at all. That is the difference: you pay once for arriving "
-           + "somewhere new, and then you can work.",
+        caption: 'And its neighbours came with it',
+        say: "Stepping on from here now \u2026 and nothing. The pages either side arrived with that "
+           + "one request, so you pay once for going somewhere new, and then you can just work.",
         async act({ page, expect, store }) {
-          await beat(page, LEAD);
           await waitPrefetch(page, [store.middle + 1]);
+          await beat(page, CUE + 300);                  // "stepping on from here now"
           await fromHere(page);
           const beside = await timedPage(page, store.middle + 1);
 
@@ -1907,17 +1972,17 @@ export const scenarios = {
       },
       {
         caption: 'Two milliseconds, and no spinner',
-        say: "That is the whole thing. A page change was a hundred and forty eight milliseconds "
-           + "and a skeleton grid; it is now two milliseconds and nothing at all. Committing "
-           + "keeps what is behind you. And thousands of pages deep, the end of the result is "
-           + "already held, while a jump into the middle costs one request and then the pages "
-           + "either side of it are free.",
+        say: "And that is the whole thing. A page change was a hundred and forty eight "
+           + "milliseconds and a skeleton grid; it is now two milliseconds and nothing at all. "
+           + "Committing keeps what is behind you. And thousands of pages deep, the end of the "
+           + "result is already held, while a jump into the middle costs one request and then "
+           + "the pages either side of it are free.",
         async act({ page, expect }) {
           /* Nothing new is claimed here, so nothing new is asserted — but the summary must
              not play over a broken app, so the tiles have to still be on screen. */
           await expect(page.locator('.tile').first()).toBeVisible();
           await meter(page, 'before: 148 ms a page, 4 loading states   '
-            + 'after: 2 ms a page, 1 — the opening load');
+            + 'after: 2 ms a page, 1 \u2014 the opening load');
         }
       }
     ]

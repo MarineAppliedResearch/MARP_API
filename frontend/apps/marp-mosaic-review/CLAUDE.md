@@ -591,36 +591,41 @@ fix or at the bug.
 `act` receives `settled()`, which waits for the grid to stop moving; use it after
 anything that re-queries. `store` is a plain object that carries values between scenes.
 
-### Pace it, or the viewer misses the thing you are proving
+### The cue goes first, or the action happens before the words
 
-Reported 2026-09-09, on the first cut of `verify-prefetch`: *"you kinda flip through it a
-little too quickly."*
+Reported twice on 2026-09-09, on two cuts of `verify-prefetch`. First *"you kinda flip
+through it a little too quickly"*, and then, after a fix that did not work: *"you say pay
+attention — I am now going to move forward, but you already moved forward a second or two
+before that."*
 
-**The runner starts `act` the moment the line begins speaking**, so an unpaced scene does
-all its work in the first half second and then sits still for the remaining ten. The
-viewer hears *"watch the tiles"* about something that finished before the sentence got to
-the verb. Every claim was asserted and the video still failed at its job, which is showing
-a person that the thing works.
+**The runner starts `act` the instant the line begins speaking.** So the moment an action
+happens is decided by *where in the sentence its cue falls*, and nothing else.
 
-So a scene is three beats, and the narration and the actions have to move together:
+**The first fix was wrong and is worth recording as wrong**, because it looks correct: a
+fixed `LEAD` pause at the top of `act`. It does not work, because a lead is measured in
+milliseconds while the cue is measured in *words* — park "I am going to page forward"
+twelve seconds into a paragraph and a two-second lead fires the action under "the fixture
+still takes a hundred and forty milliseconds…", which is nowhere near it. Any fixed number
+is wrong for every line except the one it was tuned against.
 
-- **A lead** before the action, so the words reach the point first. `beat(page, LEAD)`.
-- **One action.** If a scene does two things — page forward *and* back, commit *and*
-  return — either put a real pause between them or, better, **split it into two scenes**.
-  `verify-prefetch` went from seven scenes to nine that way, and the two extra are the
-  clearest in it.
-- **A dwell** afterwards, holding the result on screen. `beat(page, DWELL)`.
+The rule is about the writing:
 
-Say it as you would to somebody at your shoulder: *"I am going to page forward … there.
-New tiles, straight away."* The ellipsis is where the action goes.
+- **An action scene's line opens with its cue in the first three or four words**, then
+  describes the result. *"Paging forward now … there. New tiles, straight away."* The
+  ellipsis is where the action goes, and `beat(page, CUE)` is only long enough to say those
+  few words.
+- **Explanation gets its own scene, with no action in it.** If a line needs to set
+  something up, argue for it, or name the old behaviour, it moves the app not at all. Half
+  the scenes in `verify-prefetch` are these, and they are what make the other half legible.
+- **One action per scene.** Page forward *and* back, or commit *and* return, is two scenes.
+- **A dwell afterwards**, holding the result on screen. `beat(page, DWELL)`.
+- **Anything that opens is held open long enough to be read** — a panel, a menu, a dialog.
+  It is the only chance the viewer gets; they cannot pause and ask.
 
-The same applies to anything that opens: **a panel, a menu or a dialog needs to be held
-open long enough to be read**, not opened and dismissed inside one clause. It is the only
-chance the viewer gets — they cannot pause and ask.
-
-Length is not the cost it looks like. The repaced run is 158 seconds against 107, and the
-silent dry run went 19 seconds to 45. Both are cheap, and a demo nobody can follow is
-worth nothing however fast it is.
+Length is not the cost it appears to be. `verify-prefetch` went seven scenes → nine →
+seventeen, and 107 seconds → 158 → 210. All three were cheap to record, and the first two
+were worth nothing, because a demo whose narration does not match what is on screen is
+not evidence of anything.
 
 ### How the timing works
 
