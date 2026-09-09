@@ -410,6 +410,30 @@ decision the human has just made.
 
 ## Answered, 2026-09-09
 
+- **2026-09-09 — two contradictions in this spec, resolved after implementation.** Both
+  were the coordinator's, both were found by an agent building against them, and both are
+  recorded here rather than quietly corrected.
+
+  **The indexes.** *Indexes this phase needs* says **Add** for
+  `observations (confidence, observation_id)` and
+  `observations (species_id, confidence, observation_id)`, while A2's answer says this phase
+  adds no migration at all. **A2 wins: no migration, no indexes.** Correctness needs
+  neither, and the measurement that would justify each is deferred — an index chosen against
+  a real distribution beats one chosen now. Both are recorded as **owed** in
+  `.marp/verification.md`'s *Known gaps*, with the measurement that should pick them.
+
+  **`timeOfDay` versus "no timecode grammar in SQL".** A3's answer says both, and any SQL
+  predicate over `tc` must interpret that varchar somehow. **The implementing agent's
+  reading is the right one and is now the ruling:** the prohibition is on re-implementing
+  what `db/timecode.js` owns — tick and millisecond arithmetic, and the negative-sign
+  format whose two traps are documented there — not on comparing a clock time. Extracting
+  `HH:MM:SS` with an anchored pattern and casting it to `interval` mirrors the client's own
+  `timeOfDayMs` (`model/match.js`), ignores the day group and a leading sign exactly as that
+  does, is anchored so a date-carrying `tc` yields null, and reproduces none of the
+  arithmetic. What A3 rejected was option (a): a parsing *function* plus expression indexes,
+  and the date substring. That stands rejected.
+
+
 - **A1 — take the count from `(SELECT count(*) FROM matched)`, never `count(*) OVER ()`.**
   Not put to the human: it is a measurement, not a judgement. `count(*) OVER ()` has an
   empty window frame, so its `WindowAgg` buffers the entire matching set into a second
