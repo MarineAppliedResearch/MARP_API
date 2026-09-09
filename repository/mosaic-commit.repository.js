@@ -322,17 +322,28 @@ function readWithdraw(withdraw, page, marks, mode) {
  * Which of these observations this caller may not act on (R10).
  *
  * **A place rather than a formality.** Authorization is enforced per request and
- * per observation, per #68, even though in this phase every observation answers
- * the same way: all three routes take `observations:write`, which the route has
- * already required, and no scoped key exists. Adding one later changes what this
+ * per observation, per #68, even though every observation answers the same way
+ * today: all four routes take `observations:write`, which the route has already
+ * required, and no scoped key exists. Adding one later changes what this
  * consults, not where the check lives -- and `user_permissions` has no project
  * column today, so a per-project grant is a migration rather than a key.
  *
+ * **`operation` is why this signature changed** (#111 R15). One function is
+ * shared by review, training, delete and correction, and #68's *Authorization*
+ * expects deletion to want its own rule -- which cannot be written in here
+ * without knowing that delete is the caller. The parameter is cheap now with
+ * four call sites and expensive later with more. It is deliberately unused:
+ * every operation answers the same way until a scoped key exists, and inventing
+ * a rule before there is a key to express it would be the speculative half of
+ * the work.
+ *
  * @param {Object} principal - `req.principal`.
  * @param {Array<number>} observationIds - The page.
- * @returns {Array<number>} Ids the caller may not act on. Empty in this phase.
+ * @param {string} operation - `review`, `training`, `delete` or `correct`.
+ * @returns {Array<number>} Ids the caller may not act on. Empty for every operation today.
  */
-function deniedObservationIds(principal, observationIds) {
+// eslint-disable-next-line no-unused-vars
+function deniedObservationIds(principal, observationIds, operation) {
     return [];
 }
 
@@ -628,7 +639,7 @@ async function commitReview(mode, request, principal, reviewerId) {
     const withdraw = readWithdraw(request.withdraw, page, marks, mode);
     const ids = [...page.keys()];
 
-    const denied = deniedObservationIds(principal, ids);
+    const denied = deniedObservationIds(principal, ids, mode.purpose === 'training' ? 'training' : 'review');
 
     if (denied.length) {
         throw new MosaicCommitDeniedError(`Not permitted to review observations: ${denied.join(', ')}.`);
@@ -768,7 +779,7 @@ async function commitDelete(mode, request, principal) {
     readWithdraw(request.withdraw, page, marks, mode);
 
     const targets = [...marks.keys()];
-    const denied = deniedObservationIds(principal, targets);
+    const denied = deniedObservationIds(principal, targets, 'delete');
 
     if (denied.length) {
         throw new MosaicCommitDeniedError(`Not permitted to delete observations: ${denied.join(', ')}.`);

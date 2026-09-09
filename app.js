@@ -105,6 +105,7 @@ const registerJellyfinRoutes = require('./routes/jellyfin.routes');
 const registerTimecodeSyncRoutes = require('./routes/timecode_sync.routes');
 const registerMosaicRoutes = require('./routes/mosaic.routes');
 const registerMosaicCommitRoutes = require('./routes/mosaic-commit.routes');
+const registerMosaicCorrectionRoutes = require('./routes/mosaic-correction.routes');
 const { configureAuthentication } = require('./auth/auth.setup');
 
 
@@ -333,6 +334,7 @@ registerUsersRoutes(app);
 registerTokensRoutes(app);
 registerMosaicRoutes(app);
 registerMosaicCommitRoutes(app);
+registerMosaicCorrectionRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 
