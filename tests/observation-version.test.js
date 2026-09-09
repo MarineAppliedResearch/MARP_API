@@ -60,10 +60,17 @@ describe('observations.version (#103 R7, R8, D5)', () => {
     }
 
     beforeAll(async () => {
-        // Any session will do; the repository locates an observation by
-        // session_id plus obsID, so it needs a real one.
+        // Seed our own session rather than borrowing one. This read an existing
+        // session and took the first -- which works on a development database that
+        // happens to hold one, and fails on CI, which builds the baseline plus the
+        // migrations and has none. AGENTS.md names this exact trap: a test that
+        // depends on rows the development server happens to hold seeds them itself.
+        // `project_id` and `user_id` are nullable; the other four are NOT NULL with
+        // no default, and `session_id` comes from its own sequence.
         const [session] = await db.sequelize.query(
-            'SELECT session_id FROM sessions ORDER BY session_id LIMIT 1',
+            `INSERT INTO sessions (dive, line, "lineId", type, "createdAt", "updatedAt")
+             VALUES ('jest-version', 'jest-version', 'jest-version-line', 'Fish', NOW(), NOW())
+             RETURNING session_id`,
             { type: QueryTypes.SELECT }
         );
         sessionId = session.session_id;
@@ -83,10 +90,17 @@ describe('observations.version (#103 R7, R8, D5)', () => {
     });
 
     afterAll(async () => {
+        // The observation first: it references the session.
         if (observationId !== undefined) {
             await db.sequelize.query(
                 'DELETE FROM observations WHERE observation_id = :observationId',
                 { replacements: { observationId } }
+            );
+        }
+        if (sessionId !== undefined) {
+            await db.sequelize.query(
+                'DELETE FROM sessions WHERE session_id = :sessionId',
+                { replacements: { sessionId } }
             );
         }
     });
