@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#103
 repos: [marp-api]
-status: design
+status: verify
 needs: []
 ---
 
@@ -794,13 +794,22 @@ trigger did nothing.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** G1. Research complete against the live development schema (19 migrations
-  applied, 1 observation) and the repository's files; no measurement, and none possible until
-  the 440,000-row load lands. Seven blocking assumptions open: #103's four plus three found
-  during research — how `version` is incremented (D5), what it covers for #68's invalidation
-  rules (D6), and one review table or two (D7, where the recommendation disagrees with #99's
-  spec and therefore needs the human). Nothing implemented.
+- **Gate:** verify
+- **Notes:** G4. Implemented and verified as far as this machine can reach. Five
+  migrations, two models and four test suites; `npm test` is 33 suites and 269 tests, all
+  passing. `db:migrate` and `db:migrate:undo` are clean in both directions on a fresh
+  database and on one whose ledger names nine files that are gone, and the undo is compared
+  to a reference pre-phase database by structural hash rather than by eye.
+  **R19 is not fully satisfied, deliberately: the migration has not been run against a
+  restored copy of production.** That needs on-site access to the production database, and
+  the human has deferred it to a later sitting — it is a decision, not an oversight. What
+  is still owed is a checklist in `.marp/verification.md` under *Deferred, and why*,
+  including the one assertion that cannot be made here: the before/after checksum over
+  `comname`, `taxserial`, `taxReview`, `sizereview` and the `TimeSpan` columns, which is
+  meaningless on a database with no observations in it.
+  Two things settled during implementation and recorded there rather than assumed: a
+  withdrawal **deletes** the projection row (enforced by a `CHECK` that refuses
+  `withdrawn`), and `version` is not added to `model/observation.model.js`.
 
 ## Findings left alone
 

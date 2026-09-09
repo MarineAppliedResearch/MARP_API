@@ -12,10 +12,10 @@ what was declared, not what happens. So the tests live in the Jest suite that ru
 `--runInBand` against a real PostgreSQL, and the ones that matter most perform real writes
 and real deletes.
 
-Two things this phase's verification does *not* get from the test suite, and they are in
-*Manual steps* and *Known gaps* rather than glossed: the production-copy migration path,
-and any measurement. The database holds 1 observation, so nothing here is benchmarked and
-no number below is a performance claim.
+Two things this phase's verification does *not* get from the test suite, and neither is
+glossed: the production-copy migration path, which is **deferred by decision** and has its
+own section below, and any measurement. The database holds 1 observation, so nothing here
+is benchmarked and no number below is a performance claim.
 
 ## What each test proves
 
@@ -44,7 +44,7 @@ no number below is a performance claim.
 | R16 | Migration output, recorded in *Results* | migration | The orphan count is reported before the constraint is added; a non-zero count aborts with the number in the message |
 | R17 | `observation-review-schema` › indexes the history for one observation and the work of one reviewer; indexes the status filter | database | Both new tables carry exactly the indexes named in the spec and nothing else |
 | R18 | `observation-review-schema` › *the three missing foreign-key indexes* › each exists and is valid | database | All three exist, are on the right table and column, and `indisvalid` is true |
-| R19 | Migration runs, recorded in *Results* | migration | `db:migrate` and `db:migrate:undo` clean on the existing development database and on a fresh one built from the baseline. **Path B is a manual step and a known gap** |
+| R19 | Migration runs, recorded in *Results* | migration | `db:migrate` and `db:migrate:undo` clean on the existing development database, on a fresh one built from the baseline, and on one whose ledger names nine files that are gone. **The production-copy half is deferred — see *Deferred, and why*** |
 | R20 | Migration output, recorded in *Results* | migration | `guardDataIntegrity` reports before and after for migrations 1 and 4; the `CONCURRENTLY` migration opens no transaction and so cannot use it, and adds no rows |
 | R21 | `observation-review-schema` › *the phase is additive* (all four tests) | database | `taxReview` and `sizereview` unchanged and unreferenced; `comname`, `taxserial` and the `TimeSpan` columns still present; no `observed_at` |
 | R21 | `git diff --stat`, recorded in *Results* | review | No route, controller, repository method or permission key changed |
@@ -56,9 +56,51 @@ no number below is a performance claim.
   every database available here, and manufacturing an orphan would mean dropping the
   constraint the migration just added. The abort path is read in *Results* from the
   migration's own output on the zero case and from the code, not from a failing run.
-- **R19's Path B has no automated test**, by necessity. See *Manual steps*.
+- **R19's production-copy half has no automated test**, and is deferred rather than
+  substituted. See *Deferred, and why*.
 
 Every other numbered requirement has at least one row above.
+
+## Deferred, and why
+
+**The migration is not verified against a restored copy of production, and that is a
+decision rather than an oversight.** Getting a copy needs physical access to the production
+database, which means being on site, and the human has deferred it to a later sitting. It
+is the one part of R19 that is outstanding, and it is outstanding on purpose.
+
+What is run instead is a **substitute, labelled as one**, because it exercises two of the
+three things the production path would and costs nothing: a scratch database built from
+`db/baseline/schema.sql` whose `SequelizeMeta` is pre-seeded with the nine retired
+migration names, so the ledger names files that are gone exactly as an existing database's
+does, and every pending migration then runs **in one pass** rather than the phase's five
+alone. That covers the ledger shape and the single-pass ordering. It covers **nothing about
+production's data**, and no claim below rests on it doing so.
+
+**Still owed, when there is a copy.** A checklist rather than a memory:
+
+- [ ] Restore the copy into a local disposable database — `marp db up --port 5440` gives
+      one that is not this workspace's. Never against production itself.
+- [ ] **Read the actual `SequelizeMeta` count off it** — `SELECT COUNT(*) FROM
+      "SequelizeMeta";` — and record it. Do not trust a number from this repository: #103,
+      `AGENTS.md` and the umbrella's `CLAUDE.md` describe it three inconsistent ways, and
+      whatever the copy returns is the fact the rest of the run rests on.
+- [ ] Record the pre-migration `COUNT(*)` for `observations`, `keyframes`,
+      `dataset_observations`, `datasets`, `sessions` and `projects`, plus the orphan count
+      `SELECT COUNT(*) FROM dataset_observations d WHERE NOT EXISTS (SELECT 1 FROM
+      observations o WHERE o.observation_id = d.observation_id);`. A non-zero orphan count
+      aborts migration 4 with the number in the message; that is information, and somebody
+      has to decide what those membership rows meant.
+- [ ] Take the **before/after checksum** — `md5(string_agg(...))` over `comname`,
+      `taxserial`, `taxReview`, `sizereview`, `tc`, `etc`, `mediaPosition`,
+      `actualPosition` and `frame`. **This is the assertion that cannot be made here**: it
+      is meaningless on a database with no observations in it, and it is the one that would
+      catch the failure that matters — the phase turning out not to be additive on real
+      data.
+- [ ] `npx sequelize-cli db:migrate` — whatever is still pending plus these five, in one
+      pass.
+- [ ] Assert every count unchanged and every checksum identical.
+- [ ] `SELECT COUNT(*) FROM observations WHERE version <> 1;` — expected 0.
+- [ ] `npx sequelize-cli db:migrate:undo` five times, then assert the same checksums again.
 
 ## Edge cases
 
@@ -103,16 +145,6 @@ pointed forwards:
 
 Stated plainly, so each is a decision rather than a surprise.
 
-- **Path B — a restored copy of production — is not verified.** No copy of production is
-  reachable from this workspace, and nothing may be run against production itself. The
-  closest available substitute is run instead and reported as a substitute: a scratch
-  database built from `db/baseline/schema.sql` whose `SequelizeMeta` is pre-seeded with
-  the nine retired migration names, so the ledger names files that are gone exactly as an
-  existing database's does, and all pending migrations then run **in one pass**. That
-  exercises the ledger shape and the single-pass ordering. It does **not** exercise
-  production's data: the checksum comparison over `comname`, `taxserial`, `taxReview`,
-  `sizereview` and the `TimeSpan` columns before and after is meaningless on a database
-  with no observations in it, and is therefore **not** claimed.
 - **D11 — production's PostgreSQL major version is still unrecorded.** The
   catalog-only-`ADD COLUMN` claim and the `CONCURRENTLY` plan both assume ≥ 11. Local is
   18.6, verified. To be read off the copy when there is one.
@@ -132,28 +164,9 @@ Stated plainly, so each is a decision rather than a surprise.
 
 ## Manual steps
 
-**Path B, for whoever has a production copy.** Never against production itself.
-
-1. Restore the copy into a local disposable database. `marp db up --port 5440` gives you
-   one that is not the workspace's.
-2. `SELECT COUNT(*) FROM "SequelizeMeta";` and record the number. **Do not assume it.**
-   #103, `AGENTS.md` and the umbrella's `CLAUDE.md` describe it three inconsistent ways,
-   and whatever this returns is the fact the rest of the run rests on.
-3. Record `COUNT(*)` for `observations`, `keyframes`, `dataset_observations`, `datasets`,
-   `sessions` and `projects`, and the orphan count:
-   `SELECT COUNT(*) FROM dataset_observations d WHERE NOT EXISTS (SELECT 1 FROM observations o WHERE o.observation_id = d.observation_id);`
-   A non-zero orphan count aborts migration 4 with the number in the message. That is
-   information: somebody has to decide what those membership rows meant.
-4. `npx sequelize-cli db:migrate` — whatever is still pending plus these five, in one
-   pass. Expected: clean, with the two `[integrity]` before/after lines and the
-   `0 orphaned membership row(s)` line.
-5. Assert every count from step 3 is unchanged, and that `md5(string_agg(...))` over
-   `comname`, `taxserial`, `taxReview`, `sizereview`, `tc`, `etc`, `mediaPosition`,
-   `actualPosition` and `frame` is byte-identical before and after. This is the assertion
-   that the phase is additive on real data, and it is the one that would catch the failure
-   that matters.
-6. `SELECT COUNT(*) FROM observations WHERE version <> 1;` — expected 0.
-7. `npx sequelize-cli db:migrate:undo` five times, then assert the same checksums again.
+One, and it is the deferred one: the production-copy migration run, whose checklist is in
+*Deferred, and why* above rather than repeated here. Everything else in this verification
+runs from `npm test` and the migration commands recorded in *Results*.
 
 ## Walkthrough videos
 
@@ -164,4 +177,212 @@ a result without asserting it, which is the failure mode the doctrine names.
 
 ## Results
 
-<!-- Appended after the plan above was committed. Real output, including failures, verbatim. -->
+Run 2026-09-09. The plan above was committed as `f06bf78` before any of this was run;
+individual test files were run as they were written, which is the G2 loop, and the full
+suite and the migration paths were run afterwards.
+
+### The suite
+
+```
+  Test Suites : 33 passed, 0 failed, 33 total
+  Tests       : 269 passed, 0 failed, 0 skipped, 269 total
+  Duration    : 22.1s
+
+  Result: ALL TESTS PASSED
+```
+
+29 suites and 227 tests before this phase; the four new files add 42 tests, and
+227 + 42 = 269. No suite skipped, which matters because a skipped suite looks green.
+
+### Failures on the way, verbatim
+
+Two, both in the projection test and both mine rather than the schema's. Recorded because
+the second one is a trap worth knowing about.
+
+**1. The marker regex matched the file's own prose.**
+
+```
+  ✗ observation_review_current (#103 D1, R6) > the definition of "current" exists once > is the same block the migration exports and runs
+```
+
+The migration's JSDoc says *"Marked with `-- rebuild:begin` / `-- rebuild:end`"*, and the
+unanchored pattern `/-- rebuild:begin[\s\S]*?-- rebuild:end/` matched that sentence — a
+five-word "block" — instead of the SQL. Fixed by anchoring to the start of a line.
+
+**2. The extracted block commented out the code that followed it.**
+
+```
+  ✗ observation_review_current (#103 D1, R6) > the projection equals the derivation > agrees with the derivation through a claim, a losing claim, a revision and a withdrawal
+      Error:
+          at Query.run (node_modules/sequelize/src/dialects/postgres/query.js:76:25)
+```
+
+The reporter shows an empty message; run outside Jest it is
+`SQL ERROR: syntax error at end of input | position 1399`. The block's last line is
+`-- rebuild:end`, a SQL comment with no trailing newline, so
+`SELECT * FROM (${fileBlock}) derived …` put the closing parenthesis inside the comment.
+Fixed by embedding a newline after the block. The migration itself was never affected —
+its constant keeps its trailing newline — which is why `db:migrate` had been clean
+throughout.
+
+### Path A — a fresh database, both directions
+
+Scratch database `marp_phase3_a` on the local disposable PostgreSQL
+(`PostgreSQL 18.6 on x86_64-windows`), built from nothing:
+
+```
+marp_phase3_a at 127.0.0.1:5432
+  0 tables, 0 views, no migrations recorded
+Applying db/baseline/schema.sql
+Baseline in place: 23 tables, 4 views.
+```
+
+Then `npx sequelize-cli db:migrate` — 24 migrations, the 19 that were there plus this
+phase's 5. This phase's five, verbatim:
+
+```
+== 20260909120000-add-observations-version-and-model: migrating =======
+[observations version+model] before: observations=0 ml_models=0 | 8 foreign key(s) watched
+[observations version+model] after: no rows deleted, dereferenced or orphaned
+== 20260909120000-add-observations-version-and-model: migrated (0.012s)
+== 20260909120100-create-observation-reviews: migrating =======
+== 20260909120100-create-observation-reviews: migrated (0.006s)
+== 20260909120200-create-observation-review-current: migrating =======
+== 20260909120200-create-observation-review-current: migrated (0.006s)
+== 20260909120300-add-dataset-observations-observation-fk: migrating =======
+[dataset_observations observation fk] before: dataset_observations=0 observations=0 datasets=0 | 10 foreign key(s) watched
+[dataset_observations observation fk] 0 orphaned membership row(s); adding the constraint
+[dataset_observations observation fk] after: no rows deleted, dereferenced or orphaned
+== 20260909120300-add-dataset-observations-observation-fk: migrated (0.014s)
+== 20260909120400-add-missing-foreign-key-indexes: migrating =======
+[foreign key indexes] keyframes_observation_id_idx on keyframes (observation_id)
+[foreign key indexes] observations_session_id_idx on observations (session_id)
+[foreign key indexes] observations_project_id_idx on observations (project_id)
+== 20260909120400-add-missing-foreign-key-indexes: migrated (0.006s)
+```
+
+**The undo is compared by value, not by eye.** A second scratch database
+`marp_phase3_b` was built from the same baseline and migrated with
+`--to 20260901130000-seed-resource-permissions.js`, giving the exact pre-phase state —
+baseline plus 19, and nothing of this phase ever applied. A structural snapshot of each
+(every column with its type, nullability, default and length; every table, view, index,
+constraint, trigger, function and sequence; and the ledger) was hashed:
+
+```
+marp_phase3_a  after 24 migrations   lines=882  md5=389fac2ab714b214b9eba989e00301e9
+marp_phase3_b  baseline + 19         lines=811  md5=96a42216952646dca5b05a4087a33919
+marp_phase3_a  after 5 undos         lines=811  md5=96a42216952646dca5b05a4087a33919
+marp_phase3_a  migrated up again     lines=882  md5=389fac2ab714b214b9eba989e00301e9  (files identical)
+```
+
+So the undo lands on a database structurally indistinguishable from one this phase never
+touched, and re-applying lands back on the same schema. 71 structural lines is the whole
+of what the phase adds.
+
+### The ledger-shape substitute for the production path
+
+Labelled a substitute, and it is not the deferred production run. Scratch database
+`marp_phase3_c`, baseline loaded, then the nine retired migration names inserted into
+`SequelizeMeta` so the ledger names files that are gone exactly as an existing database's
+does:
+
+```
+ledger rows naming files that are gone: 9 | total ledger rows now: 9
+```
+
+`npx sequelize-cli db:migrate` then ran **all 24 in one pass** — the case Path A does not
+exercise, because there the phase's five run alone. Sequelize tolerated the nine phantom
+names, reported them applied and looked only for files not in the ledger, and the ledger
+finished with 33 rows (9 + 24). Structurally identical to `marp_phase3_a`, ledger aside:
+
+```
+C matches A structurally (ledger aside)
+```
+
+Five undos then returned it to the reference pre-phase structure:
+
+```
+C after undo matches baseline+19 structurally
+```
+
+### The development database, both directions, repeatedly
+
+`marp_phase3_*` are scratch databases. The workspace's own database was migrated up, down
+five times and up again as the work went, and finished at 24 ledger rows. After the five
+undos it held no `version` column, no `ml_model_id`, no trigger, no
+`observations_bump_version` function, no `observation_review%` table and only
+`dataset_observations_dataset_id_fkey`, at 35 tables and views — the count it started at:
+
+```
+leftover cols: []
+leftover trigger: []
+leftover function: []
+leftover tables: []
+dso fks: dataset_observations_dataset_id_fkey
+table+view count: [{"n":35}]
+```
+
+### R22 — the cascade, and the check that the check is real
+
+```
+Test: dataset_observations cascade (#103 R22) > removes the membership row but keeps the observation when a dataset is deleted ... PASS
+Test: dataset_observations cascade (#103 R22) > removes the membership row but keeps the dataset when an observation is deleted ... PASS
+Test: dataset_observations cascade (#103 R22) > deletes an observation that is in a dataset rather than refusing it ... PASS
+```
+
+A passing cascade test can be vacuous, so it was checked against its own absence: with the
+new constraint dropped inside a rolled-back transaction, the same delete leaves the
+membership row behind.
+
+```
+membership rows surviving without the constraint: 1 (orphaned)
+```
+
+That is the orphan the constraint exists to prevent, and it is what the second test would
+fail on if the referential action were missing or pointed the wrong way.
+
+### The invalid-index recovery path
+
+`keyframes_observation_id_idx` was marked invalid in `pg_index` to imitate a failed
+concurrent build, and the migration's `up` was re-run:
+
+```
+marked invalid: [{"indisvalid":false}]
+[foreign key indexes] keyframes_observation_id_idx exists but is invalid, so a previous concurrent build failed. Dropping it and rebuilding.
+[foreign key indexes] keyframes_observation_id_idx on keyframes (observation_id)
+after re-run: [{"relname":"keyframes_observation_id_idx","indisvalid":true}]
+```
+
+Re-running after a failure is the fix, as the file claims.
+
+### The documented surface did not change
+
+`npm run docs:build` leaves `docs/openapi.generated.json` byte-identical: no route,
+controller or registered schema changed, and neither new model is registered in
+`GENERATED_SCHEMAS`. The jsdoc half of the build regenerates `docs/developer/` and touches
+478 files — new pages for the five migrations, two models and four test files, plus nav
+churn on every existing page and two font SVGs. That is left uncommitted deliberately; see
+the judgement calls in the report. The jsdoc run also prints pre-existing parse errors in
+`frontend/apps/marp-mosaic-review/src/model/schedule.js`, unrelated to this phase.
+
+### The diff
+
+```
+ .marp/task.md                                      | 818 +++++++++++++++++++++
+ .marp/verification.md                              | 167 +++++
+ ...909120000-add-observations-version-and-model.js | 194 +++++
+ .../20260909120100-create-observation-reviews.js   | 223 ++++++
+ ...0909120200-create-observation-review-current.js | 280 +++++++
+ ...0300-add-dataset-observations-observation-fk.js | 158 ++++
+ ...260909120400-add-missing-foreign-key-indexes.js | 138 ++++
+ model/observation_review_current.model.js          | 147 ++++
+ model/observation_reviews.model.js                 | 169 +++++
+ tests/dataset-observations-cascade.test.js         | 164 +++++
+ tests/observation-review-current.test.js           | 470 ++++++++++++
+ tests/observation-review-schema.test.js            | 366 +++++++++
+ tests/observation-version.test.js                  | 143 ++++
+ 13 files changed, 3437 insertions(+)
+```
+
+Migrations, models, tests and these two files. No route, controller, repository method or
+permission key, and nothing removed or rewritten.
