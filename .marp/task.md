@@ -240,7 +240,7 @@ the migration, or what a later phase can ask, so they join them. **Every recomme
 below is a recommendation. None is settled, and nothing is implemented while any of them is
 open.**
 
-- [ ] **D1 · architectural · blocking** — **What form does the derived current review state
+- [x] **D1 · architectural · blocking** — **What form does the derived current review state
   take?** #68 lists a materialised column, a view or a summary table and says "the query
   plan in phase 4 decides"; phase 4 needs this built, so the circularity is broken here.
   A materialised column on `observations` is **already ruled out** by Phase 2's settled
@@ -284,7 +284,7 @@ open.**
   **Either way the endpoint should see one name**, `observation_review_current`, so that
   swapping a view for a table later, or the reverse, does not reach Phase 4's query.
 
-- [ ] **D2 · scientific or data-meaning · blocking** — **Is a hand-entered observation a
+- [x] **D2 · scientific or data-meaning · blocking** — **Is a hand-entered observation a
   distinguishable "no model", or is it a null?** Carried unanswered from #68's schema audit
   and again from #99 (A8).
   **Recommendation: a plain nullable `ml_model_id`, with the column comment saying that null
@@ -335,7 +335,7 @@ open.**
   needs a column recording which dataset memberships went with the observation, so D3 must be
   answered before that table is written.
 
-- [ ] **D4 · database/schema · blocking** — **Does #76 (`observations.observed_at`) ride in
+- [x] **D4 · database/schema · blocking** — **Does #76 (`observations.observed_at`) ride in
   the same migration wave?**
   **Recommendation: no.**
   Two reasons, both from what is actually here. First, **#76 has four unanswered
@@ -356,7 +356,7 @@ open.**
   lies. If the human wants one window, the cheaper way to get it is to sequence #76's
   migration immediately after this phase's, not inside it.
 
-- [ ] **D5 · database/schema · blocking** — **How is `observations.version` incremented?**
+- [x] **D5 · database/schema · blocking** — **How is `observations.version` incremented?**
   This is a schema object either way, which is why it belongs to this phase.
   **Recommendation: a `BEFORE UPDATE … FOR EACH ROW` trigger created by the same migration
   that adds the column, setting `NEW.version = OLD.version + 1` whenever any column of the
@@ -380,7 +380,7 @@ open.**
   instance saves, the ORM route becomes available — but that is a change to the annotation
   GUI's hot path and is a bigger thing than this phase.
 
-- [ ] **D6 · scientific or data-meaning · blocking** — **What does `version` cover, and what
+- [x] **D6 · scientific or data-meaning · blocking** — **What does `version` cover, and what
   does a review row record so #68's invalidation rules can be applied later?**
   #68 requires that a material change invalidates an active approval or exclusion, and its
   list of material changes includes **adding, removing or changing a bounding-box keyframe**.
@@ -401,7 +401,7 @@ open.**
   changes the review table's columns**, which is why it is blocking rather than deferred, even
   though the table will be empty when it ships.
 
-- [ ] **D7 · database/schema · blocking** — **One review table with a `purpose`
+- [x] **D7 · database/schema · blocking** — **One review table with a `purpose`
   discriminator, or two tables?**
   #99's spec recommends **two** — `observation_reviews` and
   `observation_training_dispositions` — on the ground that scientific and training review are
@@ -447,6 +447,74 @@ open.**
   recorded anywhere in this repository. The cheap-`ADD COLUMN` claim in D4 and the
   `CONCURRENTLY` plan in R18 both assume ≥ 11. To be read off the production copy when it is
   restored, not asked of production.
+
+## Answered, 2026-09-09
+
+Six of the seven blocking assumptions are settled. **D3 is still open** and is the only
+thing holding G1 — it changes what a reviewer sees on screen, so it is the human's.
+
+- **D1 — a maintained projection, as recommended, and the first-wins reading is
+  confirmed.** The human settled it directly: **the first valid review wins.** The first
+  person to approve an observation owns the record; a second reviewer is told it is already
+  done and does not overwrite the original reviewer or timestamp; the *same* reviewer may
+  still revise their own decision from a committed page. So "current" is *the earliest
+  claiming reviewer's latest decision*, exactly as #68 reads, and
+  `observation_review_current` is built with `(observation_id, purpose)` as its key.
+  The consequence to honour: the rule lives in the constraint —
+  `ON CONFLICT (observation_id, purpose) DO UPDATE … WHERE current.reviewer_id = :me` —
+  rather than being re-derived by every reader. And because it is a derived value,
+  `AGENTS.md` makes it part of the data contract: it ships with the SQL that rebuilds it
+  from `observation_reviews`, and with a test asserting **projection equals derivation**.
+  A future writer that bypasses the projection is data loss, not a stale cache.
+- **D2 — a plain nullable `ml_model_id`, as recommended.** Decided on the reasoning that
+  the ambiguity has a date rather than a shape: `ml_models` holds 0 rows and no model has
+  ever written an observation here, so **every row that exists today is unattributable
+  whatever column we add**, and a backfill to "hand entered" would be an unverifiable claim
+  about the scientific record. The column comment says null means "no model recorded" and
+  nothing more. The `origin` column stays available and additive if a real distinction is
+  ever needed; the sentinel `ml_models` row stays rejected, because it would appear in
+  `model_species`, `training_runs` and every "which model" report as a real model.
+- **D4 — #76 does not ride in this wave, as recommended.** Two reasons, both good: #76
+  carries four unanswered data-meaning questions and folding them in would put an open
+  blocking assumption on the critical path of the phase four others wait on; and the
+  "two passes cost more than one" argument is weak on PostgreSQL 18.6, where a column added
+  with a non-volatile default is a catalog-only change. #76's cost is its backfill and its
+  index, and neither gets cheaper for sharing a file. If one maintenance window is wanted,
+  **sequence #76 immediately after this phase rather than inside it** — and do not add a
+  bare `observed_at` that is null on every row, which is visible to the outside tools that
+  query `mare_v1` and looks like an answer while being none.
+- **D5 — a `BEFORE UPDATE` trigger, as recommended.** The finding behind it is decisive and
+  was verified rather than assumed: Sequelize's optimistic locking exists only on instance
+  `save` and instance `destroy` (`sequelize/lib/model.js:2388`, `:2141`), and static
+  `Model.update` — `BULKUPDATE`, `:1887` — never references the version attribute. **Every
+  observation write in this repository is static** (`repository/observation.repository.js`
+  `:303`, `:339`, `:697`, `:739`), and there is no instance `.save()` on an observation
+  anywhere. So `version: true` would leave the token frozen at 1 on every write the
+  annotation GUI performs, and **a token that some writers do not increment is worse than
+  no token** — it makes a stale overwrite look like a successful conditional write.
+  The trigger's cost is that it is invisible to anyone reading the model, so it owes the
+  column comment, a comment in the migration, and a test that an existing *static* update
+  bumps it.
+- **D6 — `version` means "this observation row changed", and the review row records the
+  annotation state separately, as recommended.** A keyframe change does not move
+  `observations.version`, and #68's invalidation list includes adding, removing or changing
+  a bounding-box keyframe — so a review row that recorded only `observation_version` could
+  not answer "has the annotation changed since I approved this". The review row therefore
+  also takes the keyframe count and the maximum `keyframes."updatedAt"` at decision time.
+  Recorded honestly as a **fingerprint, not a version**: two edits within one clock tick
+  that leave the count unchanged would not be detected. A real annotation version means a
+  `version` column and trigger on `keyframes`, which is more schema and more write cost on
+  the second-busiest table, and it is not being built now.
+- **D7 — one table with a `purpose` discriminator, as recommended.** The human settled it
+  directly, and it **supersedes #99's spec**, which recommended two tables
+  (`observation_reviews` and `observation_training_dispositions`). That recommendation is
+  not wrong about the decisions being independent; it is wrong that the storage has to be.
+  Independence is preserved by the `purpose` column plus `(observation_id, purpose)` on the
+  projection, and one table is what the common query wants: Delete Mode filters and displays
+  both dimensions, and #85 settled that every mode shows every workflow's tags. One scan
+  instead of two, D1's "current" rule written once rather than twice, and a third purpose
+  later — #68 reserves an explicit validation mode — is a value rather than a table.
+  Cheap to reverse while the table is empty, which it will be when it ships.
 
 ## Decisions
 
