@@ -112,6 +112,35 @@ body[data-mode="delete"] .mode-note { color: var(--red-400); font-weight: 600; }
 .sub .sep { color: #2b3d4d; }
 .sortbox { margin-left: auto; border: 1px solid var(--mode-line); border-radius: 4px;
            padding: 3px 9px; font-size: 11px; background: none; }
+/* Progress reads along the row now rather than down the rail (#91). What was a top border
+   over a stacked block is the `.sep` in front of it, which is how this row already divides
+   itself -- and which the phone layout already knows to drop. */
+.prog { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+/* Fixed width, never fluid. The bar had no width of its own in the rail, where a block
+   filling its column is what you want; in a row it would take whatever is left. And it
+   cannot be told to flex either way: `.sub` scrolls sideways on a phone rather than
+   fitting, so "what is left" is not a width -- it would grow without limit there and
+   collapse to nothing on the desktop row it was meant to share. */
+.bar { width: 116px; flex: none; height: 4px; border-radius: 2px;
+       background: var(--navy-800); overflow: hidden; }
+.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--commit)); }
+.small { font-size: 9.5px; color: var(--faint); }
+/* This row is 30px with `overflow: hidden`, so what runs past the right edge is clipped
+   and not scrolled -- and #sortBtn is what sits there. Carrying progress as well, the row
+   wants about 1100px once the sort label names two terms, so below that progress keeps
+   the bar and the percentage and drops the wording. Same trade the marked count already
+   makes on a phone, made earlier because the sort must stay reachable. */
+/* The progress block used to end the rail and carried its own top border, which was the
+   only thing keeping the last status box off the fold. With it gone to `.sub` (#91) the
+   pad has to be stated -- but only where the rail is a column. On a phone the rail is an
+   overlay with its own metrics, and padding it there moved the confidence control enough
+   to fail L4, so this stops at the phone breakpoint. */
+@media (min-width: 761px) { .rail-body { padding-bottom: 10px; } }
+
+@media (max-width: 1100px) {
+  .prog-word, .prog .small { display: none; }
+  .bar { width: 74px; }
+}
 
 /* ---------------------------------------------------------------- rail */
 .body { display: grid; grid-template-columns: 158px 1fr; min-height: 0; }
@@ -120,8 +149,9 @@ body.rail-collapsed .body { grid-template-columns: 34px 1fr; }
         padding: 10px; overflow: hidden;
         /* The head stays put and the filters scroll under it. Without this the rail was
            `overflow: hidden` over content taller than it, so at a 900px desktop the
-           status filters and the progress bar were drawn below the fold and could not be
-           reached at all -- the sharpest form of #81 L7. */
+           status filters were drawn below the fold and could not be reached at all --
+           the sharpest form of #81 L7. The progress bar was the other casualty; it now
+           lives in `.sub`, which never scrolls out from under anything (#91). */
         display: flex; flex-direction: column; }
 .rail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin;
              /* Reserve it, so appearing does not shuffle the controls sideways. */
@@ -216,11 +246,6 @@ body.rail-collapsed .fcount { display: grid; }
 /* Sits under the date button in the rail, and must stay visible with the popover shut:
    a filter that silently omits looks complete and is not. */
 .span-note { margin-top: 4px; font-size: 9.5px; color: var(--amber-300); line-height: 1.45; }
-
-.prog { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
-.bar { height: 4px; border-radius: 2px; background: var(--navy-800); overflow: hidden; margin: 6px 0 4px; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--cyan-500), var(--commit)); }
-.small { font-size: 9.5px; color: var(--faint); }
 
 /* ---------------------------------------------------------------- field */
 .field { background: var(--field); padding: 4px; position: relative;
@@ -485,6 +510,13 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   .sub { gap: 10px; padding: 0 8px; font-size: 11px; }
   .sub .sep { display: none; }
 
+  /* Progress leaves the row entirely at this width. Below 1100px it had already shed
+     its wording, but even the bar and the percentage cost width the sort control has to
+     be hunted past -- and this row scrolls, so the cost is not a smaller control but a
+     control off the end of it, which M3 exists to refuse. Progress is the item this row
+     can do without; the sort is not. */
+  .prog { display: none; }
+
   /* the rail collapses to its strip and opens over the mosaic rather than beside it */
   .body { grid-template-columns: 30px minmax(0, 1fr); }
   .rail { padding: 6px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
@@ -512,6 +544,8 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
      so it is on screen without hunting for it. */
   .sortbox { margin-left: 0; }
   .sub .marked-word { display: none; }
+  /* Progress is already down to the bar and the percentage by here -- see the 1100px
+     query beside `.prog`. Nothing more of it needs dropping. */
 
   .foot { gap: 4px; padding: 0 6px; }
   /* The legend now carries the pages-committed count, which is worth the room on a
