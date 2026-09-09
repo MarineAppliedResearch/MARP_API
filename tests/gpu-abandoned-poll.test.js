@@ -165,6 +165,43 @@ afterAll(async () => {
     }
 });
 
+describe('What a poll says about the machine that made it', () => {
+    afterEach(drainQueue);
+
+    it('records the worker as heard from even when there is no work for it', async () => {
+        const workerId = await enrolWorker('idle');
+
+        const before = await global.api.get('/api/v2/gpu/workers');
+        const enrolled = before.body.find((worker) => worker.worker_id === workerId);
+
+        expect(enrolled.last_seen_at).not.toBeNull();
+
+        // Long enough that the timestamps are distinguishable.
+        await wait(1200);
+
+        // An empty queue and no wait: the poll is answered 204 immediately.
+        const poll = await global.api
+            .post('/api/v2/gpu/poll')
+            .send({ worker_id: workerId, slot_indexes: [0], wait_seconds: 0 });
+
+        expect(poll.status).toBe(204);
+
+        const after = await global.api.get('/api/v2/gpu/workers');
+        const seen = after.body.find((worker) => worker.worker_id === workerId);
+
+        // The whole point. `last_seen_at` was written on enrolment, on a
+        // heartbeat, and on a poll that took a job -- but not on one answered
+        // "no work". So a machine dialling out every few seconds went stale
+        // within a minute and read exactly like one that had been switched off,
+        // which is the state a pool view most needs to be able to tell apart.
+        expect(new Date(seen.last_seen_at).getTime())
+            .toBeGreaterThan(new Date(enrolled.last_seen_at).getTime());
+
+        // And it is still idle rather than having been given anything.
+        expect(seen.activity).toBe('idle');
+    }, 30000);
+});
+
 describe('A long poll whose worker has gone away', () => {
     afterEach(drainQueue);
 

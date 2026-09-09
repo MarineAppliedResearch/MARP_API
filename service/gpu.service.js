@@ -223,6 +223,12 @@ class GpuService {
             );
         }
 
+        // Heard from, whatever the answer turns out to be. Before every other
+        // branch below, because a machine that is paused, or full, or given
+        // nothing is still demonstrably alive -- and `last_seen_at` is the only
+        // thing a pool view has to tell an idle machine from a dead one.
+        await gpuRepository.markWorkerSeen(workerId);
+
         // A paused machine is not given work. Without this it would lease a job,
         // be told to pause at its first heartbeat, and give the job back -- so a
         // paused worker that kept polling would churn the whole queue through

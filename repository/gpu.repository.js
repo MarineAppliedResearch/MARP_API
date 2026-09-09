@@ -202,6 +202,40 @@ class GpuRepository {
     }
 
     /**
+     * Record that a worker was heard from just now.
+     *
+     * `last_seen_at` is the only thing that distinguishes a machine that is idle
+     * from one that has died, and until this existed it was written on enrolment,
+     * on a heartbeat, and on a poll that actually took a job -- but not on a poll
+     * that was answered "no work". So an idle machine, dialling out every few
+     * seconds exactly as it should, went stale within a minute and looked
+     * indistinguishable from one that had been switched off. Observed at fourteen
+     * minutes stale on a process that was up and polling throughout.
+     *
+     * An offline worker is brought back to online by the same call, because a
+     * machine that is asking for work is by definition not offline.
+     *
+     * @async
+     * @param {number} workerId - Worker identifier.
+     * @returns {Promise<void>}
+     * @throws {Error} Re-throws any database failure.
+     */
+    async markWorkerSeen(workerId) {
+        try {
+            await this.db.sequelize.query(
+                `UPDATE gpu_workers
+                    SET last_seen_at = NOW(),
+                        state = CASE WHEN state = 'offline' THEN 'online' ELSE state END
+                  WHERE id = :workerId`,
+                { replacements: { workerId } }
+            );
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
      * Fetch the pool: every worker, with whatever it is running right now.
      *
      * One row per worker per live attempt, and one row for an idle worker with
