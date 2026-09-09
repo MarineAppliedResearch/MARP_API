@@ -17,7 +17,7 @@ Two tiers are used, and the split matters:
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `docs/openapi.generated.json` contains 11 `/v2/gpu/…` paths and 24 `Gpu*` schemas, rebuilt by `npm run docs:build` | contract | The family is registered through `registerVersionedRoute` (a literal `/api/v2/` path throws) and documented code-first. The generated tag is `V2 · GpuCompute`, rewritten from the `V1 · GpuCompute` the route file declares. |
+| R1 | `docs/openapi.generated.json` contains 12 `/v2/gpu/…` paths and 25 `Gpu*` schemas, rebuilt by `npm run docs:build` | contract | The family is registered through `registerVersionedRoute` (a literal `/api/v2/` path throws) and documented code-first. The generated tag is `V2 · GpuCompute`, rewritten from the `V1 · GpuCompute` the route file declares. |
 | R2 | `GPU worker enrolment`, `queues one job and leases it`, `GPU heartbeat`, `GPU attempt events`, `GPU attempt result`, `GPU artifact hand-off` | HTTP | All five worker-facing calls plus the two-step hand-off answer as specified. |
 | R3 | `shows the machine, its hardware, and the job it is running` asserts the serialised pool entry matches no `host`/`hostname`/`url`/`ip`/`address`/`port` key; the migration creates no such column | HTTP + schema | Push is unrepresentable rather than unused. The assertion fails the day somebody adds such a column and returns it. |
 | R4 | `does not offer one queued job to a second transaction while the first holds it`, `gives two overlapping transactions two different jobs`, `leases one queued job to exactly one of two workers polling at once`, `shares four queued jobs among eight simultaneous polls without leasing any twice` | transaction + HTTP | Claiming is inside the poll transaction and two simultaneous pollers cannot lease one job. |
@@ -33,6 +33,8 @@ Two tiers are used, and the split matters:
 | R13 | `records a success as an artifact belonging to the job rather than to a training run` asserts `training_run_id === null` and `job_id === job.id` on the recorded row | HTTP | An inference result now has somewhere to be recorded. |
 | R14 | Migration `20260909100200` applies against the local database; `epochs_training_run_id_epoch_number_unique` exists | schema | The constraint is present. See *Known gaps* — no test inserts a duplicate epoch. |
 | R16 | `npx sequelize-cli db:migrate` and `db:migrate:undo` run clean in both directions; each migration prints its `[label] before/after` integrity lines | schema | Every migration wraps its work in `db/data-integrity.js` and carries a working `down`. |
+| A13 | `keeps the new name when the machine enrols again, and stays one row`, `gives two machines that share a name a row each`, `does not disturb a live lease`, `refuses an empty name, and 404s an unknown machine`, `refuses an enrolment with no durable id, because that is the identity` | HTTP | A worker's identity is the durable id it generated for itself; the name is editable metadata. Enrolment keys on `local_id`, a re-enrolment does not overwrite the name, two machines may share one, and a rename touches neither the row's identity nor its lease. |
+| A13 | `does not echo the durable id back, keeping the identity internal`, and the `local_id` key assertion inside `does not disturb a live lease` | HTTP | The durable id is not in any response. `worker_id` is the handle a dashboard addresses a machine by, so exposing the value enrolment keys on would be an avoidable way to adopt somebody else's pool row. |
 
 ## Requirements with no test
 
@@ -45,6 +47,14 @@ Two tiers are used, and the split matters:
 - **A worker that restarts and enrols again** — asserted to be the same row with updated
   hardware, not a second row. A pool view full of ghosts would make "which machine is
   live?" unanswerable.
+- **A machine that was renamed and then restarts** — keeps the operator's name. The worker
+  computes its name at startup and sends it on every enrolment, so honouring it would have
+  reverted every rename at the next reboot.
+- **A machine renamed while it is running a job** — its next heartbeat is answered
+  `continue`, not `abandon`. This is where the original design broke: with the name as the
+  key, the re-enrolment after a rename opened a second row and left the first holding the
+  lease.
+- **Two machines with the same name** — two rows, because their durable ids differ.
 - **A re-enrolment that omits `slot_count`** — must leave the count alone. This was a real
   defect found by this suite: the service defaulted it to 1, which silently cut a
   multi-slot machine down to one slot and then looked like the scheduler refusing to give
@@ -87,6 +97,10 @@ because the implementation got them wrong first, and they are the ones to keep:
   caught the `slot_count` default described above.
 - `negative control: without the locking clause, one job goes to both transactions`, which
   exists so the concurrency tests cannot quietly stop testing anything.
+- The four `GPU worker rename` tests, which exist because the identity and the name were
+  the wrong way round: `gpu_workers.name` was `UNIQUE` and was what re-enrolment keyed on,
+  while the durable id a worker sends on every enrolment had no column to be stored in. Each
+  was checked for vacuity by mutating the thing it guards — see *Vacuity checks* below.
 
 ## Known gaps
 
@@ -310,3 +324,92 @@ from `registerVersionedRoute`, and the `Artifact` schema no longer requires
 `training_run_id`. Every description that said the frame bounds were inclusive now says
 half-open, and states both the count and the tiling property. The regenerated `docs/developer/` tree changes one navigation line per
 existing file, plus the new module pages.
+
+---
+
+## Results — A13, a worker is renameable
+
+Run on 2026-09-09 against the same local PostgreSQL, now with 24 migrations. Verbatim.
+
+### The migration, both directions
+
+```
+$ npx sequelize-cli db:migrate
+== 20260909100400-give-a-gpu-worker-a-durable-identity: migrating =======
+[gpu-worker-durable-id] before: gpu_workers=1 gpu_job_attempts=8 | 5 foreign key(s) watched
+[gpu-worker-durable-id] after: no rows deleted, dereferenced or orphaned
+== 20260909100400-give-a-gpu-worker-a-durable-identity: migrated (0.167s)
+```
+
+The one pre-existing row was backfilled `legacy-worker-65`. A second row sharing its name
+was then inserted by hand — which the old `UNIQUE (name)` would have refused, so the insert
+succeeding is itself the check that the uniqueness is gone — and the rollback run against
+both:
+
+```
+$ npx sequelize-cli db:migrate:undo
+== 20260909100400-give-a-gpu-worker-a-durable-identity: reverting =======
+[gpu-worker-durable-id-down] before: gpu_workers=2 gpu_job_attempts=8 | 5 foreign key(s) watched
+[gpu-worker-durable-id-down] worker 192 renamed to "SoftwareEngineering-a0294ccd-192" so that gpu_workers.name can be unique again
+[gpu-worker-durable-id-down] after: no rows deleted, dereferenced or orphaned
+== 20260909100400-give-a-gpu-worker-a-durable-identity: reverted (0.048s)
+```
+
+`UNIQUE (name)` and the original column comment are back, `local_id` and
+`gpu_workers_name_idx` are gone, and no row was lost. `db:migrate` then re-applied it.
+
+**The backfill is deliberately not a recoverable value.** A name carries at most an
+eight-character slice of the id the worker chose, so no full value can be rebuilt from it;
+the backfill only has to be something no real worker will send, so that such a machine's
+next enrolment opens a fresh row rather than adopting a history that is not its own. The
+consequence is stated rather than hidden: the one row already in this database becomes a
+ghost when its machine next enrols, and it cannot be deleted while its eight attempts exist.
+
+### The full suite
+
+```
+$ npm test
+
+  Test Suites : 32 passed, 0 failed, 32 total
+  Tests       : 274 passed, 0 failed, 0 skipped, 274 total
+  Duration    : 175.8s
+
+  Result: ALL TESTS PASSED
+```
+
+274 = the 268 before this change plus 6: four in `GPU worker rename`, and two in
+`GPU worker enrolment` for the durable id being required and never echoed back.
+
+### Vacuity checks
+
+Every new assertion was checked by mutating the thing it guards and watching it go red.
+Each mutation was reverted immediately.
+
+| Mutation | Went red |
+| --- | --- |
+| Re-enrolment overwrites `name` again | `keeps the new name when the machine enrols again`, `does not disturb a live lease` — 2 failed |
+| Enrolment keys on `name` instead of `local_id` (the original design) | `keeps the new name…` (409, the second row colliding on `local_id`), `gives two machines that share a name a row each`, `does not disturb a live lease` — 3 failed |
+| `renameWorker` does not write | `keeps the new name…`, `does not disturb a live lease` — 2 failed |
+| `local_id` falls back to the name when absent | `refuses an enrolment with no durable id` — 200 where 400 was expected |
+| The durable id is returned in the enrolment answer and the pool view | `does not echo the durable id back`, and the `local_id` assertion in `does not disturb a live lease` — 2 failed |
+
+### Documentation
+
+```
+$ npm run docs:build
+```
+
+`docs/openapi.generated.json` now carries 12 `/v2/gpu/…` paths and 25 `Gpu*` schemas —
+`GpuWorkerRenameRequest` is the new one. `GpuWorkerEnrolRequest` requires `local_id`, and
+`GpuWorker` says that the name is metadata and that the durable id is deliberately absent.
+
+### Still not verified
+
+- **Nothing exercises a real worker being renamed.** The rename tests enrol synthetic
+  machines through HTTP; the worker's own default name is still hostname plus an id slice,
+  which was chosen when uniqueness rested on the name and could now be a plain hostname.
+  That is a decision for the worker repository and was deliberately not made here.
+- **The ghost row.** No test covers what a backfilled row does when its machine re-enrols,
+  because the answer is "a new row appears", which is the accepted consequence rather than
+  behaviour worth locking in.
+
