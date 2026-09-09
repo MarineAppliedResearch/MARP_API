@@ -371,6 +371,22 @@ next redefinition.
   that applied.
 - **R18** — `npm run docs:build` is re-run and its output committed: this adds a route, and
   `docs/openapi.generated.json` and `docs/developer/` are tracked.
+- **R19** — The mosaic **read** row carries `species_comname`, the current species name joined
+  from `species`, beside the frozen `comname`. The same field name the correction response
+  uses, so one concept has one name across both endpoints. #105's row-shape test names the
+  exact key set as a tripwire, so the key is **moved into that list rather than the list being
+  loosened** — the way #106 moved it for `version`. The paired test is the point: a corrected
+  observation returns the new species' name while `comname` still returns the old label, and
+  the difference between them is what #68's *"was Bat Star"* indicator draws from.
+
+  **Raised, deferred, then scoped in.** A4 answered that the *response* carries the corrected
+  name, and this spec then also listed the read row under *Findings left alone* as needing a
+  scoping call rather than a decision. Both were in the file; the implementing agent found the
+  two in conflict, raised it, and declined to widen a published row shape without a
+  requirement. Scoped in on 2026-09-09 as part of this phase, because it is a **defect rather
+  than an enhancement**: it is the direct consequence of freezing `comname`, and without it a
+  reviewer filtering for one species gets tiles permanently labelled as another, on every
+  reload.
 
 ## Open assumptions
 
@@ -719,14 +735,10 @@ Named rather than fixed, per `AGENTS.md`.
   46`). A6 removes claims altogether, so the latent issue evaporates rather than being
   addressed. Worth knowing, because the comment describing it is still in the file and will
   read as current until R10 rewrites it.
-- **The mosaic read row still shows the pre-correction species name, and that is not fixed
-  here.** A4 puts the corrected name in the *correction response*, which paints the tile for
-  one session; the read row (`repository/mosaic.repository.js:147-163`) carries `o.comname` and
-  no species join, so a reload shows the old animal's name again — while the species *filter*
-  is `o.species_id`, so filtering by the new species returns a tile labelled with the old one.
-  Adding the field to the read row is a change to Phase 4's row shape and belongs either here
-  or in Phase 8; it needs a scoping call rather than a decision, which is why it is named here
-  and not settled.
+- ~~**The mosaic read row still shows the pre-correction species name.**~~ **Scoped in as R19
+  on 2026-09-09**, and no longer a finding. It was raised by the implementing agent as a
+  conflict between A4 and this list, deferred for want of a requirement, and then settled as
+  in scope: it is a defect the phase creates rather than an enhancement it declines.
 - **The mosaic cannot see that an observation was corrected.** By design — a correction never
   projects — so there is no *filter* for corrected-and-unreviewed. It would be an anti-join of
   the log against the projection rather than a projection lookup, so it is not free the way the

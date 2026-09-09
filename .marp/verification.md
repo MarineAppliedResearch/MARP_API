@@ -133,6 +133,9 @@ helper.
 | R16 | *carries the corrected species' name, distinct from comname* | http+db | The response's `species_comname` is the **catalogue's** `species.comname` for the new species, while `observation.comname` is unchanged. Without it a corrected tile shows the old animal's name for ever; reusing `comname` would let the catalogue's current label be mistaken for the annotator's frozen one. |
 | R17 | *the whole correction is one transaction* | db | Covered by the R3 and R9 pairs above: a refusal leaves nothing partially applied. |
 | R18 | `npm run docs:build` | build | The generated contract carries `POST /v2/mosaic/observations/species` and its request and response schemas, and the diff is generated rather than hand-edited. |
+| R19 | *serves the new species name while comname still serves the old label* | http+db | **The pairing is the requirement, not the field.** After a correction the mosaic row carries `species_comname` = the catalogue's name for the new species **and** `comname` = the annotator's original label, and the two differ. Asserted against the seeded species rather than a literal. Without it a corrected tile renders the old animal for ever, on every reload, while the species filter matches the new one. |
+| R19 | *serves a null species name where the observation has no species* | http+db | The join is outer, so a row with no `species_id` — about 4% of production — is never dropped for want of one, and reports `null` rather than being absent. |
+| R19 | `tests/mosaic-query.test.js` *is exactly the agreed key set* | http | The key is **moved into** the exact-key list, not admitted by loosening it. That list is a deliberate tripwire against a column joining the payload by accident; relaxing it to admit one field would disable the tripwire permanently. |
 
 ## Requirements with no test
 
@@ -186,14 +189,6 @@ helper.
 
 ## Known gaps
 
-- **The mosaic read row still shows the pre-correction species name.** A4 puts the corrected
-  name in the correction *response*, which paints the tile for one session; the read row
-  (`repository/mosaic.repository.js:147-163`) carries `o.comname` and no species join, so a
-  reload shows the old animal's name again — while the species *filter* is `o.species_id`, so
-  filtering by the new species returns a tile labelled with the old one. `.marp/task.md`
-  records this under *Findings left alone* as **needing a scoping call rather than a
-  decision**, and no requirement covers it. Not built here, and raised rather than assumed
-  either way.
 - **Nothing verifies the client.** `frontend/` is out of scope; the five incompatibilities the
   spec records are Phase 8's, and the fixture still contradicts the endpoint in three of them.
 - **No performance claim.** One observation on this database. Nothing is benchmarked and no
@@ -255,12 +250,12 @@ Final, on the rebuilt database:
 
 ```
   Test Suites : 36 passed, 0 failed, 36 total
-  Tests       : 377 passed, 0 failed, 0 skipped, 377 total
-  Duration    : 25.4s
+  Tests       : 379 passed, 0 failed, 0 skipped, 379 total
+  Duration    : 26.1s
   Result: ALL TESTS PASSED
 ```
 
-**348 to 377 reconciles exactly**, which is the point of counting rather than reporting
+**348 to 379 reconciles exactly**, which is the point of counting rather than reporting
 "green":
 
 | Suite | Was | Now | Why |
@@ -268,9 +263,10 @@ Final, on the rebuilt database:
 | `observation-review-current` | 6 | 10 | +1 finder assertion, +1 no-`first_decided_at`, +1 mid-log invalidation, +1 corrected-cannot-project |
 | `observation-review-schema` | 28 | 32 | +1 corrected vocabulary, +1 both-way species CHECK, +1 species FK restrict, +1 projection column list |
 | `mosaic-commit` | 31 | 31 | four rewritten in place, none added or lost |
-| `mosaic-correction` | — | 21 | new |
-| everything else | 283 | 283 | untouched |
-| **total** | **348** | **377** | **+29** |
+| `mosaic-query` | 48 | 48 | one key moved into the exact-key assertion; the `decide()` helper fixed. No test added or lost — the count is unchanged and that is the tripwire working |
+| `mosaic-correction` | — | 23 | new, including R19's two |
+| everything else | 235 | 235 | untouched |
+| **total** | **348** | **379** | **+31** |
 
 ### What failed on the way
 
@@ -392,6 +388,23 @@ conflicted reason enum: ["version"]
 
 The last line is the last-wins unwind reaching the published surface: `claimed` is gone as
 a conflict reason, because nothing can be refused for being second any more.
+
+`MosaicRow` carries 17 properties, `species_comname` among them and `comname` unchanged
+beside it.
+
+### R19, scoped in after the plan was written
+
+R19 did not exist when this plan was written; it was a *Known gap* here and a *Finding left
+alone* in `.marp/task.md`, because A4 settled the correction response and left the read row
+explicitly unsettled. Raised as a conflict during G2, deferred rather than guessed, and then
+scoped into this phase on 2026-09-09 as a defect the phase creates rather than an
+enhancement it declines.
+
+One thing found while building it, worth recording because the obvious edit was wrong: the
+`species` join belongs **only** in the page query. `buildCountsQuery` selects no row columns
+at all — it is seven `count(*) FILTER` aggregates over the whole matching set — so a join
+added there would have been pure cost on the largest query in the file, for a column nothing
+reads. Added to both by reflex, then removed from the counts query.
 
 ### Not run
 
