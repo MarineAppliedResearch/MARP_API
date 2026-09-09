@@ -30,6 +30,8 @@ const {
     LEASE_SECONDS,
     POLL_MAX_WAIT_SECONDS,
     POLL_RETRY_INTERVAL_MS,
+    MAX_WORKER_NAME_LENGTH,
+    MAX_WORKER_LOCAL_ID_LENGTH,
     MAX_EVENTS_PER_BATCH,
     ARTIFACT_PATH_PREFIX,
     JOB_KINDS,
@@ -64,6 +66,28 @@ function requiredString(value, field) {
     }
 
     return value.trim();
+}
+
+/**
+ * Read a worker's name.
+ *
+ * Length-checked here rather than left to the column, because a name one
+ * character too long would otherwise reach Postgres and come back as a 500 for
+ * what is plainly a bad request.
+ *
+ * @param {*} value - Value as supplied.
+ * @param {string} field - Field name, for the message.
+ * @returns {string} The trimmed name.
+ * @throws {ApiError} When it is missing, not a string, or too long.
+ */
+function requiredWorkerName(value, field) {
+    const name = requiredString(value, field);
+
+    if (name.length > MAX_WORKER_NAME_LENGTH) {
+        invalid(`${field} must be ${MAX_WORKER_NAME_LENGTH} characters or fewer.`);
+    }
+
+    return name;
 }
 
 /**
@@ -140,13 +164,25 @@ class GpuService {
     /**
      * Enrol a machine into the pool.
      *
+     * `local_id` is the identity and is required: it is the durable id the
+     * machine generated for itself, and keying on it is what lets a machine be
+     * renamed without its next enrolment forking the pool row. The name is
+     * required too, but only as the initial label -- a machine already enrolled
+     * keeps whatever it is currently called.
+     *
      * @async
-     * @param {Object} body - `{name, capabilities, slot_count, worker_version}`.
+     * @param {Object} body - `{local_id, name, capabilities, slot_count, worker_version}`.
      * @returns {Promise<Object>} `{worker_id, heartbeat_seconds, ...}`.
-     * @throws {ApiError} 400 when the name is missing.
+     * @throws {ApiError} 400 when the durable id or the name is missing.
      */
     async enrolWorker(body) {
-        const name = requiredString(body.name, 'name');
+        const localId = requiredString(body.local_id, 'local_id');
+
+        if (localId.length > MAX_WORKER_LOCAL_ID_LENGTH) {
+            invalid(`local_id must be ${MAX_WORKER_LOCAL_ID_LENGTH} characters or fewer.`);
+        }
+
+        const name = requiredWorkerName(body.name, 'name');
 
         // Left undefined when absent rather than defaulted to 1. A worker
         // re-enrolling without saying how many slots it has means "unchanged",
@@ -162,12 +198,18 @@ class GpuService {
         }
 
         const worker = await gpuRepository.enrolWorker({
+            localId,
             name,
             capabilities: body.capabilities,
             slotCount,
             workerVersion: body.worker_version,
         });
 
+        // The stored name, which for a machine already enrolled is whatever it is
+        // currently called rather than the name this request sent. A worker that
+        // was renamed learns its new name here, and `local_id` is deliberately not
+        // echoed: the identity stays internal, and `worker_id` is the handle
+        // everything else uses.
         return {
             worker_id: worker.id,
             name: worker.name,
@@ -586,6 +628,56 @@ class GpuService {
         }
 
         return Array.from(workers.values());
+    }
+
+    /**
+     * Rename a machine.
+     *
+     * An operator action, and the name is the only thing it changes. The machine
+     * is addressed by `worker_id` rather than by its durable id, because
+     * `worker_id` is already the stable handle every other call quotes and the
+     * durable id is not exposed by any response.
+     *
+     * A rename cannot disturb work: an attempt is identified by
+     * `(attempt_id, worker_id, lease_epoch)`, and none of those is the name.
+     *
+     * @async
+     * @param {number|string} workerId - Worker identifier from the path.
+     * @param {Object} body - `{name}`.
+     * @returns {Promise<Object>} The machine as it now stands.
+     * @throws {ApiError} 400 for a bad id or name, 404 when there is no such machine.
+     */
+    async renameWorker(workerId, body) {
+        const id = Number(workerId);
+
+        if (!Number.isInteger(id)) {
+            invalid('The worker id in the path must be an integer.');
+        }
+
+        const name = requiredWorkerName(body.name, 'name');
+
+        const worker = await gpuRepository.renameWorker(id, name);
+
+        if (!worker) {
+            throw new ApiError(
+                404,
+                ERROR_CODES.RESOURCE_NOT_FOUND,
+                `Worker ${id} is not enrolled.`
+            );
+        }
+
+        // The same shape the pool view's entries carry, minus the derived
+        // activity -- a rename says nothing about what the machine is doing.
+        return {
+            worker_id: worker.id,
+            name: worker.name,
+            state: worker.state,
+            slot_count: worker.slot_count,
+            worker_version: worker.worker_version,
+            capabilities: worker.capabilities,
+            enrolled_at: worker.enrolled_at,
+            last_seen_at: worker.last_seen_at,
+        };
     }
 
     /**

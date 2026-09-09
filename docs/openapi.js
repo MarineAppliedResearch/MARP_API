@@ -2286,10 +2286,10 @@ const buildOpenApiSpec = () => {
                     GpuWorker: {
                         type: 'object',
                         description:
-                            'One GPU machine enrolled in the compute pool. Deliberately carries no address of any kind: a worker dials out to MARP and MARP never dials a worker, so there is nowhere for a host, port or URL to be recorded.',
+                            'One GPU machine enrolled in the compute pool. Deliberately carries no address of any kind: a worker dials out to MARP and MARP never dials a worker, so there is nowhere for a host, port or URL to be recorded. Nor does it carry the machine\'s durable id: that is its identity, it is kept internal, and `worker_id` is the stable handle to address a machine by.',
                         properties: {
-                            worker_id: { type: 'integer', example: 3, description: 'Identifier the worker quotes on every later call.' },
-                            name: { type: 'string', example: 'office-3090', description: 'What the machine calls itself. Unique, so a restart is the same row rather than a second one.' },
+                            worker_id: { type: 'integer', example: 3, description: 'Identifier the worker quotes on every later call, and the handle a rename addresses. Stable for the life of the machine\'s enrolment.' },
+                            name: { type: 'string', example: 'office-3090', description: 'What the machine is called, for people. Editable metadata rather than identity: not unique, and a re-enrolment does not overwrite it.' },
                             state: {
                                 type: 'string',
                                 enum: ['online', 'offline', 'paused'],
@@ -2445,12 +2445,31 @@ const buildOpenApiSpec = () => {
                             },
                         },
                     },
+                    GpuWorkerRenameRequest: {
+                        type: 'object',
+                        description: 'A new name for a machine. The name is metadata, so this is the whole request.',
+                        required: ['name'],
+                        properties: {
+                            name: {
+                                type: 'string',
+                                maxLength: 255,
+                                example: 'office-3090',
+                                description: 'What to call the machine from now on. Need not be unique -- two machines are two rows because their durable ids differ, not because their names do -- and survives the machine\'s next enrolment.',
+                            },
+                        },
+                    },
                     GpuWorkerEnrolRequest: {
                         type: 'object',
                         description: 'What a machine says about itself when joining the pool.',
-                        required: ['name'],
+                        required: ['local_id', 'name'],
                         properties: {
-                            name: { type: 'string', example: 'office-3090', description: 'What the machine calls itself. Enrolling twice under one name updates that machine rather than adding a second.' },
+                            local_id: {
+                                type: 'string',
+                                maxLength: 128,
+                                example: 'a0294ccd-9fca-462e-8ba3-b5a6f5b380e3',
+                                description: 'The durable id this machine generated for itself once and keeps across restarts. **This is the identity enrolment keys on**: enrolling twice with one id updates that machine rather than adding a second, which is what lets the name be renamed freely. Opaque to MARP -- a uuid in practice, but nothing depends on that.',
+                            },
+                            name: { type: 'string', maxLength: 255, example: 'office-3090', description: 'What to call the machine. Used only when this id is new; a machine already enrolled keeps the name it currently has, so an operator\'s rename is not undone at the next restart.' },
                             capabilities: {
                                 type: 'object',
                                 additionalProperties: true,
@@ -2463,10 +2482,10 @@ const buildOpenApiSpec = () => {
                     },
                     GpuWorkerEnrolResponse: {
                         type: 'object',
-                        description: 'The identity to quote on every later call, and the heartbeat interval MARP expects.',
+                        description: 'The identity to quote on every later call, and the heartbeat interval MARP expects. The durable id is not echoed back: the worker already has it, and nothing else needs it.',
                         properties: {
                             worker_id: { type: 'integer', example: 3 },
-                            name: { type: 'string', example: 'office-3090' },
+                            name: { type: 'string', example: 'office-3090', description: 'What the machine is currently called, which for a machine that was renamed is not the name this enrolment sent.' },
                             state: { type: 'string', enum: ['online', 'offline', 'paused'], example: 'online' },
                             slot_count: { type: 'integer', example: 2 },
                             heartbeat_seconds: {

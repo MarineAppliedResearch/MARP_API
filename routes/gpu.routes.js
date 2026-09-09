@@ -2,9 +2,9 @@
  * GPU orchestration routes, registered code-first through the OpenAPI route
  * registry.
  *
- * Twelve endpoints under `/api/v2/gpu`, declared here in V1 terms because
+ * Thirteen endpoints under `/api/v2/gpu`, declared here in V1 terms because
  * `registerVersionedRoute` rewrites both the path and the tag and refuses a
- * literal `/api/v2/` path. Five are worker-facing, five are human-facing, and
+ * literal `/api/v2/` path. Five are worker-facing, six are human-facing, and
  * two are the artifact hand-off.
  *
  * **Every direction of travel is worker-to-MARP.** There is no route in this
@@ -209,7 +209,7 @@ function registerGpuRoutes(app) {
         path: '/api/gpu/workers/enrol',
         summary: 'Enrol a GPU machine into the compute pool',
         description:
-            'Registers a GPU machine and returns the identity it quotes on every later call, plus the heartbeat interval MARP expects. Enrolling twice under one name updates that machine rather than adding a second, so a worker that restarts is the same row and the pool view does not fill with ghosts -- which also means `enrolled_at` means "first seen". Re-enrolling puts the machine back to `online`, since a machine that is talking is by definition not offline, and a deliberate `paused` is not preserved: re-enrolling is how an operator restarts a worker they had parked. Held by a bootstrap credential with only `workers:enrol`, deliberately separate from `jobs:execute`, so a credential that can join the pool cannot also take work.',
+            'Registers a GPU machine and returns the identity it quotes on every later call, plus the heartbeat interval MARP expects. **Keyed on `local_id`**, the durable id the machine generated for itself and sends every time: enrolling twice with one id updates that machine rather than adding a second, so a worker that restarts is the same row and the pool view does not fill with ghosts -- which also means `enrolled_at` means "first seen". Two machines that happen to share a name get a row each, because their ids differ. `name` is required, but only as the label a *new* machine starts with: a machine already enrolled keeps whatever it is currently called, so an operator\'s rename is not undone by the machine\'s next restart, and the name it is answered with may not be the one it sent. Hardware, version and slot count are refreshed on every enrolment, because those are facts about the machine and a stale one makes the pool view fiction. Re-enrolling puts the machine back to `online`, since a machine that is talking is by definition not offline, and a deliberate `paused` is not preserved: re-enrolling is how an operator restarts a worker they had parked. Held by a bootstrap credential with only `workers:enrol`, deliberately separate from `jobs:execute`, so a credential that can join the pool cannot also take work -- and separate from the rename route, so a worker cannot relabel the pool.',
         tags: [GPU_TAG],
         requestBody: {
             required: true,
@@ -491,6 +491,36 @@ function registerGpuRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             const data = await gpuController.listPool();
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/workers/:id/rename',
+        summary: 'Rename a GPU machine',
+        description:
+            'Changes what a machine is called, and nothing else. A worker\'s identity is the durable id it generated for itself and enrols with; the name is metadata for people, so renaming one is safe in a way that would not be true if the name were the identity. **A re-enrolment does not undo it**: the worker sends the name it computes at startup on every enrolment and MARP keeps the stored one, or a rename would silently revert at the machine\'s next restart. Two machines may share a name -- their ids differ, so they are still two rows. A rename cannot disturb work either: an attempt is identified by `(attempt_id, worker_id, lease_epoch)` and none of those is the name, so a job running on the machine carries on and its next heartbeat is answered `continue`. Deliberately not reachable through enrolment, which a worker credential holds: renaming is an operator action.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the machine to rename, as returned by enrolment and by the pool view.' },
+        ],
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuWorkerRenameRequest' } } },
+        },
+        responses: {
+            200: {
+                description: 'The machine as it now stands.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuWorker' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.renameWorker(req.params.id, req.body || {});
             res.json(data);
         }),
     });

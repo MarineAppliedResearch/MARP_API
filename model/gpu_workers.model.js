@@ -4,6 +4,11 @@
  * One row per GPU machine enrolled in the compute pool, holding what it says it
  * is (name, version, hardware) and when the coordinator last heard from it.
  *
+ * **`local_id` is the identity and `name` is metadata**, not the other way round.
+ * A machine generates its `local_id` once and sends it on every enrolment, so
+ * re-enrolment keys on that and an operator can rename a machine without its next
+ * enrolment forking the row.
+ *
  * **There is no host, url or port attribute, and there must never be one.** A
  * worker dials out to MARP; MARP never dials a worker. Keeping an address
  * unrepresentable is what makes that a property of the system rather than a
@@ -55,11 +60,17 @@ module.exports = (sequelize, DataTypes) => {
                 comment: 'Unique identifier for this worker.',
             },
 
+            local_id: {
+                type: DataTypes.STRING(128),
+                allowNull: false,
+                unique: true,
+                comment: 'The durable id the machine generated for itself. This, not the name, is the worker\'s identity: re-enrolment keys on it, so a machine can be renamed without forking its pool row.',
+            },
+
             name: {
                 type: DataTypes.STRING(255),
                 allowNull: false,
-                unique: true,
-                comment: 'What this machine calls itself. Unique, so a worker that restarts and enrols again is the same row.',
+                comment: 'What this machine is called, for people. Editable metadata rather than identity: not unique, and re-enrolment does not overwrite it.',
             },
 
             enrolled_at: {

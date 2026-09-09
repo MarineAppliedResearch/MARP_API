@@ -99,7 +99,11 @@ async function queueJobs(count) {
 async function enrolWorker(suffix) {
     const response = await global.api
         .post('/api/v2/gpu/workers/enrol')
-        .send({ name: `jest-race-worker-${runId}-${suffix}`, slot_count: 1 });
+        .send({
+            local_id: `jest-race-local-${runId}-${suffix}`,
+            name: `jest-race-worker-${runId}-${suffix}`,
+            slot_count: 1,
+        });
 
     expect(response.status).toBe(200);
 

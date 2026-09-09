@@ -123,6 +123,19 @@ class GpuController {
     }
 
     /**
+     * Rename a GPU machine.
+     *
+     * @async
+     * @param {number|string} workerId - Worker identifier from the path.
+     * @param {Object} body - `{name}`.
+     * @returns {Promise<Object>} The machine as it now stands.
+     */
+    async renameWorker(workerId, body) {
+        logger.info('Controller: renameWorker');
+        return gpuService.renameWorker(workerId, body);
+    }
+
+    /**
      * List GPU jobs.
      *
      * @async

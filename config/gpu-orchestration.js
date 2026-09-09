@@ -91,6 +91,26 @@ const POLL_RETRY_INTERVAL_MS = 500;
 const JSON_BODY_LIMIT = '2mb';
 
 /**
+ * Longest name a worker may be given, matching `gpu_workers.name`. Checked in
+ * the service so an over-long name is a 400 rather than a database error
+ * surfacing as a 500.
+ *
+ * @constant
+ * @type {number}
+ */
+const MAX_WORKER_NAME_LENGTH = 255;
+
+/**
+ * Longest durable id a worker may enrol with, matching `gpu_workers.local_id`.
+ * A uuid is 36 characters; the room above that is for a worker that identifies
+ * itself some other way.
+ *
+ * @constant
+ * @type {number}
+ */
+const MAX_WORKER_LOCAL_ID_LENGTH = 128;
+
+/**
  * Most events one batch may carry. A worker with more than this to say sends two
  * batches; `(attempt_id, seq)` makes that free.
  *
@@ -239,6 +259,8 @@ module.exports = {
     POLL_MAX_WAIT_SECONDS,
     POLL_RETRY_INTERVAL_MS,
     JSON_BODY_LIMIT,
+    MAX_WORKER_NAME_LENGTH,
+    MAX_WORKER_LOCAL_ID_LENGTH,
     MAX_EVENTS_PER_BATCH,
     MAX_ARTIFACT_BYTES,
     ARTIFACT_DIRECTORY,

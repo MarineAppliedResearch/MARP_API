@@ -38,7 +38,7 @@ const ARTIFACT_DIRECTORY = path.join(__dirname, '..', 'storage', 'gpu-artifacts'
 
 /**
  * Unique per run, so a failed run's leftovers are distinguishable and two runs
- * cannot collide on the worker name's unique index.
+ * cannot collide on the durable id a worker enrols with.
  *
  * @constant
  * @type {number}
@@ -183,6 +183,7 @@ beforeAll(async () => {
     const enrolled = await global.api
         .post('/api/v2/gpu/workers/enrol')
         .send({
+            local_id: `jest-gpu-local-${runId}`,
             name: `jest-gpu-worker-${runId}`,
             // Far more slots than a real machine would have. Most tests here
             // leave their lease open rather than reporting a result, and a
@@ -232,14 +233,15 @@ afterAll(async () => {
 });
 
 /**
- * Enrolment is idempotent by name, which is what keeps a machine that reboots
- * from becoming a second row in the pool.
+ * Enrolment is idempotent by the machine's durable id, which is what keeps a
+ * machine that reboots from becoming a second row in the pool.
  */
 describe('GPU worker enrolment', () => {
-    it('returns the same worker when the same name enrols again, with fresh hardware', async () => {
+    it('returns the same worker when the same durable id enrols again, with fresh hardware', async () => {
         const again = await global.api
             .post('/api/v2/gpu/workers/enrol')
             .send({
+                local_id: `jest-gpu-local-${runId}`,
                 name: `jest-gpu-worker-${runId}`,
                 capabilities: { gpus: [{ name: 'jest-gpu-2', vram_mb: 2048 }] },
             });
@@ -254,10 +256,31 @@ describe('GPU worker enrolment', () => {
     });
 
     it('refuses an enrolment with no name', async () => {
-        const response = await global.api.post('/api/v2/gpu/workers/enrol').send({ slot_count: 1 });
+        const response = await global.api
+            .post('/api/v2/gpu/workers/enrol')
+            .send({ local_id: `jest-gpu-nameless-${runId}`, slot_count: 1 });
 
         expect(response.status).toBe(400);
         expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('refuses an enrolment with no durable id, because that is the identity', async () => {
+        const response = await global.api
+            .post('/api/v2/gpu/workers/enrol')
+            .send({ name: `jest-gpu-no-local-id-${runId}`, slot_count: 1 });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error.code).toBe('VALIDATION_ERROR');
+        expect(response.body.error.message).toMatch(/local_id/);
+    });
+
+    it('does not echo the durable id back, keeping the identity internal', async () => {
+        const again = await global.api
+            .post('/api/v2/gpu/workers/enrol')
+            .send({ local_id: `jest-gpu-local-${runId}`, name: `jest-gpu-worker-${runId}` });
+
+        expect(again.status).toBe(200);
+        expect(Object.keys(again.body)).not.toContain('local_id');
     });
 });
 
@@ -429,7 +452,11 @@ describe('GPU job submission and leasing', () => {
     it('does not give a machine more concurrent work than the slots it enrolled with', async () => {
         const enrolled = await global.api
             .post('/api/v2/gpu/workers/enrol')
-            .send({ name: `jest-gpu-one-slot-${runId}`, slot_count: 1 });
+            .send({
+                local_id: `jest-gpu-one-slot-local-${runId}`,
+                name: `jest-gpu-one-slot-${runId}`,
+                slot_count: 1,
+            });
 
         expect(enrolled.status).toBe(200);
 
@@ -1086,5 +1113,180 @@ describe('GPU pool view', () => {
         // worker reports back, which is exactly what "the coordinator's row is
         // the truth about the job, not about the machine" means.
         expect(idle.body.find((worker) => worker.worker_id === workerId).activity).toBe('busy');
+    });
+});
+
+/**
+ * A machine is renameable because its identity is the durable id it generated
+ * for itself, not what it is called.
+ *
+ * These tests use their own machines rather than the suite's, because renaming
+ * the one every other test polls with would make those tests depend on the order
+ * this block runs in.
+ */
+describe('GPU worker rename', () => {
+    /**
+     * Enrol a machine of this block's own, and remember it for teardown.
+     *
+     * @param {string} localId - Its durable id.
+     * @param {string} name - What to call it.
+     * @returns {Promise<Object>} The enrolment response body.
+     */
+    async function enrol(localId, name) {
+        const response = await global.api
+            .post('/api/v2/gpu/workers/enrol')
+            .send({ local_id: localId, name, slot_count: 1 });
+
+        expect(response.status).toBe(200);
+
+        if (!extraWorkerIds.includes(response.body.worker_id)) {
+            extraWorkerIds.push(response.body.worker_id);
+        }
+
+        return response.body;
+    }
+
+    it('keeps the new name when the machine enrols again, and stays one row', async () => {
+        const localId = `jest-rename-local-${runId}`;
+        const enrolled = await enrol(localId, `jest-rename-before-${runId}`);
+
+        const renamed = await global.api
+            .post(`/api/v2/gpu/workers/${enrolled.worker_id}/rename`)
+            .send({ name: `jest-rename-after-${runId}` });
+
+        expect(renamed.status).toBe(200);
+        expect(renamed.body.worker_id).toBe(enrolled.worker_id);
+        expect(renamed.body.name).toBe(`jest-rename-after-${runId}`);
+
+        // The machine restarting. A worker computes its name at startup and sends
+        // it every time, so this is the enrolment that used to undo the rename --
+        // and, when the name was the key, the one that forked the row.
+        const again = await enrol(localId, `jest-rename-before-${runId}`);
+
+        expect(again.worker_id).toBe(enrolled.worker_id);
+        expect(again.name).toBe(`jest-rename-after-${runId}`);
+
+        const [count] = await query(
+            'SELECT COUNT(*)::int AS n FROM gpu_workers WHERE local_id = :localId',
+            { localId }
+        );
+
+        expect(count.n).toBe(1);
+
+        const [row] = await query('SELECT name FROM gpu_workers WHERE local_id = :localId', { localId });
+
+        expect(row.name).toBe(`jest-rename-after-${runId}`);
+    });
+
+    it('gives two machines that share a name a row each', async () => {
+        const shared = `jest-rename-shared-${runId}`;
+
+        const first = await enrol(`jest-rename-twin-a-${runId}`, shared);
+        const second = await enrol(`jest-rename-twin-b-${runId}`, shared);
+
+        expect(second.worker_id).not.toBe(first.worker_id);
+
+        const [count] = await query(
+            'SELECT COUNT(*)::int AS n FROM gpu_workers WHERE name = :shared',
+            { shared }
+        );
+
+        expect(count.n).toBe(2);
+    });
+
+    it('does not disturb a live lease', async () => {
+        const worker = await enrol(`jest-rename-busy-local-${runId}`, `jest-rename-busy-${runId}`);
+        const submitted = await submitJob();
+        const job = submitted.jobs[0];
+
+        const polled = await global.api
+            .post('/api/v2/gpu/poll')
+            .send({ worker_id: worker.worker_id, slot_indexes: [0], wait_seconds: 0 });
+
+        expect(polled.status).toBe(200);
+        expect(polled.body.job_id).toBe(job.id);
+
+        const lease = polled.body;
+
+        const renamed = await global.api
+            .post(`/api/v2/gpu/workers/${worker.worker_id}/rename`)
+            .send({ name: `jest-rename-busy-renamed-${runId}` });
+
+        expect(renamed.status).toBe(200);
+
+        // The machine re-enrols mid-job, which is the moment the old design broke:
+        // keyed on the name, this enrolment found nothing called
+        // `jest-rename-busy-<runId>` any more and opened a second row, leaving the
+        // first one holding the lease. The worker would then heartbeat as the new
+        // machine and be told the attempt belongs to somebody else.
+        const again = await enrol(`jest-rename-busy-local-${runId}`, `jest-rename-busy-${runId}`);
+
+        expect(again.worker_id).toBe(worker.worker_id);
+
+        // The lease is quoted as (attempt_id, worker_id, lease_epoch), and neither
+        // the rename nor the re-enrolment moves any of those. If either did, this
+        // heartbeat would be answered `abandon` and the machine would throw away
+        // work it is halfway through.
+        const beat = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: again.worker_id,
+                lease_epoch: lease.lease_epoch,
+                state: 'running',
+                progress: { done: 7, total: 100, unit: 'frames' },
+            });
+
+        expect(beat.status).toBe(200);
+        expect(beat.body.action).toBe('continue');
+
+        const [attempt] = await query(
+            'SELECT worker_id, lease_epoch, state, progress_done FROM gpu_job_attempts WHERE id = :id',
+            { id: lease.attempt_id }
+        );
+
+        expect(attempt.worker_id).toBe(worker.worker_id);
+        expect(attempt.lease_epoch).toBe(lease.lease_epoch);
+        expect(attempt.state).toBe('running');
+        expect(attempt.progress_done).toBe(7);
+
+        const [current] = await query('SELECT state FROM gpu_jobs WHERE id = :id', { id: job.id });
+
+        expect(current.state).toBe('leased');
+
+        // And the pool shows the new name against the same machine and the same
+        // attempt -- one row renamed, not a second row with the work on the first.
+        const pool = await global.api.get('/api/v2/gpu/workers');
+        const mine = pool.body.find((entry) => entry.worker_id === worker.worker_id);
+
+        expect(mine.name).toBe(`jest-rename-busy-renamed-${runId}`);
+        expect(mine.attempts.map((entry) => entry.attempt_id)).toEqual([lease.attempt_id]);
+
+        // The durable id is the identity and is kept out of every response, so a
+        // reader of the pool cannot learn the value a re-enrolment keys on.
+        expect(Object.keys(mine)).not.toContain('local_id');
+
+        await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`);
+    });
+
+    it('refuses an empty name, and 404s an unknown machine', async () => {
+        const worker = await enrol(`jest-rename-refusal-local-${runId}`, `jest-rename-refusal-${runId}`);
+
+        const empty = await global.api
+            .post(`/api/v2/gpu/workers/${worker.worker_id}/rename`)
+            .send({ name: '   ' });
+
+        expect(empty.status).toBe(400);
+        expect(empty.body.error.code).toBe('VALIDATION_ERROR');
+
+        const missing = await global.api
+            .post('/api/v2/gpu/workers/0/rename')
+            .send({ name: `jest-rename-nobody-${runId}` });
+
+        expect(missing.status).toBe(404);
+
+        // The name it already had is untouched by either refusal.
+        const [row] = await query('SELECT name FROM gpu_workers WHERE id = :id', { id: worker.worker_id });
+
+        expect(row.name).toBe(`jest-rename-refusal-${runId}`);
     });
 });

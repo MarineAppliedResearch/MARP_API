@@ -2637,17 +2637,17 @@
       },
       "GpuWorker": {
         "type": "object",
-        "description": "One GPU machine enrolled in the compute pool. Deliberately carries no address of any kind: a worker dials out to MARP and MARP never dials a worker, so there is nowhere for a host, port or URL to be recorded.",
+        "description": "One GPU machine enrolled in the compute pool. Deliberately carries no address of any kind: a worker dials out to MARP and MARP never dials a worker, so there is nowhere for a host, port or URL to be recorded. Nor does it carry the machine's durable id: that is its identity, it is kept internal, and `worker_id` is the stable handle to address a machine by.",
         "properties": {
           "worker_id": {
             "type": "integer",
             "example": 3,
-            "description": "Identifier the worker quotes on every later call."
+            "description": "Identifier the worker quotes on every later call, and the handle a rename addresses. Stable for the life of the machine's enrolment."
           },
           "name": {
             "type": "string",
             "example": "office-3090",
-            "description": "What the machine calls itself. Unique, so a restart is the same row rather than a second one."
+            "description": "What the machine is called, for people. Editable metadata rather than identity: not unique, and a re-enrolment does not overwrite it."
           },
           "state": {
             "type": "string",
@@ -2993,17 +2993,40 @@
           }
         }
       },
-      "GpuWorkerEnrolRequest": {
+      "GpuWorkerRenameRequest": {
         "type": "object",
-        "description": "What a machine says about itself when joining the pool.",
+        "description": "A new name for a machine. The name is metadata, so this is the whole request.",
         "required": [
           "name"
         ],
         "properties": {
           "name": {
             "type": "string",
+            "maxLength": 255,
             "example": "office-3090",
-            "description": "What the machine calls itself. Enrolling twice under one name updates that machine rather than adding a second."
+            "description": "What to call the machine from now on. Need not be unique -- two machines are two rows because their durable ids differ, not because their names do -- and survives the machine's next enrolment."
+          }
+        }
+      },
+      "GpuWorkerEnrolRequest": {
+        "type": "object",
+        "description": "What a machine says about itself when joining the pool.",
+        "required": [
+          "local_id",
+          "name"
+        ],
+        "properties": {
+          "local_id": {
+            "type": "string",
+            "maxLength": 128,
+            "example": "a0294ccd-9fca-462e-8ba3-b5a6f5b380e3",
+            "description": "The durable id this machine generated for itself once and keeps across restarts. **This is the identity enrolment keys on**: enrolling twice with one id updates that machine rather than adding a second, which is what lets the name be renamed freely. Opaque to MARP -- a uuid in practice, but nothing depends on that."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "example": "office-3090",
+            "description": "What to call the machine. Used only when this id is new; a machine already enrolled keeps the name it currently has, so an operator's rename is not undone at the next restart."
           },
           "capabilities": {
             "type": "object",
@@ -3036,7 +3059,7 @@
       },
       "GpuWorkerEnrolResponse": {
         "type": "object",
-        "description": "The identity to quote on every later call, and the heartbeat interval MARP expects.",
+        "description": "The identity to quote on every later call, and the heartbeat interval MARP expects. The durable id is not echoed back: the worker already has it, and nothing else needs it.",
         "properties": {
           "worker_id": {
             "type": "integer",
@@ -3044,7 +3067,8 @@
           },
           "name": {
             "type": "string",
-            "example": "office-3090"
+            "example": "office-3090",
+            "description": "What the machine is currently called, which for a machine that was renamed is not the name this enrolment sent."
           },
           "state": {
             "type": "string",
@@ -11972,7 +11996,7 @@
     "/v2/gpu/workers/enrol": {
       "post": {
         "summary": "Enrol a GPU machine into the compute pool",
-        "description": "Registers a GPU machine and returns the identity it quotes on every later call, plus the heartbeat interval MARP expects. Enrolling twice under one name updates that machine rather than adding a second, so a worker that restarts is the same row and the pool view does not fill with ghosts -- which also means `enrolled_at` means \"first seen\". Re-enrolling puts the machine back to `online`, since a machine that is talking is by definition not offline, and a deliberate `paused` is not preserved: re-enrolling is how an operator restarts a worker they had parked. Held by a bootstrap credential with only `workers:enrol`, deliberately separate from `jobs:execute`, so a credential that can join the pool cannot also take work. Requires the `workers:enrol` permission.",
+        "description": "Registers a GPU machine and returns the identity it quotes on every later call, plus the heartbeat interval MARP expects. **Keyed on `local_id`**, the durable id the machine generated for itself and sends every time: enrolling twice with one id updates that machine rather than adding a second, so a worker that restarts is the same row and the pool view does not fill with ghosts -- which also means `enrolled_at` means \"first seen\". Two machines that happen to share a name get a row each, because their ids differ. `name` is required, but only as the label a *new* machine starts with: a machine already enrolled keeps whatever it is currently called, so an operator's rename is not undone by the machine's next restart, and the name it is answered with may not be the one it sent. Hardware, version and slot count are refreshed on every enrolment, because those are facts about the machine and a stale one makes the pool view fiction. Re-enrolling puts the machine back to `online`, since a machine that is talking is by definition not offline, and a deliberate `paused` is not preserved: re-enrolling is how an operator restarts a worker they had parked. Held by a bootstrap credential with only `workers:enrol`, deliberately separate from `jobs:execute`, so a credential that can join the pool cannot also take work -- and separate from the rename route, so a worker cannot relabel the pool. Requires the `workers:enrol` permission.",
         "tags": [
           "V2 · GpuCompute"
         ],
@@ -12379,6 +12403,63 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/workers/{id}/rename": {
+      "post": {
+        "summary": "Rename a GPU machine",
+        "description": "Changes what a machine is called, and nothing else. A worker's identity is the durable id it generated for itself and enrols with; the name is metadata for people, so renaming one is safe in a way that would not be true if the name were the identity. **A re-enrolment does not undo it**: the worker sends the name it computes at startup on every enrolment and MARP keeps the stored one, or a rename would silently revert at the machine's next restart. Two machines may share a name -- their ids differ, so they are still two rows. A rename cannot disturb work either: an attempt is identified by `(attempt_id, worker_id, lease_epoch)` and none of those is the name, so a job running on the machine carries on and its next heartbeat is answered `continue`. Deliberately not reachable through enrolment, which a worker credential holds: renaming is an operator action. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the machine to rename, as returned by enrolment and by the pool view."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GpuWorkerRenameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The machine as it now stands.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuWorker"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

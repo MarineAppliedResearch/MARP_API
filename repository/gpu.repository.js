@@ -130,27 +130,44 @@ class GpuRepository {
      * Enrol a machine, or bring an already-enrolled one back with fresh
      * hardware.
      *
-     * Keyed on the name, so a worker that restarts is the same row rather than a
-     * second one -- otherwise a machine rebooted twice a day would fill the pool
-     * view with ghosts, and a human could not tell which row was the live one.
+     * **Keyed on `local_id`, the durable id the machine generated for itself.**
+     * So a worker that restarts is the same row rather than a second one --
+     * otherwise a machine rebooted twice a day would fill the pool view with
+     * ghosts, and a human could not tell which row was the live one.
      * `enrolled_at` therefore means "first seen", which is the more useful fact.
+     *
+     * It used to key on the name, which had it backwards: the name was `UNIQUE`
+     * and the durable id had nowhere to be stored, so renaming a machine forked
+     * its row at the next enrolment and left the old one holding the lease. Two
+     * machines that happen to share a hostname now get a row each for the same
+     * reason -- their ids differ.
+     *
+     * **A re-enrolment does not overwrite the name**, which is what makes a
+     * rename stick. The worker sends the name it computes at startup on every
+     * enrolment, so honouring it would silently undo an operator's rename at the
+     * machine's next restart. Hardware, version and slot count *are* refreshed:
+     * those are facts about the machine, and reading a stale one is how the pool
+     * view came to say "no GPU" long after CUDA was working.
      *
      * @async
      * @param {Object} params
-     * @param {string} params.name - What the machine calls itself.
+     * @param {string} params.localId - The machine's durable generated id.
+     * @param {string} params.name - What the machine calls itself, used only when
+     * this is the first enrolment.
      * @param {Object} [params.capabilities] - GPUs, VRAM, driver, disk, engines.
      * @param {number} [params.slotCount] - How many attempts it will run at once.
      * @param {string} [params.workerVersion] - Version of the worker software.
      * @returns {Promise<Object>} The worker row, plain.
      * @throws {Error} Re-throws any database failure.
      */
-    async enrolWorker({ name, capabilities, slotCount, workerVersion }) {
+    async enrolWorker({ localId, name, capabilities, slotCount, workerVersion }) {
         try {
             const now = new Date();
 
             const [worker] = await this.db.gpu_workers.findOrCreate({
-                where: { name },
+                where: { local_id: localId },
                 defaults: {
+                    local_id: localId,
                     name,
                     state: 'online',
                     enrolled_at: now,
@@ -166,7 +183,7 @@ class GpuRepository {
             // Re-enrolment. The state goes back to online because a machine that
             // is talking is by definition not offline; a deliberate `paused` is
             // not preserved, since re-enrolling is how an operator restarts a
-            // worker they had parked.
+            // worker they had parked. `name` is deliberately absent: see above.
             await worker.update({
                 state: 'online',
                 last_seen_at: now,
@@ -174,6 +191,37 @@ class GpuRepository {
                 worker_version: workerVersion === undefined ? worker.worker_version : workerVersion,
                 capabilities: capabilities === undefined ? worker.capabilities : capabilities,
             });
+
+            return worker.get({ plain: true });
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * Change what a machine is called.
+     *
+     * The name is metadata, so this touches nothing else: not the identity the
+     * machine enrols with, not its state, and not any lease it holds. An attempt
+     * quotes `(attempt_id, worker_id, lease_epoch)` and none of those move, which
+     * is why a job survives its machine being renamed mid-run.
+     *
+     * @async
+     * @param {number} workerId - Worker identifier.
+     * @param {string} name - The new name.
+     * @returns {Promise<Object|null>} The updated row, or null when there is no such worker.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async renameWorker(workerId, name) {
+        try {
+            const worker = await this.db.gpu_workers.findByPk(workerId);
+
+            if (!worker) {
+                return null;
+            }
+
+            await worker.update({ name });
 
             return worker.get({ plain: true });
         } catch (error) {
