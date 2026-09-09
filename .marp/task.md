@@ -306,7 +306,7 @@ open.**
   row in `ml_models` is a third option and is not recommended — it would appear in
   `model_species`, `training_runs` and every "which model" report as a real model.
 
-- [ ] **D3 · scientific or data-meaning · blocking** — **What referential action does
+- [x] **D3 · scientific or data-meaning · blocking** — **What referential action does
   `dataset_observations.observation_id` get?** #100 sets out `CASCADE`, `RESTRICT`, and
   neither-plus-a-tombstone. Deletion provenance is this phase's, so the choice belongs here.
   **Recommendation: `ON DELETE RESTRICT`** (with `ON UPDATE CASCADE`, matching the other
@@ -515,6 +515,33 @@ thing holding G1 — it changes what a reviewer sees on screen, so it is the hum
   instead of two, D1's "current" rule written once rather than twice, and a third purpose
   later — #68 reserves an explicit validation mode — is a value rather than a table.
   Cheap to reverse while the table is empty, which it will be when it ships.
+
+- **D3 — `ON DELETE CASCADE`.** Settled by the human 2026-09-09, against the
+  recommendation, and the reason is a product one: **a delete must not be blocked.** A
+  reviewer in Delete Mode has decided a record should go, and refusing them until somebody
+  first unpicks a training-set membership turns one gesture into a two-person errand.
+  `RESTRICT` was recommended on the ground that a published model's training-set
+  composition would otherwise silently shrink. That risk is real and is **not** dismissed —
+  it is moved, from the constraint to the provenance record:
+
+  **So the deletion-provenance row must record the dataset memberships that went with the
+  observation.** This is the ordering dependency the research called out, and it applies
+  only under this answer: `observation_deletions` gains the dataset ids (and the membership
+  detail worth keeping — `inclusion_type`, `selection_method`, `weight`) captured *before*
+  the cascade fires. Without that, a delete quietly makes a training set smaller with no
+  record anywhere that it happened, which is exactly the loss `AGENTS.md` counts even when
+  the application still works.
+
+  Two consequences to carry forward:
+
+  - **Phase 5's commit writes provenance before it deletes**, in the same transaction. The
+    cascade destroys the rows the provenance is about, so reading them afterwards is not an
+    option.
+  - **`subset_observations` and `subset_keyframes` are a second, unconstrained path** to the
+    same problem — physical tables holding copies of observation columns, found during this
+    research and outside #100's scope. They are not addressed here, and a cascade on
+    `dataset_observations` does not touch them. Named so Phase 7 does not meet it as a
+    surprise.
 
 ## Decisions
 
