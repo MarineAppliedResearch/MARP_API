@@ -596,6 +596,29 @@ export const actions = {
     const res = await MarpData.setSpecies(id, speciesId);
     if (!res.ok) { fire('changeSpecies:failed', { id }); return; }
     state.changed.set(id, { from, to: res.observation.comname });
+
+    /**
+     * A correction retires every cached page. Not a commit, and not the same rule.
+     *
+     * A commit invalidates nothing, because a committed page is *pinned* and the ids it
+     * holds are excluded from every later query — the membership is deliberately frozen
+     * and the arithmetic stays honest. A species correction pins nothing: it moves the
+     * row's own value out from under the species filter, so the row genuinely leaves the
+     * result and every page after it shifts by one. #68 requires the corrected row to
+     * leave a species-filtered page on the next query, and a cached page would go on
+     * showing it.
+     *
+     * The pages go; **the rows a committed page needs stay**, exactly as under eviction,
+     * so going back to what was submitted is still free. The cost is one page change at
+     * full latency after a correction, which is what every page change cost before #99.
+     *
+     * Dropping only the visible page was the other candidate and is rejected: page N+1
+     * was cached when this row was still in the set, so it would start with the row that
+     * has just moved onto page N, and the reviewer would meet the same observation twice.
+     * A duplicate tile is worse than a wait.
+     */
+    cache.evict(cache.held().map((entry) => entry.page), page.pinnedIds(state.pageMembers));
+
     /* The correction is what the panel was opened to do, so choosing a species
        finishes it. Leaving the panel up meant it blanked and rebuilt itself, which
        read as a flicker rather than as a result. The mark stays: correcting the
