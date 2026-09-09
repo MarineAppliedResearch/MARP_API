@@ -25,6 +25,32 @@ green**, because the rule they assert was overruled — not because they broke. 
 that changes is listed under *Tests that change, and why* with which of the two it is, and
 the final count has to be reconcilable from that list rather than merely larger.
 
+## The migrations changed shape mid-implementation, and this records that
+
+The plan below was written for **two new migrations superseding the two from #103**, on the
+standing rule that an applied migration is never edited. That was reversed during G2, by the
+human: *"we don't want extra migrations for no reason."*
+
+So `20260909120500` and `20260909120600` were written, applied, proved in both directions,
+and then **folded back into `20260909120100` and `20260909120200` and deleted.** The rule
+they were obeying is the right rule when a migration has reached anywhere that matters —
+these had not. Both were written the same day, both tables held **zero rows on every
+database**, nothing had ever run against production, and the only database that had applied
+them was the local disposable one. The cost of editing was a rebuild of a database with no
+data in it; the benefit is that the next person reads one honest definition per table
+instead of an archaeology of a design that was overruled the same day.
+
+**What that costs in evidence, and how it was paid.** Editing applied files means the
+files can no longer be trusted to match what ran, so the check is a rebuild from scratch:
+
+- `marp db destroy` then `marp db up` — baseline plus every migration, from nothing.
+- Structural snapshot before and after: columns, constraints, indexes and triggers, each
+  hashed, plus row counts and the ledger.
+- Then `db:migrate:undo` back past both edited files and `db:migrate` forward again, and a
+  third snapshot.
+
+All three snapshots are byte-identical. The evidence is under *Results*.
+
 ## The tier that matters, and why almost nothing here is a unit test
 
 Jest against the real development PostgreSQL, through `npm test` — never `npx jest`, because
@@ -204,6 +230,7 @@ reported as a defect rather than edited away.
 | `observation-review-current` · `twoReviewers()` | Seeds two reviewers instead of borrowing them. | it was wrong |
 | `observation-review-schema` · `describe('observation_review_current')` | The column-list assertion loses `first_decided_at`; the log's vocabulary assertion gains `corrected`. | rule changed — A2, A6 |
 | `mosaic-query` · the row-shape assertion | **Unchanged.** The read row is not touched by this phase; see *Known gaps*. | unaffected |
+| `mosaic-query` · the `decide()` helper | Stopped writing `first_decided_at` into the projection. | **it broke** — the column went, and the helper inserted it by name. Not predicted by this plan, and it took the whole suite down: 48 failures in one file, all cascading from one insert. Named here rather than quietly fixed. |
 
 Everything else in both suites is untouched: the vocabulary `CHECK`s, the delete cases, the
 fingerprint case, the append-only assertion, and the route and permission cases.
@@ -212,4 +239,161 @@ fingerprint case, the append-only assertion, and the route and permission cases.
 
 ## Results
 
-<!-- Appended after the run. Real output, including failures, verbatim. -->
+Real output, including what failed on the way.
+
+### The suite
+
+Baseline on `abf00b9`, before any change:
+
+```
+  Test Suites : 35 passed, 0 failed, 35 total
+  Tests       : 348 passed, 0 failed, 0 skipped, 348 total
+  Duration    : 24.4s
+```
+
+Final, on the rebuilt database:
+
+```
+  Test Suites : 36 passed, 0 failed, 36 total
+  Tests       : 377 passed, 0 failed, 0 skipped, 377 total
+  Duration    : 25.4s
+  Result: ALL TESTS PASSED
+```
+
+**348 to 377 reconciles exactly**, which is the point of counting rather than reporting
+"green":
+
+| Suite | Was | Now | Why |
+| --- | --- | --- | --- |
+| `observation-review-current` | 6 | 10 | +1 finder assertion, +1 no-`first_decided_at`, +1 mid-log invalidation, +1 corrected-cannot-project |
+| `observation-review-schema` | 28 | 32 | +1 corrected vocabulary, +1 both-way species CHECK, +1 species FK restrict, +1 projection column list |
+| `mosaic-commit` | 31 | 31 | four rewritten in place, none added or lost |
+| `mosaic-correction` | — | 21 | new |
+| everything else | 283 | 283 | untouched |
+| **total** | **348** | **377** | **+29** |
+
+### What failed on the way
+
+Three failures, all real, none left standing.
+
+**1. `twoSpecies()` — the `species` table does not use the timestamp names the rest do.**
+
+```
+  ✗ observation_review_current > ... > agrees with the derivation across an invalidation
+      at twoSpecies (tests\observation-review-current.test.js:335:29)
+  ✗ observation_review_current > ... > is reproduced exactly by the committed rebuild SQL
+      at twoSpecies (tests\observation-review-current.test.js:335:29)
+```
+
+The seed used `"createdAt"`/`"updatedAt"` and omitted `taxserial`. `species` uses
+`created_at`/`updated_at` and `taxserial` is `NOT NULL` — read from `information_schema`
+rather than guessed at the second attempt. Fixed in the helper.
+
+**2. Two schema assertions written with collapsed regex escapes.**
+
+```
+      Expected pattern: /scientific[sS]*corrected/
+      Received string:  "CHECK (((((purpose)::text = 'scientific'::text) AND ..."
+
+      Expected pattern: /REFERENCES species(id)/
+      Received string:  "FOREIGN KEY (previous_species_id) REFERENCES species(id) ..."
+```
+
+Both patterns were written through a JS template literal, where `\s` and `\(` collapse to
+`s` and `(`. Rewritten as positional `indexOf` checks and `toContain`, which say what they
+mean and cannot rot the same way. **Worth noting as the same class of bug as the CRLF one
+this plan already warns about**: an escape that survives one layer and not the next.
+
+**3. `mosaic-query.test.js` — 48 failures from one insert.**
+
+```
+  Test Suites : 34 passed, 1 failed, 35 total
+  Tests       : 308 passed, 48 failed, 0 skipped, 356 total
+```
+
+Its `decide()` helper writes the projection directly and named `first_decided_at`, which
+this phase drops. Every test in the file depends on that helper, so one dead column took
+the suite down. **This is a test that broke rather than one whose rule changed**, and it
+was not predicted by the plan above — the plan's *Tests that change* table listed only the
+two review suites. Fixed by removing the column from the insert; the suite is about the
+read path and does not care which decision is current, only that one is.
+
+### The rebuild, and the three-way structural comparison
+
+`marp db destroy` then `marp db up`, then `db:migrate:undo` four times and `db:migrate`
+forward again:
+
+```
+before (superseded chain) : {"columns":"eec58d8446c3144c","constraints":"88c7551f5420797b","indexes":"f34b1c358f2dc6e1","triggers":"aaf9df9373d23854"}
+after  (folded, rebuilt)  : {"columns":"eec58d8446c3144c","constraints":"88c7551f5420797b","indexes":"f34b1c358f2dc6e1","triggers":"aaf9df9373d23854"}
+round-trip (down then up) : {"columns":"eec58d8446c3144c","constraints":"88c7551f5420797b","indexes":"f34b1c358f2dc6e1","triggers":"aaf9df9373d23854"}
+
+folded === superseded  : true
+round-trip === folded  : true
+sizes all equal        : true
+sizes                  : {"columns":472,"constraints":235,"indexes":85,"triggers":1,"tables":37}
+```
+
+**The first equality is the one that matters**: the folded `120100` and `120200` produce a
+schema identical to the one the superseding chain produced, so the fold changed how the
+files read and nothing about what they do. The second proves the edited `down` migrations
+are correct against the edited `up`.
+
+`db:migrate:status` reports 24 up and 0 down.
+
+### What the rebuild cost, and what came back
+
+| | Before | After | |
+| --- | --- | --- | --- |
+| `species` | 854 | 854 | Reproduced in full by `20260901120200-import-species-lists`, which reads `seed-data/species/lists/*.csv`. Confirmed **before** destroying anything: `readSpeciesLists()` returns 854 records, 6 empty rows skipped, 2 duplicate keys merged. |
+| `permissions` | 23 | 23 | Seeded by migration. |
+| `users` | 16 | 1 | The 15 lost were test fixtures left behind by earlier runs; 1 is the bootstrap administrator. |
+| `observations` | 1 | 0 | Test detritus. |
+| `keyframes` | 8 | 0 | Test detritus. |
+| `sessions` | 1 | 0 | Test detritus. |
+| `SequelizeMeta` | 26 | 24 | The two phantom rows for the deleted migrations are gone, so this database and a fresh one now name exactly the same 24 files. |
+
+### Migration round-trip, verbatim
+
+```
+== 20260909120400-add-missing-foreign-key-indexes: reverting =======
+== 20260909120400-add-missing-foreign-key-indexes: reverted (0.009s)
+== 20260909120300-add-dataset-observations-observation-fk: reverting =======
+== 20260909120300-add-dataset-observations-observation-fk: reverted (0.006s)
+== 20260909120200-create-observation-review-current: reverting =======
+== 20260909120200-create-observation-review-current: reverted (0.007s)
+== 20260909120100-create-observation-reviews: reverting =======
+== 20260909120100-create-observation-reviews: reverted (0.008s)
+
+== 20260909120100-create-observation-reviews: migrating =======
+== 20260909120100-create-observation-reviews: migrated (0.012s)
+== 20260909120200-create-observation-review-current: migrating =======
+== 20260909120200-create-observation-review-current: migrated (0.007s)
+== 20260909120300-add-dataset-observations-observation-fk: migrating =======
+== 20260909120300-add-dataset-observations-observation-fk: migrated (0.021s)
+== 20260909120400-add-missing-foreign-key-indexes: migrating =======
+== 20260909120400-add-missing-foreign-key-indexes: migrated (0.006s)
+```
+
+### The generated contract
+
+`npm run docs:build` emits pre-existing JSDoc parse errors from
+`frontend/apps/marp-mosaic-review/src/model/schedule.js` (a `@param` documenting a
+destructured shape). They are on `develop`, unrelated to this phase, and not fixed here.
+
+The contract itself carries the route and both schemas:
+
+```
+path present: /v2/mosaic/observations/species
+MosaicCorrectionRequest: true
+MosaicCorrectionResult: true
+conflicted reason enum: ["version"]
+```
+
+The last line is the last-wins unwind reaching the published surface: `claimed` is gone as
+a conflict reason, because nothing can be refused for being second any more.
+
+### Not run
+
+`tests/jellyfin.test.js` runs as part of the suite above and passes; nothing in this phase
+touches Jellyfin. No browser tier exists for this work and none was invented.
