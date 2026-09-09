@@ -163,7 +163,7 @@ data means. They are consultative by instruction and by #99: the recommendation 
 trade are given, the answer is the human's, and nothing is built on any of them until they
 are answered.
 
-- [ ] **A1 · API contract · blocking** — Offset, cursor (keyset), or a hybrid?
+- [x] **A1 · API contract · blocking** — Offset, cursor (keyset), or a hybrid?
   **Recommend offset**, addressed by page number and served by one materialising page-set
   query (see *The query contract*). **Argued on design merit with both the index set and
   the schema treated as things we will change** — see *Why offset, with a free hand at the
@@ -186,7 +186,7 @@ are answered.
   implementations of one ordering that must agree exactly, where a disagreement is not a
   performance bug but a correctness one, because #68 makes page membership query-derived
   and `state.pageMembers` pins whatever the ordering produced.
-- [ ] **A2 · API contract · blocking** — How is a set of pages requested, including the
+- [x] **A2 · API contract · blocking** — How is a set of pages requested, including the
   discontiguous case? **Recommend `POST /api/v2/mosaic/observations/pages`** carrying an
   explicit `pages: [1,2,3,47,48,9779,9780]` array, capped server-side, with the response
   echoing which pages it carries. POST rather than GET because the question carries ten
@@ -196,7 +196,7 @@ are answered.
   caching and idempotent-by-method semantics, neither of which this client uses — it has
   its own cache and its own sequencing. A GET with the question in the query string would
   be cacheable and would break the first time a reviewer committed twenty pages.
-- [ ] **A3 · API contract · blocking** — Where does the count come from, and what does a
+- [x] **A3 · API contract · blocking** — Where does the count come from, and what does a
   count over an arbitrary filter combination cost on 440,102 rows? **Recommend it comes
   from the same scan as the rows**, as `count(*) OVER ()` inside the materialising CTE,
   returned only when the client asks (`includeTotal: true`) — which it does once per
@@ -209,7 +209,7 @@ are answered.
   a number that is already free). **The trade:** the client must then remember the count
   across prefetches rather than re-reading it from every response, and a count that arrives
   with the rows cannot be shown before them.
-- [ ] **A4 · behavioural · blocking** — Is `excludeIds` in the cache key? **Recommend no.**
+- [x] **A4 · behavioural · blocking** — Is `excludeIds` in the cache key? **Recommend no.**
   `store.refresh()` sends `excludeIds: page.pinnedIds(state.pageMembers)` on every query,
   and that set grows on every commit. In the key, every commit invalidates the entire
   cache — the reviewer waiting after every commit, which is precisely what #99 forbids
@@ -224,7 +224,7 @@ are answered.
 - [ ] **A6 · architectural · non-blocking** — Depth comes from a scale factor inside
   `data.js`, not from a larger fixture file. Reasoning under *How the fixture gets deep
   enough*. Recorded rather than blocking because it is invisible above the seam.
-- [ ] **A7 · scientific or data-meaning · blocking** — **What do `observations."taxReview"`
+- [x] **A7 · scientific or data-meaning · blocking** — **What do `observations."taxReview"`
   (`varchar(255)`) and `observations.sizereview` (`integer`) mean, and does either already
   record a review decision?** Nothing in the schema, the migrations or the repository
   settles it, and it is not answerable by inspection — which is exactly the case AGENTS.md
@@ -242,8 +242,76 @@ are answered.
   whoever owns the decision rather than one to infer. Not blocking here because the mosaic
   simulates the dimension in the fixture and nothing in this task depends on the answer.
 
+## Answered, 2026-09-08
+
+The human answered all five blocking assumptions. G1 is closed and implementation may
+start. A1, A2 and A3 were delegated to the calling agent to confirm rather than
+rubber-stamp; A4 was delegated outright; A7 was answered from domain knowledge that is
+not in the schema and could not have been inferred from it.
+
+- **A1 — offset, as recommended.** Confirmed on the ground the spec argues: the
+  page-number requirements are already in shipped code — the pager's typable `<input>`
+  (`ui/chrome.js`), the permanent first/last chips (`pageWindow` in `model/page.js`), and
+  `page=N` in the shareable address (#79). A cursor cannot express any of them, so keyset
+  would be additive complexity beside a path that has to exist anyway rather than a
+  replacement for it. The escape hatch — persist the numbering — is preferred over a
+  hybrid for the reason the spec gives: one ordering, not two that must agree exactly.
+  **Risk to carry, not a blocker:** the materialising form costs O(matching rows) on the
+  first request per question, so a broad filter pays for a full pass before the cache can
+  hide anything. That is what *What to measure when the data lands* exists to check, and
+  the ~400 ms threshold is the number that reopens this.
+- **A2 — `POST` with an explicit `pages[]` array, as recommended.** Settled by one fact
+  rather than by preference: `excludeIds` reaches thousands of observation ids after a
+  session of committing, which does not fit a URL under any common proxy limit. GET is
+  not a stylistic alternative here, it is broken. The 12-page / 600-row cap stands, and
+  so does returning `rows: []` for a page past the end — the scheduler asks for the tail
+  before it knows the count.
+- **A3 — the count comes from the same pass as the rows, as recommended.** With one
+  coupling named, because it is easy to lose: the count is free *because* the
+  materialising pass already walks the matching set. A1 and A3 are one decision seen
+  twice. **The contract must not assume the count's source is permanent** — if the
+  snapshot table is ever built, the count comes from there instead, and `includeTotal`
+  should read as "tell me the total", never as "run `count(*) OVER ()`".
+- **A4 — `excludeIds` stays out of the cache key, as recommended.** Delegated to
+  judgement, and the reasoning is the one the spec gives: in the key, the set grows on
+  every commit, so every commit changes the identity of every cached page and discards
+  the whole cache. That is the reviewer waiting after every commit, which is the defect
+  #99 exists to prevent and which was reported by hand on 2026-09-08. Duplicate
+  suppression therefore happens at serve time (R12).
+  **The visible consequence, stated so it is not discovered as a bug:** a page cached
+  before a commit can render one tile short of `pageSize`. That is correct — those rows
+  are on the page they were committed on, which is the same promise `state.pageMembers`
+  already makes — but it is visible, and if it reads wrong in use it is a design change
+  rather than a defect fix.
+- **A7 — `taxReview` and `sizereview` are former review flags, and they stay vestigial.**
+  Answered from domain knowledge: they are the old flags for "the species needs checking"
+  and "the size needs checking". The decision is to **stop writing them and use the new
+  review records instead**, leaving the existing values untouched for historical data.
+  So the review table #68 settled on **is purely additive**, as recommended, and *What the
+  schema has to become* stands unchanged. No migration transforms them; nothing new reads
+  or writes them.
+  **A follow-on question this raises, deliberately not answered here — see A9.**
+
+## Deferred out of this task
+
+- [ ] **A9 · scientific or data-meaning · non-blocking, and not #99's to settle** — Now
+  that A7 has established `taxReview` and `sizereview` are former review flags, should the
+  mosaic **display** that historical intent? An observation whose species was already
+  flagged for checking years ago is precisely what a reviewer would want to see, and #85
+  settled the general principle that every mode shows every workflow's tags. Leaving the
+  columns vestigial is a decision about *writing* them; whether anything *reads* them is a
+  separate question and belongs to the phase that builds the review surface. Recorded here
+  so the answer to A7 does not quietly lose it; carry it to #68 rather than resolving it in
+  this task. **Nothing in #99 depends on it.**
+
 ## Decisions
 
+- **2026-09-08** — A1, A2, A3, A4 and A7 answered by the human; see *Answered*. G1 is
+  closed. A7's answer keeps the review table additive, which is what every schema
+  recommendation here assumed.
+- **2026-09-08** — The count's *source* is not part of the contract, only its
+  availability. `includeTotal` means "tell me the total"; how the server derives it may
+  change without the client changing.
 - **2026-09-08** — The basis for A1–A4 is a reading of the schema, the client code and the
   query shape, with no measurement, because the database has not been loaded. This is the
   agreed basis rather than a fallback.
