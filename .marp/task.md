@@ -664,9 +664,7 @@ this repository gets wrong.
    rebuild SQL as a comment and a `-- rebuild:` block the test reads. **In a transaction.**
    Separate from (2) so that a different answer to D1 replaces one file rather than editing
    two features into one.
-4. **`…-create-observation-deletions.js`** — the provenance table and its indexes. **In a
-   transaction.**
-5. **`…-add-dataset-observations-observation-fk.js`** — counts orphans first and aborts with
+4. **`…-add-dataset-observations-observation-fk.js`** — counts orphans first and aborts with
    the count if any (R16); then `ADD CONSTRAINT … NOT VALID` followed by a separate
    `VALIDATE CONSTRAINT`, because the two-step takes only `SHARE UPDATE EXCLUSIVE` for the
    long half instead of holding `SHARE ROW EXCLUSIVE` on both tables for the whole
@@ -674,7 +672,7 @@ this repository gets wrong.
    `['dataset_observations', 'observations', 'datasets']` — this is the one migration where
    the guard has something real to protect, because it is the one that touches an existing
    table's constraints. `down` drops the constraint.
-6. **`…-add-missing-foreign-key-indexes.js`** — `keyframes (observation_id)`,
+5. **`…-add-missing-foreign-key-indexes.js`** — `keyframes (observation_id)`,
    `observations (session_id)`, `observations (project_id)`, each
    `CREATE INDEX CONCURRENTLY IF NOT EXISTS`. **No transaction, and that is the whole point
    of it being its own file.** `CREATE INDEX CONCURRENTLY` cannot run inside a transaction
@@ -740,9 +738,10 @@ G4. A suite that skips because no copy is available **fails**; it does not pass 
 
 ## What a later phase inherits, and what it still has to decide
 
-**Inherits:** the review log and its history; one addressable name for current review state;
+**Inherits:** nothing that records a deletion — a permanent delete leaves no trace by
+design, see the decisions log; the review log and its history; one addressable name for current review state;
 `observations.version` incremented on every write path including the annotation GUI's;
-`ml_model_id`; deletion provenance that survives a delete; the three missing foreign-key
+`ml_model_id`; the three missing foreign-key
 indexes; and a worked example of a non-transactional `CONCURRENTLY` migration in a repository
 whose every other migration opens a transaction.
 
