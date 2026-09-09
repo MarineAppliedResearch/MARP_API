@@ -10,11 +10,11 @@
  * writer that appends to the log without maintaining this is data loss, not
  * staleness. The definition of "current" -- the latest decision per observation
  * and purpose, ignoring anything a correction has superseded -- and the SQL that
- * rebuilds this table from the log live in the **newest** migration carrying a
- * `-- rebuild:` block, currently
- * `migrations/20260909120600-redefine-observation-review-current-last-write-wins.js`.
- * `tests/observation-review-current.test.js` finds that file rather than naming
- * one, and asserts this table equals its derivation.
+ * rebuilds this table from the log live in
+ * `migrations/20260909120200-create-observation-review-current.js`, in one place
+ * deliberately. `tests/observation-review-current.test.js` finds that file by
+ * its `-- rebuild:` block rather than naming a path, and asserts this table
+ * equals the derivation in it.
  *
  * `decision` is never "withdrawn": a withdrawal deletes the row, because
  * undecided is the absence of a row and the mosaic's default filter is exactly

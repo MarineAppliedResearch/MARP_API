@@ -89,8 +89,7 @@ function q(sql, replacements = {}) {
  * The derivation, read off disk once, from whichever migration currently defines
  * it.
  *
- * **Found rather than named.** #111 supersedes #103's definition with a second
- * migration instead of editing an applied one, so a hard-coded path would go on
+ * **Found rather than named**, so that a later redefinition cannot leave this
  * asserting the projection matches a rule nothing runs. See
  * `tests/setup/current-derivation.js`, which also normalises line endings.
  *

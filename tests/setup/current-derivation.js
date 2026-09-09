@@ -1,15 +1,19 @@
 /**
  * Finds the migration that currently defines "current", and reads its SQL.
  *
- * **Why this is found rather than named.** Until #111 there was exactly one
- * `-- rebuild:` block, in `20260909120200-create-observation-review-current.js`,
- * and both suites hard-coded that path. #111 supersedes that definition with a
- * second migration rather than editing an applied one, so the invariant is no
- * longer "the definition exists once" but **"exactly one definition is current,
- * and it is the newest"**. A hard-coded path would go on passing against the
- * superseded block, asserting the projection matches a rule nothing uses --
- * which is precisely the drift the projection-equals-derivation test exists to
- * catch. This is also the shape that survives the next redefinition.
+ * **Why this is found rather than named.** Both suites used to hard-code
+ * `20260909120200-create-observation-review-current.js`. The definition is not
+ * guaranteed to stay in that file: the honest way to redefine "current" once a
+ * migration has reached a database that matters is a *superseding* migration,
+ * which leaves two `-- rebuild:` blocks with only the newer in force. A
+ * hard-coded path would then go on passing against the superseded block --
+ * asserting the projection matches a rule nothing runs, which is precisely the
+ * drift the projection-equals-derivation test exists to catch.
+ *
+ * So the invariant this encodes is **"exactly one definition is in force, and it
+ * is the newest"**. #111 happened to be able to edit `120200` in place, because
+ * both tables held zero rows on every database and nothing had run against
+ * production — but the test should not depend on that having been true.
  *
  * Migration filenames are timestamp-ordered, so newest is last by name.
  *

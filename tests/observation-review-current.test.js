@@ -10,11 +10,9 @@
  * So this suite does two separable things:
  *
  * 1. **It finds the migration that currently defines "current"** and confirms
- *    the block in that file is the one the module exports and runs. #111
- *    supersedes #103's definition with a second migration rather than editing an
- *    applied one, so the invariant is now *exactly one definition is current and
- *    it is the newest* -- see `tests/setup/current-derivation.js` for why the
- *    path is found rather than named.
+ *    the block in that file is the one the module exports and runs. The path is
+ *    found rather than named so that a later redefinition cannot leave this
+ *    asserting against a stale block -- see `tests/setup/current-derivation.js`.
  * 2. **It maintains the projection the way Phase 5 does** -- an unconditional
  *    upsert, because the last commit wins -- and after every decision asserts
  *    the projection equals the derivation.
@@ -67,14 +65,17 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
             expect(currentMigration.REBUILD_CURRENT_SQL).toContain(currentDerivationBlock);
         });
 
-        it('is the newest of the migrations that define it, and there is more than one', () => {
+        it('is the newest of the migrations that define it, whichever that is', () => {
             const defining = migrationsDefiningCurrent();
 
-            // #111 supersedes #103's definition rather than editing an applied
-            // migration, so two files carry a block and only the last is in
-            // force. A suite that hard-coded the older path would assert the
-            // projection matches a rule nothing runs.
-            expect(defining.length).toBeGreaterThan(1);
+            // One today: #111 folded its redefinition into `120200` rather than
+            // superseding it, which it could do because both tables held zero
+            // rows everywhere and nothing had run against production. The
+            // assertion is deliberately not "exactly one" -- the next
+            // redefinition may not be so lucky, and a superseding migration
+            // would leave two blocks with only the newer in force. What must
+            // hold either way is that the suite reads the newest.
+            expect(defining.length).toBeGreaterThanOrEqual(1);
             expect(defining[defining.length - 1]).toBe(CURRENT_MIGRATION_PATH);
         });
 

@@ -135,12 +135,16 @@ async function decide(observationId, purpose, decision, reason = null) {
         { observationId, purpose, decision, reason }
     );
 
+    // No `first_decided_at`: it went with first-valid-review-wins in #111,
+    // where it existed only to be preserved across a claiming reviewer's
+    // revision. This suite is about the read path and does not care which
+    // decision is current, only that one is.
     await db.sequelize.query(
         `INSERT INTO observation_review_current
              (review_id, observation_id, purpose, decision, reason,
-              reviewer_id, first_decided_at, decided_at, observation_version)
+              reviewer_id, decided_at, observation_version)
          SELECT review_id, observation_id, purpose, decision, reason,
-                reviewer_id, decided_at, decided_at, observation_version
+                reviewer_id, decided_at, observation_version
            FROM observation_reviews
           WHERE review_id = :reviewId`,
         { replacements: { reviewId: review.review_id } }
