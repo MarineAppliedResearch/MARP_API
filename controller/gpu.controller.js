@@ -39,11 +39,13 @@ class GpuController {
      *
      * @async
      * @param {Object} body - Poll request body.
+     * @param {Function} [isAbandoned] - Answers true once the polling worker's
+     * connection has gone, so a wait nobody is listening to takes no lease.
      * @returns {Promise<Object|null>} The lease, or null when there is no work.
      */
-    async pollForWork(body) {
+    async pollForWork(body, isAbandoned) {
         logger.info('Controller: pollForWork');
-        return gpuService.pollForWork(body);
+        return gpuService.pollForWork(body, isAbandoned);
     }
 
     /**

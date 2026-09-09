@@ -190,12 +190,23 @@ class GpuService {
      * machine that vanished into work somebody else can pick up, and it happens
      * here because a poll is the moment it matters.
      *
+     * `isAbandoned` is what stops a poll whose worker has gone away from taking
+     * a job with it. Found on the first live round trip: a worker was stopped
+     * mid-long-poll, the socket closed, and the handler went on waiting -- then
+     * claimed the next job submitted and opened an attempt for a machine that
+     * no longer existed. The job sat leased, unheartbeated, for a full lease
+     * period and burnt one of its attempts, and with `max_attempts` of three,
+     * three dropped connections would expire a job no machine had ever touched.
+     *
      * @async
      * @param {Object} body - `{worker_id, capabilities, slot_indexes, wait_seconds}`.
+     * @param {Function} [isAbandoned] - Answers true once the caller's
+     * connection has gone. Checked before every claim, so a poll nobody is
+     * listening to stops rather than leasing work into the void.
      * @returns {Promise<Object|null>} The lease, or null when there is no work.
      * @throws {ApiError} 400 for a bad request, 404 for an unknown worker.
      */
-    async pollForWork(body) {
+    async pollForWork(body, isAbandoned) {
         const workerId = requiredInteger(body.worker_id, 'worker_id');
         const waitSeconds = Math.min(
             Math.max(optionalInteger(body.wait_seconds, 'wait_seconds', 0), 0),
@@ -232,6 +243,13 @@ class GpuService {
         const deadline = Date.now() + (waitSeconds * 1000);
 
         for (;;) {
+            // Checked before the claim, not after: claiming is what opens an
+            // attempt, and an attempt opened for a machine that has gone is
+            // worse than no attempt at all.
+            if (isAbandoned && isAbandoned()) {
+                return null;
+            }
+
             const { lease, slotsFull } = await gpuRepository.claimNextJob({
                 workerId,
                 slotIndex,

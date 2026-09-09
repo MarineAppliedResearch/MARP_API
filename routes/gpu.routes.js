@@ -252,7 +252,25 @@ function registerGpuRoutes(app) {
             500: { $ref: '#/components/responses/InternalServerError' },
         },
         handler: asyncHandler(async (req, res) => {
-            const lease = await gpuController.pollForWork(req.body || {});
+            // Whether the worker is still there to receive an answer.
+            //
+            // A long poll can outlive its client -- a worker stopped or a
+            // connection dropped mid-wait -- and the handler goes on waiting
+            // regardless. Without this it then claims the next job submitted
+            // and opens an attempt for a machine that is gone, which sits
+            // leased until the lease expires and has burnt one of the job's
+            // attempts. Seen for real on the first end-to-end run.
+            let abandoned = false;
+
+            res.on('close', () => {
+                // `writableFinished` distinguishes a response that was sent
+                // from a socket the client walked away from.
+                if (!res.writableFinished) {
+                    abandoned = true;
+                }
+            });
+
+            const lease = await gpuController.pollForWork(req.body || {}, () => abandoned);
 
             // 204 rather than 200 with a null body: a long-poll that timed out
             // is a normal answer, and a worker should not have to parse one.
