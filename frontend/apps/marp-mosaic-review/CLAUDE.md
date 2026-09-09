@@ -591,6 +591,37 @@ fix or at the bug.
 `act` receives `settled()`, which waits for the grid to stop moving; use it after
 anything that re-queries. `store` is a plain object that carries values between scenes.
 
+### Pace it, or the viewer misses the thing you are proving
+
+Reported 2026-09-09, on the first cut of `verify-prefetch`: *"you kinda flip through it a
+little too quickly."*
+
+**The runner starts `act` the moment the line begins speaking**, so an unpaced scene does
+all its work in the first half second and then sits still for the remaining ten. The
+viewer hears *"watch the tiles"* about something that finished before the sentence got to
+the verb. Every claim was asserted and the video still failed at its job, which is showing
+a person that the thing works.
+
+So a scene is three beats, and the narration and the actions have to move together:
+
+- **A lead** before the action, so the words reach the point first. `beat(page, LEAD)`.
+- **One action.** If a scene does two things — page forward *and* back, commit *and*
+  return — either put a real pause between them or, better, **split it into two scenes**.
+  `verify-prefetch` went from seven scenes to nine that way, and the two extra are the
+  clearest in it.
+- **A dwell** afterwards, holding the result on screen. `beat(page, DWELL)`.
+
+Say it as you would to somebody at your shoulder: *"I am going to page forward … there.
+New tiles, straight away."* The ellipsis is where the action goes.
+
+The same applies to anything that opens: **a panel, a menu or a dialog needs to be held
+open long enough to be read**, not opened and dismissed inside one clause. It is the only
+chance the viewer gets — they cannot pause and ask.
+
+Length is not the cost it looks like. The repaced run is 158 seconds against 107, and the
+silent dry run went 19 seconds to 45. Both are cheap, and a demo nobody can follow is
+worth nothing however fast it is.
+
 ### How the timing works
 
 Each line is **spoken and measured before the run**, and the scene is then held for
@@ -622,11 +653,19 @@ Pick a voice with `NARRATE_VOICE`, e.g. `NARRATE_VOICE=en-US-AriaNeural`.
 
 ## Known gaps
 
-- **Adjacent-page prefetching is the last Phase 1 item.** Page N+1 is not fetched while
-  the reviewer works, so every page change waits on a query. Fixture-side; it does not need
-  the API. See #68.
 **Not a list of what is unbuilt** — #68 is that, and a second copy here drifts. What
 follows is what the code itself cannot tell you.
+
+- **The reviewer no longer waits, and the cache is why** (#99, 2026-09-09). A page change
+  was 148 ms and a skeleton grid; it is 2 ms and no loading state at all. Two consequences
+  are deliberate and will otherwise be found as defects. **A cache hit does not refresh
+  the total or the status counts**, consistent with the pinned branch, so *"Showing 45 of
+  2,656 matching"* does not shrink while paging over held pages — the next genuine fetch
+  corrects it, and `commitPage` refreshes the counts itself. And **a species correction
+  retires every cached page** while a commit retires none: a correction moves the row out
+  from under the species filter, so a cached page would go on showing it, and dropping only
+  the visible page would leave it on the next one — a duplicate tile is worse than one
+  wait. `.marp/verification.md` on that branch carries the numbers.
 
 - **The question persists; the work in progress does not.** The mode, the filters, the
   sort and the page live in the URL and survive a reload — and the address is a link, so
