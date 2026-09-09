@@ -189,4 +189,165 @@ why none was run.
 
 ## Results
 
-<!-- Appended after the run. Real output, including failures, verbatim. -->
+**Run 2026-09-09, `npm test`**, against the development PostgreSQL. `npm test`, not `npx
+jest`: the suite shares one database and `package.json` passes `--runInBand` for that
+reason.
+
+```
+  Test Suites : 34 passed, 0 failed, 34 total
+  Tests       : 317 passed, 0 failed, 0 skipped, 317 total
+  Duration    : 23.6s
+
+  Result: ALL TESTS PASSED
+```
+
+The suite was **33 suites and 269 tests** before this phase, measured on this branch by
+running with `tests/mosaic-query.test.js` excluded. So the count changed only by addition:
+one suite, 48 tests.
+
+### The 48 new tests, verbatim
+
+```
+the routes > are served under /api/v2/ and nowhere else ......... PASS
+the routes > require observations:read rather than a new perm…... PASS
+the envelope (R1) > returns an entry for every page asked for…... PASS
+the envelope (R1) > carries total and pageCount only when inc…... PASS
+the envelope (R1) > carries total for a page set entirely pas…... PASS
+the envelope (R1) > takes the count from an aggregate and nev…... PASS
+deterministic ordering (R2) > puts tied rows in the same orde…... PASS
+deterministic ordering (R2) > appends observation_id even whe…... PASS
+deterministic ordering (R2) > appends it exactly once, and re…... PASS
+deterministic ordering (R2) > puts null confidence last on th…... PASS
+one pass over the matching set (R3, R4) > returns for [1,3,5]…... PASS
+one pass over the matching set (R3, R4) > numbers a deep page…... PASS
+one pass over the matching set (R3, R4) > asks for one band p…... PASS
+the cap (R5) > rejects 13 pages with 400 ........................ PASS
+the cap (R5) > rejects more than 600 rows with 400 .............. PASS
+the cap (R5) > rejects a page number that is not one ............ PASS
+the cap (R5) > returns an empty page rather than an error pas…... PASS
+the status filter (R6, R7, R8) > selects exactly the right id…... PASS
+the status filter (R6, R7, R8) > filters both dimensions inde…... PASS
+the status filter (R6, R7, R8) > treats an empty status array…... PASS
+the status filter (R6, R7, R8) > rejects a status value outsi…... PASS
+the status filter (R6, R7, R8) > is a semi-join or an anti-jo…... PASS
+the status filter (R6, R7, R8) > reads the projection and nev…... PASS
+the status filter (R6, R7, R8) > emits no WHERE term for an a…... PASS
+the keyframe aggregate (R9) > stays out of the matching set f…... PASS
+the keyframe aggregate (R9) > moves into the matching set for…... PASS
+the keyframe aggregate (R9) > serves the real count and first…... PASS
+the keyframe aggregate (R9) > sorts by track length when aske…... PASS
+no duplicate rows (R14) > returns one row for an observation …... PASS
+the counts (R10, R11) > returns all six counts and a total in…... PASS
+the counts (R10, R11) > applies the non-status filters and ig…... PASS
+the counts (R10, R11) > needs no sort and no row numbering ...... PASS
+the counts (R10, R11) > counts a total over a larger set than…... PASS
+the outer joins (A5) > returns an observation with a null ses…... PASS
+the outer joins (A5) > returns an observation with a null pro…... PASS
+the outer joins (A5) > excludes it only when the reviewer fil…... PASS
+the outer joins (A5) > reaches projects through observations.…... PASS
+the species filter (A4) > matches species_id and not comname .... PASS
+the species filter (A4) > refuses a species name where an id …... PASS
+the date and time-of-day dimensions (A3) > rejects an active …... PASS
+the date and time-of-day dimensions (A3) > does not reject a …... PASS
+the date and time-of-day dimensions (A3) > serves time of day…... PASS
+the date and time-of-day dimensions (A3) > refuses a time of …... PASS
+the excluded set > suppresses ids the caller already holds pi…... PASS
+the excluded set > reads it from filters.excludeIds too, wher…... PASS
+the row shape (R13) > is exactly the agreed key set ............. PASS
+the row shape (R13) > carries no processor_name, lineId or sc…... PASS
+the row shape (R13) > serves the review state as the projecti…... PASS
+```
+
+`tests/jellyfin.test.js` ran and passed here — its 17 tests are excluded in CI by name
+because a runner cannot reach the media server. Nothing in this phase touches Jellyfin;
+they are reported because they ran.
+
+## The three failures on the way, and what each was
+
+Recorded because a verification that only shows the green run is not evidence.
+
+**1. `the counts › applies the non-status filters and ignores the status ones` — my
+arithmetic, not the endpoint's.**
+
+```
+      Error: expect(received).toBe(expected) // Object.is equality
+
+      Expected: 3
+      Received: 2
+          at Object.toBe (tests\mosaic-query.test.js:788:41)
+```
+
+The five review-state rows were seeded with `confidence: 0.1 * (i + 1)`, which produces
+`0.30000000000000004`, and the assertion then asked for `>= 0.35` while expecting three
+rows. Two things were wrong and only one of them was the number: the fixture was generating
+a float it did not mean to. Fixed by seeding `[0.1, 0.2, 0.3, 0.4, 0.5]` literally and
+asking for `>= 0.25`. **The endpoint was right both times.**
+
+**2. The suite reported `48 passed, 0 failed` and `1 suite failed` — an `afterAll` that
+could not run.**
+
+```
+  ● Test suite failed to run
+
+    > 306 |  await db.sequelize.query('DELETE FROM keyframes WHERE observation_id = ANY(:ids)', …
+      at Query.run (node_modules/sequelize/src/dialects/postgres/query.js:76:25)
+```
+
+A Sequelize **named replacement** expands an array to a list literal — `(1,2,3)` — so
+`ANY(:ids)` becomes `ANY((1,2,3))`, which is not an array and is a syntax error. `= ANY($1)`
+with a *bind* parameter, which is what the endpoint itself uses, does take an array; the two
+are not interchangeable and the difference is silent until it is not. Changed to `IN (:ids)`
+in the four cleanup statements.
+
+**Worth naming because it is the interesting part:** for two runs the cleanup did not
+happen, and the fixtures accumulated — 90 observations, 25 sessions, 5 projects, 5 models
+and 10 users left behind. Every assertion still passed, because **every question this suite
+asks is scoped to its own seeded rows**. Had the suite asked one unscoped question about a
+count, it would have gone green on the first run and failed on the second for reasons
+nothing in the test named. The leftovers were removed by hand and the database is back to
+its one observation; the re-run cleans up after itself, verified by counting afterwards.
+
+**3. `docs:build` printed four parse errors, and none of them is this phase's.**
+
+```
+ERROR: Unable to parse a tag's type expression for source file
+  frontend/apps/marp-mosaic-review/src/model/schedule.js in line 167 with tag title "param"
+  … Invalid type expression "page, ids, lastUsed"
+```
+
+Two `@param`/`@returns` tags in the mosaic app's `src/model/schedule.js` write a destructured
+shape where jsdoc expects a type. `--lenient` is why the build completes. Pre-existing, in
+the client app, and **left alone** — see the report's findings.
+
+## `docs:build`
+
+Run, and both halves committed.
+
+- **`docs/openapi.generated.json`: 485 insertions, 0 deletions.** Checked against the trap
+  that caught an earlier agent — this file regenerates with LF where CRLF is committed, so a
+  whole-file line-ending rewrite can look like a real diff. It is not one here: a rewrite
+  would show equal insertions and deletions, and this shows none. The added content is the
+  two operations `/v2/mosaic/observations/pages` and `/v2/mosaic/observations/counts`, both
+  carrying `observations:read`, plus the four schemas `MosaicQueryFilters`, `MosaicRow`,
+  `MosaicPageSet` and `MosaicStatusCounts`.
+- **`docs/developer/`: 470 files.** The jsdoc half rewrites the module sidebar on every
+  existing page, so two new modules change three lines in each of 406 pages, alongside 64
+  genuinely new files. It is tracked in this repository, so leaving it stale would be its
+  own small lie.
+
+**Both landed in one commit rather than two, and that is a deviation worth stating.** The
+right shape is the contract in its own commit and the jsdoc churn in another, so a reviewer
+has one legible commit and one they can skip. That instruction arrived after the combined
+commit had already been pushed, and splitting it now would mean rewriting published history
+and force-pushing — which `AGENTS.md` puts behind "never without the human present". Left as
+one commit deliberately rather than quietly.
+
+## What is still owed
+
+Everything under *The timing check, still owed*. Not one measurement was taken, and none is
+claimed. The database holds **1 observation**; a benchmark against it would report every one
+of those eight as passing.
+
+The two recommended sort indexes are not added either, because this phase adds no migration.
+They are owed with the measurement that justifies each.
+

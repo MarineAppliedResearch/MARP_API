@@ -759,12 +759,17 @@ observation in it.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** G1. Eight blocking assumptions open; nothing implemented. `POST` was settled
-  by the human on 2026-09-09 and is recorded under *What is settled* rather than as an
-  assumption. A1 and A2 carry measurements of the query machinery at production
-  cardinality over synthetic rows; A3 to A7 came out of the live schema and are the ones
-  #105 did not anticipate.
+- **Gate:** verify
+- **Notes:** G4. All eight blocking assumptions answered and implemented; `.marp/verification.md`
+  carries the plan and the real results. Two routes, the query behind them, 48 tests, and the
+  regenerated contract. **No migration was added**, per the human's answer to A2 — which means
+  the two sort indexes under *Indexes this phase needs* are still owed, alongside the whole of
+  *The timing check, deferred*. Nothing in this phase is a performance claim: the database holds
+  one observation.
+- **Earlier, for the record:** G1 closed on 2026-09-09. `POST` was settled by the human and is
+  recorded under *What is settled* rather than as an assumption. A1 and A2 carry measurements of
+  the query machinery at production cardinality over synthetic rows; A3 to A7 came out of the
+  live schema and are the ones #105 did not anticipate.
 
 ## Findings left alone
 
