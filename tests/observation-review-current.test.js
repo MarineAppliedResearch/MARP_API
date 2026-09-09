@@ -1,114 +1,105 @@
 /**
  * Tests that `observation_review_current` equals its derivation from the log.
  *
- * D1 and R6 of #103. The projection is a derived value, which `AGENTS.md` makes
- * part of the data contract rather than a cache: once it exists, a writer that
- * stops maintaining it is losing data, not serving something stale. The
- * protection against that is this test plus one committed definition of
- * "current" -- the `-- rebuild:` block in
- * `migrations/20260909120200-create-observation-review-current.js`.
+ * D1 and R6 of #103, carried forward to #111's R11. The projection is a derived
+ * value, which `AGENTS.md` makes part of the data contract rather than a cache:
+ * once it exists, a writer that stops maintaining it is losing data, not serving
+ * something stale. The protection against that is this test plus one committed
+ * definition of "current".
  *
  * So this suite does two separable things:
  *
- * 1. **It reads the definition out of the committed migration file** and
- *    confirms the block in the file is the one the module exports and runs. A
- *    second copy of the rule is the defect class #99 records as the most common
- *    in this application, and this is what makes a second copy fail rather than
- *    drift.
- * 2. **It maintains the projection the way Phase 5 will** -- the
- *    `ON CONFLICT (observation_id, purpose) DO UPDATE ... WHERE reviewer_id`
- *    upsert that makes first-valid-wins a constraint rather than a convention --
- *    and after every decision asserts the projection equals the derivation.
+ * 1. **It finds the migration that currently defines "current"** and confirms
+ *    the block in that file is the one the module exports and runs. #111
+ *    supersedes #103's definition with a second migration rather than editing an
+ *    applied one, so the invariant is now *exactly one definition is current and
+ *    it is the newest* -- see `tests/setup/current-derivation.js` for why the
+ *    path is found rather than named.
+ * 2. **It maintains the projection the way Phase 5 does** -- an unconditional
+ *    upsert, because the last commit wins -- and after every decision asserts
+ *    the projection equals the derivation.
+ *
+ * **The rule these assert changed in #111**, and the tests changed with it
+ * rather than because they broke: the human settled that the last commit wins
+ * (*"if they want to update they can just refresh their page and requery"*),
+ * which overrules the first-valid-review-wins that #103 and #106 built. There is
+ * no claiming reviewer and no `first_decided_at`.
  *
  * Everything runs inside a transaction that is always rolled back.
  *
- * @fileoverview Tests for the observation_review_current projection (#103 D1, R6).
+ * @fileoverview Tests for the observation_review_current projection (#103 D1/R6, #111 R11).
  * @author Isaac Travers
  * @module tests/observation-review-current
  */
 
-const fs = require('fs');
-const path = require('path');
-
 const db = require('../model');
 
-const MIGRATION_PATH = path.join(
-    __dirname, '..', 'migrations', '20260909120200-create-observation-review-current.js'
-);
-
-const migration = require(MIGRATION_PATH);
+const {
+    CURRENT_MIGRATION_PATH,
+    currentDerivationBlock,
+    currentMigration,
+    extractRebuildBlock,
+    migrationsDefiningCurrent,
+} = require('./setup/current-derivation');
 
 const { QueryTypes } = db.Sequelize;
 
-/**
- * Pulls the `-- rebuild:` block out of the committed migration file.
- *
- * Read from the file rather than from the module so that the assertion is about
- * what is committed, not about what happens to be in memory.
- *
- * Anchored to the start of a line, which is not fussiness: the file's own
- * documentation mentions both markers inline, and an unanchored pattern matched
- * that sentence instead of the SQL.
- *
- * @param {string} source - The migration file's text.
- * @returns {string} Everything between the markers, inclusive.
- */
-function extractRebuildBlock(source) {
-    const match = source.match(/^-- rebuild:begin\r?\n[\s\S]*?^-- rebuild:end$/m);
-    return match ? match[0] : '';
-}
+/** Distinguishes this run's fixtures from anything already in the database. */
+const runId = Date.now();
 
-describe('observation_review_current (#103 D1, R6)', () => {
-
-    /**
-     * The migration's own source, with line endings normalised.
-     *
-     * Normalising is deliberate and not cosmetic. **ECMAScript normalises CRLF to LF
-     * inside a template literal**, so `CURRENT_DERIVATION_SQL` always holds LF however
-     * the file is stored — while the same file read off disk holds whatever git checked
-     * out, which on Windows with `core.autocrlf` is CRLF. The two could then never match.
-     *
-     * This failed on `develop` the moment the merges caused a fresh checkout, having
-     * passed on the branch it was written on, and it passes in CI regardless because CI
-     * is Linux and checks out LF. A comparison of SQL should be about the SQL.
-     *
-     * @type {string}
-     */
-    const migrationSource = fs
-        .readFileSync(MIGRATION_PATH, 'utf8')
-        .split('\r\n')
-        .join('\n');
-
-    /** @type {string} */
-    const fileBlock = extractRebuildBlock(migrationSource);
+describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
 
     describe('the definition of "current" exists once', () => {
 
-        it('ships a -- rebuild: block in the committed migration', () => {
-            expect(fileBlock).toContain('-- rebuild:begin');
-            expect(fileBlock).toContain('-- rebuild:end');
-            // The two halves of the rule, so a block that has been reduced to a
-            // plain "latest row" query fails here.
-            expect(fileBlock).toContain('DISTINCT ON');
-            expect(fileBlock).toContain("decision <> 'withdrawn'");
+        it('ships a -- rebuild: block in the migration that currently defines it', () => {
+            expect(currentDerivationBlock).toContain('-- rebuild:begin');
+            expect(currentDerivationBlock).toContain('-- rebuild:end');
+            // The three halves of the rule, so a block reduced to a plain
+            // "latest row" query fails here rather than drifting.
+            expect(currentDerivationBlock).toContain('DISTINCT ON');
+            expect(currentDerivationBlock).toContain("decision <> 'withdrawn'");
+            expect(currentDerivationBlock).toContain("decision <> 'corrected'");
         });
 
-        it('is the same block the migration exports and runs', () => {
-            expect(extractRebuildBlock(migration.CURRENT_DERIVATION_SQL)).toBe(fileBlock);
-            expect(migration.REBUILD_CURRENT_SQL).toContain(fileBlock);
+        it('is the same block that migration exports and runs', () => {
+            expect(extractRebuildBlock(currentMigration.CURRENT_DERIVATION_SQL))
+                .toBe(currentDerivationBlock);
+            expect(currentMigration.REBUILD_CURRENT_SQL).toContain(currentDerivationBlock);
+        });
+
+        it('is the newest of the migrations that define it, and there is more than one', () => {
+            const defining = migrationsDefiningCurrent();
+
+            // #111 supersedes #103's definition rather than editing an applied
+            // migration, so two files carry a block and only the last is in
+            // force. A suite that hard-coded the older path would assert the
+            // projection matches a rule nothing runs.
+            expect(defining.length).toBeGreaterThan(1);
+            expect(defining[defining.length - 1]).toBe(CURRENT_MIGRATION_PATH);
+        });
+
+        it('no longer derives a first_decided_at, because there is no claimer', () => {
+            expect(currentDerivationBlock).not.toContain('first_decided_at');
+            expect(currentDerivationBlock).not.toContain('claimer');
         });
     });
 
     describe('the projection equals the derivation', () => {
 
         /**
-         * How Phase 5 will record a decision: append to the log, then upsert the
-         * projection under the constraint that only the claiming reviewer may
-         * change it.
+         * How Phase 5 records a decision: append to the log, then upsert the
+         * projection unconditionally.
+         *
+         * **Unconditional is the rule** (#111 A6). Where this once carried
+         * `WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id`
+         * to enforce first-valid-wins, the last commit now wins and
+         * `reviewer_id` is in the `SET` list because it moves with the decision.
          *
          * A withdrawal deletes the projection row instead, because undecided is
          * the absence of a row -- and the projection's CHECK refuses
-         * `withdrawn`, so this is enforced rather than remembered.
+         * `withdrawn`, so this is enforced rather than remembered. It is no
+         * longer scoped to the withdrawing reviewer: a withdrawal by anyone
+         * clears the current decision.
          *
          * @async
          * @param {Object} decision - The decision to record.
@@ -149,40 +140,82 @@ describe('observation_review_current (#103 D1, R6)', () => {
             );
 
             if (decision.decision === 'withdrawn') {
-                // Only the claiming reviewer's withdrawal releases the record.
                 await db.sequelize.query(
                     `DELETE FROM observation_review_current
                       WHERE observation_id = :observationId
-                        AND purpose        = :purpose
-                        AND reviewer_id    = :reviewerId`,
-                    {
-                        replacements: { observationId, purpose, reviewerId },
-                        transaction,
-                    }
+                        AND purpose        = :purpose`,
+                    { replacements: { observationId, purpose }, transaction }
                 );
                 return review.review_id;
             }
 
-            // First valid review wins. The WHERE on DO UPDATE is the rule: a
-            // second reviewer's decision finds the row taken and changes
-            // nothing, while the claiming reviewer may revise their own.
-            // reviewer_id and first_decided_at are deliberately never updated.
             await db.sequelize.query(
                 `INSERT INTO observation_review_current
                      (review_id, observation_id, purpose, decision, reason,
-                      reviewer_id, first_decided_at, decided_at, observation_version)
+                      reviewer_id, decided_at, observation_version)
                  SELECT review_id, observation_id, purpose, decision, reason,
-                        reviewer_id, decided_at, decided_at, observation_version
+                        reviewer_id, decided_at, observation_version
                    FROM observation_reviews
                   WHERE review_id = :reviewId
                  ON CONFLICT (observation_id, purpose) DO UPDATE
                     SET review_id           = EXCLUDED.review_id,
                         decision            = EXCLUDED.decision,
                         reason              = EXCLUDED.reason,
+                        reviewer_id         = EXCLUDED.reviewer_id,
                         decided_at          = EXCLUDED.decided_at,
-                        observation_version = EXCLUDED.observation_version
-                  WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id`,
+                        observation_version = EXCLUDED.observation_version`,
                 { replacements: { reviewId: review.review_id }, transaction }
+            );
+
+            return review.review_id;
+        }
+
+        /**
+         * How the correction endpoint records one: a scientific-purpose log row
+         * that never projects, plus the removal of **both** purposes' rows.
+         *
+         * Both, regardless of reviewer, because a relabel invalidates both --
+         * the human, 2026-09-09: *"yes if someone relabels something it needs to
+         * be reapproved."* A promoted training sample carrying the wrong label
+         * teaches the model the wrong thing.
+         *
+         * @async
+         * @param {Object} correction - The correction.
+         * @param {number} correction.observationId - Observation being corrected.
+         * @param {number} correction.reviewerId - Who corrected it.
+         * @param {string} correction.decidedAt - Timestamp, as SQL text.
+         * @param {number|null} correction.previousSpeciesId - Species before.
+         * @param {number} correction.correctedSpeciesId - Species after.
+         * @param {Object} transaction - Transaction to write within.
+         * @returns {Promise<string>} The new review_id.
+         */
+        async function recordCorrection(correction, transaction) {
+            const {
+                observationId, reviewerId, decidedAt, previousSpeciesId, correctedSpeciesId,
+            } = correction;
+
+            const [review] = await db.sequelize.query(
+                `INSERT INTO observation_reviews
+                     (observation_id, purpose, decision, reason, reviewer_id,
+                      observation_version, previous_species_id, corrected_species_id,
+                      decided_at, created_at, updated_at)
+                 VALUES (:observationId, 'scientific', 'corrected', NULL, :reviewerId,
+                      (SELECT version FROM observations WHERE observation_id = :observationId),
+                      :previousSpeciesId, :correctedSpeciesId,
+                      :decidedAt, NOW(), NOW())
+                 RETURNING review_id`,
+                {
+                    type: QueryTypes.SELECT,
+                    replacements: {
+                        observationId, reviewerId, decidedAt, previousSpeciesId, correctedSpeciesId,
+                    },
+                    transaction,
+                }
+            );
+
+            await db.sequelize.query(
+                'DELETE FROM observation_review_current WHERE observation_id = :observationId',
+                { replacements: { observationId }, transaction }
             );
 
             return review.review_id;
@@ -213,7 +246,7 @@ describe('observation_review_current (#103 D1, R6)', () => {
          */
         async function bothSides(transaction) {
             const columns = `review_id, observation_id, purpose, decision, reason,
-                             reviewer_id, first_decided_at, decided_at, observation_version`;
+                             reviewer_id, decided_at, observation_version`;
 
             const projection = await db.sequelize.query(
                 `SELECT ${columns} FROM observation_review_current
@@ -226,7 +259,7 @@ describe('observation_review_current (#103 D1, R6)', () => {
             // after the block matters: its last line is a SQL comment, and
             // without one the closing paren is commented out.
             const derivation = await db.sequelize.query(
-                `SELECT * FROM (${fileBlock}\n) derived ORDER BY observation_id, purpose`,
+                `SELECT * FROM (${currentDerivationBlock}\n) derived ORDER BY observation_id, purpose`,
                 { type: QueryTypes.SELECT, transaction }
             );
 
@@ -238,6 +271,9 @@ describe('observation_review_current (#103 D1, R6)', () => {
 
         /**
          * Seeds one observation to decide about.
+         *
+         * Written with SQL because the model declares the key without
+         * `autoIncrement` and Sequelize sends an explicit null (#62).
          *
          * @async
          * @param {Object} transaction - Transaction to seed within.
@@ -254,21 +290,71 @@ describe('observation_review_current (#103 D1, R6)', () => {
         }
 
         /**
-         * Two reviewers, taken from whoever exists.
+         * Two reviewers, **seeded rather than borrowed**.
+         *
+         * This used to read `SELECT user_id FROM users ORDER BY user_id LIMIT 2`
+         * and assert the second was defined. That is the Phase 3 failure class
+         * exactly: **CI builds the baseline plus migrations and holds no rows**,
+         * so a suite that borrows whatever happens to exist passes here and
+         * fails there. Seeded inside the suite's transaction, so the rollback
+         * removes them.
          *
          * @async
-         * @param {Object} transaction - Transaction to read within.
+         * @param {Object} transaction - Transaction to seed within.
          * @returns {Promise<Array<number>>} Two user ids.
          */
         async function twoReviewers(transaction) {
             const users = await db.sequelize.query(
-                'SELECT user_id FROM users ORDER BY user_id LIMIT 2',
-                { type: QueryTypes.SELECT, transaction }
+                `INSERT INTO users (name, username, status, "createdAt", "updatedAt")
+                 SELECT :name || g, :username || g, 'active', NOW(), NOW()
+                   FROM generate_series(1, 2) AS g
+                 RETURNING user_id`,
+                {
+                    type: QueryTypes.SELECT,
+                    replacements: {
+                        name: `Jest Projection Reviewer ${runId}-`,
+                        username: `jest-projection-${runId}-`,
+                    },
+                    transaction,
+                }
             );
+
             return users.map((u) => u.user_id);
         }
 
-        it('agrees with the derivation through a claim, a losing claim, a revision and a withdrawal', async () => {
+        /**
+         * Two species to correct between, seeded for the same reason.
+         *
+         * The 854 rows on a development machine are import data; CI has none.
+         *
+         * @async
+         * @param {Object} transaction - Transaction to seed within.
+         * @returns {Promise<Array<number>>} Two species ids.
+         */
+        async function twoSpecies(transaction) {
+            // `taxserial` is NOT NULL and the timestamps are snake_case here,
+            // unlike `observations` and `users`. Read from information_schema
+            // rather than assumed -- the first attempt assumed the camelCase
+            // pair and failed.
+            const species = await db.sequelize.query(
+                `INSERT INTO species (taxserial, comname, species, created_at, updated_at)
+                 SELECT 990000000 + g, :comname || g, :scientific || g, NOW(), NOW()
+                   FROM generate_series(1, 2) AS g
+                 RETURNING id`,
+                {
+                    type: QueryTypes.SELECT,
+                    replacements: {
+                        comname: `Jest Projection Fish ${runId}-`,
+                        scientific: `Jestus projectionus ${runId}-`,
+                    },
+                    transaction,
+                }
+            );
+
+            return species.map((s) => s.id);
+        }
+
+        it('agrees with the derivation through a decision, a superseding decision, a revision and a withdrawal', async () => {
             const transaction = await db.sequelize.transaction();
 
             try {
@@ -281,7 +367,7 @@ describe('observation_review_current (#103 D1, R6)', () => {
                 expect(sides.projection).toEqual([]);
                 expect(sides.derivation).toEqual([]);
 
-                // Reviewer A claims the scientific review.
+                // Reviewer A decides the scientific review.
                 await recordDecision({
                     observationId,
                     purpose: 'scientific',
@@ -296,28 +382,25 @@ describe('observation_review_current (#103 D1, R6)', () => {
                 expect(sides.projection[0].reviewer_id).toBe(reviewerA);
                 expect(sides.projection[0].decision).toBe('reviewed');
 
-                // Reviewer B decides the same thing later. The log keeps it --
-                // the full per-reviewer history is retained -- but the record
-                // still belongs to A, and neither the reviewer nor the
-                // timestamp moves.
+                // Reviewer B decides the same thing later. **The last commit
+                // wins**, so the record moves to B -- where under first-valid-
+                // wins it would have stayed with A. The log keeps both.
                 await recordDecision({
                     observationId,
                     purpose: 'scientific',
                     decision: 'flagged',
-                    reason: 'Wrong Species',
+                    reason: 'Wrong species',
                     reviewerId: reviewerB,
                     decidedAt: '2026-09-09 11:00:00+00',
                 }, transaction);
 
                 sides = await bothSides(transaction);
                 expect(sides.projection).toEqual(sides.derivation);
-                expect(sides.projection[0].reviewer_id).toBe(reviewerA);
-                expect(sides.projection[0].decision).toBe('reviewed');
-                expect(sides.projection[0].first_decided_at)
-                    .toBe(new Date('2026-09-09 10:00:00+00').toISOString());
+                expect(sides.projection[0].reviewer_id).toBe(reviewerB);
+                expect(sides.projection[0].decision).toBe('flagged');
 
                 // The training purpose is a separate decision in the same
-                // table, and B is free to claim it.
+                // table, and is unaffected by anything above.
                 await recordDecision({
                     observationId,
                     purpose: 'training',
@@ -330,13 +413,12 @@ describe('observation_review_current (#103 D1, R6)', () => {
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toHaveLength(2);
 
-                // A revises their own decision from a committed page. The
-                // decision moves, first_decided_at does not.
+                // A decides again, later still, and takes the record back.
                 await recordDecision({
                     observationId,
                     purpose: 'scientific',
                     decision: 'flagged',
-                    reason: 'Bounding Box Problem',
+                    reason: 'Bounding box',
                     reviewerId: reviewerA,
                     decidedAt: '2026-09-09 12:00:00+00',
                 }, transaction);
@@ -345,10 +427,8 @@ describe('observation_review_current (#103 D1, R6)', () => {
                 expect(sides.projection).toEqual(sides.derivation);
                 const scientific = sides.projection.find((r) => r.purpose === 'scientific');
                 expect(scientific.decision).toBe('flagged');
-                expect(scientific.reason).toBe('Bounding Box Problem');
+                expect(scientific.reason).toBe('Bounding box');
                 expect(scientific.reviewer_id).toBe(reviewerA);
-                expect(scientific.first_decided_at)
-                    .toBe(new Date('2026-09-09 10:00:00+00').toISOString());
                 expect(scientific.decided_at)
                     .toBe(new Date('2026-09-09 12:00:00+00').toISOString());
 
@@ -385,12 +465,127 @@ describe('observation_review_current (#103 D1, R6)', () => {
             }
         });
 
+        it('agrees with the derivation across an invalidation in the middle of the log (R11)', async () => {
+            const transaction = await db.sequelize.transaction();
+
+            try {
+                const observationId = await seedObservation(transaction);
+                const [reviewerA, reviewerB] = await twoReviewers(transaction);
+                const [speciesOne, speciesTwo] = await twoSpecies(transaction);
+
+                // Reviewer A approves both purposes. Two live decisions, by one
+                // person, which is the state a correction has to demolish.
+                await recordDecision({
+                    observationId,
+                    purpose: 'scientific',
+                    decision: 'reviewed',
+                    reviewerId: reviewerA,
+                    decidedAt: '2026-09-09 10:00:00+00',
+                }, transaction);
+                await recordDecision({
+                    observationId,
+                    purpose: 'training',
+                    decision: 'promoted',
+                    reviewerId: reviewerA,
+                    decidedAt: '2026-09-09 10:01:00+00',
+                }, transaction);
+
+                let sides = await bothSides(transaction);
+                expect(sides.projection).toEqual(sides.derivation);
+                expect(sides.projection).toHaveLength(2);
+
+                // Reviewer B corrects the species. **Both purposes clear.**
+                await recordCorrection({
+                    observationId,
+                    reviewerId: reviewerB,
+                    decidedAt: '2026-09-09 11:00:00+00',
+                    previousSpeciesId: speciesOne,
+                    correctedSpeciesId: speciesTwo,
+                }, transaction);
+
+                sides = await bothSides(transaction);
+                expect(sides.projection).toEqual(sides.derivation);
+                expect(sides.projection).toEqual([]);
+
+                // And the audit history survives: three rows, the correction
+                // among them, carrying what it changed and what it changed from.
+                const afterCorrection = await db.sequelize.query(
+                    `SELECT decision, previous_species_id, corrected_species_id
+                       FROM observation_reviews
+                      WHERE observation_id = :observationId
+                      ORDER BY review_id`,
+                    { type: QueryTypes.SELECT, replacements: { observationId }, transaction }
+                );
+                expect(afterCorrection.map((r) => r.decision))
+                    .toEqual(['reviewed', 'promoted', 'corrected']);
+                expect(afterCorrection[2].previous_species_id).toBe(speciesOne);
+                expect(afterCorrection[2].corrected_species_id).toBe(speciesTwo);
+
+                // A **different** reviewer decides afterwards. Under
+                // first-valid-wins this was the impossible case: A was the
+                // earliest claimant for ever and nobody else could take the
+                // record. Now it simply lands.
+                await recordDecision({
+                    observationId,
+                    purpose: 'scientific',
+                    decision: 'reviewed',
+                    reviewerId: reviewerB,
+                    decidedAt: '2026-09-09 12:00:00+00',
+                }, transaction);
+
+                sides = await bothSides(transaction);
+                expect(sides.projection).toEqual(sides.derivation);
+                expect(sides.projection).toHaveLength(1);
+                expect(sides.projection[0].reviewer_id).toBe(reviewerB);
+                expect(sides.projection[0].decision).toBe('reviewed');
+
+                // The pre-correction decisions stay invalidated: the boundary is
+                // a review_id, so nothing before it can come back, and the
+                // training purpose is still undecided even though no training
+                // row followed the correction.
+                expect(sides.projection.find((r) => r.purpose === 'training')).toBeUndefined();
+
+                // A second correction, so the chain is more than one link. The
+                // scientific decision B just made is invalidated in its turn.
+                await recordCorrection({
+                    observationId,
+                    reviewerId: reviewerA,
+                    decidedAt: '2026-09-09 13:00:00+00',
+                    previousSpeciesId: speciesTwo,
+                    correctedSpeciesId: speciesOne,
+                }, transaction);
+
+                sides = await bothSides(transaction);
+                expect(sides.projection).toEqual(sides.derivation);
+                expect(sides.projection).toEqual([]);
+
+                // Five rows, three reviewers' worth of decisions in sequence,
+                // and the correction chain reconstructs from the two columns --
+                // which a single previous_species_id could not do.
+                const history = await db.sequelize.query(
+                    `SELECT decision, previous_species_id, corrected_species_id
+                       FROM observation_reviews
+                      WHERE observation_id = :observationId
+                      ORDER BY review_id`,
+                    { type: QueryTypes.SELECT, replacements: { observationId }, transaction }
+                );
+                expect(history).toHaveLength(5);
+
+                const corrections = history.filter((r) => r.decision === 'corrected');
+                expect(corrections.map((r) => [r.previous_species_id, r.corrected_species_id]))
+                    .toEqual([[speciesOne, speciesTwo], [speciesTwo, speciesOne]]);
+            } finally {
+                await transaction.rollback();
+            }
+        });
+
         it('is reproduced exactly by the committed rebuild SQL', async () => {
             const transaction = await db.sequelize.transaction();
 
             try {
                 const observationId = await seedObservation(transaction);
                 const [reviewerA, reviewerB] = await twoReviewers(transaction);
+                const [speciesOne, speciesTwo] = await twoSpecies(transaction);
 
                 await recordDecision({
                     observationId,
@@ -398,6 +593,13 @@ describe('observation_review_current (#103 D1, R6)', () => {
                     decision: 'reviewed',
                     reviewerId: reviewerA,
                     decidedAt: '2026-09-09 10:00:00+00',
+                }, transaction);
+                await recordCorrection({
+                    observationId,
+                    reviewerId: reviewerA,
+                    decidedAt: '2026-09-09 10:30:00+00',
+                    previousSpeciesId: speciesOne,
+                    correctedSpeciesId: speciesTwo,
                 }, transaction);
                 await recordDecision({
                     observationId,
@@ -410,7 +612,7 @@ describe('observation_review_current (#103 D1, R6)', () => {
                     observationId,
                     purpose: 'training',
                     decision: 'excluded',
-                    reason: 'False Detection',
+                    reason: 'Too small',
                     reviewerId: reviewerA,
                     decidedAt: '2026-09-09 11:30:00+00',
                 }, transaction);
@@ -419,8 +621,12 @@ describe('observation_review_current (#103 D1, R6)', () => {
 
                 // The recovery path. Throwing the projection away and rebuilding
                 // it from the log must land on exactly the same rows -- that is
-                // what makes it recoverable rather than authoritative.
-                await db.sequelize.query(migration.REBUILD_CURRENT_SQL, { transaction });
+                // what makes it recoverable rather than authoritative. With a
+                // correction in the log, this is also what proves the rebuild
+                // does not try to project one: the projection's CHECK does not
+                // name `corrected`, so it would fail outright rather than
+                // quietly.
+                await db.sequelize.query(currentMigration.REBUILD_CURRENT_SQL, { transaction });
 
                 const after = (await bothSides(transaction)).projection;
                 expect(after).toEqual(before);
@@ -452,6 +658,39 @@ describe('observation_review_current (#103 D1, R6)', () => {
                 await expect(
                     db.sequelize.query(
                         `UPDATE observation_review_current SET decision = 'withdrawn'
+                          WHERE review_id = :reviewId`,
+                        { replacements: { reviewId }, transaction }
+                    )
+                ).rejects.toThrow(/observation_review_current_purpose_decision_check/);
+            } finally {
+                await transaction.rollback();
+            }
+        });
+
+        it('refuses a corrected decision in the projection', async () => {
+            const transaction = await db.sequelize.transaction();
+
+            try {
+                const observationId = await seedObservation(transaction);
+                const [reviewerA] = await twoReviewers(transaction);
+
+                const reviewId = await recordDecision({
+                    observationId,
+                    purpose: 'scientific',
+                    decision: 'reviewed',
+                    reviewerId: reviewerA,
+                    decidedAt: '2026-09-09 10:00:00+00',
+                }, transaction);
+
+                // D1: a correction is the vocabulary's second non-projectable
+                // state, and the projection's CHECK enforces it **without being
+                // changed at all** -- any value it does not name cannot be
+                // inserted. So a derivation that stopped excluding corrections
+                // would fail loudly on the next rebuild rather than quietly
+                // painting a corrected tile as reviewed.
+                await expect(
+                    db.sequelize.query(
+                        `UPDATE observation_review_current SET decision = 'corrected'
                           WHERE review_id = :reviewId`,
                         { replacements: { reviewId }, transaction }
                     )
