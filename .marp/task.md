@@ -233,7 +233,7 @@ endpoint's shape, its permissions, or the schema joins them as blocking."* A1 an
 the two #105 named; A3 to A7 are what the live schema turned up; A9 is the sibling of a
 decision the human has just made.
 
-- [ ] **A1 · performance · blocking** — **Where does the count come from?** #99 chose
+- [x] **A1 · performance · blocking** — **Where does the count come from?** #99 chose
   `count(*) OVER ()` inside the materialising CTE, on the reasoning that the pass happens
   anyway so the count is free. **The reasoning is right and the implementation is wrong.**
   **Recommend: take the count from a `count(*)` over the same materialised matching set,
@@ -263,7 +263,7 @@ decision the human has just made.
   absolute numbers move with `work_mem` — at 64 MB the same three were 297 ms and 272 ms,
   with the gap narrowing from 31% to 9% — so the *ordering* of the three is the durable
   result and the magnitudes are not.
-- [ ] **A2 · database/schema · blocking** — **`keyframe_count`: aggregate, or a maintained
+- [x] **A2 · database/schema · blocking** — **`keyframe_count`: aggregate, or a maintained
   denormalised value?** The question splits in two and they have different answers.
   **For display it needs nothing.** The `LEFT JOIN LATERAL` sits in the *outer* query, so
   it runs once per row actually returned — at most 600 per request under the cap — and
@@ -297,7 +297,7 @@ decision the human has just made.
   list for this phase** and add the table when somebody actually sorts by it. That is a
   visible product change — a control disappears from the rail — which is why it is the
   human's call and not mine.
-- [ ] **A3 · API contract · blocking** — **Does this phase serve the `date` and
+- [x] **A3 · API contract · blocking** — **Does this phase serve the `date` and
   `timeOfDay` dimensions, and how?** There is no date column on `observations`: #99
   proposed `observed_at`, #103 deliberately left it alone. Both dimensions resolve to
   `observations.tc`, a `varchar(255)` that holds **two different formats** —
@@ -325,7 +325,7 @@ decision the human has just made.
   own gate rather than riding along inside a query phase. But this removes two of the ten
   rail dimensions from the first real endpoint, which is a product decision and squarely
   the human's.
-- [ ] **A4 · scientific or data-meaning · blocking** — **Does the species filter match
+- [x] **A4 · scientific or data-meaning · blocking** — **Does the species filter match
   `comname` or `species_id`?** They disagree, and the disagreement is large. The client
   declares `{ key: 'species', field: 'comname', source: 'observations.comname' }`
   (`model/dimensions.js`) and `DEFAULT_FILTERS.species` is `['Bat Star']` — a name.
@@ -340,7 +340,7 @@ decision the human has just made.
   should appear is a question about what the record means, and AGENTS.md says to ask it
   rather than infer it. #99 filed the name-versus-id difference as "Phase 8's rename";
   it is not only a rename, and that is why it is here.
-- [ ] **A5 · database/schema · blocking** — **Which join reaches `projects`, and are the
+- [x] **A5 · database/schema · blocking** — **Which join reaches `projects`, and are the
   joins inner or outer?** `observations.session_id` and `observations.project_id` are both
   nullable, and the one row on this database has `project_id = null` with `session_id =
   1`, so the two paths demonstrably disagree even here. `dimensions.js` says the project
@@ -358,7 +358,7 @@ decision the human has just made.
   builder and not a second query. **What is genuinely unknown and needs the human:** how
   many production observations have a null `session_id` or `project_id`. If it is zero the
   question is academic; nothing here can tell.
-- [ ] **A6 · API contract · blocking** — **Does the row carry the four fields nothing
+- [x] **A6 · API contract · blocking** — **Does the row carry the four fields nothing
   renders?** #68's Phase 4 says *"exactly the row shape the tile renders and nothing
   more."* Checked against `src/ui/tile.js`, the tile reads `observation_id`, `comname`,
   `confidence`, `dive`, `line`, `tc`, `keyframe_count`, `thumbnail_status`, `thumb`,
@@ -375,7 +375,7 @@ decision the human has just made.
   the scientific name, or both"* is one of its open questions — so returning it is
   speculative either way. At 600 rows per request the payload is a real consideration, not
   a tidiness one.
-- [ ] **A7 · security/permissions · blocking** — **Which existing permission key gates
+- [x] **A7 · security/permissions · blocking** — **Which existing permission key gates
   these two routes?** `requirePermission` takes exactly one key and #68 forbids seeding
   new ones. `observations:read` is the obvious answer and the one I would pick — but the
   catalog's own descriptions make it not quite clean: the mosaic row joins `sessions`
@@ -395,7 +395,7 @@ decision the human has just made.
   inside its own transaction** rather than relying on the server default, so one endpoint's
   appetite is not a global change. Non-blocking because it is a number to tune against real
   data, not a change of shape — but it belongs in the deferred checklist and it is there.
-- [ ] **A9 · API contract · blocking** — **Is the counts endpoint `GET` or `POST`?** The
+- [x] **A9 · API contract · blocking** — **Is the counts endpoint `GET` or `POST`?** The
   human settled the page-set call as `POST` on the exclusion-set argument, and **that
   argument does not apply here**: `data.js` `counts()` takes the non-status filters only
   and no exclusion set, so its question does fit a URL. #68 says `GET
@@ -407,6 +407,94 @@ decision the human has just made.
   semantically a read, and #68 asked for `GET`. This is the same #68-versus-later
   disagreement as the verb question, and the same rule applies — but the human's decision
   was about the *page-set* endpoint, so I am not extending it to this one by inference.
+
+## Answered, 2026-09-09
+
+- **A1 — take the count from `(SELECT count(*) FROM matched)`, never `count(*) OVER ()`.**
+  Not put to the human: it is a measurement, not a judgement. `count(*) OVER ()` has an
+  empty window frame, so its `WindowAgg` buffers the entire matching set into a second
+  tuplestore and spills — 348 ms and 14,613 kB to disk, against 293 ms and no extra
+  buffering for the identical number as an ordinary aggregate over the same materialised
+  CTE. #99's *reasoning* stands and is confirmed: the count is nearly free because the set
+  is materialised once. Its *implementation* does not.
+  Carried forward as a caveat rather than a settled magnitude: at `work_mem` 64 MB the gap
+  narrows from 31% to 9%, so **the ordering of the three forms is the durable result and
+  the absolute numbers are not.** The deferred checklist repeats it against real data.
+- **A2 — keep the "Track length" sort, serve it with the aggregate, and build no
+  maintained table.** Settled by the human: *"i think it's okay if it takes 614 ms to sort
+  440000 rows of keyframes by length."*
+  So neither option as offered. **No `observation_keyframe_stats`, no trigger on
+  `keyframes`, no backfill, and no new derived value joining the data contract** — this
+  phase adds no migration at all. The cost is accepted with open eyes: sorting by track
+  length computes a hash aggregate over the matching set, measured at 614 ms for 440,103
+  groups from 3,520,816 rows, on top of ~270 ms for the sort. That is past #99's ~400 ms
+  guidance and well inside #68's two-second failure line, **and it is one sort option of
+  four** — the other three are unaffected.
+  Two things make it more defensible than the raw number suggests, and both should be
+  said rather than assumed: **#99's prefetcher means a reviewer pays it once per question,
+  not once per page change** — the page set arrives in one request and paging within it is
+  a cache hit; and the display of `keyframe_count` still costs nothing, because the
+  `LEFT JOIN LATERAL` sits in the outer query and runs at most 600 times per request
+  against an index that already exists.
+  **The trap that made a column on `observations` the wrong answer is recorded even though
+  it is now moot**, because somebody will propose it again: #103's
+  `observations_bump_version_trigger` is `BEFORE UPDATE … WHEN (old.* IS DISTINCT FROM
+  new.*)`, so writing a derived count onto `observations` would bump `version` on every
+  keyframe insert or delete — and drawing a bounding box would then make every reviewer
+  holding that page hit a version conflict at commit. If this decision is ever revisited,
+  it must be a separate table, never a column.
+- **A6 — drop `processor_name` and `lineId`; keep `first_framenum`; leave
+  `scientific_name` out for now.** Not put to the human beyond the part that was.
+  `src/ui/tile.js` renders none of the four. `processor_name` and `lineId` go because an
+  endpoint should not return what nothing draws, and `processor_name` in particular is the
+  category the permission catalog gates separately — see A7. `first_framenum` stays: it is
+  free from the same lateral that already produces `keyframe_count`, and Phase 6 needs it.
+  `scientific_name` is left out because whether the mosaic shows scientific names is still
+  an open question in #68, and adding a field later is additive while removing one is not.
+- **A7 — `observations:read` on both routes.** Follows A6 and needs no separate decision.
+  Only `observations:read` and `observations:write` exist for observations, Phase 2 settled
+  that no new permission keys are seeded, and the catalog's own note — that `reports:read`
+  is *"Separate from `observations:read` because it exposes who did how much work"* — is
+  satisfied precisely because A6 drops `processor_name`. **The two are one decision:** if
+  `processor_name` is ever put back into the row, this route stops being an
+  `observations:read` route.
+- **A9 — `POST` for the counts endpoint too.** One request shape for both routes rather
+  than two, and the filters a count is asked for are the same filters the page query
+  carries. The exclusion set is the reason the page endpoint had to be `POST` and a count
+  does not carry one — which is why the agent correctly declined to extend the decision by
+  inference — but consistency is worth more here than a `GET` that would be cacheable in
+  theory and never cached in practice, since the rail re-asks on every filter change.
+
+
+- **A3 — serve `timeOfDay`; defer `date` to #76.** The question split once the real columns
+  were read, and the split is the answer. `observations.tc` holds the **actual clock time**
+  — the one row here reads `21:57:22`, with `mediaPosition` `00:02:18.28` as the elapsed
+  media time beside it — so **time of day is servable today**, from a column that already
+  exists, with no parsing of a date that is not there. **Nothing anywhere holds the date an
+  observation was made:** not `observations`, and not `sessions`, whose only timestamps are
+  `createdAt`/`updatedAt` — when the *row* was written, which is not when the dive happened
+  and would be wrong to substitute. So the date filter is not "limited" pending #76, it is
+  unanswerable, and the endpoint rejecting it is more honest than a control that excludes
+  everything. Neither (a) nor (b) from the recommendation: no timecode grammar goes into
+  SQL, and no data migration rides inside a query phase.
+- **A4 — `species_id`.** The human settled it: *"every observation whose current species
+  record resolves to Bat Star."*
+  **And he corrected the reasoning, which was wrong in this spec and in the framing put to
+  him.** `comname` is not free text an annotator typed — **the annotator presses a species
+  button and the list entry's name is recorded.** So the drift between `comname` and
+  `species_id` is not data-entry noise; it is **lists renamed and renumbered underneath
+  records that were correct when they were made** (`migrations/20260901120500-add-observations-species-id.js`,
+  Refs #52, which measured it against production: roughly 50,000 disagreeing, about 4% not
+  resolving at all, 1,114 rows with no `taxserial`). That makes `species_id` right for a
+  better reason than being the indexed key: **it finds the organism**, where `comname` finds
+  rows whose label text matches a name that may since have moved.
+  `comname` is still never dropped — it is the only record of what the entry was called at
+  the time, and that is what makes the drift auditable.
+- **A5 — `LEFT JOIN` on both, reached via `observations.project_id`.** Not put to the human:
+  there is no judgement in it. Both `session_id` and `project_id` are nullable, the single
+  row on this database has `project_id = null`, and an inner join would drop it — and a
+  reviewer cannot tell a dropped row from a row that does not exist. Silent omission is the
+  failure mode this whole application is built to avoid.
 
 ## Decisions
 
