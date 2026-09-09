@@ -1,388 +1,192 @@
-# Verification — MarineAppliedResearch/MARP_API#103
+# Verification — MarineAppliedResearch/MARP_API#105
 
-Phase 3, review and training state in the schema. Written at G3, before the verification
-run, from the requirements in `.marp/task.md`.
+Phase 4, the mosaic query and its counts. Written at G3, before the verification run, from
+*Correctness verification, now* in `.marp/task.md`.
 
-**The tier is the decision that matters here, and for this phase it is nearly always the
-same one.** Every object this phase adds is a trigger, a `CHECK`, a referential action or
-an index, and *none of those is observable from a unit test*. A test on
-`model/observation.model.js` would pass while the version trigger did nothing, because
-`version` is deliberately not a model attribute; a test that reads `pg_constraint` proves
-what was declared, not what happens. So the tests live in the Jest suite that runs
-`--runInBand` against a real PostgreSQL, and the ones that matter most perform real writes
-and real deletes.
+#103's verification is not gone: it was renamed to
+`.marp/verification-103-review-state-schema.md` in the same commit as this file, for the
+same reason its spec was renamed — this file has to be what a reader and the harness find
+for the phase in flight, and #103's branch is unmerged so its evidence has to survive.
+Phase 3's spec flagged that whoever wrote Phase 4's verification would face the choice; this
+is that choice, made the same way.
 
-Two things this phase's verification does *not* get from the test suite, and neither is
-glossed: the production-copy migration path, which is **deferred by decision** and has its
-own section below, and any measurement. The database holds 1 observation, so nothing here
-is benchmarked and no number below is a performance claim.
+**The tier that matters here is the HTTP tier against a real PostgreSQL**, and for two
+reasons rather than one. The obvious one is that this phase is a SQL query and a route:
+nothing about a semi-join, an anti-join or a `row_number()` band is observable from a unit
+test. The less obvious one is that **every route requires a permission**, so a suite that
+calls the API through `request(app)` gets 401 and nothing else — these go through
+`tests/setup/authenticated-agent.js`, which leaves an authenticated agent holding every
+catalog permission on `global.api`.
+
+**Two requirements are deliberately verified against something other than rows**, because
+no row count on this database can see them:
+
+- **R9** — that `keyframe_count` is not computed over the whole matching set for a request
+  that does not sort by it. With one observation, the aggregate and the lateral return the
+  same answer at the same speed. So `buildPageSetQuery` is exported and the test asserts
+  against the **emitted SQL**: no keyframe aggregate inside the `matched` CTE for the three
+  sorts that do not name it, and one inside it for the sort that does.
+- **R13** — the row's key set. A payload that grows by a column nothing renders is not a
+  failure any assertion about *values* can catch, so the test snapshots the **exact key
+  set** and fails on an addition as loudly as on a removal.
+
+**Nothing here measures speed, and a green run does not mean this phase passes.** #68 is
+blunt: *"a correct endpoint that takes two seconds fails this phase."* The database holds
+**1 observation**. The timing checklist is carried forward as **owed**, in full, below.
 
 ## What each test proves
 
+All tests are in `tests/mosaic-query.test.js` unless named otherwise. Tier `http+db` means
+Supertest through the real Express app against the real development PostgreSQL; `sql` means
+an assertion against the statement the builder emits.
+
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `observation-review-schema` › *observation_reviews* › has every column / cascades / indexes | database | The decision is a row in `observation_reviews`, keyed by its own sequence, and `observations` gained no review column (see the *phase is additive* block) |
-| R1 | `observation-review-schema` › *the phase is additive* › adds no soft-delete marker and no review columns | database | No `review_status`, no `training_disposition`, no soft-delete marker |
-| R2 | `observation-review-schema` › *observation_reviews* › has every column the decision record needs | database | Exact column list: observation, reviewer, purpose, decision, reason, timestamp, `observation_version`, the keyframe fingerprint, and the representative keyframe |
-| R3 | `observation-review-schema` › *observation_reviews* › constrains the decision vocabulary per purpose | database | The compound `CHECK` carries both purposes and all five decisions, and no `undecided` |
-| R3 | `observation-review-current` › refuses a training decision recorded against the scientific purpose | database | The vocabulary is enforced, not documented: `promoted` under `scientific` is rejected by the constraint |
-| R3 | `observation-review-current` › agrees with the derivation … *withdrawal* step | database | Undecided is the absence of a row: after a withdrawal there is no projection row for that purpose |
-| R4 | `observation-review-current` › agrees with the derivation … final history assertion | database | Five decisions from two reviewers across two purposes are all still readable, in order, after the current state has moved three times |
-| R5 | `observation-review-schema` › *observation_review_current* › is keyed on the observation and the purpose; indexes the status filter | database | Current state is one primary-key lookup, and the status filter has an index with `observation_id` as its last column |
-| R6 | `observation-review-current` › *the definition of "current" exists once* (both tests) | unit + file | The `-- rebuild:` block in the committed migration is the block the module exports and runs — a second copy fails rather than drifts |
-| R6 | `observation-review-current` › agrees with the derivation through a claim, a losing claim, a revision and a withdrawal | database | The write path (Phase 5's `ON CONFLICT … WHERE reviewer_id`) and the read-side derivation agree after **every** decision, not just at the end |
-| R6 | `observation-review-current` › is reproduced exactly by the committed rebuild SQL | database | Throwing the projection away and rebuilding it from the log lands on the same rows |
-| R7 | `observation-version` › is incremented by a static update through the repository | database | `repository/observation.repository.js`'s static `Model.update` — the annotation GUI's own path — moves `version`. This is the assertion a unit test cannot make |
-| R7 | `observation-version` › starts at 1 on a newly inserted observation | database | `NOT NULL DEFAULT 1` |
-| R7 | `observation-review-schema` › is maintained by a BEFORE UPDATE row trigger | database | The trigger exists, is `BEFORE UPDATE … FOR EACH ROW`, and calls the function |
-| R8 | `observation-version` › overwrites a version supplied by the writer with `OLD.version + 1` | database | A writer cannot set the token forward to fake a conditional write or back to hide one |
-| R8 | `observation-version` › is not a Sequelize model attribute | unit | Nothing can assign it through the ORM, and a later "tidy-up" that adds it to the model fails here first |
-| R9 | `observation-review-schema` › *observations.ml_model_id* › is a nullable integer; references ml_models | database | Nullable `integer` with `ON DELETE SET NULL`, `ON UPDATE CASCADE` to `ml_models(id)` |
-| R10 | `observation-review-schema` › carries a comment saying what null means | database | The meaning of null is readable from the database itself by an outside consumer of `mare_v1`, not only from this repository |
-| R11–R14 | — | — | **Withdrawn.** There is no deletion provenance table. `observation-review-schema` › creates no deletion provenance table asserts the absence |
-| R15 | `observation-review-schema` › *dataset_observations* › has a validated foreign key to observations that cascades | database | The constraint exists, references `observations(observation_id)`, and `convalidated` is true — a `NOT VALID` left behind would mean existing rows are unenforced |
-| R16 | Migration output, recorded in *Results* | migration | The orphan count is reported before the constraint is added; a non-zero count aborts with the number in the message |
-| R17 | `observation-review-schema` › indexes the history for one observation and the work of one reviewer; indexes the status filter | database | Both new tables carry exactly the indexes named in the spec and nothing else |
-| R18 | `observation-review-schema` › *the three missing foreign-key indexes* › each exists and is valid | database | All three exist, are on the right table and column, and `indisvalid` is true |
-| R19 | Migration runs, recorded in *Results* | migration | `db:migrate` and `db:migrate:undo` clean on the existing development database, on a fresh one built from the baseline, and on one whose ledger names nine files that are gone. **The production-copy half is deferred — see *Deferred, and why*** |
-| R20 | Migration output, recorded in *Results* | migration | `guardDataIntegrity` reports before and after for migrations 1 and 4; the `CONCURRENTLY` migration opens no transaction and so cannot use it, and adds no rows |
-| R21 | `observation-review-schema` › *the phase is additive* (all four tests) | database | `taxReview` and `sizereview` unchanged and unreferenced; `comname`, `taxserial` and the `TimeSpan` columns still present; no `observed_at` |
-| R21 | `git diff --stat`, recorded in *Results* | review | No route, controller, repository method or permission key changed |
-| R22 | `dataset-observations-cascade` › all three tests | database | **The cascade removes the membership row and never a parent, in both directions**, against a real database with a dataset, an observation and a membership row seeded |
+| R0 | *the routes* › are served under `/api/v2/` and nowhere else | http+db | Both paths answer under `/api/v2/`, and the declared `/api/mosaic/...` path is **not** registered — so the prefix came from `registerVersionedRoute` rather than being written by hand |
+| R0, R12 | *the routes* › require `observations:read` rather than a new key | http+db | An agent with no permissions gets 403 from both routes; the permission catalog holds no key mentioning the mosaic or review |
+| R1 | *the envelope* › returns an entry for every page asked for, ascending | http+db | Five discontiguous pages asked for out of order come back as five entries in ascending page order, with `pageSize`, `excludedForNoDate` and `servedAt` present |
+| R1 | *the envelope* › carries `total` and `pageCount` only when `includeTotal` | http+db | Both keys present with `includeTotal: true`, both **absent** without it — absent, not null |
+| R1, R5 | *the envelope* › carries `total` for a page set entirely past the end | http+db | The count survives a request whose every band is empty. This is the case a bare projection loses: the scheduler asks for the tail before it knows the count, and would then get no total to clamp against |
+| R2 | *deterministic ordering* › puts tied rows in the same order on every call | http+db | Six seeded rows with **identical `confidence`** are paged at `pageSize` 2; the three pages hold the same ids in the same order across two identical calls, and the order is by `observation_id` |
+| R2 | *deterministic ordering* › appends `observation_id` even when the client sorts on something else | http+db | Rows tied on `updatedAt` come back in `observation_id` order; a sort naming only `updatedAt` still gets the tie-break |
+| R2 | *deterministic ordering* › appends `observation_id` when the client already sent it | sql | A client that names `observation_id` itself does not get it twice in the `ORDER BY` — the field is not in the closed sort list, so it is rejected, and the appended term is the only one |
+| R3 | *one pass* › returns for `[1,3,5]` exactly what pages 1, 3 and 5 return singly | http+db | The discontiguous set is not a different question from three single-page questions. Membership, order and `rowCount` all compared |
+| R4 | *one pass* › numbers a deep page from the same ordering as a shallow one | http+db | With 6 seeded rows at `pageSize` 1, page 6 holds what the sixth row of the full ordering holds. **This proves the addressing is offset-consistent, not that it is fast** — flatness in *cost* is measurement 2 in the deferred checklist and is not claimed here |
+| R5 | *the cap* › rejects 13 pages with 400 | http+db | 13 pages → 400, and the body is the error envelope, not a truncated result |
+| R5 | *the cap* › rejects more than 600 rows with 400 | http+db | 12 pages at `pageSize` 51 → 612 rows → 400. The row cap binds before the page cap on a wide viewport |
+| R5 | *the cap* › rejects a page number that is not one | http+db | `0`, `-1` and `1.5` each → 400 |
+| R5 | *the cap* › returns an empty page rather than an error past the end | http+db | `rows: []`, `rowCount: 0`, HTTP 200 |
+| R6, R7 | *the status filter* › selects exactly the right ids for each set | http+db | Three rows seeded — one `reviewed`, one `flagged`, one with **no projection row** — and every set asserted by id: `['unreviewed']`, `['flagged']`, `['reviewed']`, `['unreviewed','flagged']`, `['reviewed','flagged']`, all three, and `[]`. **The mixed set is the one that catches a `coalesce` regression**, so it is not optional |
+| R6, R7 | *the status filter* › is a semi-join or an anti-join, never a `coalesce` | sql | The emitted SQL contains `NOT EXISTS` for a set including the absent value, `EXISTS` for one excluding it, no predicate at all for a set covering the domain, and **no `coalesce` anywhere** |
+| R6 | *the status filter* › reads the projection and never the log | sql | `observation_review_current` appears; `observation_reviews` does not appear at all |
+| R7 | *the status filter* › filters both dimensions independently | http+db | A row `flagged` for `scientific` and `promoted` for `training` is found by a question naming both, and excluded by a question naming either wrongly |
+| R8 | *not filtering* › treats an empty status array as no filter, not as the mode's default | http+db | `reviewStatus: []` returns the `reviewed` row too — the row `['unreviewed','flagged']` would drop |
+| R8 | *not filtering* › treats an empty or absent value as no filter on every dimension | sql | An empty array, a null range and an absent key each emit no `WHERE` term, for all ten dimensions |
+| R9 | *the keyframe aggregate* › stays out of the matching set for every sort but its own | sql | For `confidence`, `updatedAt` and `obsID`, the `matched` CTE contains no `keyframes` aggregate; the lateral appears only after `FROM tally` |
+| R9 | *the keyframe aggregate* › moves into the matching set for the track-length sort | sql | For `keyframe_count`, the CTE does carry the lateral — the cost the human accepted, asserted rather than assumed, so a later "optimisation" that silently drops the sort fails here |
+| R9 | *the keyframe aggregate* › is served on every row | http+db | `keyframe_count` and `first_framenum` are the real numbers for a seeded observation with three keyframes |
+| R10 | *the counts* › returns all six counts and a total in one pass | http+db | Six seeded rows with a known status distribution; all seven numbers asserted exactly |
+| R10 | *the counts* › applies the non-status filters and ignores the status ones | http+db | The same call with `reviewStatus: ['flagged']` added returns **identical** numbers; narrowing a non-status filter changes them |
+| R10 | *the counts* › needs no sort and no row numbering | sql | The emitted SQL contains no `row_number` and no `ORDER BY` |
+| R11 | *the counts* › total is over a larger set than the page query's total | http+db | For one seeded set, the counts total strictly exceeds the page query's total when a status filter narrows, and both are asserted to their own correct values |
+| A5 | *the outer joins* › returns an observation with a null `session_id` | http+db | Seeded with no session. It appears, with null `dive`, `line` and `session_type`. **This is the test that fails if somebody restores the inner join** |
+| A5 | *the outer joins* › returns an observation with a null `project_id` | http+db | Seeded with a session but no project. It appears, with null `project_name` |
+| A5 | *the outer joins* › excludes it only when the reviewer filters on that dimension | http+db | The same null-session row is absent from a `dive`-filtered question and present in an unfiltered one — so a null is not silently a match either |
+| A4 | *the species filter* › matches `species_id` and not `comname` | http+db | Two rows sharing a `comname` and differing in `species_id`; filtering by id returns one. A `comname` value passed as `species` is rejected as not an integer rather than silently matching nothing |
+| A3 | *the date dimension* › rejects an active date filter with 400 | http+db | `date: { from: '2026-08-01' }` → 400, naming #76. `date: null` and `date: { from: null, to: null }` are **not** rejected, because the client sends every dimension on every query |
+| A3 | *the time-of-day dimension* › is served from `tc` | http+db | A row at `21:57:22` is inside `21:00`–`22:00`, outside `01:00`–`02:00`, and inside the wrapped window `21:00`–`02:00`; a row with a day-rollover `tc` of `1.00:15:33` is inside `00:00`–`01:00`, because the day component says the dive rolled over rather than which hour it was |
+| R13 | *the row shape* › is exactly the agreed key set | http+db | A snapshot of the 15 keys. `processor_name`, `lineId` and `scientific_name` asserted **absent** by name, so restoring one is a failing test rather than a silent payload — and A7 turns on `processor_name` staying out |
+| R14 | *no duplicate rows* › returns one row for an observation with many keyframes | http+db | An observation with eight keyframes appears once, with `keyframe_count` 8. This is the Sequelize `hasMany`-plus-`limit` defect the raw query exists to avoid |
+| R15 | `git status` after `npm run docs:build`, recorded in *Results* | review | The generated contract carries both new operations and is committed |
+| R16 | This file, and *Deferred, and why* | review | Correctness is verified by Jest; timing is not verified in this phase, and this file says so rather than implying otherwise |
 
 ## Requirements with no test
 
-- **R16's non-zero branch is not exercised as a test.** The migration reports 0 orphans on
-  every database available here, and manufacturing an orphan would mean dropping the
-  constraint the migration just added. The abort path is read in *Results* from the
-  migration's own output on the zero case and from the code, not from a failing run.
-- **R19's production-copy half has no automated test**, and is deferred rather than
-  substituted. See *Deferred, and why*.
-
-Every other numbered requirement has at least one row above.
-
-## Deferred, and why
-
-**The migration is not verified against a restored copy of production, and that is a
-decision rather than an oversight.** Getting a copy needs physical access to the production
-database, which means being on site, and the human has deferred it to a later sitting. It
-is the one part of R19 that is outstanding, and it is outstanding on purpose.
-
-What is run instead is a **substitute, labelled as one**, because it exercises two of the
-three things the production path would and costs nothing: a scratch database built from
-`db/baseline/schema.sql` whose `SequelizeMeta` is pre-seeded with the nine retired
-migration names, so the ledger names files that are gone exactly as an existing database's
-does, and every pending migration then runs **in one pass** rather than the phase's five
-alone. That covers the ledger shape and the single-pass ordering. It covers **nothing about
-production's data**, and no claim below rests on it doing so.
-
-**Still owed, when there is a copy.** A checklist rather than a memory:
-
-- [ ] Restore the copy into a local disposable database — `marp db up --port 5440` gives
-      one that is not this workspace's. Never against production itself.
-- [ ] **Read the actual `SequelizeMeta` count off it** — `SELECT COUNT(*) FROM
-      "SequelizeMeta";` — and record it. Do not trust a number from this repository: #103,
-      `AGENTS.md` and the umbrella's `CLAUDE.md` describe it three inconsistent ways, and
-      whatever the copy returns is the fact the rest of the run rests on.
-- [ ] Record the pre-migration `COUNT(*)` for `observations`, `keyframes`,
-      `dataset_observations`, `datasets`, `sessions` and `projects`, plus the orphan count
-      `SELECT COUNT(*) FROM dataset_observations d WHERE NOT EXISTS (SELECT 1 FROM
-      observations o WHERE o.observation_id = d.observation_id);`. A non-zero orphan count
-      aborts migration 4 with the number in the message; that is information, and somebody
-      has to decide what those membership rows meant.
-- [ ] Take the **before/after checksum** — `md5(string_agg(...))` over `comname`,
-      `taxserial`, `taxReview`, `sizereview`, `tc`, `etc`, `mediaPosition`,
-      `actualPosition` and `frame`. **This is the assertion that cannot be made here**: it
-      is meaningless on a database with no observations in it, and it is the one that would
-      catch the failure that matters — the phase turning out not to be additive on real
-      data.
-- [ ] `npx sequelize-cli db:migrate` — whatever is still pending plus these five, in one
-      pass.
-- [ ] Assert every count unchanged and every checksum identical.
-- [ ] `SELECT COUNT(*) FROM observations WHERE version <> 1;` — expected 0.
-- [ ] `npx sequelize-cli db:migrate:undo` five times, then assert the same checksums again.
+- **R4 is only half tested.** The test proves the *addressing* is consistent at depth —
+  page 6 holds the sixth row — which is what correctness means here. It does **not** prove
+  the *cost* is flat, which is the actual requirement. Flatness is measurement 2 in the
+  deferred checklist and one observation cannot observe it. Written down rather than
+  implied, because a green suite plus a requirement id is exactly how a phase comes to be
+  called verified when it is not.
+- **R3 is likewise half tested.** That a discontiguous set returns the same rows as three
+  single-page requests is asserted; that it costs one pass rather than three is a plan
+  reading and a measurement, not a test.
+- **R15 has no automated assertion.** The rebuilt contract is inspected in *Results*.
 
 ## Edge cases
 
-- **A no-op update must not inflate `version`.** The trigger carries
-  `WHEN (OLD.* IS DISTINCT FROM NEW.*)`, so `SET count = count` leaves the token alone.
-  Tested. Traces to what the token is *for*: an inflated version invalidates a review that
-  nothing actually changed, which is #68's invalidation rule firing on nothing.
-- **A writer that supplies `version` itself.** Tested with raw SQL rather than the ORM,
-  because `version` is not a model attribute and Sequelize would silently drop it — so the
-  ORM cannot express this case and the tier that can is the database.
-- **A second reviewer deciding later.** The losing claim is the case first-valid-wins
-  exists for, and the assertion is that neither `reviewer_id` nor `first_decided_at` moves
-  while the log keeps both decisions.
-- **The same reviewer revising from a committed page.** `decision` and `decided_at` move,
-  `first_decided_at` does not.
-- **A withdrawal, then the projection.** The projection row is deleted, and a `CHECK`
-  refuses `withdrawn` in the projection so a future writer cannot park one there. Traces
-  to the default mosaic filter: a withdrawn row left in place would hide the observation
-  from "unreviewed" forever.
-- **Both purposes on one observation at once.** Asserted, because the whole argument for
-  one table with a discriminator is that the common query wants both dimensions.
-- **An invalid index left by a failed `CONCURRENTLY` build.** Proved by marking a real
-  index invalid in `pg_index` and re-running the migration's `up`, recorded in *Results*.
-  Traces to `CREATE INDEX CONCURRENTLY IF NOT EXISTS`, which would otherwise skip an
-  invalid index forever — maintained on every write and used by nothing.
-- **A cascade test that is vacuous.** Checked by dropping the new constraint inside a
-  rolled-back transaction and confirming the membership row survives as an orphan without
-  it, recorded in *Results*. A test that would pass either way proves nothing.
+Each traces to a defect or a decision, not to a hunch.
+
+- **A status set covering the whole domain must emit no predicate.** Delete Mode's
+  `trainingDisposition` arrives with all three values ticked (#89), so the common case of
+  "no filter" arrives as a full set rather than an empty one. A builder that turned it into
+  `EXISTS (… decision = ANY('{undecided,promoted,excluded}'))` would drop every row with no
+  projection row, which is most of them.
+- **A wrapped time window is `OR`, not `AND`.** 22:00 to 02:00 is one night. Written as
+  `AND` it returns nothing at all, and it returns nothing *quietly*.
+- **A `tc` carrying a day rollover.** `1.00:15:33` is quarter past midnight on the second
+  day of a dive. The day component must be ignored, exactly as `timeOfDayMs` ignores it,
+  or the same observation lands in two different hours depending on who asked.
+- **`confidence` is nullable and the default sort is `confidence ASC`.** Nulls sort last,
+  so unscored rows are on the last pages rather than the first. Asserted, because it is
+  invisible until somebody pages to the end.
+- **`includeTotal` on a page set entirely past the end.** Covered above; it is the case
+  that made the count hang off a one-row tally rather than off the page projection.
+- **An unknown sort field, and an unknown status value.** Both rejected with 400. The
+  contract calls the sort list closed, and a client that mistypes `updated_at` would
+  otherwise get the default question answered without being told which question it asked.
 
 ## Regression coverage
 
-Nothing in this phase is a fix for a defect, so there is no regression suite. Two tests
-are written to fail if a plausible future "tidy-up" happens, which is the same idea
-pointed forwards:
+Nothing has broken in this code yet — it is new. Three tests are nevertheless written as
+regression tests, against defects this repository has already paid for elsewhere:
 
-- `observation-version` › *is not a Sequelize model attribute* fails if somebody adds
-  `version` to `model/observation.model.js`, which would let a client assign it.
-- `observation-review-current` › *is the same block the migration exports and runs* fails
-  if the definition of "current" is copied anywhere.
+- **the `coalesce` status filter** — the shape confirmed from the plans to lose the
+  index-only scan. `*the status filter* › is a semi-join or an anti-join` fails if it
+  returns;
+- **`count(*) OVER ()`** — measured to buffer the whole matching set into a second
+  tuplestore and spill. `*the envelope*` asserts the emitted SQL does not contain it;
+- **the inner join to `sessions`** — #99's contract SQL had it, and it drops any
+  observation with a null `session_id`. The two A5 tests fail if it comes back.
 
 ## Known gaps
 
-Stated plainly, so each is a decision rather than a surprise.
-
-- **D11 — production's PostgreSQL major version is still unrecorded.** The
-  catalog-only-`ADD COLUMN` claim and the `CONCURRENTLY` plan both assume ≥ 11. Local is
-  18.6, verified. To be read off the copy when there is one.
-- **No measurement of anything.** 1 observation. Every index here is justified by being a
-  foreign key with nothing behind it, not by a plan.
-- **The annotation fingerprint is a fingerprint, not a version.** Two keyframe edits
-  within one clock tick that leave the count unchanged are not detectable. Recorded in the
-  column comments; a real annotation version means a `version` column and trigger on
-  `keyframes`.
-- **Nothing enforces append-only on `observation_reviews`.** An `UPDATE` or `DELETE`
-  against it would succeed. The spec does not ask for a rule or trigger, and no code
-  writes the table yet; Phase 5 owns the write path.
-- **Nothing yet maintains the projection.** Phase 5 does. The rebuild SQL and the
-  equality test are what will catch a writer that bypasses it; today the table is empty
-  and its correctness is asserted through the upsert the test performs on Phase 5's
-  behalf.
+- **No measurement, at all.** 1 observation. See *Deferred, and why*.
+- **The two recommended sort indexes are not added.** `observations (confidence,
+  observation_id)` and `observations (species_id, confidence, observation_id)` are what
+  *Indexes this phase needs* recommends, and this phase adds **no migration** — the human's
+  answer to A2 says so in those words. They are owed, and they belong with the measurement
+  that justifies each: an index chosen against a real distribution beats one chosen now.
+- **`excludedForNoDate` is always 0** and will stay 0 until #76. It is in the envelope
+  because the envelope is #99's and the client reads it.
+- **The client sends a species *name* and this endpoint takes an id**; it sends
+  `excludeIds` as a `Set`, which does not survive `JSON.stringify`; and it reads
+  `review_status`/`training_disposition` where this returns
+  `review_decision`/`training_decision`. All three are the client-side rename #99 filed as
+  Phase 8's. **So the endpoint is substitutable for `queryPages()` on the request and
+  response envelope, and not yet on the field names inside a row.**
+- **`work_mem` is not set by the endpoint.** A8 recommends `SET LOCAL work_mem` inside the
+  request's own transaction and it is non-blocking; it is a number to tune against real
+  data and it is measurement 8 below.
 
 ## Manual steps
 
-One, and it is the deferred one: the production-copy migration run, whose checklist is in
-*Deferred, and why* above rather than repeated here. Everything else in this verification
-runs from `npm test` and the migration commands recorded in *Results*.
+None. Every test here runs under `npm test`.
 
 ## Walkthrough videos
 
-None. This phase renders nothing; there is no screen to record. A video here would narrate
-a result without asserting it, which is the failure mode the doctrine names.
+None. This phase adds no user-visible surface — the mosaic still runs against its fixture
+until Phase 8 points `data.js` at these routes. A video of an HTTP endpoint would narrate
+without asserting, which is the failure mode the doctrine names.
+
+## The timing check, still owed
+
+**Carried forward verbatim from *The timing check, deferred* in `.marp/task.md`, and not
+one item of it is claimed here.** The data load is expected 2026-09-10. Read-only, never
+against production. `EXPLAIN (ANALYZE, BUFFERS)`, three runs, first discarded, with
+`work_mem` and `shared_buffers` recorded beside every result — the synthetic run showed a
+15% swing from `work_mem` alone, so a number without it is not a result.
+
+1. The typical question, with the two recommended indexes in place.
+2. **Flatness (R4)** — page 1 alone against the last page alone. They should cost the same.
+3. The count, three ways, on the real query — this is what confirms or overturns A1.
+4. Selectivity: the size of the matching set for three questions a reviewer would ask.
+5. The status anti-join with the projection populated to a realistic mix. It is **empty**
+   here, which makes every anti-join free and every plan in this phase optimistic.
+6. `keyframe_count` — the lateral for a 600-row page set, and the sort over the full
+   matching set. A2's whole answer depends on the gap between them.
+7. Nulls: how many observations have a null `session_id`, `project_id`, `confidence` or
+   `species_id`. A4 and A5 are both partly unanswerable without these four numbers.
+8. `work_mem` at the server default and at 64 MB, to size A8's `SET LOCAL`.
+
+The numbers that fail the phase or reopen a decision are listed in `.marp/task.md` and are
+not restated here, so the two cannot come to disagree.
+
+**A benchmark against one observation would report every one of those as passing.** That is
+why none was run.
 
 ---
 
 ## Results
 
-Run 2026-09-09. The plan above was committed as `f06bf78` before any of this was run;
-individual test files were run as they were written, which is the G2 loop, and the full
-suite and the migration paths were run afterwards.
-
-### The suite
-
-```
-  Test Suites : 33 passed, 0 failed, 33 total
-  Tests       : 269 passed, 0 failed, 0 skipped, 269 total
-  Duration    : 22.1s
-
-  Result: ALL TESTS PASSED
-```
-
-29 suites and 227 tests before this phase; the four new files add 42 tests, and
-227 + 42 = 269. No suite skipped, which matters because a skipped suite looks green.
-
-### Failures on the way, verbatim
-
-Two, both in the projection test and both mine rather than the schema's. Recorded because
-the second one is a trap worth knowing about.
-
-**1. The marker regex matched the file's own prose.**
-
-```
-  ✗ observation_review_current (#103 D1, R6) > the definition of "current" exists once > is the same block the migration exports and runs
-```
-
-The migration's JSDoc says *"Marked with `-- rebuild:begin` / `-- rebuild:end`"*, and the
-unanchored pattern `/-- rebuild:begin[\s\S]*?-- rebuild:end/` matched that sentence — a
-five-word "block" — instead of the SQL. Fixed by anchoring to the start of a line.
-
-**2. The extracted block commented out the code that followed it.**
-
-```
-  ✗ observation_review_current (#103 D1, R6) > the projection equals the derivation > agrees with the derivation through a claim, a losing claim, a revision and a withdrawal
-      Error:
-          at Query.run (node_modules/sequelize/src/dialects/postgres/query.js:76:25)
-```
-
-The reporter shows an empty message; run outside Jest it is
-`SQL ERROR: syntax error at end of input | position 1399`. The block's last line is
-`-- rebuild:end`, a SQL comment with no trailing newline, so
-`SELECT * FROM (${fileBlock}) derived …` put the closing parenthesis inside the comment.
-Fixed by embedding a newline after the block. The migration itself was never affected —
-its constant keeps its trailing newline — which is why `db:migrate` had been clean
-throughout.
-
-### Path A — a fresh database, both directions
-
-Scratch database `marp_phase3_a` on the local disposable PostgreSQL
-(`PostgreSQL 18.6 on x86_64-windows`), built from nothing:
-
-```
-marp_phase3_a at 127.0.0.1:5432
-  0 tables, 0 views, no migrations recorded
-Applying db/baseline/schema.sql
-Baseline in place: 23 tables, 4 views.
-```
-
-Then `npx sequelize-cli db:migrate` — 24 migrations, the 19 that were there plus this
-phase's 5. This phase's five, verbatim:
-
-```
-== 20260909120000-add-observations-version-and-model: migrating =======
-[observations version+model] before: observations=0 ml_models=0 | 8 foreign key(s) watched
-[observations version+model] after: no rows deleted, dereferenced or orphaned
-== 20260909120000-add-observations-version-and-model: migrated (0.012s)
-== 20260909120100-create-observation-reviews: migrating =======
-== 20260909120100-create-observation-reviews: migrated (0.006s)
-== 20260909120200-create-observation-review-current: migrating =======
-== 20260909120200-create-observation-review-current: migrated (0.006s)
-== 20260909120300-add-dataset-observations-observation-fk: migrating =======
-[dataset_observations observation fk] before: dataset_observations=0 observations=0 datasets=0 | 10 foreign key(s) watched
-[dataset_observations observation fk] 0 orphaned membership row(s); adding the constraint
-[dataset_observations observation fk] after: no rows deleted, dereferenced or orphaned
-== 20260909120300-add-dataset-observations-observation-fk: migrated (0.014s)
-== 20260909120400-add-missing-foreign-key-indexes: migrating =======
-[foreign key indexes] keyframes_observation_id_idx on keyframes (observation_id)
-[foreign key indexes] observations_session_id_idx on observations (session_id)
-[foreign key indexes] observations_project_id_idx on observations (project_id)
-== 20260909120400-add-missing-foreign-key-indexes: migrated (0.006s)
-```
-
-**The undo is compared by value, not by eye.** A second scratch database
-`marp_phase3_b` was built from the same baseline and migrated with
-`--to 20260901130000-seed-resource-permissions.js`, giving the exact pre-phase state —
-baseline plus 19, and nothing of this phase ever applied. A structural snapshot of each
-(every column with its type, nullability, default and length; every table, view, index,
-constraint, trigger, function and sequence; and the ledger) was hashed:
-
-```
-marp_phase3_a  after 24 migrations   lines=882  md5=389fac2ab714b214b9eba989e00301e9
-marp_phase3_b  baseline + 19         lines=811  md5=96a42216952646dca5b05a4087a33919
-marp_phase3_a  after 5 undos         lines=811  md5=96a42216952646dca5b05a4087a33919
-marp_phase3_a  migrated up again     lines=882  md5=389fac2ab714b214b9eba989e00301e9  (files identical)
-```
-
-So the undo lands on a database structurally indistinguishable from one this phase never
-touched, and re-applying lands back on the same schema. 71 structural lines is the whole
-of what the phase adds.
-
-### The ledger-shape substitute for the production path
-
-Labelled a substitute, and it is not the deferred production run. Scratch database
-`marp_phase3_c`, baseline loaded, then the nine retired migration names inserted into
-`SequelizeMeta` so the ledger names files that are gone exactly as an existing database's
-does:
-
-```
-ledger rows naming files that are gone: 9 | total ledger rows now: 9
-```
-
-`npx sequelize-cli db:migrate` then ran **all 24 in one pass** — the case Path A does not
-exercise, because there the phase's five run alone. Sequelize tolerated the nine phantom
-names, reported them applied and looked only for files not in the ledger, and the ledger
-finished with 33 rows (9 + 24). Structurally identical to `marp_phase3_a`, ledger aside:
-
-```
-C matches A structurally (ledger aside)
-```
-
-Five undos then returned it to the reference pre-phase structure:
-
-```
-C after undo matches baseline+19 structurally
-```
-
-### The development database, both directions, repeatedly
-
-`marp_phase3_*` are scratch databases. The workspace's own database was migrated up, down
-five times and up again as the work went, and finished at 24 ledger rows. After the five
-undos it held no `version` column, no `ml_model_id`, no trigger, no
-`observations_bump_version` function, no `observation_review%` table and only
-`dataset_observations_dataset_id_fkey`, at 35 tables and views — the count it started at:
-
-```
-leftover cols: []
-leftover trigger: []
-leftover function: []
-leftover tables: []
-dso fks: dataset_observations_dataset_id_fkey
-table+view count: [{"n":35}]
-```
-
-### R22 — the cascade, and the check that the check is real
-
-```
-Test: dataset_observations cascade (#103 R22) > removes the membership row but keeps the observation when a dataset is deleted ... PASS
-Test: dataset_observations cascade (#103 R22) > removes the membership row but keeps the dataset when an observation is deleted ... PASS
-Test: dataset_observations cascade (#103 R22) > deletes an observation that is in a dataset rather than refusing it ... PASS
-```
-
-A passing cascade test can be vacuous, so it was checked against its own absence: with the
-new constraint dropped inside a rolled-back transaction, the same delete leaves the
-membership row behind.
-
-```
-membership rows surviving without the constraint: 1 (orphaned)
-```
-
-That is the orphan the constraint exists to prevent, and it is what the second test would
-fail on if the referential action were missing or pointed the wrong way.
-
-### The invalid-index recovery path
-
-`keyframes_observation_id_idx` was marked invalid in `pg_index` to imitate a failed
-concurrent build, and the migration's `up` was re-run:
-
-```
-marked invalid: [{"indisvalid":false}]
-[foreign key indexes] keyframes_observation_id_idx exists but is invalid, so a previous concurrent build failed. Dropping it and rebuilding.
-[foreign key indexes] keyframes_observation_id_idx on keyframes (observation_id)
-after re-run: [{"relname":"keyframes_observation_id_idx","indisvalid":true}]
-```
-
-Re-running after a failure is the fix, as the file claims.
-
-### The documented surface did not change
-
-`npm run docs:build` leaves `docs/openapi.generated.json` byte-identical: no route,
-controller or registered schema changed, and neither new model is registered in
-`GENERATED_SCHEMAS`. The jsdoc half of the build regenerates `docs/developer/` and touches
-478 files — new pages for the five migrations, two models and four test files, plus nav
-churn on every existing page and two font SVGs. That is left uncommitted deliberately; see
-the judgement calls in the report. The jsdoc run also prints pre-existing parse errors in
-`frontend/apps/marp-mosaic-review/src/model/schedule.js`, unrelated to this phase.
-
-### The diff
-
-```
- .marp/task.md                                      | 818 +++++++++++++++++++++
- .marp/verification.md                              | 167 +++++
- ...909120000-add-observations-version-and-model.js | 194 +++++
- .../20260909120100-create-observation-reviews.js   | 223 ++++++
- ...0909120200-create-observation-review-current.js | 280 +++++++
- ...0300-add-dataset-observations-observation-fk.js | 158 ++++
- ...260909120400-add-missing-foreign-key-indexes.js | 138 ++++
- model/observation_review_current.model.js          | 147 ++++
- model/observation_reviews.model.js                 | 169 +++++
- tests/dataset-observations-cascade.test.js         | 164 +++++
- tests/observation-review-current.test.js           | 470 ++++++++++++
- tests/observation-review-schema.test.js            | 366 +++++++++
- tests/observation-version.test.js                  | 143 ++++
- 13 files changed, 3437 insertions(+)
-```
-
-Migrations, models, tests and these two files. No route, controller, repository method or
-permission key, and nothing removed or rewritten.
+<!-- Appended after the run. Real output, including failures, verbatim. -->
