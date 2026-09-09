@@ -3069,3 +3069,98 @@ test.describe('the reviewer never waits (#99)', () => {
     expect(errors).toEqual([]);
   });
 });
+
+test.describe('the summary says where you are', () => {
+  /* Reported 2026-09-09, once paging became instant: the reviewer moves far more than
+     before, and the line only said how many rows were on screen. It now says which page
+     that is, out of how many, and what the page size is. */
+
+  const summary = (page) => page.evaluate(() => ({
+    pageNow: document.querySelector('#pageNow').textContent.trim(),
+    pageTotal: document.querySelector('#pageTotal').textContent.trim(),
+    shown: document.querySelector('#shown').textContent.trim(),
+    perPage: document.querySelector('#perPage').textContent.trim(),
+    tiles: document.querySelectorAll('.tile').length
+  }));
+
+  test('it names the page, the page count and the page size', async ({ page }, info) => {
+    const errors = watchErrors(page);
+    await page.goto('./');
+    await ready(page);
+
+    const at = await summary(page);
+    expect(at.pageNow).toBe('1');
+    expect(Number(at.pageTotal)).toBeGreaterThan(1);
+
+    /* The page size is stated, and it is the size -- not the row count, which differs on
+       a short page. Both are on screen, so neither has to be inferred from the other. */
+    const size = await page.evaluate(() => window.MARP.state.pageSize);
+    expect(Number(at.perPage)).toBe(size);
+
+    /* On a phone that clause is hidden rather than absent -- the row scrolls sideways and
+       M3 requires the sort control to stay inside the viewport, so the trailing words are
+       what the row gives up. "Page 2 of 24" is the part worth the width, and it stays at
+       both sizes. This asserts the concession deliberately, so it cannot rot into an
+       accident. */
+    const wordy = page.locator('.sub .per-page');
+    if (info.project.name === 'phone') await expect(wordy).toBeHidden();
+    else await expect(wordy).toBeVisible();
+    await expect(page.locator('#pageNow')).toBeVisible();
+
+    /* And the row count really is the rows drawn, so the number cannot describe a page
+       the reviewer is not looking at. */
+    expect(Number(at.shown)).toBe(at.tiles);
+    expect(errors).toEqual([]);
+  });
+
+  test('the page it names follows the reviewer, including onto a cached page',
+    async ({ page }) => {
+      const errors = watchErrors(page);
+      await page.goto('./');
+      await instrument(page);
+      await ready(page);
+      await prefetched(page, [2, 3]);
+
+      /* Forward onto a held page: the whole point is that nothing is fetched, so if the
+         summary were only refreshed by a query it would sit on page 1 and be wrong. */
+      await fromHere(page);
+      await pageChange(page, 'next');
+      expect(requests(await acts(page)), 'this page change must be a cache hit').toEqual([]);
+
+      let at = await summary(page);
+      expect(at.pageNow, 'a cache hit must still move the page number').toBe('2');
+      expect(Number(at.shown)).toBe(at.tiles);
+
+      await pageChange(page, 'next');
+      at = await summary(page);
+      expect(at.pageNow).toBe('3');
+
+      await pageChange(page, 'prev');
+      at = await summary(page);
+      expect(at.pageNow, 'and going back moves it back').toBe('2');
+      expect(Number(at.shown)).toBe(at.tiles);
+
+      /* It agrees with the pager, which is the other place the answer appears. */
+      const typed = await page.locator('#pageInput').inputValue();
+      expect(typed, 'the summary and the pager must not disagree').toBe(at.pageNow);
+      expect(errors).toEqual([]);
+    });
+
+  test('a committed page keeps its own count when the reviewer returns', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('./');
+    await instrument(page);
+    await ready(page);
+
+    await commitAndWait(page);
+    await pageChange(page, 'next');
+    await pageChange(page, 'prev');
+
+    /* A pinned page is served by id, so the rows are exactly what was submitted -- and
+       the number beside them has to be those rows, not the page size. */
+    const at = await summary(page);
+    expect(at.pageNow).toBe('1');
+    expect(Number(at.shown)).toBe(at.tiles);
+    expect(errors).toEqual([]);
+  });
+});
