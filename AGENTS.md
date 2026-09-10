@@ -502,6 +502,38 @@ that means. Every data migration wraps its work in `db/data-integrity.js`, which
 counts rows and foreign-key references before and after and refuses to commit if
 anything was lost, and carries a `down` that restores what it changed.
 
+## Running the inference pipeline needs context the baseline does not carry
+
+The baseline builds the schema and the 854-row species catalogue. It does **not** build a
+project, a session, or a registered model — those are survey data, and a `marp db destroy`
+takes them. A GPU job spec names a session and an `ml_models` row *by id*, so a rebuilt
+database rejects the same job spec that worked yesterday, and the error arrives from the
+ingest rather than from the thing that is actually missing.
+
+**Run `node scripts/seed-inference-context.js` after any rebuild.** Dry run by default;
+`--apply` writes. It is idempotent, it pins the ids the job specs use, and it advances the
+sequences past them. Do not seed these rows by hand — that is how they were lost.
+
+Two things it encodes that are not obvious from the schema:
+
+- **`species` identifies a species; `model_species` only records what a model was trained
+  with.** The join table is not a lookup and not a class-index table — it has no class
+  column, and the class names come from the model's own `mixed-classnames.yaml`. It matters
+  to a run for a narrower reason: the ingest is handed a class *name* rather than a key, and
+  `service/observation-ingest.service.js` resolves that name against `species.comname`
+  requiring exactly one match. Common names are not unique across the catalogue —
+  `Red sea urchin` is on both `Inverts` (769) and `GULF_Inverts` (544) — so the lookup
+  narrows to the model's trained species before falling back to the whole catalogue, and an
+  unseeded model leaves it with two matches and no grounds to choose. Seed the rows and the
+  run proceeds; the disambiguation is the code's lookup order, not a property of the table.
+- **The session's `type` chooses the species list.** `db/species-lists.js` maps `Invert` to
+  `Inverts`. An inverts model writing into a `Fish` session is refused by
+  `checkSessionTypeAgainstModel`, which is the check working.
+
+The worker's side of this — which interpreter, which weights, which Jellyfin — is
+machine-specific and lives in `.marp/local/`, not here. **The worker is given no Jellyfin
+credentials**; the coordinator resolves the video and the job spec carries a playable URL.
+
 ## Primary keys are assigned inconsistently
 
 `repository/observation.repository.js` sets `observation_id` itself as
