@@ -112,6 +112,13 @@ jobs:
         working-directory: marp-api
         run: node ../MARP/scripts/harness/spec-check.mjs .
 
+      # A grouping nobody checks stops covering the suite. A new test file
+      # that belongs to no subsystem would be run by no fast loop, and
+      # nothing would say so.
+      - name: Test subsystems account for every suite
+        working-directory: marp-api
+        run: node scripts/test-subsystem.mjs --audit
+
   api:
     runs-on: ubuntu-latest
 
