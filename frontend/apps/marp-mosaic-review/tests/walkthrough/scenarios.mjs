@@ -228,6 +228,54 @@ const beat = (page, ms) => page.waitForTimeout(ms);
 const CUE = 1300;       // "right — paging forward now", spoken
 const DWELL = 2000;     // long enough to see that it landed
 
+const LOOK = 3400;      // long enough to actually study a wall of tiles, not glimpse it
+
+/**
+ * Turn one page with the pager the reviewer uses, and check it really turned.
+ *
+ * Clicked rather than driven through `actions.goToPage`: this is a walkthrough of the
+ * application, so the thing on screen has to be the control somebody would press.
+ */
+async function turnPage(page, expect, settled, to) {
+  await page.locator('[data-page="next"]').click();
+  await settled();
+  await expect(page.locator('#pageNow'), `now on page ${to}`).toHaveText(String(to));
+}
+
+/**
+ * The light check behind every "look at this" line: there are tiles, and the pictures
+ * that loaded really decoded.
+ *
+ * Deliberately *not* "every tile has a decoded picture". Thumbnails are `loading="lazy"`,
+ * so a tile below the fold legitimately has not fetched yet and would read as a defect;
+ * and a thumbnail whose file is missing removes its own `<img>` in `onerror`, so a broken
+ * picture is a tile with no image rather than an image with no size. What is asserted is
+ * that the page drew something, that something in it decoded, and that nothing which did
+ * load came out at zero by zero.
+ *
+ * The counts are logged rather than painted on screen — the reviewer is looking at the
+ * tiles, and a measurement strip across the top is exactly the clutter this scenario is
+ * meant not to have.
+ */
+async function lookedAt(page, expect, where) {
+  const tiles = await page.locator('.tile').count();
+  const imgs = await page.locator('.tile img').evaluateAll((els) => els.map((i) => ({
+    src: i.getAttribute('src'), done: i.complete, w: i.naturalWidth, h: i.naturalHeight
+  })));
+  const noimage = await page.locator('.tile[data-noimage], .tile.queued, .tile.failed').count();
+
+  expect(tiles, `${where} drew tiles`).toBeGreaterThan(0);
+  const decoded = imgs.filter((i) => i.w > 0 && i.h > 0).length;
+  expect(decoded, `${where} drew pictures`).toBeGreaterThan(0);
+  for (const img of imgs.filter((i) => i.done)) {
+    expect(img.w, `${where}: ${img.src} loaded but decoded to nothing`).toBeGreaterThan(0);
+    expect(img.h).toBeGreaterThan(0);
+  }
+
+  console.log(`  ${where}: ${tiles} tiles, ${decoded} pictures decoded, ${noimage} without one`);
+  return { tiles, decoded, noimage };
+}
+
 /**
  * The question the store is currently asking, in the shape the endpoint takes.
  *
@@ -1927,6 +1975,152 @@ export const scenarios = {
 
           await meter(page, `read back from the record: ${body.total} rows, `
             + `review_decision "reviewed", reviewer ${store.me.user_id} — ${store.me.username}`);
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------------- look: just looking */
+  /* Somebody opening the reviewer cold and turning the pages, which is the whole of it.
+     It is a walkthrough — the narration says what to watch before it moves — but a small
+     one: open on the bare address, look, page forward four times, narrow to one dive,
+     look again. Nothing here proves anything about the corpus; `verify-real-database`
+     owns that and does it properly.
+
+     **It opens on the bare address deliberately.** `DEFAULT_FILTERS` used to carry the
+     fixture's species key, so a real database met an empty mosaic reading "nothing to
+     do" — the thing that looked broken to somebody who had just signed in. Opening cold
+     is now the point of the recording, so this scenario must never set
+     `MARP_WALKTHROUGH_URL`: if the bare address comes up empty again, the runner's own
+     `settled` fails before scene one and no video is written, which is correct.
+
+     The assertions are deliberately light — tiles present, the page really changed, the
+     pictures really decoded — enough that a broken app fails instead of being filmed,
+     and no corpus literals, which is what keeps this one from going stale the way the
+     verification piece has to. */
+  look: {
+    title: 'A look at the mosaic reviewer',
+    scenes: [
+      {
+        caption: 'Opened cold — no filters',
+        say: "This is the Marp mosaic reviewer, opened cold on the bare address — "
+           + "no filters, nothing chosen. Have a proper look at the wall; "
+           + "every tile is one observation.",
+        /* No movement at all. The runner has already settled the grid, so the reviewer's
+           first sight of the app is what is on screen for the whole of this line. */
+        async act({ page, expect, store }) {
+          /* The bare address narrows nothing — which is the fix this recording exists to
+             show, asserted rather than left to the eye. `reviewStatus` is excepted and is
+             not an exception to the claim: it is the *mode's* own opening status, chosen
+             by whichever workflow is selected, and it is there against the fixture too.
+             The species key that made this open empty was a dimension, and there are
+             none of those. */
+          const q = await question(page);
+          expect(Object.keys(q.filters).filter((k) => k !== 'reviewStatus'),
+            'the bare address chooses no dimension').toEqual([]);
+          expect(await totalShown(page), 'and it finds something').toBeGreaterThan(0);
+
+          store.pages = [await lookedAt(page, expect, 'page 1')];
+          store.all = await totalShown(page);
+          await beat(page, LOOK + 1200);
+        }
+      },
+      {
+        caption: 'Page two',
+        say: "Paging forward now — keep an eye on the pictures.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "paging forward now"
+          await turnPage(page, expect, settled, 2);
+          store.pages.push(await lookedAt(page, expect, 'page 2'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Page three',
+        say: "On to page three. Same again, and the tiles are there.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "on to page three"
+          await turnPage(page, expect, settled, 3);
+          store.pages.push(await lookedAt(page, expect, 'page 3'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Page four',
+        say: "Page four now. Worth a proper look — these are all different animals.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "page four now"
+          await turnPage(page, expect, settled, 4);
+          store.pages.push(await lookedAt(page, expect, 'page 4'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Page five',
+        say: "And page five. Five pages in, and it is still keeping up.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "and page five"
+          await turnPage(page, expect, settled, 5);
+          store.pages.push(await lookedAt(page, expect, 'page 5'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'The dives',
+        say: "Opening the dive filter — this is what the survey has to choose from.",
+        /* Opened here and chosen from in the next scene. A menu that opens and closes
+           inside one line is gone before the viewer has read it. */
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                    // "opening the dive filter"
+          await page.locator('[data-dim="dive"]').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toBeVisible();
+
+          store.dives = await menu.locator('button[data-v]:not([data-v=""])')
+            .evaluateAll((els) => els.map((e) => e.dataset.v));
+          expect(store.dives.length, 'the rail offers at least one dive')
+            .toBeGreaterThan(0);
+          console.log(`  dives offered: ${store.dives.join(', ')}`);
+          /* Held open, and it stays open across the cut into the next scene. */
+          await beat(page, 2200);
+        }
+      },
+      {
+        caption: 'One dive',
+        say: "Picking the first dive — now the wall is only that transect.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "picking the first dive"
+          await page.locator(`.menu button[data-v="${store.dives[0]}"]`).click();
+          await page.waitForTimeout(250);
+          await page.keyboard.press('Escape');
+          await settled();
+
+          const shown = await totalShown(page);
+          expect(shown, 'the dive really narrows it').toBeLessThan(store.all);
+          expect(shown, 'and it still finds something').toBeGreaterThan(0);
+          expect((await question(page)).filters.dive, 'the dive goes over the wire')
+            .toEqual([store.dives[0]]);
+
+          await lookedAt(page, expect, `${store.dives[0]}, page 1`);
+          console.log(`  ${store.dives[0]}: ${shown} of ${store.all}`);
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Just looking',
+        /**
+         * The last look, and it is held by the *line* rather than by a beat.
+         *
+         * `tools/walkthrough/narrate.mjs` mixes the speech over the video with ffmpeg's
+         * `-shortest`, so the film is cut where the last audio clip ends and every frame
+         * after it is thrown away — the silent cut of the first take was 55.5 seconds and
+         * the narrated one 50.7. A closing `beat` is therefore invisible, however long it
+         * is. A closing *sentence* is not, so the dwell goes in the words.
+         */
+        say: "And that is the whole of it. Nothing to do but look — "
+           + "the pictures are all there.",
+        async act({ page, expect }) {
+          await lookedAt(page, expect, 'the last look');
         }
       }
     ]
