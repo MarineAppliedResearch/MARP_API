@@ -153,30 +153,74 @@ function mountRail() {
 const PROJECTS = ['All projects', 'CAMPA 2024', 'GULF 2025', 'PACIFIC 2023',
   'SALT 2024', 'VENTS 2025', 'ARCTIC 2024'];
 
+/* The actions a top bar can offer, defined once so two screens cannot describe
+   the same button two ways. */
+const ACTIONS = {
+  inference: { text: 'New Inference Job', ico: 'plus', cls: 'primary',
+    tip: 'Run a registered model over MARP data' },
+  training: { text: 'New Training Job', ico: 'plus', cls: 'accent',
+    tip: 'Fine-tune a model on a saved dataset' },
+  dataset: { text: 'New Dataset', ico: 'plus', cls: 'primary',
+    tip: 'Build a dataset from promoted observations' },
+  register: { text: 'Register Model', ico: 'plus', cls: 'primary',
+    tip: 'Add a model trained outside MARP', later: 'Later' },
+  import: { text: 'Import Model', ico: 'download', cls: '',
+    tip: 'Upload a model artifact', later: 'Later' },
+  enrol: { text: 'Enrol Worker', ico: 'plus', cls: 'primary',
+    tip: 'Add a machine to the pool' },
+};
+
+/* What each screen's top bar holds. `project` is shown only where narrowing by
+   project means something. */
+const TOPBAR = {
+  dashboard: { project: true, actions: ['inference', 'training'] },
+  jobs: { project: true, actions: ['inference', 'training'] },
+  inference: { project: true, actions: ['inference', 'training'] },
+  training: { project: true, actions: ['inference', 'training'] },
+  datasets: { project: true, actions: ['dataset'] },
+  models: { project: false, wide: true, actions: ['import', 'register'], kebab: true,
+    search: 'Search models by name, task, dataset or description\u2026' },
+  workers: { project: false, wide: true, actions: ['enrol'], kebab: true,
+    search: 'Search workers by name, GPU or job\u2026' },
+  history: { project: true, actions: [] },
+};
+
 function mountTopbar() {
   const bar = $('.topbar');
   if (!bar) return;
+  const cfg = TOPBAR[document.body.dataset.screen] || TOPBAR.dashboard;
 
-  /* The rail toggle and the tools bracket whatever heading the screen wrote. */
   const toggle = document.createElement('button');
   toggle.className = 'btn icon railtoggle';
   toggle.setAttribute('aria-label', 'Sections');
   toggle.innerHTML = ico('menu');
   bar.insertBefore(toggle, bar.firstChild);
 
+  const btn = (key) => {
+    const a = ACTIONS[key];
+    return '<button class="btn ' + a.cls + '" title="' + a.tip + '">'
+      + ico(a.ico) + a.text
+      + (a.later ? '<span class="later">' + a.later + '</span>' : '')
+      + '</button>';
+  };
+
   const tools = document.createElement('div');
-  tools.className = 'tools';
+  tools.className = 'tools' + (cfg.wide ? ' wide' : '');
   tools.innerHTML =
-    '<span class="lab">Project</span>'
-    + '<select class="sel" aria-label="Project">'
-    + PROJECTS.map((p) => '<option>' + p + '</option>').join('')
-    + '</select>'
+    (cfg.project
+      ? '<span class="lab">Project</span><select class="sel" aria-label="Project">'
+        + PROJECTS.map((p) => '<option>' + p + '</option>').join('') + '</select>'
+      : '')
     + '<span class="search">' + ico('search', 'sm')
-    + '<input class="inp" type="search" placeholder="Search jobs, models, datasets…"'
+    + '<input class="inp" type="search" placeholder="'
+    + (cfg.search || 'Search jobs, models, datasets\u2026') + '"'
     + ' aria-label="Search"></span>'
-    + '<button class="btn icon" aria-label="Reload">' + ico('refresh') + '</button>'
-    + '<button class="btn primary">' + ico('plus') + 'New Inference Job</button>'
-    + '<button class="btn accent">' + ico('plus') + 'New Training Job</button>'
+    + '<button class="btn icon" aria-label="Reload" title="Reload">' + ico('refresh') + '</button>'
+    + (cfg.actions || []).map(btn).join('')
+    + (cfg.kebab
+      ? '<button class="btn icon" aria-label="More" title="Export, columns and settings">'
+        + ico('dots') + '</button>'
+      : '')
     + '<div class="menuwrap">'
     + '<button class="who" id="userBtn" title="Account and preferences"'
     + ' aria-haspopup="true" aria-expanded="false">IT</button>'
@@ -701,10 +745,20 @@ const TIPS = {
   'Reassign': 'Assign the groups again from a new seed',
   /* models */
   'Registered models': "Models in MARP's registry",
-  'Preferred for a task': 'Versions somebody has marked preferred for a task',
+  'Preferred models': 'Versions somebody has marked preferred for a task',
   'Cached on workers': 'Copies held on workers, ready to run without a download',
-  'New this week': 'Versions a training run registered in the last seven days',
-  'Model': 'The registered model',
+  'Recently trained': 'Versions a training run registered in the last seven days',
+  'Model name': 'The registered model',
+  'Base model': 'What this version was fine-tuned from',
+  'Key metrics': 'The headline score for its task',
+  'Model details': 'Name, task, version and what it is preferred for',
+  'Deployment & caching': 'Which workers already hold this model',
+  'Training history': 'Every version of this model and what changed',
+  'Preferred use': 'The task this version is preferred for',
+  'Mark preferred': 'Choose the task it is preferred for, and say why',
+  'View workers': 'Which workers hold a copy',
+  'More filters': 'Filter by preference, size or who registered it',
+  'Edit': 'Edit the name, description and preference',
   'Task': 'What the model does',
   'Base': 'What this version was fine-tuned from',
   'Training dataset': 'The saved dataset this version trained on',

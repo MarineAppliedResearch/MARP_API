@@ -27,25 +27,25 @@
           <span class="stat-ico"><svg class="ico"><use href="#i-models"/></svg></span>
           <span class="stat-lab">Registered models</span>
           <b class="stat-num">28</b>
-          <span class="stat-sub"><span><b>4</b> this month</span><span><b>61</b> versions</span></span>
+          <span class="stat-sub"><span><b>4</b> this month</span></span>
         </div>
-        <div class="stat" data-state="done" title="Versions somebody has marked preferred for a task">
+        <div class="stat" data-state="done" title="Versions marked preferred for a task">
           <span class="stat-ico"><svg class="ico"><use href="#i-star"/></svg></span>
-          <span class="stat-lab">Preferred for a task</span>
+          <span class="stat-lab">Preferred models</span>
           <b class="stat-num">6</b>
-          <span class="stat-sub"><span><b>4</b> detection</span><span><b>2</b> classification</span></span>
+          <span class="stat-sub"><span>for inference and training</span></span>
         </div>
-        <div class="stat" data-state="busy" title="Model copies held on workers, ready to run without a download">
+        <div class="stat" data-state="busy" title="Copies held on workers, ready without a download">
           <span class="stat-ico"><svg class="ico"><use href="#i-slots"/></svg></span>
           <span class="stat-lab">Cached on workers</span>
           <b class="stat-num">84</b>
           <span class="stat-sub"><span>across <b>12</b> models</span></span>
         </div>
-        <div class="stat" data-state="running" title="Versions registered by a training run in the last week">
+        <div class="stat" data-state="running" title="Versions a training run registered recently">
           <span class="stat-ico"><svg class="ico"><use href="#i-clock"/></svg></span>
-          <span class="stat-lab">New this week</span>
+          <span class="stat-lab">Recently trained</span>
           <b class="stat-num">3</b>
-          <span class="stat-sub"><span><b>0</b> marked preferred</span></span>
+          <span class="stat-sub"><span>in the last 7 days</span></span>
         </div>
       </div>
 
@@ -64,16 +64,17 @@
             </select>
             <select class="sel" aria-label="Status" title="Show one status only">
               <option>All statuses</option><option>Ready</option>
-              <option>Testing</option><option>Artifact missing</option>
+              <option>Testing</option><option>Error</option>
             </select>
-            <select class="sel" aria-label="Preference" title="Show only versions preferred for a task">
-              <option>Any preference</option><option>Preferred only</option>
+            <select class="sel" aria-label="Dataset" title="Show models trained on one dataset">
+              <option>All datasets</option><option>ALL_Projects_Inverts_v5</option>
+              <option>SALT_2024_Habitat_v2</option>
             </select>
-            <button class="btn" title="Open every model's details at once">
-              <svg class="ico"><use href="#i-split"/></svg>Expand all</button>
-            <button class="btn primary" title="Add a model that was trained outside MARP">
-              <svg class="ico"><use href="#i-plus"/></svg>Register model
-              <span class="later">Later</span></button>
+            <select class="sel" aria-label="Base model" title="Show models fine-tuned from one base">
+              <option>All base models</option><option>YOLOv8l</option><option>YOLOv8m</option>
+            </select>
+            <button class="btn" title="Filter by preference, size or who registered it">
+              <svg class="ico"><use href="#i-filter"/></svg>More filters</button>
           </div>
         </header>
         <div class="panel-bd flush">
@@ -82,13 +83,13 @@
               <thead>
                 <tr>
                   <th class="ex"><span class="vh">Expand</span></th>
-                  <th class="hjob sortable" title="Sort by name">Model</th>
+                  <th class="hname sortable" title="Sort by name">Model name</th>
                   <th class="htask sortable" title="Sort by task">Task</th>
                   <th class="hver sortable" title="The version this row describes">Version</th>
                   <th class="hstatus sortable" title="Whether the artifact is usable">Status</th>
-                  <th class="hbase sortable" title="What it was fine-tuned from">Base</th>
-                  <th class="hscope sortable" title="The saved dataset it trained on">Training dataset</th>
-                  <th class="hmodel sortable" title="The headline score for its task">Key metric</th>
+                  <th class="hbase sortable" title="What it was fine-tuned from">Base model</th>
+                  <th class="hdset sortable" title="The saved dataset it trained on">Training dataset</th>
+                  <th class="hmodel sortable" title="The headline score for its task">Key metrics</th>
                   <th class="hcache sortable num" title="Workers holding a copy">Cached</th>
                   <th class="hupd sortable" aria-sort="descending" title="When it was registered">Updated</th>
                   <th class="hacts"><span class="vh">Actions</span></th>
@@ -96,14 +97,14 @@
               </thead>
               <tbody>
                   <tr class="runrow-head" aria-expanded="true">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Multiclass-Det-XL" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Multiclass-Det-XL" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Multiclass-Det-XL</span><button class="starbtn on" aria-label="Preferred for General benthic detection" title="Preferred for General benthic detection"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Object detection</td>
+                    <td class="jtask">Object detection</td>
                     <td class="mono">1.0.3</td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
-                    <td class="jscope">YOLOv8l</td>
-                    <td class="jscope">ALL_Projects_Inverts_v5</td>
-                    <td class="jmodel">mAP@50 0.892</td>
+                    <td class="jbase">YOLOv8l</td>
+                    <td class="jdset">ALL_Projects_Inverts_v5</td>
+                    <td class="jmodel">mAP@0.5: 0.892</td>
                     <td class="num" data-sort="84">84</td>
                     <td class="jtime" data-sort="2026-09-10">2026-09-10</td>
                     <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
@@ -111,238 +112,188 @@
                   <tr class="runrow-body">
                     <td colspan="11">
                       <div class="rundetail">
-                        <div class="grid" data-cols="2">
+                        <div class="grid" data-cols="3">
 
                           <div class="sect">
-                            <h3>Model</h3>
+                            <h3>Model details
+                              <button class="btn sm" title="Edit the name, description and preference">
+                                <svg class="ico sm"><use href="#i-pencil"/></svg>Edit</button></h3>
                             <dl class="kv">
-                              <dt>Name</dt><dd>MARP-Multiclass-Det-XL</dd>
-                              <dt>Task</dt><dd>Object detection &middot; YOLOv8</dd>
-                              <dt>Version</dt><dd>1.0.3 &middot; <span class="mono">4b81c07e</span></dd>
-                              <dt>Base</dt><dd>YOLOv8l <span class="faint">(Ultralytics)</span></dd>
-                              <dt>Trained on</dt><dd>ALL_Projects_Inverts_v5</dd>
-                              <dt>Classes</dt><dd>24</dd>
-                              <dt>Size</dt><dd>138 MB</dd>
-                              <dt>Registered</dt><dd>2026-09-10 by itravers</dd>
+                              <dt>Model name</dt><dd>MARP-Multiclass-Det-XL</dd>
+                              <dt>Task / type</dt><dd>Object detection (YOLOv8)</dd>
+                              <dt>Version</dt><dd>1.0.3</dd>
+                              <dt>Status</dt><dd><span class="st" data-state="ready"><span class="dot"></span>Ready</span></dd>
+                              <dt>Preferred use</dt><dd>General benthic detection</dd>
+                              <dt>Base model</dt><dd>YOLOv8l <span class="faint">(Ultralytics)</span></dd>
+                              <dt>Training dataset</dt><dd>ALL_Projects_Inverts_v5</dd>
                             </dl>
-                            <div class="prefbox" title="Preference is task-specific and carries a note. It is not a global ranking.">
-                              <svg class="ico sm"><use href="#i-star"/></svg>
-                              <span><b>Preferred for general benthic detection</b>
-                                <em>The workhorse for CAMPA and PACIFIC transect video</em></span>
-                            </div>
+                            <div class="descbox">The workhorse for CAMPA and PACIFIC transect
+                              video. 24 classes, 138 MB, registered 2026-09-10 by itravers.</div>
                           </div>
 
                           <div class="sect">
-                            <h3>Key metrics <span class="faint">&middot; held-out test split</span></h3>
+                            <h3>Key metrics <span class="faint">(held-out test split)</span></h3>
                             <div class="metrics">
-                              <span title="Mean average precision at the lenient overlap threshold"><b>0.892</b>mAP@50</span>
-                              <span title="Mean average precision averaged over strict thresholds"><b>0.641</b>mAP@50-95</span>
+                              <span title="Mean average precision at the lenient overlap threshold"><b>0.892</b>mAP@0.5</span>
                               <span title="How many detections were right"><b>0.904</b>precision</span>
                               <span title="How many real animals were found"><b>0.876</b>recall</span>
                             </div>
 
-                            <h3 style="margin-top:14px">Caching</h3>
+                            <h3 style="margin-top:16px">Deployment &amp; caching</h3>
                             <div class="cachebox">
                               <svg class="ico"><use href="#i-slots"/></svg>
                               <span><b>Cached on 84 workers</b>
-                                <em>Preferred for matching jobs, not restricted to them</em></span>
-                              <button class="btn sm" title="Which workers hold this model">Workers</button>
+                                <em>Preferred for matching jobs, not a dedicated lock</em></span>
+                              <button class="btn sm" title="Which workers hold this model">View workers</button>
                             </div>
 
-                            <div class="btnrow" style="margin-top:12px">
+                            <div class="acts2">
                               <button class="btn primary" title="Start an inference job with this version">
                                 <svg class="ico"><use href="#i-play"/></svg>Use for inference</button>
-                              <button class="btn" title="Fine-tune a new version from this one">
-                                <svg class="ico"><use href="#i-training"/></svg>Train from this</button>
-                            </div>
-                            <div class="btnrow" style="margin-top:7px">
                               <button class="btn" title="Cache it on chosen workers and prefer them for matching jobs">
                                 <svg class="ico"><use href="#i-workers"/></svg>Assign to workers
                                 <span class="later">Later</span></button>
                               <button class="btn" title="Choose the task it is preferred for, and say why">
-                                <svg class="ico"><use href="#i-star"/></svg>Change preference</button>
+                                <svg class="ico"><use href="#i-star"/></svg>Mark preferred</button>
+                              <button class="btn" title="Fine-tune a new version from this one">
+                                <svg class="ico"><use href="#i-training"/></svg>Train from this</button>
                             </div>
                           </div>
 
-                        </div>
+                          <div class="sect">
+                            <h3>Lineage</h3>
+                            <div class="lineage"><div class="lnode"><svg class="ico"><use href="#i-models"/></svg><b>YOLOv8l</b><span>Base model</span><em>Ultralytics</em></div><svg class="ico larrow"><use href="#i-arrow"/></svg><div class="lnode"><svg class="ico"><use href="#i-datasets"/></svg><b>ALL_Projects v3</b><span>Transfer learning</span><em>v1.0.0</em></div><svg class="ico larrow"><use href="#i-arrow"/></svg><div class="lnode is-current"><svg class="ico"><use href="#i-models"/></svg><b>Multiclass-Det-XL</b><span>Fine-tuned model</span><em>v1.0.3</em></div></div>
+                            <p class="hint">Most MARP models are transfer-trained from an
+                              existing one.</p>
 
-                        <div class="sect">
-                          <h3>Lineage</h3>
-                            <div class="lineage"><div class="lnode"><svg class="ico"><use href="#i-models"/></svg><b>YOLOv8l</b><span>Upstream checkpoint</span><em>Ultralytics</em></div><svg class="ico larrow"><use href="#i-arrow"/></svg><div class="lnode"><svg class="ico"><use href="#i-models"/></svg><b>MARP-Multiclass-Det-XL 1.0.0</b><span>First transfer</span><em>ALL_Projects_Inverts_v3</em></div><svg class="ico larrow"><use href="#i-arrow"/></svg><div class="lnode is-current"><svg class="ico"><use href="#i-models"/></svg><b>MARP-Multiclass-Det-XL 1.0.3</b><span>Current version</span><em>ALL_Projects_Inverts_v5</em></div></div>
-                        </div>
-
-                        <div class="sect">
-                          <h3>Versions <span class="faint">(4)</span></h3>
-                          <div class="vlist">
-                            <div class="vrow vhead">
-                              <span>Version</span><span class="num">mAP@50</span>
-                              <span class="num">Size</span><span>Trained</span>
-                              <span>Dataset</span><span>What changed</span>
-                            </div>
-                            <div class="vrow is-current">
-                              <span class="mono">1.0.3<span class="tag">current</span></span>
-                              <span class="num">0.892</span>
-                              <span class="num">138 MB</span>
-                              <span>2026-09-10</span>
-                              <span class="tr">ALL_Projects_Inverts_v5</span>
-                              <span class="tr">Small-object recall improved</span>
-                            </div>
-                            <div class="vrow">
-                              <span class="mono">1.0.2</span>
-                              <span class="num">0.784</span>
-                              <span class="num">138 MB</span>
-                              <span>2026-08-14</span>
-                              <span class="tr">ALL_Projects_Inverts_v4</span>
-                              <span class="tr">More augmentation, longer schedule</span>
-                            </div>
-                            <div class="vrow">
-                              <span class="mono">1.0.1</span>
-                              <span class="num">0.741</span>
-                              <span class="num">138 MB</span>
-                              <span>2026-07-22</span>
-                              <span class="tr">ALL_Projects_Inverts_v3</span>
-                              <span class="tr">Extra epochs</span>
-                            </div>
-                            <div class="vrow">
-                              <span class="mono">1.0.0</span>
-                              <span class="num">0.702</span>
-                              <span class="num">138 MB</span>
-                              <span>2026-07-03</span>
-                              <span class="tr">ALL_Projects_Inverts_v3</span>
-                              <span class="tr">First release from transfer learning</span>
+                            <h3 style="margin-top:14px">Training history</h3>
+                            <div class="hlist">
+                              <div class="hrow hhead">
+                                <span>Date</span><span>Version</span>
+                                <span>Dataset</span><span>What changed</span>
+                              </div>
+                              <div class="hrow"><span>2026-09-10</span><span class="mono">1.0.3</span><span class="tr">ALL_Projects_Inverts_v5</span><span class="tr">Improved small object detection</span></div>
+                              <div class="hrow"><span>2026-08-14</span><span class="mono">1.0.2</span><span class="tr">ALL_Projects_Inverts_v4</span><span class="tr">Extended training, more augmentation</span></div>
+                              <div class="hrow"><span>2026-07-22</span><span class="mono">1.0.1</span><span class="tr">ALL_Projects_Inverts_v3</span><span class="tr">Increased training epochs</span></div>
+                              <div class="hrow"><span>2026-07-03</span><span class="mono">1.0.0</span><span class="tr">ALL_Projects_Inverts_v3</span><span class="tr">Initial release from transfer learning</span></div>
                             </div>
                           </div>
-                          <p class="hint">A finished training run registers a version. It is not
-                            marked preferred &mdash; that stays a human decision.</p>
+
                         </div>
                       </div>
                     </td>
                   </tr>
                   <tr class="runrow-head" aria-expanded="false">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Det-v3" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Det-v3</span><button class="starbtn" aria-label="Not preferred for any task" title="Not preferred for any task"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Object detection</td>
-                    <td class="mono">2.0.1</td>
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Kelp-Seg" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Kelp-Seg</span></span></td>
+                    <td class="jtask">Segmentation</td>
+                    <td class="mono">1.0.2</td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
-                    <td class="jscope">YOLOv8m</td>
-                    <td class="jscope">GULF_2025_Inverts_v1</td>
-                    <td class="jmodel">mAP@50 0.821</td>
-                    <td class="num" data-sort="62">62</td>
-                    <td class="jtime" data-sort="2026-09-09">2026-09-09</td>
+                    <td class="jbase">Swin-UNet</td>
+                    <td class="jdset">PACIFIC_2023_Benthic_v1</td>
+                    <td class="jmodel">mIoU: 0.876</td>
+                    <td class="num" data-sort="52">52</td>
+                    <td class="jtime" data-sort="2026-09-08">2026-09-08</td>
                     <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
                   </tr>
                   <tr class="runrow-body" hidden>
-                    <td colspan="11">
-                      <div class="rundetail"><p class="hint">Details, metrics, lineage and versions for MARP-Det-v3.</p></div>
-                    </td>
+                    <td colspan="11"><div class="rundetail"><p class="hint">Details, metrics, lineage and training history for MARP-Kelp-Seg.</p></div></td>
                   </tr>
                   <tr class="runrow-head" aria-expanded="false">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Habitat-Cls" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Habitat-Cls" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Habitat-Cls</span><button class="starbtn on" aria-label="Preferred for Substrate classification" title="Preferred for Substrate classification"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Classification</td>
+                    <td class="jtask">Classification</td>
                     <td class="mono">1.2.0</td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
-                    <td class="jscope">EfficientNet-B4</td>
-                    <td class="jscope">SALT_2024_Habitat_v2</td>
-                    <td class="jmodel">Accuracy 0.948</td>
+                    <td class="jbase">EfficientNet-B4</td>
+                    <td class="jdset">SALT_2024_Habitat_v2</td>
+                    <td class="jmodel">Acc: 0.948</td>
                     <td class="num" data-sort="37">37</td>
                     <td class="jtime" data-sort="2026-09-07">2026-09-07</td>
                     <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
                   </tr>
                   <tr class="runrow-body" hidden>
-                    <td colspan="11">
-                      <div class="rundetail"><p class="hint">Details, metrics, lineage and versions for MARP-Habitat-Cls.</p></div>
-                    </td>
+                    <td colspan="11"><div class="rundetail"><p class="hint">Details, metrics, lineage and training history for MARP-Habitat-Cls.</p></div></td>
                   </tr>
                   <tr class="runrow-head" aria-expanded="false">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Rockfish-Cls" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Rockfish-Cls</span><button class="starbtn" aria-label="Not preferred for any task" title="Not preferred for any task"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Classification</td>
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Det-v3" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Det-v3</span></span></td>
+                    <td class="jtask">Object detection</td>
+                    <td class="mono">2.0.1</td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
+                    <td class="jbase">YOLOv8m</td>
+                    <td class="jdset">GULF_2025_Inverts_v1</td>
+                    <td class="jmodel">mAP@0.5: 0.821</td>
+                    <td class="num" data-sort="62">62</td>
+                    <td class="jtime" data-sort="2026-09-05">2026-09-05</td>
+                    <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">Details, metrics, lineage and training history for MARP-Det-v3.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Rockfish-Cls" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Rockfish-Cls</span></span></td>
+                    <td class="jtask">Classification</td>
                     <td class="mono">2.1.0</td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
-                    <td class="jscope">ConvNeXt</td>
-                    <td class="jscope">CAMPA_2024_Rockfish_v3</td>
-                    <td class="jmodel">Accuracy 0.912</td>
+                    <td class="jbase">ConvNeXt</td>
+                    <td class="jdset">CAMPA_2024_Rockfish_v3</td>
+                    <td class="jmodel">Acc: 0.912</td>
                     <td class="num" data-sort="31">31</td>
                     <td class="jtime" data-sort="2026-09-05">2026-09-05</td>
                     <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
                   </tr>
                   <tr class="runrow-body" hidden>
-                    <td colspan="11">
-                      <div class="rundetail"><p class="hint">Details, metrics, lineage and versions for MARP-Rockfish-Cls.</p></div>
-                    </td>
+                    <td colspan="11"><div class="rundetail"><p class="hint">Details, metrics, lineage and training history for MARP-Rockfish-Cls.</p></div></td>
                   </tr>
                   <tr class="runrow-head" aria-expanded="false">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Fish-Det" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Fish-Det</span><button class="starbtn" aria-label="Not preferred for any task" title="Not preferred for any task"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Object detection</td>
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Fish-Det" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Fish-Det</span></span></td>
+                    <td class="jtask">Object detection</td>
                     <td class="mono">1.1.4</td>
-                    <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
-                    <td class="jscope">YOLOv8m</td>
-                    <td class="jscope">GULF_2025_Fish_Train_v1</td>
-                    <td class="jmodel">mAP@50 0.756</td>
-                    <td class="num" data-sort="28">28</td>
-                    <td class="jtime" data-sort="2026-09-05">2026-09-05</td>
-                    <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
-                  </tr>
-                  <tr class="runrow-body" hidden>
-                    <td colspan="11">
-                      <div class="rundetail"><p class="hint">Details, metrics, lineage and versions for MARP-Fish-Det.</p></div>
-                    </td>
-                  </tr>
-                  <tr class="runrow-head" aria-expanded="false">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Kelp-Seg" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Kelp-Seg</span><button class="starbtn" aria-label="Not preferred for any task" title="Not preferred for any task"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Segmentation</td>
-                    <td class="mono">1.0.2</td>
                     <td class="jstatus" data-sort="1"><span class="st" data-state="testing"><span class="dot"></span>Testing</span></td>
-                    <td class="jscope">Swin-UNet</td>
-                    <td class="jscope">PACIFIC_2023_Benthic_v1</td>
-                    <td class="jmodel">mIoU 0.784</td>
+                    <td class="jbase">YOLOv8m</td>
+                    <td class="jdset">GULF_2025_Fish_Train_v1</td>
+                    <td class="jmodel">mAP@0.5: 0.784</td>
                     <td class="num" data-sort="12">12</td>
                     <td class="jtime" data-sort="2026-09-02">2026-09-02</td>
                     <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
                   </tr>
                   <tr class="runrow-body" hidden>
-                    <td colspan="11">
-                      <div class="rundetail"><p class="hint">Details, metrics, lineage and versions for MARP-Kelp-Seg.</p></div>
-                    </td>
+                    <td colspan="11"><div class="rundetail"><p class="hint">Details, metrics, lineage and training history for MARP-Fish-Det.</p></div></td>
                   </tr>
                   <tr class="runrow-head" aria-expanded="false">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-SeaStar-Det" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-SeaStar-Det</span><button class="starbtn" aria-label="Not preferred for any task" title="Not preferred for any task"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Object detection</td>
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-SeaStar-Det" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-SeaStar-Det</span></span></td>
+                    <td class="jtask">Object detection</td>
                     <td class="mono">1.0.1</td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
-                    <td class="jscope">YOLOv8n</td>
-                    <td class="jscope">SALT_2024_SeaStar_v2</td>
-                    <td class="jmodel">mAP@50 0.688</td>
+                    <td class="jbase">YOLOv8n</td>
+                    <td class="jdset">SALT_2024_SeaStar_v2</td>
+                    <td class="jmodel">mAP@0.5: 0.688</td>
                     <td class="num" data-sort="19">19</td>
                     <td class="jtime" data-sort="2026-08-30">2026-08-30</td>
                     <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
                   </tr>
                   <tr class="runrow-body" hidden>
-                    <td colspan="11">
-                      <div class="rundetail"><p class="hint">Details, metrics, lineage and versions for MARP-SeaStar-Det.</p></div>
-                    </td>
+                    <td colspan="11"><div class="rundetail"><p class="hint">Details, metrics, lineage and training history for MARP-SeaStar-Det.</p></div></td>
                   </tr>
                   <tr class="runrow-head" aria-expanded="false">
-                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Sponge-Det" title="Open this model's details, metrics and versions"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
-                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Sponge-Det</span><button class="starbtn" aria-label="Not preferred for any task" title="Not preferred for any task"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
-                    <td class="jscope">Object detection</td>
+                    <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Sponge-Det" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Sponge-Det</span></span></td>
+                    <td class="jtask">Object detection</td>
                     <td class="mono">1.1.2</td>
-                    <td class="jstatus" data-sort="2"><span class="st" data-state="error"><span class="dot"></span>Artifact missing</span></td>
-                    <td class="jscope">YOLOv8n</td>
-                    <td class="jscope">VENTS_2025_Sponge_v1</td>
-                    <td class="jmodel">mAP@50 0.612</td>
+                    <td class="jstatus" data-sort="2"><span class="st" data-state="error"><span class="dot"></span>Error</span></td>
+                    <td class="jbase">YOLOv8n</td>
+                    <td class="jdset">VENTS_2025_Sponge_v1</td>
+                    <td class="jmodel">mAP@0.5: 0.612</td>
                     <td class="num" data-sort="0">0</td>
                     <td class="jtime" data-sort="2026-08-27">2026-08-27</td>
                     <td class="jacts"><button class="btn sm icon" aria-label="More" title="Rename, retire or export"><svg class="ico sm"><use href="#i-dots"/></svg></button></td>
                   </tr>
                   <tr class="runrow-body" hidden>
-                    <td colspan="11">
-                      <div class="rundetail"><p class="hint">Details, metrics, lineage and versions for MARP-Sponge-Det.</p></div>
-                    </td>
+                    <td colspan="11"><div class="rundetail"><p class="hint">Details, metrics, lineage and training history for MARP-Sponge-Det.</p></div></td>
                   </tr>
               </tbody>
             </table>

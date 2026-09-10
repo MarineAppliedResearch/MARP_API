@@ -173,6 +173,11 @@ svg { display: block; }
 }
 .topbar .sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
 .topbar .tools { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+/* A screen with no project select gives its search the room instead -- Models
+   and Workers search a long list and the mockups draw the field wide. */
+.topbar .tools.wide { flex: 1; margin-left: 28px; }
+.topbar .tools.wide .search { flex: 1; min-width: 0; }
+.topbar .tools.wide .search .inp { width: 100%; }
 .topbar .lab { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .topbar .railtoggle { display: none; }   /* .btn is declared later and sets inline-flex */
 
@@ -369,6 +374,10 @@ svg { display: block; }
 .two .a, .two .b, .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name { max-width: 100%; }
 .tbl td.acts { text-align: right; }
+/* Plain text cells that carry a name too long for their column. */
+.tbl td.jtask, .tbl td.jbase, .tbl td.jdset, .tbl td.jscope {
+  overflow: hidden; text-overflow: ellipsis;
+}
 .tbl td.acts > * { display: inline-flex; gap: 5px; }
 /* The bar lives inside a two-line cell here, so it takes the cell rather than a
    fixed 92px -- the column is already the thing deciding the width. */
@@ -424,6 +433,9 @@ svg { display: block; }
 .btn:disabled { opacity: 0.38; cursor: not-allowed; }
 
 .sel, .inp {
+  /* Without this an input keeps its ~170px intrinsic width and overflows any
+     column narrower than that -- which is every field on a phone. */
+  min-width: 0;
   padding: 7px 11px; border-radius: var(--r-sm);
   background: var(--sunk); border: 1px solid var(--hairline-2);
   color: var(--text); font-size: 12px;
@@ -551,7 +563,13 @@ svg { display: block; }
 
 /* A section inside the drawer. A rule and a label, not another bordered card --
    nesting cards inside a panel is how a detail view starts to look like a form. */
-.sect { display: grid; gap: 10px; }
+.sect {
+  display: grid; gap: 10px;
+  /* An `auto` track takes its items' min-content width and overflows the box
+     rather than shrinking. The definition list inside wanted 575px in a 452px
+     column, so its heading and description spilled into the column beside it. */
+  grid-template-columns: minmax(0, 1fr);
+}
 .sect > h3 {
   font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   color: var(--faint); padding-bottom: 7px; border-bottom: 1px solid var(--hairline);
@@ -974,7 +992,12 @@ tr[aria-expanded="true"] .exbtn .ico { transform: rotate(90deg); }
 
 tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .runrow-body > td { padding: 0 !important; background: var(--sunk); }
-.rundetail { padding: 16px; display: grid; gap: 14px; border-top: 1px solid var(--hairline); }
+.rundetail {
+  padding: 16px; display: grid; gap: 14px; border-top: 1px solid var(--hairline);
+  /* The detail lives inside a table cell, and `.tbl tbody td` sets nowrap --
+     which stopped the description and every hint in here from wrapping. */
+  white-space: normal;
+}
 .rundetail .charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .rundetail .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 11.5px; }
 .rundetail .facts .k { color: var(--faint); }
@@ -1083,10 +1106,6 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 
 /* ============================================================== models */
 
-.tbl.fixed .htask  { width: 11%; }
-.tbl.fixed .hver   { width: 7%; }
-.tbl.fixed .hbase  { width: 10%; }
-.tbl.fixed .hcache { width: 6%; }
 
 /* The preference marker. Task-specific, so its hover says what for; an unmarked
    model shows the outline rather than nothing, because a missing star and a
@@ -1100,19 +1119,9 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 .starbtn.on { color: var(--amber-300); }
 .starbtn.on .ico { fill: currentColor; }
 
-/* What a version is preferred for, and the note that comes with it. */
-.prefbox {
-  display: flex; gap: 9px; align-items: flex-start;
-  margin-top: 12px; padding: 10px 12px; border-radius: var(--r-sm);
-  background: rgba(246, 196, 83, 0.07); border: 1px solid rgba(246, 196, 83, 0.24);
-}
-.prefbox .ico { color: var(--amber-300); fill: currentColor; margin-top: 1px; }
-.prefbox b { display: block; color: var(--amber-300); font-size: 11.5px; }
-.prefbox em { display: block; font-style: normal; color: var(--muted);
-              font-size: 10.5px; margin-top: 2px; }
 
 /* Four scores, read across. */
-.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .metrics > span {
   display: grid; gap: 1px; padding: 9px 10px; border-radius: var(--r-sm);
   background: var(--sunk); border: 1px solid var(--hairline);
@@ -1130,26 +1139,6 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 .cachebox b { display: block; color: var(--white); font-size: 12px; }
 .cachebox em { display: block; font-style: normal; color: var(--faint); font-size: 10.5px; }
 
-/* Every version of a model. A grid rather than a table: this sits inside a
-   `<td>` of the registry, and a nested table there had its rows parsed into the
-   outer table -- an empty thead and four rows appended to the registry itself. */
-.vlist { display: grid; gap: 1px; border: 1px solid var(--hairline);
-         border-radius: var(--r-sm); overflow: hidden; background: var(--hairline); }
-.vrow {
-  display: grid; align-items: center; gap: 12px;
-  grid-template-columns: 130px 74px 74px 96px minmax(0, 1.1fr) minmax(0, 1.4fr);
-  padding: 7px 12px; background: var(--card-flat); font-size: 11.5px;
-}
-.vrow > .num { text-align: right; }
-.vrow > .tr { color: var(--muted); overflow: hidden; text-overflow: ellipsis;
-              white-space: nowrap; }
-.vrow.vhead {
-  background: var(--sunk); color: var(--faint);
-  font-size: 10px; font-weight: 700; letter-spacing: 0.11em; text-transform: uppercase;
-}
-.vrow .tag { margin-left: 7px; }
-.vrow.is-current { background: rgba(20, 126, 232, 0.10); }
-.vrow.is-current > .mono { color: var(--white); font-weight: 600; }
 
 /* Where a version came from: upstream checkpoint, first transfer, current. */
 .lineage { display: flex; align-items: stretch; gap: 8px; }
@@ -1168,6 +1157,54 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
                     background: rgba(34, 215, 220, 0.06); }
 .lnode.is-current .ico, .lnode.is-current b { color: var(--cyan-300); }
 .larrow { align-self: center; color: var(--faint); flex: none; }
+
+/* The registry's own column widths, scoped to the table. Sharing Jobs' header
+   classes meant Jobs' mid-width rules hid a header here while its cell stayed,
+   which shifts every column after it. */
+#models .hname   { width: 20%; }
+#models .htask   { width: 11%; }
+#models .hver    { width: 6%; }
+#models .hstatus { width: 10%; }
+#models .hbase   { width: 10%; }
+#models .hdset   { width: 15%; }
+#models .hmodel  { width: 12%; }
+#models .hcache  { width: 5%; }
+#models .hupd    { width: 8%; }
+#models .hacts   { width: 3%; }
+
+/* A section heading with a control on the far side of it. */
+.sect > h3 { display: flex; align-items: center; gap: 10px; }
+.sect > h3 > .btn { margin-left: auto; text-transform: none; letter-spacing: 0; }
+
+/* The model's own description, in its own box the way the mockup draws it. */
+.descbox {
+  margin-top: 12px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--hairline);
+  color: var(--muted); font-size: 11.5px; line-height: 1.5;
+}
+
+/* Four actions, two by two. */
+.acts2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+         margin-top: 14px; }
+.acts2 .btn { justify-content: flex-start; }
+
+/* The training history: date, version, dataset, what changed. A grid rather
+   than a table because this sits inside a registry row's <td>, and a nested
+   table there had its rows parsed into the outer table. */
+.hlist { display: grid; gap: 1px; border: 1px solid var(--hairline);
+         border-radius: var(--r-sm); overflow: hidden; background: var(--hairline); }
+.hrow { display: grid; grid-template-columns: 84px 52px minmax(0, 1fr) minmax(0, 1.3fr);
+        gap: 10px; align-items: baseline; padding: 6px 11px;
+        background: var(--card-flat); font-size: 11px; }
+.hrow > .tr { color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; }
+.hrow.hhead { background: var(--sunk); color: var(--faint);
+              font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em;
+              text-transform: uppercase; }
+
+/* The expanded row reads as one selected object, the way the mockup outlines it. */
+tr[aria-expanded="true"] td { box-shadow: inset 0 1px 0 rgba(45, 156, 255, 0.34); }
+.runrow-body > td { border-left: 2px solid rgba(45, 156, 255, 0.34); }
 
 /* ============================================================== responsive */
 
@@ -1200,12 +1237,12 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
   /* Three lineage nodes side by side stop being readable here. */
   .lineage { flex-direction: column; }
   .larrow { transform: rotate(90deg); align-self: start; margin-left: 18px; }
-  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  /* Six columns of version history do not fit; each becomes a block. */
-  .vrow { grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; }
-  .vrow.vhead { display: none; }
-  .vrow > .num { text-align: right; }
-  .vrow > .tr { white-space: normal; grid-column: 1 / -1; }
+  .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .acts2 { grid-template-columns: minmax(0, 1fr); }
+  /* Four columns of history do not fit; the note takes its own line. */
+  .hrow { grid-template-columns: auto auto minmax(0, 1fr); }
+  .hrow.hhead { display: none; }
+  .hrow > .tr:last-child { grid-column: 1 / -1; white-space: normal; }
 
   /* The tools take a line of their own here. Sharing one row with the title
      left `Machine Lea...` -- and the title is the thing that says where you are. */
@@ -1218,13 +1255,27 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 
   /* Scope goes. Dive and line are secondary to the model and the progress at
      this width, and they are on the job's own page. The rest take the space. */
-  .tbl.fixed .hscope, .tbl.fixed td.jscope { display: none; }
-  .tbl.fixed .hjob    { width: 26%; }
-  .tbl.fixed .hmodel  { width: 20%; }
-  .tbl.fixed .hstatus { width: 13%; }
-  .tbl.fixed .hprog   { width: 18%; }
-  .tbl.fixed .hupd    { width: 12%; }
-  .tbl.fixed .hacts   { width: 11%; }
+  .tbl.fixed:not(#models) .hscope, .tbl.fixed:not(#models) td.jscope { display: none; }
+  .tbl.fixed:not(#models) .hjob    { width: 26%; }
+  .tbl.fixed:not(#models) .hmodel  { width: 20%; }
+  .tbl.fixed:not(#models) .hstatus { width: 13%; }
+  .tbl.fixed:not(#models) .hprog   { width: 18%; }
+  .tbl.fixed:not(#models) .hupd    { width: 12%; }
+  .tbl.fixed:not(#models) .hacts   { width: 11%; }
+
+  /* Models carries eleven columns, and at this width the status cell came out
+     two pixels narrower than the word inside it. */
+  /* The base model is in the row's own detail, so it is the column to drop
+     when eleven of them will not fit. */
+  #models .hbase, #models td.jbase { display: none; }
+  #models .hname   { width: 22%; }
+  #models .htask   { width: 12%; }
+  #models .hver    { width: 7%; }
+  #models .hstatus { width: 12%; }
+  #models .hdset   { width: 16%; }
+  #models .hmodel  { width: 13%; }
+  #models .hcache  { width: 6%; }
+  #models .hupd    { width: 9%; }
 
   /* Donut, legend and slots read across instead of leaving the panel two thirds
      empty once the right-hand column has collapsed underneath the table. */
@@ -1293,6 +1344,12 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
   .panel-bd { padding: 13px; }
   .pool { grid-template-columns: minmax(0, 1fr); justify-items: center; }
   .legend { width: 100%; }
+  /* The slots block goes to one column, and its labels lose the 56px minimum
+     that made them wider than the column they sat in. */
+  .slots { grid-template-columns: minmax(0, 1fr); }
+  .slots .big { grid-row: auto; }
+  .slots .row { justify-content: space-between; }
+  .slots .row .k { min-width: 0; }
   /* A seven-column job table does not fit a phone and never will, so each row
      becomes a card. The table's own display has to go with it -- a `tr` set to
      grid inside a `display: table` parent is still laid out by the table
@@ -1355,6 +1412,9 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
      loses to a base rule declared after it. */
   .splitgrid { grid-template-columns: minmax(0, 1fr); }
   .thumbs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Two fields side by side at 342px leaves 150px each, which no labelled
+     control fits into. One per line. */
+  .fieldrow { grid-template-columns: minmax(0, 1fr); }
   .subsets li { grid-template-columns: minmax(0, 1fr) auto; }
   .subsets .btn { grid-area: 2 / 2; }
   .totalrow .v { font-size: 18px; }

@@ -69,6 +69,31 @@ for (const view of views) {
     await page.screenshot({ path: file, fullPage: true });
     console.log(`mock-${name}-${view}.png`);
 
+    /* Anything wider than the box that holds it. The right-edge check above
+       only sees content leaving the *viewport*; a child overflowing its own
+       grid column lands on top of the column beside it and stays inside the
+       page, which is how two headings ended up printed over each other. */
+    const spill = await page.evaluate(() => {
+      const out = [];
+      for (const el of document.querySelectorAll('.panel *, .rundetail *')) {
+        const par = el.parentElement;
+        if (!par) continue;
+        const cs = getComputedStyle(par);
+        if (cs.overflowX !== 'visible' || cs.display === 'inline') continue;
+        if (getComputedStyle(el).position === 'absolute') continue;
+        const a = el.getBoundingClientRect();
+        const b = par.getBoundingClientRect();
+        if (a.width === 0 || b.width === 0) continue;
+        if (a.width - b.width > 2) {
+          out.push(`${el.tagName.toLowerCase()}.${String(el.className).split(' ')[0]}`
+            + ` ${Math.round(a.width)}px inside ${Math.round(b.width)}px`
+            + ` ${par.tagName.toLowerCase()}.${String(par.className).split(' ')[0]}`);
+        }
+      }
+      return [...new Set(out)].slice(0, 5);
+    });
+    for (const o of spill) problems.push(`${name}/${view}: wider than its container: ${o}`);
+
     /* Two controls side by side in a `.fieldrow` must sit on the same line. They
        did not: a grid item stretches to its row, and a stretched `.field` puts
        the slack into its own label row, dropping the second control 7px. Easy
@@ -79,9 +104,17 @@ for (const view of views) {
         const ctrls = [...row.querySelectorAll(
           ':scope > .field > select, :scope > .field > input, :scope > .field > button')];
         if (ctrls.length < 2) continue;
-        const tops = ctrls.map((c) => Math.round(c.getBoundingClientRect().top));
-        if (Math.max(...tops) - Math.min(...tops) > 1) {
-          out.push((row.querySelector('label') || {}).textContent + ' -> ' + tops.join(' / '));
+        /* Only controls that are genuinely side by side. On a phone the row
+           collapses to one column and the fields are *meant* to stack, so
+           comparing every pair reported the layout working as a fault. */
+        for (let i = 1; i < ctrls.length; i++) {
+          const a = ctrls[i - 1].getBoundingClientRect();
+          const b = ctrls[i].getBoundingClientRect();
+          const sideBySide = Math.abs(a.left - b.left) > 2;
+          if (sideBySide && Math.abs(a.top - b.top) > 1) {
+            out.push((row.querySelector('label') || {}).textContent
+              + ' -> ' + Math.round(a.top) + ' / ' + Math.round(b.top));
+          }
         }
       }
       return out.slice(0, 4);
