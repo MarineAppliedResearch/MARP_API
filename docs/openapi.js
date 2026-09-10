@@ -2864,8 +2864,10 @@ const buildOpenApiSpec = () => {
                             project_name: { type: 'string', nullable: true, example: 'Deep Reef Survey 2025', description: 'Null where the observation records no project. Both joins are outer, so a row is never silently dropped for want of one.' },
                             review_decision: { type: 'string', nullable: true, enum: ['reviewed', 'flagged', null], example: null, description: 'Current scientific decision, or null for unreviewed -- which is the absence of a record.' },
                             flag_reason: { type: 'string', nullable: true, example: null },
+                            review_reviewer_id: { type: 'integer', nullable: true, example: 42, description: 'users.user_id of whoever made the current scientific decision, or null where there is none. **An id and not a name**, deliberately: the permission catalog separates reports:read from observations:read because it exposes who did how much work, and this row carries no processor_name for the same reason. A client compares it with its own authenticated principal to draw "by you", which needs no name at all. Without it the client\'s "REVIEWED by you" badge, the borrowed tag\'s attribution and its byMe derivation all silently became nothing, because it was reading four columns this row has never carried.' },
                             training_decision: { type: 'string', nullable: true, enum: ['promoted', 'excluded', null], example: null, description: 'Current training decision, or null for undecided.' },
                             exclusion_reason: { type: 'string', nullable: true, example: null },
+                            training_reviewer_id: { type: 'integer', nullable: true, example: 42, description: 'users.user_id of whoever made the current training decision, or null where there is none. An id and not a name, for the same reason as review_reviewer_id.' },
                             keyframe_count: { type: 'integer', example: 8, description: 'How many keyframes the observation carries. Computed per returned row, not over the matching set, unless the sort names it.' },
                             first_framenum: { type: 'integer', nullable: true, example: 3457 },
                             thumbnail_status: { type: 'string', enum: ['queued', 'ready', 'failed'], example: 'ready', description: 'Whether the tile has a picture. **Never null**: serving a page enqueues the thumbnails it is missing, so an observation with no record at all reports `queued` rather than an absence the client has no rendering for. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page.' },
@@ -3106,6 +3108,29 @@ const buildOpenApiSpec = () => {
                             },
                             review_id: { type: 'integer', example: 9912, description: 'The observation_reviews row this correction appended. It carries purpose "scientific", decision "corrected", and both species ids.' },
                             correctedAt: { type: 'string', format: 'date-time', example: '2026-09-09T12:00:00.000Z' },
+                        },
+                    },
+                    MosaicFacets: {
+                        type: 'object',
+                        description:
+                            'Which values each set dimension can still offer for one question. **The dimension being enumerated is excluded from its own predicate** -- a dive list narrowed by the dives already selected would only ever offer what is already selected -- while every other filter applies, the two status dimensions included, so the rail never offers a combination that returns nothing. Only dimensions that were asked for are present.',
+                        properties: {
+                            facets: {
+                                type: 'object',
+                                description: 'Keyed by dimension name: project, dive, line, sessionType, session, species, model.',
+                                additionalProperties: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            value: { description: 'What the filter takes. An integer for species, model and session; a string for the rest.', oneOf: [{ type: 'integer' }, { type: 'string' }], example: 41 },
+                                            label: { type: 'string', example: 'Bat Star', description: 'What a reviewer reads. A different column from value for species (species.comname), model (ml_models.name) and session (its own id, because a session has no name).' },
+                                            list: { type: 'string', nullable: true, example: 'Inverts', description: 'Populated for species only: which annotation list the entry belongs to. A common name identifies a species only within its list -- values below 10000 are local codes invented per list and reused -- so a question spanning two lists can offer two organisms under one label, and the client qualifies the label only when that is actually the case.' },
+                                            count: { type: 'integer', example: 812, description: 'Matching observations under the rest of the question. Free from the aggregate that groups the values, and it is what lets a client open on the most numerous species rather than on a name written into its source.' },
+                                        },
+                                    },
+                                },
+                            },
                         },
                     },
                     MosaicStatusCounts: {

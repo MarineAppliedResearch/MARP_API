@@ -1023,6 +1023,16 @@ describe('the mosaic query (#105)', () => {
                 'observation_id',
                 'project_name',
                 'review_decision',
+                // Owed to #124's A13, and F8 is the defect it closes: the client draws
+                // "REVIEWED by you", the borrowed tag's attribution and `byMe` from
+                // `reviewed_by` / `flagged_by` / `training_approved_by` / `excluded_by`,
+                // and this row has never carried any of the four -- so all three silently
+                // became nothing. **Ids and not names**, which keeps #118's A10 reasoning
+                // intact: the catalog separates `reports:read` because it exposes who did
+                // how much work, and an id the caller can only compare with its own
+                // principal exposes nobody. **Moved into this list rather than the list
+                // being loosened** -- naming the exact keys is the tripwire.
+                'review_reviewer_id',
                 'session_type',
                 // Owed to #111, not wanted by the tile either: `comname` above
                 // is the annotator's frozen label and a species correction never
@@ -1041,6 +1051,9 @@ describe('the mosaic query (#105)', () => {
                 // derivable from observation_id, so no `thumb` joins it.
                 'thumbnail_status',
                 'training_decision',
+                // The training half of A13's pair. Same reasoning, same list, same rule
+                // about being moved in rather than admitted by loosening.
+                'training_reviewer_id',
                 // Owed to #106's D1, not wanted by the tile: the commit routes
                 // require the version the reviewer saw, and this row is the only
                 // channel that can carry it.

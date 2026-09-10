@@ -3970,6 +3970,12 @@
             "nullable": true,
             "example": null
           },
+          "review_reviewer_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 42,
+            "description": "users.user_id of whoever made the current scientific decision, or null where there is none. **An id and not a name**, deliberately: the permission catalog separates reports:read from observations:read because it exposes who did how much work, and this row carries no processor_name for the same reason. A client compares it with its own authenticated principal to draw \"by you\", which needs no name at all. Without it the client's \"REVIEWED by you\" badge, the borrowed tag's attribution and its byMe derivation all silently became nothing, because it was reading four columns this row has never carried."
+          },
           "training_decision": {
             "type": "string",
             "nullable": true,
@@ -3985,6 +3991,12 @@
             "type": "string",
             "nullable": true,
             "example": null
+          },
+          "training_reviewer_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 42,
+            "description": "users.user_id of whoever made the current training decision, or null where there is none. An id and not a name, for the same reason as review_reviewer_id."
           },
           "keyframe_count": {
             "type": "integer",
@@ -4522,6 +4534,52 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-09-09T12:00:00.000Z"
+          }
+        }
+      },
+      "MosaicFacets": {
+        "type": "object",
+        "description": "Which values each set dimension can still offer for one question. **The dimension being enumerated is excluded from its own predicate** -- a dive list narrowed by the dives already selected would only ever offer what is already selected -- while every other filter applies, the two status dimensions included, so the rail never offers a combination that returns nothing. Only dimensions that were asked for are present.",
+        "properties": {
+          "facets": {
+            "type": "object",
+            "description": "Keyed by dimension name: project, dive, line, sessionType, session, species, model.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "description": "What the filter takes. An integer for species, model and session; a string for the rest.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "example": 41
+                  },
+                  "label": {
+                    "type": "string",
+                    "example": "Bat Star",
+                    "description": "What a reviewer reads. A different column from value for species (species.comname), model (ml_models.name) and session (its own id, because a session has no name)."
+                  },
+                  "list": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Inverts",
+                    "description": "Populated for species only: which annotation list the entry belongs to. A common name identifies a species only within its list -- values below 10000 are local codes invented per list and reused -- so a question spanning two lists can offer two organisms under one label, and the client qualifies the label only when that is actually the case."
+                  },
+                  "count": {
+                    "type": "integer",
+                    "example": 812,
+                    "description": "Matching observations under the rest of the question. Free from the aggregate that groups the values, and it is what lets a client open on the most numerous species rather than on a name written into its source."
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -13823,6 +13881,75 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MosaicStatusCounts"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/facets": {
+      "post": {
+        "summary": "Which values each rail dimension can still offer for one question",
+        "description": "Answers, per set dimension, the values that are **still reachable under the filters already chosen** -- because offering a dive that returns nothing is worse than not offering it. **The dimension being enumerated is excluded from its own predicate**: a dive list narrowed by the dives already selected would only ever offer what is already selected. Every other filter applies, the two status dimensions included, so the rail never offers a combination that returns nothing. `value` is what the filter takes and `label` is what a reviewer reads, and for species, model and session those are different columns -- a species name lives on `species`, a model name on `ml_models`, and a session has no name, so its id is the honest label. `count` rides along free from the aggregate that groups the values, and the client needs it to pick a default species. `list` is populated for species only: a common name identifies a species only within its list, so a question spanning two lists can offer two organisms under one label and the client has to be able to say which. **A route of its own rather than a flag on the page response** -- that response carries an exact-key tripwire over its row shape, and one contract answering two shapes is what disables a tripwire; and the page-set request is issued up to three times per navigation by the prefetcher, where this is asked once per question, exactly as the counts route beside it is. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "project",
+                        "dive",
+                        "line",
+                        "sessionType",
+                        "session",
+                        "species",
+                        "model"
+                      ]
+                    },
+                    "example": [
+                      "dive",
+                      "line",
+                      "species"
+                    ],
+                    "description": "Which dimensions to answer for. Absent means all of them. A name outside the list is a 400 rather than a silently missing key, because a client that mistypes one would otherwise render an empty control and read it as \"nothing is reachable\"."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One entry per requested dimension.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicFacets"
                 }
               }
             }

@@ -184,6 +184,67 @@ function registerMosaicRoutes(app) {
         }),
     });
 
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: PERMISSION,
+        path: '/api/mosaic/observations/facets',
+        summary: 'Which values each rail dimension can still offer for one question',
+        description:
+            'Answers, per set dimension, the values that are **still reachable under the filters already chosen** -- because offering a '
+            + 'dive that returns nothing is worse than not offering it. **The dimension being enumerated is excluded from its own '
+            + 'predicate**: a dive list narrowed by the dives already selected would only ever offer what is already selected. Every '
+            + 'other filter applies, the two status dimensions included, so the rail never offers a combination that returns nothing. '
+            + '`value` is what the filter takes and `label` is what a reviewer reads, and for species, model and session those are '
+            + 'different columns -- a species name lives on `species`, a model name on `ml_models`, and a session has no name, so its id '
+            + 'is the honest label. `count` rides along free from the aggregate that groups the values, and the client needs it to pick a '
+            + 'default species. `list` is populated for species only: a common name identifies a species only within its list, so a '
+            + 'question spanning two lists can offer two organisms under one label and the client has to be able to say which. '
+            + '**A route of its own rather than a flag on the page response** -- that response carries an exact-key tripwire over its row '
+            + 'shape, and one contract answering two shapes is what disables a tripwire; and the page-set request is issued up to three '
+            + 'times per navigation by the prefetcher, where this is asked once per question, exactly as the counts route beside it is.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: {
+                'application/json': {
+                    schema: {
+                        type: 'object',
+                        properties: {
+                            filters: { $ref: '#/components/schemas/MosaicQueryFilters' },
+                            dimensions: {
+                                type: 'array',
+                                items: {
+                                    type: 'string',
+                                    enum: Object.keys(mosaicRepository.FACET_DIMENSIONS),
+                                },
+                                example: ['dive', 'line', 'species'],
+                                description:
+                                    'Which dimensions to answer for. Absent means all of them. A name outside the list is a 400 rather '
+                                    + 'than a silently missing key, because a client that mistypes one would otherwise render an empty '
+                                    + 'control and read it as "nothing is reachable".',
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        responses: {
+            200: {
+                description: 'One entry per requested dimension.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/MosaicFacets' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            try {
+                res.json(await mosaicRepository.facets(req.body || {}));
+            } catch (error) {
+                throw asClientError(error);
+            }
+        }),
+    });
+
 }
 
 module.exports = registerMosaicRoutes;
