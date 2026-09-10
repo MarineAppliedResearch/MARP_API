@@ -228,6 +228,36 @@ const beat = (page, ms) => page.waitForTimeout(ms);
 const CUE = 1300;       // "right — paging forward now", spoken
 const DWELL = 2000;     // long enough to see that it landed
 
+/**
+ * The question the store is currently asking, in the shape the endpoint takes.
+ *
+ * Everything that is not narrowing is dropped, so what goes over the wire is only what the
+ * rail actually has selected — the same thing the client sends.
+ */
+const question = (page) => page.evaluate(() => {
+  const { state } = window.MARP;
+  return {
+    filters: Object.fromEntries(Object.entries(state.filters)
+      .filter(([, v]) => v != null && (!Array.isArray(v) || v.length))),
+    sort: [{ field: state.sort.field, dir: state.sort.dir }],
+    pageSize: state.pageSize
+  };
+});
+
+/**
+ * Ask the endpoint directly, from the test rather than through the application.
+ *
+ * `page.request` carries the browser context's session cookie, so this is the reviewer's
+ * own credentials — but it is **not** the code path that drew the screen, and that is the
+ * whole point. A scene claiming the tiles came out of the database has to compare them
+ * against something that did not draw them; comparing the app to itself proves nothing.
+ */
+async function askApi(page, origin, path, data) {
+  const res = await page.request.post(`${origin}/api/v2${path}`, { data });
+  if (!res.ok()) throw new Error(`${path} answered ${res.status()}: ${await res.text()}`);
+  return res.json();
+}
+
 export const scenarios = {
 
   /* ----------------------------------------------------------- training */
@@ -1535,6 +1565,224 @@ export const scenarios = {
            + "will use are already built and tested behind this.",
         async act({ page, expect }) {
           await expect(page.locator('.tile').first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------ verifying: it is the real database */
+  /* Thirty seconds, seven scenes, one claim: this is MARP's own database and not the
+     fixture. So every scene compares the screen against a read the application did not
+     make — `askApi` goes straight to the endpoint from the test — because a scene that
+     narrates a number the app also computed has proved nothing about where it came from.
+     The spoken numbers are asserted exactly rather than loosely, so a changed corpus fails
+     the run and writes no video instead of narrating a figure that is no longer true.
+
+     It needs a running API and a signed-in session; see `tools/api-session.mjs` and
+     `MARP_API_BASE` in `playwright.config.mjs`. */
+  'verify-real-database': {
+    title: 'Verifying: the reviewer is on the real database',
+    scenes: [
+      {
+        caption: 'The real database, not the fixture',
+        say: "The Marp mosaic reviewer, on the real database — not the fixture.",
+        /* No action at all: this is the claim being made, and the app moves nowhere. */
+        async act({ page, expect, store }) {
+          store.origin = new URL(page.url()).origin;
+
+          /* `src/backend.js` stamps which backing is installed for exactly this question,
+             and `?backing=fixture` would paint a permanent banner. There is none, and the
+             fixture is not in the page at all. */
+          expect(await page.evaluate(() => document.documentElement.dataset.backing),
+            'the installed backing').toBe('api');
+          expect(await page.evaluate(() => window.MARP.backing)).toBe('api');
+          await expect(page.locator('#backingFlag')).toHaveCount(0);
+          expect(await page.evaluate(() => Boolean(window.MARP.data)),
+            'the fixture is not loaded').toBe(false);
+
+          /* And the reviewer is a principal the server named. `src/data.js` used to hold
+             the literal 'I. Travers', which was true for one person on one machine. */
+          const me = await page.request.get(`${store.origin}/api/v2/auth/me`);
+          expect(me.status()).toBe(200);
+          store.me = (await me.json()).user;
+          expect(store.me.user_id).toBeGreaterThan(0);
+
+          await meter(page, `backing: api  ·  served by the API at ${store.origin}`
+            + `  ·  signed in as ${store.me.username}`);
+        }
+      },
+      {
+        caption: '340 observations, fifty a page',
+        say: "Three hundred and forty real observations.",
+        async act({ page, expect, store }) {
+          const q = await question(page);
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+
+          /* The spoken numbers, asserted. A looser check would let the line go on saying
+             three hundred and forty after the corpus had moved. */
+          expect(body.total, 'the corpus this line names').toBe(340);
+          expect(q.pageSize, 'fifty to a page, at this viewport').toBe(50);
+
+          expect(await totalShown(page), 'the screen shows the endpoint\'s own total')
+            .toBe(body.total);
+          expect(Number(await page.locator('#pageTotal').innerText())).toBe(body.pageCount);
+
+          /* The strongest form of it: the tiles are the endpoint's page one, in the order
+             the endpoint put them in. */
+          const tiles = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(tiles, 'the tiles are the endpoint\'s page one, in its order')
+            .toEqual(body.pages[0].rows.map((r) => r.observation_id));
+
+          store.total = body.total;
+          await meter(page, `${body.total} observations · ${body.pageCount} pages of `
+            + `${q.pageSize} · these ${tiles.length} tiles are the endpoint's page one, in its order`);
+        }
+      },
+      {
+        caption: 'Real frames, cut from the video',
+        say: "Real frames, cut out of the survey video.",
+        async act({ page, expect, store }) {
+          const tiles = await page.locator('.tile').count();
+          const imgs = await page.locator('.tile img').evaluateAll((els) => els.map((i) => ({
+            src: i.getAttribute('src'), w: i.naturalWidth, h: i.naturalHeight
+          })));
+
+          expect(imgs.length, 'every tile on the page has a picture').toBe(tiles);
+          for (const img of imgs) {
+            expect(img.src).toMatch(/^\/api\/v2\/observations\/\d+\/thumbnail$/);
+            /* Decoded, not merely requested: a broken image is an `<img>` too. */
+            expect(img.w, `${img.src} decoded`).toBeGreaterThan(0);
+            expect(img.h).toBeGreaterThan(0);
+          }
+
+          /* And the bytes are really there, asked for outside the page. */
+          const one = await page.request.get(store.origin + imgs[0].src);
+          expect(one.status()).toBe(200);
+          expect(one.headers()['content-type']).toMatch(/^image\//);
+          expect((await one.body()).length).toBeGreaterThan(1000);
+
+          await meter(page, `${imgs.length} of ${tiles} tiles decoded · `
+            + `${imgs[0].w}×${imgs[0].h} · ${one.headers()['content-type']} from `
+            + `${imgs[0].src}`);
+        }
+      },
+      {
+        caption: 'The species list comes from the data',
+        say: "Opening the species filter … four real species.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "opening the species filter now"
+          await page.locator('[data-dim="species"]').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toBeVisible();
+
+          const offered = await menu.locator('[data-v]').evaluateAll((els) => els
+            .filter((e) => e.dataset.v)
+            .map((e) => ({ key: Number(e.dataset.v), label: e.textContent.trim() })));
+
+          /* Not "the species on this page": page one happens to hold all four, so a list
+             read off the rows would look identical. This is the facets route answering
+             what is still reachable under the rest of the question. */
+          const facets = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: (await question(page)).filters });
+          const keys = facets.facets.species.map((f) => Number(f.value)).sort((a, b) => a - b);
+          expect(keys.length, 'four species, which is what the line says').toBe(4);
+          expect(offered.map((o) => o.key).sort((a, b) => a - b),
+            'the rail offers exactly what the endpoint says is reachable').toEqual(keys);
+
+          store.pick = offered.find((o) => /Fish-eating anemone/i.test(o.label));
+          expect(store.pick, 'the survey found a fish-eating anemone').toBeTruthy();
+
+          await meter(page, `species offered: ${offered.map((o) => `${o.key} ${o.label}`).join('  ·  ')}`);
+          /* Held open. It is the only chance the viewer gets to read it, and it stays
+             open across the cut into the next scene, which is where it is chosen. */
+          await beat(page, 1600);
+        }
+      },
+      {
+        caption: 'Twenty of three hundred and forty',
+        say: "Choosing the anemone … twenty of three hundred and forty.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                        // "choosing the anemone"
+          await page.locator(`.menu [data-v="${store.pick.key}"]`).click();
+          await page.waitForTimeout(250);
+          await page.keyboard.press('Escape');
+          await settled();
+
+          const shown = await totalShown(page);
+          expect(shown, 'twenty, which is what the line says').toBe(20);
+
+          const ids = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(ids.length).toBe(shown);
+          expect(await page.locator('.tile .cap')
+            .evaluateAll((els) => [...new Set(els.map((e) => e.textContent.trim()))]),
+            'every tile is the species that was chosen').toEqual([store.pick.label]);
+
+          /* The same narrowed question, asked of the endpoint directly. */
+          const q = await question(page);
+          expect(q.filters.species, 'the filter goes over the wire as the species key')
+            .toEqual([store.pick.key]);
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+          expect(body.total).toBe(shown);
+          expect(body.pages[0].rows.map((r) => r.observation_id)).toEqual(ids);
+
+          store.page = ids;
+          await meter(page, `${shown} of ${store.total} · species ${store.pick.key}, `
+            + `${store.pick.label} · the endpoint returns the same ${ids.length} ids`);
+          await beat(page, 1300);
+        }
+      },
+      {
+        caption: 'Committing the page',
+        say: "Committing now … there. Every tile reviewed.",
+        async act({ page, expect, store }) {
+          await beat(page, 1000);                       // "committing now" — three words
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+
+          /* A record badge could be left over from an earlier recording. An **outcome**
+             cannot: `state.outcomes` is what *this* commit answered, per observation, and
+             it is keyed by `observation_id` rather than by position. */
+          const outcomes = await page.evaluate(
+            (ids) => ids.map((id) => window.MARP.state.outcomes.get(id)), store.page);
+          expect(outcomes, 'this commit answered for every tile on the page')
+            .toEqual(store.page.map(() => 'reviewed'));
+
+          await meter(page, `committed ${store.page.length} observations · `
+            + `this commit answered "reviewed" for every one of them`);
+          await beat(page, 1300);
+        }
+      },
+      {
+        caption: 'Read back out of the database',
+        say: "Read back from the database. Reviewed, by me.",
+        /* No action. The assertion is the scene: a fresh read of the record, from outside
+           the application, after the write. */
+        async act({ page, expect, store }) {
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages', {
+            filters: { species: [store.pick.key], reviewStatus: ['reviewed'] },
+            sort: [{ field: 'confidence', dir: 'asc' }],
+            pageSize: store.page.length, pages: [1], includeTotal: true
+          });
+
+          const asc = (a, b) => a - b;
+          expect(body.total, 'the record now holds every one of them').toBe(store.page.length);
+          expect(body.pages[0].rows.map((r) => r.observation_id).sort(asc))
+            .toEqual([...store.page].sort(asc));
+          for (const row of body.pages[0].rows) {
+            expect(row.review_decision).toBe('reviewed');
+            /* "By me" asserted rather than narrated: the reviewer id on the record is the
+               principal the server named in the first scene. */
+            expect(row.review_reviewer_id, 'reviewed by this reviewer')
+              .toBe(store.me.user_id);
+          }
+
+          await meter(page, `read back from the record: ${body.total} rows, `
+            + `review_decision "reviewed", reviewer ${store.me.user_id} — ${store.me.username}`);
         }
       }
     ]
