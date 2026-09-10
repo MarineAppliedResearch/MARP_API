@@ -399,6 +399,36 @@ rows the development server happens to hold, seed them in the suite; see
 `tests/species-lists.test.js`, where a block used to fail in one place and pass vacuously
 in three.
 
+**There is a fast tier and a slow tier. Use the fast one between changes.**
+`npm test` is the whole suite -- 41 suites, ~195 s -- and it is for the end of a change
+set, not the working loop. The suites are grouped into subsystems, and running the one
+you touched takes 14--46 s:
+
+```bash
+npm run test:gpu           # orchestration, leases, video resolution, ingest
+npm run test:mosaic        # the picture mosaic reviewer
+npm run test:review        # review and training state, observation versioning
+npm run test:observations  # observations, keyframes, the timecode columns
+npm run test:ml            # datasets, training runs, epochs, metrics, models
+npm run test:species
+npm run test:auth
+npm run test:core          # projects, sessions, tasks, schema, data integrity
+npm run test:media         # Jellyfin. Needs the live media server; CI excludes it
+npm run test:subsystems    # the audit: does every suite belong to exactly one group
+```
+
+The groups are defined once, in `scripts/test-subsystem.mjs`. **Add a new test file to a
+group when you write it** -- `test:subsystems` runs in CI and fails when a suite belongs to
+no group or to two, because a suite in no group is a suite no fast loop ever runs.
+
+Two things that make this less useful than the numbers suggest, and are worth knowing
+rather than rediscovering. Most of a subsystem's time is Jest starting up and each suite
+opening its own database connection, not the assertions -- so a *single file* is about 8 s
+and five files is 46 s rather than 5x8. And the runner invokes Jest through `node` rather
+than a shell on purpose: the path pattern contains `|`, which a Windows shell reads as a
+pipe, and that made the whole run execute nothing in about a second -- looking fast rather
+than looking broken.
+
 **`npm test`, not `npx jest`.** The suite runs against the real development
 PostgreSQL, and `package.json` passes `--runInBand` for that reason. Running Jest
 directly lets workers race each other over one database and produces a wave of
