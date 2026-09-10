@@ -312,7 +312,7 @@ list a correction picker would search.
 
 Listed in the order they block work: A1 and A2 shape everything under them.
 
-- [ ] **A1 · architectural · blocking** — **Where does the vocabulary translation live?**
+- [x] **A1 · architectural · blocking** — **Where does the vocabulary translation live?**
   Option (i) **`src/api/` adapts**: it renames `review_decision` → `review_status`, maps null →
   `'unreviewed'`, rewrites `observation_id` → `id` in commit results, and synthesises a `thumb`
   URL. Nothing above `api/` changes and #68's claim holds literally — but the client keeps a
@@ -327,7 +327,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   (ii): `fixtures/observations.json` is generated (`tools/make-fixture.mjs`) so the rename is a
   generator change plus a regeneration, and the diff is large but mechanical.
 
-- [ ] **A2 · architectural · blocking** — **Does `src/data.js` survive, and what backs each
+- [x] **A2 · architectural · blocking** — **Does `src/data.js` survive, and what backs each
   test tier?** F17 is the problem: the 216 unit tests, the 58 contract checks and
   `data-scale.test.mjs` all depend on a fixture that can be reloaded, slowed, failed, broken
   and scaled ×147 in memory. Option (i) **delete it** — `src/api/` is the seam, and those
@@ -343,7 +343,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   implementations of one seam can drift; the answer to that is a shared shape check, which
   R24's list makes visible.
 
-- [ ] **A3 · security/permissions · blocking** — **How does the app authenticate, and how does
+- [x] **A3 · security/permissions · blocking** — **How does the app authenticate, and how does
   an `<img>` request authenticate?** Grounded recommendation, not a guess:
   `middleware/resolve-principal.middleware.js:52-60` prefers the Passport session over a
   bearer token, `requirePermission` reads only `req.principal`, and the cookie is `httpOnly`,
@@ -364,7 +364,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   and the commit buttons when the other two are absent** — but which permission the door
   checks, and whether a read-only reviewer is a supported state, are the human's call.
 
-- [ ] **A4 · behavioural · blocking** — **What does a reviewer see for 401, for 403, and for a
+- [x] **A4 · behavioural · blocking** — **What does a reviewer see for 401, for 403, and for a
   dropped connection?** #68 names this explicitly and the fixture cannot model any of it. The
   three are genuinely different: a 401 means the seven-day cookie lapsed and re-logging in
   fixes it; a 403 means it will never work and retrying is cruel; a 5xx or a dropped socket
@@ -379,7 +379,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   or whether a redirect to `/` losing the page is preferred for being simpler and more
   obviously correct.
 
-- [ ] **A5 · API contract · blocking** — **How is a committed page re-read?** F13: `byIds` has
+- [x] **A5 · API contract · blocking** — **How is a committed page re-read?** F13: `byIds` has
   no endpoint. Option (i) a new route, `POST /api/v2/mosaic/observations/by-ids`, returning the
   same `MosaicRow` shape **in the order asked for**. Option (ii) add an `observationIds` field
   to `MosaicQueryFilters` and reuse the pages route — one serialiser, but "pages of a question"
@@ -390,7 +390,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   **Recommendation: (i).** It is a new published contract surface, so it is an *ask-first* item
   under `AGENTS.md`'s permissions — which is why it is here and not in the plan.
 
-- [ ] **A6 · API contract · blocking** — **Where do the rail's option lists come from?** F12:
+- [x] **A6 · API contract · blocking** — **Where do the rail's option lists come from?** F12:
   `optionsFor` and `reachableUnder` scan the whole fixture, synchronously, and no endpoint
   answers "the distinct dives still reachable under these filters". Option (i) a **facets**
   route that answers every set dimension's reachable values for one question in one call —
@@ -405,7 +405,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   `src/ui/menus.js:196` and `src/store.js:890,901` change. That is a leak, and it gets counted
   under R24 rather than hidden.
 
-- [ ] **A7 · API contract · blocking** — **How does the version reach the commit, and what does
+- [x] **A7 · API contract · blocking** — **How does the version reach the commit, and what does
   the reviewer see when one has moved?** F4. Option (i) `src/api/` remembers the version it
   served for each observation. **Rejected on reasoning, not preference**: a prefetch or a poll
   would refresh that map to a version the reviewer never saw, which defeats the entire point of
@@ -418,7 +418,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   nothing was written*, the mark kept, and a page-level prompt to re-read. What that looks like
   is a product decision.
 
-- [ ] **A8 · behavioural · blocking** — **How does a `queued` thumbnail become `ready` on
+- [x] **A8 · behavioural · blocking** — **How does a `queued` thumbnail become `ready` on
   screen?** F9 and F10: the fixture's `awaitThumbnail` has no endpoint, the retry route answers
   `queued` and never `ready`, and extraction runs at 3 concurrent Jellyfin streams (#118's A7),
   so a page of 45 missing pictures takes many seconds to fill. Option (i) **poll for the
@@ -432,7 +432,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   testable. The undecided part is what the reviewer should be told while waiting, and whether
   polling should stop after a bounded number of rounds and say "still preparing".
 
-- [ ] **A9 · behavioural · blocking** — **Does the seam gain a page-level retry, or does
+- [x] **A9 · behavioural · blocking** — **Does the seam gain a page-level retry, or does
   `api/` coalesce?** F10. Option (i) add `retryThumbnails(ids)` and change
   `src/store.js:717-741` to call it once — honest, matches the endpoint, and the store already
   has the page in hand. Option (ii) keep `retryThumbnail(id)` and coalesce N calls inside
@@ -484,7 +484,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   nobody in this session touched. Which is right is the human's call, and it changes what a
   page looks like.
 
-- [ ] **A13 · product/UI + security/permissions · blocking** — **What happens to "by you" and
+- [x] **A13 · product/UI + security/permissions · blocking** — **What happens to "by you" and
   "by whom"?** F8. Option (i) accept the loss: the badge reads `REVIEWED`, tooltips lose the
   attribution, `byMe` is always false. Option (ii) the row gains `review_reviewer_id` and
   `training_reviewer_id` — ids, not names — and the client compares them with
@@ -496,7 +496,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   (R25), never appended by loosening it. This is a published contract change, so it is
   ask-first and it is here.
 
-- [ ] **A14 · product/UI · blocking** — **What happens to the dimensions with nothing behind
+- [x] **A14 · product/UI · blocking** — **What happens to the dimensions with nothing behind
   them?**
 
   **This assumption was written on two wrong facts and is corrected.** It claimed `date`,
@@ -534,7 +534,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   **What is left for the human:** whether withdrawing `date` is acceptable at all, given it is
   a control a reviewer may have been using against the fixture.
 
-- [ ] **A15 · environment · blocking** — **What seeds the database the browser tier runs
+- [x] **A15 · environment · blocking** — **What seeds the database the browser tier runs
   against, and does it hold real thumbnails?** The measured state above is 6 observations, one
   species, one project, one dive, 0 thumbnails — so ~126 render tests × 2 viewports and 58
   contract checks have nothing to run against. `AGENTS.md` is unambiguous: *"'Seed it' means
@@ -556,7 +556,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   the real-extraction path exercised separately against Jellyfin. Leaving it open because the
   size, and the fake-picture question, both change what the tier proves.
 
-- [ ] **A16 · performance/concurrency · blocking** — **Is a superseded request cancelled?**
+- [x] **A16 · performance/concurrency · blocking** — **Is a superseded request cancelled?**
   `src/store.js` already guards correctness with a sequencing token
   (`const token = ++reqSeq; … if (token !== reqSeq) return;`), so a late response cannot land
   on screen. But #99's prefetcher issues adjacent-page requests that a page change invalidates,
@@ -574,6 +574,45 @@ Listed in the order they block work: A1 and A2 shape everything under them.
 
 Nothing is decided until the assumptions above are answered. Recorded here so they are not
 re-litigated:
+
+- **2026-09-10 · A1-A9, A13-A16** — **Taken as recommended, on the human's direction:**
+  *"I want to work on the issue."* Each recommendation and its costs are written out at the
+  assumption above; this records that they were accepted rather than individually argued.
+
+  - **A1** — the client adopts the schema's names; no translation adapter. #68's claim that
+    nothing above `api/` changes is a *measurement*, and an adapter would make it pass by
+    destroying what it measures.
+  - **A2** — `src/data.js` survives as a fixture used by tests only, so the 60 ms loop and
+    `withoutLatency`'s `typeof window` guard stay meaningful.
+  - **A3** — the session cookie authenticates, including an `<img>`. Grounded, not invented:
+    `resolve-principal` already prefers the session over a bearer token, and the cookie is
+    `httpOnly` / `sameSite: lax`, so a same-origin tile request is authorised with no new
+    scheme. This is also #120's browser question answered for this case.
+  - **A4** — refused, failed and expired are three distinct states; a 401 re-authenticates in
+    place so a reviewer's marks survive it.
+  - **A5** — a by-ids route, so a committed page can be re-read. **Adds published API
+    surface**, which is normally ask-first; taken under the same direction.
+  - **A6** — a facets route for the rail's option lists. The only option that preserves "never
+    offer a dive that returns nothing", and it is what gives `session` its list (A14).
+  - **A7** — the store sends rows carrying their `version`. An `api/`-side version cache is
+    **rejected on reasoning**: a prefetch would substitute a version the reviewer never saw,
+    which defeats the whole point of the check.
+  - **A8** — a page-level poll turns `queued` into `ready`: one request and one notify per
+    round, not one per tile.
+  - **A9** — the page retry is a seam method taking ids. Coalescing it into the page fetch
+    would hide a round trip the contract tier cannot see.
+  - **A13** — the row gains reviewer *ids*, not names, and the client compares them with the
+    authenticated principal. Keeps #118's `observations:read` reasoning intact: "by you"
+    without exposing anybody's name.
+  - **A14** — **withdraw `date` only**, and say on the rail it is waiting on #76. `session` and
+    `model` are not withdrawn: both are filterable, and the corrected text above says why.
+    There is no column a date filter could read, so this is not a preference.
+  - **A15** — a seeder at a few hundred rows for the browser tier. **Depends on
+    `scripts/seed-inference-context.js`**, which is not on `develop` yet — it is in PR #123 —
+    so either that merges first or this phase writes its own alongside. The database holds six
+    observations of one species in one dive, so the tier cannot run against it as it stands.
+  - **A16** — `AbortSignal` on every seam method. A shape decision, and painful to retrofit
+    once callers exist.
 
 - **2026-09-10 · A12** — **The tile's "was X" indicator keeps today's behaviour: it appears
   only after a correction made in the current session.** Answered by the human, against the
