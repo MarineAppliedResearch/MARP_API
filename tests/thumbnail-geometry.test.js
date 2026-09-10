@@ -425,25 +425,72 @@ describe('thumbnail geometry (#118)', () => {
 
             const choice = chooseBox(keyframes, 150);
 
-            // Whichever subset wins, the box must be one track's own midpoint --
-            // 0.15 or 0.85 -- and never the 0.5 a mixed interpolation gives.
-            expect([0.15, 0.85].some((expected) => Math.abs(choice.box.x - expected) < 1e-9)).toBe(true);
+            // Subset "1" is the first of the two, so the box is its own midpoint
+            // at 0.15 -- never the 0.5 a mixed interpolation would land on, which
+            // is the seabed between two different animals.
+            expect(choice.subset).toBe('1');
+            expect(choice.box.x).toBeCloseTo(0.15, 9);
             expect(Math.abs(choice.box.x - 0.5)).toBeGreaterThan(0.3);
         });
 
-        it('prefers a subset that brackets the frame over one that does not', () => {
+        it('takes the first subset even when a later one brackets the frame and it does not', () => {
+            // The rule is the human's, 2026-09-09: "if it has more than one
+            // subset it should always be the subset first, subsets are labeled
+            // by number starting at 0." The subset is chosen before the box, so
+            // subset 0 wins here despite subset 1 being the one that brackets
+            // the counted frame and being eight times the area. An earlier rule
+            // preferred whichever bracketed, which let the picture come from a
+            // track nobody chose.
             const keyframes = [
-                // Brackets 150, but small.
-                keyframe(100, { x: 0.10, y: 0.10, width: 0.05, height: 0.05 }, '1'),
-                keyframe(200, { x: 0.20, y: 0.20, width: 0.05, height: 0.05 }, '1'),
-                // Much larger, but the counted moment is not on this track.
-                keyframe(800, { x: 0.90, y: 0.90, width: 0.40, height: 0.40 }, '2'),
+                // Does not bracket 150, and small.
+                keyframe(800, { x: 0.90, y: 0.90, width: 0.05, height: 0.05 }, '0'),
+                // Brackets 150, and much larger.
+                keyframe(100, { x: 0.10, y: 0.10, width: 0.40, height: 0.40 }, '1'),
+                keyframe(200, { x: 0.20, y: 0.20, width: 0.40, height: 0.40 }, '1'),
             ];
 
             const choice = chooseBox(keyframes, 150);
 
+            expect(choice.subset).toBe('0');
+            expect(choice.source).toBe('largest-keyframe');
+            expect(choice.framenum).toBe(800);
+        });
+
+        it('interpolates within the first subset when that subset brackets the frame', () => {
+            const keyframes = [
+                keyframe(100, { x: 0.10, y: 0.10, width: 0.05, height: 0.05 }, '0'),
+                keyframe(200, { x: 0.20, y: 0.20, width: 0.05, height: 0.05 }, '0'),
+                keyframe(800, { x: 0.90, y: 0.90, width: 0.40, height: 0.40 }, '1'),
+            ];
+
+            const choice = chooseBox(keyframes, 150);
+
+            expect(choice.subset).toBe('0');
             expect(choice.source).toBe('interpolated');
-            expect(choice.subset).toBe('1');
+            expect(choice.box.x).toBeCloseTo(0.15, 9);
+        });
+
+        it('orders subset labels as numbers, so "2" comes before "10"', () => {
+            // `subset` is a varchar. A plain string sort puts "10" first, which
+            // would silently pick the wrong track on any observation that ever
+            // reaches ten subsets.
+            const keyframes = [
+                keyframe(100, { x: 0.90, y: 0.90, width: 0.10, height: 0.10 }, '10'),
+                keyframe(100, { x: 0.10, y: 0.10, width: 0.10, height: 0.10 }, '2'),
+            ];
+
+            expect(chooseBox(keyframes, 100).subset).toBe('2');
+        });
+
+        it('sorts a non-numeric subset label after every numeric one', () => {
+            // Legacy data is not obliged to be tidy. Picking something
+            // deterministically beats throwing on a stray label.
+            const keyframes = [
+                keyframe(100, { x: 0.90, y: 0.90, width: 0.10, height: 0.10 }, 'legacy'),
+                keyframe(100, { x: 0.10, y: 0.10, width: 0.10, height: 0.10 }, '3'),
+            ];
+
+            expect(chooseBox(keyframes, 100).subset).toBe('3');
         });
     });
 });

@@ -190,13 +190,47 @@ function largestKeyframe(keyframes) {
 }
 
 /**
+ * Orders subset labels the way they are numbered, lowest first.
+ *
+ * `subset` is a `varchar`, so a plain string sort puts `"10"` before `"2"`. The
+ * labels are numbers, so they are compared as numbers. A label that is not a
+ * number sorts after every label that is, rather than throwing -- legacy data is
+ * not obliged to be tidy, and picking *something* deterministically beats failing.
+ *
+ * @param {string} a - One subset label.
+ * @param {string} b - The other.
+ * @returns {number} Negative when `a` comes first.
+ */
+function compareSubsets(a, b) {
+    const na = Number(a);
+    const nb = Number(b);
+    const aNumeric = a !== '' && Number.isFinite(na);
+    const bNumeric = b !== '' && Number.isFinite(nb);
+
+    if (aNumeric && bNumeric) {
+        return na - nb;
+    }
+
+    if (aNumeric !== bNumeric) {
+        return aNumeric ? -1 : 1;
+    }
+
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+
+/**
  * Chooses the frame and the box to cut a thumbnail from.
  *
- * The whole of A4 in one place: interpolate at the observation's own frame where
- * the track brackets it, otherwise fall back to the largest box. Where an
- * observation carries more than one subset, each is asked in turn and a subset
- * that brackets the frame wins over one that does not; between two that both
- * bracket it, the larger box wins.
+ * The whole of A4 in one place: **the first subset**, then interpolate at the
+ * observation's own frame where that subset brackets it, otherwise fall back to
+ * its largest box.
+ *
+ * **The subset is chosen before the box, and nothing about the box can change
+ * it.** Answered by the human, 2026-09-09: *"if it has more than one subset it
+ * should always be the subset first, subsets are labeled by number starting at
+ * 0."* An earlier rule here asked every subset and preferred whichever bracketed
+ * the counted frame, breaking ties by area -- that let a picture come from a
+ * track nobody chose, and it is gone.
  *
  * @param {Array<Object>} keyframes - Every keyframe of one observation.
  * @param {number} observationFrame - The observation's own absolute frame.
@@ -209,52 +243,41 @@ function chooseBox(keyframes, observationFrame) {
         return null;
     }
 
+    // The first subset, and only the first. Everything after this point reads one
+    // group, so a second subset cannot contribute a box or a frame.
+    const first = [...groups.keys()].sort(compareSubsets)[0];
+    const group = groups.get(first);
+
     let interpolatedChoice = null;
     let fallbackChoice = null;
 
-    // A subset that brackets the counted moment always beats one that does not,
-    // whatever the box sizes, because the counted moment is the scientific fact.
-    // Size only breaks a tie between two that both bracket it.
-    for (const group of groups.values()) {
-        const interpolated = interpolateBox(group, observationFrame);
+    const interpolated = interpolateBox(group, observationFrame);
 
-        if (interpolated) {
-            const area = interpolated.box.width * interpolated.box.height;
-
-            if (!interpolatedChoice || area > interpolatedChoice.area) {
-                interpolatedChoice = {
-                    area,
-                    box: interpolated.box,
-                    framenum: observationFrame,
-                    subset: group[0].subset == null ? null : String(group[0].subset),
-                    source: 'interpolated',
-                    before: interpolated.before,
-                    after: interpolated.after,
-                };
-            }
-
-            continue;
-        }
-
+    if (interpolated) {
+        interpolatedChoice = {
+            box: interpolated.box,
+            framenum: observationFrame,
+            subset: group[0].subset == null ? null : String(group[0].subset),
+            source: 'interpolated',
+            before: interpolated.before,
+            after: interpolated.after,
+        };
+    } else {
         const largest = largestKeyframe(group);
-        const area = Number(largest.width) * Number(largest.height);
 
-        if (!fallbackChoice || area > fallbackChoice.area) {
-            fallbackChoice = {
-                area,
-                box: {
-                    x: Number(largest.x),
-                    y: Number(largest.y),
-                    width: Number(largest.width),
-                    height: Number(largest.height),
-                },
-                framenum: Number(largest.framenum),
-                subset: largest.subset == null ? null : String(largest.subset),
-                source: 'largest-keyframe',
-                before: largest,
-                after: largest,
-            };
-        }
+        fallbackChoice = {
+            box: {
+                x: Number(largest.x),
+                y: Number(largest.y),
+                width: Number(largest.width),
+                height: Number(largest.height),
+            },
+            framenum: Number(largest.framenum),
+            subset: largest.subset == null ? null : String(largest.subset),
+            source: 'largest-keyframe',
+            before: largest,
+            after: largest,
+        };
     }
 
     return interpolatedChoice || fallbackChoice;
