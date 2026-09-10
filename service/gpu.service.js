@@ -25,6 +25,8 @@ const crypto = require('crypto');
 
 const gpuRepository = require('../repository/gpu.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
+const observationIngestService = require('./observation-ingest.service');
+const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
     HEARTBEAT_SECONDS,
@@ -37,6 +39,8 @@ const {
     MAX_EVENTS_PER_BATCH,
     ARTIFACT_PATH_PREFIX,
     JOB_KINDS,
+    INGESTIBLE_JOB_KINDS,
+    ENGINE_DATA_TYPES,
     JOB_STATES,
     REPORTABLE_ATTEMPT_STATES,
     WORKER_EVENT_KINDS,
@@ -332,7 +336,7 @@ class GpuService {
                 let spec;
 
                 try {
-                    spec = await this.resolveVideoForLease(lease.job.spec);
+                    spec = await this.resolveSpecForLease(lease.job.spec);
                 } catch (error) {
                     // The lease is given up rather than handed over. Two worse
                     // options were available: hand out a spec with no URL in it,
@@ -345,7 +349,7 @@ class GpuService {
                     // with the reason on every attempt row.
                     await gpuRepository.failAttemptUnresolved({
                         attemptId: lease.attempt.id,
-                        failureReason: `The video could not be resolved for this lease: ${error.message}`,
+                        failureReason: `This lease could not be resolved: ${error.message}`,
                     });
 
                     // 204, not a retry inside this poll. Looking again at once
@@ -382,6 +386,91 @@ class GpuService {
 
             await sleep(Math.min(POLL_RETRY_INTERVAL_MS, remaining));
         }
+    }
+
+    /**
+     * Turn a stored spec into the one a worker is handed.
+     *
+     * Two resolutions, both of them the coordinator's and neither of them the
+     * worker's: **which source to open**, and **which survey convention counts**.
+     * They happen together and at lease time for the same reason -- a stream URL
+     * carries a credential that would rot in the queue, and a session's type can
+     * change between a submission and a claim, so a spec frozen at submission
+     * would be answering yesterday's question.
+     *
+     * A failure here gives the lease up rather than handing over a half-resolved
+     * spec; the caller fails the attempt and says why.
+     *
+     * @async
+     * @param {Object} spec - The stored spec, as submitted.
+     * @returns {Promise<Object>} The spec a worker is handed.
+     * @throws {Error} When either resolution fails.
+     */
+    async resolveSpecForLease(spec) {
+        return this.resolveDataTypeForLease(await this.resolveVideoForLease(spec));
+    }
+
+    /**
+     * Fill `params.data_type` from the session the job writes into.
+     *
+     * **This decides which frame of a track becomes the observation**, and so
+     * its timecode. `pick_observation_time` counts a fish when its centre crosses
+     * near the bottom of frame and an invertebrate when it enters the
+     * bottom-centre trapezoid; those are survey conventions, not geometry, and
+     * the worker cannot know which applies because it knows nothing about MARP.
+     *
+     * Left alone when the submitter set one. Filled from `sessions.type`
+     * otherwise, which maps straight through -- the values are identical, which
+     * is presumably why this went unnoticed while the worker defaulted it to
+     * `Fish`.
+     *
+     * Nothing is filled for a job with no session: it produces no observations,
+     * so there is no observation frame to choose and no session to choose it
+     * from. Such a job still meets the worker's own default, which is its own
+     * business.
+     *
+     * @async
+     * @param {Object} spec - The spec, with its video already resolved.
+     * @returns {Promise<Object>} A copy whose `params.data_type` is set, where
+     * one could be.
+     * @throws {Error} When the job names a session that cannot be read, or one
+     * the engine has no counting rule for.
+     */
+    async resolveDataTypeForLease(spec) {
+        if (this.submittedDataType(spec) !== null) {
+            return spec;
+        }
+
+        const session = observationIngestService.validateSpecSession(spec.session);
+
+        if (!session) {
+            return spec;
+        }
+
+        const sessionType = await observationIngestService.sessionTypeForSpec(session);
+
+        if (sessionType === null) {
+            throw new Error(
+                `the job names session ${session.session_id}, which does not exist, so there is no `
+                + 'survey convention to score its observations by.'
+            );
+        }
+
+        // Refused here as well as at submit, and this is the one that counts: a
+        // session's type can be edited after a job is queued, and handing over a
+        // type the engine does not branch on means the track's first frame is
+        // used instead, silently.
+        if (!ENGINE_DATA_TYPES.includes(sessionType)) {
+            throw new Error(
+                `session ${session.session_id} has type "${sessionType}", which the inference engine has `
+                + `no counting rule for. It branches on ${ENGINE_DATA_TYPES.join(', ')}.`
+            );
+        }
+
+        return {
+            ...spec,
+            params: { ...(spec.params && typeof spec.params === 'object' ? spec.params : {}), data_type: sessionType },
+        };
     }
 
     /**
@@ -611,7 +700,7 @@ class GpuService {
             }
         }
 
-        return gpuRepository.publishResult({
+        const published = await gpuRepository.publishResult({
             attemptId: this.attemptIdFromPath(attemptId),
             workerId,
             leaseEpoch,
@@ -619,6 +708,67 @@ class GpuService {
             failureReason: body.failure_reason,
             artifacts: named,
         });
+
+        const ingest = await this.ingestPublishedJob(published);
+
+        return ingest === null ? published : { ...published, ingest };
+    }
+
+    /**
+     * Turn a job that has just published a successful result into observations.
+     *
+     * **After the result transaction has committed, and in its own transaction.**
+     * A parse failure must not roll back a job whose compute succeeded, or the
+     * worker would be asked to redo hours of GPU work because a species name was
+     * missing from a list -- and the bytes are already held, so the fix is to
+     * correct the data and call the ingest route, not to run the model again.
+     *
+     * A failure is therefore recorded rather than thrown: as a coordinator note
+     * on the attempt, in the log, and in the `ingest` block of the answer the
+     * worker gets. That is what makes it loud without making it the worker's
+     * problem.
+     *
+     * @async
+     * @param {Object} published - What `publishResult` returned.
+     * @returns {Promise<Object|null>} What was ingested, why it was not, or null
+     * when this result was never a candidate.
+     */
+    async ingestPublishedJob(published) {
+        if (!published || !published.published || published.outcome !== 'succeeded') {
+            return null;
+        }
+
+        const detail = await gpuRepository.getJobDetail(published.job_id);
+
+        if (!detail || !INGESTIBLE_JOB_KINDS.includes(detail.job.kind)) {
+            return null;
+        }
+
+        // A job submitted without a session has nowhere to put observations.
+        // Skipped rather than failed: producing only a detections artifact is a
+        // legitimate run, and every job predating spec.session is one.
+        if (!detail.job.spec || !detail.job.spec.session) {
+            return { ingested: false, skipped: 'the job spec names no session' };
+        }
+
+        try {
+            return await observationIngestService.ingestJob({
+                ...detail.job,
+                artifacts: detail.artifacts,
+            });
+        } catch (error) {
+            const reason = error && error.message ? error.message : String(error);
+
+            logger.error(`Error::observation ingest failed for job ${published.job_id}: ${reason}`);
+
+            await gpuRepository.appendCoordinatorNote(published.published_attempt_id, {
+                note: 'observation ingest failed',
+                job_id: published.job_id,
+                reason,
+            });
+
+            return { ingested: false, failed: reason };
+        }
     }
 
     // -----------------------------------------------------------------
@@ -908,6 +1058,7 @@ class GpuService {
         }
 
         this.validateSubmittedVideo(spec.video);
+        await this.validateSubmittedObservationTarget(kind, spec);
 
         // The range is always present, even for a whole video, so nothing
         // downstream has to special-case the undivided case -- and the
@@ -989,6 +1140,35 @@ class GpuService {
         return result;
     }
 
+    /**
+     * Ingest one job's observations on request.
+     *
+     * The recovery path for R14: automatic ingest runs when a result publishes,
+     * and when it fails -- an unknown species name, a session type that does not
+     * match the model -- the bytes are still held and the fix is to correct the
+     * data and call this. Idempotent, so calling it on a job that already
+     * ingested changes nothing and says so.
+     *
+     * @async
+     * @param {number|string} jobId - Job identifier from the path.
+     * @returns {Promise<Object>} What was written, and what it resolved to.
+     * @throws {ApiError} 404 when there is no such job, 400 when it cannot be
+     * ingested, 409 when its result cannot be reconciled.
+     */
+    async ingestJobObservations(jobId) {
+        const id = this.jobIdFromPath(jobId);
+        const detail = await gpuRepository.getJobDetail(id);
+
+        if (!detail) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `GPU job ${jobId} was not found.`);
+        }
+
+        return observationIngestService.ingestJob({
+            ...detail.job,
+            artifacts: detail.artifacts,
+        });
+    }
+
     // -----------------------------------------------------------------
     // Shared validation
     // -----------------------------------------------------------------
@@ -1032,6 +1212,76 @@ class GpuService {
         }
 
         return ranges;
+    }
+
+    /**
+     * Validate the part of a submitted spec that says where its observations go.
+     *
+     * Checked here rather than only at ingest so that a malformed session or a
+     * missing model is a 400 on the submission, not a surprise hours later when a
+     * GPU has already done the work.
+     *
+     * **Optional, and deliberately so.** A run whose only purpose is a raw
+     * detections artifact is legitimate, and a `training` or `diagnostic` job has
+     * no observations at all. But a job that *does* say where its observations go
+     * must also say which registered model made them: `observations.ml_model_id`
+     * is on every ingested row, and the model's trained-species list is what
+     * settles a common name that more than one species carries.
+     *
+     * @param {string} kind - The job kind being submitted.
+     * @param {Object} spec - The submitted spec.
+     * @returns {void}
+     * @throws {ApiError} 400 when the session or the model is malformed, or when
+     * a session is named without a model.
+     */
+    async validateSubmittedObservationTarget(kind, spec) {
+        const session = observationIngestService.validateSpecSession(spec.session);
+
+        if (!session) {
+            return;
+        }
+
+        if (!INGESTIBLE_JOB_KINDS.includes(kind)) {
+            invalid(
+                `spec.session says where observations go, but a ${kind} job produces none. `
+                + `Only ${INGESTIBLE_JOB_KINDS.join(' and ')} jobs write observations.`
+            );
+        }
+
+        observationIngestService.validateSpecModel(spec.model);
+
+        // A submitter who set `data_type` themselves means it, and it is theirs
+        // to get right -- the same reasoning that keeps a bare `video.url` from
+        // being second-guessed.
+        if (this.submittedDataType(spec) !== null) {
+            return;
+        }
+
+        // Checked here so a session the engine has no counting rule for is
+        // refused before a GPU spends hours on it. The lease is where it is
+        // resolved and where the authoritative refusal happens, because a
+        // session's type can change between the two.
+        observationIngestService.assertEngineUnderstandsSessionType(
+            await observationIngestService.sessionTypeForSpec(session)
+        );
+    }
+
+    /**
+     * The `data_type` a submitter set for themselves, if any.
+     *
+     * @param {Object} spec - The spec, submitted or stored.
+     * @returns {string|null} What they set, or null when they set nothing.
+     */
+    submittedDataType(spec) {
+        const params = spec && typeof spec === 'object' ? spec.params : null;
+
+        if (!params || typeof params !== 'object') {
+            return null;
+        }
+
+        const value = params.data_type;
+
+        return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
     }
 
     /**

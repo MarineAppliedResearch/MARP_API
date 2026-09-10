@@ -189,6 +189,43 @@ const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
 const JOB_STATES = ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'];
 
 /**
+ * Job kinds whose results become observations in the annotation record.
+ *
+ * A `training` job produces weights and a `diagnostic` job produces a number;
+ * neither has a session to write into, so neither is ingested.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const INGESTIBLE_JOB_KINDS = ['inference', 'tracking'];
+
+/**
+ * Survey conventions the worker's `pick_observation_time` actually branches on.
+ *
+ * It is `params.data_type` that decides **which frame of a track an observation
+ * is recorded at**, and the two rules are survey conventions rather than
+ * geometry: a fish is counted when its centre crosses near the bottom of frame,
+ * an invertebrate when it enters the bottom-centre trapezoid. So this is not a
+ * tuning parameter, it is which discipline's counting rule applies.
+ *
+ * **A value outside this list fails silently and badly.**
+ * `pick_observation_time` matches `("Fish", "GULF_Fish")` or
+ * `("Invert", "GULF_Inverts")` and returns nothing otherwise, at which point
+ * `build_observation` falls back to the track's first frame -- a third
+ * convention nobody chose, with no error anywhere. Hence the list is checked
+ * here, before a job is queued, rather than trusted.
+ *
+ * These are `sessions.type` values, deliberately: the mapping is the identity,
+ * which is presumably why nobody noticed the parameter was being defaulted.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const ENGINE_DATA_TYPES = ['Fish', 'GULF_Fish', 'Invert', 'GULF_Inverts'];
+
+
+
+/**
  * Job states that cannot change again. A cancel or a claim against one of these
  * is refused rather than applied.
  *
@@ -282,6 +319,8 @@ module.exports = {
     MEDIA_CLIENT_IDENTITY,
     WORKER_STATES,
     JOB_KINDS,
+    INGESTIBLE_JOB_KINDS,
+    ENGINE_DATA_TYPES,
     JOB_STATES,
     TERMINAL_JOB_STATES,
     ATTEMPT_STATES,

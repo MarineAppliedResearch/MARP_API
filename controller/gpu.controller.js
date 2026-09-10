@@ -183,6 +183,18 @@ class GpuController {
         logger.info('Controller: cancelJob');
         return gpuService.cancelJob(jobId);
     }
+
+    /**
+     * Ingest one job's observations into the annotation record.
+     *
+     * @async
+     * @param {number|string} jobId - Job identifier from the path.
+     * @returns {Promise<Object>} What was written, and what it resolved to.
+     */
+    async ingestJobObservations(jobId) {
+        logger.info('Controller: ingestJobObservations');
+        return gpuService.ingestJobObservations(jobId);
+    }
 }
 
 module.exports = new GpuController();
