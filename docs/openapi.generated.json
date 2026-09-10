@@ -3655,6 +3655,639 @@
           }
         }
       },
+      "MosaicQueryFilters": {
+        "type": "object",
+        "description": "The mosaic rail, as a query. **An absent or empty value means not filtering**, never \"apply the reviewing mode's default\" -- both status dimensions are sent on every query and both may be empty. `date` is rejected rather than served: no column holds the date an observation was made, and a filter that silently omits is worse than no filter. See #76.",
+        "properties": {
+          "project": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Deep Reef Survey 2025"
+            ],
+            "description": "projects.name, reached through observations.project_id."
+          },
+          "dive": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "D04"
+            ],
+            "description": "sessions.dive."
+          },
+          "line": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "1"
+            ],
+            "description": "sessions.line."
+          },
+          "sessionType": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Fish"
+            ],
+            "description": "sessions.type. Aliased on the way out as session_type, because a bare `type` on an observation says type of what."
+          },
+          "session": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              400
+            ],
+            "description": "observations.session_id."
+          },
+          "species": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              41
+            ],
+            "description": "observations.species_id, and only species_id. It finds the organism; `comname` finds rows whose label text matches a name that may since have moved."
+          },
+          "model": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [],
+            "description": "observations.ml_model_id."
+          },
+          "confidence": {
+            "type": "object",
+            "nullable": true,
+            "description": "observations.confidence, inclusive at both ends. Either end may be null.",
+            "properties": {
+              "from": {
+                "type": "number",
+                "nullable": true,
+                "example": 0
+              },
+              "to": {
+                "type": "number",
+                "nullable": true,
+                "example": 0.8
+              }
+            }
+          },
+          "timeOfDay": {
+            "type": "object",
+            "nullable": true,
+            "description": "Time of day from observations.tc, inclusive. **May wrap past midnight**: 22:00 to 02:00 is one night. A row whose tc carries no readable clock is excluded.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "nullable": true,
+                "example": "22:00"
+              },
+              "to": {
+                "type": "string",
+                "nullable": true,
+                "example": "02:00"
+              }
+            }
+          },
+          "reviewStatus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "unreviewed",
+                "flagged",
+                "reviewed"
+              ]
+            },
+            "example": [
+              "unreviewed",
+              "flagged"
+            ],
+            "description": "Current scientific review state. `unreviewed` is the absence of a review record, not a stored value."
+          },
+          "trainingDisposition": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "undecided",
+                "promoted",
+                "excluded"
+              ]
+            },
+            "example": [],
+            "description": "Current training disposition. `undecided` is the absence of a review record, not a stored value."
+          }
+        }
+      },
+      "MosaicRow": {
+        "type": "object",
+        "description": "One mosaic tile: what the tile renders, plus the `version` the commit routes require back. `processor_name` and `lineId` are deliberately absent because nothing draws either, and who annotated something is what the permission catalog gates separately from observations:read. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.",
+        "properties": {
+          "observation_id": {
+            "type": "integer",
+            "example": 100123
+          },
+          "version": {
+            "type": "integer",
+            "example": 3,
+            "description": "The observation row version, maintained by a database trigger. **Send it back on a commit**: the three mosaic commit routes require the version the reviewer saw and refuse a request that omits one, so this is what makes a stale decision detectable rather than silently applied."
+          },
+          "obsID": {
+            "type": "integer",
+            "nullable": true,
+            "example": 4412,
+            "description": "The annotator-facing observation number. A distinct column from observation_id."
+          },
+          "confidence": {
+            "type": "number",
+            "nullable": true,
+            "example": 0.42,
+            "description": "Nullable. Nulls sort last ascending, so unscored rows land on the last pages of the default question."
+          },
+          "comname": {
+            "type": "string",
+            "nullable": true,
+            "example": "Bat Star",
+            "description": "What the species entry was called when the observation was recorded. Never dropped and never rewritten, including by a species correction: it is what makes the drift from species_id auditable."
+          },
+          "species_comname": {
+            "type": "string",
+            "nullable": true,
+            "example": "Ochre Star",
+            "description": "The **current** common name of the species the observation is now classified as, joined from species. Distinct from comname, which stays the annotator own choice: a species correction changes species_id and never the label the annotator saw, so without this field a corrected tile would render the old animal for ever while the species filter matched the new one. The pair is also what the \"was Bat Star\" indicator draws from. Null where the observation has no species -- about 4% of rows legitimately do not."
+          },
+          "tc": {
+            "type": "string",
+            "nullable": true,
+            "example": "21:57:22",
+            "description": "Recorded clock time, as .NET TimeSpan text."
+          },
+          "dive": {
+            "type": "string",
+            "nullable": true,
+            "example": "D04"
+          },
+          "line": {
+            "type": "string",
+            "nullable": true,
+            "example": "1"
+          },
+          "session_type": {
+            "type": "string",
+            "nullable": true,
+            "example": "Fish"
+          },
+          "project_name": {
+            "type": "string",
+            "nullable": true,
+            "example": "Deep Reef Survey 2025",
+            "description": "Null where the observation records no project. Both joins are outer, so a row is never silently dropped for want of one."
+          },
+          "review_decision": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "reviewed",
+              "flagged",
+              null
+            ],
+            "example": null,
+            "description": "Current scientific decision, or null for unreviewed -- which is the absence of a record."
+          },
+          "flag_reason": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "training_decision": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "promoted",
+              "excluded",
+              null
+            ],
+            "example": null,
+            "description": "Current training decision, or null for undecided."
+          },
+          "exclusion_reason": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "keyframe_count": {
+            "type": "integer",
+            "example": 8,
+            "description": "How many keyframes the observation carries. Computed per returned row, not over the matching set, unless the sort names it."
+          },
+          "first_framenum": {
+            "type": "integer",
+            "nullable": true,
+            "example": 3457
+          }
+        }
+      },
+      "MosaicPageSet": {
+        "type": "object",
+        "description": "A set of pages for one question, answered in one pass over the matching set. Carries an entry for **every** page asked for, in ascending page order, so the caller never has to work out which came back.",
+        "properties": {
+          "pageSize": {
+            "type": "integer",
+            "example": 45
+          },
+          "total": {
+            "type": "integer",
+            "example": 2656,
+            "description": "Rows matching the question. Present only when includeTotal was true."
+          },
+          "pageCount": {
+            "type": "integer",
+            "example": 60,
+            "description": "Present only when includeTotal was true."
+          },
+          "pages": {
+            "type": "array",
+            "description": "One entry per requested page, ascending. A page past the end is rows: [] with rowCount 0, not an error -- a prefetcher asks for the tail before it knows the count.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "example": 1
+                },
+                "rows": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MosaicRow"
+                  }
+                },
+                "rowCount": {
+                  "type": "integer",
+                  "example": 45
+                }
+              }
+            }
+          },
+          "excludedForNoDate": {
+            "type": "integer",
+            "example": 0,
+            "description": "How many observations a date filter could not answer for. Always 0 while the date dimension is rejected rather than served."
+          },
+          "servedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-09T11:04:22.113Z",
+            "description": "Diagnostic. Nothing depends on it."
+          }
+        }
+      },
+      "MosaicCommitRequest": {
+        "type": "object",
+        "required": [
+          "observations"
+        ],
+        "description": "One shape for all three commit routes: the page as the reviewer saw it, and the marks. **`marks` is the exception set, not a selection** -- `review` flags them, `training` excludes them, and `delete` destroys them and touches nothing else. A row absent from the marks is accepted by review and training and **untouched** by delete.",
+        "properties": {
+          "observations": {
+            "type": "array",
+            "description": "The whole page, each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.",
+            "items": {
+              "type": "object",
+              "required": [
+                "observation_id",
+                "version"
+              ],
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100123
+                },
+                "version": {
+                  "type": "integer",
+                  "example": 3,
+                  "description": "From the mosaic row. Trigger-maintained; never sent back changed."
+                }
+              }
+            }
+          },
+          "marks": {
+            "type": "array",
+            "description": "The exception set. Every id must be on the page. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. The delete route records no reason and refuses any.",
+            "items": {
+              "type": "object",
+              "required": [
+                "observation_id"
+              ],
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100124
+                },
+                "reason": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "Wrong species"
+                }
+              }
+            }
+          },
+          "withdraw": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              100125
+            ],
+            "description": "Ids whose decision this reviewer is taking back. **Review and training only** -- a delete records no decision to take back. A withdrawal deletes the projection row and leaves every log row, because undecided is the absence of a row. An id that is also marked is a 400."
+          }
+        }
+      },
+      "MosaicCommitResult": {
+        "type": "object",
+        "description": "Per-observation outcomes. **The five arrays are not a partition**: `reverted` co-occurs with `flagged` for the same id when a flag takes back an acceptance, and a delete request's unmarked ids appear in none of them. Every entry is found by `observation_id`, never by position.",
+        "properties": {
+          "atomicity": {
+            "type": "string",
+            "enum": [
+              "per-observation"
+            ],
+            "example": "per-observation",
+            "description": "What the commit guaranteed. `per-observation` means an ineligible observation is an outcome rather than an error and rolls nothing back, while an unexpected failure rolls the whole request back so a failed commit applied nothing."
+          },
+          "reviewed": {
+            "type": "array",
+            "description": "What the commit accepted. `outcome` follows the route: `reviewed`, `promoted`, or `deleted`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100123
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "reviewed",
+                    "promoted",
+                    "deleted"
+                  ],
+                  "example": "reviewed"
+                }
+              }
+            }
+          },
+          "flagged": {
+            "type": "array",
+            "description": "What the commit recorded as the exception. `flagged` on review, `excluded` on training. Empty on delete.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100124
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "flagged",
+                    "excluded"
+                  ],
+                  "example": "flagged"
+                }
+              }
+            }
+          },
+          "reverted": {
+            "type": "array",
+            "description": "Acceptances taken back. Carries the same entry as `flagged` where a flag replaced an acceptance, and `withdrawn` for an explicit `withdraw`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100124
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "flagged",
+                    "excluded",
+                    "withdrawn"
+                  ],
+                  "example": "withdrawn"
+                }
+              }
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "description": "Left unwritten. **`not-found` is the only reason this API emits today** -- an id that is no longer an observations row. Imagery is not judged by the server until server-generated thumbnails exist, so no skip is ever reported for it.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100126
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "not-found"
+                  ],
+                  "example": "not-found"
+                }
+              }
+            }
+          },
+          "conflicted": {
+            "type": "array",
+            "description": "Refused, and **not recorded**. One cause: `version`, meaning the annotation changed since the page was fetched. There is no `claimed` -- the last commit wins, so nothing is ever refused for being second.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100127
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "version"
+                  ],
+                  "example": "version"
+                }
+              }
+            }
+          },
+          "committedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-09T12:00:00.000Z",
+            "description": "When the decisions were recorded, as the record holds it."
+          }
+        }
+      },
+      "MosaicCorrectionRequest": {
+        "type": "object",
+        "required": [
+          "observation_id",
+          "version",
+          "species_id"
+        ],
+        "description": "One observation, one new species. Single rather than bulk because the client corrects one tile at a time; a bulk form would be additive later.",
+        "properties": {
+          "observation_id": {
+            "type": "integer",
+            "example": 100123
+          },
+          "version": {
+            "type": "integer",
+            "example": 3,
+            "description": "The version the reviewer saw, from the mosaic row. **Required.** A correction invalidates review decisions belonging to other people, so one made from a stale view would invalidate decisions about a classification the corrector never saw. An absent version is a 400, never an implicit overwrite."
+          },
+          "species_id": {
+            "type": "integer",
+            "example": 417,
+            "description": "The species to correct to, as species.id -- **not** taxserial, and not the species_id the fixture keys its catalogue on."
+          }
+        }
+      },
+      "MosaicCorrectionResult": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "description": "Applied or refused, and **both are 200**: the client branches on `ok` alone, so a refusal that has a perfectly good result to show is not a transport failure. A malformed request is still a 400, and who may ask is still a 401 or 403.",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          },
+          "error": {
+            "type": "string",
+            "enum": [
+              "not-found",
+              "conflicted",
+              "unchanged"
+            ],
+            "example": "conflicted",
+            "description": "Present only when `ok` is false. `not-found`: no such observation, or no such species. `conflicted`: the version moved since the page was fetched, and nothing was written. `unchanged`: the observation already carries that species, so nothing was written -- doing it anyway would destroy live review decisions in exchange for no change."
+          },
+          "observation": {
+            "type": "object",
+            "description": "The observation as it now stands. Present only when `ok` is true.",
+            "properties": {
+              "observation_id": {
+                "type": "integer",
+                "example": 100123
+              },
+              "version": {
+                "type": "integer",
+                "example": 4,
+                "description": "Bumped by the trigger. Send this one back on the next write."
+              },
+              "species_id": {
+                "type": "integer",
+                "nullable": true,
+                "example": 417
+              },
+              "species_comname": {
+                "type": "string",
+                "nullable": true,
+                "example": "Greenblotched Rockfish",
+                "description": "The **current catalogue name** for the species the observation now is. A separate field from `comname` on purpose: without it a corrected tile would go on showing the old animal for ever, and reusing `comname` would let the catalogue label be mistaken for the frozen one the annotator chose. Taken from species.comname, not gui_display_name (an abbreviation) and not species (the scientific name)."
+              },
+              "comname": {
+                "type": "string",
+                "nullable": true,
+                "example": "Blue/Deacon Rockfish",
+                "description": "**Unchanged by a correction, always.** What the species list entry was called when the annotator chose it. Roughly 50,000 observations already disagree with what their list says today, and keeping this frozen is what makes that drift auditable rather than silently rewritten."
+              },
+              "taxserial": {
+                "type": "integer",
+                "nullable": true,
+                "example": 166730,
+                "description": "Unchanged by a correction, for the same reason as comname. After an off-list correction this and species_id name different organisms -- deliberately, and auditably."
+              }
+            }
+          },
+          "previous": {
+            "type": "object",
+            "description": "What the observation was before. Present only when `ok` is true.",
+            "properties": {
+              "species_id": {
+                "type": "integer",
+                "nullable": true,
+                "example": 233,
+                "description": "Null where the observation had no species -- about 4% of rows legitimately do not."
+              },
+              "species_comname": {
+                "type": "string",
+                "nullable": true,
+                "example": "Blue Rockfish"
+              }
+            }
+          },
+          "review_id": {
+            "type": "integer",
+            "example": 9912,
+            "description": "The observation_reviews row this correction appended. It carries purpose \"scientific\", decision \"corrected\", and both species ids."
+          },
+          "correctedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-09T12:00:00.000Z"
+          }
+        }
+      },
+      "MosaicStatusCounts": {
+        "type": "object",
+        "description": "How the non-status-filtered set divides across the two status dimensions. **`total` here is over a different and larger set than the page query's `total`** -- this one applies no status filter at all -- and the two are never substituted for one another.",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "example": 12480
+          },
+          "unreviewed": {
+            "type": "integer",
+            "example": 9800
+          },
+          "reviewed": {
+            "type": "integer",
+            "example": 2100
+          },
+          "flagged": {
+            "type": "integer",
+            "example": 580
+          },
+          "undecided": {
+            "type": "integer",
+            "example": 11900
+          },
+          "promoted": {
+            "type": "integer",
+            "example": 420
+          },
+          "excluded": {
+            "type": "integer",
+            "example": 160
+          }
+        }
+      },
       "Artifact": {
         "type": "object",
         "description": "A tracked output file (weights, log, plot, export, etc.) produced during a training run, including its path, size, checksum, and optional contextual metadata.\n",
@@ -12697,6 +13330,341 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/pages": {
+      "post": {
+        "summary": "Fetch a set of mosaic pages for one question",
+        "description": "Answers a filtered, sorted, paged question about observations in **one pass** over the matching set. A discontiguous page set -- the head, the tail and the neighbourhood of the current page -- costs what one page costs, and page 9,780 costs what page 1 costs, because the cost is proportional to the matching set rather than to the offset. **The ordering always ends with `observation_id`, appended by the server whatever the client sent**: page membership is query-derived, so a comparator that can return zero for two different rows would put different observations on page one each visit. A page past the end is `rows: []` rather than an error. Over 12 pages or 600 rows is rejected with 400, never truncated -- a caller that quietly gets fewer pages than it asked for believes it holds a set it does not. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "pages"
+                ],
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  },
+                  "sort": {
+                    "type": "array",
+                    "description": "One or two terms, each naming a field from the closed list. A field outside it is rejected rather than quietly replaced by the default. `observation_id` is not a term here -- the server appends it, always.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "enum": [
+                            "confidence",
+                            "keyframe_count",
+                            "updatedAt",
+                            "obsID"
+                          ],
+                          "example": "confidence"
+                        },
+                        "dir": {
+                          "type": "string",
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "example": "asc"
+                        }
+                      }
+                    }
+                  },
+                  "pageSize": {
+                    "type": "integer",
+                    "example": 45,
+                    "description": "Rows per page. Follows the reviewer's viewport, so it is not a constant."
+                  },
+                  "pages": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "example": [
+                      1,
+                      2,
+                      3,
+                      47,
+                      48,
+                      9779
+                    ],
+                    "description": "1-based page numbers. **May be discontiguous.** De-duplicated and sorted server-side."
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "example": [
+                      100123,
+                      100456
+                    ],
+                    "description": "Observation ids the caller already holds pinned to a committed page. Optional."
+                  },
+                  "includeTotal": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true the response carries total and pageCount. Ask once per question, never on a prefetch."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Every page asked for, in ascending page order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicPageSet"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/counts": {
+      "post": {
+        "summary": "Count how a mosaic question divides across the review states",
+        "description": "Applies the **non-status** filters only and returns all six status counts plus a total, in one pass, with no sort and no row numbering. Deliberately not conditioned on either status dimension, because the rail shows a count beside every status box whether or not that status is currently selected -- so a count here may exceed the number of rows the page query returns. **Its `total` is a different number over a different set from the page query's `total`** and the two must never be substituted for one another. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  }
+                },
+                "description": "The same filters object the page query takes. `reviewStatus` and `trainingDisposition` are ignored here rather than rejected, so one serialiser can feed both routes."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The six status counts and the total they divide.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicStatusCounts"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/review": {
+      "post": {
+        "summary": "Commit a page of scientific review decisions",
+        "description": "Accepts every observation on the page that is not marked, and records every marked one as **flagged** with its reason -- the marks are the page's exception set, not a selection. **This is not one transaction**: outcomes are per observation, so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. **The last commit wins**: a second reviewer is not refused, their decision replaces the first as the current one, and the first decision stays in the log. Nobody is locked out of an observation by whoever got there first. An observation whose `version` has moved since the page was fetched comes back `conflicted` with reason `version` and **its decision is not recorded at all**. An unexpected failure rolls the whole request back, so a failed commit applied nothing. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MosaicCommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-observation outcomes. The five arrays are not a partition.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicCommitResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/training": {
+      "post": {
+        "summary": "Commit a page of training dispositions",
+        "description": "Promotes every observation on the page that is not marked, and records every marked one as **excluded** with its reason. The scientific and training decisions are independent: this changes nothing about scientific review status. Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MosaicCommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-observation outcomes, with `promoted` and `excluded` as the outcome values.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicCommitResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/delete": {
+      "post": {
+        "summary": "Permanently delete the marked observations",
+        "description": "**Irreversible, and it leaves no trace.** Destroys only the observations named in `marks` -- unmarked ids on the page are untouched and appear in no outcome array -- conditional on the `version` each was fetched with, so a row that moved comes back `conflicted` rather than being destroyed. There is no deletion provenance record: nothing stores that an observation existed, who removed it, or when. The delete cascades to `keyframes`, `dataset_observations`, `observation_reviews` and `observation_review_current`, **removing a training-set membership row and never its dataset**; it never removes a session, a project or a source video. `withdraw` is not accepted here. The confirmation dialog is the client's and no confirm token is required. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MosaicCommitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Per-observation outcomes. Deleted ids arrive in `reviewed` with outcome `deleted`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicCommitResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/mosaic/observations/species": {
+      "post": {
+        "summary": "Correct one observation's species",
+        "description": "Changes `species_id` and **nothing else**. `comname` and `taxserial` are never rewritten: they are what the species list entry was called when the annotator chose it, and roughly 50,000 observations already disagree with what their list says today because lists were renamed underneath records that were correct when made -- which is exactly what makes the drift auditable. The response carries `species_comname`, the catalogue's current name for the corrected species, as a **separate field** so it cannot be mistaken for the annotator's frozen label.\n\n**A correction invalidates every review decision on the observation, for both purposes.** The scientific review and the training disposition are removed regardless of who made them, and the observation returns to unreviewed and undecided for anyone to decide again -- a promoted training sample carrying the wrong label teaches the model the wrong thing. Their decisions stay in `observation_reviews`: the audit history is retained, only its currency is not.\n\n**`version` is required.** A correction destroys other people's approvals, so one made from a stale view would destroy approvals of a classification the corrector never saw. A stale version comes back `{ok: false, error: \"conflicted\"}` and writes nothing; an absent one is a `400`. A correction naming the species already recorded writes nothing and comes back `{ok: false, error: \"unchanged\"}`, because it would otherwise destroy live decisions in exchange for no change.\n\n**A service token is refused with 403**: a correction belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MosaicCorrectionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The correction, applied or refused. Both are `200`: the client branches on `ok`, and a refusal with a perfectly good result to show is not a transport failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicCorrectionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

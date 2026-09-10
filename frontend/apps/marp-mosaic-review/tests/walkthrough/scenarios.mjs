@@ -59,18 +59,14 @@ async function setEnd(page, key, end, value, settled) {
 const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.marked)');
 
 /**
- * Mark the first undecided tile and keep hold of it.
- *
- * A locator is re-resolved on every use, and `freshTile` stops matching the instant
- * the tile is marked — so anything that clicks and then keeps using the same locator
- * waits forever. Pin the id first.
- */
-/**
  * Mark the first `n` undecided tiles, one after another.
  *
- * Paced rather than instant: the point of the introduction video is that reviewing is
- * a person going down a wall clicking things, and fifteen tiles vanishing in one frame
- * does not read as work being done.
+ * A locator is re-resolved on every use, and `freshTile` stops matching the instant a tile
+ * is marked — so anything that clicks and then keeps using the same locator waits forever.
+ * Pin the id first, which is what this does.
+ *
+ * Paced rather than instant: reviewing is a person going down a wall clicking things, and
+ * fifteen tiles vanishing in one frame does not read as work being done.
  */
 async function markMany(page, n, gap = 280) {
   const ids = [];
@@ -92,183 +88,147 @@ async function markFirstFresh(page) {
   return tile;
 }
 
+/**
+ * Count every instant a loading state is on screen, and record what the store asked for.
+ *
+ * The same instrumentation `render.spec.mjs` uses, and for the same reason: rendering here
+ * is a full re-render, so a skeleton grid is replaced within one notify and any check that
+ * looks *afterwards* cannot see the flash. A MutationObserver sees it.
+ */
+async function watchWaits(page) {
+  await page.evaluate(async () => {
+    const { state, subscribe } = await import('./src/store.js');
+    window.__waits = 0;
+    window.__asks = [];
+    window.addEventListener('marp:action', (e) => {
+      if (e.detail.name === 'query' || e.detail.name === 'query:pinned') {
+        window.__asks.push(e.detail.name);
+      }
+    });
+    const look = () => {
+      if (document.querySelector('.tile.skeleton')
+        || document.querySelector('#field[data-state="loading"]')) window.__waits++;
+    };
+    new MutationObserver(look).observe(document.body, {
+      subtree: true, childList: true, attributes: true,
+      attributeFilter: ['class', 'data-state']
+    });
+    look();
+    void state; void subscribe;
+  });
+}
+
+/** Forget what has happened, so the next scene's numbers are about one page change. */
+const fromHere = (page) => page.evaluate(() => {
+  window.__waits = 0; window.__asks.length = 0;
+});
+
+/**
+ * Paint the measurements across the top of the frame.
+ *
+ * Scaffolding for the camera, exactly like `showAddress`: a millisecond count is the whole
+ * subject of this walkthrough and there is nowhere on screen it would otherwise appear.
+ * Belongs to no test and to no part of the application.
+ */
+async function meter(page, text, tone = 'good') {
+  await page.evaluate(([t, k]) => {
+    let strip = document.getElementById('demoMeter');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.id = 'demoMeter';
+      strip.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:9999;'
+        + 'font:13px/2.1 ui-monospace,Consolas,monospace;padding:0 12px;'
+        + 'pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      document.body.appendChild(strip);
+    }
+    strip.style.background = k === 'bad' ? '#2a1414' : '#0b1b24';
+    strip.style.color = k === 'bad' ? '#ffb4b4' : '#7fe3ff';
+    strip.style.borderBottom = `1px solid ${k === 'bad' ? '#5c2626' : '#17414f'}`;
+    strip.textContent = t;
+  }, [text, tone]);
+}
+
+/**
+ * Change page, and answer with how long the new page took to be on screen.
+ *
+ * Resolved by the store's own settled notify rather than by a timeout or a poll, which
+ * would measure the timeout or the poll interval instead of the page change.
+ */
+function timedPage(page, to) {
+  return page.evaluate((want) => new Promise((resolve, reject) => {
+    import('./src/store.js').then(({ actions, state, subscribe }) => {
+      const target = want === 'next' ? state.page + 1
+        : want === 'prev' ? state.page - 1 : want;
+      if (target === state.page) return reject(new Error(`already on page ${target}`));
+      const started = performance.now();
+      const bail = setTimeout(() => reject(new Error('the page never settled')), 20_000);
+      const off = subscribe((s) => {
+        if (s.loading || s.page !== target) return;
+        clearTimeout(bail); off();
+        resolve(performance.now() - started);
+      });
+      actions.goToPage(target);
+    }, reject);
+  }), to);
+}
+
+/** Wait until the scheduler says it has fetched these pages ahead. */
+async function waitPrefetch(page, wanted) {
+  await page.waitForFunction((want) => {
+    const got = new Set();
+    for (const a of (window.__ahead || [])) for (const n of a) got.add(n);
+    return want.every((n) => got.has(n));
+  }, wanted, { timeout: 25_000 });
+}
+
+/** Record which pages the prefetcher has cached, for `waitPrefetch` to read. */
+async function watchAhead(page) {
+  await page.evaluate(() => {
+    window.__ahead = [];
+    window.addEventListener('marp:action', (e) => {
+      if (e.detail.name === 'prefetch:cached') {
+        window.__ahead.push(e.detail.detail.pages || []);
+      }
+    });
+  });
+}
+
+/** Take the fixture to production depth, and answer with the shape that produced. */
+function deepen(page, scale = 147) {
+  return page.evaluate((n) => new Promise((resolve, reject) => {
+    Promise.all([import('./src/data.js'), import('./src/store.js')])
+      .then(([{ MarpData }, { actions, subscribe }]) => {
+        MarpData.setScale(n);
+        const bail = setTimeout(() => reject(new Error('the deep question never settled')), 25_000);
+        const off = subscribe((s) => {
+          if (s.loading) return;
+          clearTimeout(bail); off();
+          resolve({ pageCount: s.pageCount, total: s.total, pageSize: s.pageSize });
+        });
+        /* The scale is invisible to the cache key, so ask a different question in the same
+           breath -- a stale scale-1 page served at depth would look exactly like a defect. */
+        actions.setSort('confidence', 'desc');
+      }, reject);
+  }), scale);
+}
+
+/**
+ * The beats a scene is built from.
+ *
+ * The runner starts `act` the instant the line begins speaking, so the timing of an action
+ * is decided by *where in the sentence its cue falls* — not by a lead you pick. A fixed
+ * lead does not work: park "I am going to page forward" twelve seconds into a paragraph
+ * and the tiles will have changed long before the viewer is told to watch them.
+ *
+ * So the rule is about the words, not the numbers: **an action scene's line opens with its
+ * cue in the first three or four words**, and everything explanatory goes in a scene of its
+ * own with no action in it. `CUE` is then just long enough for those few words to be said.
+ */
+const beat = (page, ms) => page.waitForTimeout(ms);
+const CUE = 1300;       // "right — paging forward now", spoken
+const DWELL = 2000;     // long enough to see that it landed
+
 export const scenarios = {
-
-  /* ------------------------------------------------------------- review */
-  review: {
-    title: 'Scientific Data Review',
-    scenes: [
-      {
-        caption: 'MARP Picture Mosaic Reviewer',
-        say: "This is the Marp Picture Mosaic Reviewer. Every tile here is one observation "
-           + "that a model produced, and they're all predicted to be the same species. "
-           + "That's the whole idea — when they're side by side, the one that doesn't belong "
-           + "jumps out at you."
-      },
-      {
-        caption: 'Click a tile to flag it',
-        say: "Reviewing is just clicking the ones that look wrong. Let's flag three of them. "
-           + "Notice the flag lands straight away — there's no dialog in the way, because "
-           + "this is the thing you'll do thousands of times.",
-        async act({ page, expect }) {
-          for (const i of [0, 1, 2]) {
-            await tilesIn(page).nth(i).click();
-            await page.waitForTimeout(420);
-          }
-          await expect(page.locator('.tile.marked')).toHaveCount(3);
-        }
-      },
-      {
-        caption: 'The badge opens the panel',
-        say: "If you want to say why, click the flag badge itself. That opens this panel. "
-           + "The reason is optional — the flag already counts on its own.",
-        async act({ page, expect, store }) {
-          const badge = page.locator('[data-badge]').first();
-          store.correctedId = await badge.locator('xpath=ancestor::*[@data-id][1]')
-            .getAttribute('data-id');
-          await badge.click();
-          await expect(page.locator('.pick')).toBeVisible();
-        }
-      },
-      {
-        caption: 'Choosing a reason',
-        say: "Let's say this one is the wrong species.",
-        async act({ page }) {
-          await page.locator('.pick .chip', { hasText: 'Wrong species' }).click();
-        }
-      },
-      {
-        caption: 'Correcting it here, without opening the video',
-        say: "And when you already know what it should be, you can fix it right here. "
-           + "Search the taxonomy, pick the right one, and it saves immediately.",
-        async act({ page, expect }) {
-          await page.locator('.pick [data-act="correct"]').click();
-          await expect(page.locator('.pick #spSearch')).toBeVisible();
-          await page.locator('.pick #spSearch').fill('lea');
-          await page.waitForTimeout(800);
-          await page.locator('.pick .srow').first().click();
-        }
-      },
-      {
-        caption: 'Click anywhere to close',
-        say: "Click anywhere outside to close the panel. That click only dismisses — it won't "
-           + "unflag whatever happens to be underneath it. And because this page is showing one "
-           + "predicted species, the one you just corrected is no longer one of them, so it "
-           + "leaves. The other two flags stay exactly where they were.",
-        async act({ page, expect, store }) {
-          await page.locator('#field').click({ position: { x: 6, y: 6 } });
-          await expect(page.locator('.pick')).toHaveCount(0);
-
-          /* This asserted three marks and failed on `develop` before #77 ever existed: the
-             page filters to one predicted species, so correcting a tile's species takes it
-             out of the filter and off the page. The old narration claimed the tile stayed
-             and showed what it used to be, which is exactly the kind of line the doctrine
-             warns about -- a scene that says one thing while the app does another. */
-          await expect(page.locator(`.tile[data-id="${store.correctedId}"]`)).toHaveCount(0);
-          await expect(page.locator('.tile.marked')).toHaveCount(2);
-        }
-      },
-      {
-        caption: 'Mark Page Reviewed',
-        say: "Now the important part. Instead of approving every observation one at a time, "
-           + "you commit the page. Everything you didn't flag is accepted in a single action. "
-           + "The work scales with how many are wrong, not with how many there are.",
-        async act({ page, expect, store }) {
-          await page.locator('#commit').click();
-          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
-          store.reviewed = await page.locator('.tile .badge', { hasText: 'REVIEWED' }).count();
-        }
-      },
-      {
-        caption: 'On to the next page',
-        say: "Green means accepted, amber means still open. Let's move on to the next page.",
-        async act({ page, settled }) {
-          await page.locator('[data-page="next"]').click();
-          await settled();
-        }
-      },
-      {
-        caption: 'Going back to check',
-        say: "But hold on — let's go back and make sure we didn't get that wrong.",
-        async act({ page, settled }) {
-          await page.locator('[data-page="prev"]').click();
-          await settled();
-        }
-      },
-      {
-        caption: 'Everything we submitted is still here',
-        say: "And there it is, exactly as we left it. The ones we accepted, the ones we "
-           + "flagged, and the correction we made. You can change any of it and commit "
-           + "again — nothing is locked away just because you moved on.",
-        async act({ page, expect, store }) {
-          expect(await page.locator('.tile .badge', { hasText: 'REVIEWED' }).count())
-            .toBe(store.reviewed);
-          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
-        }
-      }
-    ]
-  },
-
-  /* ------------------------------------------------------------- delete */
-  delete: {
-    title: 'Delete Mode',
-    scenes: [
-      {
-        caption: 'Delete Mode',
-        say: "Delete Mode is for clearing out observations that shouldn't exist at all. "
-           + "It uses the same rhythm as reviewing, but with one important difference.",
-        async act({ page, expect, settled }) {
-          await page.locator('.seg button', { hasText: 'Delete' }).click();
-          await settled();
-          await expect(page.locator('#commit')).toContainText('Delete Marked');
-        }
-      },
-      {
-        caption: 'The commit is inverted here',
-        say: "In the review modes, committing accepts everything you didn't mark. Here it's "
-           + "the opposite: it deletes only what you did mark. Everything else is left alone. "
-           + "The header says so, the footer says so, and the button counts them.",
-        async act({ page, expect }) {
-          await expect(page.locator('.mode-note')).toContainText('permanently deletes');
-        }
-      },
-      {
-        caption: 'Marking two for deletion',
-        say: "So let's mark two of these. Nothing is deleted yet — this is just a selection, "
-           + "and you can undo it right up until you commit.",
-        async act({ page, expect }) {
-          for (const i of [0, 1]) {
-            await tilesIn(page).nth(i).click();
-            await page.waitForTimeout(450);
-          }
-          await expect(page.locator('.tile.marked')).toHaveCount(2);
-        }
-      },
-      {
-        caption: 'The whole page is tinted red',
-        say: "Notice the whole frame has gone red. The mode colours everything around the "
-           + "mosaic, but never the images themselves — because tinting the pictures would "
-           + "change how the organisms look, and that's the one thing you're judging.",
-        async act() { /* a beat to look at it */ }
-      },
-      {
-        caption: 'Deleting the marked tiles',
-        say: "Now we commit, and only the marked ones go.",
-        async act({ page, expect }) {
-          await page.locator('#commit').click();
-          await expect(page.locator('.tile .badge', { hasText: 'DELETED' }).first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'Deleted tiles stay visible, greyed out',
-        say: "The deleted ones stay on the page, greyed out and struck through, so you can "
-           + "see what you just did. The others are untouched.",
-        async act({ page, expect }) {
-          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
-        }
-      }
-    ]
-  },
 
   /* ----------------------------------------------------------- training */
   training: {
@@ -331,151 +291,6 @@ export const scenarios = {
   },
 
   /* ------------------------------------------------------------- overview */
-  /* The introduction. Assumes no prior knowledge: what MARP is, what a false positive
-     is and why removing them matters, then each workflow driven at working pace.
-
-     Panels are opened at the start of a scene and left open while the line about them
-     plays. An earlier cut did the whole species correction inside one act, so the
-     window came and went in two seconds under twelve seconds of narration about it. */
-  overview: {
-    title: 'MARP Picture Mosaic Reviewer — introduction',
-    scenes: [
-      {
-        caption: 'MARP Picture Mosaic Reviewer',
-        say: "This is the Picture Mosaic Reviewer, part of Marp \u2014 the Marine Analysis and "
-           + "Reporting Platform."
-      },
-      {
-        caption: 'Where the data comes from',
-        say: "Marp turns underwater video into scientific records. A machine learning model "
-           + "watches the footage and marks every animal it thinks it sees."
-      },
-      {
-        caption: 'False positives',
-        say: "A model gets things wrong in two ways. It misses animals that are there \u2014 false "
-           + "negatives. And it marks things that aren't \u2014 false positives. The Picture Mosaic "
-           + "Reviewer is how we find the false positives and get rid of them, simply and in "
-           + "bulk."
-      },
-      {
-        caption: 'Why a mosaic',
-        say: "Instead of one record at a time, we put hundreds on one screen, all the same "
-           + "predicted species. Your eye is very good at finding the thing that doesn't match "
-           + "in a grid of things that do. That's the trick.",
-        async act({ page, expect }) {
-          await expect(page.locator('.tile').first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'The filters build the query',
-        say: "The filters set up the query. Any combination of what's in the database \u2014 "
-           + "project, dive, line, species \u2014 and the mosaic is built from whatever you ask for.",
-        async act({ page, expect, settled }) {
-          /* Opened first and left up, so the list is on screen while it is described. */
-          await page.locator('[data-dim="dive"]').click();
-          await expect(page.locator('.menu')).toBeVisible();
-          await page.waitForTimeout(5200);
-          await page.locator('.menu [data-v]').nth(1).click();
-          await settled();
-          await expect(page.locator('[data-dim="dive"]')).not.toContainText('All dives');
-        }
-      },
-      {
-        caption: 'Click the ones that look wrong',
-        say: "Then you go through and click the ones that look wrong.",
-        async act({ page, expect, store }) {
-          store.ids = await markMany(page, 15);
-          await expect(page.locator('.tile.marked')).toHaveCount(15);
-        }
-      },
-      {
-        caption: 'Recording what was wrong',
-        say: "You can click the flag itself if you want to record what was wrong with it \u2014 "
-           + "wrong species, false detection, a duplicate. That reason stays with the "
-           + "observation for whoever picks it up next.",
-        async act({ page, expect, store }) {
-          const tile = page.locator(`.tile[data-id="${store.ids[0]}"]`);
-          await tile.locator('[data-badge]').click();
-          await expect(page.locator('.pick')).toBeVisible();
-          await page.waitForTimeout(4200);
-          await page.locator('.pick .chip', { hasText: 'Wrong species' }).click();
-          /* Left open: the next scene continues in this same panel. */
-        }
-      },
-      {
-        caption: 'Change the observation here',
-        say: "And if you already know what it actually is, you can change the observation "
-           + "right here in this window. Search the taxonomy, pick the right species, and it "
-           + "saves immediately. No need to open the video.",
-        async act({ page, expect, store }) {
-          const tile = page.locator(`.tile[data-id="${store.ids[0]}"]`);
-          const before = await tile.locator('.cap').innerText();
-          await page.locator('.pick [data-act="correct"]').click();
-          await expect(page.locator('.pick #spSearch')).toBeVisible();
-          await page.waitForTimeout(2600);
-          await page.locator('.pick #spSearch').fill('lea');
-          await page.waitForTimeout(3200);           // the matches, on screen, being read
-          await page.locator('.pick .srow').first().click();
-          await expect(page.locator('.pick')).toHaveCount(0);
-          await expect(tile.locator('.cap')).not.toHaveText(before);
-        }
-      },
-      {
-        caption: 'Commit the page',
-        say: "Then you commit the entire page. That takes care of fifty records at once \u2014 "
-           + "everything you didn't flag is accepted, and the ones you flagged keep their flag.",
-        async act({ page, expect }) {
-          await page.locator('#commit').click();
-          await expect(page.locator('#commit')).toContainText('Saved');
-          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
-          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'Approving training data',
-        say: "In addition to approving the scientific data, we approve the training data the "
-           + "same way. Here we un-approve the ones we don't want teaching the next model, "
-           + "save, and everything else is promoted.",
-        async act({ page, expect, settled }) {
-          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
-          await settled();
-          await markMany(page, 15, 220);
-          await page.locator('#commit').click();
-          await expect(page.locator('.tile .badge', { hasText: 'PROMOTED' }).first()).toBeVisible();
-          await expect(page.locator('.tile .badge', { hasText: 'EXCLUDED' }).first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'Deleting',
-        say: "And deleting works the same way. Mark what shouldn't be in the database at all, "
-           + "and commit. Those records are gone.",
-        async act({ page, expect, settled }) {
-          await page.locator('.seg button', { hasText: 'Delete' }).click();
-          await settled();
-          await markMany(page, 10, 220);
-          await page.locator('#commit').click();
-          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'And on to page two',
-        say: "Then on to page two, and we delete half of these as well.",
-        async act({ page, expect, settled }) {
-          await page.locator('[data-page="next"]').click();
-          await settled();
-          const total = await page.locator('.tile:not(.failed):not(.queued)').count();
-          await markMany(page, Math.floor(total / 2), 150);
-          await page.locator('#commit').click();
-          await expect(page.locator('.tile.out-deleted').first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'MARP Picture Mosaic Reviewer',
-        say: "Using the Marp Picture Mosaic Reviewer gives us a very efficient way to review a "
-           + "model's false positives, and approve or reject them."
-      }
-    ]
-  },
 
   /* ------------------------------------------------- verify: mode separation */
   /* --------------------------------------- verify: the delete confirmation */
@@ -483,154 +298,6 @@ export const scenarios = {
      cancelling really does nothing, and that confirming really does delete. Every line
      asserts what it claims -- a scene that narrates a result without asserting it can
      lie, and this is the one workflow where that would matter most. */
-  /* ------------------------------------------------- verifying: the filters */
-  'verify-filters': {
-    title: 'Verifying: the filter rail',
-    scenes: [
-      {
-        caption: 'Ten filters, one list',
-        say: "The rail used to be five filters in a column. It is ten now. They were "
-           + "briefly grouped under four headings, and the headings cost more room than "
-           + "they bought — without them the whole rail fits on screen.",
-        async act({ page, expect }) {
-          const labels = await page.locator('#railDimensions .lbl').allInnerTexts();
-          expect(labels.length).toBe(10);
-          expect(await page.locator('.railgroup__title').count()).toBe(0);
-          /* And the point of removing them: the bottom of the rail is reachable. */
-          await expect(page.locator('#statusFilters [data-status="reviewed"]')).toBeVisible();
-        }
-      },
-      {
-        caption: 'More than one at a time',
-        say: "The first thing that changed is that you are no longer stuck with one. "
-           + "Watch the dive filter — I am picking two dives, and the menu stays open, "
-           + "because picking several is the normal case and not a special one.",
-        async act({ page, expect, settled, store }) {
-          store.all = await totalShown(page);
-          await page.locator('[data-dim="dive"]').click();
-          await expect(page.locator('.menu')).toBeVisible();
-
-          await page.locator('.menu [data-v]').nth(1).click();   // nth(0) clears
-          await page.waitForTimeout(500);
-          await page.locator('.menu [data-v]').nth(2).click();
-          await page.keyboard.press('Escape');
-          await settled();
-
-          /* Two chosen, and the mosaic is genuinely narrower for it. Two names still fit
-             on the button, so it lists them; a third would collapse to a count. */
-          await expect(page.locator('[data-dim="dive"]')).toHaveText(/Dive .+,\s*Dive .+/);
-          store.twoDives = await totalShown(page);
-          expect(store.twoDives).toBeLessThan(store.all);
-        }
-      },
-      {
-        caption: 'Dropping one keeps the other',
-        say: "And taking one back off leaves the other exactly where it was. That sounds "
-           + "obvious, but the old rail cleared everything underneath whenever you touched "
-           + "anything above it — so a selection you had spent a minute assembling vanished "
-           + "because you changed your mind about one dive.",
-        async act({ page, expect, settled, store }) {
-          await page.locator('[data-dim="dive"]').click();
-          await page.locator('.menu [data-v]').nth(2).click();   // untoggle the second
-          await page.keyboard.press('Escape');
-          await settled();
-
-          await expect(page.locator('[data-dim="dive"]')).not.toContainText('All dives');
-          const oneDive = await totalShown(page);
-          expect(oneDive).toBeLessThan(store.twoDives);
-        }
-      },
-      {
-        caption: 'How sure the model was',
-        say: "Confidence is a range now, with both ends. Pull the top end down and you get "
-           + "the calls the model was least sure about — which is exactly where the mistakes "
-           + "are, so that is usually the page worth looking at first.",
-        async act({ page, expect, settled }) {
-          const before = await totalShown(page);
-          const to = page.locator('[data-span="confidence"] [data-end="to"]');
-          /* A range input is dragged, not typed into, so drive it the way the browser
-             would and let the rail's own change handler do the rest. */
-          await to.evaluate((el) => {
-            el.value = '0.7';
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-          });
-          await settled();
-          expect(await totalShown(page)).toBeLessThan(before);
-          await expect(page.locator('[data-span="confidence"]')).toBeVisible();
-        }
-      },
-      {
-        caption: 'Clearing it again',
-        say: "Before the next one, let us put confidence back. An empty filter means it is "
-           + "not filtering. It never means show me nothing.",
-        async act({ page, expect, settled }) {
-          const narrow = await totalShown(page);
-          const to = page.locator('[data-span="confidence"] [data-end="to"]');
-          await to.evaluate((el) => {
-            el.value = '1';
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-          });
-          await settled();
-          expect(await totalShown(page)).toBeGreaterThan(narrow);
-        }
-      },
-      {
-        caption: 'Time of day',
-        say: "Every observation carries a time of day, so this one always works. Here is the "
-           + "tail end of the night. Five in the morning until just before seven.",
-        async act({ page, expect, settled, store }) {
-          await setEnd(page, 'timeOfDay', 'from', '05:00', settled);
-          await setEnd(page, 'timeOfDay', 'to', '06:59', settled);
-          store.oneSide = await totalShown(page);
-          expect(store.oneSide).toBeGreaterThan(0);
-        }
-      },
-      {
-        caption: 'And it wraps past midnight',
-        say: "Now watch the count. I am moving the end of that window round to one in the "
-           + "morning, so it starts at five and finishes after midnight. A dive that runs "
-           + "from dusk into the small hours is one night, not two — and written the obvious "
-           + "way, a window like that matches nothing at all.",
-        async act({ page, expect, settled, store }) {
-          await setEnd(page, 'timeOfDay', 'to', '01:00', settled);
-          const wrapped = await totalShown(page);
-          /* The whole claim: the far side of midnight is included, so this is bigger
-             rather than empty. */
-          expect(wrapped).toBeGreaterThan(store.oneSide);
-        }
-      },
-      {
-        caption: 'Dates, and what it cannot see',
-        say: "The date filter is the one that cannot always answer. A time code only carries "
-           + "a date where the clock was synced, and plenty of the record was never synced. "
-           + "So watch what appears underneath it when I ask for a date range.",
-        async act({ page, expect, settled }) {
-          await setEnd(page, 'timeOfDay', 'from', '', settled);
-          await setEnd(page, 'timeOfDay', 'to', '', settled);
-          await setEnd(page, 'date', 'from', '2019-01-01', settled);
-
-          const note = page.locator('[data-note="date"]');
-          await expect(note).toBeVisible();
-          const said = await note.innerText();
-          expect(Number(said.replace(/\D/g, ''))).toBeGreaterThan(0);
-        }
-      },
-      {
-        caption: 'It says what it left out',
-        say: "It tells you how many it had to leave out. Until an hour ago it did not. "
-           + "The number was counted, and the line was written to show it, and nothing "
-           + "carried the one to the other — so the mosaic simply emptied and said nothing, "
-           + "which looks exactly like there being no data. A filter that quietly omits is "
-           + "worse than no filter at all.",
-        async act({ page, expect }) {
-          const said = await page.locator('[data-note="date"]').innerText();
-          expect(said.toLowerCase()).toContain('no recorded date');
-        }
-      }
-    ]
-  },
 
   /* -------------------------------------------- verifying: coming back to it */
   'verify-resume': {
@@ -1215,98 +882,6 @@ export const scenarios = {
   },
 
   /* --------------------------------- verify: the states never rendered */
-  /* Four states the grid could always reach and had never drawn. Every scene asserts what
-     it claims -- the empty message, the disabled commit, the skip note, the recovery. */
-  'verify-empty-and-broken': {
-    title: 'Verifying: the empty and broken states',
-    scenes: [
-      {
-        caption: 'A filter that matches nothing',
-        say: "Ask for something that isn't there. Until now the mosaic just went blank — "
-           + "no message, no way back.",
-        async act({ page, expect }) {
-          await page.evaluate(async () => {
-            const { state, actions } = await import('./src/store.js');
-            state.filters.species = 'No Such Species';
-            await actions.refresh();
-          });
-          await expect(page.locator('.pagestate--empty')).toBeVisible();
-          await expect(page.locator('.pagestate--empty')).toContainText('Nothing to review here');
-          await page.waitForTimeout(2600);
-        }
-      },
-      {
-        caption: 'One way back',
-        say: "It says so, and it offers the one thing worth offering — clear the filters. "
-           + "The rail has five dimensions and working out which one emptied it is not "
-           + "the reviewer's job.",
-        async act({ page, expect, settled }) {
-          await page.locator('[data-act="clear-filters"]').click();
-          await settled();
-          await expect(page.locator('.tile').first()).toBeVisible();
-          await expect(page.locator('.pagestate')).toHaveCount(0);
-        }
-      },
-      {
-        caption: 'When the imagery never arrives',
-        say: "Now break every thumbnail on the page. The observations are still here and "
-           + "still real — but there is nothing to look at.",
-        async act({ page, expect, settled }) {
-          await page.evaluate(async () => {
-            const { state, actions } = await import('./src/store.js');
-            const { MarpData } = await import('./src/data.js');
-            MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
-            await actions.refresh();
-          });
-          await expect(page.locator('.pagestate--banner')).toBeVisible();
-          await page.waitForTimeout(2400);
-        }
-      },
-      {
-        caption: 'The commit stops pretending',
-        say: "The commit button used to look perfectly normal here and would have done "
-           + "nothing at all. Now it is disabled, and it says why.",
-        async act({ page, expect }) {
-          await expect(page.locator('#commit')).toBeDisabled();
-          await expect(page.locator('#commit')).toContainText('nothing to do');
-          await page.waitForTimeout(2800);
-        }
-      },
-      {
-        caption: 'You can still flag what you could not see',
-        say: "This is the important part. A flag is a reviewer saying something is wrong, "
-           + "and a missing picture is worth flagging. That flag reaches the database, "
-           + "even though nobody could see the observation. Until now it was silently "
-           + "thrown away.",
-        async act({ page, expect }) {
-          const id = await page.locator('.tile').first().getAttribute('data-id');
-          await page.locator(`.tile[data-id="${id}"]`).click();
-          await expect(page.locator('.tile.marked')).toHaveCount(1);
-          await expect(page.locator('#commit')).toBeEnabled();
-          await page.locator('#commit').click();
-          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
-          await page.waitForTimeout(1800);
-        }
-      },
-      {
-        caption: 'And you can ask for the picture again',
-        say: "The server refetches missing imagery on its own, and you can ask again from "
-           + "here. The thumbnails come back, and the page carries on.",
-        async act({ page, expect }) {
-          await page.evaluate(async () => {
-            const { state, actions } = await import('./src/store.js');
-            const { MarpData } = await import('./src/data.js');
-            MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
-            await actions.refresh();
-          });
-          await expect(page.locator('.pagestate--banner')).toBeVisible();
-          await page.locator('[data-act="retry-thumbnails"]').click();
-          await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 25000 });
-          await page.waitForTimeout(1200);
-        }
-      }
-    ]
-  },
 
   /* ------------------------------------------- verify: the shortcuts */
   /* Short. The keyboard is not the speed path here -- the pointer is -- so this shows
@@ -1385,98 +960,6 @@ export const scenarios = {
           await page.keyboard.press('Control+Enter');
           await expect(page.locator('#commit')).toHaveClass(/nudge/);
           await page.waitForTimeout(1600);
-        }
-      }
-    ]
-  },
-
-  'verify-modes': {
-    title: 'Verifying: the modes are separate',
-    scenes: [
-      {
-        caption: 'Checking a fix: modes showing each other\u2019s answers',
-        say: "This is a verification run, so watch the badges the whole way through \u2014 the "
-           + "badges are where this bug showed. Scientific review and training review are two "
-           + "separate decisions about the same observation, and the app was letting one of "
-           + "them wear the other one's answer."
-      },
-      {
-        caption: 'Scientific review: flag two, then commit',
-        say: "We're in Scientific Data Review. I'll flag two observations and commit the page. "
-           + "Pay attention to what appears: green means accepted, amber means flagged. That is "
-           + "Scientific review's answer, and it belongs only here.",
-        async act({ page, expect }) {
-          for (let i = 0; i < 2; i++) {           // .first() each time: the set shrinks
-            await markFirstFresh(page);
-            await page.waitForTimeout(400);
-          }
-          await page.locator('#commit').click();
-          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first()).toBeVisible();
-          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'Now switch to Training Data Review',
-        say: "Now the important part. I'm switching to Training Data Review, and every one of "
-           + "those badges should be gone. Before the fix, this screen came up covered in green "
-           + "REVIEWED badges that Training review never gave \u2014 and clicking a tile would grey "
-           + "it out while it still claimed to be reviewed.",
-        async act({ page, expect, settled }) {
-          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
-          await settled();
-          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
-          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' })).toHaveCount(0);
-          await expect(page.locator('.tile.marked')).toHaveCount(0);
-        }
-      },
-      {
-        caption: 'Clean \u2014 nothing carried over',
-        say: "And there it is. Clean. Every tile shows its frame count and nothing else, because "
-           + "Training review has not been asked about any of these yet. Notice the filter on the "
-           + "left has changed too \u2014 it reads Training disposition now, not Review status. That "
-           + "is the reason nothing shows: Training is reading a different dimension entirely.",
-        async act({ page, expect }) {
-          await expect(page.locator('#statusLbl')).toHaveText('Training disposition');
-          await expect(page.locator('.tile .frames').first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'Delete Mode: the flag is meant to show here',
-        say: "Delete Mode is different, and this is deliberate, so watch what stays. The "
-           + "flag is still on screen. Delete Mode filters on Review status, not on its own "
-           + "dimension, because deleting cannot be undone \u2014 and the most useful thing to "
-           + "know before removing an observation is what the scientific record already says "
-           + "about it. That somebody flagged it. Or worse, that somebody accepted it.",
-        async act({ page, expect, settled }) {
-          await page.locator('.seg button', { hasText: 'Delete' }).click();
-          await settled();
-          await expect(page.locator('#statusLbl')).toHaveText('Review status');
-          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
-        }
-      },
-      {
-        caption: 'But nothing here is selected for deletion',
-        say: "What has not carried over is the selection. Look at the button: zero tiles. "
-           + "Those badges are context, not a decision \u2014 a flag is not a deletion, and marking "
-           + "here means something completely different, so nothing arrives marked. You start "
-           + "from an empty selection every time.",
-        async act({ page, expect }) {
-          await expect(page.locator('.tile.marked')).toHaveCount(0);
-          await expect(page.locator('#commit')).toContainText('0 tiles');
-        }
-      },
-      {
-        caption: 'Back to Scientific: the flag is on the record',
-        say: "And back to Scientific review. This is the part to watch closely. The flag we made "
-           + "is still here, because committing wrote it to the record \u2014 and look, it comes back "
-           + "already marked. That matters more than it sounds: a mark is what the next commit "
-           + "treats as the exception, so a flag that came back unmarked would be wiped the next "
-           + "time anybody committed this page.",
-        async act({ page, expect, settled }) {
-          await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
-          await settled();
-          await expect(page.locator('.tile.marked').first()).toBeVisible();
-          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
         }
       }
     ]
@@ -1582,6 +1065,476 @@ export const scenarios = {
           }
           await expect(page.locator('.tile.marked').first()).toBeVisible();
           await expect(page.locator('.reason-chip', { hasText: 'was ' }).first()).toBeVisible();
+        }
+      }
+    ]
+  }
+  ,
+  'verify-prefetch': {
+    title: 'Verifying: the reviewer never waits',
+    scenes: [
+      {
+        caption: 'Before this, every page change waited',
+        say: "Last piece of this issue, and it is about waiting. Until now every single page "
+           + "change went off and asked for data, and you sat looking at a grey skeleton grid "
+           + "while it did. The strip along the top of the frame counts every moment a loading "
+           + "state is on screen. It says zero, because we have not moved anywhere yet.",
+        async act({ page, settled }) {
+          /* No navigation in this scene at all. It is the explanation, and an action here
+             would happen under a sentence that is not about it. */
+          await watchWaits(page);
+          await watchAhead(page);
+          await settled();
+          await meter(page, 'page 1   loading states drawn: 0   fixture latency: 140 ms');
+        }
+      },
+      {
+        caption: 'Watch the tiles',
+        say: "So keep your eye on the tiles, and on that counter. The fixture still takes a "
+           + "hundred and forty milliseconds to answer a real query, so if anything gets "
+           + "fetched here, you will see it happen.",
+        async act({ page }) {
+          await beat(page, 900);                        // nothing to do; just let it be said
+        }
+      },
+      {
+        caption: 'Page forward',
+        say: "Paging forward now \u2026 there. New tiles, straight away. No skeleton grid, nothing "
+           + "fetched, and the counter along the top has not moved.",
+        async act({ page, expect }) {
+          await beat(page, CUE);                        // "paging forward now"
+          await fromHere(page);
+          const ms = await timedPage(page, 'next');
+
+          const asks = await page.evaluate(() => window.__asks.length);
+          const waits = await page.evaluate(() => window.__waits);
+          expect(asks, 'a held page must not be fetched').toBe(0);
+          expect(waits, 'no loading state may be drawn at any instant').toBe(0);
+          expect(ms, 'a cache hit cannot take a fixture latency').toBeLessThan(60);
+          await expect(page.locator('.tile').first()).toBeVisible();
+
+          await meter(page, `page 2 arrived in ${Math.round(ms)} ms   `
+            + `requests: 0   loading states drawn: 0`);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'A reviewer moves both ways',
+        say: "A reviewer does not only go forwards, though. They page on, and then they come "
+           + "back to check something. So the page behind has to be held too, not just the page "
+           + "ahead of them.",
+        async act({ page }) {
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'And back again',
+        say: "Going back now \u2026 and there it is. The same tiles, no wait, and again nothing was "
+           + "fetched to get here.",
+        async act({ page, expect }) {
+          await beat(page, CUE);                        // "going back now"
+          /* No prefetch wait, deliberately: page 1 is in the head band the scheduler always
+             holds, and it was the visible page a moment ago. Waiting on a `prefetch:cached`
+             event would hang, because the runner settles the app before the first scene runs
+             — so that prefetch fired before any listener of ours existed. */
+          await fromHere(page);
+          const ms = await timedPage(page, 'prev');
+
+          expect(await page.evaluate(() => window.__asks.length)).toBe(0);
+          expect(await page.evaluate(() => window.__waits)).toBe(0);
+          expect(ms).toBeLessThan(60);
+          await meter(page, `back to page 1 in ${Math.round(ms)} ms   `
+            + `requests: 0   loading states drawn: 0`);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Now the one you reported',
+        say: "Now the one you reported by hand. Committing a page used to throw away the pages "
+           + "behind it, so you could not go back and look at what you had just submitted. "
+           + "Let us commit this page and then walk back to it.",
+        async act({ page, store }) {
+          store.before = await page.locator('.tile')
+            .evaluateAll((t) => t.map((x) => x.dataset.id));
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Commit the page',
+        say: "Committing now \u2026 and there are the badges. Every tile on this page is accepted, "
+           + "and it is on the record.",
+        async act({ page, expect }) {
+          await beat(page, CUE);                        // "committing now"
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+          await meter(page, 'page 1 committed');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Page on',
+        say: "Paging on now \u2026 there. A fresh page, and the work behind us is still held.",
+        async act({ page }) {
+          await beat(page, CUE);                        // "paging on now"
+          await fromHere(page);
+          await timedPage(page, 'next');
+          await meter(page, 'page 2 \u2014 now come back to the committed page');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'And back to the committed page',
+        say: "Going back to it now \u2026 and there. Every badge still there, the same tiles in the "
+           + "same order, showing exactly what was submitted \u2014 and coming back did not wait "
+           + "either.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE + 300);                  // "going back to it now"
+          await fromHere(page);
+          const ms = await timedPage(page, 'prev');
+
+          /* A committed page is pinned, so returning is served by id from the row index —
+             and it must show what was submitted, not what the filter now matches. */
+          expect(ms, 'coming back to a committed page must not wait').toBeLessThan(60);
+          const after = await page.locator('.tile')
+            .evaluateAll((t) => t.map((x) => x.dataset.id));
+          expect(after, 'a committed page keeps its exact membership').toEqual(store.before);
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+
+          await meter(page, `came back in ${Math.round(ms)} ms \u2014 `
+            + `the page still shows what was submitted`);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Now the real size',
+        say: "That is three thousand rows, though, which is not a real test of anything. A "
+           + "prefetcher looks instant when the whole result already fits in memory. So let us "
+           + "make it the size it will really be.",
+        async act({ page }) {
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'A hundred and fifty nine thousand',
+        say: "Growing it now \u2026 and there. A hundred and fifty nine thousand observations, and "
+           + "thousands of pages of them.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "growing it now"
+          const deep = await deepen(page);
+          expect(deep.pageCount, 'the fixture must actually be deep').toBeGreaterThan(1000);
+          store.deep = deep;
+          await meter(page, `${deep.total.toLocaleString()} observations, `
+            + `${deep.pageCount.toLocaleString()} pages`);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'The end is held on purpose',
+        say: "The scheduler deliberately holds the first few pages and the last few, because a "
+           + "reviewer jumps to the end more often than you would think. So watch what the very "
+           + "last page costs.",
+        async act({ page, store }) {
+          /* Wait for the tail band here rather than in the acting scene, so the action there
+             is not sitting behind a poll of unknown length. */
+          await waitPrefetch(page, [store.deep.pageCount]);
+          await beat(page, 700);
+        }
+      },
+      {
+        caption: 'Jump to the last page',
+        say: "Jumping to the end now \u2026 and there. The last page of thousands, and nothing was "
+           + "fetched at all.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "jumping to the end now"
+          await fromHere(page);
+          const last = await timedPage(page, store.deep.pageCount);
+
+          expect(await page.evaluate(() => window.__asks.length),
+            'the last page is in the tail band, so it is already held').toBe(0);
+          expect(await page.evaluate(() => window.__waits)).toBe(0);
+          expect(last).toBeLessThan(60);
+          await expect(page.locator('.tile').first()).toBeVisible();
+
+          await meter(page, `page ${store.deep.pageCount.toLocaleString()} of `
+            + `${store.deep.pageCount.toLocaleString()} in ${Math.round(last)} ms \u2014 no request`);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'But that one was expected',
+        say: "That one was held on purpose, though, so it only proves half of it. The real "
+           + "question is what happens when you go somewhere nobody could have guessed \u2014 so let "
+           + "us type a page number out in the middle.",
+        async act({ page, store }) {
+          store.middle = await page.evaluate(async () => {
+            const { state } = await import('./src/store.js');
+            return Math.round(state.pageCount / 2) + 7;
+          });
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'A page nobody predicted',
+        say: "Jumping into the middle now \u2026 and that one did wait, because it had to. But it "
+           + "cost one request for the whole set of pages around it, not one request for every "
+           + "page.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE + 300);                  // "jumping into the middle now"
+          await fromHere(page);
+          const jump = await timedPage(page, store.middle);
+          const asks = await page.evaluate(() => window.__asks.length);
+
+          /* One request for the whole set is the point of asking for a set of pages rather
+             than a page: nine pages would otherwise be nine round trips. */
+          expect(asks, 'the jump is one request, not one per page').toBe(1);
+          expect(jump, 'this one really did go to the data layer').toBeGreaterThan(100);
+          await meter(page, `page ${store.middle.toLocaleString()} fetched in `
+            + `${Math.round(jump)} ms \u2014 one request, not one per page`);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'And its neighbours came with it',
+        say: "Stepping on from here now \u2026 and nothing. The pages either side arrived with that "
+           + "one request, so you pay once for going somewhere new, and then you can just work.",
+        async act({ page, expect, store }) {
+          await waitPrefetch(page, [store.middle + 1]);
+          await beat(page, CUE + 300);                  // "stepping on from here now"
+          await fromHere(page);
+          const beside = await timedPage(page, store.middle + 1);
+
+          expect(await page.evaluate(() => window.__asks.length)).toBe(0);
+          expect(await page.evaluate(() => window.__waits)).toBe(0);
+          expect(beside).toBeLessThan(60);
+          await meter(page, `the page beside it: ${Math.round(beside)} ms, `
+            + `no request, no loading state`);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Two milliseconds, and no spinner',
+        say: "And that is the whole thing. A page change was a hundred and forty eight "
+           + "milliseconds and a skeleton grid; it is now two milliseconds and nothing at all. "
+           + "Committing keeps what is behind you. And thousands of pages deep, the end of the "
+           + "result is already held, while a jump into the middle costs one request and then "
+           + "the pages either side of it are free.",
+        async act({ page, expect }) {
+          /* Nothing new is claimed here, so nothing new is asserted — but the summary must
+             not play over a broken app, so the tiles have to still be on screen. */
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await meter(page, 'before: 148 ms a page, 4 loading states   '
+            + 'after: 2 ms a page, 1 \u2014 the opening load');
+        }
+      }
+    ]
+  }
+  ,
+  /* ------------------------------------------------- the tour: where the app is now */
+  /* A current picture of the reviewer, fixture-backed. Recorded before phase 6 changes
+     what the tiles show and phase 8 changes where the rows come from — so it is worth
+     having as a "before". Every scene asserts what its line claims. */
+  tour: {
+    title: 'The MARP Picture Mosaic Reviewer, as it works today',
+    scenes: [
+      {
+        caption: 'A wall of pictures, not a list of rows',
+        say: "This is the Marp Picture Mosaic Reviewer. A machine learning model has looked "
+           + "at hours of dive video and pulled out every animal it thinks it found, and "
+           + "somebody now has to check that work. The whole idea here is that you check it "
+           + "by looking at a wall of pictures rather than reading a table one row at a time.",
+        async act({ page, expect, settled }) {
+          await settled();
+          await expect(tilesIn(page).first()).toBeVisible();
+          const n = await tilesIn(page).count();
+          expect(n).toBeGreaterThan(8);
+        }
+      },
+      {
+        caption: 'The question is on the left',
+        say: "Down the left is the question. Which project, which dive, which line, which "
+           + "species, how confident the model was, what time of day. Ten of those, and they "
+           + "narrow the wall rather than producing a report.",
+        async act({ page, expect }) {
+          await expect(page.locator('.rail')).toBeVisible();
+          await expect(page.locator('[data-dim="species"]')).toBeVisible();
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Narrowing to one species',
+        say: "Picking a species now \u2026 and the wall is a different wall. Notice the count "
+           + "along the top changed with it \u2014 that is how many observations match the "
+           + "question, and which page of them you are looking at.",
+        async act({ page, expect, settled }) {
+          await beat(page, CUE);
+          const before = await totalShown(page);
+          await page.locator('[data-dim="species"]').click();
+          await beat(page, 700);
+          const opt = page.locator('.menu .mbody button[data-v]').first();
+          if (await opt.count()) { await opt.click(); await settled(); }
+          await expect(page.locator('#pageNow')).toBeVisible();
+          const after = await totalShown(page);
+          expect(typeof after).toBe('number');
+          void before;
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Marking the ones that are wrong',
+        say: "Now the actual work. The model gets things wrong, and the wrong ones usually "
+           + "look wrong \u2014 so you go down the wall and tap them. One tap, no dialog in the "
+           + "way, because a reviewer does this thousands of times in a sitting.",
+        async act({ page, store }) {
+          await beat(page, CUE);
+          store.marked = await markMany(page, 6, 320);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'A mark is the exception, not a note',
+        say: "Those marks are not a scratchpad. When this page is committed, whatever is "
+           + "marked becomes the exception and everything unmarked is accepted \u2014 so you are "
+           + "not clicking fifty good ones, you are clicking the few bad ones.",
+        async act({ page, expect, store }) {
+          await expect(page.locator('.tile.marked')).toHaveCount(store.marked.length);
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Saying why, if it helps',
+        say: "Opening one of them now \u2026 and you can say why. The reason is optional \u2014 a bare "
+           + "flag is valid on its own \u2014 but it tells whoever resolves this later what you "
+           + "were seeing. You can also correct the species from right here.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);
+          const id = store.marked[0];
+          await page.locator(`.tile[data-id="${id}"] [data-badge]`).click();
+          await expect(page.locator('.pick')).toBeVisible();
+          await beat(page, 900);
+          await page.locator('.pick [data-reason="Wrong species"]').click();
+          await expect(page.locator('.reason-chip').first()).toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Committing the page',
+        say: "Committing now \u2026 and there. Six flagged, the rest accepted, and every tile now "
+           + "says what just happened to it. The page does not clear itself and it does not "
+           + "jump forward \u2014 moving on is a separate decision.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+          await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first())
+            .toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'And it is still editable',
+        say: "Taking one back now \u2026 and it changes its mind with you. A committed page is not "
+           + "finished \u2014 if you flagged something you should not have, you click it again and "
+           + "commit again. That is the undo.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          const tile = page.locator('.tile .badge', { hasText: 'FLAGGED' }).first();
+          const id = await tile.locator('xpath=ancestor::*[contains(@class,"tile")]')
+            .getAttribute('data-id');
+          await page.locator(`.tile[data-id="${id}"]`).click();
+          await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/out-reverted|marked/);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Paging is instant now',
+        say: "Paging on now \u2026 and back. There is no wait there at all, and there used to be. "
+           + "The pages around you are already fetched before you ask for them, so moving "
+           + "through a result feels like scrolling something already in memory.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          await timedPage(page, 'next');
+          await beat(page, 1200);
+          const ms = await timedPage(page, 'prev');
+          expect(ms).toBeLessThan(200);
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Three separate questions',
+        say: "The same wall answers three different questions, and they are genuinely "
+           + "separate. Is this observation scientifically sound. Should it be used to train "
+           + "the next model. And should it be in the database at all.",
+        async act({ page }) {
+          await beat(page, 900);
+        }
+      },
+      {
+        caption: 'Training review',
+        say: "Switching to training now \u2026 and the wall is the same pictures asking a "
+           + "different question. Anything the scientific side already said stays visible on "
+           + "the tile, because whoever is deciding this should see it.",
+        async act({ page, expect, settled }) {
+          await beat(page, CUE);
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await settled();
+          await expect(page.locator('body')).toHaveAttribute('data-mode', 'training');
+          await expect(page.locator('.tile').first()).toBeVisible();
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Delete asks first',
+        say: "And deleting. Switching to delete now \u2026 mark a few, and commit. This is the one "
+           + "place the tool interrupts you, because this one is permanent \u2014 it names the "
+           + "exact number it is about to destroy.",
+        async act({ page, expect, settled }) {
+          await beat(page, CUE);
+          await page.locator('.seg button', { hasText: 'Delete' }).click();
+          await settled();
+          await markMany(page, 3, 300);
+          await page.locator('#commit').click();
+          await expect(page.locator('.confirm__box')).toBeVisible();
+          await expect(page.locator('.confirm__title')).toContainText('3 observations');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'And cancel really does nothing',
+        say: "Cancelling now \u2026 and nothing was sent. The three are still marked, so the page "
+           + "does not have to be done again. Nothing is destroyed in this tool without "
+           + "somebody reading a number and agreeing to it.",
+        async act({ page, expect }) {
+          await beat(page, CUE);
+          await page.locator('[data-confirm="cancel"]').click();
+          await expect(page.locator('.confirm__box')).toHaveCount(0);
+          await expect(page.locator('.tile.marked')).toHaveCount(3);
+          await expect(page.locator('.tile.out-deleted')).toHaveCount(0);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'The question lives in the address',
+        say: "One last thing. The whole question \u2014 the mode, every filter, the sort, the page "
+           + "\u2014 lives in the address along the top. So a reload puts you back where you were, "
+           + "and you can send somebody a link to exactly the wall you are looking at.",
+        async act({ page, expect }) {
+          await showAddress(page);
+          await expect(page.locator('#demoAddress')).toContainText('marp-mosaic-review');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Still running on a fixture',
+        say: "And one honest caveat. Everything you just watched runs on generated data "
+           + "inside the browser \u2014 the real interface, the real rules, but not the real "
+           + "database yet. Connecting it to Marp's API is later work, and the endpoints it "
+           + "will use are already built and tested behind this.",
+        async act({ page, expect }) {
+          await expect(page.locator('.tile').first()).toBeVisible();
         }
       }
     ]

@@ -30,6 +30,24 @@ function ok(v, msg) { if (!v) throw new Error(msg || 'expected truthy'); }
  */
 async function reset(mode = 'scientific') {
   await MarpData.reload();
+
+  /**
+   * Empty the page cache, which `MarpData.reload()` cannot reach.
+   *
+   * The cache is keyed by the question (#99) and every check here asks the same one, so
+   * without this each check is served the *previous* check's rows — which the reload
+   * above has just orphaned. Ten checks failed that way the first time the cache was
+   * wired in: commits that had not happened, a species change that had not saved, and a
+   * count that had not moved.
+   *
+   * In the application a reload is what drops the cache, and this file cannot reload. A
+   * different question empties it, so ask one nobody is asking and then the real one. It
+   * costs one extra query per check, which is the price of each check starting from the
+   * same place.
+   */
+  state.filters.species = ['no such species'];
+  await actions.refresh();
+
   state.mode = mode;
   state.page = 1;
   /* Arrays now: every set dimension is multi-select, and an empty one means the
@@ -275,6 +293,60 @@ test('Filter and sort dimensions',
     ok(state.counts.unreviewed < before,
        `committing should reduce the unreviewed count (was ${before}, now ${state.counts.unreviewed})`);
     ok(state.counts.reviewed > 0, 'and increase the reviewed count');
+  });
+
+/**
+ * The two counts defects settled in #99, both found by reading and neither previously
+ * tested. This is the tier that can see them: nothing is drawn differently at the moment
+ * either happens, which is exactly why they survived.
+ *
+ * - `state.counts` was assigned **before** the token check, so a superseded response
+ *   wrote into state and only then bailed. Nothing redrew at that instant; the next
+ *   `notify()` drew it.
+ * - `counts()` ran on **every** refresh, which against a real API is a second full pass
+ *   over the matching set on every page turn.
+ *
+ * A slow first query is superseded by a fast second. Both ask a different question, so
+ * neither can be answered from the page cache and both really go to the data layer.
+ */
+test('Filter and sort dimensions',
+  'a superseded query writes no counts into state', async () => {
+    await reset();
+    const realQuery = MarpData.query.bind(MarpData);
+    const realCounts = MarpData.counts.bind(MarpData);
+    let asked = 0;
+
+    try {
+      let holdFirst = true;
+      MarpData.query = async (args) => {
+        const hold = holdFirst ? 900 : 0;
+        holdFirst = false;
+        const res = await realQuery(args);
+        await new Promise((r) => setTimeout(r, hold));
+        return res;
+      };
+      /* Tag each answer with which call produced it, so "whose counts landed" is
+         readable rather than inferred. */
+      MarpData.counts = async (args) => ({ ...(await realCounts(args)), total: ++asked });
+
+      /* Two different questions, so the cache is emptied by each and cannot answer. */
+      actions.setSort('confidence', 'desc');          // slow, and about to be superseded
+      await new Promise((r) => setTimeout(r, 60));
+      actions.setSort('confidence', 'asc');           // fast: this is the newest request
+      await new Promise((r) => setTimeout(r, 500));
+
+      const landed = state.counts.total;
+      eq(landed, 1, 'the newest request is the only one that should have asked');
+
+      /* Now let the superseded one land. */
+      await new Promise((r) => setTimeout(r, 800));
+      eq(state.counts.total, landed,
+         'a superseded response must write nothing into state after its token is spent');
+      eq(asked, 1, 'and must not ask for a count at all — one refresh, one count');
+    } finally {
+      MarpData.query = realQuery;
+      MarpData.counts = realCounts;
+    }
   });
 
 test('Training data review',

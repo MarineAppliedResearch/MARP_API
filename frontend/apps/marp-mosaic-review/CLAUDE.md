@@ -591,6 +591,42 @@ fix or at the bug.
 `act` receives `settled()`, which waits for the grid to stop moving; use it after
 anything that re-queries. `store` is a plain object that carries values between scenes.
 
+### The cue goes first, or the action happens before the words
+
+Reported twice on 2026-09-09, on two cuts of `verify-prefetch`. First *"you kinda flip
+through it a little too quickly"*, and then, after a fix that did not work: *"you say pay
+attention — I am now going to move forward, but you already moved forward a second or two
+before that."*
+
+**The runner starts `act` the instant the line begins speaking.** So the moment an action
+happens is decided by *where in the sentence its cue falls*, and nothing else.
+
+**The first fix was wrong and is worth recording as wrong**, because it looks correct: a
+fixed `LEAD` pause at the top of `act`. It does not work, because a lead is measured in
+milliseconds while the cue is measured in *words* — park "I am going to page forward"
+twelve seconds into a paragraph and a two-second lead fires the action under "the fixture
+still takes a hundred and forty milliseconds…", which is nowhere near it. Any fixed number
+is wrong for every line except the one it was tuned against.
+
+The rule is about the writing:
+
+- **An action scene's line opens with its cue in the first three or four words**, then
+  describes the result. *"Paging forward now … there. New tiles, straight away."* The
+  ellipsis is where the action goes, and `beat(page, CUE)` is only long enough to say those
+  few words.
+- **Explanation gets its own scene, with no action in it.** If a line needs to set
+  something up, argue for it, or name the old behaviour, it moves the app not at all. Half
+  the scenes in `verify-prefetch` are these, and they are what make the other half legible.
+- **One action per scene.** Page forward *and* back, or commit *and* return, is two scenes.
+- **A dwell afterwards**, holding the result on screen. `beat(page, DWELL)`.
+- **Anything that opens is held open long enough to be read** — a panel, a menu, a dialog.
+  It is the only chance the viewer gets; they cannot pause and ask.
+
+Length is not the cost it appears to be. `verify-prefetch` went seven scenes → nine →
+seventeen, and 107 seconds → 158 → 210. All three were cheap to record, and the first two
+were worth nothing, because a demo whose narration does not match what is on screen is
+not evidence of anything.
+
 ### How the timing works
 
 Each line is **spoken and measured before the run**, and the scene is then held for
@@ -622,11 +658,19 @@ Pick a voice with `NARRATE_VOICE`, e.g. `NARRATE_VOICE=en-US-AriaNeural`.
 
 ## Known gaps
 
-- **Adjacent-page prefetching is the last Phase 1 item.** Page N+1 is not fetched while
-  the reviewer works, so every page change waits on a query. Fixture-side; it does not need
-  the API. See #68.
 **Not a list of what is unbuilt** — #68 is that, and a second copy here drifts. What
 follows is what the code itself cannot tell you.
+
+- **The reviewer no longer waits, and the cache is why** (#99, 2026-09-09). A page change
+  was 148 ms and a skeleton grid; it is 2 ms and no loading state at all. Two consequences
+  are deliberate and will otherwise be found as defects. **A cache hit does not refresh
+  the total or the status counts**, consistent with the pinned branch, so *"Showing 45 of
+  2,656 matching"* does not shrink while paging over held pages — the next genuine fetch
+  corrects it, and `commitPage` refreshes the counts itself. And **a species correction
+  retires every cached page** while a commit retires none: a correction moves the row out
+  from under the species filter, so a cached page would go on showing it, and dropping only
+  the visible page would leave it on the next one — a duplicate tile is worse than one
+  wait. `.marp/verification.md` on that branch carries the numbers.
 
 - **The question persists; the work in progress does not.** The mode, the filters, the
   sort and the page live in the URL and survive a reload — and the address is a link, so

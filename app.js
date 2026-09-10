@@ -111,6 +111,9 @@ const registerTimecodeSyncRoutes = require('./routes/timecode_sync.routes');
 // -- see where it is called below.
 const registerGpuRoutes = require('./routes/gpu.routes');
 const { mountGpuBodyParsing } = require('./routes/gpu.routes');
+const registerMosaicRoutes = require('./routes/mosaic.routes');
+const registerMosaicCommitRoutes = require('./routes/mosaic-commit.routes');
+const registerMosaicCorrectionRoutes = require('./routes/mosaic-correction.routes');
 const { configureAuthentication } = require('./auth/auth.setup');
 
 
@@ -345,6 +348,9 @@ registerAuthRoutes(app);
 registerUsersRoutes(app);
 registerTokensRoutes(app);
 registerGpuRoutes(app);
+registerMosaicRoutes(app);
+registerMosaicCommitRoutes(app);
+registerMosaicCorrectionRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 
