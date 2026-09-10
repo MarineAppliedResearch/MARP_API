@@ -143,13 +143,22 @@ Written down deliberately. A recorded gap is a decision; an omitted one is a sur
   and that a commit lands in `observation_reviews`. A local-only dump (#125) does not close
   this: CI builds an empty database, so a checked-in seeder at a smaller volume is what R23
   actually needs.
-- **`DEFAULT_FILTERS.species` is a placeholder key.** The bare address opens on an **empty
-  mosaic** against a real database. A10(b) settled that the default should come from the
-  facets call; it is not built. The walkthrough works around it with an explicit question in
-  the URL, which is itself the evidence the gap is real.
-- **The dive menu reads "Dive Dive 12"** — `sessions.dive` carries the word and
-  `dimensions.js` adds another. Visible in the recorded walkthrough for about five seconds.
-  Fixing it has a fixture side and a decision in it.
+- **Both of the visible defects above are now fixed** (`bc1083ea`), and one of them turned
+  out to be deeper than a placeholder:
+  - **The default no longer carries a species literal.** It was the fixture's Bat Star key,
+    which matches nothing real, so the app opened on an empty mosaic reading *"nothing to
+    do"*. It narrows nothing now — a bare question returns **1,009 rows over 21 pages**
+    against this database, with five species on page one.
+  - **The dive label no longer prefixes a value that already carries the word** — it was
+    wrong against *both* datasets, `"Dive Dive 12"` real and `"Dive D04"` fixture.
+- **A10(b)'s facets-derived default is still not built, and now has a stated reason.** It
+  was attempted and reverted. With no literal in the default, *"the reviewer chose to see
+  everything"* and *"the reviewer has not chosen yet"* become the same question and write
+  the same address — so seeding a species onto a bare address hands back the filter a
+  reviewer deliberately cleared. `query-url`'s *clearing every filter comes back narrowing
+  nothing* is the test that catches it, and it names this as the thing to revisit first.
+  **Building it needs a decision about what a bare address means**, which is a design
+  question rather than a line of code.
 - **No throughput measurement.** Nothing here is benchmarked, and the corpus is 1,062
   observations rather than 440,000.
 - **`npm run docs:build` exits 1** on four pre-existing jsdoc errors in `schedule.js`,
