@@ -670,6 +670,36 @@ const TIPS = {
   'Save detection crops': 'A thumbnail cut from the frame for each detection',
   'Cap how many this job may use': 'Leave the rest of the pool free for other work',
   'Stop early when validation stalls': 'End the run when validation stops improving',
+
+  /* datasets */
+  'Classes': 'Which observation classes to include',
+  'Generating model': 'Human annotation, or detections from a particular model',
+  'Confidence': 'Only observations scored inside this range',
+  'Recorded between': 'When the video was captured, not when it was annotated',
+  'Train': 'The share the model learns from',
+  'Validation': 'Held back to decide when to stop training',
+  'Test': 'Held back entirely, for scoring a finished model',
+  'Name': 'What this dataset is called when a run selects it',
+  'Queries added': 'Each query contributes its matches; duplicates are dropped',
+  'Composition': 'How many observations each class contributes',
+  'Class breakdown': 'How many observations each class contributes',
+  'Purpose': 'What this dataset is meant to be used for',
+  'Frozen on save': 'Membership and split, fixed at this moment',
+  'Sample frames': 'Thumbnails of matching observations',
+  'Dataset': 'The saved dataset',
+  'Observations': 'How many observations it holds',
+  'Classes': 'How many distinct classes it covers',
+  'Groups': 'Overlap groups the split was assigned to',
+  'Split': 'Train, validation and test shares',
+  'Created': 'When it was frozen',
+  'Runs': 'Training runs that have used it',
+  'Add all 12,486 to the dataset': 'Add every matching observation; duplicates are ignored',
+  'Run query': 'Count what these filters match',
+  'Load query': 'Reuse a saved set of filters',
+  'Reassign groups': 'Assign the groups again from a new seed',
+  'Save draft': 'Keep the filters and membership without freezing a split',
+  'Create dataset': 'Freeze this membership and split',
+  'Train': 'Start a training run on this dataset',
 };
 
 /** The element's own words, ignoring chips and counts hung off it. */
@@ -695,6 +725,79 @@ function applyTips() {
   });
 }
 
+/* ============================================== the dataset split control */
+
+/**
+ * The split, assigned by overlap group.
+ *
+ * This is the one control on the screen that has to demonstrate a rule rather
+ * than just collect a number: #104 requires the partition be assigned to whole
+ * groups of observations whose key frames share screen time, never to single
+ * observations. So the arithmetic is done here for real -- largest group first,
+ * into whichever partition is furthest from its target -- and what comes back
+ * is the share the grouping actually allowed, beside the share that was asked
+ * for. Typing 33/33/34 shows the difference immediately.
+ */
+function wireSplit() {
+  const strip = $('.groupstrip');
+  if (!strip || !strip.dataset.sizes) return;
+
+  const sizes = strip.dataset.sizes.split(',').map(Number);
+  const total = sizes.reduce((a, b) => a + b, 0);
+  const blocks = $$('i', strip);
+  const inputs = [$('#pTrain'), $('#pVal'), $('#pTest')];
+  const outs = [$('#trOut'), $('#vaOut'), $('#teOut')];
+  const nums = [$('#trN'), $('#vaN'), $('#teN')];
+  const CLS = ['tr', 'va', 'te'];
+  let seed = 1;
+
+  const assign = (want) => {
+    const targets = want.map((w) => total * w / 100);
+    const got = [0, 0, 0];
+    const kind = new Array(sizes.length);
+    /* Largest first, so one dense aggregation cannot overshoot a small
+       partition and leave it impossible to fill. */
+    const order = sizes.map((v, i) => i).sort((a, b) => sizes[b] - sizes[a]
+      || ((a * seed) % 7) - ((b * seed) % 7));
+    for (const i of order) {
+      let k = 0;
+      let worst = -Infinity;
+      for (let c = 0; c < 3; c++) {
+        const room = targets[c] - got[c];
+        if (room > worst) { worst = room; k = c; }
+      }
+      kind[i] = k;
+      got[k] += sizes[i];
+    }
+    return { kind, got };
+  };
+
+  const draw = () => {
+    let want = inputs.map((el) => Math.max(0, Number(el.value) || 0));
+    const sum = want.reduce((a, b) => a + b, 0) || 1;
+    want = want.map((w) => w * 100 / sum);          // normalise, whatever was typed
+
+    const { kind, got } = assign(want);
+    blocks.forEach((b, i) => {
+      b.className = CLS[kind[i]];
+      b.style.flexGrow = String(sizes[i]);
+    });
+    const fmt = (n) => n.toLocaleString('en-US');
+    for (let k = 0; k < 3; k++) {
+      const pct = Math.round(got[k] / total * 1000) / 10;
+      if (outs[k]) outs[k].textContent = fmt(got[k]) + ' observations · ' + pct + '% actual';
+      if (nums[k]) nums[k].textContent = fmt(got[k]);
+    }
+  };
+
+  inputs.forEach((el) => el && el.addEventListener('input', draw));
+  const again = $('#reshuffle');
+  if (again) {
+    again.addEventListener('click', () => { seed = (seed * 7 + 3) % 101 || 1; draw(); });
+  }
+  draw();
+}
+
 /* ==================================================================== boot */
 
 document.body.dataset.rail = 'closed';
@@ -710,4 +813,5 @@ wireSliders();
 wireInferenceForm();
 wireSorting();
 wireAccordions();
+wireSplit();
 applyTips();

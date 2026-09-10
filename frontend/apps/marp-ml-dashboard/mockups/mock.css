@@ -969,6 +969,106 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
   color: var(--red-400);
 }
 
+/* ============================================================== datasets */
+
+/* A condition that is not a choice. It looks like a setting because a person
+   will look for one, and says it is fixed. */
+.locked-note {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 15px;
+  padding: 9px 11px; border-radius: var(--r-sm);
+  background: rgba(70, 217, 154, 0.07); border: 1px solid rgba(70, 217, 154, 0.26);
+  color: var(--mint-300); font-size: 11.5px; font-weight: 600;
+}
+
+/* The class breakdown with a share column as well as a count. */
+.dist.wide, .dist.pct { grid-template-columns: auto minmax(36px, 1fr) auto auto; }
+.dist .p { color: var(--faint); font-size: 10.5px; text-align: right; min-width: 30px; }
+
+/* Where thumbnails will go. Empty on purpose -- inventing marine imagery for a
+   design review would make the screen look finished when it is not. */
+.samples { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.samples i {
+  aspect-ratio: 4 / 3; border-radius: 5px;
+  background: repeating-linear-gradient(135deg, rgba(42, 214, 220, 0.05) 0 6px,
+                                        transparent 6px 12px), var(--sunk);
+  border: 1px solid var(--hairline);
+}
+
+/* The queries a dataset was assembled from. Each keeps its own colour so the
+   composition bars can be traced back to where the rows came from. */
+.subsets { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.subsets li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 2px 10px;
+  padding: 9px 11px 9px 14px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--hairline);
+  position: relative; align-items: center;
+}
+.subsets li::before {
+  content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+.subsets li.g1::before { background: var(--cyan-400); }
+.subsets li.g2::before { background: var(--mint-400); }
+.subsets li.g3::before { background: var(--amber-300); }
+.subsets .s1 { grid-area: 1 / 1; color: var(--white); font-size: 12px; font-weight: 600; }
+.subsets .s2 { grid-area: 2 / 1; color: var(--faint); font-size: 10.5px; }
+.subsets .s3 { grid-area: 1 / 2 / -1 / 3; text-align: right; color: var(--white);
+               font-weight: 700; font-size: 13px; }
+.subsets .s3 em { display: block; font-style: normal; font-weight: 500;
+                  font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase;
+                  color: var(--faint); }
+.subsets .btn { grid-area: 1 / 3 / -1 / 4; }
+
+.totalrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px;
+  margin-top: 12px; padding: 11px 13px; border-radius: var(--r-sm);
+  background: rgba(20, 126, 232, 0.08); border: 1px solid rgba(45, 156, 255, 0.26);
+}
+.totalrow .k { color: var(--text); font-size: 12px; font-weight: 600; }
+.totalrow .v { grid-area: 1 / 2 / -1 / 3; align-self: center;
+               font-size: 21px; font-weight: 700; color: var(--white); letter-spacing: -0.01em; }
+.totalrow .n { color: var(--faint); font-size: 10.5px; }
+
+/* ---- the split ---------------------------------------------------------- */
+
+.splitgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;
+             align-items: start; margin-bottom: 16px; }
+.splitgrid .field { margin-bottom: 0; }
+.pctrow { display: flex; align-items: center; gap: 7px; }
+.pctrow .inp { width: 78px; }
+.pcs { color: var(--muted); font-size: 12px; }
+
+/* One block per overlap group, sized by how many observations it holds. This is
+   the whole point of the control: the split moves groups, never observations. */
+.groupstrip {
+  display: flex; gap: 1px; height: 34px; overflow: hidden;
+  border-radius: var(--r-sm); border: 1px solid var(--hairline); background: var(--sunk);
+}
+.groupstrip i { flex-basis: 0; min-width: 1px; }
+.groupstrip i.tr { background: rgba(34, 215, 220, 0.55); }
+.groupstrip i.va { background: rgba(155, 124, 240, 0.55); }
+.groupstrip i.te { background: rgba(246, 196, 83, 0.5); }
+.groupstrip i:hover { filter: brightness(1.5); }
+
+/* ---- why a group cannot be split --------------------------------------- */
+
+.tlwrap { overflow-x: auto; }
+.tl { width: 100%; min-width: 620px; height: auto; display: block; }
+.tl .gl { stroke: rgba(42, 214, 220, 0.12); stroke-width: 1; }
+.tl .ax, .tl .lb, .tl .tm, .tl .bt, .tl .tag {
+  font-family: var(--body-font); font-size: 9.5px;
+}
+.tl .ax { fill: var(--faint); text-anchor: middle; }
+.tl .lb { fill: var(--text); text-anchor: end; font-size: 10.5px; }
+.tl .tm { fill: var(--faint); }
+.tl .bt { fill: var(--cyan-300); font-weight: 700; font-size: 9px;
+          letter-spacing: 0.04em; }
+.tl .tag { fill: var(--navy-1000); font-weight: 700; }
+.tl .ob { fill: var(--cyan-400); }
+.tl .band { fill: rgba(34, 215, 220, 0.09); stroke: rgba(34, 215, 220, 0.34); }
+.tlkey { margin-top: 9px; font-size: 11.5px; color: var(--muted); }
+.tlkey b { color: var(--white); }
+
 /* ============================================================== responsive */
 
 @media (max-width: 1420px) {
@@ -1140,6 +1240,17 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 
   .tbl.stack.expandable tbody tr.runrow-body { display: block; padding: 0; }
   .tbl.stack.expandable tbody tr.runrow-body > td { display: block; }
+
+  /* Datasets. These live in the *last* phone block on purpose: this stylesheet
+     has two, with base rules in between, and an override in the earlier one
+     loses to a base rule declared after it. */
+  .splitgrid { grid-template-columns: minmax(0, 1fr); }
+  .samples { grid-template-columns: repeat(3, 1fr); }
+  .subsets li { grid-template-columns: minmax(0, 1fr) auto; }
+  .subsets .btn { grid-area: 2 / 2; }
+  .totalrow .v { font-size: 18px; }
+  .dist.wide, .dist.pct { grid-template-columns: auto minmax(24px, 1fr) auto auto; }
+  .dist .k { max-width: 13ch; }
   .rundetail { padding: 12px; }
   /* Scope comes back. The mid-width rule drops that column for want of room,
      but a card has a line to spare and the dive and line are what identify the
