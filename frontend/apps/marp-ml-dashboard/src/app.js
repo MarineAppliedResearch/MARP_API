@@ -181,7 +181,14 @@ async function render() {
 export async function start() {
   document.body.dataset.rail = 'closed';
   state.data = await load();
-  addEventListener('hashchange', () => render());
+  /* The rail's destinations are plain <a href="#/id">, so they change the hash
+     without going through nav() -- which meant the phone sheet stayed open over
+     the page you had just navigated to. Closing here covers every route change
+     whatever caused it. */
+  addEventListener('hashchange', () => {
+    document.body.dataset.rail = 'closed';
+    render();
+  });
   await render();
   // Reachable from the console, the way the mosaic reviewer's is, so a state
   // the fixture is too healthy to produce can still be got at by hand.
