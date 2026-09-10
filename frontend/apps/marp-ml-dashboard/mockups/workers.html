@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Workers</title>
+<link rel="icon" href="../../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./mock.css">
+</head>
+<body data-screen="workers">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="The GPU pool that runs training and inference">Workers</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <div class="stats">
+        <div class="stat" data-state="online" title="Machines that answered recently, of every machine enrolled">
+          <span class="stat-ico"><svg class="ico"><use href="#i-workers"/></svg></span>
+          <span class="stat-lab">Reachable</span>
+          <b class="stat-num">124<span class="of">/ 143</span></b>
+          <span class="stat-sub"><span><b>98</b> busy</span><span><b>20</b> idle</span><span><b>6</b> paused</span></span>
+        </div>
+        <div class="stat" data-state="busy" title="Concurrent jobs the pool is running, of its total capacity">
+          <span class="stat-ico"><svg class="ico"><use href="#i-slots"/></svg></span>
+          <span class="stat-lab">GPU slots in use</span>
+          <b class="stat-num">127<span class="of">/ 313</span></b>
+          <span class="stat-sub"><span><b>41%</b> used</span><span><b>186</b> free</span></span>
+        </div>
+        <div class="stat" data-state="running" title="Jobs a worker is executing right now">
+          <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
+          <span class="stat-lab">Active jobs</span>
+          <b class="stat-num">6</b>
+          <span class="stat-sub"><span><b>4</b> inference</span><span><b>2</b> training</span></span>
+        </div>
+        <div class="stat" data-state="queued" title="Submitted and waiting for a free slot">
+          <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
+          <span class="stat-lab">Queued</span>
+          <b class="stat-num">8</b>
+          <span class="stat-sub"><span>longest waiting <b>18m</b></span></span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <header class="panel-hd">
+          <h2>Workers <span class="count">(143)</span></h2>
+          <div class="panel-tools">
+            <span class="search">
+              <svg class="ico sm"><use href="#i-search"/></svg>
+              <input class="inp" type="search" placeholder="Search workers&hellip;"
+                     aria-label="Search workers" title="Filter by name, id, GPU or current job">
+            </span>
+            <select class="sel" aria-label="Status" title="Show one state only">
+              <option>All states</option><option>Busy</option><option>Idle</option>
+              <option>Paused</option><option>Offline</option>
+            </select>
+            <select class="sel" aria-label="GPU" title="Show one GPU type only">
+              <option>All GPUs</option><option>RTX 4090</option><option>RTX 3090</option>
+              <option>A5000</option><option>A100 80GB</option>
+            </select>
+            <select class="sel" aria-label="Capability" title="Show machines that can do one thing">
+              <option>Any capability</option><option>Training</option><option>Inference</option>
+            </select>
+            <select class="sel" aria-label="Cached model" title="Show machines holding one model">
+              <option>Any cached model</option><option>MARP-Multiclass-Det-XL</option>
+            </select>
+          </div>
+        </header>
+        <div class="panel-bd">
+          <div class="pool-strip">
+            <span class="pslab">By GPU</span>
+            <button class="gchip" title="32 of 38 RTX 4090 machines are busy"><span class="gn">RTX 4090</span><span class="gc">38</span><span class="gbar"><i style="width:84%"></i></span></button><button class="gchip" title="19 of 27 RTX 3090 machines are busy"><span class="gn">RTX 3090</span><span class="gc">27</span><span class="gbar"><i style="width:70%"></i></span></button><button class="gchip" title="16 of 22 A5000 machines are busy"><span class="gn">A5000</span><span class="gc">22</span><span class="gbar"><i style="width:73%"></i></span></button><button class="gchip" title="11 of 19 RTX 4070 machines are busy"><span class="gn">RTX 4070</span><span class="gc">19</span><span class="gbar"><i style="width:58%"></i></span></button><button class="gchip" title="9 of 14 L40S machines are busy"><span class="gn">L40S</span><span class="gc">14</span><span class="gbar"><i style="width:64%"></i></span></button><button class="gchip" title="6 of 8 A100 80GB machines are busy"><span class="gn">A100 80GB</span><span class="gc">8</span><span class="gbar"><i style="width:75%"></i></span></button><button class="gchip" title="5 of 15 Other machines are busy"><span class="gn">Other</span><span class="gc">15</span><span class="gbar"><i style="width:33%"></i></span></button>
+          </div>
+        </div>
+        <div class="panel-bd flush">
+          <div class="tblwrap">
+            <table class="tbl fixed stack expandable" id="workers">
+              <thead>
+                <tr>
+                  <th class="ex"><span class="vh">Expand</span></th>
+                  <th class="wname sortable" title="Sort by name">Worker</th>
+                  <th class="wstate sortable" title="Sort by state, busiest first">Status</th>
+                  <th class="wrole sortable" title="What this machine is set up to do">Role</th>
+                  <th class="wgpu sortable" title="Sort by GPU">GPU</th>
+                  <th class="wcpu sortable" title="Sort by processor load">CPU</th>
+                  <th class="wmem sortable" title="Sort by memory in use">Memory</th>
+                  <th class="wmodel sortable" title="The model this machine has cached">Cached model</th>
+                  <th class="wjobs sortable num" title="Ranges it is running now">Jobs</th>
+                  <th class="wup sortable" title="How long it has been enrolled and up">Uptime</th>
+                  <th class="whb sortable" aria-sort="ascending" title="A healthy idle machine can go most of a minute without speaking, so quiet means 90 seconds">Last heard</th>
+                </tr>
+              </thead>
+              <tbody>
+                  <tr class="runrow-head" aria-expanded="true">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for campa-lab-04" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">campa-lab-04</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 4090</span><span class="b">24 GB</span></span></td>
+                    <td class="wcpu" data-sort="62"><span class="prog" data-state="busy"><span class="bar"><i style="width:62%"></i></span><span class="pct">62%</span></span></td>
+                    <td class="wmem" data-sort="71"><span class="prog" data-state="busy"><span class="bar"><i style="width:71%"></i></span><span class="pct">71%</span></span></td>
+                    <td class="wmodel">MARP-Multiclass-Det-XL</td>
+                    <td class="num" data-sort="1">1</td>
+                    <td class="wup" data-sort="12d 6h">12d 6h</td>
+                    <td class="whb" data-sort="4">4s ago</td>
+                  </tr>
+                  <tr class="runrow-body">
+                    <td colspan="11">
+                      <div class="rundetail">
+
+                        <div class="wdhead">
+                          <span class="name"><svg class="ico"><use href="#i-workers"/></svg>
+                            <span class="t">campa-lab-04</span></span>
+                          <span class="st" data-state="busy"><span class="dot"></span>Busy</span>
+                          <span class="wid mono" title="The durable id enrolment keys on. The name above is editable metadata.">wk_7f3a91</span>
+                          <span class="wdacts">
+                            <button class="btn sm" title="Change the display name; the durable id does not change">
+                              <svg class="ico sm"><use href="#i-pencil"/></svg>Rename</button>
+                            <button class="btn sm" title="Finish the range in flight, then stop taking work">
+                              <svg class="ico sm"><use href="#i-pause"/></svg>Drain
+                              <span class="later">Later</span></button>
+                            <button class="btn sm" title="Interrupt now. The range restarts when work resumes">
+                              <svg class="ico sm"><use href="#i-stop"/></svg>Pause now
+                              <span class="later">Later</span></button>
+                            <button class="btn sm danger" title="Take this machine out of the pool">
+                              <svg class="ico sm"><use href="#i-x"/></svg>Retire
+                              <span class="later">Later</span></button>
+                          </span>
+                        </div>
+
+                        <div class="grid" data-cols="2">
+                          <div class="sect">
+                            <h3>System</h3>
+                            <dl class="kv">
+                              <dt>Worker id</dt><dd class="mono">wk_7f3a91</dd>
+                              <dt>Hostname</dt><dd>campa-lab-04.marp.local</dd>
+                              <dt>Operating system</dt><dd>Ubuntu 22.04.5 LTS</dd>
+                              <dt>CUDA</dt><dd>12.4 &middot; driver 550.78</dd>
+                              <dt>Worker version</dt><dd>1.0.0</dd>
+                              <dt>Enrolled</dt><dd>2026-08-29</dd>
+                              <dt>Last heard from</dt><dd>4 seconds ago</dd>
+                            </dl>
+                            <div class="capsrow"><span class="tag">Inference (YOLO)</span><span class="tag">Training (PyTorch)</span><span class="tag">Video decode (NVDEC)</span><span class="tag">Transcoding</span></div>
+                          </div>
+
+                          <div class="sect">
+                            <h3>Current job <button class="btn sm" title="Open this job">Open</button></h3>
+                            <dl class="kv">
+                              <dt>Job</dt><dd>ARCTIC_2024_Dive_0449_Inverts <span class="faint">1736</span></dd>
+                              <dt>Kind</dt><dd>Inference</dd>
+                              <dt>Model</dt><dd>MARP-Multiclass-Det-XL 1.2.1</dd>
+                              <dt>Range</dt><dd class="mono">18 000 &ndash; 18 900</dd>
+                              <dt>Elapsed</dt><dd>12m 04s &middot; ~13m remaining</dd>
+                            </dl>
+                            <div class="jobprog" data-state="running">
+                              <span class="bar wide"><i style="width:62%"></i></span>
+                              <span class="pct">62%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="sect">
+                          <h3>Hardware</h3>
+                          <div class="hw">
+                            <div class="hwcard" data-state="busy">
+                              <span class="hwt">GPU &middot; RTX 4090</span>
+                              <b>62%</b>
+                              <span class="bar wide"><i style="width:62%"></i></span>
+                              <span class="hwn">14.9 of 24 GB &middot; 61 &deg;C &middot; 310 W</span>
+                            </div>
+                            <div class="hwcard" data-state="idle">
+                              <span class="hwt">CPU &middot; 12 cores</span>
+                              <b>71%</b>
+                              <span class="bar wide"><i style="width:71%"></i></span>
+                              <span class="hwn">8.5 of 12 cores</span>
+                            </div>
+                            <div class="hwcard" data-state="paused">
+                              <span class="hwt">Memory</span>
+                              <b>71%</b>
+                              <span class="bar wide"><i style="width:71%"></i></span>
+                              <span class="hwn">45.4 of 64 GB</span>
+                            </div>
+                            <div class="hwcard" data-state="done">
+                              <span class="hwt">Slots</span>
+                              <b>1 / 2</b>
+                              <span class="bar wide"><i style="width:50%"></i></span>
+                              <span class="hwn">one free for another range</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="grid" data-cols="2">
+                          <div class="sect">
+                            <h3>Utilisation</h3>
+                            <div class="chart"><div class="chd"><span class="t">GPU utilisation</span><span class="key map">last 24 hours</span><span class="n">mean 62 per cent</span></div><svg viewBox="0 0 620 130" aria-hidden="true"><g class="grid"><line x1="16" x2="604" y1="16.0" y2="16.0"/><line x1="16" x2="604" y1="65.0" y2="65.0"/><line x1="16" x2="604" y1="114.0" y2="114.0"/></g><g class="ax"><text class="ax" x="10" y="22">100%</text><text class="ax" x="10" y="114">0</text></g><path class="fill map" d="M16.0,114.0 L16.0,56.4 L22.1,49.6 L28.2,44.1 L34.4,40.6 L40.5,39.2 L46.6,40.2 L52.8,43.1 L58.9,47.5 L65.0,52.6 L71.1,57.5 L77.2,61.5 L83.4,64.1 L89.5,65.0 L95.6,64.3 L101.8,62.2 L107.9,59.5 L114.0,56.7 L120.1,54.5 L126.2,53.4 L132.4,53.6 L138.5,55.0 L144.6,57.4 L150.8,60.1 L156.9,62.4 L163.0,63.8 L169.1,63.5 L175.2,61.4 L181.4,57.3 L187.5,51.7 L193.6,45.1 L199.8,38.4 L205.9,32.3 L212.0,27.7 L218.1,25.0 L224.2,24.5 L230.4,26.3 L236.5,29.8 L242.6,34.5 L248.8,39.7 L254.9,44.7 L261.0,48.8 L267.1,51.8 L273.2,53.6 L279.4,54.4 L285.5,54.8 L291.6,55.3 L297.8,56.7 L303.9,59.4 L310.0,63.7 L316.1,69.7 L322.2,76.9 L328.4,84.9 L334.5,92.8 L340.6,99.9 L346.8,105.4 L352.9,108.8 L359.0,109.9 L365.1,108.7 L371.2,105.7 L377.4,101.5 L383.5,96.9 L389.6,92.8 L395.8,89.6 L401.9,87.9 L408.0,87.8 L414.1,88.9 L420.2,90.9 L426.4,93.1 L432.5,94.9 L438.6,95.8 L444.8,95.3 L450.9,93.4 L457.0,90.3 L463.1,86.6 L469.2,82.9 L475.4,80.0 L481.5,78.5 L487.6,78.8 L493.8,81.3 L499.9,85.6 L506.0,91.4 L512.1,97.9 L518.2,104.4 L524.4,109.9 L530.5,110.1 L536.6,110.1 L542.8,110.1 L548.9,110.1 L555.0,110.1 L561.1,106.0 L567.2,101.7 L573.4,98.0 L579.5,95.2 L585.6,93.7 L591.8,93.1 L597.9,93.2 L604.0,93.3 L604.0,114.0 Z"/><polyline class="line map" points="16.0,56.4 22.1,49.6 28.2,44.1 34.4,40.6 40.5,39.2 46.6,40.2 52.8,43.1 58.9,47.5 65.0,52.6 71.1,57.5 77.2,61.5 83.4,64.1 89.5,65.0 95.6,64.3 101.8,62.2 107.9,59.5 114.0,56.7 120.1,54.5 126.2,53.4 132.4,53.6 138.5,55.0 144.6,57.4 150.8,60.1 156.9,62.4 163.0,63.8 169.1,63.5 175.2,61.4 181.4,57.3 187.5,51.7 193.6,45.1 199.8,38.4 205.9,32.3 212.0,27.7 218.1,25.0 224.2,24.5 230.4,26.3 236.5,29.8 242.6,34.5 248.8,39.7 254.9,44.7 261.0,48.8 267.1,51.8 273.2,53.6 279.4,54.4 285.5,54.8 291.6,55.3 297.8,56.7 303.9,59.4 310.0,63.7 316.1,69.7 322.2,76.9 328.4,84.9 334.5,92.8 340.6,99.9 346.8,105.4 352.9,108.8 359.0,109.9 365.1,108.7 371.2,105.7 377.4,101.5 383.5,96.9 389.6,92.8 395.8,89.6 401.9,87.9 408.0,87.8 414.1,88.9 420.2,90.9 426.4,93.1 432.5,94.9 438.6,95.8 444.8,95.3 450.9,93.4 457.0,90.3 463.1,86.6 469.2,82.9 475.4,80.0 481.5,78.5 487.6,78.8 493.8,81.3 499.9,85.6 506.0,91.4 512.1,97.9 518.2,104.4 524.4,109.9 530.5,110.1 536.6,110.1 542.8,110.1 548.9,110.1 555.0,110.1 561.1,106.0 567.2,101.7 573.4,98.0 579.5,95.2 585.6,93.7 591.8,93.1 597.9,93.2 604.0,93.3"/><g><text class="ax" x="16.0" y="127">14:00</text><text class="ax" x="163.0" y="127">20:00</text><text class="ax" x="310.0" y="127">02:00</text><text class="ax" x="457.0" y="127">08:00</text><text class="ax" x="604.0" y="127">14:00</text></g></svg></div>
+                          </div>
+                          <div class="sect">
+                            <h3>Recent work on this machine</h3>
+                            <div class="hlist wlist">
+                              <div class="hrow hhead">
+                                <span>Job</span><span>Kind</span><span>Status</span>
+                                <span>Started</span><span>Took</span>
+                              </div>
+                              <div class="hrow"><span class="mono">1736</span><span>Inference</span><span><span class="st" data-state="running"><span class="dot"></span>Running</span></span><span class="tr">12:28</span><span class="tr">12m 04s</span></div>
+                              <div class="hrow"><span class="mono">1728</span><span>Inference</span><span><span class="st" data-state="done"><span class="dot"></span>Completed</span></span><span class="tr">11:04</span><span class="tr">1h 18m</span></div>
+                              <div class="hrow"><span class="mono">1719</span><span>Training</span><span><span class="st" data-state="done"><span class="dot"></span>Completed</span></span><span class="tr">08:12</span><span class="tr">3h 12m</span></div>
+                              <div class="hrow"><span class="mono">1702</span><span>Inference</span><span><span class="st" data-state="failed"><span class="dot"></span>Failed</span></span><span class="tr">06:40</span><span class="tr">2m 12s</span></div>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+                    </td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for bergstrom-4090" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">bergstrom-4090</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
+                    <td class="wrole">Training</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 4090</span><span class="b">24 GB</span></span></td>
+                    <td class="wcpu" data-sort="88"><span class="prog" data-state="busy"><span class="bar"><i style="width:88%"></i></span><span class="pct">88%</span></span></td>
+                    <td class="wmem" data-sort="76"><span class="prog" data-state="busy"><span class="bar"><i style="width:76%"></i></span><span class="pct">76%</span></span></td>
+                    <td class="wmodel">MARP-Multiclass-Det-XL</td>
+                    <td class="num" data-sort="1">1</td>
+                    <td class="wup" data-sort="3d 14h">3d 14h</td>
+                    <td class="whb" data-sort="2">2s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for bergstrom-4090.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for campa-lab-07" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">campa-lab-07</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 3090</span><span class="b">24 GB</span></span></td>
+                    <td class="wcpu" data-sort="54"><span class="prog" data-state="busy"><span class="bar"><i style="width:54%"></i></span><span class="pct">54%</span></span></td>
+                    <td class="wmem" data-sort="48"><span class="prog" data-state="busy"><span class="bar"><i style="width:48%"></i></span><span class="pct">48%</span></span></td>
+                    <td class="wmodel">MARP-Det-v3</td>
+                    <td class="num" data-sort="1">1</td>
+                    <td class="wup" data-sort="21d 2h">21d 2h</td>
+                    <td class="whb" data-sort="6">6s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for campa-lab-07.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for arctic-rig-03" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">arctic-rig-03</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">A5000</span><span class="b">24 GB</span></span></td>
+                    <td class="wcpu" data-sort="47"><span class="prog" data-state="busy"><span class="bar"><i style="width:47%"></i></span><span class="pct">47%</span></span></td>
+                    <td class="wmem" data-sort="52"><span class="prog" data-state="busy"><span class="bar"><i style="width:52%"></i></span><span class="pct">52%</span></span></td>
+                    <td class="wmodel">MARP-Det-v3</td>
+                    <td class="num" data-sort="1">1</td>
+                    <td class="wup" data-sort="8d 19h">8d 19h</td>
+                    <td class="whb" data-sort="11">11s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for arctic-rig-03.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for reef-node-11" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">reef-node-11</span></span></td>
+                    <td class="jstatus" data-sort="1"><span class="st" data-state="idle"><span class="dot"></span>Idle</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 4070</span><span class="b">12 GB</span></span></td>
+                    <td class="wcpu" data-sort="3"><span class="prog" data-state="idle"><span class="bar"><i style="width:3%"></i></span><span class="pct">3%</span></span></td>
+                    <td class="wmem" data-sort="9"><span class="prog" data-state="idle"><span class="bar"><i style="width:9%"></i></span><span class="pct">9%</span></span></td>
+                    <td class="wmodel">MARP-Crab-Det</td>
+                    <td class="num" data-sort="0">0</td>
+                    <td class="wup" data-sort="5d 3h">5d 3h</td>
+                    <td class="whb" data-sort="38">38s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for reef-node-11.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for volunteer-maren" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">volunteer-maren</span></span></td>
+                    <td class="jstatus" data-sort="1"><span class="st" data-state="idle"><span class="dot"></span>Idle</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 3090</span><span class="b">24 GB</span></span></td>
+                    <td class="wcpu" data-sort="2"><span class="prog" data-state="idle"><span class="bar"><i style="width:2%"></i></span><span class="pct">2%</span></span></td>
+                    <td class="wmem" data-sort="7"><span class="prog" data-state="idle"><span class="bar"><i style="width:7%"></i></span><span class="pct">7%</span></span></td>
+                    <td class="wmodel"><span class="dash">&mdash;</span></td>
+                    <td class="num" data-sort="0">0</td>
+                    <td class="wup" data-sort="1d 11h">1d 11h</td>
+                    <td class="whb" data-sort="52">52s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for volunteer-maren.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for campa-lab-12" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">campa-lab-12</span></span></td>
+                    <td class="jstatus" data-sort="2"><span class="st" data-state="paused"><span class="dot"></span>Paused</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 4090</span><span class="b">24 GB</span></span></td>
+                    <td class="wcpu" data-sort="1"><span class="prog" data-state="paused"><span class="bar"><i style="width:1%"></i></span><span class="pct">1%</span></span></td>
+                    <td class="wmem" data-sort="4"><span class="prog" data-state="paused"><span class="bar"><i style="width:4%"></i></span><span class="pct">4%</span></span></td>
+                    <td class="wmodel">MARP-Fish-Det</td>
+                    <td class="num" data-sort="0">0</td>
+                    <td class="wup" data-sort="30d 4h">30d 4h</td>
+                    <td class="whb" data-sort="9">9s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for campa-lab-12.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for gulf-a100-01" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">gulf-a100-01</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
+                    <td class="wrole">Training</td>
+                    <td class="wgpu"><span class="two"><span class="a">A100</span><span class="b">80 GB</span></span></td>
+                    <td class="wcpu" data-sort="71"><span class="prog" data-state="busy"><span class="bar"><i style="width:71%"></i></span><span class="pct">71%</span></span></td>
+                    <td class="wmem" data-sort="63"><span class="prog" data-state="busy"><span class="bar"><i style="width:63%"></i></span><span class="pct">63%</span></span></td>
+                    <td class="wmodel">MARP-Habitat-Cls</td>
+                    <td class="num" data-sort="1">1</td>
+                    <td class="wup" data-sort="44d 8h">44d 8h</td>
+                    <td class="whb" data-sort="3">3s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for gulf-a100-01.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for gulf-l40s-02" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">gulf-l40s-02</span></span></td>
+                    <td class="jstatus" data-sort="1"><span class="st" data-state="idle"><span class="dot"></span>Idle</span></td>
+                    <td class="wrole">Training</td>
+                    <td class="wgpu"><span class="two"><span class="a">L40S</span><span class="b">48 GB</span></span></td>
+                    <td class="wcpu" data-sort="4"><span class="prog" data-state="idle"><span class="bar"><i style="width:4%"></i></span><span class="pct">4%</span></span></td>
+                    <td class="wmem" data-sort="11"><span class="prog" data-state="idle"><span class="bar"><i style="width:11%"></i></span><span class="pct">11%</span></span></td>
+                    <td class="wmodel">MARP-Habitat-Cls</td>
+                    <td class="num" data-sort="0">0</td>
+                    <td class="wup" data-sort="17d 7h">17d 7h</td>
+                    <td class="whb" data-sort="21">21s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for gulf-l40s-02.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for volunteer-okeanos" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">volunteer-okeanos</span></span></td>
+                    <td class="jstatus" data-sort="3"><span class="st" data-state="offline"><span class="dot"></span>Offline</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 3080</span><span class="b">10 GB</span></span></td>
+                    <td class="wcpu" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
+                    <td class="wmem" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
+                    <td class="wmodel"><span class="dash">&mdash;</span></td>
+                    <td class="num" data-sort="0">0</td>
+                    <td class="wup" data-sort="—">—</td>
+                    <td class="whb quiet" data-sort="5400">2h ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for volunteer-okeanos.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for pacific-rig-08" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">pacific-rig-08</span></span></td>
+                    <td class="jstatus" data-sort="3"><span class="st" data-state="offline"><span class="dot"></span>Offline</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX 4070</span><span class="b">12 GB</span></span></td>
+                    <td class="wcpu" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
+                    <td class="wmem" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
+                    <td class="wmodel"><span class="dash">&mdash;</span></td>
+                    <td class="num" data-sort="0">0</td>
+                    <td class="wup" data-sort="—">—</td>
+                    <td class="whb quiet" data-sort="26100">7h ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for pacific-rig-08.</p></div></td>
+                  </tr>
+                  <tr class="runrow-head" aria-expanded="false">
+                    <td class="ex"><button class="exbtn" aria-label="Show details for salt-lab-02" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">salt-lab-02</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
+                    <td class="wrole">Inference</td>
+                    <td class="wgpu"><span class="two"><span class="a">A5000</span><span class="b">24 GB</span></span></td>
+                    <td class="wcpu" data-sort="58"><span class="prog" data-state="busy"><span class="bar"><i style="width:58%"></i></span><span class="pct">58%</span></span></td>
+                    <td class="wmem" data-sort="44"><span class="prog" data-state="busy"><span class="bar"><i style="width:44%"></i></span><span class="pct">44%</span></span></td>
+                    <td class="wmodel">MARP-SeaStar-Det</td>
+                    <td class="num" data-sort="1">1</td>
+                    <td class="wup" data-sort="9d 22h">9d 22h</td>
+                    <td class="whb" data-sort="8">8s ago</td>
+                  </tr>
+                  <tr class="runrow-body" hidden>
+                    <td colspan="11"><div class="rundetail"><p class="hint">System, hardware, current job and recent work for salt-lab-02.</p></div></td>
+                  </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <footer class="panel-ft">
+          <span>Showing <b class="strong">1&ndash;12</b> of 143 workers</span>
+          <div class="pager">
+            <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
+            <button aria-current="page">1</button><button>2</button><button>3</button>
+            <button>4</button><button>&hellip;</button><button>12</button>
+            <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+          </div>
+          <span class="rpp">Rows
+            <select class="sel" aria-label="Rows per page"><option>12</option><option>25</option><option>50</option></select>
+          </span>
+        </footer>
+      </section>
+
+      <div class="grid" data-cols="2">
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>Job queue <span class="count">(8)</span></h2>
+            <span class="later">Reordering: later</span>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack" id="queue">
+                <thead>
+                  <tr>
+                    <th class="qpos num">#</th><th class="qid">Job</th><th class="qkind">Kind</th>
+                    <th class="qmodel">Model</th><th class="qscope">Scope</th>
+                    <th class="qsub">Submitted</th><th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="num">1</td>
+                    <td class="mono">1731</td>
+                    <td><span class="tag inference">Inference</span></td>
+                    <td class="wmodel">MARP-Rockfish-Cls 2.1.0</td>
+                    <td class="jscope">CAMPA 2024 &middot; Dive 0125 &middot; L30</td>
+                    <td class="jtime">16:20</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Move up" title="Move up the queue"><svg class="ico sm"><use href="#i-arrow"/></svg></button><button class="btn sm icon danger" aria-label="Cancel" title="Take it out of the queue"><svg class="ico sm"><use href="#i-x"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="num">2</td>
+                    <td class="mono">1730</td>
+                    <td><span class="tag inference">Inference</span></td>
+                    <td class="wmodel">MARP-Crab-Det 1.0.2</td>
+                    <td class="jscope">CAMPA 2024 &middot; Line 28</td>
+                    <td class="jtime">16:17</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Move up" title="Move up the queue"><svg class="ico sm"><use href="#i-arrow"/></svg></button><button class="btn sm icon danger" aria-label="Cancel" title="Take it out of the queue"><svg class="ico sm"><use href="#i-x"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="num">3</td>
+                    <td class="mono">1729</td>
+                    <td><span class="tag training">Training</span></td>
+                    <td class="wmodel">MARP-Fish-Det 1.1.5</td>
+                    <td class="jscope">GULF_2025_Fish_Train_v1</td>
+                    <td class="jtime">16:02</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Move up" title="Move up the queue"><svg class="ico sm"><use href="#i-arrow"/></svg></button><button class="btn sm icon danger" aria-label="Cancel" title="Take it out of the queue"><svg class="ico sm"><use href="#i-x"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="num">4</td>
+                    <td class="mono">1727</td>
+                    <td><span class="tag inference">Inference</span></td>
+                    <td class="wmodel">MARP-Det-v3 2.0.1</td>
+                    <td class="jscope">VENTS 2025 &middot; Line 12</td>
+                    <td class="jtime">15:44</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Move up" title="Move up the queue"><svg class="ico sm"><use href="#i-arrow"/></svg></button><button class="btn sm icon danger" aria-label="Cancel" title="Take it out of the queue"><svg class="ico sm"><use href="#i-x"/></svg></button></span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>Activity</h2>
+            <div class="panel-tools">
+              <select class="sel" aria-label="Worker" title="Show one machine only">
+                <option>All workers</option><option>campa-lab-04</option>
+              </select>
+            </div>
+          </header>
+          <div class="panel-bd">
+            <div class="lg">
+            <div class="lgrow"><span class="lt">14:22:31</span><span class="dot" data-state="busy"></span><span class="lw">campa-lab-04</span><span class="lm">progress 8,604 of 18,300 frames</span></div>
+            <div class="lgrow"><span class="lt">14:22:28</span><span class="dot" data-state="idle"></span><span class="lw">reef-node-11</span><span class="lm">heartbeat, no work taken</span></div>
+            <div class="lgrow"><span class="lt">14:22:15</span><span class="dot" data-state="busy"></span><span class="lw">bergstrom-4090</span><span class="lm">training epoch 35 of 100</span></div>
+            <div class="lgrow"><span class="lt">14:21:02</span><span class="dot" data-state="paused"></span><span class="lw">campa-lab-12</span><span class="lm">paused by itravers</span></div>
+            <div class="lgrow"><span class="lt">14:19:44</span><span class="dot" data-state="offline"></span><span class="lw">pacific-rig-08</span><span class="lm">lease expired, range returned to the pool</span></div>
+            <div class="lgrow"><span class="lt">14:18:07</span><span class="dot" data-state="busy"></span><span class="lw">gulf-a100-01</span><span class="lm">model MARP-Habitat-Cls 1.2.0 cached</span></div>
+            <div class="lgrow"><span class="lt">14:15:53</span><span class="dot" data-state="idle"></span><span class="lw">volunteer-maren</span><span class="lm">enrolled, awaiting work</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./mock.js"></script>
+</body>
+</html>
