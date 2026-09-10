@@ -100,14 +100,20 @@ function mountSprite() {
    the one count an operator has to act on -- a number beside every entry is
    decoration. */
 const NAV = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'jobs', label: 'Jobs', badge: 7 },
-  { id: 'inference', label: 'Inference' },
-  { id: 'training', label: 'Training' },
-  { id: 'datasets', label: 'Datasets' },
-  { id: 'models', label: 'Models' },
-  { id: 'workers', label: 'Workers' },
-  { id: 'history', label: 'History' },
+  { id: 'dashboard', label: 'Dashboard',
+    tip: 'What the GPU pool is running, queued and struggling with' },
+  { id: 'jobs', label: 'Jobs', badge: 7, tone: 'attn',
+    tip: 'One queue for training and inference \u2014 7 need attention' },
+  { id: 'inference', label: 'Inference', badge: 4, tone: 'run',
+    tip: 'Run a model over MARP data \u2014 4 running now' },
+  { id: 'training', label: 'Training', badge: 2, tone: 'run',
+    tip: 'Fine-tune a model on a saved dataset \u2014 2 running now' },
+  { id: 'datasets', label: 'Datasets',
+    tip: 'Build and save training sets from approved observations' },
+  { id: 'models', label: 'Models',
+    tip: 'The model registry, its versions and what each is preferred for' },
+  { id: 'workers', label: 'Workers', tip: 'The GPU pool that runs the work' },
+  { id: 'history', label: 'History', tip: 'Finished work, searchable' },
 ];
 
 const IMG = '../../../shared/assets/images/';
@@ -119,10 +125,13 @@ function mountRail() {
 
   const links = NAV.map((n) => {
     const current = n.id === here ? ' aria-current="page"' : '';
+    /* Two kinds of count, and they must not look alike: red is work that has
+       gone wrong, cyan is work in progress. */
     const badge = n.badge
-      ? '<span class="badge" title="' + n.badge + ' need attention">' + n.badge + '</span>'
+      ? '<span class="badge" data-tone="' + (n.tone || 'attn') + '">' + n.badge + '</span>'
       : '';
-    return '<a href="./' + n.id + '.html"' + current + ' data-nav="' + n.id + '">'
+    return '<a href="./' + n.id + '.html"' + current + ' data-nav="' + n.id + '"'
+      + ' title="' + (n.tip || n.label) + '">'
       + ico(n.id) + '<span>' + n.label + '</span>' + badge + '</a>';
   }).join('');
 
@@ -290,15 +299,28 @@ function wireSorting() {
 
     const sortBy = (th, dir) => {
       const i = Array.prototype.indexOf.call(th.parentElement.children, th);
-      const rows = $$('tr', body);
       const sign = dir === 'ascending' ? 1 : -1;
-      rows.sort((a, b) => {
-        const x = keyOf(a, i);
-        const y = keyOf(b, i);
+
+      /* In an expandable table a row is really two rows -- the head and the
+         detail under it -- so they are gathered into pairs and moved together.
+         Sorting the `tr` list flat interleaved every run with someone else's
+         charts. */
+      const groups = [];
+      $$('tr', body).forEach((tr) => {
+        if (tr.classList.contains('runrow-body') && groups.length) {
+          groups[groups.length - 1].push(tr);
+        } else {
+          groups.push([tr]);
+        }
+      });
+
+      groups.sort((a, b) => {
+        const x = keyOf(a[0], i);
+        const y = keyOf(b[0], i);
         if (x === y) return 0;
         return (x > y ? 1 : -1) * sign;
       });
-      rows.forEach((r) => body.appendChild(r));
+      groups.forEach((g) => g.forEach((tr) => body.appendChild(tr)));
       heads.forEach((h) => h.setAttribute('aria-sort', h === th ? dir : 'none'));
     };
 
@@ -485,6 +507,194 @@ function wireInferenceForm() {
   refreshSum();
 }
 
+/**
+ * A row that opens to its own detail. Used by Training's runs, where a person
+ * wants one run's curves beside the row above rather than in a drawer that
+ * hides the list.
+ */
+function wireAccordions() {
+  $$('table.expandable tbody tr.runrow-head').forEach((head) => {
+    const body = head.nextElementSibling;
+    if (!body || !body.classList.contains('runrow-body')) return;
+    const set = (on) => {
+      head.setAttribute('aria-expanded', String(on));
+      body.hidden = !on;
+    };
+    const toggle = () => set(head.getAttribute('aria-expanded') !== 'true');
+    const btn = $('.exbtn', head);
+    if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+    head.addEventListener('click', (e) => {
+      if (e.target.closest('button, input, a, select')) return;
+      toggle();
+    });
+  });
+
+  const all = $$('.btn').find((b) => b.textContent.trim() === 'Expand all');
+  if (!all) return;
+  all.addEventListener('click', () => {
+    const heads = $$('tr.runrow-head');
+    const opening = heads.some((h) => h.getAttribute('aria-expanded') !== 'true');
+    heads.forEach((h) => {
+      h.setAttribute('aria-expanded', String(opening));
+      if (h.nextElementSibling) h.nextElementSibling.hidden = !opening;
+    });
+    all.lastChild.textContent = opening ? 'Collapse all' : 'Expand all';
+  });
+}
+
+/* ================================================================== tips */
+
+/**
+ * A short hover explanation on every control, keyed by the text already on
+ * screen.
+ *
+ * Kept as a dictionary rather than a `title` on each element for the same
+ * reason the rail is: eight hand-written screens would otherwise explain the
+ * same control eight ways. Anything already carrying its own `title` is left
+ * alone, so a screen can be more specific where it needs to be.
+ */
+const TIPS = {
+  /* top bar */
+  'Project': 'Narrow every list on this screen to one project',
+  'Search jobs, models, datasets…': 'Search across jobs, models and datasets',
+  'New Inference Job': 'Run a registered model over MARP data',
+  'New Training Job': 'Fine-tune a model on a saved dataset',
+
+  /* headline numbers */
+  'Running jobs': 'Jobs a worker is executing right now',
+  'Queued jobs': 'Submitted and waiting for a free GPU slot',
+  'Needs attention': 'Failed, or finished with some pieces failed',
+  'Completed today': 'Finished since midnight',
+  'Workers reachable': 'Machines that answered recently, of every machine enrolled',
+  'GPU slots in use': 'Concurrent jobs the pool is running, of its total capacity',
+  'Training now': 'Training runs in progress',
+  'Completed': 'Runs that finished and registered a version',
+  'Failed': 'Runs that stopped without registering anything',
+  'Best mAP@50': 'The best mean average precision any registered version reached',
+
+  /* table headers */
+  'Job': 'The job name',
+  'Run': 'The training run name',
+  'Type': 'Inference or training',
+  'Scope': 'Which MARP data the job covers',
+  'Dataset': 'The saved dataset this run trained on',
+  'Model': 'The model and version the job is locked to',
+  'Produces': 'The model version a successful run registers',
+  'Status': 'Where the job has got to',
+  'Progress': 'Frames or epochs finished',
+  'Workers': 'Machines on this job now, of the slots it asked for',
+  'Submitted': 'When the job was queued',
+  'Updated': 'When anything about the job last changed',
+  'Started': 'When work actually began',
+  'Took': 'Wall-clock time from start to finish',
+  'Epochs': 'Epochs finished, of the number requested',
+  'mAP@50': 'Mean average precision at the lenient overlap threshold',
+  'Frames': 'The half-open frame range, start included and end excluded',
+  'Worker': 'The machine holding this piece of work',
+  'State': 'Where this piece has got to',
+  'Done': 'How much of this range is finished',
+
+  /* inference form */
+  'Task preset': 'Fills the settings below with a sensible starting point',
+  'Version': 'Which version of the model to run',
+  'Engine': 'The inference runtime the worker will use',
+  'Confidence threshold': 'Detections below this score are discarded',
+  'IoU threshold (NMS)': 'How much two boxes may overlap before one is dropped',
+  'Max detections per frame': 'A ceiling, so one busy frame cannot flood the results',
+  'Image size': 'What each frame is resized to before the model sees it',
+  'Tracker': 'How detections in consecutive frames are joined into one animal',
+  'Reduction': 'Which frame of a track becomes the observation',
+  'Frame range size': 'How much video one worker takes at a time',
+  'Output mode': 'Whether results become observations or just a CSV',
+  'Save results to': 'Where the observations are attached',
+  'Output options': 'What else the job produces besides observations',
+  'Worker selection': 'A preference for which machines take the work',
+  'Worker limit': 'A ceiling on how many machines this job may occupy',
+  'Job name': 'What this job is called in the queue and in history',
+  'Columns': 'Which fields the exported CSV carries',
+
+  /* training form */
+  'Base model': 'The registered model or checkpoint being fine-tuned',
+  'Task': 'What the model is being trained to do',
+  'Batch size': 'Frames per optimiser step. Larger needs more VRAM',
+  'Learning rate': 'How far each step moves the weights',
+  'Optimiser': 'The algorithm that updates the weights',
+  'Warm-up epochs': 'Epochs at a reduced learning rate before full speed',
+  'Augmentation': 'Transformations applied to training frames to widen the data',
+  'Saved dataset': 'The frozen set of approved observations to train on',
+  'Saved split': 'The train, validation and test partition saved with the dataset',
+  'Class distribution': 'How many observations each class contributes',
+  'Version name': 'What the version this run registers will be called',
+  'Traceability': 'What this run will be recorded as having come from',
+  'Run name': 'What this run is called in the list',
+  'Estimated': 'A guess from the dataset size and the base model',
+  'On success': 'What exists afterwards if the run finishes',
+  'What will actually run': 'The exact model, version and hash the job is locked to',
+  'What that gives you': 'What the base model already knows',
+  'What that contains': 'What the chosen scope covers',
+  'What this will do': 'The work this submits, computed from the scope',
+
+  /* buttons */
+  'More filters': 'Filter by worker, model, submitter or date',
+  'Expand all': "Open every run's curves at once",
+  'Reprioritise': 'Move the selected jobs up or down the queue',
+  'Retry failed': 'Re-run only the pieces that failed',
+  'Clear selection': 'Deselect every row',
+  'Run inference': 'Submit the job as configured',
+  'Start training': 'Submit the run as configured',
+  'Advanced settings': 'Tracker, thresholds and range size',
+  'Pause after current range': 'Finish the range in flight, then stop taking work',
+  'Pause now': 'Interrupt immediately. The range restarts when work resumes',
+  'Cancel job': 'Stop the job and take it out of the queue',
+  'Duplicate': 'Start a new job with this configuration',
+  'Run again': 'Submit the same job again',
+  'Retry': 'Re-run this job from the beginning',
+  'Retry 2': 'Re-run only the two pieces that failed',
+  'Stop': 'End this run now',
+  'Diagnostics': 'Attempts, leases and the event log',
+
+  /* scope and mode segments */
+  'Dive': 'Every line in one dive',
+  'Line': 'One transect line',
+  'Custom': 'A hand-picked set of videos',
+  'Write observations': "Detections become records in MARP's database",
+  'CSV test & export': 'A downloadable file, leaving the database untouched',
+  'Detection': 'Find and box animals',
+  'Classification': 'Name what is already boxed',
+  'Segmentation': 'Outline animals pixel by pixel',
+
+  /* checkboxes */
+  'Save detections to the database': 'Always on in this mode',
+  'Include confidence scores': "Keep each detection's score on the observation",
+  'Generate annotated video': 'A copy of the video with boxes drawn on it',
+  'Save detection crops': 'A thumbnail cut from the frame for each detection',
+  'Cap how many this job may use': 'Leave the rest of the pool free for other work',
+  'Stop early when validation stalls': 'End the run when validation stops improving',
+};
+
+/** The element's own words, ignoring chips and counts hung off it. */
+function ownText(el) {
+  const clone = el.cloneNode(true);
+  clone.querySelectorAll('.later, .ro-tag, .count, .badge, .faint').forEach((n) => n.remove());
+  return clone.textContent.replace(/\s+/g, ' ').trim();
+}
+
+function applyTips() {
+  const sel = '.field > label, th, .stat-lab, .tabstrip button, .seg button,'
+    + ' .btn, .check span, .kv dt, .panel-hd h2, .exbtn, summary,'
+    + ' .topbar .lab, .search input, .sel';
+  $$(sel).forEach((el) => {
+    if (el.getAttribute('title')) return;                 // the screen was specific
+    const key = ownText(el) || el.getAttribute('placeholder') || el.getAttribute('aria-label');
+    const tip = TIPS[key];
+    if (!tip) return;
+    /* On a label, the tip belongs to the whole field -- hovering the control is
+       the natural gesture, not hovering its caption. */
+    const target = el.matches('.field > label') ? el.parentElement : el;
+    if (!target.getAttribute('title')) target.setAttribute('title', tip);
+  });
+}
+
 /* ==================================================================== boot */
 
 document.body.dataset.rail = 'closed';
@@ -499,3 +709,5 @@ wireSwitchers();
 wireSliders();
 wireInferenceForm();
 wireSorting();
+wireAccordions();
+applyTips();

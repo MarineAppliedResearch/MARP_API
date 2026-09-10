@@ -77,6 +77,10 @@ a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; border-radius: 4px; }
 h1, h2, h3 { margin: 0; font-weight: 600; }
 svg { display: block; }
+/* Present for a screen reader, absent on screen. Without this the
+   expander column's heading printed over the next one as EXPANDN. */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip-path: inset(50%); white-space: nowrap; }
 .ico { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
        stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .ico.sm { width: 13px; height: 13px; }
@@ -132,8 +136,18 @@ svg { display: block; }
 }
 .rail-nav .badge {
   min-width: 19px; padding: 1px 6px; border-radius: 10px;
+  font-size: 10.5px; font-weight: 700; text-align: center;
+}
+/* Two kinds of count, deliberately not alike: red is work that has gone wrong,
+   cyan is work in progress. One colour for both would make a healthy pool of
+   running jobs read as a pile of failures. */
+.rail-nav .badge[data-tone="attn"] {
   background: rgba(224, 97, 107, 0.16); border: 1px solid rgba(224, 97, 107, 0.42);
-  color: var(--red-400); font-size: 10.5px; font-weight: 700; text-align: center;
+  color: var(--red-400);
+}
+.rail-nav .badge[data-tone="run"] {
+  background: rgba(34, 215, 220, 0.14); border: 1px solid rgba(34, 215, 220, 0.40);
+  color: var(--cyan-300);
 }
 .rail-foot { padding: 14px 18px; border-top: 1px solid var(--hairline); }
 .rail-foot .ver { color: var(--faint); font-size: 10.5px; margin-top: 6px; }
@@ -904,11 +918,56 @@ details.fold .fbody { padding: 4px 12px 14px; }
 .chart .line.val { stroke: var(--violet-300); }
 .chart .fill.val { fill: rgba(155, 124, 240, 0.08); }
 .chart .tip.val { fill: var(--violet-300); }
+.chart .line.cls { stroke: var(--blue-400); }
+.chart .fill.cls { fill: rgba(45, 156, 255, 0.07); }
+.chart .tip.cls { fill: var(--blue-400); }
 .chart .line.map { stroke: var(--green-400); }
 .chart .fill.map { fill: rgba(167, 236, 53, 0.10); }
 .chart .tip.map { fill: var(--green-300); }
+.chart .line.map2 { stroke: var(--mint-400); }
+.chart .fill.map2 { fill: rgba(70, 217, 154, 0.07); }
+.chart .tip.map2 { fill: var(--mint-300); }
+.chart .line.prec { stroke: var(--cyan-300); }
+.chart .fill.prec { fill: rgba(100, 246, 242, 0.07); }
+.chart .tip.prec { fill: var(--cyan-300); }
+.chart .line.rec { stroke: var(--amber-300); }
+.chart .fill.rec { fill: rgba(246, 196, 83, 0.07); }
+.chart .tip.rec { fill: var(--amber-300); }
+.chart .chd .key.cls::before { background: var(--blue-400); }
+.chart .chd .key.map2::before { background: var(--mint-400); }
+.chart .chd .key.prec::before { background: var(--cyan-300); }
+.chart .chd .key.rec::before { background: var(--amber-300); }
 
 .checks.two-up { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ============================================================== accordions */
+
+/* A row that opens to show its own detail. Cheaper than a drawer for something
+   you want to compare against the row above it. */
+.tbl .ex { width: 34px; }
+.exbtn {
+  width: 22px; height: 22px; padding: 0; display: grid; place-items: center;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  color: var(--muted);
+}
+.exbtn:hover { color: var(--white); border-color: var(--hairline-2); }
+tr[aria-expanded="true"] .exbtn { color: var(--cyan-300); }
+tr[aria-expanded="true"] .exbtn .ico { transform: rotate(90deg); }
+.exbtn .ico { transition: transform 0.12s ease-out; }
+@media (prefers-reduced-motion: reduce) { .exbtn .ico { transition: none; } }
+
+tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
+.runrow-body > td { padding: 0 !important; background: var(--sunk); }
+.rundetail { padding: 16px; display: grid; gap: 14px; border-top: 1px solid var(--hairline); }
+.rundetail .charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.rundetail .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 11.5px; }
+.rundetail .facts .k { color: var(--faint); }
+.rundetail .facts .v { color: var(--white); font-weight: 600; margin-left: 6px; }
+.rundetail .warn { margin: 0; }
+.rundetail .warn[data-state="failed"] {
+  background: rgba(224, 97, 107, 0.07); border-color: rgba(224, 97, 107, 0.26);
+  color: var(--red-400);
+}
 
 /* ============================================================== responsive */
 
@@ -936,6 +995,8 @@ details.fold .fbody { padding: 4px 12px 14px; }
      the dashboard's own split: as a bare `.grid > .grid` it also caught the
      creation flows' three-column form and pinned it to two. */
   .grid[data-cols="wide-narrow"] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Three charts side by side stop being readable well before this. */
+  .rundetail .charts { grid-template-columns: minmax(0, 1fr); }
 
   /* The tools take a line of their own here. Sharing one row with the title
      left `Machine Lea...` -- and the title is the thing that says where you are. */
@@ -1042,6 +1103,44 @@ details.fold .fbody { padding: 4px 12px 14px; }
   /* Neither survives the trip to a phone card: bulk selection needs a pointer,
      and the row's own icon already says inference or training, in colour. */
   .tbl.stack td.chk, .tbl.stack th.chk, .tbl.stack td.jtype { display: none; }
+
+  /* An expandable table's own card. `.stack.expandable` rather than
+     `.expandable` on purpose: the `.tbl.stack` rules written for the Jobs card
+     sit later in this file at equal specificity, and won -- which put the run
+     name in the 22px expander column, one letter per line. */
+  .tbl.stack.expandable tbody tr.runrow-head {
+    /* Four columns, because the row of three numbers needs three of its own and
+       the 22px expander column cannot be one of them -- "Epoch 100 / 100" spilled
+       straight over the mAP beside it. */
+    grid-template-columns: 22px minmax(0, 1fr) auto auto;
+    gap: 3px 10px;
+  }
+  .tbl.stack.expandable td.ex      { grid-area: 1 / 1; align-self: center; }
+  .tbl.stack.expandable td.jname   { grid-area: 1 / 2; }
+  .tbl.stack.expandable td.jstatus { grid-area: 1 / 3 / 1 / -1; text-align: right; align-self: center; }
+  .tbl.stack.expandable td.jscope  { grid-area: 2 / 2 / 2 / -1; }
+  .tbl.stack.expandable td.jmodel  { grid-area: 3 / 2 / 3 / -1; }
+  .tbl.stack.expandable td.jprog   { grid-area: 4 / 1 / 4 / -1; margin: 5px 0 3px; }
+  .tbl.stack.expandable td.nep     { grid-area: 5 / 1 / 5 / 3; }
+  .tbl.stack.expandable td.nmap    { grid-area: 5 / 3; }
+  .tbl.stack.expandable td.ntook   { grid-area: 5 / 4; text-align: right; }
+  .tbl.stack.expandable td.jtime   { grid-area: 6 / 1 / 6 / -1; }
+
+  /* The three numbers share a line, so each says what it is. */
+  .tbl.stack.expandable td.num { text-align: left; white-space: nowrap; }
+  .tbl.stack.expandable td.num::before {
+    color: var(--faint); font-size: 9.5px; letter-spacing: 0.08em;
+    text-transform: uppercase; margin-right: 5px;
+  }
+  .tbl.stack.expandable td.nep::before { content: "Epoch"; }
+  .tbl.stack.expandable td.nmap::before { content: "mAP"; }
+  .tbl.stack.expandable td.ntook::before { content: "Took"; }
+  /* The date under the time is redundant on a card that is all one day. */
+  .tbl.stack.expandable td.jtime .two { display: flex; gap: 7px; align-items: baseline; }
+
+  .tbl.stack.expandable tbody tr.runrow-body { display: block; padding: 0; }
+  .tbl.stack.expandable tbody tr.runrow-body > td { display: block; }
+  .rundetail { padding: 12px; }
   /* Scope comes back. The mid-width rule drops that column for want of room,
      but a card has a line to spare and the dive and line are what identify the
      work. */
