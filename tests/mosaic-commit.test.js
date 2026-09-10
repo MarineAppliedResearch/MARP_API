@@ -104,6 +104,18 @@ const { currentDerivationBlock: derivationBlock } = require('./setup/current-der
  * declares the key without `autoIncrement` and Sequelize sends an explicit null
  * (#62).
  *
+ * **Each one is given a `ready` thumbnail** (#118 R12). Phase 6 made the server
+ * able to judge imagery: an *unmarked* row whose thumbnail is not ready is now
+ * `skipped` with reason `no-imagery` rather than accepted, because accepting it
+ * would be a reviewer saying "this is right" about a picture they were never
+ * shown. Every test in this suite is about commit semantics rather than about
+ * imagery, so its fixtures are tiles a reviewer could actually have looked at.
+ * The tests that are about the skip use {@link removeImagery} to take it away.
+ *
+ * The row says `ready` and no file is written, deliberately: the commit path
+ * reads the row and never stats the file, and asserting that is part of what
+ * keeps a page of 600 from becoming 600 filesystem calls.
+ *
  * @param {number} count - How many.
  * @returns {Promise<Array<number>>} The new ids, ascending.
  */
@@ -126,7 +138,39 @@ async function addObservations(count) {
 
     seeded.observationIds.push(...ids);
 
+    await q(
+        // `IN (:ids)` rather than `= ANY(:ids)`: a named replacement holding an
+        // array expands to `(1,2,3)`, which makes ANY a syntax error.
+        `INSERT INTO observation_thumbnails
+             (observation_id, status, permanent, filename, content_type, generation,
+              attempts, requested_at, completed_at, created_at, updated_at)
+         SELECT o.observation_id, 'ready', false,
+                o.observation_id || '-jest-commit.jpg', 'image/jpeg', 1,
+                1, NOW(), NOW(), NOW(), NOW()
+           FROM observations o
+          WHERE o.observation_id IN (:ids)`,
+        { ids }
+    );
+
     return ids;
+}
+
+/**
+ * Takes the picture away from an observation, so it has none at all (#118 R12).
+ *
+ * Deleting the row rather than failing it, because *no record* is the state a
+ * legacy observation nobody has asked about is really in -- and the commit route
+ * must treat "never asked for" and "asked for and not arrived" the same way. A
+ * separate test covers the `queued` case.
+ *
+ * @param {number} observationId - Which observation.
+ * @returns {Promise<void>}
+ */
+async function removeImagery(observationId) {
+    await q(
+        'DELETE FROM observation_thumbnails WHERE observation_id = :observationId',
+        { observationId }
+    );
 }
 
 /**
@@ -466,6 +510,157 @@ describe('the mosaic page commit (#106)', () => {
             );
 
             expect(still.n).toBe(1);
+        });
+    });
+
+    describe('imagery, and what may be accepted blind (#118 R12)', () => {
+
+        // Phase 6 gave the server a thumbnail state, so it can now make an
+        // imagery judgement -- and these tests can now fail, which is why the
+        // predecessor comment on SKIP_NOT_FOUND said none was written.
+
+        it('skips an unmarked row with no thumbnail record at all, with reason no-imagery', async () => {
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({ observations: [await at(a)] });
+
+            expect(res.status).toBe(200);
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+            expect(res.body.reviewed).toEqual([]);
+
+            // Nothing was written: a skip is not a quiet acceptance.
+            expect(await logFor(a)).toEqual([]);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('skips an unmarked row whose thumbnail is still queued', async () => {
+            const [a] = await addObservations(1);
+
+            await q(
+                `UPDATE observation_thumbnails
+                    SET status = 'queued', filename = NULL
+                  WHERE observation_id = :a`,
+                { a }
+            );
+
+            const res = await alice.post(REVIEW).send({ observations: [await at(a)] });
+
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+            expect(await logFor(a)).toEqual([]);
+        });
+
+        it('skips an unmarked row whose thumbnail failed permanently', async () => {
+            const [a] = await addObservations(1);
+
+            await q(
+                `UPDATE observation_thumbnails
+                    SET status = 'failed', permanent = true, filename = NULL,
+                        last_error = 'The observation has no keyframes.'
+                  WHERE observation_id = :a`,
+                { a }
+            );
+
+            const res = await alice.post(REVIEW).send({ observations: [await at(a)] });
+
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+        });
+
+        it('commits a MARKED row with no picture, because flagging needs no imagery', async () => {
+            // F15: accepting needs imagery, flagging does not. A reviewer must be
+            // able to flag a tile precisely *because* it has no picture.
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, reason: 'No imagery' }],
+            });
+
+            expect(res.body.flagged).toEqual([{ observation_id: a, outcome: 'flagged' }]);
+            expect(res.body.skipped).toEqual([]);
+
+            const current = await currentFor(a);
+
+            expect(current).toHaveLength(1);
+            expect(current[0].decision).toBe('flagged');
+        });
+
+        it('withdraws a decision from a row with no picture', async () => {
+            // A withdrawal is a take-back rather than an acceptance, so imagery
+            // has nothing to say about it. Without this the reviewer could flag a
+            // pictureless tile and then never undo it.
+            const [a] = await addObservations(1);
+
+            await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, reason: 'No imagery' }],
+            });
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                withdraw: [a],
+            });
+
+            expect(res.body.reverted).toEqual([{ observation_id: a, outcome: 'withdrawn' }]);
+            expect(res.body.skipped).toEqual([]);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('applies the same rule on the training route', async () => {
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(TRAINING).send({ observations: [await at(a)] });
+
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+            expect(res.body.reviewed).toEqual([]);
+        });
+
+        it('leaves the delete route alone, because it never touches an unmarked row', async () => {
+            const [doomed, spared] = await addObservations(2);
+
+            await removeImagery(doomed);
+            await removeImagery(spared);
+
+            const res = await alice.post(DELETE).send({
+                observations: [await at(doomed), await at(spared)],
+                marks: [{ observation_id: doomed }],
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.body.reviewed).toEqual([{ observation_id: doomed, outcome: 'deleted' }]);
+            expect(res.body.skipped).toEqual([]);
+
+            const [gone] = await q(
+                'SELECT count(*)::int AS n FROM observations WHERE observation_id = :doomed',
+                { doomed }
+            );
+
+            expect(gone.n).toBe(0);
+        });
+
+        it('divides one page between accepted, flagged and skipped', async () => {
+            // The realistic shape: a page where some tiles have pictures and some
+            // do not, committed in one request. Per-observation atomicity means
+            // the ones with pictures still land.
+            const [withPicture, marked, without] = await addObservations(3);
+
+            await removeImagery(without);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(withPicture), await at(marked), await at(without)],
+                marks: [{ observation_id: marked, reason: 'Wrong species' }],
+            });
+
+            expect(res.body.reviewed).toEqual([{ observation_id: withPicture, outcome: 'reviewed' }]);
+            expect(res.body.flagged).toEqual([{ observation_id: marked, outcome: 'flagged' }]);
+            expect(res.body.skipped).toEqual([{ observation_id: without, reason: 'no-imagery' }]);
         });
     });
 

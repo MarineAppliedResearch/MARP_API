@@ -41,6 +41,7 @@
  */
 
 const db = require('../model');
+const thumbnailRepository = require('./observation-thumbnail.repository');
 
 /**
  * The cap on one page-set request: 12 pages or 600 rows, whichever binds first.
@@ -148,6 +149,16 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  * beside it is not a finished read path. Delete-only would have saved nothing:
  * the version has to be in the row either way.
  *
+ * `thumbnail_status` is Phase 6's one addition (#118, R11) and it is **never
+ * null**: serving a page enqueues the thumbnails it is missing, so an observation
+ * with no record at all reports `queued` rather than an absence the client has no
+ * rendering for. Only the status -- the picture's address is
+ * `/api/v2/observations/{observation_id}/thumbnail`, derivable from a key the row
+ * already carries, so a second field would be a URL repeated 45 times a page.
+ * Like the two above it, the key was **moved into**
+ * `tests/mosaic-query.test.js`'s exact-key list rather than the list being
+ * loosened -- naming the exact keys is the tripwire.
+ *
  * The column list is written out rather than `o.*` so that a column added to
  * `observations` does not silently join the payload.
  *
@@ -171,7 +182,8 @@ const ROW_COLUMNS = `
         rt.decision AS training_decision,
         rt.reason   AS exclusion_reason,
         k.keyframe_count,
-        k.first_framenum`;
+        k.first_framenum,
+        coalesce(th.status, 'queued') AS thumbnail_status`;
 
 /**
  * Time of day, in `interval`, from the `tc` a row carries.
@@ -651,6 +663,7 @@ SELECT t.total,
          ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
   LEFT JOIN observation_review_current rt
          ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+  LEFT JOIN observation_thumbnails th ON th.observation_id = o.observation_id
   ${keyframeLateral}k ON true
  ORDER BY m.rn`;
 
@@ -753,6 +766,24 @@ async function queryPages(request = {}) {
 
         byPage.get(Math.ceil(Number(rn) / pageSize)).push(served);
     }
+
+    // Phase 6's A3, answered by the human: **serving a page enqueues the
+    // thumbnails it is missing**, which is what makes the `queued` tile the
+    // client already draws truthful. It also prioritises for free -- only what
+    // somebody is actually looking at is ever extracted -- and bounds the queue
+    // to the working set rather than to 440,000 rows.
+    //
+    // The cost is accepted with open eyes and is recorded rather than hidden:
+    // this route is declared `observations:read` and now has a side effect, and
+    // the client's prefetcher asks for adjacent pages, so one reviewer's
+    // navigation can enqueue up to three pages at once. The concurrency
+    // constant is what bounds that, not the permission.
+    //
+    // An observation that already failed permanently keeps its row and is not
+    // re-enqueued: `enqueueMissing` inserts only where nothing exists.
+    await thumbnailRepository.enqueueMissing(
+        [...byPage.values()].flat().map((row) => row.observation_id)
+    );
 
     return {
         pageSize,

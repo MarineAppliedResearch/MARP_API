@@ -141,13 +141,29 @@ const ATOMICITY = 'per-observation';
 const CONFLICT_VERSION = 'version';
 
 /**
- * The only reason this phase emits `skipped` (R5).
+ * The observation is gone: it was deleted between the page being fetched and the
+ * commit arriving (R5).
  *
- * **Never for imagery.** The server makes no imagery judgement until Phase 6 --
- * there are no thumbnails and nothing on `observations` records a status -- so a
- * test asserting an imagery skip could not fail, and none is written.
+ * **This was the only `skipped` reason until Phase 6.** The line that used to
+ * stand here said *"never for imagery -- the server makes no imagery judgement
+ * until Phase 6"*, and #118 is that phase.
  */
 const SKIP_NOT_FOUND = 'not-found';
+
+/**
+ * The second reason, added by Phase 6 (#118 R12).
+ *
+ * Phase 6 gives the server a thumbnail state, so an imagery judgement is now one
+ * it can make -- and a test asserting this skip can now fail, which is what makes
+ * it worth writing.
+ *
+ * **An unmarked row whose thumbnail is not `ready` is skipped rather than
+ * accepted**, because accepting it is a reviewer saying *"this is right"* about a
+ * picture they were never shown. A **marked** row is committed whether or not it
+ * has a picture: flagging a tile does not need imagery and never did, and Delete
+ * is unaffected because it never touches an unmarked row.
+ */
+const SKIP_NO_IMAGERY = 'no-imagery';
 
 /**
  * An integer, or a refusal saying which field was wrong.
@@ -411,6 +427,38 @@ async function currentDecisions(observationIds, purpose, transaction) {
 }
 
 /**
+ * Which of these observations have a picture a reviewer could have looked at
+ * (#118 R12).
+ *
+ * `ready` and nothing else. `queued` means the picture has not arrived,
+ * `failed` means it never will, and an observation with no row at all has never
+ * had one asked for -- and none of the three is a tile somebody can accept on
+ * sight.
+ *
+ * The file is deliberately **not** checked here. The thumbnail row is what the
+ * mosaic query reads, per-tile `existsSync` inside a commit would be one stat
+ * per row on a page of 600, and if storage ever moves behind a network it stops
+ * being cheap at all. A row that says `ready` whose file has gone is a
+ * recoverable state the serving route reports, not a reason to refuse a review.
+ *
+ * @async
+ * @param {Array<number>} observationIds - The page's ids.
+ * @param {Object} transaction - The commit's transaction.
+ * @returns {Promise<Set<number>>} The ids holding a ready thumbnail.
+ */
+async function readyThumbnails(observationIds, transaction) {
+    const rows = await db.sequelize.query(
+        `SELECT observation_id
+           FROM observation_thumbnails
+          WHERE status = 'ready'
+            AND observation_id = ANY($1::int[])`,
+        { bind: [observationIds], type: QueryTypes.SELECT, transaction }
+    );
+
+    return new Set(rows.map((row) => row.observation_id));
+}
+
+/**
  * Appends the decisions that take effect, and only those.
  *
  * Two conditions, both in the write (R12), where there were three before #111
@@ -648,6 +696,7 @@ async function commitReview(mode, request, principal, reviewerId) {
     return db.sequelize.transaction(async (transaction) => {
         const live = await lockObservations(ids, transaction);
         const current = await currentDecisions(ids, mode.purpose, transaction);
+        const withImagery = await readyThumbnails(ids, transaction);
         const out = outcomes();
 
         // What will be attempted, and what is refused before any write. A
@@ -673,6 +722,16 @@ async function commitReview(mode, request, principal, reviewerId) {
                 } else {
                     noop.push(id);
                 }
+
+                continue;
+            }
+
+            // R12. An unmarked row is an acceptance, and accepting a tile with
+            // no picture is a reviewer saying "this is right" about something
+            // they were never shown. A marked row goes through: flagging needs
+            // no imagery.
+            if (!marks.has(id) && !withImagery.has(id)) {
+                out.skip(id, SKIP_NO_IMAGERY);
 
                 continue;
             }
@@ -872,6 +931,7 @@ module.exports = {
     MosaicCommitDeniedError,
     MosaicRequestError,
     SKIP_NOT_FOUND,
+    SKIP_NO_IMAGERY,
     commitPage,
     deniedObservationIds,
 };
