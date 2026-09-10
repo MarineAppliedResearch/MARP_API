@@ -922,8 +922,9 @@ async function status() {
  * `pause` stops *starting* new extractions and lets in-flight ones finish,
  * because killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid
  * for. `resume` starts taking work again. `stop` is pause plus discarding the
- * queue -- the rows return to being simply absent, which under A3 means the next
- * page view re-enqueues them, so nothing is lost and no fourth state is needed.
+ * queue -- the rows return to being simply absent, which since A3 was reversed
+ * reports `failed` and is re-enqueued by the reviewer's *Ask again* rather than by
+ * the next page view. Nothing is lost and no fourth state is needed.
  *
  * @async
  * @param {string} action - `pause`, `resume` or `stop`.

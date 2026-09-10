@@ -353,7 +353,9 @@ Numbered so a test can cite one.
   `config/gpu-orchestration.js` states in its header and the reason it gives.
 - **R4** — The absence of a row is a state in its own right: *nothing has ever been asked for*.
   No row is pre-created for the ~440,000 existing observations. What absence reports to the
-  client is A3.
+  client is A3 — **`failed`**, since A3's reversal on 2026-09-10; a row is created when the
+  observation is created, so absence means the observation predates that and nothing is
+  coming for it until #121.
 
 **The extraction**
 
@@ -386,6 +388,12 @@ Numbered so a test can cite one.
   (`routes/species.routes.js:490-494`) and is re-extractable, not lost.
 
 **The contract**
+
+- **R27** — **A thumbnail is enqueued when the observation is created, and no read ever
+  enqueues one.** The ingest writes the queue entry in the **same transaction** as the
+  observation, so the two cannot disagree. `POST /api/mosaic/observations/pages` is a pure
+  read. Added 2026-09-10 with A3's reversal; the negative half is the half that needs a test,
+  because a side effect on a read path is reinstated by accident rather than by decision.
 
 - **R11** — The mosaic row gains **`thumbnail_status` and nothing else**, and the key is
   **moved into** `tests/mosaic-query.test.js`'s exact-key list rather than the list being
@@ -575,6 +583,11 @@ recommendation below is a recommendation. Nothing is implemented while one is op
 - [x] **A3 · product/UI · blocking** — **What does the absence of a thumbnail row report, and
   does serving a mosaic page enqueue the pictures it is missing?** These are one question
   because the answer to the first is only honest if the second is yes.
+  **SUPERSEDED 2026-09-10 — see the dated `## Decisions` entry below.** The text that follows
+  is left exactly as it was written and answered on 2026-09-09; the human has since reversed
+  it on a more important principle. It is kept because the reasoning it was answered on is
+  what the reversal is a judgement about, and because *"the alternative"* two paragraphs down
+  turned out to be what MARP does.
   **Recommendation: serving a page enqueues its missing thumbnails, and absence reports
   `queued`.** It makes the client's existing `queued` tile truthful; it prioritises for free,
   because only what somebody is actually looking at is ever extracted; it bounds the queue to
@@ -758,6 +771,82 @@ recommendation below is a recommendation. Nothing is implemented while one is op
 Nothing is decided until the assumptions above are answered. These are the ones already
 settled elsewhere that this spec is recording so they are not re-litigated.
 
+- **2026-09-10 · A3, REVERSED — a thumbnail is enqueued when the observation is created, and
+  serving a mosaic page enqueues nothing.** The human overruled the 2026-09-09 answer:
+
+  > *"One of our key criteria is that the user never has to wait. So trying to load the page
+  > should not be the thing that makes the back end work. When the observation is created, it
+  > should get enqueued."*
+
+  A3 was answered the other way for a reason that still holds on its own terms — absence is
+  only honest as `queued` if a page fetch enqueues — and it has been overruled on a more
+  important principle: **a read must not be what triggers work.** The 2026-09-09 text and its
+  decision entry are both left in place above rather than edited away, because what the
+  reversal is a judgement *about* is the reasoning, not just the outcome.
+
+  **What changed in the code.** The ingest is where observations are born, so
+  `repository/observation-ingest.repository.js#writeJobObservations` enqueues a thumbnail for
+  every observation it writes, **inside the same transaction as the observation** — so a
+  rollback takes both and there is no window in which an observation exists with nothing
+  intending to picture it. `repository/mosaic.repository.js#queryPages` no longer calls
+  `enqueueMissing` at all, which makes `POST /api/mosaic/observations/pages` a pure read
+  again.
+
+  **What it costs, plainly, and none of it is hidden.**
+
+  1. **Enqueue-on-create only covers observations created from now on.** The roughly 440,000
+     legacy rows will never be created again, so under this design **they get no picture
+     until something backfills them** — which is #121, deliberately deferred. A legacy row's
+     absence of a thumbnail record is therefore **no longer transient**, and *absence reports
+     `queued`* stopped being honest for it the moment the page fetch stopped enqueueing.
+  2. **The queue is no longer bounded by the working set.** A ten-minute inference run
+     enqueues ~300 thumbnails whether or not anybody opens the mosaic, and R19's
+     never-reject rule plus A7's concurrency constant are now the only things bounding it. In
+     exchange the extraction is done *before* a reviewer arrives, which is the point.
+  3. **Prioritisation by attention is gone.** Under the old answer only what somebody was
+     looking at was ever extracted. Now the ingest's own order decides, and nothing prefers
+     the page a reviewer is about to open. Not worth building a priority for on this evidence;
+     recorded so nobody thinks it was overlooked.
+  4. **What it buys back:** `observations:read` no longer consumes a shared media server, so
+     A10's awkwardness is retired — the retry route is now the only place a read permission
+     causes a Jellyfin stream, and it does so because a person pressed *Ask again*. #99's
+     prefetcher costs Jellyfin nothing.
+
+- **2026-09-10 · A legacy row reports `failed`, and no fourth state is added.** The
+  consequence above forced a decision A3 had made unnecessary, and this is it. **Absence of a
+  thumbnail record reports `failed`** — `coalesce(th.status, 'failed')` in the mosaic row.
+
+  **Why, and it is chosen against the two alternatives rather than by default:**
+
+  - **`queued` is now a lie.** For a row created after this change `queued` is true and a
+    record exists to say so, so the coalesce never speaks for it. The only rows the coalesce
+    speaks for are ones that predate enqueue-on-create, and for those nothing is coming until
+    #121 exists. Reporting `queued` puts every one of them in a PREPARING tile with a
+    progress bar, waiting on work nobody has scheduled — which is exactly the *"the user
+    never has to wait"* failure the reversal was made to prevent, in a more dishonest form.
+  - **A fourth state, `absent`, is not needed, and this was checked rather than assumed.**
+    The client's existing states already cover it: `ui/tile.js:142-146` draws anything that is
+    not `ready` as NO IMAGE and adds a `failed` class; `model/modes.js:241-242` reports
+    `pageState` as `no-imagery` for a page where every row is `failed`, which
+    `ui/grid.js:70-80` draws as a banner with an ***Ask again*** button; and `store.js:717`
+    wires that button to the retry route, which `requeue` answers by **creating a row for an
+    observation that never had one**. So the reviewer's only recovery path already works
+    end to end, with no client change and no rendering that does not exist. A fourth state
+    would cost a client change to draw a state #121 is meant to eliminate.
+  - **`permanent` stays false**, so *Ask again* is offered rather than refused. That is the
+    line the flag draws and it still draws it: an observation with no keyframes is permanently
+    failed and refuses the retry; an observation nobody has got to yet is not.
+
+  **What this is honestly worse at, stated rather than omitted.** A page of legacy rows opens
+  as a wall of NO IMAGE, which A3 called *"the worst first impression the mosaic can make"*
+  and it was right. That cost is now paid, and #121 is what removes it. Two smaller
+  consequences: `ui/grid.js`'s banner says *"the server refetches missing imagery on its
+  own"*, which is no longer true and is client copy for #124 or #121 to correct; and `stop`
+  (R24) now leaves discarded rows visible as NO IMAGE rather than as tiles that stay
+  PREPARING, which is arguably more honest and is certainly more visible.
+
+  **Recorded on #121** so the sweeper's owner knows it inherited this.
+
 - **2026-09-09 · A2** — **A table, `observation_thumbnails`, but a smaller one than proposed.**
   The human challenged the premise: *"Why would the thumbnail state have to live anywhere? The
   thumbnail is a file. If the file doesn't serve, then we know that its state isn't there."*
@@ -802,7 +891,8 @@ settled elsewhere that this spec is recording so they are not re-litigated.
   and the threshold can be lowered later against evidence. Applies to every observation, not
   to a legacy subset — see the rewritten A8 and the correction to F7.
 
-- **2026-09-09 · A3** — **Serving a mosaic page enqueues its missing thumbnails, and absence
+- **2026-09-09 · A3 — REVERSED on 2026-09-10. Kept, not deleted; read the entry below it.**
+  **Serving a mosaic page enqueues its missing thumbnails, and absence
   reports `queued`.** Answered by the human, taking the recommendation. The costs stand as
   written and are accepted: `POST /api/mosaic/observations/pages` is `observations:read` and
   acquires a side effect, and #99's prefetcher means one reviewer's navigation can enqueue up

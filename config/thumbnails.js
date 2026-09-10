@@ -246,9 +246,9 @@ const THUMBNAIL_STATUSES = ['queued', 'ready', 'failed'];
  *
  * `paused` stops *starting* new extractions and lets in-flight ones finish --
  * killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for.
- * There is no separate `stopped`: stop is pause plus discarding the queue, and
- * under A3 the next page view re-enqueues what it discarded, so nothing is lost
- * and no fourth state is needed.
+ * There is no separate `stopped`: stop is pause plus discarding the queue, and a
+ * discarded row reports `failed`, which the reviewer's *Ask again* re-enqueues --
+ * so nothing is lost and no fourth state is needed.
  *
  * @constant
  * @type {Array<string>}

@@ -47,12 +47,14 @@ can invalidate the whole package.
 | R1 | *is a table of its own, and writing it does not touch the observation* | http+db | The decisive test for A2. A thumbnail write moves neither `observations.version` nor `updatedAt` — the two columns that would have reordered the mosaic under a reviewer and conflicted every commit. |
 | R2 | *holds at most one row per observation* / *goes with the observation when it is deleted* | http+db | Uniqueness, and the `ON DELETE CASCADE` actually firing rather than being declared. |
 | R3 | *refuses a status outside queued, ready and failed* / *refuses to call a queued row permanent* | http+db | Both `CHECK`s refuse at the database, not in application code. The second is the one that stops a permanent `queued` row that would never drain and never retry. |
-| R4 | *pre-creates nothing: an observation with no record has none* | http+db | Absence is a state. Nothing is pre-created for 440,000 rows. |
+| R4 | *pre-creates nothing: an observation with no record has none* / *reports failed for an observation that has no record* | http+db | Absence is a state. Nothing is pre-created for 440,000 rows, and since A3's reversal absence reports `failed` rather than `queued` — nothing is coming for such a row until #121. |
+| R27 | `tests/gpu-observation-ingest.test.js` *queues one thumbnail per observation, without anybody asking for a page* / *enqueues nothing extra when the same job is ingested again* / *writes no thumbnail when the ingest refuses the whole result* | http+db | The positive half of A3's reversal, at the tier that can see it: a real worker reporting a real result file, with no page request anywhere in the test. The third proves the enqueue is inside the ingest's transaction — a refusal leaves no row behind. |
+| R27 | *creates no thumbnail record, however many times a page is served* / *leaves a permanent failure exactly as it found it* | http+db | The **negative** half, and the one that matters most. A side effect on a read path is reinstated by accident, not by decision, so the assertion is over `observation_thumbnails` itself rather than over the response. Mutation-checked: re-adding the `enqueueMissing` call to `queryPages` fails it with *Expected `Array []`, Received 2 rows*. |
 | R5 | *records where the picture came from, so it can be made again* | http+db | Resolution is through `video_source`. `jellyfin_item_id` is never consulted — F7's correction. |
 | R6 | *the source dimensions are required* | unit | A crop without real pixel dimensions throws rather than guessing 1920×1080. |
 | R7 | the eight *clamp* tests, and *puts the box centre at x, y rather than its corner* | unit | Centre-origin, pad, square, clamp, in that order. |
 | R8, R10 | *records where the picture came from, so it can be made again* | http+db | Frame, subset and source dimensions on the row, so a re-extraction is reproducible rather than a fresh guess. |
-| R9 | *fails an observation with no keyframes permanently* / *fails an unparseable mediaPosition permanently* | http+db | The permanent failures that no retry can fix, which is what stops A3's enqueue-on-page-view hammering Jellyfin for ever. |
+| R9 | *fails an observation with no keyframes permanently* / *fails an unparseable mediaPosition permanently* | http+db | The permanent failures that no retry can fix, which is what stops *Ask again* hammering Jellyfin for ever. (Written when A3 made a page view the risk; the reversal moved the risk to the retry route and the requirement is unchanged.) |
 | R11 | `tests/mosaic-query.test.js` *is exactly the agreed key set* | http+db | `thumbnail_status` was **moved into** the tripwire's exact-key list, not added by loosening it. |
 | R12 | four tests in `tests/mosaic-commit.test.js`: *skips an unmarked row with no thumbnail record at all* / *…still queued* / *…failed permanently* / *commits a MARKED row with no picture* | http+db | The rule and its exception together. The fourth is the one that matters: flagging needs no imagery, so a marked row commits without a picture. |
 | R12 | *applies the same rule on the training route* / *leaves the delete route alone* / *withdraws a decision from a row with no picture* | http+db | The rule's edges — same on training, absent on delete, and a withdrawal is not blocked by a missing picture. |
@@ -68,7 +70,7 @@ can invalidate the whole package.
 | R21 | *refuses a frame rate that disagrees with the derived frame* | http+db | Nine rates: 25, 25.001, 29.97, 30, 50, 24, 0, null, NaN. A mismatch is a recorded failure carrying both rates, never a warning that continues. |
 | R22 | *the clamp*: each of the four edges, both diagonal corners, the real measured span, two boxes entirely outside the frame | unit | **The requirement that already paid for itself** — see *Regression coverage*. |
 | R23 | *reports the run state, the counts and the configured limit* | http+db | What makes A7's constant tunable by observation rather than by argument. |
-| R24 | *pauses* / *starts no new extraction while paused* / *stop discards the queue* / *re-enqueues on the next page view what stop discarded* / *resumes* | http+db | The three verbs are distinct and each says what happens to work already running. |
+| R24 | *pauses* / *starts no new extraction while paused* / *stop discards the queue* / *leaves what stop discarded absent until somebody asks again* / *resumes* | http+db | The three verbs are distinct and each says what happens to work already running. The fourth was *re-enqueues on the next page view what stop discarded* until A3's reversal; rewritten to assert the retry route recovers the row and the page view does not. |
 | R25 | *pauses, and the pause is persisted rather than held in memory* | http+db | Read back from `thumbnail_extraction_state` directly, so an API restart cannot silently un-pause a service somebody paused because Jellyfin was struggling. |
 | R26 | *is readable with observations:read alone* / *refuses a run-state change to a caller who is not an admin* | http+db | The split, and the refusal proved by the state **not** moving rather than only by the status code. |
 | A4 | *takes the first subset even when a later one brackets the frame and it does not* | unit | The human's rule: the subset is chosen before the box, and neither bracketing nor area can change it. Adversarial by construction — subset `0` neither brackets nor is larger, and still wins. |
@@ -95,12 +97,22 @@ Each traces to a defect or to a measured fact rather than to imagination.
 - **A frame rate that is nearly 25** (25.001) as well as plainly not (29.97). The near-miss is
   the one a tolerance check gets wrong.
 - **A row that outlived its file**, from the species-picture precedent.
-- **A permanent failure served a page repeatedly**, which is the enqueue loop A3 could
-  otherwise create.
+- **A permanent failure served a page repeatedly**, which was the enqueue loop A3 could
+  otherwise create — and which, since A3's reversal, asserts the page view does not touch the
+  row at all.
 - **Two subsets where the first is the worse-looking choice.** Constructed to fail if anyone
   reinstates the preference rule.
 
 ## Regression coverage
+
+- **A3's reversal (2026-09-10).** Four existing tests asserted enqueue-on-page-serve and were
+  **rewritten to assert the new rule rather than deleted**, because the rule they used to
+  guard still needs a guard pointing the other way. `serving a page enqueues what is missing`
+  became `serving a page enqueues nothing`; `re-enqueues on the next page view what stop
+  discarded` became `leaves what stop discarded absent until somebody asks again`. Three new
+  tests in `tests/gpu-observation-ingest.test.js` cover the positive half. Mutation-checked in
+  both directions: with the `enqueueMissing` call restored to `queryPages` the tripwire fails
+  and reports the two rows it found.
 
 - **The clamp (R22).** During G2 the new test failed with `Expected: <= 1920 / Received: 2765`:
   a box entirely outside the frame produced a rectangle ending past the frame edge, which

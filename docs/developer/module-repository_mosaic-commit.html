@@ -187,8 +187,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>What the response says about itself (R6). A value, not a boolean, so a later
-change is expressible without a rename.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>What the response says about itself (R6). A value, not a boolean, so a laterchange is expressible without a rename.</li></ul></dd>
     
 
     
@@ -234,8 +233,7 @@ change is expressible without a rename.</li></ul></dd>
 
 
 <div class="description usertext">
-    What the response says about itself (R6). A value, not a boolean, so a later
-change is expressible without a rename.
+    What the response says about itself (R6). A value, not a boolean, so a laterchange is expressible without a rename.
 </div>
 
 
@@ -256,9 +254,7 @@ change is expressible without a rename.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Why a decision was refused. Under last-write-wins there is exactly one cause
-left -- the annotation moved underneath the reviewer. `claimed` went with the
-claim rule (#111 R10); nothing can be refused for being second.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Why a decision was refused. Under last-write-wins there is exactly one causeleft -- the annotation moved underneath the reviewer. `claimed` went with theclaim rule (#111 R10); nothing can be refused for being second.</li></ul></dd>
     
 
     
@@ -304,9 +300,7 @@ claim rule (#111 R10); nothing can be refused for being second.</li></ul></dd>
 
 
 <div class="description usertext">
-    Why a decision was refused. Under last-write-wins there is exactly one cause
-left -- the annotation moved underneath the reviewer. `claimed` went with the
-claim rule (#111 R10); nothing can be refused for being second.
+    Why a decision was refused. Under last-write-wins there is exactly one causeleft -- the annotation moved underneath the reviewer. `claimed` went with theclaim rule (#111 R10); nothing can be refused for being second.
 </div>
 
 
@@ -327,21 +321,7 @@ claim rule (#111 R10); nothing can be refused for being second.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>What each route means, in one place.
-
-Three routes rather than one `mode` parameter (R1), because the permission
-guard is per route and that is what keeps delete splittable later -- but what
-the three *do* differs by these few values, so the write path is one.
-
-`accepts` is what an unmarked observation becomes and `marks` is what a marked
-one becomes. Delete inverts that: it acts on the marked set and leaves the rest
-untouched (`data.js:746`), which is why `accepts` is null there.
-
-`reasons` is the closed vocabulary, taken from the client's own
-`src/model/modes.js` -- the only caller, so a value outside its list is a bug
-rather than a data condition (R17). Every entry is well inside `varchar(64)`,
-so the column's width cannot be reached through this route. Delete records no
-reason at all, so its list is empty and any reason is refused.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>What each route means, in one place.Three routes rather than one `mode` parameter (R1), because the permissionguard is per route and that is what keeps delete splittable later -- but whatthe three *do* differs by these few values, so the write path is one.`accepts` is what an unmarked observation becomes and `marks` is what a markedone becomes. Delete inverts that: it acts on the marked set and leaves the restuntouched (`data.js:746`), which is why `accepts` is null there.`reasons` is the closed vocabulary, taken from the client's own`src/model/modes.js` -- the only caller, so a value outside its list is a bugrather than a data condition (R17). Every entry is well inside `varchar(64)`,so the column's width cannot be reached through this route. Delete records noreason at all, so its list is empty and any reason is refused.</li></ul></dd>
     
 
     
@@ -387,21 +367,7 @@ reason at all, so its list is empty and any reason is refused.</li></ul></dd>
 
 
 <div class="description usertext">
-    What each route means, in one place.
-
-Three routes rather than one `mode` parameter (R1), because the permission
-guard is per route and that is what keeps delete splittable later -- but what
-the three *do* differs by these few values, so the write path is one.
-
-`accepts` is what an unmarked observation becomes and `marks` is what a marked
-one becomes. Delete inverts that: it acts on the marked set and leaves the rest
-untouched (`data.js:746`), which is why `accepts` is null there.
-
-`reasons` is the closed vocabulary, taken from the client's own
-`src/model/modes.js` -- the only caller, so a value outside its list is a bug
-rather than a data condition (R17). Every entry is well inside `varchar(64)`,
-so the column's width cannot be reached through this route. Delete records no
-reason at all, so its list is empty and any reason is refused.
+    What each route means, in one place.Three routes rather than one `mode` parameter (R1), because the permissionguard is per route and that is what keeps delete splittable later -- but whatthe three *do* differs by these few values, so the write path is one.`accepts` is what an unmarked observation becomes and `marks` is what a markedone becomes. Delete inverts that: it acts on the marked set and leaves the restuntouched (`data.js:746`), which is why `accepts` is null there.`reasons` is the closed vocabulary, taken from the client's own`src/model/modes.js` -- the only caller, so a value outside its list is a bugrather than a data condition (R17). Every entry is well inside `varchar(64)`,so the column's width cannot be reached through this route. Delete records noreason at all, so its list is empty and any reason is refused.
 </div>
 
 
@@ -433,12 +399,7 @@ reason at all, so its list is empty and any reason is refused.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The observation is gone: it was deleted between the page being fetched and the
-commit arriving (R5).
-
-**This was the only `skipped` reason until Phase 6.** The line that used to
-stand here said *"never for imagery -- the server makes no imagery judgement
-until Phase 6"*, and #118 is that phase.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The observation is gone: it was deleted between the page being fetched and thecommit arriving (R5).**This was the only `skipped` reason until Phase 6.** The line that used tostand here said *"never for imagery -- the server makes no imagery judgementuntil Phase 6"*, and #118 is that phase.</li></ul></dd>
     
 
     
@@ -484,12 +445,7 @@ until Phase 6"*, and #118 is that phase.</li></ul></dd>
 
 
 <div class="description usertext">
-    The observation is gone: it was deleted between the page being fetched and the
-commit arriving (R5).
-
-**This was the only `skipped` reason until Phase 6.** The line that used to
-stand here said *"never for imagery -- the server makes no imagery judgement
-until Phase 6"*, and #118 is that phase.
+    The observation is gone: it was deleted between the page being fetched and thecommit arriving (R5).**This was the only `skipped` reason until Phase 6.** The line that used tostand here said *"never for imagery -- the server makes no imagery judgementuntil Phase 6"*, and #118 is that phase.
 </div>
 
 
@@ -510,17 +466,7 @@ until Phase 6"*, and #118 is that phase.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The second reason, added by Phase 6 (#118 R12).
-
-Phase 6 gives the server a thumbnail state, so an imagery judgement is now one
-it can make -- and a test asserting this skip can now fail, which is what makes
-it worth writing.
-
-**An unmarked row whose thumbnail is not `ready` is skipped rather than
-accepted**, because accepting it is a reviewer saying *"this is right"* about a
-picture they were never shown. A **marked** row is committed whether or not it
-has a picture: flagging a tile does not need imagery and never did, and Delete
-is unaffected because it never touches an unmarked row.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The second reason, added by Phase 6 (#118 R12).Phase 6 gives the server a thumbnail state, so an imagery judgement is now oneit can make -- and a test asserting this skip can now fail, which is what makesit worth writing.**An unmarked row whose thumbnail is not `ready` is skipped rather thanaccepted**, because accepting it is a reviewer saying *"this is right"* about apicture they were never shown. A **marked** row is committed whether or not ithas a picture: flagging a tile does not need imagery and never did, and Deleteis unaffected because it never touches an unmarked row.</li></ul></dd>
     
 
     
@@ -566,17 +512,7 @@ is unaffected because it never touches an unmarked row.</li></ul></dd>
 
 
 <div class="description usertext">
-    The second reason, added by Phase 6 (#118 R12).
-
-Phase 6 gives the server a thumbnail state, so an imagery judgement is now one
-it can make -- and a test asserting this skip can now fail, which is what makes
-it worth writing.
-
-**An unmarked row whose thumbnail is not `ready` is skipped rather than
-accepted**, because accepting it is a reviewer saying *"this is right"* about a
-picture they were never shown. A **marked** row is committed whether or not it
-has a picture: flagging a tile does not need imagery and never did, and Delete
-is unaffected because it never touches an unmarked row.
+    The second reason, added by Phase 6 (#118 R12).Phase 6 gives the server a thumbnail state, so an imagery judgement is now oneit can make -- and a test asserting this skip can now fail, which is what makesit worth writing.**An unmarked row whose thumbnail is not `ready` is skipped rather thanaccepted**, because accepting it is a reviewer saying *"this is right"* about apicture they were never shown. A **marked** row is committed whether or not ithas a picture: flagging a tile does not need imagery and never did, and Deleteis unaffected because it never touches an unmarked row.
 </div>
 
 
@@ -607,24 +543,7 @@ is unaffected because it never touches an unmarked row.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Appends the decisions that take effect, and only those.
-
-Two conditions, both in the write (R12), where there were three before #111
-removed the claim:
-
-- the `JOIN` on `observations` drops an id that no longer exists, so a vanished
-  row is `not-found` rather than a foreign-key error mid-page (R8);
-- the `AND o.version = w.version` drops a stale decision, so nothing is logged
-  for it -- which is what keeps the projection equal to its derivation across a
-  rebuild (D2).
-
-Nothing is dropped for belonging to somebody else. Under last-write-wins every
-reviewer may decide every observation, every time.
-
-The annotation fingerprint is computed here, server-side, at decision time
-(R15): the client is not asked for it and could not be trusted with it.
-`representative_keyframe_id` is written NULL (R16) -- neither side knows it
-until Phase 6, and guessing would put a wrong image behind a decision.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Appends the decisions that take effect, and only those.Two conditions, both in the write (R12), where there were three before #111removed the claim:- the `JOIN` on `observations` drops an id that no longer exists, so a vanished  row is `not-found` rather than a foreign-key error mid-page (R8);- the `AND o.version = w.version` drops a stale decision, so nothing is logged  for it -- which is what keeps the projection equal to its derivation across a  rebuild (D2).Nothing is dropped for belonging to somebody else. Under last-write-wins everyreviewer may decide every observation, every time.The annotation fingerprint is computed here, server-side, at decision time(R15): the client is not asked for it and could not be trusted with it.`representative_keyframe_id` is written NULL (R16) -- neither side knows ituntil Phase 6, and guessing would put a wrong image behind a decision.</li></ul></dd>
     
 
     
@@ -854,20 +773,7 @@ until Phase 6, and guessing would put a wrong image behind a decision.</li></ul>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Permanently deletes the marked observations, conditional on their version.
-
-One statement (R19): a row whose version moved comes back `conflicted` rather
-than being destroyed. **A delete leaves no trace** (R20) -- no provenance row,
-nothing recording who or when -- and it cascades to exactly `keyframes`,
-`dataset_observations`, `observation_reviews` and `observation_review_current`.
-It never removes a `dataset`, a `session`, a `project` or a source video.
-
-Unmarked ids are untouched and appear in no outcome array (R5, `data.js:746`).
-The confirmation is the client's (`store.js:759`); this does not second-guess
-it and takes no confirm token (R18).
-
-No row lock is taken: the `DELETE` is itself the conditional write, and the
-existence check that follows only attributes a refusal.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Permanently deletes the marked observations, conditional on their version.One statement (R19): a row whose version moved comes back `conflicted` ratherthan being destroyed. **A delete leaves no trace** (R20) -- no provenance row,nothing recording who or when -- and it cascades to exactly `keyframes`,`dataset_observations`, `observation_reviews` and `observation_review_current`.It never removes a `dataset`, a `session`, a `project` or a source video.Unmarked ids are untouched and appear in no outcome array (R5, `data.js:746`).The confirmation is the client's (`store.js:759`); this does not second-guessit and takes no confirm token (R18).No row lock is taken: the `DELETE` is itself the conditional write, and theexistence check that follows only attributes a refusal.</li></ul></dd>
     
 
     
@@ -1727,11 +1633,7 @@ existence check that follows only attributes a refusal.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The projection as it stands for these observations and this purpose.
-
-Read for two things only: whether a flag is taking back an acceptance, which is
-what makes an entry `reverted` (`data.js:769`), and whether there is a decision
-to withdraw at all. It decides nothing about who may write.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The projection as it stands for these observations and this purpose.Read for two things only: whether a flag is taking back an acceptance, which iswhat makes an entry `reverted` (`data.js:769`), and whether there is a decisionto withdraw at all. It decides nothing about who may write.</li></ul></dd>
     
 
     
@@ -1937,23 +1839,7 @@ to withdraw at all. It decides nothing about who may write.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Which of these observations this caller may not act on (R10).
-
-**A place rather than a formality.** Authorization is enforced per request and
-per observation, per #68, even though every observation answers the same way
-today: all four routes take `observations:write`, which the route has already
-required, and no scoped key exists. Adding one later changes what this
-consults, not where the check lives -- and `user_permissions` has no project
-column today, so a per-project grant is a migration rather than a key.
-
-**`operation` is why this signature changed** (#111 R15). One function is
-shared by review, training, delete and correction, and #68's *Authorization*
-expects deletion to want its own rule -- which cannot be written in here
-without knowing that delete is the caller. The parameter is cheap now with
-four call sites and expensive later with more. It is deliberately unused:
-every operation answers the same way until a scoped key exists, and inventing
-a rule before there is a key to express it would be the speculative half of
-the work.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Which of these observations this caller may not act on (R10).**A place rather than a formality.** Authorization is enforced per request andper observation, per #68, even though every observation answers the same waytoday: all four routes take `observations:write`, which the route has alreadyrequired, and no scoped key exists. Adding one later changes what thisconsults, not where the check lives -- and `user_permissions` has no projectcolumn today, so a per-project grant is a migration rather than a key.**`operation` is why this signature changed** (#111 R15). One function isshared by review, training, delete and correction, and #68's *Authorization*expects deletion to want its own rule -- which cannot be written in herewithout knowing that delete is the caller. The parameter is cheap now withfour call sites and expensive later with more. It is deliberately unused:every operation answers the same way until a scoped key exists, and inventinga rule before there is a key to express it would be the speculative half ofthe work.</li></ul></dd>
     
 
     
@@ -2371,24 +2257,7 @@ the work.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Locks the requested observation rows and reads what they currently are.
-
-Two jobs in one statement. It reports existence and the live version, which is
-how a refusal is later attributed to `not-found` or to `version` rather than
-guessed at -- and it **serializes commits over the same observation**, which is
-what keeps the reported refusal reason equal to the one that actually applied.
-Ordered by `observation_id` so two commits over overlapping pages queue rather
-than deadlock.
-
-**Kept deliberately under last-write-wins, on a narrower justification than it
-had** (#111). It used to exist so that two reviewers arriving together could
-not both pass the claim test; there is no claim now, and either outcome would
-be legitimate. It stays because the version comparison is read before the write
-and reported after it.
-
-`FOR NO KEY UPDATE` and not `FOR UPDATE`: this is the strength a foreign-key
-reference takes anyway, it does not block readers, and nothing here changes the
-observation's key.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Locks the requested observation rows and reads what they currently are.Two jobs in one statement. It reports existence and the live version, which ishow a refusal is later attributed to `not-found` or to `version` rather thanguessed at -- and it **serializes commits over the same observation**, which iswhat keeps the reported refusal reason equal to the one that actually applied.Ordered by `observation_id` so two commits over overlapping pages queue ratherthan deadlock.**Kept deliberately under last-write-wins, on a narrower justification than ithad** (#111). It used to exist so that two reviewers arriving together couldnot both pass the claim test; there is no claim now, and either outcome wouldbe legitimate. It stays because the version comparison is read before the writeand reported after it.`FOR NO KEY UPDATE` and not `FOR UPDATE`: this is the strength a foreign-keyreference takes anyway, it does not block readers, and nothing here changes theobservation's key.</li></ul></dd>
     
 
     
@@ -2570,13 +2439,7 @@ observation's key.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Collects the five outcome arrays, which are **not a partition** (R5).
-
-`reverted` co-occurs with `flagged` for the same id, and a delete request's
-unmarked ids appear in no array at all. Both are the fixture's existing
-behaviour and both are easy to assume away, so the response documents it.
-
-Every entry is found by `observation_id`, never by position (R3).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Collects the five outcome arrays, which are **not a partition** (R5).`reverted` co-occurs with `flagged` for the same id, and a delete request'sunmarked ids appear in no array at all. Both are the fixture's existingbehaviour and both are easy to assume away, so the response documents it.Every entry is found by `observation_id`, never by position (R3).</li></ul></dd>
     
 
     
@@ -2684,18 +2547,7 @@ Every entry is found by `observation_id`, never by position (R3).</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Projects the decisions just logged. The last commit wins (#111 R10).
-
-**The upsert is unconditional**, where it used to carry
-`WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id` to make
-first-valid-wins a constraint rather than a convention. That guard is the rule
-A6 overruled, and with it gone `reviewer_id` joins the `SET` list -- it is now
-*who made the current decision* rather than who owns the record, so it has to
-move when somebody else decides later. Leaving it out was the whole point
-before and would be a silent bug now.
-
-`first_decided_at` is gone from the table entirely: it existed to be preserved
-across a claiming reviewer's revision, and there is no claiming reviewer.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Projects the decisions just logged. The last commit wins (#111 R10).**The upsert is unconditional**, where it used to carry`WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id` to makefirst-valid-wins a constraint rather than a convention. That guard is the ruleA6 overruled, and with it gone `reviewer_id` joins the `SET` list -- it is now*who made the current decision* rather than who owns the record, so it has tomove when somebody else decides later. Leaving it out was the whole pointbefore and would be a silent bug now.`first_decided_at` is gone from the table entirely: it existed to be preservedacross a claiming reviewer's revision, and there is no claiming reviewer.</li></ul></dd>
     
 
     
@@ -2877,11 +2729,7 @@ across a claiming reviewer's revision, and there is no claiming reviewer.</li></
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The exception set: what the reviewer flagged, excluded or marked for deletion.
-
-A mark must name an observation on the page, because the page is what the
-commit is about and a mark outside it is a client bug rather than a request to
-reach further.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The exception set: what the reviewer flagged, excluded or marked for deletion.A mark must name an observation on the page, because the page is what thecommit is about and a mark outside it is a client bug rather than a request toreach further.</li></ul></dd>
     
 
     
@@ -3117,11 +2965,7 @@ reach further.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The page as the reviewer saw it: ids and the versions they were fetched with.
-
-**An absent version is a `400`, never an implicit overwrite** (D1). An optional
-version is the worse failure -- a client that forgets one would get silent
-last-write-wins on the annotation and nothing anywhere would say so.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The page as the reviewer saw it: ids and the versions they were fetched with.**An absent version is a `400`, never an implicit overwrite** (D1). An optionalversion is the worse failure -- a client that forgets one would get silentlast-write-wins on the annotation and nothing anywhere would say so.</li></ul></dd>
     
 
     
@@ -3309,14 +3153,7 @@ last-write-wins on the annotation and nothing anywhere would say so.</li></ul></
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The explicit take-backs (D3).
-
-No client gesture produces one yet -- the mosaic's take-back of a flag commits
-as `reviewed` -- so this is the request shape that makes the settled schema
-reachable: a withdrawal cannot be produced by accident from a page commit, and
-it is the shape a later *clear my decision* gesture would send.
-
-Not accepted on delete, which records no decision to take back.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The explicit take-backs (D3).No client gesture produces one yet -- the mosaic's take-back of a flag commitsas `reviewed` -- so this is the request shape that makes the settled schemareachable: a withdrawal cannot be produced by accident from a page commit, andit is the shape a later *clear my decision* gesture would send.Not accepted on delete, which records no decision to take back.</li></ul></dd>
     
 
     
@@ -3576,19 +3413,7 @@ Not accepted on delete, which records no decision to take back.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Which of these observations have a picture a reviewer could have looked at
-(#118 R12).
-
-`ready` and nothing else. `queued` means the picture has not arrived,
-`failed` means it never will, and an observation with no row at all has never
-had one asked for -- and none of the three is a tile somebody can accept on
-sight.
-
-The file is deliberately **not** checked here. The thumbnail row is what the
-mosaic query reads, per-tile `existsSync` inside a commit would be one stat
-per row on a page of 600, and if storage ever moves behind a network it stops
-being cheap at all. A row that says `ready` whose file has gone is a
-recoverable state the serving route reports, not a reason to refuse a review.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Which of these observations have a picture a reviewer could have looked at(#118 R12).`ready` and nothing else. `queued` means the picture has not arrived,`failed` means it never will, and an observation with no row at all has neverhad one asked for -- and none of the three is a tile somebody can accept onsight.The file is deliberately **not** checked here. The thumbnail row is what themosaic query reads, per-tile `existsSync` inside a commit would be one statper row on a page of 600, and if storage ever moves behind a network it stopsbeing cheap at all. A row that says `ready` whose file has gone is arecoverable state the serving route reports, not a reason to refuse a review.</li></ul></dd>
     
 
     
@@ -3770,19 +3595,7 @@ recoverable state the serving route reports, not a reason to refuse a review.</l
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Releases the projection rows this reviewer has withdrawn (R14).
-
-A withdrawal **deletes**: `observation_review_current_purpose_decision_check`
-permits only `reviewed|flagged` and `promoted|excluded`, so `withdrawn` is
-legal in the log and illegal here, and a delete is the only legal expression of
-it. Undecided is the absence of a row, which is what makes the mosaic's default
-filter a primary-key anti-join.
-
-**Not scoped to `reviewer_id`** (#111 R10). It used to delete only when the
-withdrawing reviewer owned the row, which was the claim rule wearing a
-different hat. Under last-write-wins a withdrawal is simply the latest
-decision, so anybody's withdrawal clears the current one -- and the derivation
-agrees, which is what the projection-equals-derivation test checks.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Releases the projection rows this reviewer has withdrawn (R14).A withdrawal **deletes**: `observation_review_current_purpose_decision_check`permits only `reviewed|flagged` and `promoted|excluded`, so `withdrawn` islegal in the log and illegal here, and a delete is the only legal expression ofit. Undecided is the absence of a row, which is what makes the mosaic's defaultfilter a primary-key anti-join.**Not scoped to `reviewer_id`** (#111 R10). It used to delete only when thewithdrawing reviewer owned the row, which was the claim rule wearing adifferent hat. Under last-write-wins a withdrawal is simply the latestdecision, so anybody's withdrawal clears the current one -- and the derivationagrees, which is what the projection-equals-derivation test checks.</li></ul></dd>
     
 
     
@@ -3988,10 +3801,7 @@ agrees, which is what the projection-equals-derivation test checks.</li></ul></d
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Classifies an id the write refused, from what the locked read saw.
-
-The conditional writes stay the authority on what was written; this only
-attributes a refusal to the cause a reviewer needs to be told about (R4).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Classifies an id the write refused, from what the locked read saw.The conditional writes stay the authority on what was written; this onlyattributes a refusal to the cause a reviewer needs to be told about (R4).</li></ul></dd>
     
 
     

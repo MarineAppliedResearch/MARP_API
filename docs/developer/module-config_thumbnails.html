@@ -180,10 +180,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>How many observations one extraction pass claims at a time.
-
-A page is 45 tiles, and claiming a page's worth means one drain cycle can serve
-the page a reviewer is actually looking at.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>How many observations one extraction pass claims at a time.A page is 45 tiles, and claiming a page's worth means one drain cycle can servethe page a reviewer is actually looking at.</li></ul></dd>
     
 
     
@@ -229,10 +226,7 @@ the page a reviewer is actually looking at.</li></ul></dd>
 
 
 <div class="description usertext">
-    How many observations one extraction pass claims at a time.
-
-A page is 45 tiles, and claiming a page's worth means one drain cycle can serve
-the page a reviewer is actually looking at.
+    How many observations one extraction pass claims at a time.A page is 45 tiles, and claiming a page's worth means one drain cycle can servethe page a reviewer is actually looking at.
 </div>
 
 
@@ -264,17 +258,7 @@ the page a reviewer is actually looking at.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>How long a claimed extraction may run before the row is available again (R18).
-
-The queue is the `queued` rows in the table, so a process that died mid-decode
-would otherwise strand its tiles at PREPARING for ever. This is a lease and it
-is deliberately the smallest one that works -- a timestamp and a timeout. **If
-it ever grows heartbeats or workers, that is the signal the GPU job system was
-the right answer after all**, and this design should be revisited rather than
-grown into a second copy of one.
-
-Two minutes: the spike cut six frames from one stream in 1.5 s, so a batch that
-has been claimed this long is not slow, it is gone.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>How long a claimed extraction may run before the row is available again (R18).The queue is the `queued` rows in the table, so a process that died mid-decodewould otherwise strand its tiles at PREPARING for ever. This is a lease and itis deliberately the smallest one that works -- a timestamp and a timeout. **Ifit ever grows heartbeats or workers, that is the signal the GPU job system wasthe right answer after all**, and this design should be revisited rather thangrown into a second copy of one.Two minutes: the spike cut six frames from one stream in 1.5 s, so a batch thathas been claimed this long is not slow, it is gone.</li></ul></dd>
     
 
     
@@ -320,17 +304,7 @@ has been claimed this long is not slow, it is gone.</li></ul></dd>
 
 
 <div class="description usertext">
-    How long a claimed extraction may run before the row is available again (R18).
-
-The queue is the `queued` rows in the table, so a process that died mid-decode
-would otherwise strand its tiles at PREPARING for ever. This is a lease and it
-is deliberately the smallest one that works -- a timestamp and a timeout. **If
-it ever grows heartbeats or workers, that is the signal the GPU job system was
-the right answer after all**, and this design should be revisited rather than
-grown into a second copy of one.
-
-Two minutes: the spike cut six frames from one stream in 1.5 s, so a batch that
-has been claimed this long is not slow, it is gone.
+    How long a claimed extraction may run before the row is available again (R18).The queue is the `queued` rows in the table, so a process that died mid-decodewould otherwise strand its tiles at PREPARING for ever. This is a lease and itis deliberately the smallest one that works -- a timestamp and a timeout. **Ifit ever grows heartbeats or workers, that is the signal the GPU job system wasthe right answer after all**, and this design should be revisited rather thangrown into a second copy of one.Two minutes: the spike cut six frames from one stream in 1.5 s, so a batch thathas been claimed this long is not slow, it is gone.
 </div>
 
 
@@ -440,14 +414,7 @@ has been claimed this long is not slow, it is gone.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The ffmpeg binary, located through configuration (A9).
-
-Answered by the human: a system binary the deployment provides, not
-`ffmpeg-static`. It keeps an ~80 MB platform-specific binary out of every
-developer's `node_modules`, and it makes "no ffmpeg here" a condition the
-service reports rather than a surprise on the first thumbnail. The accepted
-cost is a new deployment prerequisite on the production VM and on every
-developer machine.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The ffmpeg binary, located through configuration (A9).Answered by the human: a system binary the deployment provides, not`ffmpeg-static`. It keeps an ~80 MB platform-specific binary out of everydeveloper's `node_modules`, and it makes "no ffmpeg here" a condition theservice reports rather than a surprise on the first thumbnail. The acceptedcost is a new deployment prerequisite on the production VM and on everydeveloper machine.</li></ul></dd>
     
 
     
@@ -493,14 +460,7 @@ developer machine.</li></ul></dd>
 
 
 <div class="description usertext">
-    The ffmpeg binary, located through configuration (A9).
-
-Answered by the human: a system binary the deployment provides, not
-`ffmpeg-static`. It keeps an ~80 MB platform-specific binary out of every
-developer's `node_modules`, and it makes "no ffmpeg here" a condition the
-service reports rather than a surprise on the first thumbnail. The accepted
-cost is a new deployment prerequisite on the production VM and on every
-developer machine.
+    The ffmpeg binary, located through configuration (A9).Answered by the human: a system binary the deployment provides, not`ffmpeg-static`. It keeps an ~80 MB platform-specific binary out of everydeveloper's `node_modules`, and it makes "no ffmpeg here" a condition theservice reports rather than a surprise on the first thumbnail. The acceptedcost is a new deployment prerequisite on the production VM and on everydeveloper machine.
 </div>
 
 
@@ -532,9 +492,7 @@ developer machine.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>How long one ffmpeg or ffprobe call may run before it is killed, in
-milliseconds. A hung decode against a struggling media server must not hold one
-of the three streams for ever.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>How long one ffmpeg or ffprobe call may run before it is killed, inmilliseconds. A hung decode against a struggling media server must not hold oneof the three streams for ever.</li></ul></dd>
     
 
     
@@ -580,9 +538,7 @@ of the three streams for ever.</li></ul></dd>
 
 
 <div class="description usertext">
-    How long one ffmpeg or ffprobe call may run before it is killed, in
-milliseconds. A hung decode against a struggling media server must not hold one
-of the three streams for ever.
+    How long one ffmpeg or ffprobe call may run before it is killed, inmilliseconds. A hung decode against a struggling media server must not hold oneof the three streams for ever.
 </div>
 
 
@@ -614,8 +570,7 @@ of the three streams for ever.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The ffprobe binary, same rule. R6 and R21 both go through it: the frame's real
-pixel dimensions and the source's real frame rate are read, never assumed.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The ffprobe binary, same rule. R6 and R21 both go through it: the frame's realpixel dimensions and the source's real frame rate are read, never assumed.</li></ul></dd>
     
 
     
@@ -661,8 +616,7 @@ pixel dimensions and the source's real frame rate are read, never assumed.</li><
 
 
 <div class="description usertext">
-    The ffprobe binary, same rule. R6 and R21 both go through it: the frame's real
-pixel dimensions and the source's real frame rate are read, never assumed.
+    The ffprobe binary, same rule. R6 and R21 both go through it: the frame's realpixel dimensions and the source's real frame rate are read, never assumed.
 </div>
 
 
@@ -694,13 +648,7 @@ pixel dimensions and the source's real frame rate are read, never assumed.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>How far the source's real frame rate may sit from the rate `db/timecode.js`
-assumed when it derived the observation's frame, before the extraction is
-refused (R21).
-
-A tolerance rather than an equality test because ffprobe reports a rational --
-30000/1001 is 29.97002997... -- and floating point should not be the thing that
-decides. Anything genuinely 25 comes back as 25.000 exactly.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>How far the source's real frame rate may sit from the rate `db/timecode.js`assumed when it derived the observation's frame, before the extraction isrefused (R21).A tolerance rather than an equality test because ffprobe reports a rational --30000/1001 is 29.97002997... -- and floating point should not be the thing thatdecides. Anything genuinely 25 comes back as 25.000 exactly.</li></ul></dd>
     
 
     
@@ -746,13 +694,7 @@ decides. Anything genuinely 25 comes back as 25.000 exactly.</li></ul></dd>
 
 
 <div class="description usertext">
-    How far the source's real frame rate may sit from the rate `db/timecode.js`
-assumed when it derived the observation's frame, before the extraction is
-refused (R21).
-
-A tolerance rather than an equality test because ffprobe reports a rational --
-30000/1001 is 29.97002997... -- and floating point should not be the thing that
-decides. Anything genuinely 25 comes back as 25.000 exactly.
+    How far the source's real frame rate may sit from the rate `db/timecode.js`assumed when it derived the observation's frame, before the extraction isrefused (R21).A tolerance rather than an equality test because ffprobe reports a rational --30000/1001 is 29.97002997... -- and floating point should not be the thing thatdecides. Anything genuinely 25 comes back as 25.000 exactly.
 </div>
 
 
@@ -784,12 +726,7 @@ decides. Anything genuinely 25 comes back as 25.000 exactly.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>How long the drain loop waits when it found nothing, in milliseconds.
-
-Repeated looking rather than `LISTEN`/`NOTIFY`, for the reason
-`config/gpu-orchestration.js` gives about its own poll: work appears when
-somebody opens a page, and a second of latency on picking it up is invisible
-next to the decode.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>How long the drain loop waits when it found nothing, in milliseconds.Repeated looking rather than `LISTEN`/`NOTIFY`, for the reason`config/gpu-orchestration.js` gives about its own poll: work appears whensomebody opens a page, and a second of latency on picking it up is invisiblenext to the decode.</li></ul></dd>
     
 
     
@@ -835,12 +772,7 @@ next to the decode.</li></ul></dd>
 
 
 <div class="description usertext">
-    How long the drain loop waits when it found nothing, in milliseconds.
-
-Repeated looking rather than `LISTEN`/`NOTIFY`, for the reason
-`config/gpu-orchestration.js` gives about its own poll: work appears when
-somebody opens a page, and a second of latency on picking it up is invisible
-next to the decode.
+    How long the drain loop waits when it found nothing, in milliseconds.Repeated looking rather than `LISTEN`/`NOTIFY`, for the reason`config/gpu-orchestration.js` gives about its own poll: work appears whensomebody opens a page, and a second of latency on picking it up is invisiblenext to the decode.
 </div>
 
 
@@ -872,16 +804,7 @@ next to the decode.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>How many Jellyfin streams extraction may hold open at once (A7, R16).
-
-Three, answered by the human. **The ceiling is shared with people**: Jellyfin
-sustains roughly five or six concurrent streams and a reviewer watching a clip
-is one of them, so extraction taking all of it means a reviewer's own video
-stalls while their own thumbnails are made. Three leaves at least half of it.
-
-The figure it is derived from -- "five or six" -- is an estimate nobody has
-measured, which is why R20 asks for the measurement and why this is one
-constant rather than a number scattered through the service.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>How many Jellyfin streams extraction may hold open at once (A7, R16).Three, answered by the human. **The ceiling is shared with people**: Jellyfinsustains roughly five or six concurrent streams and a reviewer watching a clipis one of them, so extraction taking all of it means a reviewer's own videostalls while their own thumbnails are made. Three leaves at least half of it.The figure it is derived from -- "five or six" -- is an estimate nobody hasmeasured, which is why R20 asks for the measurement and why this is oneconstant rather than a number scattered through the service.</li></ul></dd>
     
 
     
@@ -927,16 +850,7 @@ constant rather than a number scattered through the service.</li></ul></dd>
 
 
 <div class="description usertext">
-    How many Jellyfin streams extraction may hold open at once (A7, R16).
-
-Three, answered by the human. **The ceiling is shared with people**: Jellyfin
-sustains roughly five or six concurrent streams and a reviewer watching a clip
-is one of them, so extraction taking all of it means a reviewer's own video
-stalls while their own thumbnails are made. Three leaves at least half of it.
-
-The figure it is derived from -- "five or six" -- is an estimate nobody has
-measured, which is why R20 asks for the measurement and why this is one
-constant rather than a number scattered through the service.
+    How many Jellyfin streams extraction may hold open at once (A7, R16).Three, answered by the human. **The ceiling is shared with people**: Jellyfinsustains roughly five or six concurrent streams and a reviewer watching a clipis one of them, so extraction taking all of it means a reviewer's own videostalls while their own thumbnails are made. Three leaves at least half of it.The figure it is derived from -- "five or six" -- is an estimate nobody hasmeasured, which is why R20 asks for the measurement and why this is oneconstant rather than a number scattered through the service.
 </div>
 
 
@@ -968,11 +882,7 @@ constant rather than a number scattered through the service.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Who MARP says it is when it opens a stream for its own purposes.
-
-Extraction is the first time the API reads video bytes rather than redirecting
-a client to them (F28), so it is worth being nameable in Jellyfin's session
-list -- that list is how R20's "concurrent streams observed" is counted.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Who MARP says it is when it opens a stream for its own purposes.Extraction is the first time the API reads video bytes rather than redirectinga client to them (F28), so it is worth being nameable in Jellyfin's sessionlist -- that list is how R20's "concurrent streams observed" is counted.</li></ul></dd>
     
 
     
@@ -1018,11 +928,7 @@ list -- that list is how R20's "concurrent streams observed" is counted.</li></u
 
 
 <div class="description usertext">
-    Who MARP says it is when it opens a stream for its own purposes.
-
-Extraction is the first time the API reads video bytes rather than redirecting
-a client to them (F28), so it is worth being nameable in Jellyfin's session
-list -- that list is how R20's "concurrent streams observed" is counted.
+    Who MARP says it is when it opens a stream for its own purposes.Extraction is the first time the API reads video bytes rather than redirectinga client to them (F28), so it is worth being nameable in Jellyfin's sessionlist -- that list is how R20's "concurrent streams observed" is counted.
 </div>
 
 
@@ -1054,16 +960,7 @@ list -- that list is how R20's "concurrent streams observed" is counted.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Minimum video match score that may attach a picture to a scientific record (A8).
-
-Answered by the human, taking the recommendation: the exact-match band only.
-`resolveVideoSource` scores an exact display-name, path-stem or full-filename
-match at 100/98/96 and its own default `minScore` is 60 -- and a match at 60 can
-produce a confident, plausible picture of **the wrong dive**, which a reviewer
-reads as a bad detection and may delete. The failure mode is silent corruption
-of the review, not a missing tile, so anything below this is recorded as a
-permanent failure carrying the score, and the bar can be lowered later against
-evidence.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Minimum video match score that may attach a picture to a scientific record (A8).Answered by the human, taking the recommendation: the exact-match band only.`resolveVideoSource` scores an exact display-name, path-stem or full-filenamematch at 100/98/96 and its own default `minScore` is 60 -- and a match at 60 canproduce a confident, plausible picture of **the wrong dive**, which a reviewerreads as a bad detection and may delete. The failure mode is silent corruptionof the review, not a missing tile, so anything below this is recorded as apermanent failure carrying the score, and the bar can be lowered later againstevidence.</li></ul></dd>
     
 
     
@@ -1109,16 +1006,7 @@ evidence.</li></ul></dd>
 
 
 <div class="description usertext">
-    Minimum video match score that may attach a picture to a scientific record (A8).
-
-Answered by the human, taking the recommendation: the exact-match band only.
-`resolveVideoSource` scores an exact display-name, path-stem or full-filename
-match at 100/98/96 and its own default `minScore` is 60 -- and a match at 60 can
-produce a confident, plausible picture of **the wrong dive**, which a reviewer
-reads as a bad detection and may delete. The failure mode is silent corruption
-of the review, not a missing tile, so anything below this is recorded as a
-permanent failure carrying the score, and the bar can be lowered later against
-evidence.
+    Minimum video match score that may attach a picture to a scientific record (A8).Answered by the human, taking the recommendation: the exact-match band only.`resolveVideoSource` scores an exact display-name, path-stem or full-filenamematch at 100/98/96 and its own default `minScore` is 60 -- and a match at 60 canproduce a confident, plausible picture of **the wrong dive**, which a reviewerreads as a bad detection and may delete. The failure mode is silent corruptionof the review, not a missing tile, so anything below this is recorded as apermanent failure carrying the score, and the bar can be lowered later againstevidence.
 </div>
 
 
@@ -1150,13 +1038,7 @@ evidence.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Padding applied to each side of the box before the square expansion (A5).
-
-10%, answered by the human after F32: the worker's `_apply_directional_pad`
-already widens every machine-written box by local track velocity before it is
-stored, so this is a **second, deliberate** application rather than the first.
-10% rather than the 20% originally recommended for that reason, and it still
-hedges the legacy and hand-drawn boxes, which carry no velocity padding.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Padding applied to each side of the box before the square expansion (A5).10%, answered by the human after F32: the worker's `_apply_directional_pad`already widens every machine-written box by local track velocity before it isstored, so this is a **second, deliberate** application rather than the first.10% rather than the 20% originally recommended for that reason, and it stillhedges the legacy and hand-drawn boxes, which carry no velocity padding.</li></ul></dd>
     
 
     
@@ -1202,13 +1084,7 @@ hedges the legacy and hand-drawn boxes, which carry no velocity padding.</li></u
 
 
 <div class="description usertext">
-    Padding applied to each side of the box before the square expansion (A5).
-
-10%, answered by the human after F32: the worker's `_apply_directional_pad`
-already widens every machine-written box by local track velocity before it is
-stored, so this is a **second, deliberate** application rather than the first.
-10% rather than the 20% originally recommended for that reason, and it still
-hedges the legacy and hand-drawn boxes, which carry no velocity padding.
+    Padding applied to each side of the box before the square expansion (A5).10%, answered by the human after F32: the worker's `_apply_directional_pad`already widens every machine-written box by local track velocity before it isstored, so this is a **second, deliberate** application rather than the first.10% rather than the 20% originally recommended for that reason, and it stillhedges the legacy and hand-drawn boxes, which carry no velocity padding.
 </div>
 
 
@@ -1240,13 +1116,7 @@ hedges the legacy and hand-drawn boxes, which carry no velocity padding.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>What the extractor may be doing (R24, R25).
-
-`paused` stops *starting* new extractions and lets in-flight ones finish --
-killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for.
-There is no separate `stopped`: stop is pause plus discarding the queue, and
-under A3 the next page view re-enqueues what it discarded, so nothing is lost
-and no fourth state is needed.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>What the extractor may be doing (R24, R25).`paused` stops *starting* new extractions and lets in-flight ones finish --killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for.There is no separate `stopped`: stop is pause plus discarding the queue, and adiscarded row reports `failed`, which the reviewer's *Ask again* re-enqueues --so nothing is lost and no fourth state is needed.</li></ul></dd>
     
 
     
@@ -1292,13 +1162,7 @@ and no fourth state is needed.</li></ul></dd>
 
 
 <div class="description usertext">
-    What the extractor may be doing (R24, R25).
-
-`paused` stops *starting* new extractions and lets in-flight ones finish --
-killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for.
-There is no separate `stopped`: stop is pause plus discarding the queue, and
-under A3 the next page view re-enqueues what it discarded, so nothing is lost
-and no fourth state is needed.
+    What the extractor may be doing (R24, R25).`paused` stops *starting* new extractions and lets in-flight ones finish --killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for.There is no separate `stopped`: stop is pause plus discarding the queue, and adiscarded row reports `failed`, which the reviewer's *Ask again* re-enqueues --so nothing is lost and no fourth state is needed.
 </div>
 
 
@@ -1330,9 +1194,7 @@ and no fourth state is needed.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Seconds of video decoded before the earliest wanted frame in a batch, so the
-decoder is settled by the time it matters. The spike's value, which landed all
-six frames with a pts delta of 0 (F36).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Seconds of video decoded before the earliest wanted frame in a batch, so thedecoder is settled by the time it matters. The spike's value, which landed allsix frames with a pts delta of 0 (F36).</li></ul></dd>
     
 
     
@@ -1378,9 +1240,7 @@ six frames with a pts delta of 0 (F36).</li></ul></dd>
 
 
 <div class="description usertext">
-    Seconds of video decoded before the earliest wanted frame in a batch, so the
-decoder is settled by the time it matters. The spike's value, which landed all
-six frames with a pts delta of 0 (F36).
+    Seconds of video decoded before the earliest wanted frame in a batch, so thedecoder is settled by the time it matters. The spike's value, which landed allsix frames with a pts delta of 0 (F36).
 </div>
 
 
@@ -1412,12 +1272,7 @@ six frames with a pts delta of 0 (F36).
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Where the JPEG files live. A sister folder to the species pictures, served the
-way they are served -- which is settled, not decided here.
-
-`storage/` is git-ignored and a thumbnail has no seed set to be re-imported
-from, so a fresh deployment starts with this directory empty. That is why R10
-requires the row to carry everything needed to make the picture again.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Where the JPEG files live. A sister folder to the species pictures, served theway they are served -- which is settled, not decided here.`storage/` is git-ignored and a thumbnail has no seed set to be re-importedfrom, so a fresh deployment starts with this directory empty. That is why R10requires the row to carry everything needed to make the picture again.</li></ul></dd>
     
 
     
@@ -1463,12 +1318,7 @@ requires the row to carry everything needed to make the picture again.</li></ul>
 
 
 <div class="description usertext">
-    Where the JPEG files live. A sister folder to the species pictures, served the
-way they are served -- which is settled, not decided here.
-
-`storage/` is git-ignored and a thumbnail has no seed set to be re-imported
-from, so a fresh deployment starts with this directory empty. That is why R10
-requires the row to carry everything needed to make the picture again.
+    Where the JPEG files live. A sister folder to the species pictures, served theway they are served -- which is settled, not decided here.`storage/` is git-ignored and a thumbnail has no seed set to be re-importedfrom, so a fresh deployment starts with this directory empty. That is why R10requires the row to carry everything needed to make the picture again.
 </div>
 
 
@@ -1500,8 +1350,7 @@ requires the row to carry everything needed to make the picture again.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>MIME type every stored thumbnail carries. One format, so the served
-`Content-Type` is a fact rather than a guess.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>MIME type every stored thumbnail carries. One format, so the served`Content-Type` is a fact rather than a guess.</li></ul></dd>
     
 
     
@@ -1547,8 +1396,7 @@ requires the row to carry everything needed to make the picture again.
 
 
 <div class="description usertext">
-    MIME type every stored thumbnail carries. One format, so the served
-`Content-Type` is a fact rather than a guess.
+    MIME type every stored thumbnail carries. One format, so the served`Content-Type` is a fact rather than a guess.
 </div>
 
 
@@ -1580,8 +1428,7 @@ requires the row to carry everything needed to make the picture again.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>JPEG quality for a stored tile. Matches what the spike produced and the human
-looked at.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>JPEG quality for a stored tile. Matches what the spike produced and the humanlooked at.</li></ul></dd>
     
 
     
@@ -1627,8 +1474,7 @@ looked at.</li></ul></dd>
 
 
 <div class="description usertext">
-    JPEG quality for a stored tile. Matches what the spike produced and the human
-looked at.
+    JPEG quality for a stored tile. Matches what the spike produced and the humanlooked at.
 </div>
 
 
@@ -1660,13 +1506,7 @@ looked at.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Edge of the finished tile, in pixels (A5).
-
-320 rather than the fixture's 512, on a measurement rather than an estimate:
-F35 found five of six real crops are *smaller than 320 px at source*, so
-raising the output would buy nothing -- the limit is the detection's size at
-1920x1080, not the tile. 320 also covers a 132 px tile at 2x device pixel
-ratio, and at 440,000 observations it is roughly 5 GB rather than 20.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Edge of the finished tile, in pixels (A5).320 rather than the fixture's 512, on a measurement rather than an estimate:F35 found five of six real crops are *smaller than 320 px at source*, soraising the output would buy nothing -- the limit is the detection's size at1920x1080, not the tile. 320 also covers a 132 px tile at 2x device pixelratio, and at 440,000 observations it is roughly 5 GB rather than 20.</li></ul></dd>
     
 
     
@@ -1712,13 +1552,7 @@ ratio, and at 440,000 observations it is roughly 5 GB rather than 20.</li></ul><
 
 
 <div class="description usertext">
-    Edge of the finished tile, in pixels (A5).
-
-320 rather than the fixture's 512, on a measurement rather than an estimate:
-F35 found five of six real crops are *smaller than 320 px at source*, so
-raising the output would buy nothing -- the limit is the detection's size at
-1920x1080, not the tile. 320 also covers a 132 px tile at 2x device pixel
-ratio, and at 440,000 observations it is roughly 5 GB rather than 20.
+    Edge of the finished tile, in pixels (A5).320 rather than the fixture's 512, on a measurement rather than an estimate:F35 found five of six real crops are *smaller than 320 px at source*, soraising the output would buy nothing -- the limit is the detection's size at1920x1080, not the tile. 320 also covers a 132 px tile at 2x device pixelratio, and at 440,000 observations it is roughly 5 GB rather than 20.
 </div>
 
 
@@ -1750,11 +1584,7 @@ ratio, and at 440,000 observations it is roughly 5 GB rather than 20.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The three states a thumbnail row may hold (R3).
-
-Mirrors the migration's check constraint rather than feeding it. `permanent` is
-a separate flag rather than a fourth state because the client's vocabulary is
-these three (F9) and it already reads `thumbnail_permanent` alongside them.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The three states a thumbnail row may hold (R3).Mirrors the migration's check constraint rather than feeding it. `permanent` isa separate flag rather than a fourth state because the client's vocabulary isthese three (F9) and it already reads `thumbnail_permanent` alongside them.</li></ul></dd>
     
 
     
@@ -1800,11 +1630,7 @@ these three (F9) and it already reads `thumbnail_permanent` alongside them.</li>
 
 
 <div class="description usertext">
-    The three states a thumbnail row may hold (R3).
-
-Mirrors the migration's check constraint rather than feeding it. `permanent` is
-a separate flag rather than a fourth state because the client's vocabulary is
-these three (F9) and it already reads `thumbnail_permanent` alongside them.
+    The three states a thumbnail row may hold (R3).Mirrors the migration's check constraint rather than feeding it. `permanent` isa separate flag rather than a fourth state because the client's vocabulary isthese three (F9) and it already reads `thumbnail_permanent` alongside them.
 </div>
 
 
