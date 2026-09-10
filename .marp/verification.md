@@ -47,6 +47,22 @@ the block cannot pass vacuously in CI where there are no observations.
 | R15 `gpu_job_id` and `jellyfin_item_id` | *writes one observation per finished track…* |
 | R16 the migration is guarded and reversible | run by hand, below. Not covered by a test. |
 | R17 generated documentation rebuilt | `npm run docs:build`, below. Not covered by a test. |
+| R18 the coordinator supplies the survey convention | *fills data_type from the type of the session named by id*; *fills data_type from a session the job describes rather than names* |
+| R19 a submitted `data_type` is left alone | *leaves a data_type the submitter set deliberately* |
+| R20 an unusable session type is refused, never defaulted | *refuses at submit a session whose type the engine has no counting rule for*; *fails the attempt rather than guessing when the session type changed after submission*; *accepts that session when the submitter names a convention themselves* |
+| R21 resolved at lease time, beside the video | *fails the attempt rather than guessing when the session type changed after submission* — the type is edited after a clean submission, so only a lease-time resolution can catch it; also *refuses to lease a job naming a session that does not exist* |
+
+## Why the `data_type` tests are at the HTTP tier
+
+What a worker receives is the leased response body. A check one layer down — asserting that
+`resolveDataTypeForLease` returns the right thing — would pass while the body actually handed
+over carried no `data_type` at all, and the worker's default for a missing one is `Fish`. That
+is the defect being fixed, so the test has to read the leased body.
+
+The same reasoning puts *fails the attempt rather than guessing when the session type changed
+after submission* where it is: it submits cleanly, edits `sessions.type` underneath the queued
+job, then polls. A submit-time check cannot see that, which is the whole argument for
+resolving at lease time.
 
 ## The fixture, and what is honest about it
 
@@ -65,14 +81,22 @@ cost this pair real time twice. It is also why *refuses a result row with no con
 at all* exists: the contract is that the key is always present, and the only thing standing
 between that and a column quietly filling with nulls nobody chose is that assertion.
 
+`confidence` has since merged into the worker's `develop` (PR #6), so a real run can replace
+these values. The file as it stands is still hand-made.
+
+**And these six observations are fish-scored invertebrates.** Job 1256 ran before
+`params.data_type` was wired, so the worker used its default of `Fish` and chose each
+observation's frame by the fish rule rather than the inverts one. Real animals, real boxes,
+real keyframes — a good fixture for the parse, and **not** reference data for where an
+observation belongs. Jobs 1105 and 1257 are in the same position. See A24.
+
 ## Results, as run
 
 `npx jest tests/gpu-observation-ingest.test.js --runInBand --forceExit`:
 
 ```
   Test Suites : 1 passed, 0 failed, 1 total
-  Tests       : 26 passed, 0 failed, 0 skipped, 26 total
-  Duration    : 7.9s
+  Tests       : 34 passed, 0 failed, 0 skipped, 34 total
 ```
 
 The four neighbouring GPU suites, which the changes to `gpu.service.js` and the job spec
@@ -88,11 +112,10 @@ could have broken:
 
 ```
   Test Suites : 41 passed, 0 failed, 41 total
-  Tests       : 463 passed, 0 failed, 0 skipped, 463 total
-  Duration    : 194.7s
+  Tests       : 471 passed, 0 failed, 0 skipped, 471 total
 ```
 
-437 of those 463 predate this branch. **The 285 figure in the retired spec is stale** —
+437 of those 471 predate this branch. **The 285 figure in the retired spec is stale** —
 `develop` has moved a long way since, mostly the mosaic work.
 
 The migration, up and down and up again:
@@ -131,6 +154,10 @@ Named rather than left to be discovered:
   `max(observation_id) + 1` without the lock really do agree on the next key — so the
   passing test cannot quietly stop testing anything. What is *not* covered is two real
   workers reporting within the same second, which is the way it will actually happen.
+- **No worker has yet been handed a filled `data_type`.** The leased body is asserted to
+  carry it, which is the tier that matters on MARP's side, but nothing here proves the
+  worker then scores an inverts track by the inverts rule. That needs a real run, and it is
+  the point of running one.
 - **A video that is not 25 fps.** R8's guard is proven by fabricating a disagreeing `tc`,
   not by a real recording at another frame rate. What is proven is that the guard fires;
   what is not proven is that a real non-25 fps video makes it fire.

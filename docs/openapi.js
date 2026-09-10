@@ -2300,13 +2300,19 @@ const buildOpenApiSpec = () => {
                             },
                             params: {
                                 type: 'object',
-                                description: 'Engine parameters, passed through untouched.',
+                                description: 'Engine parameters, passed through untouched -- with one exception, `data_type`, which the coordinator fills at lease time.',
                                 additionalProperties: true,
                                 properties: {
                                     conf: { type: 'number', example: 0.25 },
                                     iou: { type: 'number', example: 0.7 },
                                     imgsz: { type: 'integer', example: 1280 },
                                     tracker: { type: 'string', nullable: true, example: 'botsort.yaml' },
+                                    data_type: {
+                                        type: 'string',
+                                        example: 'Invert',
+                                        description: 'Which survey convention decides the frame a track is counted at: a fish when its centre crosses near the bottom of frame, an invertebrate when it enters the bottom-centre trapezoid. **This changes which frame becomes the observation, and therefore its timecode**, so it is not a tuning parameter.\n\n'
+                                            + 'Left alone when submitted; otherwise **filled from `session.type` when the job is leased**, since the worker knows nothing about MARP and cannot know which discipline is being surveyed. A session type the engine has no rule for is refused rather than defaulted, because the engine falls back to the first frame of a track with no error.',
+                                    },
                                 },
                             },
                             reduction: {

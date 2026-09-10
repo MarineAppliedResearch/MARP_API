@@ -49,7 +49,11 @@ const path = require('path');
 
 const ingestRepository = require('../repository/observation-ingest.repository');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
-const { ARTIFACT_DIRECTORY, INGESTIBLE_JOB_KINDS } = require('../config/gpu-orchestration');
+const {
+    ARTIFACT_DIRECTORY,
+    INGESTIBLE_JOB_KINDS,
+    ENGINE_DATA_TYPES,
+} = require('../config/gpu-orchestration');
 const { speciesListForSessionType } = require('../db/species-lists');
 const {
     ASSUMED_FPS,
@@ -344,6 +348,74 @@ class ObservationIngestService {
             line: session.line.trim(),
             type: session.type.trim(),
         };
+    }
+
+    /**
+     * The session type a job's observations will be recorded under.
+     *
+     * Two forms to read, and the same two `validateSpecSession` accepts, because
+     * this deliberately reuses that rather than parsing `spec.session` a second
+     * way: a job describing its session already carries `type`, and one naming a
+     * `session_id` has it in `sessions`.
+     *
+     * Null when the session is named but is not there. That is not this method's
+     * refusal to make -- a session can be deleted between a submission and a
+     * lease, so submit-time cannot be the authority on existence, and ingest
+     * already refuses a missing session with the reason named.
+     *
+     * @async
+     * @param {Object|null} session - The validated `spec.session`, or null.
+     * @returns {Promise<string|null>} The session type, or null when unknowable.
+     */
+    async sessionTypeForSpec(session) {
+        if (!session) {
+            return null;
+        }
+
+        if (session.type) {
+            return session.type;
+        }
+
+        const row = await ingestRepository.getSession(session.session_id);
+
+        return row ? row.type : null;
+    }
+
+    /**
+     * Refuse a session type the worker's engine does not branch on.
+     *
+     * **The failure this prevents is silent.** `params.data_type` chooses which
+     * frame of a track an observation is recorded at, by survey convention;
+     * `pick_observation_time` matches two tuples and returns nothing for
+     * anything else, and `build_observation` then falls back to the track's first
+     * frame. So a session type MARP allows but the engine has never heard of does
+     * not error -- it scores the observation by a third rule nobody chose, and
+     * the resulting timecode looks entirely ordinary.
+     *
+     * MARP holds session types the engine has no rule for (`Habitat`,
+     * `MarineDebris`, `Substrate60Second`), so this is a real case and not a
+     * defence against typing mistakes.
+     *
+     * @param {string|null} sessionType - The session's type, or null when unknown.
+     * @returns {void}
+     * @throws {ApiError} 400 when the engine has no rule for it.
+     */
+    assertEngineUnderstandsSessionType(sessionType) {
+        // Null means the session could not be read, which is a different
+        // complaint and belongs to whoever resolves it.
+        if (sessionType === null || sessionType === undefined) {
+            return;
+        }
+
+        if (!ENGINE_DATA_TYPES.includes(sessionType)) {
+            invalid(
+                `Session type "${sessionType}" is not one the inference engine has a counting rule for. `
+                + `It branches on ${ENGINE_DATA_TYPES.join(', ')}, and anything else silently falls back `
+                + 'to the first frame of each track -- a third survey convention nobody chose, with the '
+                + 'wrong timecode and no error. Use a session whose type the engine understands, or set '
+                + 'spec.params.data_type deliberately.'
+            );
+        }
     }
 
     /**

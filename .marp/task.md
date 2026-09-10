@@ -91,6 +91,24 @@ This is the parse that A16 named as the one missing piece. The hand-over itself 
   they are catalog-only on a 440,000-row table rather than a rewrite.
 - **R17** — `docs/openapi.generated.json` and `docs/developer/` are rebuilt, because the
   route family changed and they are tracked.
+- **R18** — **The coordinator tells the worker which survey convention counts.**
+  `params.data_type` decides the frame a track is recorded at — a fish when its centre
+  crosses near the bottom of frame, an invertebrate when it enters the bottom-centre
+  trapezoid — and the worker cannot know which applies, because it knows nothing about
+  MARP. It is filled from `sessions.type`, which maps straight through: the values are
+  identical.
+- **R19** — A `data_type` the submitter set is left alone. Filled only when absent.
+- **R20** — **A session type the engine has no counting rule for is refused, never
+  defaulted.** `pick_observation_time` branches on `Fish`/`GULF_Fish` and
+  `Invert`/`GULF_Inverts` and returns nothing otherwise, at which point the worker falls
+  back to the track's first frame — a third convention nobody chose, with no error. MARP
+  holds session types the engine has no rule for (`Habitat`, `MarineDebris`,
+  `Substrate60Second`), so this is a real case. Refused at submit, and again at lease,
+  which is the one that counts.
+- **R21** — Resolution happens **at lease time, beside the video**, and for the same
+  reason: a session's type can be edited while its job sits in the queue, so a spec frozen
+  at submission would answer yesterday's question. A failure gives the lease up and fails
+  the attempt with the reason named.
 
 ## Open assumptions
 
@@ -155,6 +173,29 @@ This is the parse that A16 named as the one missing piece. The hand-over itself 
   the video really is 25 fps, which is why R8 checks rather than assumes: the worker
   computes from the video's measured rate, so a disagreement is the one available signal
   that the assumption broke.
+- [x] **A24 · scientific/data-meaning · blocking** — answered 2026-09-10 by Isaac: **wire
+  `params.data_type`.** The coordinator passes the session's type through, so an inverts
+  survey is scored by the inverts rule. R18 to R21 are that answer.
+
+  **What this means for the runs already on disk.** Every real inverts run so far — jobs
+  1105, 1256 and 1257, all against model 91 — carried no `data_type`, so the worker used
+  its default of `Fish` and picked each observation's frame by *the fish rule*: the first
+  frame where the centre crosses y > 0.8, rather than the frame where the animal enters the
+  bottom-centre trapezoid. Their observation frames, and therefore their timecodes, were
+  chosen by the wrong survey convention.
+
+  So **the six observations in `tests/fixtures/gpu-observations-job-1256.jsonl` are
+  fish-scored invertebrates.** They are real detections of real animals with real boxes,
+  which is what makes them a good fixture for the parse — but their `observation_frame` is
+  not where an inverts survey would count them, and **nothing in those files should ever be
+  treated as reference data for where an observation belongs.** Re-run the jobs to get that.
+
+- [ ] **A25 · api contract · non-blocking** — **a submitted `params.data_type` wins.** Only
+  an absent one is filled. A submitter who set it meant it, the same way a bare `video.url`
+  is handed through rather than second-guessed — and it is the one escape hatch for running
+  a model over a session type the engine has no rule for, which is otherwise refused
+  outright. The alternative, letting the session override it, would mean a job could not be
+  made to do what it plainly said.
 - [ ] **A23 · scientific/data-meaning · non-blocking** — **`videoLocation` is left null,
   and `user_id` is the job's `created_by`.** In the legacy pipeline `videoLocation` was the
   operator's own local path to the file, which on a distributed worker does not exist;
@@ -180,6 +221,11 @@ This is the parse that A16 named as the one missing piece. The hand-over itself 
   existed only inside `migrations/20260901120500-add-observations-species-id.js`, which
   keeps its own copy: a migration is a record of what was run, not a live import.
 
+- **2026-09-10** — `params.data_type` is resolved by `resolveSpecForLease`, which does the
+  video and the convention together. Two resolutions, both the coordinator's, both needing
+  the same lease-time placement; one function saying so is better than two call sites that
+  have to be kept beside each other.
+
 ## Plan
 
 1. Migration: `observations.gpu_job_id` and `observations.jellyfin_item_id`, guarded, with
@@ -193,7 +239,9 @@ This is the parse that A16 named as the one missing piece. The hand-over itself 
 5. Job spec validation for `spec.session` and `spec.model.ml_model_id`.
 6. Hook into `recordResult` after the publish commits; the coordinator note on failure.
 7. `POST /gpu/jobs/:id/ingest`, its OpenAPI entry, and `npm run docs:build`.
-8. Tests.
+8. `params.data_type`: the engine's accepted set in config, the session-type lookup reusing
+   the session validation, the submit-time refusal, and the lease-time resolution.
+9. Tests.
 
 ## Acceptance criteria
 
@@ -205,6 +253,9 @@ This is the parse that A16 named as the one missing piece. The hand-over itself 
 - An inverts model against a `Fish` session fails, and writes nothing.
 - Ingesting the same job twice writes one set of rows; a re-run gets its own set.
 - A successful worker result triggers ingest without anybody asking for it.
+- A leased spec for an `Invert` session carries `params.data_type` of `Invert`.
+- A job against a `Habitat` session is refused at submit, and one whose session type is
+  edited to `MarineDebris` after submission fails its attempt rather than being leased.
 - `npm test` is green.
 
 ## Test plan
@@ -216,14 +267,18 @@ run, and — the part worth reading — what is **not** covered.
 
 - **Gate:** verifying
 - **Notes:** implemented and verified 2026-09-10. `tests/gpu-observation-ingest.test.js` is
-  26 for 26; `npm test` is 463 for 463, of which 437 predate this branch. **The 285 figure
+  34 for 34; `npm test` is 471 for 471, of which 437 predate this branch. **The 285 figure
   in the retired spec is stale** — `develop` has moved a long way since, mostly the mosaic
   work.
 
-  Two things a reader needs to know. The fixture's `confidence` values are **hand-added**,
-  because the worker change that emits the field is on `3-observation-confidence` in
-  `marp-inference-worker` and is not merged; nothing yet proves the two sides agree about
-  that key, and that is the most likely place for them to disagree. And `params.data_type`
-  is a defect found here and deliberately left alone: the worker defaults it to `Fish`,
-  which picks the observation frame by the fish rule, and the real inverts runs against
-  model 91 carried no `data_type` at all. Named in the report, not fixed.
+  Two things a reader needs to know.
+
+  The fixture's `confidence` values are **hand-added**. `confidence` has since merged into
+  the worker's `develop` (PR #6), so a real run will replace them, but the file as it stands
+  is hand-made and nothing yet proves the two sides agree about that key. It is the most
+  likely place for them to disagree.
+
+  And the fixture's observations are **fish-scored invertebrates** — see A24. The
+  `params.data_type` defect is now fixed, but the result files that already exist were
+  produced before the fix, so their observation frames follow the fish rule. Good fixture
+  for the parse; not reference data for where an observation belongs.

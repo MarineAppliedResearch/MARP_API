@@ -83,6 +83,8 @@ const seeded = {
     projectId: undefined,
     invertSessionId: undefined,
     fishSessionId: undefined,
+    habitatSessionId: undefined,
+    mutableSessionId: undefined,
     modelId: undefined,
     speciesIds: {},
 };
@@ -314,6 +316,15 @@ beforeAll(async () => {
 
     seeded.invertSessionId = await makeSession('Dive 8', '1000', 'Invert');
     seeded.fishSessionId = await makeSession('Dive 8', '1001', 'Fish');
+
+    // A type MARP allows and the inference engine has no counting rule for. Real,
+    // not a typo: `Habitat`, `MarineDebris` and `Substrate60Second` are all in
+    // this database and none of them is a branch in `pick_observation_time`.
+    seeded.habitatSessionId = await makeSession('Dive 8', '1002', 'Habitat');
+
+    // Its own session, so the test that edits a type after submission cannot
+    // disturb anything else.
+    seeded.mutableSessionId = await makeSession('Dive 8', '1003', 'Invert');
 
     const [model] = await db.sequelize.query(
         `INSERT INTO ml_models (name, model_type, architecture_version, status, notes, created_at, updated_at)
@@ -628,14 +639,69 @@ describe('Checking the session against the model', () => {
         expect(await observationsForJob(job.id)).toHaveLength(0);
     });
 
-    it('refuses a session that does not exist', async () => {
-        const spec = specFor({ session: { session_id: 2147483000 } });
-        const { job, reported } = await runJob(REAL_RESULT, spec);
+    it('refuses to lease a job naming a session that does not exist, before a GPU spends time on it', async () => {
+        // Caught at lease rather than at ingest, because the leased spec has to
+        // carry the survey convention and there is no session to take it from.
+        // Better here: the alternative is a worker running for hours and the
+        // result having nowhere to go.
+        const submitted = await global.api
+            .post('/api/v2/gpu/jobs')
+            .send({
+                kind: 'inference',
+                priority: TEST_PRIORITY + createdJobIds.length,
+                spec: specFor({ session: { session_id: 2147483000 } }),
+            });
 
-        expect(reported.body.ingest.ingested).toBe(false);
-        expect(reported.body.ingest.failed).toMatch(/does not exist/);
+        expect(submitted.status).toBe(200);
+        createdJobIds.push(submitted.body.jobs[0].id);
 
-        expect(await observationsForJob(job.id)).toHaveLength(0);
+        const leased = await global.api
+            .post('/api/v2/gpu/poll')
+            .send({ worker_id: workerId, slot_indexes: [0], wait_seconds: 0 });
+
+        expect(leased.status).toBe(204);
+
+        const [attempt] = await query(
+            'SELECT state, failure_reason FROM gpu_job_attempts WHERE job_id = :id ORDER BY lease_epoch DESC LIMIT 1',
+            { id: submitted.body.jobs[0].id }
+        );
+
+        expect(attempt.state).toBe('failed');
+        expect(attempt.failure_reason).toMatch(/does not exist/);
+    });
+
+    it('refuses to ingest when the session was deleted after the job ran', async () => {
+        // The ingest-tier refusal is still reachable, and this is how: a session
+        // can be deleted between a job finishing and somebody asking for its
+        // result again. An empty result so that no observation ends up
+        // referencing the session being removed.
+        const [rows] = await db.sequelize.query(
+            `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+             VALUES (:projectId, NULL, :dive, '4000', :lineId, 'Invert', NOW(), NOW())
+             RETURNING session_id`,
+            {
+                replacements: {
+                    projectId: seeded.projectId,
+                    dive: `jest-doomed-${runId}`,
+                    lineId: `jest-doomed-${runId}_4000`,
+                },
+                type: QueryTypes.INSERT,
+            }
+        );
+
+        const doomedId = rows[0].session_id;
+        const { job, reported } = await runJob([], specFor({ session: { session_id: doomedId } }));
+
+        expect(reported.body.ingest).toMatchObject({ ingested: true, observations: 0 });
+
+        await db.sequelize.query('DELETE FROM sessions WHERE session_id = :id', {
+            replacements: { id: doomedId },
+        });
+
+        const response = await global.api.post(`/api/v2/gpu/jobs/${job.id}/ingest`).send({});
+
+        expect(response.status).toBe(409);
+        expect(response.body.error.message).toMatch(/does not exist/);
     });
 });
 
@@ -973,5 +1039,150 @@ describe('Submitting a job that says where its observations go', () => {
 
         expect(response.status).toBe(400);
         expect(response.body.error.message).toMatch(/names no session/);
+    });
+});
+
+/**
+ * `params.data_type` -- which survey convention counts, resolved by the
+ * coordinator because the worker cannot know it.
+ */
+describe('The survey convention a worker is handed', () => {
+    /**
+     * Submit and lease, returning what the worker would actually receive.
+     *
+     * At the HTTP tier deliberately: what a worker gets is the leased body, and a
+     * check one layer down would pass while the body handed over carried no
+     * `data_type` at all -- which is precisely the defect being fixed, since the
+     * worker's own default for a missing one is `Fish`.
+     *
+     * @async
+     * @param {Object} spec - The spec to submit.
+     * @returns {Promise<Object>} The leased spec.
+     */
+    async function leasedSpec(spec) {
+        const { lease } = await submitAndLease(spec);
+
+        return lease.spec;
+    }
+
+    it('fills data_type from the type of the session named by id', async () => {
+        const spec = await leasedSpec(specFor());
+
+        expect(spec.params.data_type).toBe('Invert');
+
+        // The rest of params survives, rather than being replaced wholesale.
+        expect(spec.params.conf).toBe(0.15);
+    });
+
+    it('fills data_type from a session the job describes rather than names', async () => {
+        const spec = await leasedSpec(specFor({
+            session: {
+                project_id: seeded.projectId,
+                dive: `jest-convention-${runId}`,
+                line: '3000',
+                type: 'GULF_Inverts',
+            },
+        }));
+
+        expect(spec.params.data_type).toBe('GULF_Inverts');
+    });
+
+    it('leaves a data_type the submitter set deliberately', async () => {
+        const submitted = specFor();
+
+        submitted.params = { ...submitted.params, data_type: 'GULF_Fish' };
+
+        const spec = await leasedSpec(submitted);
+
+        // The session is an Invert one, and the submitter still wins: they meant
+        // it, the same way a bare video url is not second-guessed.
+        expect(spec.params.data_type).toBe('GULF_Fish');
+    });
+
+    it('fills nothing for a job with no session, which produces no observations', async () => {
+        const submitted = specFor();
+
+        delete submitted.session;
+
+        const spec = await leasedSpec(submitted);
+
+        expect(spec.params.data_type).toBeUndefined();
+    });
+
+    it('refuses at submit a session whose type the engine has no counting rule for', async () => {
+        const response = await global.api
+            .post('/api/v2/gpu/jobs')
+            .send({
+                kind: 'inference',
+                priority: TEST_PRIORITY,
+                spec: specFor({ session: { session_id: seeded.habitatSessionId } }),
+            });
+
+        expect(response.status).toBe(400);
+        expect(response.body.error.message).toMatch(/Habitat/);
+        expect(response.body.error.message).toMatch(/first frame of each track/);
+    });
+
+    it('accepts that session when the submitter names a convention themselves', async () => {
+        const submitted = specFor({ session: { session_id: seeded.habitatSessionId } });
+
+        submitted.params = { ...submitted.params, data_type: 'Invert' };
+
+        const spec = await leasedSpec(submitted);
+
+        expect(spec.params.data_type).toBe('Invert');
+    });
+
+    it('fails the attempt rather than guessing when the session type changed after submission', async () => {
+        // The authoritative check is at lease time, not at submit, because this
+        // is possible: a session's type can be edited while its job sits in the
+        // queue, and the spec was validated against the old one.
+        const { job } = await submitAndLease(
+            specFor({ session: { session_id: seeded.mutableSessionId } })
+        );
+
+        // Give the job back so it can be leased again after the edit.
+        await global.api.post(`/api/v2/gpu/jobs/${job.id}/cancel`).send({});
+
+        const second = await global.api
+            .post('/api/v2/gpu/jobs')
+            .send({
+                kind: 'inference',
+                priority: TEST_PRIORITY + createdJobIds.length,
+                spec: specFor({ session: { session_id: seeded.mutableSessionId } }),
+            });
+
+        expect(second.status).toBe(200);
+        createdJobIds.push(second.body.jobs[0].id);
+
+        await db.sequelize.query(
+            `UPDATE sessions SET type = 'MarineDebris' WHERE session_id = :id`,
+            { replacements: { id: seeded.mutableSessionId } }
+        );
+
+        try {
+            const leased = await global.api
+                .post('/api/v2/gpu/poll')
+                .send({ worker_id: workerId, slot_indexes: [0], wait_seconds: 0 });
+
+            // No lease handed out, and the attempt records why rather than the
+            // worker being blamed for the coordinator's problem.
+            expect(leased.status).toBe(204);
+
+            const [attempt] = await query(
+                'SELECT state, failure_reason FROM gpu_job_attempts WHERE job_id = :id ORDER BY lease_epoch DESC LIMIT 1',
+                { id: second.body.jobs[0].id }
+            );
+
+            expect(attempt.state).toBe('failed');
+            expect(attempt.failure_reason).toMatch(/could not be resolved/);
+            expect(attempt.failure_reason).toMatch(/MarineDebris/);
+            expect(attempt.failure_reason).toMatch(/no counting rule/);
+        } finally {
+            await db.sequelize.query(
+                `UPDATE sessions SET type = 'Invert' WHERE session_id = :id`,
+                { replacements: { id: seeded.mutableSessionId } }
+            );
+        }
     });
 });
