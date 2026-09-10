@@ -69,6 +69,25 @@ for (const view of views) {
     await page.screenshot({ path: file, fullPage: true });
     console.log(`mock-${name}-${view}.png`);
 
+    /* Two controls side by side in a `.fieldrow` must sit on the same line. They
+       did not: a grid item stretches to its row, and a stretched `.field` puts
+       the slack into its own label row, dropping the second control 7px. Easy
+       to miss by eye on one screen, and it was wrong on two. */
+    const rows = await page.evaluate(() => {
+      const out = [];
+      for (const row of document.querySelectorAll('.fieldrow')) {
+        const ctrls = [...row.querySelectorAll(
+          ':scope > .field > select, :scope > .field > input, :scope > .field > button')];
+        if (ctrls.length < 2) continue;
+        const tops = ctrls.map((c) => Math.round(c.getBoundingClientRect().top));
+        if (Math.max(...tops) - Math.min(...tops) > 1) {
+          out.push((row.querySelector('label') || {}).textContent + ' -> ' + tops.join(' / '));
+        }
+      }
+      return out.slice(0, 4);
+    });
+    for (const r of rows) problems.push(`${name}/${view}: field pair off the same line: ${r}`);
+
     /* A tab icon that points at nothing fails silently -- the tab just shows the
        browser's default and nobody notices for months. So it is asserted. */
     const fav = await page.evaluate(async () => {

@@ -716,12 +716,16 @@ h2 > .later, summary > .later { vertical-align: middle; }
 .panel-hd .sub { display: block; font-size: 11.5px; color: var(--faint);
                  font-weight: 400; margin-top: 3px; }
 
-.field { display: grid; gap: 6px; margin-bottom: 15px; }
+.field { display: grid; gap: 6px; margin-bottom: 15px; align-content: start; }
 .field:last-child { margin-bottom: 0; }
 .field > label { font-size: 11.5px; font-weight: 600; color: var(--text); }
 .field.req > label::after { content: " *"; color: var(--red-400); }
 .field .hint { font-size: 10.5px; color: var(--faint); line-height: 1.45; }
-.fieldrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; }
+/* `align-items: start` because a grid item stretches to its row by default,
+   and a stretched `.field` distributes the slack into its own label row -- which
+   put the second control of every pair 7px below the first. */
+.fieldrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+            gap: 12px; align-items: start; }
 
 /* A segmented control. The Mosaic Reviewer's markup, so the two applications
    are the same object rather than two things that look alike. */
@@ -1055,8 +1059,9 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 
 textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 
-/* A label with a link on the far side of it. */
-.field > label { display: flex; align-items: baseline; gap: 8px; }
+/* Only the labels that carry a link need to be a row; making every label a
+   flex container changed their heights and moved the controls under them. */
+.field > label:has(.more) { display: flex; align-items: baseline; gap: 8px; }
 .field > label .more { margin-left: auto; }
 
 /* ---- the split ---------------------------------------------------------- */

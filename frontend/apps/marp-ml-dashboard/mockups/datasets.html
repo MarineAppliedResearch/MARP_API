@@ -64,19 +64,11 @@
                   </select>
                 </div>
               </div>
-              <div class="fieldrow">
-                <div class="field">
-                  <label for="dstransect">Transect</label>
-                  <select class="sel wide" id="dstransect">
-                    <option>All transects</option><option>T-01</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="dsspecies">Species</label>
-                  <button class="sel wide picker" id="dsspecies" type="button"
-                          title="Choose which species to include">All species
-                    <svg class="ico sm"><use href="#i-right"/></svg></button>
-                </div>
+              <div class="field">
+                <label for="dsspecies">Species</label>
+                <button class="sel wide picker" id="dsspecies" type="button"
+                        title="Choose which species to include">All species
+                  <svg class="ico sm"><use href="#i-right"/></svg></button>
               </div>
               <div class="field">
                 <label for="dsmodel">Generating model</label>
@@ -154,7 +146,7 @@
 
               <div class="quad">
                 <span title="Observations these filters match"><b>12,486</b>observations</span>
-                <span title="Key frames behind them"><b>24,892</b>images</span>
+                <span title="Key frames plus the interpolated frames between them, which are trained on as well"><b>24,892</b>frames</span>
                 <span title="Videos and dives they come from"><b>67</b>videos</span>
                 <span title="Distinct species present"><b>12</b>species</span>
               </div>
@@ -201,21 +193,6 @@
                 <label for="dsdesc">Description</label>
                 <textarea class="inp wide" id="dsdesc" rows="2">Rockfish and associated species from CAMPA 2024 (promoted observations, high confidence)</textarea>
               </div>
-              <div class="fieldrow">
-                <div class="field">
-                  <label for="dstype">Dataset type</label>
-                  <select class="sel wide" id="dstype">
-                    <option>Training</option><option>Validation</option><option>Test</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="dsstrategy">Split strategy</label>
-                  <select class="sel wide" id="dsstrategy">
-                    <option>70 / 20 / 10</option><option>80 / 10 / 10</option><option>Custom split</option>
-                  </select>
-                </div>
-              </div>
-
               <div class="field">
                 <label>Added subsets <span class="faint">(3)</span>
                   <button class="more" title="Add the current query result">Add from query
@@ -258,7 +235,7 @@
         <section class="panel">
           <header class="panel-hd">
             <h2><span class="stepnum"><b>4.</b>Train / validation / test</span>
-              <span class="sub">Saved with the dataset and not re-derived later</span></h2>
+              <span class="sub">Every dataset holds all three, fixed on save</span></h2>
             <div class="panel-tools">
               <span class="pill" data-state="idle"
                     title="Observations whose key frames share screen time are assigned together, so no frame appears in two partitions">1,204 overlap groups</span>
@@ -319,9 +296,8 @@
                   <tr>
                     <th class="hjob sortable">Name</th>
                     <th class="hscope sortable">Description</th>
-                    <th class="htype sortable">Type</th>
                     <th class="htype sortable num">Observations</th>
-                    <th class="htype sortable num">Images</th>
+                    <th class="htype sortable num">Frames</th>
                     <th class="htype sortable num">Classes</th>
                     <th class="hupd sortable" aria-sort="descending">Created</th>
                     <th class="hupd sortable">Updated</th>
@@ -332,7 +308,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">CAMPA_2024_Rockfish_v3</span></span></td>
                     <td class="jscope">Rockfish training set, high confidence</td>
-                    <td><span class="tag">Training</span></td>
                     <td class="num" data-sort="11982">11,982</td>
                     <td class="num" data-sort="24103">24,103</td>
                     <td class="num" data-sort="12">12</td>
@@ -343,7 +318,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">GULF_Invertebrates_v2</span></span></td>
                     <td class="jscope">Invertebrate validation set</td>
-                    <td><span class="tag">Validation</span></td>
                     <td class="num" data-sort="5672">5,672</td>
                     <td class="num" data-sort="11340">11,340</td>
                     <td class="num" data-sort="8">8</td>
@@ -354,7 +328,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">Baja_Seamount_Test</span></span></td>
                     <td class="jscope">Model test set from the Gulf survey</td>
-                    <td><span class="tag">Test</span></td>
                     <td class="num" data-sort="4218">4,218</td>
                     <td class="num" data-sort="8436">8,436</td>
                     <td class="num" data-sort="7">7</td>
@@ -365,7 +338,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">ALL_Projects_Inverts_v5</span></span></td>
                     <td class="jscope">Multi-species training dataset</td>
-                    <td><span class="tag">Training</span></td>
                     <td class="num" data-sort="15734">15,734</td>
                     <td class="num" data-sort="31892">31,892</td>
                     <td class="num" data-sort="24">24</td>
@@ -376,7 +348,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">SALT_2024_Habitat_v2</span></span></td>
                     <td class="jscope">Substrate and habitat classes</td>
-                    <td><span class="tag">Training</span></td>
                     <td class="num" data-sort="6204">6,204</td>
                     <td class="num" data-sort="12880">12,880</td>
                     <td class="num" data-sort="7">7</td>
@@ -416,9 +387,8 @@
                   <tr>
                     <th class="hjob sortable">Name</th>
                     <th class="hscope sortable">Description</th>
-                    <th class="htype sortable">Type</th>
                     <th class="htype sortable num">Observations</th>
-                    <th class="htype sortable num">Images</th>
+                    <th class="htype sortable num">Frames</th>
                     <th class="htype sortable num">Classes</th>
                     <th class="hupd sortable" aria-sort="descending">Created</th>
                     <th class="hupd sortable">Updated</th>
@@ -429,7 +399,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">CAMPA_2024_Rockfish_v3</span></span></td>
                     <td class="jscope">Rockfish training set, high confidence</td>
-                    <td><span class="tag">Training</span></td>
                     <td class="num" data-sort="11982">11,982</td>
                     <td class="num" data-sort="24103">24,103</td>
                     <td class="num" data-sort="12">12</td>
@@ -440,7 +409,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">GULF_Invertebrates_v2</span></span></td>
                     <td class="jscope">Invertebrate validation set</td>
-                    <td><span class="tag">Validation</span></td>
                     <td class="num" data-sort="5672">5,672</td>
                     <td class="num" data-sort="11340">11,340</td>
                     <td class="num" data-sort="8">8</td>
@@ -451,7 +419,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">Baja_Seamount_Test</span></span></td>
                     <td class="jscope">Model test set from the Gulf survey</td>
-                    <td><span class="tag">Test</span></td>
                     <td class="num" data-sort="4218">4,218</td>
                     <td class="num" data-sort="8436">8,436</td>
                     <td class="num" data-sort="7">7</td>
@@ -462,7 +429,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">ALL_Projects_Inverts_v5</span></span></td>
                     <td class="jscope">Multi-species training dataset</td>
-                    <td><span class="tag">Training</span></td>
                     <td class="num" data-sort="15734">15,734</td>
                     <td class="num" data-sort="31892">31,892</td>
                     <td class="num" data-sort="24">24</td>
@@ -473,7 +439,6 @@
                   <tr>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">SALT_2024_Habitat_v2</span></span></td>
                     <td class="jscope">Substrate and habitat classes</td>
-                    <td><span class="tag">Training</span></td>
                     <td class="num" data-sort="6204">6,204</td>
                     <td class="num" data-sort="12880">12,880</td>
                     <td class="num" data-sort="7">7</td>
