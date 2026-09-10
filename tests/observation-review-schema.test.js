@@ -150,11 +150,13 @@ describe('#103 schema objects', () => {
             )).map((r) => r.column_name);
 
             expect(present).toEqual([
+                'corrected_species_id',
                 'created_at',
                 'decided_at',
                 'decision',
                 'observation_id',
                 'observation_version',
+                'previous_species_id',
                 'purpose',
                 'reason',
                 'representative_keyframe_id',
@@ -164,6 +166,52 @@ describe('#103 schema objects', () => {
                 'reviewer_id',
                 'updated_at',
             ]);
+        });
+
+        it('admits a corrected scientific decision, and nothing outside the vocabulary', async () => {
+            const check = await constraintDef('observation_reviews_purpose_decision_check');
+
+            // #111 A2: a correction is a *scientific* review decision. Training
+            // deliberately gains nothing, which is what makes the derivation's
+            // purpose-blind boundary load-bearing rather than a convenience.
+            expect(check.def).toContain("'corrected'");
+
+            // Positional rather than a regex over the whole definition: the
+            // corrected value must fall inside the scientific branch, which
+            // comes first, and there must be none after the training branch
+            // begins.
+            const scientificAt = check.def.indexOf("'scientific'");
+            const trainingAt = check.def.indexOf("'training'");
+            const correctedAt = check.def.indexOf("'corrected'");
+
+            expect(scientificAt).toBeGreaterThanOrEqual(0);
+            expect(correctedAt).toBeGreaterThan(scientificAt);
+            expect(correctedAt).toBeLessThan(trainingAt);
+            expect(check.def.indexOf("'corrected'", trainingAt)).toBe(-1);
+        });
+
+        it('ties the corrected species to the corrected decision, in both directions', async () => {
+            const check = await constraintDef('observation_reviews_corrected_species_check');
+
+            expect(check).toBeDefined();
+            // Both halves. The second is the one easy to leave out and the one
+            // that matters: without it an ordinary decision could carry a
+            // corrected species and every reader would have to guess what that
+            // meant.
+            expect(check.def).toMatch(/corrected_species_id IS NOT NULL/);
+            expect(check.def).toMatch(/corrected_species_id IS NULL/);
+        });
+
+        it('restricts both species so an audit row cannot be silently emptied', async () => {
+            const previous = await constraintDef('observation_reviews_previous_species_id_fkey');
+            const corrected = await constraintDef('observation_reviews_corrected_species_id_fkey');
+
+            // RESTRICT rather than the SET NULL observations.species_id uses:
+            // that column holds a live value, these hold historical ones.
+            expect(previous.def).toContain('REFERENCES species(id)');
+            expect(previous.def).toContain('ON DELETE RESTRICT');
+            expect(corrected.def).toContain('REFERENCES species(id)');
+            expect(corrected.def).toContain('ON DELETE RESTRICT');
         });
 
         it('assigns review_id from its own sequence rather than the observations pattern', async () => {
@@ -232,10 +280,39 @@ describe('#103 schema objects', () => {
             expect(review.def).toMatch(/ON DELETE CASCADE/);
         });
 
-        it('refuses withdrawn, because undecided is the absence of a row', async () => {
+        it('refuses withdrawn and corrected, because neither is a live decision', async () => {
             const check = await constraintDef('observation_review_current_purpose_decision_check');
             expect(check).toBeDefined();
             expect(check.def).not.toContain('withdrawn');
+
+            // #111 D1: a correction is the vocabulary's second non-projectable
+            // state, and this CHECK enforces it **without having been changed at
+            // all** -- any value it does not name cannot be inserted. So a
+            // derivation that stopped excluding corrections fails loudly on the
+            // next rebuild rather than quietly painting a corrected tile.
+            expect(check.def).not.toContain('corrected');
+        });
+
+        it('no longer carries first_decided_at, which went with first-valid-wins', async () => {
+            const present = (await rows(
+                `SELECT column_name FROM information_schema.columns
+                  WHERE table_name = 'observation_review_current' ORDER BY column_name`
+            )).map((r) => r.column_name);
+
+            // Its purpose was to be preserved across a claiming reviewer's
+            // revision. There is no claiming reviewer, it was NOT NULL, and
+            // keeping it would force every writer to invent a value.
+            expect(present).not.toContain('first_decided_at');
+            expect(present).toEqual([
+                'decided_at',
+                'decision',
+                'observation_id',
+                'observation_version',
+                'purpose',
+                'reason',
+                'review_id',
+                'reviewer_id',
+            ]);
         });
 
         it('indexes the status filter with the observation_id tie-break last', async () => {

@@ -2247,7 +2247,8 @@ const buildOpenApiSpec = () => {
                             version: { type: 'integer', example: 3, description: 'The observation row version, maintained by a database trigger. **Send it back on a commit**: the three mosaic commit routes require the version the reviewer saw and refuse a request that omits one, so this is what makes a stale decision detectable rather than silently applied.' },
                             obsID: { type: 'integer', nullable: true, example: 4412, description: 'The annotator-facing observation number. A distinct column from observation_id.' },
                             confidence: { type: 'number', nullable: true, example: 0.42, description: 'Nullable. Nulls sort last ascending, so unscored rows land on the last pages of the default question.' },
-                            comname: { type: 'string', nullable: true, example: 'Bat Star', description: 'What the species entry was called when the observation was recorded. Never dropped: it is what makes the drift from species_id auditable.' },
+                            comname: { type: 'string', nullable: true, example: 'Bat Star', description: 'What the species entry was called when the observation was recorded. Never dropped and never rewritten, including by a species correction: it is what makes the drift from species_id auditable.' },
+                            species_comname: { type: 'string', nullable: true, example: 'Ochre Star', description: 'The **current** common name of the species the observation is now classified as, joined from species. Distinct from comname, which stays the annotator own choice: a species correction changes species_id and never the label the annotator saw, so without this field a corrected tile would render the old animal for ever while the species filter matched the new one. The pair is also what the "was Bat Star" indicator draws from. Null where the observation has no species -- about 4% of rows legitimately do not.' },
                             tc: { type: 'string', nullable: true, example: '21:57:22', description: 'Recorded clock time, as .NET TimeSpan text.' },
                             dive: { type: 'string', nullable: true, example: 'D04' },
                             line: { type: 'string', nullable: true, example: '1' },
@@ -2380,16 +2381,64 @@ const buildOpenApiSpec = () => {
                             },
                             conflicted: {
                                 type: 'array',
-                                description: 'Refused, and **not recorded**. `version` means the annotation changed since the page was fetched; `claimed` means another reviewer got there first. Two causes, one outcome value, so the reason is what tells the reviewer which happened. Nothing here names who claimed it: showing who belongs to the read path, under the key that gates identity.',
+                                description: 'Refused, and **not recorded**. One cause: `version`, meaning the annotation changed since the page was fetched. There is no `claimed` -- the last commit wins, so nothing is ever refused for being second.',
                                 items: {
                                     type: 'object',
                                     properties: {
                                         observation_id: { type: 'integer', example: 100127 },
-                                        reason: { type: 'string', enum: ['version', 'claimed'], example: 'claimed' },
+                                        reason: { type: 'string', enum: ['version'], example: 'version' },
                                     },
                                 },
                             },
                             committedAt: { type: 'string', format: 'date-time', example: '2026-09-09T12:00:00.000Z', description: 'When the decisions were recorded, as the record holds it.' },
+                        },
+                    },
+                    MosaicCorrectionRequest: {
+                        type: 'object',
+                        required: ['observation_id', 'version', 'species_id'],
+                        description:
+                            'One observation, one new species. Single rather than bulk because the client corrects one tile at a time; a bulk form would be additive later.',
+                        properties: {
+                            observation_id: { type: 'integer', example: 100123 },
+                            version: { type: 'integer', example: 3, description: 'The version the reviewer saw, from the mosaic row. **Required.** A correction invalidates review decisions belonging to other people, so one made from a stale view would invalidate decisions about a classification the corrector never saw. An absent version is a 400, never an implicit overwrite.' },
+                            species_id: { type: 'integer', example: 417, description: 'The species to correct to, as species.id -- **not** taxserial, and not the species_id the fixture keys its catalogue on.' },
+                        },
+                    },
+                    MosaicCorrectionResult: {
+                        type: 'object',
+                        required: ['ok'],
+                        description:
+                            'Applied or refused, and **both are 200**: the client branches on `ok` alone, so a refusal that has a perfectly good result to show is not a transport failure. A malformed request is still a 400, and who may ask is still a 401 or 403.',
+                        properties: {
+                            ok: { type: 'boolean', example: true },
+                            error: {
+                                type: 'string',
+                                enum: ['not-found', 'conflicted', 'unchanged'],
+                                example: 'conflicted',
+                                description: 'Present only when `ok` is false. `not-found`: no such observation, or no such species. `conflicted`: the version moved since the page was fetched, and nothing was written. `unchanged`: the observation already carries that species, so nothing was written -- doing it anyway would destroy live review decisions in exchange for no change.',
+                            },
+                            observation: {
+                                type: 'object',
+                                description: 'The observation as it now stands. Present only when `ok` is true.',
+                                properties: {
+                                    observation_id: { type: 'integer', example: 100123 },
+                                    version: { type: 'integer', example: 4, description: 'Bumped by the trigger. Send this one back on the next write.' },
+                                    species_id: { type: 'integer', nullable: true, example: 417 },
+                                    species_comname: { type: 'string', nullable: true, example: 'Greenblotched Rockfish', description: 'The **current catalogue name** for the species the observation now is. A separate field from `comname` on purpose: without it a corrected tile would go on showing the old animal for ever, and reusing `comname` would let the catalogue label be mistaken for the frozen one the annotator chose. Taken from species.comname, not gui_display_name (an abbreviation) and not species (the scientific name).' },
+                                    comname: { type: 'string', nullable: true, example: 'Blue/Deacon Rockfish', description: '**Unchanged by a correction, always.** What the species list entry was called when the annotator chose it. Roughly 50,000 observations already disagree with what their list says today, and keeping this frozen is what makes that drift auditable rather than silently rewritten.' },
+                                    taxserial: { type: 'integer', nullable: true, example: 166730, description: 'Unchanged by a correction, for the same reason as comname. After an off-list correction this and species_id name different organisms -- deliberately, and auditably.' },
+                                },
+                            },
+                            previous: {
+                                type: 'object',
+                                description: 'What the observation was before. Present only when `ok` is true.',
+                                properties: {
+                                    species_id: { type: 'integer', nullable: true, example: 233, description: 'Null where the observation had no species -- about 4% of rows legitimately do not.' },
+                                    species_comname: { type: 'string', nullable: true, example: 'Blue Rockfish' },
+                                },
+                            },
+                            review_id: { type: 'integer', example: 9912, description: 'The observation_reviews row this correction appended. It carries purpose "scientific", decision "corrected", and both species ids.' },
+                            correctedAt: { type: 'string', format: 'date-time', example: '2026-09-09T12:00:00.000Z' },
                         },
                     },
                     MosaicStatusCounts: {

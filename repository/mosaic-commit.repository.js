@@ -29,31 +29,34 @@
  * projection change -- because a log row with no projection row is the one
  * inconsistency `observation_review_current` cannot tolerate.
  *
- * **A decision that did not take effect is never logged** (D2). For the version
- * cause that is correctness, not taste: a version-conflicted commit can happen
- * with nobody having claimed the observation, so a log row would make that
- * reviewer the earliest claimant under the `-- rebuild:` derivation in
- * `migrations/20260909120200-create-observation-review-current.js`, and the next
+ * **The last commit wins** (#111 A6). The human settled it on 2026-09-09:
+ * *"obviously the last person to commit something wins, in our normal workflow
+ * we are not expecting two people to query and review with the same filters, but
+ * if they do, the last one to commit should win, and if they want to update they
+ * can just refresh their page and requery."* That **overrules the
+ * first-valid-review-wins this file was built for**, and most of the machinery
+ * came back out: there is no claim, no claimer, no earliest reviewer, and no
+ * observation anybody is locked out of. A reviewer who wants the current state
+ * refreshes and requeries.
+ *
+ * **A decision that did not take effect is still never logged**, and the reason
+ * narrowed rather than disappearing. It used to be that logging a loser would
+ * make them the earliest claimant for ever; that reason is gone with the claim.
+ * What survives is the version cause: a version-conflicted decision that were
+ * logged would be the latest row for its observation and purpose, so the next
  * rebuild would resurrect a decision the server refused. #103's
  * projection-equals-derivation test is what would find it, long afterwards.
  *
- * **Claim is decided against the log, not against the projection**, and that is
- * the one place this file goes further than the spec's sketch. The derivation
- * names the *earliest claiming reviewer* forever, so an observation its claimer
- * has withdrawn still belongs to them -- its projection row is absent, and a
- * second reviewer writing one would put the projection out of step with the
- * derivation. The `claimer` CTE below is that rule, restricted to the requested
- * ids, and it lives inside the write.
- *
- * **The observation rows are locked `FOR NO KEY UPDATE` before the claim is
- * read.** Without it two reviewers arriving together both pass the claim test on
- * their own snapshot, both append a log row, and only one projection write
- * applies -- leaving the loser logged, which is exactly what D2 forbids. The lock
- * is transaction-scoped and ordered by `observation_id` so two commits cannot
+ * **The observation rows are still locked `FOR NO KEY UPDATE`, for a narrower
+ * reason.** Its old justification was the claim test and is gone. What is left is
+ * that the version comparison producing `conflicted/version` is read before the
+ * write and reported after it: without the lock two commits can interleave so
+ * the *reported* reason is not the one that actually applied. The lock is
+ * transaction-scoped and ordered by `observation_id` so two commits cannot
  * deadlock; it is not a reservation, and #68's *no locking or reserving records*
  * is about claims held across requests.
  *
- * Refs #106, MarineAppliedResearch/MARP_API#68, MarineAppliedResearch/MARP_API#103.
+ * Refs #106, #111, MarineAppliedResearch/MARP_API#68, MarineAppliedResearch/MARP_API#103.
  *
  * @fileoverview The mosaic page-commit write path: review, training and delete.
  * @author Isaac Travers
@@ -132,10 +135,10 @@ const MODES = {
  * change is expressible without a rename. */
 const ATOMICITY = 'per-observation';
 
-/** Why a decision was refused. #68 names both causes and a reviewer needs to know
- * which happened (R4): the annotation moved, or somebody else got there first. */
+/** Why a decision was refused. Under last-write-wins there is exactly one cause
+ * left -- the annotation moved underneath the reviewer. `claimed` went with the
+ * claim rule (#111 R10); nothing can be refused for being second. */
 const CONFLICT_VERSION = 'version';
-const CONFLICT_CLAIMED = 'claimed';
 
 /**
  * The only reason this phase emits `skipped` (R5).
@@ -319,17 +322,28 @@ function readWithdraw(withdraw, page, marks, mode) {
  * Which of these observations this caller may not act on (R10).
  *
  * **A place rather than a formality.** Authorization is enforced per request and
- * per observation, per #68, even though in this phase every observation answers
- * the same way: all three routes take `observations:write`, which the route has
- * already required, and no scoped key exists. Adding one later changes what this
+ * per observation, per #68, even though every observation answers the same way
+ * today: all four routes take `observations:write`, which the route has already
+ * required, and no scoped key exists. Adding one later changes what this
  * consults, not where the check lives -- and `user_permissions` has no project
  * column today, so a per-project grant is a migration rather than a key.
  *
+ * **`operation` is why this signature changed** (#111 R15). One function is
+ * shared by review, training, delete and correction, and #68's *Authorization*
+ * expects deletion to want its own rule -- which cannot be written in here
+ * without knowing that delete is the caller. The parameter is cheap now with
+ * four call sites and expensive later with more. It is deliberately unused:
+ * every operation answers the same way until a scoped key exists, and inventing
+ * a rule before there is a key to express it would be the speculative half of
+ * the work.
+ *
  * @param {Object} principal - `req.principal`.
  * @param {Array<number>} observationIds - The page.
- * @returns {Array<number>} Ids the caller may not act on. Empty in this phase.
+ * @param {string} operation - `review`, `training`, `delete` or `correct`.
+ * @returns {Array<number>} Ids the caller may not act on. Empty for every operation today.
  */
-function deniedObservationIds(principal, observationIds) {
+// eslint-disable-next-line no-unused-vars
+function deniedObservationIds(principal, observationIds, operation) {
     return [];
 }
 
@@ -338,10 +352,16 @@ function deniedObservationIds(principal, observationIds) {
  *
  * Two jobs in one statement. It reports existence and the live version, which is
  * how a refusal is later attributed to `not-found` or to `version` rather than
- * guessed at -- and it **serializes claimants**, which the log-based claim test
- * needs to be true rather than merely current at snapshot time. Ordered by
- * `observation_id` so two commits over overlapping pages queue rather than
- * deadlock.
+ * guessed at -- and it **serializes commits over the same observation**, which is
+ * what keeps the reported refusal reason equal to the one that actually applied.
+ * Ordered by `observation_id` so two commits over overlapping pages queue rather
+ * than deadlock.
+ *
+ * **Kept deliberately under last-write-wins, on a narrower justification than it
+ * had** (#111). It used to exist so that two reviewers arriving together could
+ * not both pass the claim test; there is no claim now, and either outcome would
+ * be legitimate. It stays because the version comparison is read before the write
+ * and reported after it.
  *
  * `FOR NO KEY UPDATE` and not `FOR UPDATE`: this is the strength a foreign-key
  * reference takes anyway, it does not block readers, and nothing here changes the
@@ -369,9 +389,8 @@ async function lockObservations(observationIds, transaction) {
  * The projection as it stands for these observations and this purpose.
  *
  * Read for two things only: whether a flag is taking back an acceptance, which is
- * what makes an entry `reverted` (`data.js:769`), and whether this reviewer has a
- * decision to withdraw. It is **not** how claim is decided -- see the file
- * comment.
+ * what makes an entry `reverted` (`data.js:769`), and whether there is a decision
+ * to withdraw at all. It decides nothing about who may write.
  *
  * @async
  * @param {Array<number>} observationIds - The page.
@@ -394,18 +413,17 @@ async function currentDecisions(observationIds, purpose, transaction) {
 /**
  * Appends the decisions that take effect, and only those.
  *
- * Three conditions, all in the write (R12):
+ * Two conditions, both in the write (R12), where there were three before #111
+ * removed the claim:
  *
  * - the `JOIN` on `observations` drops an id that no longer exists, so a vanished
  *   row is `not-found` rather than a foreign-key error mid-page (R8);
  * - the `AND o.version = w.version` drops a stale decision, so nothing is logged
  *   for it -- which is what keeps the projection equal to its derivation across a
- *   rebuild (D2);
- * - the `NOT EXISTS` over `claimer` drops an observation somebody else claimed.
- *   `claimer` is the derivation's own rule: the reviewer with the earliest first
- *   decision, tied on the lower `review_id`. Read against the log rather than the
- *   projection, because a claimer who has withdrawn still owns the observation
- *   while its projection row is absent.
+ *   rebuild (D2).
+ *
+ * Nothing is dropped for belonging to somebody else. Under last-write-wins every
+ * reviewer may decide every observation, every time.
  *
  * The annotation fingerprint is computed here, server-side, at decision time
  * (R15): the client is not asked for it and could not be trusted with it.
@@ -431,21 +449,6 @@ async function appendDecisions(decisions, purpose, reviewerId, transaction) {
                      r->>'decision'             AS decision,
                      r->>'reason'               AS reason
                FROM jsonb_array_elements($1::jsonb) AS r
-         ),
-         claim AS (
-             SELECT observation_id,
-                    reviewer_id,
-                    MIN(decided_at) AS first_decided_at,
-                    MIN(review_id)  AS first_review_id
-               FROM observation_reviews
-              WHERE purpose = $2
-                AND observation_id IN (SELECT observation_id FROM w)
-              GROUP BY observation_id, reviewer_id
-         ),
-         claimer AS (
-             SELECT DISTINCT ON (observation_id) observation_id, reviewer_id
-               FROM claim
-              ORDER BY observation_id, first_decided_at, first_review_id
          )
          INSERT INTO observation_reviews (
                 observation_id, purpose, decision, reason, reviewer_id,
@@ -465,11 +468,6 @@ async function appendDecisions(decisions, purpose, reviewerId, transaction) {
                        max("updatedAt")   AS max_updated_at
                   FROM keyframes
                  WHERE observation_id = o.observation_id) k ON true
-          WHERE NOT EXISTS (
-                SELECT 1
-                  FROM claimer c
-                 WHERE c.observation_id = w.observation_id
-                   AND c.reviewer_id   <> $3)
          RETURNING review_id, observation_id, decision, decided_at`,
         {
             bind: [JSON.stringify(decisions), purpose, reviewerId],
@@ -480,18 +478,18 @@ async function appendDecisions(decisions, purpose, reviewerId, transaction) {
 }
 
 /**
- * Projects the decisions just logged. First valid review wins (R11).
+ * Projects the decisions just logged. The last commit wins (#111 R10).
  *
- * The rule is the constraint plus the `WHERE` on `DO UPDATE`, written once here
- * and re-derived by no reader (#103's R6). `reviewer_id` and `first_decided_at`
- * are never updated: `first_decided_at` is the timestamp first-wins has to
- * preserve when the claiming reviewer revises.
+ * **The upsert is unconditional**, where it used to carry
+ * `WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id` to make
+ * first-valid-wins a constraint rather than a convention. That guard is the rule
+ * A6 overruled, and with it gone `reviewer_id` joins the `SET` list -- it is now
+ * *who made the current decision* rather than who owns the record, so it has to
+ * move when somebody else decides later. Leaving it out was the whole point
+ * before and would be a silent bug now.
  *
- * `first_decided_at` is taken as this reviewer's earliest decision on the
- * observation rather than as the row being written, so a reviewer who withdrew
- * and later decided again re-inserts with the timestamp the derivation computes
- * for them. Writing `NOW()` there would put the projection out of step with the
- * derivation the moment anyone re-decided after a withdrawal.
+ * `first_decided_at` is gone from the table entirely: it existed to be preserved
+ * across a claiming reviewer's revision, and there is no claiming reviewer.
  *
  * @async
  * @param {Array<string|number>} reviewIds - The `review_id`s to project.
@@ -506,24 +504,18 @@ async function projectDecisions(reviewIds, transaction) {
     return db.sequelize.query(
         `INSERT INTO observation_review_current (
                 observation_id, purpose, review_id, decision, reason, reviewer_id,
-                first_decided_at, decided_at, observation_version)
+                decided_at, observation_version)
          SELECT r.observation_id, r.purpose, r.review_id, r.decision, r.reason,
-                r.reviewer_id, f.first_decided_at, r.decided_at, r.observation_version
+                r.reviewer_id, r.decided_at, r.observation_version
            FROM observation_reviews r
-           JOIN LATERAL (
-                SELECT MIN(h.decided_at) AS first_decided_at
-                  FROM observation_reviews h
-                 WHERE h.observation_id = r.observation_id
-                   AND h.purpose        = r.purpose
-                   AND h.reviewer_id    = r.reviewer_id) f ON true
           WHERE r.review_id = ANY($1::bigint[])
          ON CONFLICT (observation_id, purpose) DO UPDATE
             SET review_id           = EXCLUDED.review_id,
                 decision            = EXCLUDED.decision,
                 reason              = EXCLUDED.reason,
+                reviewer_id         = EXCLUDED.reviewer_id,
                 decided_at          = EXCLUDED.decided_at,
                 observation_version = EXCLUDED.observation_version
-          WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id
          RETURNING observation_id`,
         { bind: [reviewIds], type: QueryTypes.SELECT, transaction }
     );
@@ -538,17 +530,19 @@ async function projectDecisions(reviewIds, transaction) {
  * it. Undecided is the absence of a row, which is what makes the mosaic's default
  * filter a primary-key anti-join.
  *
- * Scoped to `reviewer_id`, so it deletes only when the withdrawing reviewer owns
- * the row.
+ * **Not scoped to `reviewer_id`** (#111 R10). It used to delete only when the
+ * withdrawing reviewer owned the row, which was the claim rule wearing a
+ * different hat. Under last-write-wins a withdrawal is simply the latest
+ * decision, so anybody's withdrawal clears the current one -- and the derivation
+ * agrees, which is what the projection-equals-derivation test checks.
  *
  * @async
  * @param {Array<number>} observationIds - Ids withdrawn in this commit.
  * @param {string} purpose - `scientific` or `training`.
- * @param {number} reviewerId - The acting `users.user_id`.
  * @param {Object} transaction - The commit's transaction.
  * @returns {Promise<Array<Object>>} `{observation_id}` for each row released.
  */
-async function releaseWithdrawn(observationIds, purpose, reviewerId, transaction) {
+async function releaseWithdrawn(observationIds, purpose, transaction) {
     if (observationIds.length === 0) {
         return [];
     }
@@ -556,10 +550,9 @@ async function releaseWithdrawn(observationIds, purpose, reviewerId, transaction
     return db.sequelize.query(
         `DELETE FROM observation_review_current
            WHERE purpose        = $2
-             AND reviewer_id    = $3
              AND observation_id = ANY($1::int[])
          RETURNING observation_id`,
-        { bind: [observationIds, purpose, reviewerId], type: QueryTypes.SELECT, transaction }
+        { bind: [observationIds, purpose], type: QueryTypes.SELECT, transaction }
     );
 }
 
@@ -622,10 +615,10 @@ function reportRefusal(id, live, sent, out) {
         return;
     }
 
-    // It exists, at the version the reviewer saw, and the write still declined
-    // it: somebody else claimed it. Reported, not recorded -- #68's second
-    // reviewer "is reported as already completed".
-    out.conflict(id, CONFLICT_CLAIMED);
+    throw new Error(
+        `Mosaic commit aborted: observation ${id} was refused at version ${sent} with no cause. `
+        + 'Nothing was applied.'
+    );
 }
 
 /**
@@ -646,7 +639,7 @@ async function commitReview(mode, request, principal, reviewerId) {
     const withdraw = readWithdraw(request.withdraw, page, marks, mode);
     const ids = [...page.keys()];
 
-    const denied = deniedObservationIds(principal, ids);
+    const denied = deniedObservationIds(principal, ids, mode.purpose === 'training' ? 'training' : 'review');
 
     if (denied.length) {
         throw new MosaicCommitDeniedError(`Not permitted to review observations: ${denied.join(', ')}.`);
@@ -658,9 +651,9 @@ async function commitReview(mode, request, principal, reviewerId) {
         const out = outcomes();
 
         // What will be attempted, and what is refused before any write. A
-        // withdrawal this reviewer has nothing to withdraw is a no-op rather than
-        // a log row: logging it would make them the claimer of an observation
-        // nobody has decided, and lock everyone else out of it.
+        // withdrawal with nothing to withdraw is a no-op rather than a log row:
+        // the request's intent is already met, and an unprojectable log row
+        // against an undecided observation says nothing true.
         const attempt = [];
         const noop = [];
 
@@ -673,9 +666,9 @@ async function commitReview(mode, request, principal, reviewerId) {
             const held = current.get(id);
 
             if (withdraw.has(id)) {
-                if (held && held.reviewer_id !== reviewerId) {
-                    out.conflict(id, CONFLICT_CLAIMED);
-                } else if (held) {
+                // Whose decision it is does not matter any more: the last
+                // commit wins, and a withdrawal is a commit like any other.
+                if (held) {
                     attempt.push({ observation_id: id, version, decision: 'withdrawn', reason: null });
                 } else {
                     noop.push(id);
@@ -707,13 +700,13 @@ async function commitReview(mode, request, principal, reviewerId) {
 
         const projected = await projectDecisions(decided.map((row) => row.review_id), transaction);
         const released = await releaseWithdrawn(
-            withdrawn.map((row) => row.observation_id), mode.purpose, reviewerId, transaction
+            withdrawn.map((row) => row.observation_id), mode.purpose, transaction
         );
 
-        // R7: the log row and the projection change are one unit. Under the row
-        // lock every logged decision is one this reviewer owns, so a shortfall
-        // here is not an outcome -- it is the invariant broken, and the only
-        // honest answer is to roll the request back and report a failed commit.
+        // R7: the log row and the projection change are one unit. The upsert is
+        // unconditional, so every logged decision must project; a shortfall here
+        // is not an outcome but the invariant broken, and the only honest answer
+        // is to roll the request back and report a failed commit.
         if (projected.length !== decided.length || released.length !== withdrawn.length) {
             throw new Error(
                 'Mosaic commit aborted: the projection did not accept every logged decision '
@@ -786,7 +779,7 @@ async function commitDelete(mode, request, principal) {
     readWithdraw(request.withdraw, page, marks, mode);
 
     const targets = [...marks.keys()];
-    const denied = deniedObservationIds(principal, targets);
+    const denied = deniedObservationIds(principal, targets, 'delete');
 
     if (denied.length) {
         throw new MosaicCommitDeniedError(`Not permitted to delete observations: ${denied.join(', ')}.`);
@@ -874,7 +867,6 @@ async function commitPage(modeKey, request = {}, principal = {}, reviewerId = nu
 
 module.exports = {
     ATOMICITY,
-    CONFLICT_CLAIMED,
     CONFLICT_VERSION,
     MODES,
     MosaicCommitDeniedError,

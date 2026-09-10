@@ -1,736 +1,754 @@
 ---
-task: MarineAppliedResearch/MARP_API#106
+task: MarineAppliedResearch/MARP_API#111
 repos: [marp-api]
-status: verify
+status: design
 needs: []
 ---
 
-# Phase 5 — the page commit
+# Phase 7 — species correction, invalidation, and the permission review
 
-Design specification for MARP_API#106, the **write path** of #68. Three commit endpoints —
-scientific review, training disposition, delete — each taking a page of observation ids plus
-the marks, and each returning **per-observation outcomes**.
+Design specification for MARP_API#111, the last API phase of #68 before the fixture is
+replaced. Three things, and the middle one turned out to be the largest:
+
+1. **The species correction endpoint** — `data.js`'s `setSpecies()` made real.
+2. **The invalidation a correction causes**, which sent the question back to what "current"
+   means — and the answer, given by the human on 2026-09-09, **overrules first-valid-review-
+   wins in two already-merged phases.** That change is written up as its own piece of work
+   below, because it is one.
+3. **The permission review**, which is a negative obligation rather than a feature.
 
 **G1 only. Nothing is implemented while a `blocking` assumption below is open.** Phases 3
-(#103) and 4 (#105) are on this branch and unmerged; this stacks on both, and #105's spec is
-preserved beside this one as `.marp/task-105-mosaic-query.md`.
+(#103), 4 (#105) and 5 (#106) are merged to `develop`; this branch stacks on nothing. Their
+specs are preserved beside this one as `.marp/task-103-review-state-schema.md`,
+`.marp/task-105-mosaic-query.md` and `.marp/task-106-page-commit.md`.
 
 ## Goal
 
-A reviewer scans a page of pictures, flags what is wrong, and presses **Mark Page Reviewed**.
-Everything they did not flag is accepted; everything they flagged is recorded as the
-exception, with its reason. What they see afterwards is the truth about each individual
-observation: this one was reviewed, that one was flagged, that one somebody else had already
-claimed, that one changed underneath them. Two reviewers can work the same page at the same
-time and neither destroys the other's work. A reviewer in Delete Mode destroys exactly the
-records they picked, and nothing else.
+A biologist looking at a wall of pictures sees one that is plainly the wrong animal, presses
+**Change Species**, picks the right one, and the tile confirms it. What the record then says
+is the truth: the observation's species is the corrected one, the annotator's own label is
+still there to be audited against, and **any approval given to the old classification is
+gone**, so the observation comes back round to be reviewed again by whoever reviews it next.
+
+And underneath that, a simpler rule than the one built: two reviewers are not expected to be
+working the same filters at the same time, and when they are, the last one to commit wins.
+Nobody is locked out of an observation by somebody who got there first.
 
 ## The basis, and what each recommendation rests on
 
 Three bases, and every recommendation below says which one it stands on.
 
-- **The live development database, read only.** `PostgreSQL 18.6`, queried through
-  `information_schema`, `pg_constraint`, `pg_trigger`, `pg_proc` and `pg_indexes`. This is
-  the baseline plus 24 migrations including #103's five, so it is the authority for what a
-  constraint, index or trigger actually is — `db/baseline/schema.sql` is the baseline only
-  and predates this whole design.
+- **The live development database, read only.** PostgreSQL 18.6, queried through
+  `information_schema`, `pg_constraint`, `pg_trigger`, `pg_proc`, `pg_indexes` and
+  `pg_get_functiondef`. This is the baseline plus 24 migrations, including #103's five, so it
+  is the authority for what a constraint, index or trigger actually is.
+  `db/baseline/schema.sql` predates this whole design and is not consulted for it.
 - **The repository's files**, and **the client's files**, which are a constraint on the
   contract rather than background: `frontend/apps/marp-mosaic-review/src/data.js`
-  (`commitPage`), `src/store.js` (`commitPage`), `src/model/page.js` (`applyCommit`,
-  `marksAfterCommit`, `seedMarks`), and that app's `CLAUDE.md`.
-- **No measurement.** 1 observation, 8 keyframes, 1 session, 1 project, 854 species, 8 users,
-  0 `ml_models`, 0 `dataset_observations`, 0 `observation_reviews`, 0
-  `observation_review_current`, 24 `SequelizeMeta` rows. One row answers "fast" to every
-  question, so nothing here is benchmarked and no number is claimed. Same agreed basis as
-  #99, #103 and #105, not a fallback.
+  (`setSpecies`), `src/store.js` (`changeSpecies`), `src/ui/tile.js`, and that app's
+  `CLAUDE.md`.
+- **No measurement.** 1 observation, 8 keyframes, 1 session, 854 species, 15 users, 0
+  `observation_reviews`, 0 `observation_review_current`, 24 `SequelizeMeta` rows. One row
+  answers "fast" to every question, so nothing here is benchmarked and no number is claimed.
+  Same agreed basis as #99, #103, #105 and #106, not a fallback.
+
+**On citing #68.** `AGENTS.md` now says a requirement taken from #68 is checked with the
+human rather than inherited: it is a record of thinking written over months, it contradicts
+itself in places, and three phases have built from a single line of it and had to unwind —
+the deletion provenance table, first-valid-review-wins, and a `GET` that #99 had already
+settled as a `POST`. So every #68 line this spec leans on is **quoted** and, where it is
+load-bearing and unconfirmed, **asked** (A5) rather than asserted.
 
 ## What is settled before this phase starts
 
-Inherited and enforced. Contradicting any of these fails a constraint or a test rather than
-drifting.
+Inherited. Contradicting any of these fails a constraint or a test rather than drifting.
 
-- **First valid review wins.** The first reviewer to claim an observation for a purpose owns
-  the record; a second is told it is already done and does **not** overwrite the original
-  reviewer or timestamp. The same reviewer may revise their own decision. The rule lives in
-  the write, not in a reader:
-  `ON CONFLICT (observation_id, purpose) DO UPDATE … WHERE current.reviewer_id = :me`.
-- **A take-back deletes the projection row.** `observation_review_current_purpose_decision_check`
-  permits only `reviewed|flagged` for `scientific` and `promoted|excluded` for `training`, so
-  `withdrawn` is legal in the log and **illegal** in the projection. Undecided is the absence
-  of a row, because the mosaic's default filter is a primary-key anti-join.
+- **`comname` is never rewritten, and neither is `taxserial`.** Settled in #111. `comname` is
+  the label the list entry carried when the annotator pressed the button, and roughly 50,000
+  observations already disagree with what their list says today because lists were renamed and
+  renumbered underneath records that were correct when made
+  (`migrations/20260901120500-add-observations-species-id.js`, Refs #52). A correction changes
+  `species_id`. `taxReview`, `sizereview` and the `TimeSpan` columns are untouched too.
+- **`observations.species_id` is nullable and about 4% of production rows have no value.**
+  Read from the migration above: 438,988 of 440,102 rows carry a `taxserial`, and the backfill
+  could not resolve roughly 4% of them. The single row on this database has `species_id =
+  NULL`, `comname = 'Blue/Deacon Rockfish'`, `taxserial = 166730`. So "the species before the
+  correction" is legitimately absent, not merely unknown.
+- **`species_id` references `species(id)`**, `ON UPDATE CASCADE ON DELETE SET NULL` — read
+  from `pg_constraint` as `observations_species_id_fkey`. `species` has 854 rows here and
+  carries `comname`, `species` (the scientific name), `gui_display_name`, `taxserial`,
+  `species_list` and `is_active`.
 - **`observations.version` is trigger-maintained.** `observations_bump_version_trigger`,
-  `BEFORE UPDATE … WHEN (old.* IS DISTINCT FROM new.*)`, and its function assigns
-  `NEW.version := OLD.version + 1` from **`OLD`**, never `NEW` — read from the live catalogue.
-  Read it to detect a conflict; never write it, and do not add `version: true` to
-  `model/observation.model.js`; `tests/observation-version.test.js` fails if you do.
-- **A delete leaves no trace.** No provenance table, no soft-delete marker, no record that an
-  observation existed. #68 no longer asks for one. The confirmation dialog is the safeguard.
+  `BEFORE UPDATE … FOR EACH ROW WHEN (old.* IS DISTINCT FROM new.*)`, and
+  `observations_bump_version()` assigns `NEW.version := OLD.version + 1` from **`OLD`**, never
+  `NEW` — read from `pg_get_functiondef`. Read it to detect a conflict; never write it.
+- **The projection table stays.** `observation_review_current` is built, tested and merged,
+  and the mosaic's default "unreviewed" filter is a primary-key anti-join against it, which is
+  what #105's query relies on. Under last-wins it gets *simpler* to maintain, not redundant.
+  Replacing it with a view is not proposed and would be a regression.
+- **The projection is a derived value and therefore part of the data contract**, not a cache.
+  Its definition ships once, as a `-- rebuild:` block in a migration, and
+  `tests/observation-review-current.test.js` asserts projection equals derivation. That test
+  is what catches a half-change months later, and it is the reason this phase's changes to the
+  derivation and to the write path have to land together.
 - **Every route under `/api/v2/`**, declared without the prefix through
-  `registerVersionedRoute`, which is also what attaches `requirePermission`. Hand-mounting to
-  dodge its throw gets the URL and loses the permission check.
-- **The annotation fingerprint** (#103's D6). A review row records the keyframe count and the
-  maximum `keyframes."updatedAt"` at decision time, because a keyframe edit does **not** move
-  `observations.version` — keyframes are their own table. It is a fingerprint, not a version,
-  and two edits inside one clock tick that leave the count unchanged are not detected.
-- **`taxReview`, `sizereview`, `comname`, `taxserial` and the `TimeSpan` columns are not
-  touched.** No new permission key is seeded. `frontend/` is not touched by this phase.
+  `registerVersionedRoute`, which is also what attaches `requirePermission`.
+  `routes/lib/register-versioned-route.js:46` throws on a path that already starts `/api/v2/`,
+  and hand-mounting to dodge that throw gets the URL and loses the permission check.
+- **No new permission key is seeded.** Phase 2 settled the existing model.
+- **A delete leaves no trace.** Withdrawn 2026-09-09; nothing here reinstates it.
+- **`frontend/` is not changed by this phase.** The incompatibilities this phase creates for
+  the client are recorded below and are Phase 8's work, exactly as #105's three were.
 
-### The three questions #106 named — all three answered by the human, 2026-09-09
+## The three questions #111 named
 
-Recorded here as settled rather than as open assumptions, with the consequences written out.
+**1 · What a correction records, and where — answered.** 2026-09-09, the human: *"a species
+correction is a review decision."* So it is a row in `observation_reviews`, not a separate
+audit table beside it. What that implies is D1, D2 and D6, and it is not all obvious: the
+table's `CHECK` has no value for it; it carries data no decision carries (the species it
+replaced) and none of the data a flag carries (a `reason` from the client's vocabulary); and
+a row in that table takes part in whatever the derivation says "current" means — which for a
+correction must be *nothing*, because a correction is not an approval and must not paint a
+tile as reviewed.
 
-**1 · A page commit is NOT one transaction. Save what can be saved; report what cannot, per
-observation.** Chosen directly, against the option of failing the whole page. Fifty pictures,
-one changed underneath the reviewer: the forty-nine land and that one comes back
-`conflicted`. The reasoning to keep: losing forty-nine sound decisions to protect one is a bad
-trade, and #68's outcome vocabulary — `reviewed`, `flagged`, `skipped`, `reverted`,
-`conflicted` — only means anything if the rest of the page landed. A whole-page rollback makes
-four of those five values unreachable. #68 requires the client be **told** which it is; R6
-below is that, and the client already renders exactly this shape (`data.js:718` returns
-`reviewed`/`flagged`/`skipped`/`reverted` arrays and `store.js:827` paints outcomes from them).
-**What "not one transaction" does and does not mean is R7 and R8**, because the two obvious
-readings differ and one of them silently loses a reviewer's work.
+**2 · The invalidation collision — dissolved, by overruling the rule it collided with.**
+2026-09-09, the human: *"obviously the last person to commit something wins, in our normal
+workflow we are not expecting two people to query and review with the same filters, but if
+they do, the last one to commit should win, and if they want to update they can just refresh
+their page and requery."*
 
-**2 · All three routes take `observations:write`.** His words: *"i'm not sure, we should error
-on the side of more simple."* No new keys, consistent with Phase 2. **The consequence, stated
-because it should be visible to whoever revisits it: anyone who can correct a species can also
-permanently delete.** The live catalogue holds 23 permission keys and exactly two for
-observations — `observations:read` and `observations:write`, the latter described as *"Record,
-change and delete observations. This is what an annotator needs."* So the key already claims
-delete; what it cannot do is separate it.
+There is no earliest claimant, no race rule and no reservation. **The collision described in
+#111 cannot occur**, because there is no first claimer to get stuck on: after a correction
+removes the current decision, anyone may decide, because anyone may always decide. What
+remains is not a collision but a mechanism — a correction has to *stop* the previous decision
+being current — and D3 is that mechanism. The whole of *Last-write-wins* below is the change
+this answer makes to two merged phases.
 
-#68's *Authorization* wants delete separable — a per-project delete permission plus a global
-one. That is **deferred, not designed out**, and here is exactly what adding it later costs,
-so the deferral is a decision with a known price:
+**3 · Whether a correction is version-checked — answered: yes.** 2026-09-09. It looked as
+though A6 might have decided this by implication — *"if they want to update they can just
+refresh their page and requery"* reads as last-write-wins on the annotation as well as on the
+decision — and it does not. **Last-write-wins governs whose *decision* stands. It does not
+govern whether a decision may be recorded against an observation that has changed underneath
+it.** Approving a picture whose species somebody has since corrected records an approval of a
+classification the reviewer never saw, which is the exact failure invalidation exists to
+prevent. So `conflicted` survives A6 with `version` as its only reason.
 
-- **a new permission key seeded** (`observations:delete`, and a global counterpart), which is
-  one row in `migrations/…-seed-resource-permissions.js`' pattern and grants to nobody by
-  default, so nothing breaks on the day it lands;
-- **project scope, which does not exist anywhere today.** `user_permissions` carries
-  `user_permission_id`, `user_id`, `permission_id`, `granted_by_user_id`, `createdAt`,
-  `updatedAt` — read from `information_schema` — and **no project column**. A per-project grant
-  therefore needs a column or a table, i.e. a migration, not a key;
-- **the route's guard swapped** — one constant per route (R9), which is why they are three
-  routes and not one;
-- **a per-observation check inside the delete path**, because #68 requires authorization
-  enforced per observation for a mixed-project request. Note `observations.project_id` is
-  nullable and the one row on this database has it null, so a project-scoped rule needs an
-  answer for "no project" before it can be written;
-- **Delete Mode's gating in the client** reading the new key rather than `observations:write`.
+## Last-write-wins: what changes in two merged phases
 
-**Until that lands, Delete Mode is gated exactly as species correction is**, and a caller
-holding `observations:write` may destroy any observation in any project. R10 and D4 are where
-that bites hardest: the `annotation-gui` token preset holds `observations:write`
-(`scripts/create-application-token.js:47`).
+Its own piece of work, listed exhaustively, because it revises code and tests that are
+already on `develop` and a half-done version of it would be invisible for months.
 
-**3 · Imagery: the server checks nothing in this phase.** His words: *"I think until we put in
-thumbnails, we'll just simulate the thumbnails locally?"* Yes. The client keeps its own rule —
-**accepting needs imagery, flagging does not** (`data.js:739`) — against its simulated
-thumbnails, and the real check arrives with Phase 6. So the endpoint accepts what it is told
-and makes no judgement about usable imagery. It has nothing to judge with: Phase 4's row shape
-carries no `thumbnail_status` (`repository/mosaic.repository.js:140`), nothing on
-`observations` records one, and there are no thumbnails to have a status.
+### What "current" becomes
 
-`skipped` stays in the vocabulary because #68 defines it and the client renders it. **What the
-server emits it for in this phase is exactly one reason: `not-found`** — an id in the request
-that is no longer an `observations` row, which is the fixture's own first branch
-(`data.js:731`). **It never emits `skipped` for an imagery reason until Phase 6**, and R5 says
-so, so that nobody writes a test that cannot fail.
+Phase 3's own spec predicted this shape: *"if the answer is simply last write wins, the
+derivation collapses to one `DISTINCT ON (observation_id, purpose)` that an index on
+`(observation_id, purpose, decided_at DESC)` serves directly."* That index exists —
+`observation_reviews_observation_purpose_decided_idx`, read from `pg_indexes`.
+
+The three CTEs (`claim`, `claimer`, `latest`) collapse to one, and the whole notion of a
+claimer disappears. D3 carries the SQL, including the one thing corrections add to it.
+
+### What goes, precisely
+
+| Where | What goes | Why |
+| --- | --- | --- |
+| `migrations/20260909120200`, `-- rebuild:` | `claim` and `claimer` CTEs | there is no earliest claimant |
+| `observation_review_current` | the `first_decided_at` column | see below |
+| `mosaic-commit.repository.js:520` | `WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id` on the upsert | the later decision wins unconditionally |
+| `mosaic-commit.repository.js:445-470` | the `claim`/`claimer` CTEs and the `NOT EXISTS` in `appendDecisions` | nothing is refused for being claimed |
+| `mosaic-commit.repository.js:500-514` | the `JOIN LATERAL` computing `first_decided_at` | the column is gone |
+| `mosaic-commit.repository.js:557-563` | `AND reviewer_id = $3` on `releaseWithdrawn` | a withdrawal by anyone clears the current decision |
+| `mosaic-commit.repository.js:675-681` | the `held.reviewer_id !== reviewerId` branch for a withdrawal | same |
+| `mosaic-commit.repository.js:133` | `CONFLICT_CLAIMED` | unreachable once nothing can be claimed |
+
+**`first_decided_at` does not survive, and it should not.** Its column comment says what it is
+for — *"Preserved when they revise their own decision, which is what first-valid-wins has to
+keep"* — and that purpose has evaporated. It is `NOT NULL`, so keeping it forces every writer
+to invent a value and the next reader to believe it means something. It could be redefined as
+"when this observation was first decided for this purpose, by anyone", but nobody has asked
+for that fact, it is in the log if anyone ever does, and computing it would put a second pass
+back into a derivation that just collapsed to one. Drop it. Every database has 0 rows in this
+table, so nothing is lost.
+
+**`reviewer_id` in the projection survives** and changes meaning cleanly: from *"the reviewer
+who owns this record"* to *"who made the current decision"*. Its comment has to change with
+it, and — new under last-wins — the upsert must now include it in the `SET` list, where it was
+deliberately excluded before.
+
+**The row lock: keep it, with the reason rewritten.** `lockObservations`'
+`FOR NO KEY UPDATE` (`mosaic-commit.repository.js:355`) is justified today by the claim test:
+*"without it two reviewers arriving together both pass the claim test on their own snapshot,
+both append a log row, and only one projection write applies — leaving the loser logged."*
+Under last-wins both log rows are correct history and either projection outcome is legitimate,
+so **that justification is gone and the lock is not needed for it.** It is kept for a
+different, smaller reason, which A3 preserved: the version comparison that produces
+`conflicted / version` is read before the write and reported after it, and without the lock two
+commits can interleave so that the *reported* reason is not the one that actually applied. So
+the lock stays and its comment is rewritten to say that instead — had A3 gone the other way it
+would have been deleted outright, which is worth recording because the comment currently in the
+file is the only thing that explains why it is there.
+
+### Which merged tests change, and into what
+
+- `tests/mosaic-commit.test.js`, `describe('first valid review wins (R11, R13)')` — the whole
+  block is now asserting a rule that does not exist. Four cases:
+  - *"gives the record to the first reviewer and reports the second"* → **gives the record to
+    the second reviewer, and the first's decision stays in the log**. It becomes the
+    last-wins test.
+  - *"lets the claiming reviewer revise without moving first_decided_at"* → **deleted**; there
+    is no claiming reviewer and no `first_decided_at`. What survives from it is that a
+    reviewer revising their own decision produces a second log row and one projection row,
+    which the case above already covers.
+  - *"lets two reviewers hold the two purposes independently"* → **kept as is**. Purpose
+    independence is unaffected.
+  - *"serializes two commits arriving together, and logs only the winner"* → **both commits
+    log, and the projection holds one of them**. It is no longer a test that one is refused;
+    it is a test that concurrency produces a consistent end state — two log rows, exactly one
+    projection row, `reviewer_id` matching whichever review row the projection points at, and
+    projection equal to derivation. Note it can no longer assert *which* reviewer won without
+    being flaky, and that is correct: under last-wins that is genuinely undetermined.
+- `tests/mosaic-commit.test.js`, *"refuses to withdraw a decision another reviewer owns"* →
+  **inverted**: a withdrawal by another reviewer succeeds and clears the current decision.
+- `tests/observation-review-current.test.js`, *"agrees with the derivation through a claim, a
+  losing claim, a revision and a withdrawal"* → the "losing claim" step becomes a
+  **superseding** decision by a second reviewer, and the assertion becomes that the second
+  reviewer's decision is current. Plus the new mid-log invalidation case (R11).
+- `tests/observation-review-schema.test.js`, `describe('observation_review_current')` — the
+  column-list assertion and *"refuses withdrawn"* both need the dropped column and the widened
+  log vocabulary reflected.
+
+Everything else in both suites is untouched — the vocabulary CHECKs, the delete cases, the
+fingerprint case, the append-only assertion, the route and permission cases.
+
+### Does this need a migration?
+
+Yes, and the phase can have them. Three changes, best as **two files**:
+
+1. **`observation_reviews` widened**: the two species columns and the rebuilt
+   purpose/decision `CHECK` (R6).
+2. **The projection redefined**: `first_decided_at` dropped, and a new
+   `CURRENT_DERIVATION_SQL` with its rebuild re-run (R7). One file, because both halves are
+   the same decision.
+
+**Migration `20260909120200` is not edited.** Editing an applied migration makes the file
+disagree with what ran: the ledger already records it, so its `up()` never runs again, and
+every existing database would keep a projection maintained against a definition the file no
+longer contains. A superseding migration is honest, applies wherever `db:migrate` runs, and is
+exactly what #103 planned for — its own header says the projection is *"separate from the
+migration that creates `observation_reviews` so that a different answer about the shape of
+current state replaces one file rather than editing two features apart."* This is that
+different answer.
+
+The consequence for R11: two migration files then carry a `-- rebuild:` block, so *"the
+definition exists once"* becomes *"exactly one definition is current, and it is the newest"*.
+The test finds it rather than hard-coding a path, which is also the shape that survives the
+next redefinition.
 
 ## What is already true, checked rather than assumed
 
-Read from the live database and the files, not from the design record.
-
-- **The two vocabularies differ by exactly one value**, and that is the whole mechanism of a
-  withdrawal. `observation_reviews_purpose_decision_check` allows
-  `reviewed|flagged|withdrawn` for `scientific` and `promoted|excluded|withdrawn` for
-  `training`; `observation_review_current_purpose_decision_check` allows the same lists
-  **without `withdrawn`**.
-- **`observation_review_current.review_id` is `NOT NULL` and references
-  `observation_reviews(review_id)` `ON DELETE CASCADE`.** So the projection row cannot be
-  written before its log row exists, which fixes the order of the two statements.
-- **The projection has no `created_at`/`updated_at`** — deliberately, per #103 — so nothing in
-  it carries a write time other than `first_decided_at` and `decided_at`.
-- **`observation_reviews.reviewer_id` is `NOT NULL` and references `users(user_id)`
-  `ON DELETE RESTRICT`.** A reviewer cannot vanish while their decision stands, and **a
-  principal with no `users.user_id` cannot write a review at all.** See D4.
-- **`req.principal` is `{type, id, permissions}` and `id` means two different things.**
-  `middleware/resolve-principal.middleware.js:54` sets `type: 'user'` with `id =
-  req.user.user_id`; `repository/v2_tokens.repository.js:483` sets `type: 'service'` with
-  `id = token.service_client_id`. `routes/v2_tokens.routes.js:59` already carries the helper
-  that exists because of this — *"whose principal id is a `service_clients.service_client_id`,
-  not a `users.user_id`, and can't satisfy that foreign key."*
-- **The `annotation-gui` token preset holds `observations:write`**
-  (`scripts/create-application-token.js:47`), alongside `keyframes:write` and
-  `sessions:write`.
-- **Deleting an observation cascades to exactly four tables**, from `pg_constraint`:
-  `keyframes`, `dataset_observations`, `observation_reviews`, `observation_review_current` —
-  all `ON DELETE CASCADE`. `dataset_observations` is #103's D3, settled `CASCADE` by the human
-  so that *a delete must not be blocked*, which means **a delete silently removes training-set
-  membership rows**. `subset_observations` and `subset_keyframes` carry an unconstrained
-  `observation_id` and are **not** reached, so a delete orphans rows there — #103 named this
-  and left it alone; so does this phase.
-- **Phase 4's row shape does not return `version`.** `ROW_COLUMNS`
-  (`repository/mosaic.repository.js:140`) is `observation_id`, `obsID`, `confidence`,
-  `comname`, `tc`, `dive`, `line`, `session_type`, `project_name`, `review_decision`,
-  `flag_reason`, `training_decision`, `exclusion_reason`, `keyframe_count`, `first_framenum`.
-  #105's R13 snapshots that key set, so adding to it is a failing test until the snapshot moves.
-  **The client therefore cannot know the version it saw, and cannot send it.** D1.
-- **The client's commit sends no versions.** `store.js:775` is `state.rows.map((r) =>
-  r.observation_id)` and `:791` sends `{mode, observationIds, marks}` — ids and marks, nothing
-  else. #68's Delete Mode says *"the request identifies exact observation IDs and versions"*.
-- **The fixture rows do carry `version`** (`fixtures/observations.json`), so once the endpoint
-  returns it the client change is small.
-- **The client reads only two of the five outcome arrays.** `page.js:58` `applyCommit` iterates
-  `result.reviewed` and `result.flagged` and does `next.set(r.id, r.outcome)`. `skipped` and
-  `reverted` are read only for the counts in the `commitPage:result` event (`store.js:837`).
-  **`conflicted` is not read at all**, so today a conflicted tile would draw no badge and look
-  untouched — and worse, `page.js:97` `marksAfterCommit` rebuilds the marks from the outcomes,
-  so a conflicted flag **loses its mark**. That is the client change this phase forces, and it
-  belongs to Phase 8.
-- **`reverted` is not a bucket.** `data.js:769` pushes the same entry into `flagged` *and*
-  `reverted`. And in Delete Mode `data.js:746` leaves unmarked rows untouched with no outcome
-  at all. So the five arrays are **not a partition of the request**, and the contract has to say
-  so rather than let somebody assume it.
-- **The client's failure path is load-bearing.** `store.js:795` — a thrown commit sets
-  `status: 'failed'`, fires `commitPage:failed`, and **leaves every mark exactly as it was** so
-  the reviewer can retry without redoing the page. R8 exists to keep that true.
-- **A review write does not bump `observations.version`.** Reviews are rows in their own
-  tables; the trigger is on `observations`. So two reviewers committing the same page do not
-  invalidate each other through `version` — that is what first-wins is for — and `version`
-  detects only *"the annotation changed under me"*. Two distinct causes, one outcome value,
-  which is why R4 gives `conflicted` a reason.
-- **The client's take-back of a flag commits as `reviewed`, not as a withdrawal.** #68's
-  *taking back* state is uncommitted, and at commit *whatever is not marked is accepted*
-  (`data.js:773`). So **no client gesture produces `withdrawn` today**, and the vocabulary the
-  schema carries is unreachable from the mosaic as built. D3.
-- **The reason vocabulary is unconstrained in the database** — `varchar(64)`, no `CHECK`, per
-  #103's D8, *"enforced by the API rather than a constraint"*. This phase is that API.
-- **`repository/observation.repository.js:773` `deleteObservation` swallows its error and
-  returns `{}`**, and has unreachable `return {status: …}` code after `return data`. Documented
-  in its own JSDoc and named in #103's findings. **This phase does not use it** — see
-  *Findings left alone*.
+- **`observation_reviews_purpose_decision_check` admits six combinations and no more:**
+  `scientific` × {`reviewed`, `flagged`, `withdrawn`} and `training` × {`promoted`,
+  `excluded`, `withdrawn`}. There is no value for a correction, so this phase needs a
+  migration whether or not anything else forced one.
+- **`observation_review_current_purpose_decision_check` admits four:** `scientific` ×
+  {`reviewed`, `flagged`} and `training` × {`promoted`, `excluded`}. Anything the projection's
+  `CHECK` does not name simply cannot be inserted, which is what makes `withdrawn` a `DELETE`
+  — and a correction inherits that property for free, loudly, rather than by convention.
+- **`observation_reviews` has no column for a species**, in either direction. Its columns are
+  `review_id`, `observation_id`, `purpose`, `decision`, `reason`, `reviewer_id`,
+  `observation_version`, `reviewed_keyframe_count`, `reviewed_keyframe_max_updated_at`,
+  `representative_keyframe_id`, `decided_at`, `created_at`, `updated_at`.
+- **Phase 5 holds a second copy of the claim rule, deliberately.**
+  `repository/mosaic-commit.repository.js:433-467`. So the derivation and the write path have
+  to change together or they disagree, and #103's test is what would find it, long afterwards.
+- **`updateObservation` propagates `comname` to keyframes.**
+  `repository/observation.repository.js:690-712`: when the submitted `comname` differs from the
+  stored one it updates every `keyframes` row for that observation. `keyframes` carries a
+  `comname` and **no `species_id`** — checked in `information_schema`. So the correction must
+  not go through `updateObservation`, and because it never sends a `comname` the propagation
+  would not fire anyway. Both halves are stated because relying on the second alone is one
+  refactor away from being wrong.
+- **`observations.species_id` is written nowhere in the application today.** Only
+  `migrations/20260901120500` populates it and `model/observation.model.js:227` declares it.
+  The correction is its first write path; there is no existing pattern to match.
+- **`observations` has no `scientific_name` column**, and the mosaic row carries `o.comname`
+  with no species join at all (`repository/mosaic.repository.js:147-163`). This is why A4
+  exists.
+- **The permission catalog holds 23 keys and exactly two for observations**, read from the
+  live table: `observations:read`, and `observations:write` described as *"Record, change and
+  delete observations. This is what an annotator needs."*
+- **`user_permissions` has no project column** — `user_permission_id`, `user_id`,
+  `permission_id`, `granted_by_user_id`, `createdAt`, `updatedAt` — and
+  `observations.project_id` is **nullable**, with the single local row carrying null. Both
+  matter to D7.
+- **`observation_id` is assigned by hand** as `max(observation_id) + 1` (#62), despite the
+  column carrying a `nextval` default. This phase creates no observation; it is a note for
+  whoever seeds test rows — insert with SQL, as `tests/observation-review-current.test.js:245`
+  already does.
 
 ## Requirements
 
-Numbered so a test can cite one.
+- **R1** — One route, one observation: `POST /api/mosaic/observations/species`, declared
+  through `registerVersionedRoute` so it lands at `/api/v2/mosaic/observations/species` behind
+  `requirePermission`. Single-observation rather than bulk, because the client's seam is
+  `setSpecies(observationId, speciesId)` (`data.js:790`) called one tile at a time
+  (`store.js:596`); a bulk form is additive later and nothing asks for it now.
+- **R2** — The only observation column written is `species_id`. `comname`, `taxserial`,
+  `taxReview`, `sizereview` and the `TimeSpan` columns are not touched, and the write does not
+  go through `updateObservation`.
+- **R3** — The request carries `{observation_id, version, species_id}` and a stale `version` is
+  refused without writing anything, reported the way Phase 5 reports it (A3).
+- **R4** — A correction naming the species the observation already has writes nothing. It
+  would otherwise invalidate live review decisions in exchange for changing nothing at all.
+  *(Under the version-boundary design this replaced, a no-op was a correctness landmine —
+  the trigger's `WHEN (old.* IS DISTINCT FROM new.*)` means a no-op update does not move the
+  version, and a boundary at an unmoved version would have made the observation permanently
+  unreviewable. D3's boundary is not version-shaped, so that trap is gone and this is now a
+  behavioural rule rather than a correctness one. Recorded because the trap will look
+  attractive again to anyone who reaches for a version boundary.)*
+- **R5** — The correction appends exactly one `observation_reviews` row: `purpose =
+  'scientific'`, `decision = 'corrected'`, `reviewer_id` = the acting user,
+  `observation_version` = the version it applied to, `previous_species_id` and
+  `corrected_species_id`, `reason` null, and the annotation fingerprint populated server-side
+  the way Phase 5 populates it (A2).
+- **R6** — A migration widens `observation_reviews`: the two species columns, the
+  purpose/decision `CHECK` rebuilt to admit the correction, and a `CHECK` tying
+  `corrected_species_id IS NOT NULL` to `decision = 'corrected'` and null to every other
+  decision — so a correction cannot be recorded without saying what it changed to, and an
+  ordinary decision cannot pretend to be one. `previous_species_id` stays nullable because 4%
+  of observations legitimately have no prior species.
+- **R7** — A second migration redefines "current" for last-write-wins (D3), drops
+  `first_decided_at`, and re-runs the rebuild so every database ends holding a projection the
+  new definition agrees with. `down` restores the previous definition and the column, and
+  rebuilds again.
+- **R8** — A `corrected` row **never projects**: an observation somebody corrected but nobody
+  has reviewed since is unreviewed, for both purposes.
+- **R9** — The correction removes the observation's `observation_review_current` rows for
+  **both** purposes, **regardless of `reviewer_id`**, in the same transaction as the log row
+  and the `species_id` update. An explicit `DELETE`, because the projection is maintained
+  rather than recomputed — and the derivation must agree with it, which R11 is what proves.
+  Unlike `releaseWithdrawn` (`mosaic-commit.repository.js:557`) it is not reviewer-scoped: it
+  removes other people's projection rows, which is what invalidation means. Their decisions
+  stay in the log, which is what *"retaining that decision's audit history"* means.
+- **R10** — Phase 5's write path is brought into line with the new derivation in the same
+  change: the claim CTEs and the `NOT EXISTS` go, the upsert becomes unconditional and
+  includes `reviewer_id`, `releaseWithdrawn` loses its reviewer scope, and `CONFLICT_CLAIMED`
+  goes. Enumerated in *What goes, precisely*.
+- **R11** — `tests/observation-review-current.test.js` reads the **current** definition rather
+  than a hard-coded path, and gains a case with **an invalidation in the middle of a log**:
+  decide, correct, decide again as a *different* reviewer, asserting projection equals
+  derivation at every step and that the second reviewer's decision is the current one. Any
+  comparison of file content against a template literal normalises `\r\n` to `\n` first — the
+  suite already does this at line 79, and the reason is in the test plan.
+- **R12** — The route takes its own permission constant, `CORRECTION_PERMISSION`, alongside
+  Phase 5's three. Value `observations:write`; no new key seeded.
+- **R13** — A non-user principal is refused `403` before any write, with Phase 5's reasoning
+  verbatim: `observation_reviews.reviewer_id` is `NOT NULL REFERENCES users(user_id)`, a
+  bearer principal's id is a `service_clients.service_client_id`, both sequences start at 1,
+  and the failure is not an error but a correction silently attributed to an unrelated person
+  in the scientific record.
+- **R14** — Refusal-case tests in the style of `tests/auth.test.js` and
+  `tests/v2_users.test.js`: anonymous, a user without `observations:write`, and a service
+  token. Plus the coupling assertion D7 owes — that review, training, deletion and correction
+  each read their own constant, so changing one does not move the others. Rows are seeded,
+  never borrowed: **CI builds the baseline plus migrations with no observations and no
+  sessions**, and a test that borrows an existing row passes here and fails there. That
+  happened on Phase 3.
+- **R15** — `deniedObservationIds` (`mosaic-commit.repository.js:329`) learns which operation
+  is asking. It is one function shared by all three modes and returns `[]`; a per-project
+  delete rule cannot be written inside it without knowing that delete is the caller, and the
+  parameter is cheaper now with three call sites than later with more.
+- **R16** — The response is substitutable for the fixture's: `{ok: true, observation,
+  previous}` on success and `{ok: false, error}` on refusal, because `store.js:597` branches on
+  `res.ok` alone. `observation` carries the **corrected species' name from `species.comname`**
+  in its own field alongside the frozen `comname`, and the new `version`; `previous` carries
+  the prior `species_id` and its name (A4).
+- **R17** — The whole correction is one transaction. The observation row is locked `FOR NO KEY
+  UPDATE` before its version is read — the same strength as `lockObservations`
+  (`mosaic-commit.repository.js:355`) and, since A3 keeps the version refusal, for the
+  narrowed reason given in *Last-write-wins*: the version is read before the write and reported
+  after it, and without the lock a concurrent commit can make the reported reason not the one
+  that applied.
+- **R18** — `npm run docs:build` is re-run and its output committed: this adds a route, and
+  `docs/openapi.generated.json` and `docs/developer/` are tracked.
+- **R19** — The mosaic **read** row carries `species_comname`, the current species name joined
+  from `species`, beside the frozen `comname`. The same field name the correction response
+  uses, so one concept has one name across both endpoints. #105's row-shape test names the
+  exact key set as a tripwire, so the key is **moved into that list rather than the list being
+  loosened** — the way #106 moved it for `version`. The paired test is the point: a corrected
+  observation returns the new species' name while `comname` still returns the old label, and
+  the difference between them is what #68's *"was Bat Star"* indicator draws from.
 
-**The endpoints**
-
-- **R1** — Three routes, declared without the `/api/v2/` prefix and registered through
-  `registerVersionedRoute`: `POST /api/mosaic/observations/review`, `…/training`, `…/delete`.
-  Three rather than one `mode` parameter, because the permission guard is per route and that
-  is what keeps the three operations splittable later (#68, Phase 7's negative obligation).
-- **R2** — One request shape feeds all three: the page's observations, and the marks. The
-  marks are the **exception set**, so `review` flags them, `training` excludes them, and
-  `delete` destroys them and touches nothing else. A row absent from the marks is accepted by
-  `review` and `training` and **untouched** by `delete` (`data.js:746`).
-- **R3** — Every response entry is found by `observation_id`, never by position. Array order is
-  not part of the contract; the client already looks up by key (`page.js:58`).
-- **R4** — Outcomes are per observation, from #68's five values. `conflicted` carries a
-  **reason** distinguishing *the annotation changed since the page was fetched* from *another
-  reviewer already claimed it*, because #68 names both causes and a reviewer needs to know
-  which happened.
-- **R5** — The five arrays are **not a partition**. `reverted` co-occurs with `flagged` for the
-  same id; a `delete` request's unmarked ids appear in no array. The response documents this,
-  and **`skipped` is emitted for exactly one reason in this phase, `not-found`** — never for
-  imagery, which waits for Phase 6.
-- **R6** — The response states its own atomicity, so #68's *"the client is told which"* is
-  satisfied by a field rather than by documentation. A value, not a boolean, so a later change
-  is expressible without a rename.
-
-**What the transaction actually guarantees**
-
-- **R7** — **One observation's writes succeed or fail together.** The log row and the
-  projection change are one unit: a log row with no projection row, or a projection row with no
-  log row, is the one inconsistency `observation_review_current` cannot tolerate, and the
-  projection's `NOT NULL` foreign key to `review_id` is what makes it detectable rather than
-  silent. Species correction is **not** in this phase's write path — that is Phase 7 — so the
-  unit is those two writes and nothing else.
-- **R8** — **Ineligibility is not an error, and an error is not per row.** A conflict, a
-  vanished row, an unclaimable row: none of these raises, so none of them rolls anything back.
-  An unexpected failure — a deadlock, the connection dying mid-page — **rolls the whole request
-  back and is reported as a failed commit**, because the client's rule is that a failed commit
-  applied nothing and left the marks alone (`store.js:795`), and a half-applied commit reported
-  as a failure would silently discard the reviewer's work. **A partial result is partial by
-  outcome, never partial by accident.**
-- **R9** — Every route requires `observations:write`, named in one constant per route so
-  swapping it is a one-line change. No permission key is seeded, created or renamed.
-- **R10** — Authorization is checked per request **and per observation**, per #68, even though
-  in this phase every observation answers the same way. The check exists as a place rather than
-  as a formality, so adding a scoped key later changes what it consults and not where it is.
-
-**The write**
-
-- **R11** — First valid review wins, enforced by the constraint:
-  `INSERT … ON CONFLICT (observation_id, purpose) DO UPDATE … WHERE
-  observation_review_current.reviewer_id = :me`. The rule is written once, in the write, and no
-  reader re-derives it (#103's R6).
-- **R12** — A conditional write that does not apply is detected by **what came back**, not by a
-  prior read. A read-then-write cannot be safe here: two reviewers pass the same read before
-  either writes.
-- **R13** — After any commit, **the projection still equals the derivation** in
-  `migrations/20260909120200-create-observation-review-current.js`' `-- rebuild:` block. That
-  block is the single definition of "current" (#103's R6) and
-  `tests/observation-review-current.test.js` already asserts equality; this phase's tests
-  assert it again **after** a concurrent commit, a version conflict and a withdrawal, because
-  that is when a write path can break it.
-- **R14** — A withdrawal **deletes** the projection row and leaves every log row in place, and
-  it deletes only when the withdrawing reviewer owns the row.
-- **R15** — The annotation fingerprint — keyframe count and `max(keyframes."updatedAt")` — is
-  computed **server-side at decision time** and written onto every log row. The client is not
-  asked for it and cannot be trusted with it.
-- **R16** — `representative_keyframe_id` is written `NULL` in this phase, because neither side
-  knows it: there is no representative-keyframe assignment on `observations` and Phase 4's row
-  returns `first_framenum`, not a keyframe id. Recorded as owed to Phase 6 rather than guessed.
-- **R17** — A reason is `varchar(64)`; a longer one, or a value outside #68's initial
-  vocabulary, is a `400` on the request rather than a truncated or silently-dropped reason. The
-  client can only send its own list, so an unknown value is a bug and not a data condition.
-
-**Delete**
-
-- **R18** — `delete` destroys only marked observations, and the confirmation is the client's
-  (`store.js:759`). The endpoint does not second-guess it and does not require a separate
-  confirm token.
-- **R19** — A delete is a conditional delete on the version the reviewer saw, and a row that
-  moved comes back `conflicted` rather than being destroyed.
-- **R20** — A delete leaves no trace: no provenance row, and nothing recording who or when.
-  **What it removes is named in the spec and asserted by a test**, because the cascade set is
-  invisible from the route: `keyframes`, `dataset_observations`, `observation_reviews`,
-  `observation_review_current`. It never removes a `dataset`, a `session`, a `project` or a
-  source video.
-
-**Everything else**
-
-- **R21** — `npm run docs:build` is re-run and the regenerated contract committed, or the diff
-  is a lie.
-- **R22** — Correctness is verified by Jest against the real development PostgreSQL through
-  `tests/setup/authenticated-agent.js`; `npm test`, never `npx jest`. #106's four named tests —
-  concurrent commit, version conflict, withdrawal, and the delete cascade — are only observable
-  there.
-- **R23** — No migration, no schema change, no new permission key, and nothing under
-  `frontend/`. If the answer to D1 requires the mosaic row shape to change, that is an edit to
-  `repository/mosaic.repository.js` and #105's snapshot test, **not** a migration.
+  **Raised, deferred, then scoped in.** A4 answered that the *response* carries the corrected
+  name, and this spec then also listed the read row under *Findings left alone* as needing a
+  scoping call rather than a decision. Both were in the file; the implementing agent found the
+  two in conflict, raised it, and declined to widen a published row shape without a
+  requirement. Scoped in on 2026-09-09 as part of this phase, because it is a **defect rather
+  than an enhancement**: it is the direct consequence of freezing `comname`, and without it a
+  reviewer filtering for one species gets tiles permanently labelled as another, on every
+  reload.
 
 ## Open assumptions
 
-The three #106 named are answered above and are recorded as settled, not here. The four below
-were found by this research; each changes the contract, the permissions or the data, so each is
-`blocking`. **Every recommendation is a recommendation. Nothing is implemented while one is
-open.**
+- [x] **A1 · scientific or data-meaning · blocking** — answered 2026-09-09: a species
+  correction *is* a review decision, recorded in `observation_reviews` rather than in a
+  separate audit table. Consequences in D1, D2, D6. → candidate ADR.
+- [x] **A6 · architectural · blocking** — answered 2026-09-09: **the last commit wins.** No
+  earliest claimant, no race rule, no reservation; a reviewer who wants the current state
+  refreshes and requeries. This overrules first-valid-review-wins in #103 and #106 and is
+  written up as *Last-write-wins* above. → this one must become an ADR, because it reverses a
+  documented decision in two merged phases.
+- [x] **A2 · database/schema · blocking** — answered 2026-09-09: **a correction is a
+  *scientific* review decision.** One row, `purpose = 'scientific'`, `decision = 'corrected'`.
+  Two candidates were put up and both are now closed: a purpose-neutral `classification` value
+  is not used, and the correction does **not** write a second row for the training purpose.
+  The consequence is that the correction row cannot invalidate the training purpose by being
+  the latest row for it — so **the boundary in D3 is required rather than optional**, and it
+  is deliberately written without a purpose filter so that one scientific-purpose row ends the
+  round for both. Recorded because a later reader will otherwise try to simplify the boundary
+  away.
+- [x] **A3 · API contract · blocking** — answered 2026-09-09: **yes, a correction is
+  version-checked**, and Phase 5's version refusal stands with it. So `conflicted` survives
+  A6 with `version` as its only remaining reason, `claimed` having gone with the claim rule;
+  the row lock is kept for the narrowed reason in *Last-write-wins*; and the client must send
+  a version it does not send today (`data.js:790`), which is incompatibility 1 below. Last-
+  write-wins governs whose *decision* stands, not whether a decision may be recorded against
+  an observation that has since changed underneath it — the two were the question, and they
+  are answered differently on purpose.
+- [x] **A4 · product/UI · blocking** — answered 2026-09-09: **the response carries the
+  corrected species' name**, because `comname` is frozen and without it a corrected tile shows
+  the old animal's name for ever. Taken from `species.comname` — the catalogue's full common
+  name, not `gui_display_name`, which is an abbreviation (`Greenblotched RF`), and not
+  `species`, which is the scientific name — in a field named for what it is rather than reusing
+  `comname`, so nothing can mistake the catalogue's current label for the annotator's frozen
+  one. **Still to route, and it is not this assumption:** the mosaic *read* row
+  (`repository/mosaic.repository.js:147-163`) carries `o.comname` and no species join, so a
+  reload undoes the display. Whether that field lands here or in Phase 8 is a scoping call,
+  and it is raised in *Findings left alone* rather than settled here.
+- [x] **A5 · scientific or data-meaning · blocking** — which of #68's *Invalidation* list are
+  real requirements? Asked rather than inherited, per `AGENTS.md`. The quoted lines: *"If an
+  approved observation changes materially, its active approval is automatically invalidated
+  and it must be approved again before being used as approved training data. Material changes
+  include at least: Changing the species or classification · Changing the observation's start
+  or end frame · Adding, removing, or changing a bounding-box keyframe · Any other change
+  altering the frames, labels, or interpolated bounding boxes exported for training"*, and
+  *"A material change also invalidates an active **Excluded** disposition and returns the
+  observation to **Undecided**"*, and *"Presentation-only changes, such as selecting a
+  different representative image, invalidate nothing."* **This phase implements exactly one of
+  them — the species correction — and the recommendation is that it should.** What is being
+  asked is whether the other three are requirements at all, because two of them are cheap to
+  agree to and expensive to build: a keyframe edit does not move `observations.version` and so
+  cannot use this phase's mechanism at all (D6), and it happens in the annotation GUI's write
+  path, which would have to reach into the review log. Also worth confirming: does a species
+  correction really invalidate the **training** disposition too, or only the scientific one?
+  A2 assumes both, on the strength of the *Excluded* line above.
+- [ ] **A7 · behavioural · non-blocking** — how is R4's no-op reported: `400`, or `{ok: false,
+  error: 'unchanged'}`? Recommendation: the latter, because the client branches on `ok` alone
+  and a `400` surfaces as a transport failure in a path that has a perfectly good result to
+  show.
+- [ ] **A8 · scientific or data-meaning · non-blocking** — may a correction name a species with
+  `is_active = false`, or one whose `species_list` differs from the owning session's list?
+  Recommendation: refuse an inactive entry, following `repository/species.repository.js:412,
+  444, 474`, which filters `is_active: true` everywhere it offers species for annotation;
+  **allow** an off-list one, because a misidentification is exactly the case where the right
+  answer is on another list. The consequence to see: `taxserial` stays frozen, so after an
+  off-list correction `taxserial` and `species_id` name different organisms and a query joining
+  on `taxserial` gets the pre-correction answer — the same auditable drift `comname` already
+  carries, by the same decision.
+- [ ] **A9 · database/schema · non-blocking** — `previous_species_id` and
+  `corrected_species_id`: `ON DELETE RESTRICT` or `SET NULL`? Recommendation: `RESTRICT`,
+  matching `observation_reviews.reviewer_id`, whose migration reasons that an actor must not be
+  able to vanish from a record that belongs to them. Species are retired with `is_active`
+  rather than deleted, so nothing is blocked in practice, and `SET NULL` — which
+  `observations.species_id` uses — would silently empty an audit row. That column's choice is
+  about a live value; this one is about a historical one.
 
-- [x] **D1 · API contract · blocking** — **How does the client tell the server which version it
-  saw?** This is the one that decides whether `conflicted` exists at all, and the human has just
-  made `conflicted` central by choosing per-observation outcomes.
-  Two facts collide. Phase 4's row shape returns no `version`
-  (`repository/mosaic.repository.js:140`), and #105's R13 snapshot test makes that key set a
-  tripwire. The client's commit sends no versions (`store.js:775`, `:791`), while #68's Delete
-  Mode requires *"the request identifies exact observation IDs and versions"*. So today the
-  server cannot be told, and a conflict cannot be detected — `version` would be a token nobody
-  reads, which is the mirror image of #103's D5 finding that a token some writers do not
-  increment is worse than no token.
-  **Recommendation: add `version` to the mosaic row shape, and require a
-  `[{observation_id, version}]` list on all three commit routes, rejecting a request that omits
-  a version with `400`.** Three reasons, all from what is here: the fixture rows already carry
-  `version` (`fixtures/observations.json`) so the client change is one field in one map; the
-  row shape is the only channel that exists, because the endpoint returns nothing else per
-  observation; and an *optional* version is the worse failure — a client that forgets it gets
-  silent last-write-wins on the annotation and nothing anywhere says so.
-  **What it costs, plainly:** it changes a **published contract surface**. #105 is merged-ready
-  with a snapshot test naming its exact row keys, and `docs/openapi.generated.json` records
-  that shape. So this is a small edit to a finished phase, and it joins the list of Phase 8
-  client changes. It also adds one integer to every row of a 600-row page, which is nothing.
-  **The alternative, named so it can be chosen:** the endpoint reads each observation's current
-  `version` itself and compares against nothing — i.e. no conflict detection, `conflicted`
-  never returned, and #68's *Concurrent review* met only by first-wins. That is coherent and
-  much smaller, and it means an observation whose species somebody corrected while the page was
-  open is accepted against the state the reviewer did **not** see. **I would not choose it**,
-  because that is the exact case #68 built `version` for.
-  **What would change the recommendation:** if the human would rather not touch #105's contract
-  before it merges, the honest middle is to require versions on `delete` only — where #68 states
-  the requirement explicitly and where being wrong is irreversible — and defer them on `review`
-  and `training` to Phase 8. Say so and it is one line either way.
+- **A5 — answered 2026-09-09, both halves.**
 
-- [x] **D2 · scientific or data-meaning · blocking** — **Does a decision that did not take
-  effect get a log row?** A reviewer commits and is told `conflicted`. Is that decision written
-  to `observation_reviews` anyway, as a record that they said it?
-  **Recommendation: no, for both causes of a conflict — and for the version cause it is not a
-  preference, it is a correctness requirement.**
-  The decisive finding: the projection is defined as *the earliest claiming reviewer's latest
-  decision* by the `-- rebuild:` block in
-  `migrations/20260909120200-create-observation-review-current.js`. A **version**-conflicted
-  commit can happen with nobody having claimed the observation — the annotation changed, no one
-  reviewed it. Log that row and the derivation makes that reviewer the claimer, so the next
-  rebuild **resurrects a decision the server refused**, and R13's projection-equals-derivation
-  assertion becomes the thing that tells you about it, long after the fact. A **claim**-
-  conflicted row is safe to log — the derivation still yields the earlier claimer — but there is
-  no reason to hold the two to different rules, and #68 says the second reviewer *"is reported
-  as already completed"*: reported, not recorded.
-  **The trade:** #103's R4 wants the full per-reviewer history, and #68 reserves an *"explicit
-  validation mode"* where a second independent review would be the point. Under this
-  recommendation those second opinions are never captured, so that mode starts from nothing —
-  which is a data-migration-free start, but a start from zero.
-  **The alternative:** log claim-conflicts and refuse to log version-conflicts. It captures the
-  second opinions, it is derivation-safe, and it costs one rule that has to be explained every
-  time somebody reads the write path. **A third option is worse and should not be chosen:**
-  logging both and relying on the derivation, because it is correct only until the first
-  rebuild.
+  **Part 2, the human's answer, and the load-bearing one: a relabel invalidates *both*
+  purposes.** His words: *"yes if someone relabels something it needs to be reapproved."*
+  So a species correction ends the round for the scientific review **and** the training
+  disposition, and the observation returns to unreviewed and undecided for anybody to
+  decide again. The reason is the one that matters scientifically rather than the one #68
+  happens to state: a promoted training sample carrying the wrong label teaches the model
+  the wrong thing, which is worse than not having the sample at all.
+  So the `boundary` CTE stays **unfiltered by purpose**, R9's `DELETE` removes both
+  projection rows, and the acceptance criterion is that a corrected observation is
+  unreviewed for both purposes.
 
-- [x] **D3 · API contract · blocking** — **What request expresses a withdrawal, given no client
-  gesture produces one?** #106 requires a withdrawal test — *"the projection row is gone, the
-  log still holds every decision"* — so the endpoint must support one. But the client's
-  take-back of a flag commits as `reviewed`, not as a withdrawal (`data.js:773`, and #68's
-  *taking back* state is explicitly uncommitted), so **nothing in the mosaic as built ever asks
-  for `withdrawn`**, and the vocabulary the schema carries is unreachable.
-  **Recommendation: an explicit per-observation intent in the request — a `withdraw` list of
-  ids, alongside the page and the marks — which `review` and `training` accept and `delete`
-  does not.** It is the smallest thing that makes the settled schema reachable and #106's test
-  drivable, it cannot be produced by accident from a page commit, and it is exactly the shape a
-  later *"clear my decision"* gesture would send.
-  **The trade, said plainly: this builds a path with no caller.** `AGENTS.md` says minimum code
-  and no speculative features, and one reading of that is to build no withdrawal at all in
-  Phase 5, leave `withdrawn` unwritten, and let #106's withdrawal test become a Phase 7 test
-  when a gesture exists. **The reason I do not recommend that** is that the constraint refusing
-  `withdrawn` in the projection is the load-bearing half of #103's design, and an enforcement
-  nothing exercises is an enforcement nobody has checked — it is one `CHECK` and one `DELETE`
-  away from being verified now, at the tier that can see it.
-  **What a different answer changes:** the request shape on two routes, and whether `reverted`
-  is the only withdrawal-shaped outcome this phase can return.
+  **Part 1, settled by the coordinator: the other three material changes in #68's
+  *Invalidation* list are out of scope for this phase.** Changing the start or end frame,
+  adding or changing a bounding-box keyframe, and anything else altering the exported
+  frames or boxes — none is built here. Two reasons, both from what is actually in the
+  repository rather than from preference: a keyframe edit **does not move
+  `observations.version` at all**, since keyframes are their own table, so it cannot use
+  this phase's mechanism; and it happens in the annotation GUI's write path, which would
+  have to reach into the review log to record anything. That is a different piece of work
+  with a different risk.
+  **They are deferred, not rejected.** The boundary is a `review_id`-keyed "this round is
+  over" marker precisely so a second cause of invalidation arrives as a second branch of
+  one `SELECT`, and D6 records that a keyframe fingerprint would instead land as a
+  predicate inside `latest`. Neither is foreclosed.
 
-- [x] **D4 · security/permissions · blocking** — **What happens when a commit arrives on a
-  service token?** `observation_reviews.reviewer_id` is `NOT NULL` and references
-  `users(user_id)`. A bearer-token principal's `id` is a `service_clients.service_client_id`
-  (`repository/v2_tokens.repository.js:483`), and the repository already carries a helper that
-  exists because of exactly this trap (`routes/v2_tokens.routes.js:59`). So writing
-  `req.principal.id` as the reviewer is one of two bad outcomes: a foreign-key violation and a
-  `500`, or — where a `users` row happens to share that number, which it will, because both
-  sequences start at 1 — **a review silently attributed to an unrelated person in the scientific
-  record.**
-  **Recommendation: all three commit routes refuse a non-user principal with `403`, before any
-  write.** Two reasons beyond the foreign key. First, all three are reviewer gestures made by a
-  person in an interactive tool, and #68's *What counts as reviewed* is about a person having
-  looked. Second, and concretely: **the `annotation-gui` token preset holds
-  `observations:write`** (`scripts/create-application-token.js:47`), so with the permission
-  answer settled as it is, that token would otherwise authorize permanent bulk deletion of
-  observations from the mosaic delete route. Refusing non-user principals closes that without a
-  new key.
-  **Note it is not free.** `delete` has no reviewer to record — deletion leaves no trace — so it
-  is the one route where a service principal *could* be served, and refusing it is a choice
-  rather than a consequence. **I still recommend refusing it**, because a machine performing
-  irreversible bulk deletion with no record of having done so is the one operation in MARP
-  where that combination is least acceptable.
-  **The alternatives, named:** map a service principal onto a configured "system" user, which
-  invents an actor in the scientific record and is the sentinel-row mistake #103 rejected for
-  `ml_models`; or make `reviewer_id` nullable, which contradicts *a review belongs to its
-  reviewer* and needs a migration this phase does not have.
-
-- [x] **D5 · API contract · non-blocking** — Route paths. `#68` says `POST
-  /api/v2/observations/review`; #105 already put the mosaic's routes under
-  `/api/v2/mosaic/observations/…`, and the general rule recorded in #105 is that where #68 and a
-  later, more specific decision disagree, the later one wins and #68 gets corrected.
-  **Following the sibling: `/api/mosaic/observations/{review,training,delete}`**, declared
-  without the prefix. Established pattern, recorded rather than asked — and #68's *Phase 5*
-  section needs the same correction its *Phase 4* section did.
-
-- [x] **D6 · database/schema · non-blocking** — **Should append-only be enforced on
-  `observation_reviews`?** #106 asks, and offers *"or say why not"*. **Why not: a trigger
-  refusing `DELETE` would contradict a settled cascade.** `observation_reviews_observation_id_fkey`
-  is `ON DELETE CASCADE`, and #68's permanent delete depends on it — so "nothing is ever
-  deleted" is already false by design, and a trigger enforcing it would break Delete Mode. That
-  leaves refusing `UPDATE` only, which is a migration in a phase whose scope is the write path,
-  to protect against a writer that does not exist. **Recommendation: no trigger.** Instead the
-  repository is the only writer, it only ever inserts, and a test asserts the write path emits
-  no `UPDATE` or `DELETE` against `observation_reviews` — the check that costs nothing and
-  fails when somebody adds one. Revisit if a second writer ever appears.
-
-- [x] **D7 · cross-repository integration · non-blocking** — Phase 8 inherits **three more
-  incompatibilities**, joining the three #68 already records. Named here so they are expected
-  rather than met: `marks` is a `Map` and `excludeIds` a `Set`, and **neither survives
-  `JSON.stringify`** — both serialise to `{}`, silently, so the exception set would vanish over
-  the wire and a page of flags would commit as accepted; the response entries are keyed `id` in
-  the fixture (`data.js:731`) where the endpoint returns `observation_id`, following #68's Phase
-  8 ruling that the endpoint's names follow the schema; and **`applyCommit` and
-  `marksAfterCommit` must learn `conflicted`** (`page.js:58`, `:97`), or a conflicted tile draws
-  no badge and loses its mark. **Not fixed here — this phase does not touch `frontend/`.**
-
-## Answered, 2026-09-09
-
-The human was unsure on D1 and delegated it; D2, D3 and D4 were settled on the
-recommendation. All four are recorded with the reasoning, because three of them are
-enforced by constraints and the fourth guards the scientific record.
-
-- **D1 — `version` goes into the mosaic row, and all three commit routes require
-  `[{observation_id, version}]`.** Full, not delete-only, and the reasoning that decided it
-  is worth keeping: **the middle option saves nothing.** For a client to send a version on
-  delete, the version has to be in the row it received — so Phase 4's row shape changes
-  either way, and "delete-only" buys no reduction in cost while leaving review and training
-  on silent last-write-wins. So the real choice was full or nothing, and nothing makes
-  #68's *Concurrent review* section unimplementable: `conflicted` could never fire,
-  `observations.version` would be a token nobody reads, and that is the exact mirror of
-  #103's D5 finding that a token some writers do not increment is worse than no token.
-  **What this costs, and it is owed to #105 rather than to this phase:** one entry in
-  `ROW_COLUMNS` (`repository/mosaic.repository.js:140`), the R13 snapshot test that names
-  the row's exact keys, and a regenerated `docs/openapi.generated.json`. #105 is unmerged,
-  so this is a correction to it rather than a revision of something shipped. **Do it as
-  part of this phase and say so in the commit**, so the two stay consistent — a row shape
-  that cannot support the commit route beside it is not a finished read path.
-  An **absent** version is a `400`, never an implicit overwrite: a client that forgets is
-  the failure mode an optional field hides.
-- **D2 — a decision that did not take effect is not logged.** For the version cause this is
-  correctness rather than preference, and the argument is the one to keep: a
-  version-conflicted commit can occur **with nobody having claimed the row** — the
-  annotation changed, no one reviewed it. Log it and the `-- rebuild:` derivation in
-  `migrations/20260909120200-create-observation-review-current.js` makes that reviewer the
-  earliest claimant, so **the next rebuild resurrects a decision the server refused**, and
-  #103's projection-equals-derivation test is what discovers it, long afterwards. Claim
-  conflicts are derivation-safe to log, but #68 says the second reviewer *"is reported as
-  already completed"* — reported, not recorded, and one rule is better than two.
-  The trade, named: #68's later "explicit validation mode" starts from no data about
-  refused attempts.
-- **D3 — a withdrawal is an explicit `withdraw` list of ids, on review and training only.**
-  Accepted knowing it builds a path the mosaic does not yet call: the client's take-back of
-  a flag commits as `reviewed`, so `withdrawn` is unreachable from the app as built. It is
-  recommended anyway because the `CHECK` refusing `withdrawn` in the projection is the
-  load-bearing half of #103's D1 design, and #106 requires a withdrawal test — one `DELETE`
-  away from being verified at the tier that can see it, rather than asserted in prose.
-- **D4 — all three routes refuse a non-user principal with `403`, before any write.** This
-  is the finding that most justified the gate, and it is a data-integrity matter rather than
-  a permissions preference. `observation_reviews.reviewer_id` is `NOT NULL → users(user_id)`,
-  while a bearer principal's `id` is a `service_clients.service_client_id`
-  (`repository/v2_tokens.repository.js:483`). Both sequences start at 1, so they collide —
-  and the failure is not an error but **a review silently attributed to an unrelated person
-  in the scientific record.** The helper that refuses this already exists
-  (`routes/v2_tokens.routes.js:59`) precisely because of the same trap.
-  And the part that matters beyond this phase: the **`annotation-gui` token preset holds
-  `observations:write`** (`scripts/create-application-token.js:47`), so under the settled
-  single-key answer that token would otherwise authorize **permanent bulk deletion**.
-  `/delete` records no reviewer, so refusing it there is a deliberate choice rather than a
-  consequence of the foreign key — and it is the right one: a service token should not be
-  able to destroy the scientific record unattended.
+  **And the reason this was asked at all rather than inherited:** `AGENTS.md` now says a
+  requirement taken from #68 is checked with the human, because three phases have built
+  from a single line of it and had to unwind — the deletion provenance table,
+  first-valid-review-wins, and a `GET` that #99 had already settled as a `POST`. *Invalidation*
+  is exactly that kind of section, and this phase's whole mechanism is built to satisfy it.
 
 ## Decisions
 
-- **2026-09-09 — A page commit is not one transaction; save what can be saved and report the
-  rest per observation.** The human's, directly, against failing the whole page. Losing
-  forty-nine sound decisions to protect one is a bad trade, and four of #68's five outcome
-  values are unreachable under a whole-page rollback.
-- **2026-09-09 — "Not one transaction" means outcomes are per observation. It does not mean
-  fifty transactions.** R7 and R8 are the two halves. Ineligibility — a conflict, a vanished
-  row, an unclaimable row — is not an error and rolls nothing back, so no savepoint and no
-  per-row transaction is needed to isolate it: the outcome falls out of which ids the
-  conditional write returns. An **unexpected** failure is not per row and rolls the request
-  back, which is what keeps the client's *"a failed commit applied nothing and left the marks
-  alone"* true. **The cost of the alternative, named:** independently durable per-observation
-  writes would keep the first thirty rows of a page that died mid-flight, at the price of a
-  half-applied commit the client reports as a failure while the record disagrees — the reviewer
-  then re-commits over work that already landed. **For fifty rows the mechanism cost is not the
-  deciding factor either way**: one transaction is one WAL flush and one round trip, fifty
-  transactions are fifty of each, and savepoints sit between; correctness picked this, not
-  throughput.
-- **2026-09-09 — All three routes take `observations:write`, and delete is therefore not
-  separable yet.** The human chose simplicity. The consequence is recorded rather than implied:
-  anyone who can correct a species can permanently delete. What it would take to add the
-  separation is written out above, including the part that is not a permission key at all —
-  `user_permissions` has no project scope, so a per-project grant is a migration.
-- **2026-09-09 — The server makes no imagery judgement in this phase.** The client simulates
-  thumbnails and keeps its own rule. `skipped` is emitted for `not-found` only, and **never for
-  imagery until Phase 6**, so no test asserts a skip this phase cannot produce.
-- **2026-09-09 — Response entries are found by `observation_id`, and the five arrays are not a
-  partition.** `reverted` co-occurs with `flagged`; a delete request's unmarked ids appear
-  nowhere. Both are the fixture's existing behaviour and both are easy to assume away.
-- **2026-09-09 — The basis is the live development database read through the catalogue, plus
-  the repository's and the client's files. No measurement**: one observation. Same basis as
-  #99, #103 and #105.
+- **2026-09-09 · D1 — A correction is a decision row, and it is the vocabulary's second
+  non-projectable state.** `withdrawn` is legal in the log and illegal in the projection; a
+  correction joins it. That is not a workaround for A1's answer, it is what A1's answer
+  implies: recorded *as* a decision, and not an approval, so it must not paint a tile. The
+  projection's `CHECK` enforces it **without being changed at all** — any value it does not
+  name cannot be inserted, and it fails loudly rather than quietly. What must change is the
+  derivation's final filter, from `WHERE decision <> 'withdrawn'` to one that excludes a
+  correction too, or the rebuild would try to insert a `corrected` row and hit that `CHECK`.
 
-## The shape, written out so it can be reviewed concretely
+- **2026-09-09 · D2 — The previous and the corrected species are two columns on the log row,
+  not one and not a `reason`.** Two, because after a *second* correction the observation's
+  current species is no longer what the first correction changed *to*, so a single
+  `previous_species_id` leaves the chain unreconstructable — and #68 asks a correction to
+  record *"actor, time, previous classification, new classification, and observation version"*.
+  Not `reason`, because that column holds the reviewer-facing flag vocabulary in `varchar(64)`
+  and putting a species *name* there would reintroduce the exact failure `comname` documents: a
+  text label that goes stale underneath the record. A key, not a name.
 
-**Rewritten before anything is built if D1, D2 or D3 are answered differently.** Written
-against the recommendations, with the parts each assumption owns marked.
+- **2026-09-09 · D3 — "Current" is the latest decision per `(observation_id, purpose)`, with a
+  correction ending what came before it.** A6 collapses three CTEs to one; A2 requires the
+  `boundary` that goes back in front of it.
 
-### The request, one shape for all three routes
+  **Why the boundary is not optional, given A2.** The correction row carries `purpose =
+  'scientific'`, so it is the latest row for the *scientific* purpose and no row at all for
+  training. Without the boundary a correction would leave a live `promoted` disposition
+  standing against a classification that no longer exists. The `boundary` CTE therefore
+  deliberately carries **no purpose filter**: one scientific-purpose correction row ends the
+  round for both purposes, which is what makes A2's one-row answer sufficient.
 
-```jsonc
-{
-  "observations": [ { "observation_id": 100000, "version": 3 } ],  // D1: the page, as seen
-  "marks":        [ { "observation_id": 100001, "reason": "Wrong Species" } ],
-  "withdraw":     [ 100002 ]                                       // D3; not on /delete
-}
-```
+  ```sql
+  -- rebuild:begin
+  WITH boundary AS (
+      -- The most recent correction per observation. Deliberately unfiltered by
+      -- purpose: a correction is recorded as a scientific decision but it
+      -- invalidates the training disposition too, so one row ends the round for
+      -- both. A second cause of invalidation is a second branch of this SELECT.
+      SELECT observation_id, MAX(review_id) AS at_review_id
+        FROM observation_reviews
+       WHERE decision = 'corrected'
+       GROUP BY observation_id
+  ),
+  latest AS (
+      -- Last write wins. One DISTINCT ON, served by
+      -- observation_reviews_observation_purpose_decided_idx.
+      SELECT DISTINCT ON (r.observation_id, r.purpose)
+             r.review_id, r.observation_id, r.purpose, r.decision, r.reason,
+             r.reviewer_id, r.decided_at, r.observation_version
+        FROM observation_reviews r
+        LEFT JOIN boundary b ON b.observation_id = r.observation_id
+       WHERE r.decision <> 'corrected'
+         AND (b.at_review_id IS NULL OR r.review_id > b.at_review_id)
+       ORDER BY r.observation_id, r.purpose, r.decided_at DESC, r.review_id DESC
+  )
+  SELECT review_id, observation_id, purpose, decision, reason,
+         reviewer_id, decided_at, observation_version
+    FROM latest
+   WHERE decision <> 'withdrawn'
+  -- rebuild:end
+  ```
 
-`observations` is the whole page, exactly as `store.js:775` sends it. `marks` is the exception
-set. One shape for three routes, for the reason A9 gave the counts route: one serialiser, one
-validator, and the filters — here the marks — mean the same thing on each.
+  **`review_id`, not `observation_version`, is the boundary token.** It is a gapless BIGINT
+  sequence assigned by the database, strictly increasing, with no ties and no dependence on
+  what else touched the observation row. A version boundary looked natural and is a trap: the
+  version trigger fires only `WHEN (old.* IS DISTINCT FROM new.*)`, so a correction that
+  changes nothing records a boundary at a version that never moves — invalidating every
+  decision and admitting none, forever. `review_id` has no such failure mode, and R4 becomes a
+  behavioural rule rather than a load-bearing one.
 
-### The response
+  **`decided_at DESC, review_id DESC` keeps the existing tie-break**, which matters more under
+  last-wins than it did before: two decisions inside one clock tick are now ordinary rather
+  than exceptional, and `review_id` is what makes the answer deterministic instead of
+  planner-dependent.
 
-```jsonc
-{
-  "atomicity": "per-observation",     // R6, and #68's "the client is told which"
-  "reviewed":   [ { "observation_id": 100000, "outcome": "reviewed" } ],
-  "flagged":    [ { "observation_id": 100001, "outcome": "flagged" } ],
-  "reverted":   [ { "observation_id": 100001, "outcome": "flagged" } ],  // R5: co-occurs
-  "skipped":    [ { "observation_id": 100003, "reason": "not-found" } ],
-  "conflicted": [ { "observation_id": 100004, "reason": "claimed" } ],   // or "version"
-  "committedAt": "2026-09-09T12:00:00.000Z"
-}
-```
+- **2026-09-09 · D4 — The definition is superseded by a new migration; `20260909120200` is not
+  edited.** Reasoning in *Does this need a migration?* above. The test consequence — find the
+  current definition rather than hard-code a path — is R11.
 
-`outcome` follows the route: `reviewed`/`flagged` for review, `promoted`/`excluded` for
-training, `deleted` for delete — which is what the fixture already returns and what the tile
-badge reads.
+- **2026-09-09 · D5 — Invalidation is not the same event as a race, and only one of them was
+  overruled.** Worth writing down because #111 framed them as one question and they are not.
+  A6 removes the race rule entirely. Invalidation survives A6 untouched: without it, a
+  correction leaves the pre-correction `reviewed` row as the latest decision and the tile goes
+  on reading *reviewed* for a classification that no longer exists. D3's boundary is that, and
+  it is the only thing corrections add to what would otherwise be a bare `DISTINCT ON`.
 
-**Nothing in the response says *who* claimed a conflicted observation.** #68's live-page
-behaviour wants the tile to show it has already been reviewed *"including by whom where
-appropriate"*, and that is deliberately not here: the permission catalog separates
-`users:read` — *"so a client can show who processed something"* — from `observations:read`, and
-#105's A7 dropped `processor_name` from the mosaic row for exactly that reason. Naming a
-reviewer from an `observations:write` route would cross the same line. Showing who belongs to
-the read path, under the key that gates identity.
+- **2026-09-09 · D6 — Which boundaries this phase implements, and the shape the rest arrive
+  in.** Subject to A5, which asks whether the rest are requirements at all. This phase
+  implements **one**: a species correction.
 
-### The write, per route
+  - **An observation-boundary change** (start or end frame) — identical shape: a decision row
+    in the correction family, a second branch inside `boundary`. #68 records the set of triage
+    corrections beyond species as unsettled, so it waits for that.
+  - **A bounding-box keyframe added, removed or changed** — **a different shape, and this is
+    the honest part.** A keyframe edit does not move `observations.version` at all, and it is
+    not an act in the review log, so it can be neither a version boundary nor a `corrected`
+    row without the annotation write path reaching into review data. #103 anticipated it
+    differently: `reviewed_keyframe_count` and `reviewed_keyframe_max_updated_at` are recorded
+    with every decision, and the predicate would be a *fingerprint comparison against live
+    keyframe state* — a decision counts while the observation's current fingerprint still
+    matches the one it recorded. That lands as a second predicate inside `latest`, not a second
+    branch inside `boundary`. So `latest` is the extension point for both kinds and `boundary`
+    for only one of them, and nothing about this phase forecloses either.
+  - **Presentation-only changes** — invalidate nothing, and D3 gives that for free by not
+    looking at the observation row at all.
 
-Two statements per purpose, in this order, because the projection's `review_id` is `NOT NULL`
-and references the log:
+- **2026-09-09 · D7 — The permission review, which is this phase's negative obligation.**
+  #68: *"the schema and API must not couple those three operations in a way that prevents finer
+  permissions later, since deletion in particular is likely to want its own."* Audited rather
+  than asserted.
 
-```sql
--- 1. the log. Append-only, one row per decision that took effect.
---    The source is a join against `observations`, so a vanished id drops out here and is
---    reported `not-found` (R5) rather than raising a foreign-key error mid-page (R8), and
---    the version check is a WHERE rather than an exception (D1).
---    The annotation fingerprint is computed here, server-side (R15).
-INSERT INTO observation_reviews (
-       observation_id, purpose, decision, reason, reviewer_id, observation_version,
-       reviewed_keyframe_count, reviewed_keyframe_max_updated_at, representative_keyframe_id)
-SELECT o.observation_id, :purpose, w.decision, w.reason, :me, o.version,
-       k.keyframe_count, k.max_updated_at, NULL            -- R16: Phase 6 owes this
-  FROM (VALUES …) AS w (observation_id, version, decision, reason)
-  JOIN observations o ON o.observation_id = w.observation_id AND o.version = w.version
-  LEFT JOIN LATERAL (SELECT count(*)::int AS keyframe_count,
-                            max("updatedAt") AS max_updated_at
-                       FROM keyframes WHERE observation_id = o.observation_id) k ON true
-RETURNING review_id, observation_id, decision;
+  **What is already uncoupled.** `routes/mosaic-commit.routes.js:60-62` declares
+  `REVIEW_PERMISSION`, `TRAINING_PERMISSION` and `DELETE_PERMISSION` as three separate
+  constants that happen to hold the same value, and `registerVersionedRoute` attaches
+  `requirePermission` per route. The route layer is genuinely split: swapping one is one line.
+  R12 preserves that by giving correction a fourth constant rather than reusing one.
 
--- 2. the projection. First valid review wins, enforced by the constraint (R11).
---    A row this reviewer does not own updates nothing and comes back in no RETURNING,
---    which is how `claimed` is detected — by what came back, not by a prior read (R12).
-INSERT INTO observation_review_current (
-       observation_id, purpose, review_id, decision, reason, reviewer_id,
-       first_decided_at, decided_at, observation_version)
-SELECT …
-  FROM inserted
-ON CONFLICT (observation_id, purpose) DO UPDATE
-   SET review_id = EXCLUDED.review_id, decision = EXCLUDED.decision,
-       reason = EXCLUDED.reason, decided_at = EXCLUDED.decided_at,
-       observation_version = EXCLUDED.observation_version
- WHERE observation_review_current.reviewer_id = EXCLUDED.reviewer_id
-RETURNING observation_id;
-```
+  **What is coupled, and it is one thing.** `deniedObservationIds(principal, observationIds)`
+  (`mosaic-commit.repository.js:329`) is the named seam for the per-observation authorization
+  #68 asks for on a mixed-project request, and it is **one function shared by all three modes
+  with no way to tell which is asking.** It returns `[]` today, so nothing is wrong; but a
+  per-project delete rule cannot be expressed inside it without a parameter. R15.
 
-`first_decided_at` is never updated — that is the timestamp first-wins has to preserve when the
-claiming reviewer revises (#103).
+  **What splitting deletion off costs today**, priced against the live catalogue: a new
+  permission key seeded (one row in the existing seed migration's pattern, granted to nobody,
+  so nothing breaks the day it lands); **project scope, which exists nowhere** — no project
+  column on `user_permissions`, so a per-project grant is a migration and not a key, and
+  `observations.project_id` is nullable, so a project-scoped rule needs an answer for "no
+  project" before it can be written; the route's guard constant swapped; a real body for
+  `deniedObservationIds`; and Delete Mode's gating in the client reading the new key.
 
-**A withdrawal** (D3) is the same log insert with `decision = 'withdrawn'`, then
-`DELETE FROM observation_review_current WHERE (observation_id, purpose) = (…) AND reviewer_id =
-:me RETURNING observation_id` — the `CHECK` refuses `withdrawn` in this table, so a delete is
-the only legal expression of it (R14).
+  **The consequence this phase adds, and it should be visible.** Phase 5 recorded that anyone
+  who can correct a species can also permanently delete. The correction route inverts the
+  interesting direction: **anyone holding `observations:write` can now destroy any reviewer's
+  approval, on any observation, in any project, by correcting a species.** That is what
+  invalidation *is* and the log keeps the history — but it is a new power on an old key, and
+  the `annotation-gui` token preset holds that key
+  (`scripts/create-application-token.js:47-52`). R13 is why a *token* cannot reach this route;
+  a person holding the key can.
 
-**A delete** is one statement, conditional on the version:
+## Five incompatibilities the client will meet
 
-```sql
-DELETE FROM observations o
- USING (VALUES …) AS w (observation_id, version)
- WHERE o.observation_id = w.observation_id AND o.version = w.version
-RETURNING o.observation_id;
-```
+Recorded the way #105 recorded its three, because Phase 8's measurable claim is that nothing
+above `api/` changes and these already break it. **Not fixed here** — `frontend/` is out of
+scope for this phase.
 
-Ids not returned are `conflicted` (`version`) or `skipped` (`not-found`), told apart by one
-existence query over the remainder. Nothing else is written, and the four cascades named in R20
-do the rest. **The trigger does not fire on a delete**, so the version here is a plain
-comparison.
-
-**Under D2's recommendation**, a version-conflicted row never reaches statement 1 — the join
-drops it — so nothing is logged for it, which is what keeps R13 true across a rebuild.
+1. **`setSpecies` sends no version** (`data.js:790`), and A3 requires one. `store.js:596` has
+   the row in hand, so it is a small change in a known place.
+2. **The fixture rewrites `comname`, `scientific_name` and `taxserial`** (`data.js:802-804`).
+   All three are frozen by #111, so the fixture does not merely stand in for the endpoint, it
+   contradicts it.
+3. **`store.js:598` reads `res.observation.comname` as the new label**, and with `comname`
+   frozen that value never changes — so the tile's *"was X → Y"* renders `was X → X`. A4 is
+   the endpoint half of this.
+4. **`tile.js:94-95` falls back to `row.previous_comname`**, a field the fixture invents on the
+   row (`data.js:799`) and which no real row will carry.
+5. **The fixture's species objects key on `species_id`** (`data.js:794`) while the real
+   catalogue's primary key is `species.id`. In the picker's data rather than in this endpoint,
+   but it belongs in the same list.
 
 ## Plan
 
-1. G1 gate — the human answers D1 through D4. Nothing below starts while one is open.
-2. Rewrite *The shape* against the answers.
-3. The repository: `repository/mosaic-commit.repository.js` beside `mosaic.repository.js`,
-   sharing its `MosaicRequestError` shape and its raw-SQL approach (#105's R14). Fast tier
-   after each step.
-4. The routes, three of them, one permission constant each (R9).
-5. If D1 is answered as recommended: add `version` to `ROW_COLUMNS` and move #105's snapshot.
-6. `npm run docs:build`, and commit what it regenerates (R21).
-7. G3 — `.marp/verification.md` from the requirements above, before anything is run. **Phase
-   4's `.marp/verification.md` is still on this branch and is Phase 4's**; it is renamed aside
-   at G3 the way its `task.md` was, not overwritten.
-8. G4 — run it, record the output verbatim including failures.
+Each step small enough to verify. The order is load-bearing at steps 2 and 3.
+
+1. The migration widening `observation_reviews` (R6). `db/data-integrity.js` around it: it
+   adds nullable columns and widens a constraint, so nothing should move, and the guard is what
+   proves it.
+2. The migration redefining "current" and dropping `first_decided_at` (R7, D3, D4). **After
+   step 1**, because its rebuild reads a vocabulary step 1 creates.
+3. `tests/observation-review-current.test.js` onto the current definition, with the mid-log
+   invalidation case (R11). **Before the write path**, so the test that catches a half-change
+   is in place while the half-change is possible.
+4. Phase 5's write path brought into line (R10), and the merged tests listed in *Which merged
+   tests change* rewritten to assert last-wins.
+5. `repository/mosaic-correction.repository.js`: the transaction — lock, version check, no-op
+   check, species lookup, `species_id` update, the log row, projection removal for both
+   purposes. Beside the other two mosaic repositories, sharing their error shapes.
+6. `routes/mosaic-correction.routes.js`: the HTTP surface, its own permission constant, the
+   non-user refusal, and the OpenAPI operation with request and response schemas added to
+   `docs/openapi.js` beside `MosaicCommitRequest`.
+7. `deniedObservationIds` gains the operation parameter (R15) and its four call sites.
+8. The refusal-case and coupling tests (R14).
+9. `npm run docs:build`, then `npm test` in full.
 
 ## Acceptance criteria
 
-- Three routes exist under `/api/v2/`, each behind `requirePermission('observations:write')`,
-  each refusing a non-user principal with `403` (D4).
-- Two reviewers committing the same observation: the first owns the record, the second is
-  `conflicted` with reason `claimed`, and the original reviewer and `first_decided_at` are
-  unchanged. Against the real database, because it is meaningless anywhere else.
-- An observation changed under a fetched page comes back `conflicted` with reason `version`,
-  and its decision is not written (D1, D2).
-- A withdrawal leaves no projection row and every log row (R14).
-- A delete removes the observation, its keyframes, its `dataset_observations` membership and
-  its review rows, and removes no `dataset`, `session` or `project` (R20).
-- **Projection equals derivation** after every one of the above (R13).
-- `observations.version` is not written by any statement this phase adds, and
-  `model/observation.model.js` is unchanged.
-- No migration, no permission key, nothing under `frontend/`. `git diff --stat` shows routes,
-  a repository, tests, the regenerated docs, and this file.
+- A species correction changes `species_id` and nothing else on the observation; `comname` and
+  `taxserial` are byte-identical afterwards, asserted rather than assumed.
+- After a correction, an observation that was `reviewed` is unreviewed for **both** purposes,
+  and a **different** person can review it — the case that was impossible before this phase.
+- Two reviewers committing the same observation both land in the log, and the projection holds
+  the later decision. Nobody is refused for being second.
+- The projection equals the derivation after every step of decide → correct → decide-as-
+  somebody-else, and the committed rebuild SQL reproduces it exactly.
+- A correction naming the current species writes nothing.
+- Anonymous, under-permissioned and service-token callers are refused, and each of the four
+  mosaic write routes reads its own permission constant.
+- `npm test` is green in full, including `tests/jellyfin.test.js` locally, and
+  `docs/openapi.generated.json` is rebuilt rather than hand-edited.
 
 ## Test plan
 
-`.marp/verification.md`, written at G3 and carrying the results at G4. It names, per
-requirement, the tier that can observe it — and four are only observable against the real
-PostgreSQL: the concurrent claim, the version conflict, the withdrawal's `CHECK`, and the
-delete cascade. A unit test on a repository method cannot see any of the four.
+Filled in at G3, before anything is run, and reviewed by a human. `marp verify plan` writes the
+first draft of `.marp/verification.md` from the requirements above, including the ones with no
+test against them — which is the part worth looking at. Two constraints already known, both
+recorded in R11 and R14 because each has cost a day here: **CI builds an empty database**, so
+every test seeds its own observation and session with SQL rather than borrowing one; and **any
+comparison of file content against a template literal normalises `\r\n` to `\n`**, because
+ECMAScript normalises CRLF inside a template literal and `readFileSync` does not, so such a
+test passes in CI and fails on Windows.
 
-Phase 4's `.marp/verification.md` was renamed to `.marp/verification-105-mosaic-query.md`
-rather than overwritten, the way its `task.md` was.
+The tier that matters for this phase is Jest against the real development PostgreSQL. A
+last-wins concurrency case, a mid-log invalidation case and a projection-equals-derivation
+case are all meaningless anywhere else.
 
 ## Status
 
-- **Gate:** verified. G5, the pull request, is the human's.
-- **Notes:** G1 closed 2026-09-09 — the human answered D1 through D4 and the three questions
-  #106 named, all recorded above with the reasoning. G2 implemented the settled spec:
-  `repository/mosaic-commit.repository.js`, `routes/mosaic-commit.routes.js`, and `version`
-  added to `ROW_COLUMNS` as the change owed to #105. G3 and G4 are `.marp/verification.md`:
-  31 tests for this phase, 348 in the suite, all passing, with the concurrency test proved
-  able to fail by removing the row lock.
-- **One departure from *The shape* above, and it is the only one:** claim is decided against
-  the **log** — the derivation's earliest claiming reviewer, restricted to the requested ids
-  and computed inside the log insert — rather than against the presence of a projection row,
-  and the observation rows are locked `FOR NO KEY UPDATE` first. The sketch's *a row this
-  reviewer does not own updates nothing and comes back in no RETURNING* detects a claim only
-  **after** the log row is written, which contradicts D2; and the projection's presence is not
-  the derivation's rule once a withdrawal exists — a claimer who has withdrawn still owns the
-  observation while its projection row is absent, so a second reviewer's projection write
-  would put the projection out of step with the derivation and break R13. The lock is what
-  makes the log-based test safe rather than merely current at snapshot time: without it two
-  reviewers arriving together both pass it and the loser is left logged. R11's conditional
-  write is kept in place regardless, and a shortfall against it is treated as R8's unexpected
-  failure — the request rolls back and reports a failed commit.
+- **Gate:** design
+- **Notes:** Five blocking assumptions answered by the human on 2026-09-09 — A1, A2, A3, A4
+  and A6. **A6 is the large one**: it overrules first-valid-review-wins in two merged phases
+  and is written up as its own piece of work, and it is the one that must become an ADR. A2
+  and A4 were not in #111; they were found by working out what A1's answer and the frozen
+  `comname` imply, and both were answered on the same day. **A5 was the last thing holding G2 and was answered on
+  2026-09-09** — a relabel invalidates both purposes, and #68's other three material changes
+  are deferred with the boundary shaped to take them later. It was asked rather than
+  inherited because `AGENTS.md` now says a #68 requirement is checked rather than
+  inherited, and *Invalidation* — which this phase's whole mechanism is built to satisfy — is
+  exactly the kind of section that has already cost three phases an unwind. Nothing is
+  implemented.
 
 ## Findings left alone
 
-Named per `AGENTS.md`, not fixed and not filed.
+Named rather than fixed, per `AGENTS.md`.
 
-- **`repository/observation.repository.js:773` `deleteObservation` swallows its error and
-  returns `{}`**, and carries unreachable code after its `return`. This phase does not call it —
-  the delete route needs a conditional, set-based delete this method cannot express — so the
-  broken method stays, unused by the new path and still used by the existing observation route.
-  Worth a human's decision about whether the new path should replace it.
-- **`subset_observations` and `subset_keyframes` carry an unconstrained `observation_id`**, so
-  a permanent delete orphans rows in both. #103 found this and left it; #100 covers only
-  `dataset_observations`.
-- **`frontend/apps/marp-mosaic-review/src/data.js:739` reports `no-imagery` in Delete Mode**
-  for an unmarked row with no thumbnail, even though Delete Mode never touches an unmarked row.
-  Harmless noise in the fixture; the endpoint does not copy it.
-- **`observations_observation_id_seq` is at `last_value 6` against a table max of 1** — #62's
-  drift, still visible.
+- **The withdrawal lock-out is gone, but not because anybody fixed it.** Phase 5 recorded that
+  *"a claimer who has withdrawn still owns the observation"* (`mosaic-commit.repository.js:41-
+  46`). A6 removes claims altogether, so the latent issue evaporates rather than being
+  addressed. Worth knowing, because the comment describing it is still in the file and will
+  read as current until R10 rewrites it.
+- ~~**The mosaic read row still shows the pre-correction species name.**~~ **Scoped in as R19
+  on 2026-09-09**, and no longer a finding. It was raised by the implementing agent as a
+  conflict between A4 and this list, deferred for want of a requirement, and then settled as
+  in scope: it is a defect the phase creates rather than an enhancement it declines.
+- **The mosaic cannot see that an observation was corrected.** By design — a correction never
+  projects — so there is no *filter* for corrected-and-unreviewed. It would be an anti-join of
+  the log against the projection rather than a projection lookup, so it is not free the way the
+  existing status filters are. #68's workflow may want one.
+- **`repository/observation.repository.js` `updateObservation` accepts a `comname` and
+  propagates it to every keyframe** (lines 690-712). It is the pre-existing annotation write
+  path and the GUI depends on it, so nothing about it is wrong; but it is the one route by
+  which a caller can still rewrite the annotator's frozen label, and #111's *"`comname` is
+  never rewritten"* is a rule this phase honours rather than a property the schema enforces.
+- **`observations.version` moves on a change to any column** — `taxReview`, a size count,
+  `updateddate`. So a page fetched before an unrelated edit gets `conflicted` today. Correct
+  but blunt, and it will read as a false conflict to a reviewer. Relevant to A3 and not this
+  phase's to change.

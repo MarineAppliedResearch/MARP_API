@@ -2,19 +2,20 @@
  * Creates `observation_review_current`, the maintained projection of which
  * decision is current for an observation and a purpose.
  *
- * **Why a projection rather than deriving it on read, and the reason is
- * correctness rather than speed.** #68's *Concurrent review* settles that the
- * first valid review wins: the first person to approve an observation owns the
- * record, a second reviewer is told it is already done and does not overwrite
- * the original reviewer or timestamp, and the *same* reviewer may still revise
- * their own decision from a committed page. So "current" is not "the latest
- * row" -- it is *the earliest claiming reviewer's latest decision*. Derived on
- * read that is a two-level query no single index serves. As a projection it is
- * one row with a unique key, and the first-wins rule becomes the constraint
- * itself: Phase 5 writes
- * `INSERT ... ON CONFLICT (observation_id, purpose) DO UPDATE ... WHERE
- * observation_review_current.reviewer_id = :me`, so the rule is enforced once
- * rather than re-derived by every reader.
+ * **Why a projection rather than deriving it on read.** The mosaic's default
+ * "unreviewed" filter is exactly "no row here", so as a table it is a
+ * primary-key anti-join rather than a correlated subquery over the log -- and
+ * the log is the second-busiest write path in the application. The projection is
+ * one row per observation per purpose, with the pair as its key, which is what
+ * keeps "at most one current decision" true by construction rather than by
+ * convention.
+ *
+ * **The last commit wins.** A second reviewer deciding the same observation is
+ * not refused and does not have to be: their decision simply becomes the current
+ * one, and the first stays in the log. Nobody is locked out of an observation by
+ * whoever reached it first, and a reviewer who wants the current state refreshes
+ * and requeries. So "current" is the latest decision per observation and
+ * purpose, which one `DISTINCT ON` answers and one index serves.
  *
  * **It is a derived value, so it is part of the data contract**, not a cache.
  * A writer that stops maintaining it is data loss. That is why the derivation
@@ -23,19 +24,27 @@
  * use -- the test asserts projection equals derivation, which is how drift is
  * detected rather than assumed absent.
  *
- * **A withdrawal removes the row rather than sitting in it as a decision.**
- * Undecided is the absence of a row, for both purposes, which is what makes the
- * mosaic's default "unreviewed" filter a primary-key anti-join -- the whole
- * reason this shape was chosen. The CHECK below enforces it: `withdrawn` is
- * legal in the log and illegal here, so Phase 5 must delete the projection row
- * when the claiming reviewer withdraws, and cannot quietly leave a withdrawn
- * observation looking reviewed.
+ * **A withdrawal removes the row rather than sitting in it as a decision, and a
+ * correction never puts one there at all.** Undecided is the absence of a row,
+ * for both purposes. The CHECK below enforces it: `withdrawn` and `corrected`
+ * are both legal in the log and illegal here, so a writer must delete the
+ * projection row rather than quietly leave an observation looking reviewed. The
+ * CHECK does this **by naming only the live decisions** -- anything outside its
+ * list simply cannot be inserted, so a derivation that stopped excluding one
+ * would fail loudly on the next rebuild instead of painting a wrong tile.
+ *
+ * **A correction ends the round for both purposes.** A relabelled observation
+ * has to be reapproved: a promoted training sample carrying the wrong label
+ * teaches the model the wrong thing, which is worse than not having the sample
+ * at all. That is why the `boundary` CTE below is deliberately unfiltered by
+ * purpose -- the correction is one scientific-purpose row, and it has to end the
+ * training round too.
  *
  * Separate from the migration that creates `observation_reviews` so that a
  * different answer about the shape of current state replaces one file rather
  * than editing two features apart.
  *
- * Refs #103.
+ * Refs #103, #111.
  *
  * @fileoverview Migration creating the observation_review_current projection and its rebuild definition.
  * @author Isaac Travers
@@ -46,20 +55,28 @@
 
 /**
  * The single definition of "current": for each observation and purpose, the
- * earliest claiming reviewer's latest decision, excluding a withdrawal.
+ * latest decision, ignoring anything a correction has superseded.
  *
  * Read by the rebuild below and by the test that asserts the projection has not
  * drifted from it. Both halves of the rule are here and nowhere else:
  *
- * - `claim` reduces the log to one row per reviewer per observation and purpose,
- *   carrying when that reviewer first decided.
- * - `claimer` picks the reviewer who claimed it -- earliest first decision, tied
- *   on the lower `review_id` so the result is deterministic rather than
- *   arbitrary.
- * - `latest` takes that reviewer's most recent decision, tied on the higher
- *   `review_id` for the same reason.
- * - `first_decided_at` stays the claiming reviewer's *first* decision, which is
- *   the timestamp first-wins has to preserve when they revise.
+ * - `boundary` is the most recent correction per observation, which ends the
+ *   round for everything decided before it.
+ * - `latest` is one `DISTINCT ON` per observation and purpose, served directly
+ *   by `observation_reviews_observation_purpose_decided_idx`.
+ *
+ * **`review_id`, not `observation_version`, is the boundary token.** It is a
+ * gapless BIGINT sequence assigned by the database, strictly increasing, with no
+ * ties and no dependence on what else touched the observation row. A version
+ * boundary looks natural and is a trap: `observations_bump_version_trigger`
+ * fires only `WHEN (old.* IS DISTINCT FROM new.*)`, so a correction that changed
+ * nothing would record a boundary at a version that never moved -- invalidating
+ * every decision and admitting none, permanently.
+ *
+ * **`decided_at DESC, review_id DESC` is the tie-break**, and it is not
+ * decoration: two decisions inside one clock tick are ordinary rather than
+ * exceptional when the last commit wins, and `review_id` is what makes the
+ * answer deterministic instead of planner-dependent.
  *
  * Marked with `-- rebuild:begin` / `-- rebuild:end` so a test can read the block
  * out of the committed file and confirm it is what actually runs. The markers
@@ -70,25 +87,19 @@
  */
 const CURRENT_DERIVATION_SQL = `
 -- rebuild:begin
-WITH claim AS (
-    SELECT observation_id,
-           purpose,
-           reviewer_id,
-           MIN(decided_at) AS first_decided_at,
-           MIN(review_id)  AS first_review_id
+WITH boundary AS (
+    -- The most recent correction per observation. Deliberately unfiltered by
+    -- purpose: a correction is recorded as a scientific decision but it
+    -- invalidates the training disposition too, so one row ends the round for
+    -- both. A second cause of invalidation is a second branch of this SELECT.
+    SELECT observation_id, MAX(review_id) AS at_review_id
       FROM observation_reviews
-     GROUP BY observation_id, purpose, reviewer_id
-),
-claimer AS (
-    SELECT DISTINCT ON (observation_id, purpose)
-           observation_id,
-           purpose,
-           reviewer_id,
-           first_decided_at
-      FROM claim
-     ORDER BY observation_id, purpose, first_decided_at, first_review_id
+     WHERE decision = 'corrected'
+     GROUP BY observation_id
 ),
 latest AS (
+    -- Last write wins. One DISTINCT ON, served by
+    -- observation_reviews_observation_purpose_decided_idx.
     SELECT DISTINCT ON (r.observation_id, r.purpose)
            r.review_id,
            r.observation_id,
@@ -96,14 +107,12 @@ latest AS (
            r.decision,
            r.reason,
            r.reviewer_id,
-           c.first_decided_at,
            r.decided_at,
            r.observation_version
       FROM observation_reviews r
-      JOIN claimer c
-        ON c.observation_id = r.observation_id
-       AND c.purpose        = r.purpose
-       AND c.reviewer_id    = r.reviewer_id
+      LEFT JOIN boundary b ON b.observation_id = r.observation_id
+     WHERE r.decision <> 'corrected'
+       AND (b.at_review_id IS NULL OR r.review_id > b.at_review_id)
      ORDER BY r.observation_id, r.purpose, r.decided_at DESC, r.review_id DESC
 )
 SELECT review_id,
@@ -112,7 +121,6 @@ SELECT review_id,
        decision,
        reason,
        reviewer_id,
-       first_decided_at,
        decided_at,
        observation_version
   FROM latest
@@ -134,7 +142,7 @@ const REBUILD_CURRENT_SQL = `
 DELETE FROM observation_review_current;
 INSERT INTO observation_review_current (
     review_id, observation_id, purpose, decision, reason,
-    reviewer_id, first_decided_at, decided_at, observation_version
+    reviewer_id, decided_at, observation_version
 )
 ${CURRENT_DERIVATION_SQL};
 `;
@@ -178,7 +186,7 @@ module.exports = {
                         type: Sequelize.STRING(32),
                         allowNull: false,
                         primaryKey: true,
-                        comment: 'Which review: "scientific" or "training". At most one current decision per observation per purpose, which is what makes first-valid-wins enforceable by the primary key.',
+                        comment: 'Which review: "scientific" or "training". At most one current decision per observation per purpose, which the primary key is what enforces.',
                     },
                     review_id: {
                         type: Sequelize.BIGINT,
@@ -191,7 +199,7 @@ module.exports = {
                     decision: {
                         type: Sequelize.STRING(32),
                         allowNull: false,
-                        comment: 'The active decision. Never "withdrawn" -- a withdrawal deletes this row, because undecided is the absence of a row and the mosaic filters on exactly that.',
+                        comment: 'The active decision. Never "withdrawn" and never "corrected" -- neither is a live decision, so both delete this row instead, because undecided is the absence of a row and the mosaic filters on exactly that.',
                     },
                     reason: {
                         type: Sequelize.STRING(64),
@@ -205,17 +213,12 @@ module.exports = {
                         // reviewer vanishing.
                         type: Sequelize.INTEGER,
                         allowNull: false,
-                        comment: 'The reviewer who owns this record -- the earliest claiming reviewer. Phase 5 compares against this to enforce first-valid-wins.',
-                    },
-                    first_decided_at: {
-                        type: Sequelize.DATE,
-                        allowNull: false,
-                        comment: 'When the claiming reviewer first decided. Preserved when they revise their own decision, which is what first-valid-wins has to keep.',
+                        comment: 'Who made the current decision. Not an owner: the last commit wins, so this moves whenever somebody else decides later.',
                     },
                     decided_at: {
                         type: Sequelize.DATE,
                         allowNull: false,
-                        comment: 'When the active decision was made -- later than first_decided_at if the claiming reviewer has revised it.',
+                        comment: 'When the active decision was made.',
                     },
                     observation_version: {
                         type: Sequelize.INTEGER,
@@ -226,10 +229,13 @@ module.exports = {
                 { transaction }
             );
 
-            // The same compound vocabulary as the log, minus `withdrawn`: a
-            // withdrawal is a deletion here, not a state. Enforced rather than
-            // documented, because a withdrawn row left in place would silently
-            // hide an observation from the default "unreviewed" filter.
+            // The same compound vocabulary as the log, minus `withdrawn` and
+            // `corrected`: neither is a live decision, so both are a deletion
+            // here rather than a state. Enforced by naming only what is legal,
+            // so a value this list does not carry cannot be inserted at all --
+            // which is what makes a derivation that stopped excluding one fail
+            // loudly rather than silently hide an observation from the default
+            // "unreviewed" filter or paint a corrected tile as reviewed.
             await sequelize.query(
                 `ALTER TABLE observation_review_current
                    ADD CONSTRAINT observation_review_current_purpose_decision_check

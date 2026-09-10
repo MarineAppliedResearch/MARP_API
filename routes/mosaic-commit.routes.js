@@ -6,11 +6,12 @@
  * is `repository/mosaic-commit.repository.js`; this file is the HTTP surface and
  * nothing else.
  *
- * **Three routes rather than one `mode` parameter** (R1). The permission guard is
- * per route, and that is what keeps the three operations splittable later: #68's
- * *Authorization* wants delete separable -- a per-project delete permission plus a
- * global one -- and when that lands it is one constant on one route rather than a
- * branch inside a shared handler.
+ * **Three routes rather than one `mode` parameter** (R1), and #111 adds a fourth
+ * beside them in `mosaic-correction.routes.js`. The permission guard is per route,
+ * and that is what keeps the operations splittable later: #68's *Authorization*
+ * wants delete separable -- a per-project delete permission plus a global one --
+ * and when that lands it is one constant on one route rather than a branch inside
+ * a shared handler.
  *
  * **All three take `observations:write`**, settled by the human on the grounds of
  * simplicity, and the consequence is recorded rather than implied: **anyone who
@@ -155,8 +156,8 @@ function registerMosaicCommitRoutes(app) {
             'Accepts every observation on the page that is not marked, and records every marked one as **flagged** with its reason -- '
             + 'the marks are the page\'s exception set, not a selection. **This is not one transaction**: outcomes are per observation, '
             + 'so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. '
-            + '**First valid review wins**: a second reviewer is reported as `conflicted` with reason `claimed` and does not overwrite '
-            + 'the original reviewer or timestamp, while the claiming reviewer may revise their own decision. An observation whose '
+            + '**The last commit wins**: a second reviewer is not refused, their decision replaces the first as the current one, and '
+            + 'the first decision stays in the log. Nobody is locked out of an observation by whoever got there first. An observation whose '
             + '`version` has moved since the page was fetched comes back `conflicted` with reason `version` and **its decision is not '
             + 'recorded at all**. An unexpected failure rolls the whole request back, so a failed commit applied nothing.'
             + USER_ONLY_NOTE,
@@ -188,7 +189,7 @@ function registerMosaicCommitRoutes(app) {
         description:
             'Promotes every observation on the page that is not marked, and records every marked one as **excluded** with its reason. '
             + 'The scientific and training decisions are independent: this changes nothing about scientific review status. '
-            + 'Everything the review route says about per-observation outcomes, first-wins and version conflicts holds identically here.'
+            + 'Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here.'
             + USER_ONLY_NOTE,
         tags: [TAG],
         requestBody: {

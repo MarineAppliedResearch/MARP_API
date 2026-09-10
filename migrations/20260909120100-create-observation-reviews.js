@@ -35,7 +35,17 @@
  * `keyframes`, which is more schema and more write cost on the second-busiest
  * table, and is not being built now.
  *
- * Refs #103.
+ * **A species correction is one of these decisions**, not a separate audit
+ * table: `purpose = 'scientific'`, `decision = 'corrected'`, carrying the species
+ * it replaced and the species it chose. Two species columns rather than one,
+ * because after a *second* correction the observation's current species is no
+ * longer what the first correction changed to, so a single previous_species_id
+ * leaves the chain unreconstructable. Not a `reason` either: that column holds
+ * the reviewer-facing flag vocabulary, and putting a species *name* there would
+ * reintroduce the exact failure `comname` documents -- a text label going stale
+ * underneath the record. A key, not a name.
+ *
+ * Refs #103, #111.
  *
  * @fileoverview Migration creating the observation_reviews decision log.
  * @author Isaac Travers
@@ -94,7 +104,30 @@ module.exports = {
                     decision: {
                         type: Sequelize.STRING(32),
                         allowNull: false,
-                        comment: 'What the reviewer decided. "reviewed", "flagged" or "withdrawn" for the scientific purpose; "promoted", "excluded" or "withdrawn" for training. There is no "undecided" -- that is the absence of a row.',
+                        comment: 'What the reviewer decided. "reviewed", "flagged", "withdrawn" or "corrected" for the scientific purpose; "promoted", "excluded" or "withdrawn" for training. There is no "undecided" -- that is the absence of a row.',
+                    },
+                    previous_species_id: {
+                        type: Sequelize.INTEGER,
+                        allowNull: true,
+                        references: { model: 'species', key: 'id' },
+                        // RESTRICT, like reviewer_id: a value the record is
+                        // *about* must not be able to vanish from it.
+                        // Deliberately unlike observations.species_id, which
+                        // uses SET NULL -- that column holds a live value, this
+                        // one holds a historical one, and emptying it would
+                        // silently gut an audit row. Species are retired with
+                        // is_active rather than deleted, so nothing is blocked.
+                        onDelete: 'RESTRICT',
+                        onUpdate: 'CASCADE',
+                        comment: 'The species the observation carried before a correction. Null when it had none -- about 4% of rows legitimately do not -- and null on every decision that is not a correction.',
+                    },
+                    corrected_species_id: {
+                        type: Sequelize.INTEGER,
+                        allowNull: true,
+                        references: { model: 'species', key: 'id' },
+                        onDelete: 'RESTRICT',
+                        onUpdate: 'CASCADE',
+                        comment: 'The species a correction changed the observation to. NOT NULL for a correction and null for every other decision, enforced by observation_reviews_corrected_species_check rather than by the column, because the rule is about the pair.',
                     },
                     reason: {
                         // No CHECK and no lookup table: #68 records the
@@ -170,12 +203,42 @@ module.exports = {
             // One compound CHECK rather than two: it constrains the purpose and
             // the decision vocabulary within that purpose in the same
             // expression, so neither can be legal on its own.
+            //
+            // `corrected` is a scientific decision and training deliberately has
+            // no equivalent. That asymmetry is load-bearing rather than an
+            // oversight: a correction is recorded once, as one scientific-purpose
+            // row, so it cannot end the training round by being the latest row
+            // for a purpose it does not carry -- which is why the projection's
+            // derivation needs a purpose-blind boundary rather than a bare
+            // "latest row" query.
             await sequelize.query(
                 `ALTER TABLE observation_reviews
                    ADD CONSTRAINT observation_reviews_purpose_decision_check
                    CHECK (
-                       (purpose = 'scientific' AND decision IN ('reviewed', 'flagged', 'withdrawn'))
+                       (purpose = 'scientific' AND decision IN ('reviewed', 'flagged', 'withdrawn', 'corrected'))
                     OR (purpose = 'training'   AND decision IN ('promoted', 'excluded', 'withdrawn'))
+                   )`,
+                { transaction }
+            );
+
+            // Ties the corrected species to the corrected decision, in both
+            // directions, so neither half can hold on its own: a correction
+            // cannot be recorded without saying what it changed *to*, and an
+            // ordinary decision cannot pretend to be one by carrying a species.
+            // The second direction is the one easy to leave out and the one that
+            // matters -- without it a `reviewed` row could carry a
+            // corrected_species_id and every reader of the log would have to
+            // decide for itself what that meant.
+            //
+            // previous_species_id is deliberately unconstrained: it is null for
+            // a correction of an observation that had no species and null for
+            // every non-correction, so it carries no signal to enforce.
+            await sequelize.query(
+                `ALTER TABLE observation_reviews
+                   ADD CONSTRAINT observation_reviews_corrected_species_check
+                   CHECK (
+                       (decision =  'corrected' AND corrected_species_id IS NOT NULL)
+                    OR (decision <> 'corrected' AND corrected_species_id IS NULL)
                    )`,
                 { transaction }
             );
