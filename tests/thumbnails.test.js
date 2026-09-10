@@ -249,9 +249,15 @@ describe('observation thumbnails (#118)', () => {
 
         seeded.projectId = project.project_id;
 
+        // user_id is left NULL rather than hard-coded to 1. The column is
+        // nullable and nothing here reads it, while `sessions.user_id` has a
+        // foreign key to `users` -- so naming a row this suite did not create
+        // makes it depend on whichever user the bootstrap migration happened to
+        // make first. That is the borrowed-row defect that passes locally and
+        // fails on an empty database.
         const [session] = await q(
             `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-             VALUES (:projectId, 1, :dive, 'L1', 'LID1', 'JestThumb', NOW(), NOW())
+             VALUES (:projectId, NULL, :dive, 'L1', 'LID1', 'JestThumb', NOW(), NOW())
              RETURNING session_id`,
             { projectId: seeded.projectId, dive: `JEST-THUMB-${runId}` }
         );

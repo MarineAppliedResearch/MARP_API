@@ -143,6 +143,26 @@ surprise later.
   any fixture row. That is Phase 8.
 - **CI runs the fast tiers only.** A green pipeline is not this package.
 
+## The suite does not need the real data
+
+Raised by the human at G3 review — *"we don't always have the real data available"* — and it
+is the right question, because CI builds an **empty** database and a test that borrows an
+existing row passes here and fails there. Checked rather than assumed:
+
+- `tests/thumbnails.test.js` seeds its own project, session, observations and users in
+  `beforeAll` and removes them in `afterAll`. Grepped for references to the six real
+  observations, to `session_id` 142 and to `gpu_job_id` 132: **none**. The suite does not know
+  the pipeline was ever run.
+- `tests/thumbnail-geometry.test.js` touches no database at all.
+- **One borrowed row was found and removed.** The suite created its session with a hard-coded
+  `user_id` of `1`, and `sessions.user_id` has a foreign key to `users` — so it depended on
+  whichever user the bootstrap migration happened to create first. The column is nullable and
+  nothing here reads it, so it is now `NULL`.
+- **Named, not fixed:** `tests/mosaic-commit.test.js:345`, `tests/mosaic-correction.test.js:261`
+  and `tests/mosaic-query.test.js:233` still hard-code `user_id, 1`. They are from earlier
+  phases and they pass in CI today, which is itself the evidence that user 1 exists there. It
+  is latent fragility rather than a live defect, and it is not this phase's to change.
+
 ## Manual steps
 
 Cannot be automated, and the second one is the point of the phase.
