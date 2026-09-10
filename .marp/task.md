@@ -278,11 +278,15 @@ list a correction picker would search.
 - **R12** — a retry answers `queued`, and the tile reaches `ready` by whatever A8 settles —
   without one request per tile and without one re-render per tile.
 - **R13** — a `permanent` failure renders as permanent: no retry offered, and the reason shown.
-- **R14** — a committed page is re-read by id, so returning to it shows what was submitted.
+- **R14** — a committed page is shown from the cache #99 already keeps, **without a request**.
+  `model/cache.js:163` states the invariant already: *"a committed page is served without a
+  request when every id it holds is here."* No by-ids endpoint. Answered by the human.
 - **R15** — the rail's option lists are the values still reachable under the filters already
   chosen, taken from the server rather than from the rows on screen.
-- **R16** — a rail dimension with nothing behind it is not offered at all, rather than offered
-  and answering 400 or empty.
+- **R16** — every dimension the rail offers is answerable. **No dimension is withdrawn.**
+  `date` filters a `tc` range, which searches time of day now and gains date support when
+  #76 gives an observation a real date — the control does not change shape when it does.
+  `session` and `model` were never unbacked. Answered by the human.
 - **R17** — the correction picker searches the species list the observation belongs to, sends
   the species key, and shows something sensible before anything is typed without sending an
   empty query.
@@ -422,7 +426,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   screen?** F9 and F10: the fixture's `awaitThumbnail` has no endpoint, the retry route answers
   `queued` and never `ready`, and extraction runs at 3 concurrent Jellyfin streams (#118's A7),
   so a page of 45 missing pictures takes many seconds to fill. Option (i) **poll for the
-  visible page**, one request for all queued ids (A5's by-ids route), on an interval with
+  visible page** by re-reading it through the existing pages endpoint, on an interval with
   backoff, stopping when the page changes or nothing is queued — one request and one
   `notify()` per round, which is what R12 needs. Option (ii) poll
   `GET /api/v2/observations/thumbnails/status` — cheap, but it reports the extractor's global
@@ -575,42 +579,56 @@ Listed in the order they block work: A1 and A2 shape everything under them.
 Nothing is decided until the assumptions above are answered. Recorded here so they are not
 re-litigated:
 
-- **2026-09-10 · A1-A9, A13-A16** — **Taken as recommended, on the human's direction:**
-  *"I want to work on the issue."* Each recommendation and its costs are written out at the
-  assumption above; this records that they were accepted rather than individually argued.
+- **2026-09-10 · A1-A9, A13-A16 — answered by the human**, one at a time. Three differ from
+  the recommendation and are the reason this phase adds **no new routes at all**.
 
   - **A1** — the client adopts the schema's names; no translation adapter. #68's claim that
     nothing above `api/` changes is a *measurement*, and an adapter would make it pass by
     destroying what it measures.
-  - **A2** — `src/data.js` survives as a fixture used by tests only, so the 60 ms loop and
+  - **A2** — `src/data.js` survives as a fixture used by tests only, so the fast unit loop and
     `withoutLatency`'s `typeof window` guard stay meaningful.
-  - **A3** — the session cookie authenticates, including an `<img>`. Grounded, not invented:
-    `resolve-principal` already prefers the session over a bearer token, and the cookie is
-    `httpOnly` / `sameSite: lax`, so a same-origin tile request is authorised with no new
-    scheme. This is also #120's browser question answered for this case.
+  - **A3** — **the normal MARP login.** *"We log in on the MARP front end, and that's how they
+    will log in."* The session cookie authenticates every request including an `<img>`, which
+    works with no scheme invented: `resolve-principal` already prefers the session over a
+    bearer token and the cookie is `httpOnly` / `sameSite: lax`. The app is gated in `app.js`
+    before the static mount, as `/apps/dashboard` already is.
   - **A4** — refused, failed and expired are three distinct states; a 401 re-authenticates in
     place so a reviewer's marks survive it.
-  - **A5** — a by-ids route, so a committed page can be re-read. **Adds published API
-    surface**, which is normally ask-first; taken under the same direction.
-  - **A6** — a facets route for the rail's option lists. The only option that preserves "never
-    offer a dive that returns nothing", and it is what gives `session` its list (A14).
-  - **A7** — the store sends rows carrying their `version`. An `api/`-side version cache is
+  - **A5 — STRUCK. There is no by-ids route.** *"I don't see why we need to reread a page we
+    just committed. We already have it built into the system that if we go back to a previous
+    page, we keep a cache of those previous items."* Correct, and `model/cache.js:163` says so
+    in as many words. #99 already built this; the recommendation had missed it. See R14.
+  - **A6 — the option lists ride on the page response, not on a new route.** *"I figured the
+    filter was gonna be able to be baked right into the observation query. I didn't think we
+    would need a whole new route for that."* New **queries** are expected and fine — *"you'll
+    have to create new queries that query your dives and your lines per dive"* — but they
+    answer on the existing pages endpoint. Put them behind a flag on the request so #99's
+    prefetch, which asks for up to three pages a navigation, does not pay for them.
+  - **A7** — the store sends rows carrying their own `version`. An `api/`-side version cache is
     **rejected on reasoning**: a prefetch would substitute a version the reviewer never saw,
-    which defeats the whole point of the check.
-  - **A8** — a page-level poll turns `queued` into `ready`: one request and one notify per
-    round, not one per tile.
-  - **A9** — the page retry is a seam method taking ids. Coalescing it into the page fetch
-    would hide a round trip the contract tier cannot see.
+    which defeats the check. The human's own model is unchanged and worth restating: **last
+    write wins.** The version check fires only when the row moved *underneath a page the
+    reviewer was looking at*, which is the one case where "last write" would mean silently
+    discarding somebody's correction.
+  - **A8** — a page-level poll re-reads the visible page through the existing pages endpoint:
+    one request and one `notify()` per round, with backoff, stopping when nothing is queued or
+    the page changes. Revised from the recommendation, which had leaned on A5's route.
+  - **A9** — the page retry is its own seam method taking ids. Coalescing it into the page
+    fetch would hide a round trip the contract tier cannot see.
   - **A13** — the row gains reviewer *ids*, not names, and the client compares them with the
     authenticated principal. Keeps #118's `observations:read` reasoning intact: "by you"
     without exposing anybody's name.
-  - **A14** — **withdraw `date` only**, and say on the rail it is waiting on #76. `session` and
-    `model` are not withdrawn: both are filterable, and the corrected text above says why.
-    There is no column a date filter could read, so this is not a preference.
-  - **A15** — a seeder at a few hundred rows for the browser tier. **Depends on
-    `scripts/seed-inference-context.js`**, which is not on `develop` yet — it is in PR #123 —
-    so either that merges first or this phase writes its own alongside. The database holds six
-    observations of one species in one dive, so the tier cannot run against it as it stands.
+  - **A14 — `date` is NOT withdrawn; it filters a `tc` range.** *"We don't wanna key anything
+    to ETC. We're trying to key things to TC… we wanna be able to search for times without a
+    date or times with a date."* `tc` currently holds a time of day with no date component, so
+    the search is time-only today and gains date when **#76** lands — the control keeps its
+    shape either way. A note has been left on #76 saying so. The human also named the
+    distinction that matters: `tc` is the actual clock time when a survey is synced, where
+    `mediaPosition` is the position in the video file — different quantities.
+  - **A15** — a checked-in seeder producing a deterministic dataset for the browser tier; the
+    six real observations of one species in one dive cannot exercise paging or filtering.
+    Recorded as future context, not built here: the human expects **three databases** — a
+    fixed seeded one for testing, a development one, and production.
   - **A16** — `AbortSignal` on every seam method. A shape decision, and painful to retrofit
     once callers exist.
 
@@ -664,7 +682,8 @@ Written for after the gate. Each step is small enough to verify on its own.
 2. **The request builders and the row mapper** — the exclusion set as an array (R4), the
    species filter as a key (R5), the row's field names per A1 (R6). A named test asserts the
    *serialised body*, not the argument.
-3. **The read path** — pages, counts, and whichever of A5's options answers by-ids. Wire
+3. **The read path** — pages and counts, plus the option lists riding on the page response
+   (A6). A committed page comes from the cache, not from a request (R14). Wire
    `src/store.js`'s three read call sites.
 4. **The write path** — review, training, delete, correction. Versions per A7, outcomes keyed
    by `observation_id` (R8), `conflicted` rendered (R9).
