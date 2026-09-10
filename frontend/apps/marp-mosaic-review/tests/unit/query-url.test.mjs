@@ -40,10 +40,14 @@ test('R1: mode, filters, sort and page all survive the round trip', () => {
   q.filters = {
     ...q.filters,
     dive: ['D04', 'D05'],
-    species: ['Bat Star', 'Ochre Star'],
+    /* Keys, not names (F1). And they have to come back as **numbers**: an address only
+       carries text, and the endpoint refuses `filters.species` that is not integers. */
+    species: [41, 43],
     confidence: { from: 0.5, to: 0.8 },
     timeOfDay: { from: '22:00', to: '02:00' },
-    date: { from: '2019-01-01', to: '2019-12-31' }
+    /* A17: the date range carries times. It was `YYYY-MM-DD`, which is the reading the
+       human ruled out. */
+    date: { from: '09:00', to: '17:00' }
   };
   q.sort = { field: 'obsID', dir: 'asc', then: null };
   q.page = 7;
@@ -53,10 +57,10 @@ test('R1: mode, filters, sort and page all survive the round trip', () => {
   assert.equal(back.page, 7);
   assert.deepEqual(back.sort, { field: 'obsID', dir: 'asc', then: null });
   assert.deepEqual(back.filters.dive, ['D04', 'D05']);
-  assert.deepEqual(back.filters.species, ['Bat Star', 'Ochre Star']);
+  assert.deepEqual(back.filters.species, [41, 43]);
   assert.deepEqual(back.filters.confidence, { from: 0.5, to: 0.8 });
   assert.deepEqual(back.filters.timeOfDay, { from: '22:00', to: '02:00' });
-  assert.deepEqual(back.filters.date, { from: '2019-01-01', to: '2019-12-31' });
+  assert.deepEqual(back.filters.date, { from: '09:00', to: '17:00' });
 });
 
 test('R6: every declared dimension can be written and read back', () => {
@@ -64,9 +68,13 @@ test('R6: every declared dimension can be written and read back', () => {
      and forgotten here fails immediately instead of silently not surviving a reload. */
   for (const dimension of DIMENSIONS) {
     const q = base();
-    if (dimension.kind === KIND.SET) q.filters[dimension.key] = ['alpha', 'beta'];
-    else if (dimension.kind === KIND.WINDOW) q.filters[dimension.key] = { from: '01:15', to: '03:45' };
-    else if (dimension.key === 'date') q.filters[dimension.key] = { from: '2020-02-02', to: null };
+    /* A `numeric` set dimension filters on an integer key, so `['alpha','beta']` is not a
+       value it can carry -- it would be discarded on the way back in, which is R3 working
+       rather than a round-trip failure. A `clock` range carries times (A17). */
+    if (dimension.kind === KIND.SET) {
+      q.filters[dimension.key] = dimension.numeric ? [41, 43] : ['alpha', 'beta'];
+    } else if (dimension.kind === KIND.WINDOW) q.filters[dimension.key] = { from: '01:15', to: '03:45' };
+    else if (dimension.clock) q.filters[dimension.key] = { from: '02:02', to: null };
     else {
       const [lo, hi] = dimension.bounds;
       q.filters[dimension.key] = { from: lo, to: hi };
@@ -152,7 +160,7 @@ test('M2: the secondary term survives the address', () => {
   const q = { ...defaultQuery(), sort: { field: 'confidence', dir: 'asc', then: { field: 'keyframe_count', dir: 'desc' } } };
   const written = toQuery(q);
   /* The fixture's default species filter rides along; the sort is the part under test. */
-  assert.equal(written, '?species=Bat%20Star&sort=confidence.asc,keyframe_count.desc',
+  assert.equal(written, '?species=41&sort=confidence.asc,keyframe_count.desc',
     'both terms in one parameter, because they are one question');
   assert.deepEqual(fromQuery(written).sort, q.sort);
 });
@@ -175,7 +183,7 @@ test('M2: a secondary naming the primary is not a term, and is not written', () 
   assert.deepEqual(fromQuery('?sort=obsID.asc,obsID.desc').sort,
     { field: 'obsID', dir: 'asc', then: null });
   const q = { ...defaultQuery(), sort: { field: 'obsID', dir: 'asc', then: { field: 'obsID', dir: 'desc' } } };
-  assert.equal(toQuery(q), '?species=Bat%20Star&sort=obsID.asc');
+  assert.equal(toQuery(q), '?species=41&sort=obsID.asc');
 });
 
 test('M2: the default sort still writes a bare address', () => {
@@ -191,12 +199,15 @@ test('R3: a parameter naming no dimension is simply ignored', () => {
 });
 
 test('a value containing a comma stays one value', () => {
-  /* Species names can carry commas, and a comma is also how a multi-select is separated.
+  /* Project names can carry commas, and a comma is also how a multi-select is separated.
      Reading the address with URLSearchParams decodes first and splits second, which turns
-     one species into two — hence the hand-rolled parse. */
+     one value into two — hence the hand-rolled parse.
+     This used the species dimension, which now carries integer keys and so cannot hold a
+     comma at all (F1). `project` is the nearest dimension that still carries free text,
+     and the property under test is the parser's, not that dimension's. */
   const q = base();
-  q.filters.species = ['Rockfish, unidentified', 'Bat Star'];
-  assert.deepEqual(round(q).filters.species, ['Rockfish, unidentified', 'Bat Star']);
+  q.filters.project = ['Deep Reef, outer', 'Nearshore Kelp'];
+  assert.deepEqual(round(q).filters.project, ['Deep Reef, outer', 'Nearshore Kelp']);
 });
 
 test('a half-escaped address does not throw', () => {
@@ -269,12 +280,14 @@ test('the address stays readable: colons survive, commas do not become separator
 });
 
 test('an open-ended range keeps which end was open', () => {
+  /* Times rather than dates (A17). The property is which end was open, not which
+     vocabulary the ends are written in. */
   const q = base();
-  q.filters.date = { from: null, to: '2020-12-31' };
-  assert.deepEqual(round(q).filters.date, { from: null, to: '2020-12-31' });
+  q.filters.date = { from: null, to: '17:00' };
+  assert.deepEqual(round(q).filters.date, { from: null, to: '17:00' });
 
-  q.filters.date = { from: '2020-01-01', to: null };
-  assert.deepEqual(round(q).filters.date, { from: '2020-01-01', to: null });
+  q.filters.date = { from: '09:00', to: null };
+  assert.deepEqual(round(q).filters.date, { from: '09:00', to: null });
 });
 
 test('a dimension that nests keeps its dependents, because the address is not a gesture', () => {

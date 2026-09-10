@@ -54,13 +54,35 @@ export const clearPins = () => new Map();
 /**
  * Fold a commit response into the outcome map. Reverted entries carry the outcome
  * they were changed to, not a separate label, so the tile shows the current truth.
+ *
+ * **Keyed by `observation_id`, never by `id` and never by position** (F5, R8). This read
+ * `r.id`, which no entry of `MosaicCommitResult` has ever carried — every one of the five
+ * arrays is keyed `observation_id`. Against the endpoint that wrote one entry under the
+ * key `undefined` and left **every tile on a committed page with no outcome at all**: no
+ * error, no log, and a page that looks as though the commit never happened. It only
+ * worked against the fixture because the fixture also said `id`.
+ *
+ * `conflicted` is folded in as its own outcome (R9). It means the annotation moved under
+ * the reviewer and **nothing was written**, which is a different thing from a commit that
+ * did nothing, and the tile has to be able to say so. The entry carries `reason` rather
+ * than `outcome`, so the outcome is named here.
  */
 export function applyCommit(outcomes, result) {
   const next = new Map(outcomes);
-  (result.reviewed || []).forEach((r) => next.set(r.id, r.outcome));
-  (result.flagged || []).forEach((r) => next.set(r.id, r.outcome));
+  (result.reviewed || []).forEach((r) => next.set(r.observation_id, r.outcome));
+  (result.flagged || []).forEach((r) => next.set(r.observation_id, r.outcome));
+  (result.conflicted || []).forEach((r) => next.set(r.observation_id, 'conflicted'));
   return next;
 }
+
+/**
+ * The ids a commit refused for a moved version, so the page can offer a re-read (R9).
+ *
+ * Their marks are deliberately kept: nothing was written, so the reviewer's intention is
+ * still pending rather than applied.
+ */
+export const conflictedIds = (result) =>
+  (result && result.conflicted || []).map((r) => r.observation_id);
 
 /**
  * Seed the marks from what the records already say.
@@ -93,12 +115,21 @@ export function seedMarks(marks, touched, rows, isException) {
  * behaving as though a click meant the opposite of what it did.
  *
  * Reasons are carried across, because the reason belonged to the decision.
+ *
+ * **A `conflicted` tile keeps whatever mark it had** (R9). Nothing was written for it, so
+ * the reviewer's intention is still pending rather than recorded — dropping the mark would
+ * silently discard the decision the commit refused to take, which is the one thing a
+ * conflict must not do. An unmarked conflicted tile stays unmarked, because "accept this"
+ * is not an exception.
  */
 export function marksAfterCommit(marks, outcomes, ids, exception) {
   const next = new Map();
   if (!exception) return next;                 // Delete Mode keeps nothing marked
   ids.forEach((id) => {
-    if (outcomes.get(id) !== exception) return;
+    const outcome = outcomes.get(id);
+    const keep = outcome === exception
+      || (outcome === 'conflicted' && marks.has(id));
+    if (!keep) return;
     next.set(id, { reason: (marks.get(id) || {}).reason || null });
   });
   return next;

@@ -284,9 +284,11 @@ list a correction picker would search.
 - **R15** — the rail's option lists are the values still reachable under the filters already
   chosen, taken from the server rather than from the rows on screen.
 - **R16** — every dimension the rail offers is answerable. **No dimension is withdrawn.**
-  `date` filters a `tc` range, which searches time of day now and gains date support when
-  #76 gives an observation a real date — the control does not change shape when it does.
-  `session` and `model` were never unbacked. Answered by the human.
+  `date` filters a `tc` range, **compared as a point in time** (A17): it discriminates time
+  of day now and gains date support when #76 gives an observation a real date, and the
+  control does not change shape when it does. It does not wrap, which is what still
+  distinguishes it from `timeOfDay`. `session` and `model` were never unbacked. Answered by
+  the human.
 - **R17** — the correction picker searches the species list the observation belongs to, sends
   the species key, and shows something sensible before anything is typed without sending an
   empty query.
@@ -574,6 +576,35 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   failure — otherwise a page change would report a transport error to the reviewer, which is
   exactly the confusion A4 exists to remove.
 
+- [x] **A17 · product/UI + scientific · non-blocking** — **What does the `date` range
+  actually compare, now that it is not withdrawn?** Raised during G2, after A14 was answered.
+  A14 settles that `date` stays and *"filters a `tc` range, which searches time of day now and
+  gains date support when #76 gives an observation a real date — the control does not change
+  shape when it does"*, and the human's own words were *"we wanna be able to search for times
+  without a date or times with a date"*. Two readings of that are both reasonable and they
+  return different rows, which is the test for a material assumption:
+
+  (i) **the date component of `tc`.** The range compares `dateOf(tc)`, which is what
+  `model/match.js:103-109` already does, and a row whose `tc` carries no date **cannot answer**
+  — so it is excluded *and counted*, which is exactly the `excludedForNoDate` reporting #76
+  built so a date filter could never silently omit. Today no row's `tc` carries a date, so the
+  filter answers zero and the rail says so in words. Answerable, honest, and it needs no change
+  to the control or to the client. But "searches time of day now" is then false: it searches
+  nothing now.
+
+  (ii) **`tc` as a point in time.** The range compares whatever components both sides carry, so
+  with date-less `tc` values it discriminates *time of day* — which is what "searches time of
+  day now" says. This matches the human's sentence most directly, and it is what makes the
+  control useful before #76. Two costs: it overlaps `timeOfDay`, which is already a `tc`
+  filter (a wrapping window rather than a plain range, so they are not identical but they are
+  adjacent); and the control has to accept a time as well as a date, where today it is
+  `<input type="date">` and `model/query-url.js:182-188` validates `YYYY-MM-DD` — which is a
+  change of shape, and A14 says the shape does not change.
+
+  **Answered (ii)** — see *Decisions*. Non-blocking was the right tag: it blocked the `date`
+  control and nothing else, so the twenty-four requirements that do not depend on it carried
+  on while it was open.
+
 ## Decisions
 
 Nothing is decided until the assumptions above are answered. Recorded here so they are not
@@ -651,6 +682,27 @@ re-litigated:
     fixed seeded one for testing, a development one, and production.
   - **A16** — `AbortSignal` on every seam method. A shape decision, and painful to retrofit
     once callers exist.
+
+- **2026-09-10 · A17** — **The `date` range compares `tc` as a point in time**, reading (ii).
+  Answered by the human: *"if there is no date, it'll just default to the time. And if there
+  is a date, then the date will also work."* So the control accepts a **time**, discriminates
+  time of day today, and starts discriminating dates when #76 gives an observation a real one
+  — without the control changing shape, which is what A14 meant. Reading (i), comparing the
+  date component of `tc`, is explicitly ruled out: it answers zero rows today.
+
+  Three consequences, recorded because each is a place this could be got wrong later:
+
+  - **the endpoint serves it instead of refusing it.** `repository/mosaic.repository.js`
+    threw a 400 naming #76; it now applies an inclusive range over the same clock expression
+    `timeOfDay` uses. R16 is met.
+  - **it does not wrap, and `timeOfDay` does.** That is the whole difference between the two
+    controls now, and it is a real one: `timeOfDay` is *"22:00 to 02:00 is one night"*, where
+    a `date` range from later to earlier is empty. They are adjacent rather than duplicates,
+    and they stop being adjacent at all the moment `tc` carries a date.
+  - **`excludedForNoDate` finally has something to report.** #76 built that reporting so a
+    date filter could never silently omit, and it counts rows the filter *could not answer
+    for* — which under (ii) is a row whose `tc` carries no readable clock. It is computed
+    only while the filter is active, because it costs a pass.
 
 - **2026-09-10 · A12** — **The tile's "was X" indicator keeps today's behaviour: it appears
   only after a correction made in the current session.** Answered by the human, against the

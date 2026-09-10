@@ -40,6 +40,27 @@ const { MarpData } = await import('../../src/data.js');
 const { matchesFilters, unanswerable } = await import('../../src/model/match.js');
 const { sortTerms } = await import('../../src/model/filters.js');
 
+/**
+ * Commit a set of served rows, in the shape the endpoint takes.
+ *
+ * `commitPage({ mode, observationIds, marks })` is gone: the three commit routes require
+ * `observations: [{ observation_id, version }]` and **refuse a request that omits a
+ * version** -- "a missing version is a 400, never an implicit overwrite" (F4, A7, R7). The
+ * store passes the rows it is holding, so the version travels with the thing the reviewer
+ * looked at; these tests do the same.
+ *
+ * @param {string} mode - The reviewing mode.
+ * @param {Array<Object>} rows - Served rows, each carrying its own `version`.
+ * @param {Map} [marks] - The exception set.
+ * @returns {Promise<Object>} The commit result.
+ */
+const commit = (mode, rows, marks = new Map()) => MarpData.commitPage({
+  mode,
+  observations: rows.map((r) => ({ observation_id: r.observation_id, version: r.version })),
+  marks: [...marks.entries()].map(([observation_id, mark]) =>
+    ({ observation_id, reason: (mark && mark.reason) || null }))
+});
+
 /* ------------------------------------------------------- the reference implementation */
 
 /**
@@ -57,11 +78,19 @@ function reference({ filters = {}, sort, page = 1, pageSize = 45 }, observations
   if (filters.excludeIds && filters.excludeIds.size) {
     rows = rows.filter((r) => !filters.excludeIds.has(r.observation_id));
   }
+  /* The row carries the schema's `review_decision` / `training_decision`, where the
+     **neutral state is null** -- the absence of a review record -- while the *filter*
+     vocabulary still spells that `'unreviewed'` / `'undecided'`, exactly as
+     `MosaicQueryFilters` does. This reference held the fixture's old private vocabulary on
+     both sides, so it agreed with a fixture that agreed with nothing (F3). */
+  const decided = (value, neutral) => (value == null ? neutral : value);
   if (filters.reviewStatus && filters.reviewStatus.length) {
-    rows = rows.filter((r) => filters.reviewStatus.includes(r.review_status));
+    rows = rows.filter((r) =>
+      filters.reviewStatus.includes(decided(r.review_decision, 'unreviewed')));
   }
   if (filters.trainingDisposition && filters.trainingDisposition.length) {
-    rows = rows.filter((r) => filters.trainingDisposition.includes(r.training_disposition));
+    rows = rows.filter((r) =>
+      filters.trainingDisposition.includes(decided(r.training_decision, 'undecided')));
   }
 
   const terms = sortTerms(sort);
@@ -228,6 +257,10 @@ test('query() still returns the fixture rows themselves at scale 1', async () =>
 
   assert.equal(first.observation_id, reference({ page: 1 }, base).ids[0]);
   assert.ok(first.thumb, 'a served row carries the fixture row it came from');
+  /* `thumb` is a **fixture** field. The endpoint's row deliberately carries no `thumb` --
+     "the address is derivable from a key this row already carries" -- so the tile asks the
+     seam for a picture's address rather than building one (F7, R1). */
+  assert.equal(MarpData.thumbnailUrl(first), `./fixtures/thumbs/${first.thumb}`);
   const again = await MarpData.query({ page: 1 });
   assert.equal(again.rows[0], first, 'the same object, as every existing test expects');
 });
@@ -311,8 +344,8 @@ test('a served row is a copy, so writing to it cannot reach the fixture (R13)', 
      out of the fixture, which is the source of truth for every later query. `store.js`
      writes `thumbnail_status` on a served row while a retry is in flight, so this path is
      live rather than hypothetical. */
-  a.comname = 'Not A Species';
-  a.review_status = 'flagged';
+  a.species_comname = 'Not A Species';
+  a.review_decision = 'flagged';
   a.thumbnail_status = 'failed';
 
   const third = await MarpData.queryPages(q);
@@ -330,7 +363,7 @@ test('a committed replica is copied out of the overlay too, not handed over (R13
   const open = await MarpData.query({ filters, page: 1, pageSize: 3 });
   const committed = ids(open.rows);
 
-  await MarpData.commitPage({ mode: 'scientific', observationIds: committed, marks: new Map() });
+  await commit('scientific', open.rows);
 
   const [[one], [two]] = await Promise.all([
     MarpData.byIds([committed[0]]), MarpData.byIds([committed[0]])
@@ -338,9 +371,9 @@ test('a committed replica is copied out of the overlay too, not handed over (R13
   assert.notEqual(one, two, 'the overlay row is the record; a served copy of it is not');
   assert.deepEqual(one, two);
 
-  one.review_status = 'unreviewed';
+  one.review_decision = null;
   const [three] = await MarpData.byIds([committed[0]]);
-  assert.equal(three.review_status, 'reviewed', 'the record did not move');
+  assert.equal(three.review_decision, 'reviewed', 'the record did not move');
 });
 
 test('every query carries the observation_id tie-break, at any depth (R2)', async () => {
@@ -373,7 +406,7 @@ test('every query carries the observation_id tie-break, at any depth (R2)', asyn
 
 test('a page served twice holds the same ids in the same order (R2)', async () => {
   await fixtureAt(147);
-  const q = { filters: { species: ['Bat Star'] }, page: 1234, pageSize: 45 };
+  const q = { filters: { species: [41] }, page: 1234, pageSize: 45 };   // Bat Star, by key
 
   const [first, second] = await Promise.all([MarpData.query(q), MarpData.query(q)]);
   assert.deepEqual(ids(second.rows), ids(first.rows));
@@ -396,12 +429,12 @@ test('a commit against a replica survives, and leaves its siblings alone (R13)',
   const scale = 5;
   await fixtureAt(scale);
 
-  const filters = { species: ['Bat Star'], reviewStatus: ['unreviewed'] };
+  const filters = { species: [41], reviewStatus: ['unreviewed'] };   // Bat Star, by key
   const open = await MarpData.query({ filters, page: 1, pageSize: 3 });
   const committed = ids(open.rows);
   assert.equal(committed.length, 3);
 
-  await MarpData.commitPage({ mode: 'scientific', observationIds: committed, marks: new Map() });
+  await commit('scientific', open.rows);
 
   /* The sibling replicas of the same base rows are a different decision each. */
   const siblings = committed.map((id) => {
@@ -417,11 +450,13 @@ test('a commit against a replica survives, and leaves its siblings alone (R13)',
   ]);
 
   for (const row of back) {
-    assert.equal(row.review_status, 'reviewed', 'a committed replica reads back committed');
-    assert.equal(row.reviewed_by, 'I. Travers');
+    assert.equal(row.review_decision, 'reviewed', 'a committed replica reads back committed');
+    /* A reviewer **id**, not a name (A13, F8). `reviewed_by: 'I. Travers'` was a column
+       the endpoint's row has never carried, holding one developer's name. */
+    assert.equal(row.review_reviewer_id, 5);
   }
   for (const row of kin) {
-    assert.equal(row.review_status, 'unreviewed',
+    assert.equal(row.review_decision, null,
       'committing one replica must not commit the row it was copied from');
   }
 
@@ -432,31 +467,43 @@ test('a commit against a replica survives, and leaves its siblings alone (R13)',
 
 test('a species correction against a replica survives (R13)', async () => {
   await fixtureAt(7);
-  const open = await MarpData.query({ filters: { species: ['Bat Star'] }, page: 2, pageSize: 4 });
-  const target = open.rows[1].observation_id;
+  /* Species is filtered by **key** now, not by name (F1): the endpoint's filter is
+     `observations.species_id`, and only that, because it finds the organism where a name
+     finds rows whose label happens to match. */
+  const batStar = PRISTINE.species.find((sp) => sp.comname === 'Bat Star');
+  const rockfish = PRISTINE.species.find((sp) => sp.comname === 'Rockfish');
 
-  const rockfish = PRISTINE.species.find((s) => s.comname === 'Rockfish');
-  const res = await MarpData.setSpecies(target, rockfish.species_id);
+  const open = await MarpData.query({ filters: { species: [batStar.species_id] }, page: 2, pageSize: 4 });
+  const target = open.rows[1];
+
+  const res = await MarpData.setSpecies({
+    observationId: target.observation_id, speciesId: rockfish.species_id, version: target.version
+  });
   assert.equal(res.ok, true);
-  assert.equal(res.observation.observation_id, target);
+  assert.equal(res.observation.observation_id, target.observation_id);
 
   /* It has left the species-filtered set, and joined the other one. */
   const [[back], bat, rock] = await Promise.all([
-    MarpData.byIds([target]),
-    MarpData.query({ filters: { species: ['Bat Star'] }, page: 1, pageSize: 45 }),
-    MarpData.query({ filters: { species: ['Rockfish'] }, page: 1, pageSize: 45 })
+    MarpData.byIds([target.observation_id]),
+    MarpData.query({ filters: { species: [batStar.species_id] }, page: 1, pageSize: 45 }),
+    MarpData.query({ filters: { species: [rockfish.species_id] }, page: 1, pageSize: 45 })
   ]);
-  assert.equal(back.comname, 'Rockfish');
-  assert.equal(back.previous_comname, 'Bat Star');
+  /* **`species_comname` moved and `comname` did not** (F6). `comname` is the label the
+     annotator's list entry carried and a correction never rewrites it; keeping it frozen
+     is what makes the drift auditable. This asserted `back.comname === 'Rockfish'` and
+     `back.previous_comname === 'Bat Star'` -- a field no row carries at all. */
+  assert.equal(back.species_comname, 'Rockfish');
+  assert.equal(back.comname, 'Bat Star', 'the annotator label is never rewritten');
+  assert.equal(back.previous_comname, undefined, 'and there is no such field');
   assert.equal(bat.total, 1185 * 7 - 1);
   assert.equal(rock.total,
-    PRISTINE.observations.filter((r) => r.comname === 'Rockfish').length * 7 + 1);
+    PRISTINE.observations.filter((r) => r.species_id === rockfish.species_id).length * 7 + 1);
 });
 
 test('the status counts scale with the set, and move when work is committed', async () => {
   const scale = 11;
   const base = await fixtureAt(scale);
-  const filters = { species: ['Bat Star'] };
+  const filters = { species: [41] };            // Bat Star, by key (F1)
 
   const [before, open] = await Promise.all([
     MarpData.counts({ filters }),
@@ -464,12 +511,11 @@ test('the status counts scale with the set, and move when work is committed', as
   ]);
   const matching = base.filter((r) => matchesFilters(filters, r));
   assert.equal(before.total, matching.length * scale);
+  /* Null is the neutral state on the row; `unreviewed` is what the *count* is keyed by. */
   assert.equal(before.unreviewed,
-    matching.filter((r) => r.review_status === 'unreviewed').length * scale);
+    matching.filter((r) => r.review_decision == null).length * scale);
 
-  await MarpData.commitPage({
-    mode: 'scientific', observationIds: ids(open.rows), marks: new Map()
-  });
+  await commit('scientific', open.rows);
 
   const after = await MarpData.counts({ filters });
   assert.equal(after.total, before.total, 'reviewing something does not remove it');
@@ -495,11 +541,21 @@ test('exclusion suppresses exactly the replicas it names, at depth', async () =>
 
 test('the date filter reports what it could not answer for, at depth', async () => {
   const base = await fixtureAt(147);
-  const filters = { date: { from: '2026-08-01', to: null } };
+  /* A17: the range compares `tc` as a point in time, so the ends are **times**. It was
+     `{ from: '2026-08-01' }`, comparing the date component of `tc` -- which no row carries,
+     so the filter answered zero rows and the whole set was "unanswerable". That is the
+     reading the human ruled out. */
+  const filters = { date: { from: '00:00', to: null } };
 
   const got = await MarpData.query({ filters, page: 1 });
   assert.equal(got.excludedForNoDate, reference({ filters }, base).excludedForNoDate * 147);
-  assert.equal(got.total, 0, 'no row in this fixture carries a date');
+  /* Every row's `tc` carries a readable clock, so nothing is unanswerable and a range
+     open at the top matches the whole set. Under the old reading this asserted `total: 0`
+     and `excludedForNoDate` equal to the whole set -- a filter that excluded everything
+     and said so, which is why it had to be refused rather than served. */
+  assert.equal(got.excludedForNoDate, 0, 'every tc in this fixture carries a clock');
+  assert.equal(got.total, (await MarpData.query({ page: 1 })).total,
+    'a range open at the top narrows nothing');
 });
 
 /* ------------------------------------------------------------ the page-set contract */
@@ -677,11 +733,9 @@ test('setting the scale renumbers the set and drops simulated edits', async () =
   const open = await MarpData.query({ filters, page: 1, pageSize: 4 });
   assert.equal(open.total, unreviewed * 5, 'the set is the fixture, five times over');
 
-  await MarpData.commitPage({
-    mode: 'scientific', observationIds: ids(open.rows), marks: new Map()
-  });
+  await commit('scientific', open.rows);
   const [committed] = await MarpData.byIds([ids(open.rows)[0]]);
-  assert.equal(committed.review_status, 'reviewed');
+  assert.equal(committed.review_decision, 'reviewed');
 
   MarpData.setScale(9);
   assert.equal(MarpData.scale(), 9);

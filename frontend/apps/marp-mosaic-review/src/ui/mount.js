@@ -12,9 +12,10 @@ import { renderConfirm, wireConfirm } from './confirm.js';
 import { renderRail, wireRail } from './rail.js';
 import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
+import { renderFailure, wireFailure } from './failure.js';
 import {
   closeMenus, isMenuOpenFor,
-  modelMenu, sortMenu, userMenu
+  sortMenu, userMenu
 } from './menus.js';
 
 export { computeLayout };
@@ -29,6 +30,9 @@ function wirePageStates() {
     if (!act) return;
     if (act.dataset.act === 'clear-filters') { e.stopPropagation(); actions.clearFilters(); }
     if (act.dataset.act === 'retry-thumbnails') { e.stopPropagation(); actions.retryFailedThumbnails(); }
+    /* Offered after a version conflict: the annotation moved underneath the page and
+       nothing was written, so re-reading is the way forward (R9). */
+    if (act.dataset.act === 'reread') { e.stopPropagation(); actions.rereadAfterConflict(); }
   });
 }
 
@@ -175,6 +179,7 @@ export function mount() {
   });
 
   wireGrid();
+  wireFailure();
   wirePageStates();
   wirePager();
   wireMenus();
@@ -188,6 +193,7 @@ export function mount() {
      converges in one extra pass rather than looping. */
   subscribe(() => {
     renderChrome();
+    renderFailure();
     renderGrid();
     renderPicker();
     renderConfirm();

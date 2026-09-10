@@ -12,10 +12,9 @@
  * that was clicked.
  */
 import { state, actions } from '../store.js';
-import { MarpData } from '../data.js';
 import { SORT_FIELDS, SORT_DIRS, sortField, sortArrow } from '../model/filters.js';
-import { DIMENSION } from '../model/dimensions.js';
-import { el, ICON, ME } from './dom.js';
+import { DIMENSION, optionLabel } from '../model/dimensions.js';
+import { el, ICON } from './dom.js';
 
 let openMenuEl = null;
 let openAnchorKey = null;
@@ -193,7 +192,17 @@ export function dimensionMenu(anchor, key) {
      the whole list -- including the "All …" entry, which is what B1 was about. */
   const build = () => {
     const chosen = state.filters[key] || [];
-    const options = MarpData.optionsFor(key, state.filters);
+    /**
+     * From `state.facets`, which the store fetched once for this question (R15, A6).
+     *
+     * This called `MarpData.optionsFor(key, state.filters)` **synchronously, from a render
+     * path**, and that scanned the whole fixture — 3,000 rows in memory, which is not
+     * available at 440,000 (F12). Making the seam method async would have changed this
+     * file and two actions in the store, which is a leak above `api/`; asking once per
+     * question instead means the rail reads state exactly as it reads everything else, and
+     * the leak does not happen.
+     */
+    const options = state.facets[key] || [];
 
     /* Scoped dimensions say what they are scoped by, so an empty dive list reads as
        "this project has none" rather than as a broken control. */
@@ -206,9 +215,15 @@ export function dimensionMenu(anchor, key) {
       onPick: () => actions.clearDimension(key),
     }];
 
-    options.forEach((value) => {
+    /* `{ value, label }` pairs, not bare values (A10a). `species` and `model` filter on
+       an integer key, so `dimension.one(value)` would have drawn "775" — the value is what
+       goes on the wire and the label is what a reviewer reads, and for three of the seven
+       dimensions those are genuinely different things. */
+    options.forEach((option) => {
+      const value = option.value;
       items.push({
-        value: String(value), label: dimension.one(value), on: chosen.includes(value),
+        value: String(value), label: optionLabel(dimension, value, state.facets),
+        on: chosen.includes(value),
         keepOpen: true,
         onPick: () => actions.toggleDimension(key, value),
       });
@@ -220,14 +235,6 @@ export function dimensionMenu(anchor, key) {
 
   menu(anchor, build(), { search: Boolean(dimension.searchable), rebuild: build });
 }
-
-/** No column links an observation to the model that produced it — see #68. */
-export const modelMenu = (anchor) => menu(anchor, [
-  { head: 'Model — not yet in the schema' },
-  { value: 'v3.2', label: 'BatStarNet v3.2', on: true, onPick: () => {} },
-  { value: 'v3.1', label: 'BatStarNet v3.1', onPick: () => {} },
-  { value: 'any', label: 'Any model', onPick: () => {} }
-], { search: true });
 
 /**
  * The sort: a field and a direction, and then a second field and direction for the ties.
@@ -290,8 +297,11 @@ export const sortMenu = (anchor) => {
   menu(anchor, build(), { align: 'right', rebuild: build });
 };
 
+/* The signed-in reviewer's name, from the server (R19). It was the literal
+   `'I. Travers'` imported from `ui/dom.js`, so this menu told everybody they were one
+   developer. `state.me` is null until `/api/v2/auth/me` has answered. */
 export const userMenu = (anchor) => menu(anchor, [
-  { head: `Signed in as ${ME}` },
+  { head: state.me ? `Signed in as ${state.me.name}` : 'Signing in\u2026' },
   { value: 'prefs', label: 'Preferences', onPick: () => {} },
   { value: 'keys', label: 'Keyboard shortcuts', onPick: () => {} },
   { value: 'density', label: 'Tile density', onPick: () => {} },

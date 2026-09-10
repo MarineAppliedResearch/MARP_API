@@ -6,8 +6,10 @@
  * what the last commit did. Everything here is derived; nothing is stored.
  */
 import { state, MODES } from '../store.js';
-import { existingState, decidedBy, pendingException, borrowedTags } from '../model/modes.js';
-import { ICON, ME } from './dom.js';
+import { existingState, decidedByMe, pendingException, borrowedTags } from '../model/modes.js';
+import { currentSpeciesName } from '../model/row.js';
+import { MarpBackend } from '../backend.js';
+import { ICON } from './dom.js';
 
 export const markIcon = (mode = state.mode) =>
   ({ scientific: ICON.flag, training: ICON.exc, delete: ICON.del }[mode]);
@@ -40,9 +42,14 @@ function existingBadge(existing, row, id, byMe) {
       title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}${who ? ', by you' : ''}">${ICON.flag}FLAGGED${who}</span>`;
     case 'excluded': return `<span class="badge b-exc">${ICON.exc}EXCLUDED${who}</span>`;
     case 'promoted': return `<span class="badge b-pro">${ICON.pro}PROMOTED${who}</span>`;
+    /* `REVIEWED`, with no name, when it was somebody else. This drew
+       `row.reviewed_by || 'REVIEWED'` -- a column the row does not carry, so the fallback
+       was the only branch that ever ran (F8) -- and A13 settled that it stays nameless
+       deliberately: the row carries a reviewer *id*, so the client can say "by you"
+       without the mosaic becoming a route that reports who did how much work. */
     default: return byMe
       ? `<span class="badge b-out">${ICON.tick}REVIEWED &middot; you</span>`
-      : `<span class="badge b-oth">${ICON.eye}${row.reviewed_by || 'REVIEWED'}</span>`;
+      : `<span class="badge b-oth">${ICON.eye}REVIEWED</span>`;
   }
 }
 
@@ -70,7 +77,12 @@ function borrowed(row) {
   const tags = borrowedTags(state.mode, row);
   if (!tags.length) return '';
   return `<span class="rtags">${tags.map((t) => {
-    const title = [`${t.workflow}: ${t.value}`, t.reason, t.by].filter(Boolean).join(' — ');
+    /* "by you" or nothing. The tooltip used to name the person from `t.by`, which came
+       from a column the row does not carry; A13 gives an id instead, so the only thing
+       the interface may say about a decision's owner is whether it was the reviewer's. */
+    const mine = state.me && t.reviewerId != null && t.reviewerId === state.me.user_id;
+    const title = [`${t.workflow}: ${t.value}`, t.reason, mine ? 'by you' : null]
+      .filter(Boolean).join(' — ');
     return `<span class="rtag ${TAG_CLASS[t.value] || 'b-oth'}" data-rtag="${t.key}"
       title="${title}">${TAG_ICON[t.value] || ''}${t.value.toUpperCase()}</span>`;
   }).join('')}</span>`;
@@ -90,11 +102,19 @@ function corner(row, id, { marked, changed, existing, outcome }) {
 
   if (marked && marked.reason) return `<span class="reason-chip">${marked.reason}</span>`;
 
-  /* A correction is clickable: it reopens the chooser on the tile it belongs to. */
-  if (changed || row.previous_comname) {
-    const was = (changed && changed.from) || row.previous_comname;
+  /**
+   * A correction is clickable: it reopens the chooser on the tile it belongs to.
+   *
+   * **Only a correction made in this session** (A12, answered against the recommendation).
+   * `row.previous_comname` is gone: no row carries it, and the field this phase *could*
+   * have drawn instead — `comname` differing from `species_comname` — would have made the
+   * chip appear on every row that has ever been relabelled, including rows nobody in this
+   * session touched. That is a behaviour change rather than a port, and the human's call
+   * was to keep today's behaviour. `state.changed` is therefore the only source.
+   */
+  if (changed) {
     return `<span class="reason-chip" data-changed="${id}"
-      title="Change the species again">was ${was}</span>`;
+      title="Change the species again">was ${changed.from}</span>`;
   }
   if ((existing === 'flagged' || outcome === 'flagged') && row.flag_reason) {
     return `<span class="reason-chip">${row.flag_reason}</span>`;
@@ -111,14 +131,40 @@ function corner(row, id, { marked, changed, existing, outcome }) {
  */
 function body(row) {
   if (row.thumbnail_status === 'ready') {
-    /* `thumb` is the file, named for the species it shows. It used to be an index into a
-       flat pile of pictures, with two of them reserved by hand so the label and the image
-       could not disagree -- which worked only for as long as somebody remembered. */
-    return `<img src="./fixtures/thumbs/${row.thumb}" alt="${row.comname}" loading="lazy">`;
+    /**
+     * The address comes from the seam (R10, F7, R1).
+     *
+     * This was `./fixtures/thumbs/${row.thumb}` — a URL written above `api/`, and a
+     * *fixture* URL at that, so it could never have drawn a real picture. The row
+     * deliberately carries no `thumb`: "the address is derivable from a key this row
+     * already carries, so no second field repeats a URL 45 times a page", and the
+     * row-shape tripwire asserts its absence. So the seam answers, and against the API
+     * that is a same-origin `<img>` carrying the session cookie — no signed URL, no token
+     * in a query string, and no blob fetch per tile.
+     *
+     * `onerror` is R10's second half: a 404 on a row that reported `ready` degrades to the
+     * no-image state rather than to a broken-image glyph. `storage/` is restored
+     * separately from the database, so a recorded thumbnail whose file is missing is a
+     * real and recoverable state.
+     */
+    return `<img src="${MarpBackend.thumbnailUrl(row)}" alt="${currentSpeciesName(row)}"
+      loading="lazy" onerror="this.closest('.tile').dataset.noimage='1';this.remove()">`;
   }
   if (row.thumbnail_status === 'queued') {
-    return `<span class="fallback"><img src="./fixtures/thumbs/marp-mark.png" alt="">
-      <span class="ph-t">PREPARING</span><span class="phbar"><i></i></span></span>`;
+    return `<span class="fallback"><span class="ph-t">PREPARING</span>
+      <span class="phbar"><i></i></span></span>`;
+  }
+  /**
+   * A failure that retrying cannot help says so, and offers no button (R13, F11).
+   *
+   * `thumbnail_permanent` is set from a retry answer, never from a row — the client had
+   * code for this state and no data had ever reached it, so it has never been rendered
+   * until now. The reason is the endpoint's own, e.g. "the observation has no keyframes,
+   * so it has no bounding box and can never have a cropped picture".
+   */
+  if (row.thumbnail_permanent) {
+    return `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
+      <span class="na-t">NO IMAGE &middot; PERMANENT</span></span>`;
   }
   return `<span class="fallback"><span style="font-size:20px;color:#c07d85">&#9888;</span>
     <span class="na-t">NO IMAGE</span></span>`;
@@ -138,12 +184,16 @@ export function tile(row) {
   const exception = pendingException(state.mode);
   const takingBack = !marked && exception && state.touched.has(id)
     && (outcome === exception || existing === exception);
-  const byMe = decidedBy(row) === ME;
+  /* An id against the authenticated principal's id (A13). `decidedBy(row) === ME` was a
+     name against a literal, and both halves were wrong: the row carries no name, and the
+     literal was one developer's. */
+  const byMe = decidedByMe(state.mode, row, state.me);
   const noImage = row.thumbnail_status !== 'ready';
 
   const cls = ['tile'];
   if (row.thumbnail_status === 'queued') cls.push('queued');
   if (row.thumbnail_status === 'failed') cls.push('failed');
+  if (row.thumbnail_permanent) cls.push('permanent');
   if (marked) cls.push('marked');
   if (state.picker && state.picker.id === id) cls.push('active');
   if (changed) cls.push('changed');
@@ -160,6 +210,11 @@ export function tile(row) {
       ? `<span class="badge b-rev" title="Not committed yet — the next commit accepts it">${markIcon()}TAKING BACK</span>`
     : marked ? `<span class="badge ${markClass()}" data-badge="${id}"
         title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`
+    /* A refused commit is its own state: the annotation moved underneath the page and
+       **nothing was written**, which is a different thing from a commit that did nothing.
+       The mark is kept, so the page can be re-read and committed again (R9). */
+    : outcome === 'conflicted'
+      ? `<span class="badge b-rev" title="The annotation moved while you were looking at it — nothing was written. Re-read the page and commit again.">${ICON.cross}MOVED</span>`
     : outcome ? outcomeBadge(outcome, row, id)
     : showExisting ? existingBadge(existing, row, id, byMe)
     /* A correction is not this mode's business, so it only claims the badge when
@@ -167,11 +222,17 @@ export function tile(row) {
     : changed ? `<span class="badge b-chg">${ICON.tick}CHANGED</span>`
     : '';
 
-  const tip = noImage
-    ? `${row.comname} · no image — markable, but excluded from the page commit`
-    : `${row.comname} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
+  /* The **current** species, not the annotator's frozen label (F6). `row.comname` here
+     showed the old animal for ever on any observation that had been corrected, while the
+     species filter -- which is `species_id` -- matched the new one. */
+  const name = currentSpeciesName(row);
+  const tip = row.thumbnail_permanent
+    ? `${name} · no image, and retrying cannot help${row.thumbnail_reason ? ' — ' + row.thumbnail_reason : ''}`
+    : noImage
+      ? `${name} · no image — markable, but excluded from the page commit`
+      : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
 
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}">
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      ${borrowed(row)}<span class="cap">${row.comname}</span></button>`;
+      ${borrowed(row)}<span class="cap">${name}</span></button>`;
 }

@@ -20,5 +20,21 @@ export const ICON = {
   cross: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M12.6 4.8 11.2 3.4 8 6.6 4.8 3.4 3.4 4.8 6.6 8l-3.2 3.2 1.4 1.4L8 9.4l3.2 3.2 1.4-1.4L9.4 8z"/></svg>'
 };
 
-/** The current reviewer. Becomes the session identity when there is an API. */
-export const ME = 'I. Travers';
+/**
+ * The reviewer's initials, for the header button.
+ *
+ * **The name itself is gone from this file** (R19). It was the literal `'I. Travers'`, and
+ * `ui/tile.js` compared it against `decidedBy(row)` to decide "by you" — against four row
+ * columns that do not exist, so the badge was true for one person on one machine and
+ * silently false for everybody else (F8). The identity comes from `/api/v2/auth/me` and
+ * lives in `state.me`; this is only how a name is drawn small.
+ *
+ * @param {Object|null} me - `state.me`.
+ * @returns {string} Up to two initials, or a dash before the identity has arrived.
+ */
+export const initialsOf = (me) => {
+  const name = (me && me.name) || '';
+  const parts = name.split(/[\s.]+/).filter(Boolean);
+  if (!parts.length) return '\u2014';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+};

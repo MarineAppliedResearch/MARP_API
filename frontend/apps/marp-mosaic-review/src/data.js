@@ -10,10 +10,24 @@
  * including the per-observation results that #68 requires for bulk operations.
  */
 
-const ME = 'I. Travers';
+/**
+ * The signed-in reviewer, as the fixture's own `users` entry.
+ *
+ * **An id and a name, not a bare name.** This was the literal `'I. Travers'`, and it was
+ * compared against four row columns that do not exist (F8) — so "by you" was true for one
+ * person on one machine and silently false for everybody else. `whoami()` below is the
+ * seam method the interface asks instead, so nothing above `api/` holds a name at all
+ * (R19).
+ */
+const ME = Object.freeze({ user_id: 5, name: 'I. Travers', username: 'itravers' });
 
 import { matchesFilters, unanswerable } from './model/match.js';
 import { DIMENSIONS, DIMENSION, KIND, isActive } from './model/dimensions.js';
+/* The row column and the neutral *filter* value for each status dimension, declared once
+   in `model/modes.js`. The fixture used to spell both out, which is how it came to filter
+   and count on a column the schema does not have. */
+import { STATUS_DIMENSIONS } from './model/modes.js';
+import { currentSpeciesName as currentName } from './model/row.js';
 /* Same reason as `matchesFilters`: which comparisons a query makes, in which order, is a
    rule, and a second copy of it here is a second place for the fixture and the API to
    disagree about what a sort means. */
@@ -151,13 +165,23 @@ function editable(id) {
   return row;
 }
 
-/* The two status dimensions are not in `DIMENSIONS`, so `matchesFilters` cannot see them.
-   An empty array means **not filtering** -- never the owning mode's default. #89. */
+/**
+ * The two status dimensions are not in `DIMENSIONS`, so `matchesFilters` cannot see them.
+ * An empty array means **not filtering** -- never the owning mode's default. #89.
+ *
+ * The row now carries the schema's `review_decision` / `training_decision`, where the
+ * neutral state is **null** -- the absence of a review record -- while the *filter*
+ * vocabulary still spells that `'unreviewed'` / `'undecided'`, exactly as the endpoint's
+ * `MosaicQueryFilters` does. `STATUS_DIMENSIONS` is the one place the pair is declared, so
+ * this reads the mapping from there rather than spelling either word again (F3, A1).
+ */
+const decidedAs = (dim, r) => r[dim.column] == null ? dim.neutral : r[dim.column];
+
 const statusMatches = (filters, r) =>
-  (!filters.reviewStatus || !filters.reviewStatus.length
-    || filters.reviewStatus.includes(r.review_status))
-  && (!filters.trainingDisposition || !filters.trainingDisposition.length
-    || filters.trainingDisposition.includes(r.training_disposition));
+  Object.values(STATUS_DIMENSIONS).every((dim) => {
+    const wanted = filters[dim.key];
+    return !wanted || !wanted.length || wanted.includes(decidedAs(dim, r));
+  });
 
 /** Everything a query narrows on except the exclusion set, which is per replica. */
 const member = (filters, r) =>
@@ -176,6 +200,38 @@ const compare = (terms) => (a, b) => {
   }
   return a.observation_id - b.observation_id;
 };
+
+/**
+ * What the rail draws for one value of a set dimension.
+ *
+ * The three key-valued dimensions — species, model, session — filter on an integer and
+ * show a name, so the option list has to carry both (A10a). Where the name lives is not
+ * uniform and that is a property of the schema rather than of this fixture: a species name
+ * is a column on `species`, a model name a column on `ml_models`, and a session has no
+ * name at all, so its own id is the honest label.
+ *
+ * Everything else labels itself, which is why this is a lookup rather than a declaration.
+ */
+function labelFor(dimension, value, row) {
+  if (dimension.key === 'species') return currentName(row) || String(value);
+  if (dimension.key === 'model') {
+    const model = (db.models || []).find((m) => m.id === value);
+    return model ? model.name : String(value);
+  }
+  return value;
+}
+
+/**
+ * Which annotation list a row's species was chosen from, for A10(c).
+ *
+ * A common name identifies a species only *within* a list (F15), so a mosaic spanning
+ * session types can offer two different organisms under one label. The real answer comes
+ * from `species.species_list`; the fixture carries the list on the catalogue entry.
+ */
+function speciesListOf(row) {
+  const entry = (db.species || []).find((s) => s.species_id === row.species_id);
+  return (entry && entry.species_list) || null;
+}
 
 /** The ids a caller wants suppressed, from whichever of the two places they arrived in. */
 function excludedIds(...sources) {
@@ -339,6 +395,29 @@ function badRequest(message) {
 }
 
 /**
+ * Refuse to answer a question the caller has already superseded (A16, R21).
+ *
+ * Every seam method takes an optional `AbortSignal`, and the fixture honours it for the
+ * same reason `fetch` does: a request the reviewer has moved past should stop costing
+ * something, and — more importantly here — the *shape* has to be the same in both
+ * backings or the store's abort handling would be exercised against only one of them.
+ *
+ * The rejection is a `DOMException` named `AbortError` where the platform has one, which
+ * is what `fetch` throws, so `isAbort()` in `src/api/transport.js` recognises both. Under
+ * `node --test` `DOMException` exists from Node 17, and the plain `Error` fallback keeps
+ * the name so nothing depends on the class.
+ */
+function throwIfAborted(signal) {
+  if (!signal || !signal.aborted) return;
+  if (typeof DOMException === 'function') {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  const err = new Error('The operation was aborted.');
+  err.name = 'AbortError';
+  throw err;
+}
+
+/**
  * The pages a request is actually asking for: de-duplicated, ascending, inside the cap.
  *
  * **Rejected rather than silently truncated.** A scheduler that quietly gets fewer pages
@@ -376,12 +455,30 @@ const termsFor = (sort) =>
     : sortTerms(Array.isArray(sort) ? null : sort);
 
 export const MarpData = {
-  async load() {
-    if (db) return db;
-    const res = await fetch('./fixtures/observations.json');
-    if (!res.ok) throw new Error(`fixture failed to load: ${res.status}`);
-    db = await res.json();
-    return db;
+  async load({ signal } = {}) {
+    if (!db) {
+      const res = await fetch('./fixtures/observations.json');
+      if (!res.ok) throw new Error(`fixture failed to load: ${res.status}`);
+      db = await res.json();
+    }
+    throwIfAborted(signal);
+    /* `{ me }` as well as the data, so the store's `init` reads identity from the seam
+       whichever backing it is on -- against the API there is nothing to load *but* the
+       identity. */
+    return { db, me: ME };
+  },
+
+  /**
+   * Who the reviewer is (R19).
+   *
+   * The fixture's answer to `GET /api/v2/auth/me`. It exists so the interface can stop
+   * holding a name: `src/data.js:13` and `src/ui/dom.js:24` both carried the literal
+   * `'I. Travers'`, and the badge, the tooltip and `byMe` all rested on it.
+   */
+  async whoami({ signal } = {}) {
+    await latency(20);
+    throwIfAborted(signal);
+    return ME;
   },
 
   /**
@@ -465,35 +562,93 @@ export const MarpData = {
    * reachable before this: the fixture is uniformly healthy, so the only way to see a page
    * of failed thumbnails was to edit the fixture by hand and forget to put it back.
    *
+   * `permanent` is why F11 was a finding: the client short-circuits a retry on
+   * `thumbnail_permanent`, and **no row has ever carried the key** — one grep hit, in this
+   * file, reading a field nothing writes. The endpoint does not put it on the row either;
+   * it answers `permanent: true` per entry of a *retry*, and refuses rather than
+   * re-queueing. So this marks a fixture row permanently broken and
+   * {@link MarpData.retryThumbnails} reports it the way the endpoint would, which is what
+   * finally makes "permanent" a state something can render.
+   *
    * @param {number[]|'page'} ids  observation ids, or 'page' for everything currently loaded
    * @param {string} [status]      'failed' (default) or 'queued'
+   * @param {Object} [options]
+   * @param {boolean} [options.permanent=false]  retrying cannot help
+   * @param {string} [options.reason]            why, as the endpoint's `last_error`
    */
-  breakThumbnails(ids, status = 'failed') {
+  breakThumbnails(ids, status = 'failed', { permanent = false, reason = null } = {}) {
     let broken = 0;
     for (const id of new Set(ids)) {
       const row = editable(id);
       if (!row) continue;
       row.thumbnail_status = status;
+      /* Fixture-internal, and deliberately **not** part of the row shape the client
+         reads: the client learns `permanent` from a retry answer, never from a page. */
+      row._permanent = Boolean(permanent);
+      row._permanentReason = permanent
+        ? (reason
+          || 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.')
+        : null;
       broken++;
     }
     return broken;
   },
 
   /**
-   * Ask for a thumbnail again.
+   * Ask again for **a page** of thumbnails: one request, answering per observation.
    *
-   * The real thing is the server noticing the thumbnail is missing and fetching it; this
-   * is the seam that call will go through. It fails a second time for anything the fixture
-   * has marked permanently broken, so a retry that cannot help does not pretend to.
+   * `retryThumbnail(id)` was the seam, and the store mapped it over the failed rows — so a
+   * page of forty-five failures was forty-five round trips (F10). The endpoint takes
+   * `observationIds` and answers per observation explicitly so that "a page-level retry is
+   * one round trip and two paints" (A9, R11).
+   *
+   * Two things it will not do, both of them the endpoint's contract rather than a
+   * simplification:
+   *
+   * - it answers **`queued`, never a synchronous `ready`**. An accepted retry has not
+   *   happened yet, and the fixture's old shortcut of returning `ready` is what let the
+   *   client believe a picture existed the moment it asked;
+   * - a **permanent** failure is refused rather than re-queued, and says why. Without that
+   *   the retry button is a way to hammer a shared media server for a picture that can
+   *   never exist.
+   *
+   * Every entry is found by `observation_id`, never by position.
    */
-  async retryThumbnail(id) {
+  async retryThumbnails(observationIds = [], { signal } = {}) {
+    const ids = [...new Set(observationIds)];
+    if (ids.some((id) => !Number.isInteger(id))) {
+      throw badRequest('observationIds takes observation ids as integers');
+    }
     await latency(LATENCY.thumb);
-    const base = baseFor(id);
-    if (!base) return null;
-    const current = served(base, replicaOf(id));
-    if (current.thumbnail_permanent) return current.thumbnail_status;   // nothing to be done
-    editable(id).thumbnail_status = 'ready';
-    return 'ready';
+    throwIfAborted(signal);
+
+    return {
+      thumbnails: ids.map((id) => {
+        const base = baseFor(id);
+        if (!base) {
+          return {
+            observation_id: id, status: 'failed', permanent: true, reason: 'not-found'
+          };
+        }
+        const current = served(base, replicaOf(id));
+
+        if (current._permanent) {
+          return {
+            observation_id: id,
+            status: current.thumbnail_status,
+            permanent: true,
+            reason: current._permanentReason
+          };
+        }
+        /* Already ready is left alone: a retry asks for a picture and one exists. */
+        if (current.thumbnail_status === 'ready') {
+          return { observation_id: id, status: 'ready', permanent: false, reason: null };
+        }
+
+        editable(id).thumbnail_status = 'queued';
+        return { observation_id: id, status: 'queued', permanent: false, reason: null };
+      })
+    };
   },
 
   async reload() {
@@ -512,6 +667,7 @@ export const MarpData = {
 
   species() { return db.species; },
   projects() { return db.projects; },
+  models() { return db.models; },
 
   /**
    * What a dimension can still offer, given everything else the reviewer has chosen.
@@ -538,10 +694,63 @@ export const MarpData = {
     const others = { ...filters, [key]: null };
     const rows = db.observations.filter((r) => !r.deleted && matchesFilters(others, r));
 
-    return [...new Set(rows.map((r) => r[dimension.field]))]
-      .filter((v) => v != null && v !== '')
-      .sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+    const seen = new Map();
+    for (const r of rows) {
+      const value = r[dimension.field];
+      if (value == null || value === '') continue;
+      if (seen.has(value)) { seen.get(value).count++; continue; }
+      seen.set(value, { value, label: labelFor(dimension, value, r), count: 1,
+                        list: dimension.key === 'species' ? speciesListOf(r) : null });
+    }
+
+    return [...seen.values()]
+      .sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { numeric: true }));
   },
+
+  /**
+   * What every set dimension can still offer, for one question, in one call.
+   *
+   * The fixture's implementation of `POST /api/v2/mosaic/observations/facets` (A6). Written
+   * to that contract rather than to what is convenient here, because the client is written
+   * against the contract and not against this file:
+   *
+   * - each dimension is enumerated with **itself excluded** from the filters, so choosing
+   *   one dive does not reduce the dive list to that dive;
+   * - every entry carries `{ value, label, count, list }` — the value is what the filter
+   *   takes and the label is what a reviewer reads, and for species, model and session
+   *   those are genuinely different things (A10a);
+   * - `count` is what A10(b) needs to open on the most numerous species rather than on a
+   *   name written into the source;
+   * - `list` is populated for species only, because a common name identifies a species
+   *   only within its list (F15) and A10(c) qualifies a label only when the question spans
+   *   more than one.
+   */
+  async facets({ filters = {}, dimensions, signal } = {}) {
+    await latency(60);
+    throwIfAborted(signal);
+
+    const wanted = Array.isArray(dimensions)
+      ? dimensions
+      : DIMENSIONS.filter((d) => d.kind === KIND.SET).map((d) => d.key);
+
+    const out = {};
+    for (const key of new Set(wanted)) out[key] = MarpData.optionsFor(key, filters);
+    return out;
+  },
+
+  /**
+   * Where a tile's picture is, as far as the fixture is concerned.
+   *
+   * The other half of F7. `ui/tile.js` wrote `./fixtures/thumbs/${row.thumb}` into its own
+   * markup, which is a URL above `api/` and breaks R1 — and it is a *fixture* path, so it
+   * could never have worked against the endpoint. Asking the seam lets the fixture keep
+   * its files and lets `src/api/` answer with the route, with the tile knowing neither.
+   *
+   * `thumb` is a fixture field and deliberately not part of the row shape: the endpoint's
+   * row carries no `thumb`, because "the address is derivable from a key this row already
+   * carries", and its tripwire asserts the absence.
+   */
+  thumbnailUrl(row) { return `./fixtures/thumbs/${row && row.thumb}`; },
 
   /**
    * Which values of the dependent dimensions are still reachable after a change.
@@ -549,19 +758,25 @@ export const MarpData = {
    * `model/match.js` needs this to drop only what no longer applies rather than clearing
    * a whole selection -- and only the data layer knows which dives belong to which
    * project.
+   *
+   * **Plain values, not the labelled options `optionsFor` returns.** `applyDimension` asks
+   * "is this value still reachable", and handing it `{ value, label }` objects would make
+   * every `Set.has` miss — silently, and it would read as the nesting rule having stopped
+   * working. Two shapes, each named for what asks for it.
    */
   reachableUnder(filters) {
     const out = {};
     for (const d of DIMENSIONS) {
       if (d.kind !== KIND.SET || !d.nestsUnder) continue;
-      out[d.key] = MarpData.optionsFor(d.key, filters);
+      out[d.key] = MarpData.optionsFor(d.key, filters).map((o) => o.value);
     }
     return out;
   },
 
   /** Free-text search over the taxonomy, as the species chooser needs. */
-  async searchSpecies(term) {
+  async searchSpecies(term, { signal } = {}) {
     await latency(60);
+    throwIfAborted(signal);
     const t = (term || '').trim().toLowerCase();
     if (!t) return db.species.slice(0, 6);
     return db.species.filter(
@@ -574,8 +789,9 @@ export const MarpData = {
    * committed keeps its membership, so returning to it shows what was submitted
    * rather than whatever the filter now matches.
    */
-  async byIds(ids) {
+  async byIds(ids, { signal } = {}) {
     await latency(LATENCY.query);
+    throwIfAborted(signal);
     const out = [];
     for (const id of ids) {
       const base = baseFor(id);
@@ -588,7 +804,7 @@ export const MarpData = {
    * Status counts for the current non-status filters. The rail shows these, and
    * they must move when work is committed — a stale count is worse than none.
    */
-  async counts({ filters = {} } = {}) {
+  async counts({ filters = {}, signal } = {}) {
     /* The same rule the query uses. This had its own copy of the filter logic, which
        compared a multi-select array with === and silently counted nothing -- the exact
        duplication the declaration was introduced to remove, surviving in the one place
@@ -602,14 +818,15 @@ export const MarpData = {
       undecided: 0, promoted: 0, excluded: 0,
       total: 0
     };
+    /* One increment per dimension, keyed by the *filter* value the rail reads counts by --
+       so a null decision counts as `unreviewed` / `undecided`, which is exactly what the
+       endpoint's `count(*) FILTER (WHERE rc.decision IS NULL)` produces. */
     const add = (r, n) => {
       acc.total += n;
-      if (r.review_status === 'unreviewed') acc.unreviewed += n;
-      else if (r.review_status === 'reviewed') acc.reviewed += n;
-      else if (r.review_status === 'flagged') acc.flagged += n;
-      if (r.training_disposition === 'undecided') acc.undecided += n;
-      else if (r.training_disposition === 'promoted') acc.promoted += n;
-      else if (r.training_disposition === 'excluded') acc.excluded += n;
+      for (const dim of Object.values(STATUS_DIMENSIONS)) {
+        const value = decidedAs(dim, r);
+        if (value in acc) acc[value] += n;
+      }
     };
 
     /* Every replica of a base row counts as that row, and then each replica that has been
@@ -637,13 +854,17 @@ export const MarpData = {
    * is the page-*set* call the scheduler uses, and both go through `resolve` so the two
    * can never disagree about what page 7 holds.
    */
-  async query({ filters = {}, sort = { field: 'confidence', dir: 'asc' }, page = 1, pageSize = 45 }) {
+  async query({
+    filters = {}, sort = { field: 'confidence', dir: 'asc' }, page = 1, pageSize = 45,
+    exclude, signal
+  }) {
     await latency(LATENCY.query);
+    throwIfAborted(signal);
 
     /* Every rail dimension goes through one rule, declared in model/dimensions.js and
        applied by model/match.js, so the fixture and the API cannot disagree about what a
        filter means -- and so adding a dimension is one entry there and nothing here. */
-    const plan = resolve(filters, sortTerms(sort), excludedIds(filters.excludeIds));
+    const plan = resolve(filters, sortTerms(sort), excludedIds(exclude, filters.excludeIds));
 
     const total = plan.total;
     const start = (page - 1) * pageSize;
@@ -679,11 +900,12 @@ export const MarpData = {
    * store can hand the same filters object to this and to `query`.
    */
   async queryPages({
-    filters = {}, sort, pageSize = 45, pages = [], exclude, includeTotal = false
+    filters = {}, sort, pageSize = 45, pages = [], exclude, includeTotal = false, signal
   } = {}) {
     /* Before the latency, as a `400` would be: a rejected request never reaches the wire. */
     const wanted = requestedPages(pages, pageSize);
     await latency(LATENCY.query);
+    throwIfAborted(signal);
 
     const plan = resolve(filters, termsFor(sort), excludedIds(exclude, filters.excludeIds));
     const total = plan.total;
@@ -715,100 +937,201 @@ export const MarpData = {
    * the session, and the reviewer. #68 requires flagged observations to remain
    * available for correction rather than disappearing.
    */
-  async commitPage({ mode, observationIds, marks }) {
+  /**
+   * `observations` is the page as the reviewer saw it, each entry carrying the `version`
+   * it was fetched with (A7, R7); `marks` is the exception set as
+   * `[{ observation_id, reason }]`; `withdraw` is ids whose decision is being taken back.
+   *
+   * **Every entry of the answer is keyed `observation_id`** (R8) and the five arrays are
+   * not a partition -- `reverted` co-occurs with `flagged` for the same id. That is the
+   * endpoint's `MosaicCommitResult`, and it is the shape this returns because the store
+   * reads the answer by key: it used to read `r.id`, which blanked every outcome on a
+   * committed page (F5).
+   *
+   * A version that has moved comes back `conflicted` **with nothing written** -- the whole
+   * point of the mandatory version. The fixture can produce that: `bumpVersion(ids)` moves
+   * a row under the reviewer, so R9's rendering has a tier that can reach it.
+   */
+  async commitPage({ mode, observations = [], marks = [], withdraw = [], signal } = {}) {
     /* `slowNextCommit` holds this one open; it applies once and then forgets itself, the
        same way `failNextCommit` does. */
     const held = slowNext; slowNext = 0;
     await (held ? delay(held) : latency(LATENCY.commit));
+    throwIfAborted(signal);
     if (failNext) { failNext = false; throw new Error('the commit could not be saved'); }
-    const reviewed = [], flagged = [], skipped = [], reverted = [];
+    const reviewed = [], flagged = [], skipped = [], reverted = [], conflicted = [];
 
-    for (const id of observationIds) {
+    /* Both take the contract's array-of-objects shape. A missing version is the caller's
+       mistake and is refused rather than treated as "overwrite whatever is there" -- an
+       optional version hides exactly the failure the version exists to catch. */
+    const marked = new Map();
+    for (const mark of marks) marked.set(mark.observation_id, mark);
+    const withdrawn = new Set(withdraw);
+
+    for (const entry of observations) {
+      const id = entry && entry.observation_id;
+      if (!Number.isInteger(entry && entry.version)) {
+        throw badRequest(`observation ${JSON.stringify(id)} was sent without a version`);
+      }
+
       /* At scale 1 this is the fixture row, written in place as it always was; deeper it
          is the replica's own overlay copy, so a committed page reads back as committed
          without the whole virtual set being materialised. */
       const row = editable(id);
-      if (!row) { skipped.push({ id, reason: 'not-found' }); continue; }
-      const isMarked = marks.has(id);
+      if (!row) { skipped.push({ observation_id: id, reason: 'not-found' }); continue; }
+
+      /* The annotation moved since the page was fetched. Nothing is written -- not even
+         partially -- and the reviewer is told, rather than their stale decision being
+         applied to a classification they never saw. */
+      if (row.version !== entry.version) {
+        conflicted.push({ observation_id: id, reason: 'version' });
+        continue;
+      }
+
+      const isMarked = marked.has(id);
 
       /* Accepting means somebody looked at it, so it needs a picture. Flagging means
          somebody is saying something is wrong, and a thumbnail that never arrived is
          itself worth flagging -- so a marked row is written whether or not it has
          imagery. This check used to come first and dropped the row before it ever saw
          the mark, which silently threw away flags. */
-      if (!isMarked && row.thumbnail_status !== 'ready') {
-        skipped.push({ id, reason: 'no-imagery' });
+      if (!isMarked && !withdrawn.has(id) && row.thumbnail_status !== 'ready') {
+        skipped.push({ observation_id: id, reason: 'no-imagery' });
         continue;
       }
 
       if (mode === 'delete') {
-        if (isMarked) { row.deleted = true; reviewed.push({ id, outcome: 'deleted' }); }
+        if (isMarked) { row.deleted = true; reviewed.push({ observation_id: id, outcome: 'deleted' }); }
         continue;                                   // unmarked rows are untouched
       }
-      if (isMarked) {
-        const reason = (marks.get(id) || {}).reason || null;
-        const wasAccepted = mode === 'scientific'
-          ? row.review_status === 'reviewed'
-          : row.training_disposition === 'promoted';
 
-        if (mode === 'scientific') {
-          row.review_status = 'flagged';
-          row.flag_reason = reason;
-          row.flagged_by = ME;
-          row.flagged_at = new Date().toISOString();
-          row.reviewed_by = null;
-        } else {
-          row.training_disposition = 'excluded';
-          row.exclusion_reason = reason;
-          row.excluded_by = ME;
-          row.training_approved_by = null;
-        }
+      const dim = mode === 'scientific'
+        ? STATUS_DIMENSIONS.reviewStatus : STATUS_DIMENSIONS.trainingDisposition;
+      const accepted = mode === 'scientific' ? 'reviewed' : 'promoted';
+      const exception = mode === 'scientific' ? 'flagged' : 'excluded';
+      const reasonColumn = dim.reasonColumn;
+      /* One column per dimension, holding an **id** -- A13. The fixture used to write four
+         name columns (`reviewed_by`, `flagged_by`, `training_approved_by`, `excluded_by`)
+         that the endpoint's row has never carried, which is why the client's attribution
+         silently became nothing the moment it met a real row (F8). */
+      const reviewerColumn = dim.reviewerColumn;
+
+      /* An explicit take-back: `undecided` is the absence of a record, so a withdrawal
+         clears the decision rather than storing a fourth value. */
+      if (withdrawn.has(id)) {
+        row[dim.column] = null;
+        row[reasonColumn] = null;
+        row[reviewerColumn] = null;
         row.version += 1;
-        const outcome = mode === 'scientific' ? 'flagged' : 'excluded';
-        flagged.push({ id, outcome });
-        if (wasAccepted) reverted.push({ id, outcome });   // an acceptance was withdrawn
+        reverted.push({ observation_id: id, outcome: 'withdrawn' });
         continue;
       }
 
-      if (mode === 'scientific') {
-        row.review_status = 'reviewed';
-        row.flag_reason = null; row.flagged_by = null;
-        row.reviewed_by = 'I. Travers';
-        reviewed.push({ id, outcome: 'reviewed' });
-      } else if (mode === 'training') {
-        row.training_disposition = 'promoted';
-        row.exclusion_reason = null; row.excluded_by = null;
-        row.training_approved_by = 'I. Travers';
-        reviewed.push({ id, outcome: 'promoted' });
+      if (isMarked) {
+        const reason = (marked.get(id) || {}).reason || null;
+        const wasAccepted = row[dim.column] === accepted;
+
+        row[dim.column] = exception;
+        row[reasonColumn] = reason;
+        row[reviewerColumn] = ME.user_id;
+        if (mode === 'scientific') row.flagged_at = new Date().toISOString();
+
+        row.version += 1;
+        flagged.push({ observation_id: id, outcome: exception });
+        if (wasAccepted) reverted.push({ observation_id: id, outcome: exception });
+        continue;
       }
+
+      row[dim.column] = accepted;
+      row[reasonColumn] = null;
+      row[reviewerColumn] = ME.user_id;
+      reviewed.push({ observation_id: id, outcome: accepted });
       row.version += 1;
     }
-    return { reviewed, flagged, skipped, reverted };
+
+    return {
+      atomicity: 'per-observation',
+      reviewed, flagged, skipped, reverted, conflicted,
+      committedAt: new Date().toISOString()
+    };
   },
 
-  /** A single correction. Returns the authoritative row, as the API will. */
-  async setSpecies(observationId, speciesId) {
+  /**
+   * A single correction, in `MosaicCorrectionResult`'s shape.
+   *
+   * **`comname` is not touched, ever** -- it is the label the annotator chose, and keeping
+   * it frozen is what makes the drift from `species_id` auditable. The current name is
+   * `species_comname`. `store.changeSpecies` read `res.observation.comname` as the
+   * corrected name, so the "was X" indicator reported the new name as the old one and
+   * `from` and `to` came out equal (F6).
+   *
+   * `version` is required for the same reason the commit requires it: a correction made
+   * from a stale view would invalidate review decisions about a classification the
+   * corrector never saw.
+   */
+  async setSpecies({ observationId, speciesId, version, signal } = {}) {
     await latency(LATENCY.species);
+    throwIfAborted(signal);
     /* The species is checked first so a correction that cannot be made writes nothing --
        `editable` materialises a replica the moment it is asked for one. */
     const sp = db.species.find((s) => s.species_id === speciesId);
     if (!sp) return { ok: false, error: 'not-found' };
     const row = editable(observationId);
     if (!row) return { ok: false, error: 'not-found' };
-    const previous = { comname: row.comname, scientific_name: row.scientific_name };
-    row.previous_comname = row.comname;
-    row.changed_by = ME;
+    if (!Number.isInteger(version)) {
+      throw badRequest(`observation ${JSON.stringify(observationId)} was sent without a version`);
+    }
+    if (row.version !== version) return { ok: false, error: 'conflicted' };
+    if (row.species_id === sp.species_id) return { ok: false, error: 'unchanged' };
+
+    const previous = { species_id: row.species_id, species_comname: currentName(row) };
+    row.changed_by = ME.user_id;
     row.species_id = sp.species_id;
-    row.comname = sp.comname;
+    row.species_comname = sp.comname;
     row.scientific_name = sp.species;
-    row.taxserial = sp.taxserial;
     row.version += 1;
-    return { ok: true, observation: row, previous };
+
+    return {
+      ok: true,
+      observation: {
+        observation_id: row.observation_id,
+        version: row.version,
+        species_id: row.species_id,
+        species_comname: row.species_comname,
+        /* Unchanged, both of them, and that is the contract rather than an oversight. */
+        comname: row.comname,
+        taxserial: row.taxserial
+      },
+      previous,
+      correctedAt: new Date().toISOString()
+    };
+  },
+
+  /**
+   * Move a row's version under the reviewer, so a `conflicted` outcome is reachable.
+   *
+   * A testing affordance like `failNextCommit`. Without it R9 has no tier that can see it:
+   * the fixture bumps the version only where the reviewer's own commit did, so nothing
+   * inside one client can produce the second reviewer whose write moved the row.
+   *
+   * @param {number[]} ids - Observations to bump.
+   * @returns {number} How many were moved.
+   */
+  bumpVersion(ids) {
+    let moved = 0;
+    for (const id of new Set(ids)) {
+      const row = editable(id);
+      if (!row) continue;
+      row.version += 1;
+      moved++;
+    }
+    return moved;
   },
 
   /** Stands in for the thumbnail worker finishing a queued image. */
-  async awaitThumbnail(observationId) {
+  async awaitThumbnail(observationId, { signal } = {}) {
     await latency(LATENCY.thumb);
+    throwIfAborted(signal);
     const row = editable(observationId);
     if (!row) return { ok: false };
     row.thumbnail_status = 'ready';
