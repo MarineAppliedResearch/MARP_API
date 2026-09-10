@@ -202,6 +202,59 @@ a real choice and is implemented as stated rather than left unsaid.
   job", and `video_source` identifies the video. Nothing in `MARP_API` reads that output
   yet; the note is here for whoever builds the ingest.
 
+- [x] **A16 · scientific/data-meaning · blocking** — answered 2026-09-09 by Isaac: **how a
+  finished job becomes observations.** A **session is a dive and a line, never a video** —
+  `sessions` holds `project_id, user_id, dive, line, lineId, type` and has no video column,
+  so sessions being one video each is practice rather than structure and a session may span
+  several videos. **The video reference lives on the observation**, which already carries
+  `video_source` and `jellyfin_item_id`.
+
+  A job **names an existing `session_id` when it has one, and otherwise carries enough to
+  create one** — project, dive, line and type. The submitter owns that: project, dive and
+  line are human decisions and are not recoverable from a video and a frame range, so the
+  job creator derives them and sends them. The coordinator does not invent scientific
+  groupings. A split job may later map to more than one session; left open deliberately.
+
+  `sessions.type` is `Fish` / `Invert` / `GULF_Fish` and the GUI routes on it. **An inverts
+  model's output belongs in an `Invert` session**, and ingest should check that rather than
+  trust it — a mismatch is wrong in a way no error would surface. Isaac expects `type` may
+  eventually go away; it stays for now.
+
+  The hand-over itself is **already built**: the worker reports its result naming artifacts
+  by sha256, MARP answers `already_have` or an upload target, and MARP ends up holding the
+  file. Only the **parse** is missing — nothing reads that JSONL into `observations`.
+- [x] **A17 · scientific/data-meaning · blocking** — answered 2026-09-09 by Isaac.
+  **`model_species` is a join table: it records which species a model was trained with**,
+  and carries the per-species training metrics (`dataset_size`, `balance_weight`,
+  `precision_mean`, `recall_mean`, `f1_mean`). That is all it is for. It is **not** a
+  class-index-to-species translation table, and nothing at ingest should read it as one.
+  Seeded for CAMPA_GR1_TEST6-mixed (model 91) as seven rows naming its seven species.
+
+  Two data answers, both to be preserved rather than repaired:
+
+  - **`Red sea urchin` is species 769, taxserial 157971** — the row carrying
+    `observation_type = 'invert'`. Species 544 (taxserial 157835) is the other match on that
+    common name and is not the one this model means.
+  - **`Fragile pink urchin`'s taxserial really is `100`**, where its neighbours are six-digit
+    values. That is what MARP holds and it is what an observation must carry. Do not "fix" it,
+    the same way keyframe box widths over 1.0 are not to be clamped.
+
+- [x] **A18 · scientific/data-meaning · blocking** — answered 2026-09-09 by Isaac, and it
+  closes a question I had wrongly left open. **The class index never leaves the worker.** The
+  worker is sent the model, loads it, and therefore holds the model's own class-index-to-name
+  mapping; it resolves the index and writes the **name** into its output. Verified in the real
+  results file from job 1105: `"comname": "California sea cucumber"`, and each keyframe
+  carries the name too.
+
+  So the worker sends names and no identifiers — no `taxserial`, no `species_id` — which is
+  correct under A8: it knows nothing about MARP. **The API resolves a name to a species**
+  against the species list.
+
+  Where a name matches more than one species row — `Red sea urchin` matches 544 and 769 —
+  the model's own trained-species list settles it, because that is a fact about the model
+  recorded in `model_species` (A17) and not a translation table being repurposed. If a name
+  cannot be resolved, ingest **fails loudly** rather than skipping the observation or
+  guessing a species.
 
 ## Decisions
 
