@@ -110,18 +110,21 @@ const ROW_COLUMNS = `
 /**
  * Enqueues a thumbnail for every observation that has no record at all.
  *
- * A3, answered by the human: **serving a mosaic page enqueues its missing
- * thumbnails**, so the `queued` tile the client already draws is truthful, only
- * what somebody is actually looking at is ever extracted, and the queue is
- * bounded by the working set rather than by 440,000 rows.
+ * A3 as the human reversed it on 2026-09-10: **an observation is enqueued when it
+ * is created**, not when somebody reads it. *"One of our key criteria is that the
+ * user never has to wait. So trying to load the page should not be the thing that
+ * makes the back end work."* The ingest calls this inside its own write
+ * transaction, so an observation and its queue entry cannot disagree.
  *
- * `ON CONFLICT DO NOTHING` is what keeps that safe: an observation that already
- * failed permanently keeps its row and is **not** re-enqueued, which is the whole
- * reason permanence is recorded. A page of hopeless legacy rows would otherwise
- * ask Jellyfin again on every page view, for ever.
+ * The retry route calls it too, through `requeue`, which is how a row that
+ * predates the change ever gets a picture before #121's sweeper exists.
+ *
+ * `ON CONFLICT DO NOTHING` is what keeps a second caller safe: an observation that
+ * already failed permanently keeps its row and is **not** re-enqueued, which is
+ * the whole reason permanence is recorded.
  *
  * @async
- * @param {Array&lt;number>} observationIds - Observations on the page being served.
+ * @param {Array&lt;number>} observationIds - Observations to enqueue.
  * @param {Object} [transaction] - Transaction to run inside.
  * @returns {Promise&lt;number>} How many rows were newly enqueued.
  */
@@ -361,9 +364,9 @@ async function recordReady(observationId, result) {
  * Records a failed extraction, permanently or not.
  *
  * **Permanent means retrying cannot help**, and the honesty of that flag is what
- * protects the media server: a permanent row is never re-enqueued by a page view
- * and never re-queued by the retry route, so the *Ask again* button the page
- * invites the reviewer to press stops being a way to hammer Jellyfin.
+ * protects the media server: a permanent row is never re-queued by the retry
+ * route, so the *Ask again* button the page invites the reviewer to press stops
+ * being a way to hammer Jellyfin.
  *
  * `lastError` reaches an operator and a reviewer-facing diagnostic, so a caller
  * must never put a stream URL in it -- `buildDirectStreamUrl` embeds the Jellyfin
@@ -447,9 +450,11 @@ async function findByObservationId(observationId) {
 /**
  * Discards the queue (R24, `stop`).
  *
- * The rows return to being **simply absent**, which under A3 means the next page
- * view re-enqueues them. So nothing is lost, and no fourth state had to be
- * invented for "was queued and then abandoned".
+ * The rows return to being **simply absent**, which since A3 was reversed means
+ * they report `failed` and the reviewer's *Ask again* re-enqueues them -- a page
+ * view no longer will. Nothing is lost and no fourth state had to be invented for
+ * "was queued and then abandoned", but a stopped queue is now visible to a
+ * reviewer as NO IMAGE rather than as a tile that stays PREPARING.
  *
  * `ready` and `failed` rows are untouched: they are outcomes, not queue.
  *

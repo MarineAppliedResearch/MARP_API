@@ -62,8 +62,10 @@
  * make every commit conflict because a picture arrived.
  *
  * The absence of a row is a state in its own right -- *nothing has ever been
- * asked for* -- and is never written. Serving a mosaic page enqueues what is
- * missing, so absence reports `queued` to the client.
+ * asked for* -- and is never written. A row is created when the observation is
+ * created (A3, reversed 2026-09-10), so absence means the observation predates
+ * that and nothing is coming for it: it reports **`failed`** to the client, which
+ * draws NO IMAGE and offers an *Ask again* that works. #121 is the sweeper.
  *
  * Refs #118.
  *

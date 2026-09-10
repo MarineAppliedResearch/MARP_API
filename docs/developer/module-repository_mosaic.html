@@ -190,7 +190,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line59">line 59</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line58">line 58</a>
     </li></ul></dd>
     
 
@@ -264,7 +264,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line121">line 121</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line120">line 120</a>
     </li></ul></dd>
     
 
@@ -325,18 +325,13 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The cap on one page-set request: 12 pages or 600 rows, whichever binds first.
-
-A request over it is **rejected**, never truncated (R5). A scheduler that
-quietly gets fewer pages than it asked for believes it holds a set it does not,
-and the reviewer meets that as a spinner on a page the cache was supposed to
-have. Mirrors `MAX_PAGES` / `MAX_ROWS` in the mosaic's `src/data.js`.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The cap on one page-set request: 12 pages or 600 rows, whichever binds first.A request over it is **rejected**, never truncated (R5). A scheduler thatquietly gets fewer pages than it asked for believes it holds a set it does not,and the reviewer meets that as a spinner on a page the cache was supposed tohave. Mirrors `MAX_PAGES` / `MAX_ROWS` in the mosaic's `src/data.js`.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line57">line 57</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line56">line 56</a>
     </li></ul></dd>
     
 
@@ -376,12 +371,7 @@ have. Mirrors `MAX_PAGES` / `MAX_ROWS` in the mosaic's `src/data.js`.</li></ul><
 
 
 <div class="description usertext">
-    The cap on one page-set request: 12 pages or 600 rows, whichever binds first.
-
-A request over it is **rejected**, never truncated (R5). A scheduler that
-quietly gets fewer pages than it asked for believes it holds a set it does not,
-and the reviewer meets that as a spinner on a page the cache was supposed to
-have. Mirrors `MAX_PAGES` / `MAX_ROWS` in the mosaic's `src/data.js`.
+    The cap on one page-set request: 12 pages or 600 rows, whichever binds first.A request over it is **rejected**, never truncated (R5). A scheduler thatquietly gets fewer pages than it asked for believes it holds a set it does not,and the reviewer meets that as a spinner on a page the cache was supposed tohave. Mirrors `MAX_PAGES` / `MAX_ROWS` in the mosaic's `src/data.js`.
 </div>
 
 
@@ -413,52 +403,13 @@ have. Mirrors `MAX_PAGES` / `MAX_ROWS` in the mosaic's `src/data.js`.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The row the tile renders, and nothing more (R13, A6).
-
-`processor_name` and `lineId` are deliberately absent: nothing draws either, and
-`processor_name` is exactly the "who did how much work" the permission catalog
-separates from `observations:read` -- carrying it would stop this being an
-`observations:read` route (A7). `scientific_name` is out because whether the
-mosaic shows scientific names is still open in #68, and adding a field later is
-additive where removing one is not. `first_framenum` stays: it is free from the
-same lateral that produces `keyframe_count`, and Phase 6 needs it to address a
-thumbnail.
-
-**`species_comname` is owed to #111** the way `version` is owed to #106, and for
-a defect rather than a preference. A species correction changes `species_id` and
-deliberately never rewrites `comname`, which stays the label the list entry
-carried when the annotator chose it. Without a second field the row can only
-report the annotator label, so a corrected tile renders the **old animal**, for
-ever, on every reload -- while the species *filter* is `o.species_id`, so
-filtering for one species returns tiles labelled as another. Both are here, and
-the difference between them is what #68's "was Bat Star" indicator draws from.
-
-`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted by
-the tile. It is the only channel by which the reviewer's client can learn the
-version it saw, and the three commit routes reject a request that omits one --
-so without it `conflicted` could never fire and `observations.version` would be
-a token nobody reads. A read path whose row cannot support the commit route
-beside it is not a finished read path. Delete-only would have saved nothing:
-the version has to be in the row either way.
-
-`thumbnail_status` is Phase 6's one addition (#118, R11) and it is **never
-null**: serving a page enqueues the thumbnails it is missing, so an observation
-with no record at all reports `queued` rather than an absence the client has no
-rendering for. Only the status -- the picture's address is
-`/api/v2/observations/{observation_id}/thumbnail`, derivable from a key the row
-already carries, so a second field would be a URL repeated 45 times a page.
-Like the two above it, the key was **moved into**
-`tests/mosaic-query.test.js`'s exact-key list rather than the list being
-loosened -- naming the exact keys is the tripwire.
-
-The column list is written out rather than `o.*` so that a column added to
-`observations` does not silently join the payload.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The row the tile renders, and nothing more (R13, A6).`processor_name` and `lineId` are deliberately absent: nothing draws either, and`processor_name` is exactly the "who did how much work" the permission catalogseparates from `observations:read` -- carrying it would stop this being an`observations:read` route (A7). `scientific_name` is out because whether themosaic shows scientific names is still open in #68, and adding a field later isadditive where removing one is not. `first_framenum` stays: it is free from thesame lateral that produces `keyframe_count`, and Phase 6 needs it to address athumbnail.**`species_comname` is owed to #111** the way `version` is owed to #106, and fora defect rather than a preference. A species correction changes `species_id` anddeliberately never rewrites `comname`, which stays the label the list entrycarried when the annotator chose it. Without a second field the row can onlyreport the annotator label, so a corrected tile renders the **old animal**, forever, on every reload -- while the species *filter* is `o.species_id`, sofiltering for one species returns tiles labelled as another. Both are here, andthe difference between them is what #68's "was Bat Star" indicator draws from.`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted bythe tile. It is the only channel by which the reviewer's client can learn theversion it saw, and the three commit routes reject a request that omits one --so without it `conflicted` could never fire and `observations.version` would bea token nobody reads. A read path whose row cannot support the commit routebeside it is not a finished read path. Delete-only would have saved nothing:the version has to be in the row either way.`thumbnail_status` is Phase 6's one addition (#118, R11) and it is **nevernull**: an observation with no record at all reports **`failed`** rather than anabsence the client has no rendering for. `failed` rather than `queued` becauseA3 was reversed (2026-09-10) and a page fetch no longer enqueues anything -- sofor a row that predates enqueue-on-create nothing is coming, and `queued` wouldbe a promise MARP does not keep. `failed` is honest, the client already draws itas NO IMAGE with an *Ask again* that works, and #121 is what will backfill.Only the status -- the picture's address is`/api/v2/observations/{observation_id}/thumbnail`, derivable from a key the rowalready carries, so a second field would be a URL repeated 45 times a page.Like the two above it, the key was **moved into**`tests/mosaic-query.test.js`'s exact-key list rather than the list beingloosened -- naming the exact keys is the tripwire.The column list is written out rather than `o.*` so that a column added to`observations` does not silently join the payload.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line168">line 168</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line171">line 171</a>
     </li></ul></dd>
     
 
@@ -498,46 +449,7 @@ The column list is written out rather than `o.*` so that a column added to
 
 
 <div class="description usertext">
-    The row the tile renders, and nothing more (R13, A6).
-
-`processor_name` and `lineId` are deliberately absent: nothing draws either, and
-`processor_name` is exactly the "who did how much work" the permission catalog
-separates from `observations:read` -- carrying it would stop this being an
-`observations:read` route (A7). `scientific_name` is out because whether the
-mosaic shows scientific names is still open in #68, and adding a field later is
-additive where removing one is not. `first_framenum` stays: it is free from the
-same lateral that produces `keyframe_count`, and Phase 6 needs it to address a
-thumbnail.
-
-**`species_comname` is owed to #111** the way `version` is owed to #106, and for
-a defect rather than a preference. A species correction changes `species_id` and
-deliberately never rewrites `comname`, which stays the label the list entry
-carried when the annotator chose it. Without a second field the row can only
-report the annotator label, so a corrected tile renders the **old animal**, for
-ever, on every reload -- while the species *filter* is `o.species_id`, so
-filtering for one species returns tiles labelled as another. Both are here, and
-the difference between them is what #68's "was Bat Star" indicator draws from.
-
-`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted by
-the tile. It is the only channel by which the reviewer's client can learn the
-version it saw, and the three commit routes reject a request that omits one --
-so without it `conflicted` could never fire and `observations.version` would be
-a token nobody reads. A read path whose row cannot support the commit route
-beside it is not a finished read path. Delete-only would have saved nothing:
-the version has to be in the row either way.
-
-`thumbnail_status` is Phase 6's one addition (#118, R11) and it is **never
-null**: serving a page enqueues the thumbnails it is missing, so an observation
-with no record at all reports `queued` rather than an absence the client has no
-rendering for. Only the status -- the picture's address is
-`/api/v2/observations/{observation_id}/thumbnail`, derivable from a key the row
-already carries, so a second field would be a URL repeated 45 times a page.
-Like the two above it, the key was **moved into**
-`tests/mosaic-query.test.js`'s exact-key list rather than the list being
-loosened -- naming the exact keys is the tripwire.
-
-The column list is written out rather than `o.*` so that a column added to
-`observations` does not silently join the payload.
+    The row the tile renders, and nothing more (R13, A6).`processor_name` and `lineId` are deliberately absent: nothing draws either, and`processor_name` is exactly the "who did how much work" the permission catalogseparates from `observations:read` -- carrying it would stop this being an`observations:read` route (A7). `scientific_name` is out because whether themosaic shows scientific names is still open in #68, and adding a field later isadditive where removing one is not. `first_framenum` stays: it is free from thesame lateral that produces `keyframe_count`, and Phase 6 needs it to address athumbnail.**`species_comname` is owed to #111** the way `version` is owed to #106, and fora defect rather than a preference. A species correction changes `species_id` anddeliberately never rewrites `comname`, which stays the label the list entrycarried when the annotator chose it. Without a second field the row can onlyreport the annotator label, so a corrected tile renders the **old animal**, forever, on every reload -- while the species *filter* is `o.species_id`, sofiltering for one species returns tiles labelled as another. Both are here, andthe difference between them is what #68's "was Bat Star" indicator draws from.`version` is here and is **owed to Phase 5** (#106's D1) rather than wanted bythe tile. It is the only channel by which the reviewer's client can learn theversion it saw, and the three commit routes reject a request that omits one --so without it `conflicted` could never fire and `observations.version` would bea token nobody reads. A read path whose row cannot support the commit routebeside it is not a finished read path. Delete-only would have saved nothing:the version has to be in the row either way.`thumbnail_status` is Phase 6's one addition (#118, R11) and it is **nevernull**: an observation with no record at all reports **`failed`** rather than anabsence the client has no rendering for. `failed` rather than `queued` becauseA3 was reversed (2026-09-10) and a page fetch no longer enqueues anything -- sofor a row that predates enqueue-on-create nothing is coming, and `queued` wouldbe a promise MARP does not keep. `failed` is honest, the client already draws itas NO IMAGE with an *Ask again* that works, and #121 is what will backfill.Only the status -- the picture's address is`/api/v2/observations/{observation_id}/thumbnail`, derivable from a key the rowalready carries, so a second field would be a URL repeated 45 times a page.Like the two above it, the key was **moved into**`tests/mosaic-query.test.js`'s exact-key list rather than the list beingloosened -- naming the exact keys is the tripwire.The column list is written out rather than `o.*` so that a column added to`observations` does not silently join the payload.
 </div>
 
 
@@ -569,23 +481,13 @@ The column list is written out rather than `o.*` so that a column added to
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The closed list of sortable fields, and the expression each sorts on.
-
-Matches `SORT_FIELDS` in the mosaic's `src/model/filters.js`. A field outside
-this list is a rejected request rather than a silent fallback to the default:
-the contract calls it a closed list, and a client that mistypes a field would
-otherwise get a different question answered without being told.
-
-`keyframe_count` is the one that is not a column. Sorting by it is the case A2
-exists to answer, and the human accepted its cost with open eyes -- so it moves
-the keyframe aggregate inside the matching set, where it runs per matching row.
-Every other sort leaves the aggregate in the outer query (R9).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The closed list of sortable fields, and the expression each sorts on.Matches `SORT_FIELDS` in the mosaic's `src/model/filters.js`. A field outsidethis list is a rejected request rather than a silent fallback to the default:the contract calls it a closed list, and a client that mistypes a field wouldotherwise get a different question answered without being told.`keyframe_count` is the one that is not a column. Sorting by it is the case A2exists to answer, and the human accepted its cost with open eyes -- so it movesthe keyframe aggregate inside the matching set, where it runs per matching row.Every other sort leaves the aggregate in the outer query (R9).</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line113">line 113</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line112">line 112</a>
     </li></ul></dd>
     
 
@@ -625,17 +527,7 @@ Every other sort leaves the aggregate in the outer query (R9).</li></ul></dd>
 
 
 <div class="description usertext">
-    The closed list of sortable fields, and the expression each sorts on.
-
-Matches `SORT_FIELDS` in the mosaic's `src/model/filters.js`. A field outside
-this list is a rejected request rather than a silent fallback to the default:
-the contract calls it a closed list, and a client that mistypes a field would
-otherwise get a different question answered without being told.
-
-`keyframe_count` is the one that is not a column. Sorting by it is the case A2
-exists to answer, and the human accepted its cost with open eyes -- so it moves
-the keyframe aggregate inside the matching set, where it runs per matching row.
-Every other sort leaves the aggregate in the outer query (R9).
+    The closed list of sortable fields, and the expression each sorts on.Matches `SORT_FIELDS` in the mosaic's `src/model/filters.js`. A field outsidethis list is a rejected request rather than a silent fallback to the default:the contract calls it a closed list, and a client that mistypes a field wouldotherwise get a different question answered without being told.`keyframe_count` is the one that is not a column. Sorting by it is the case A2exists to answer, and the human accepted its cost with open eyes -- so it movesthe keyframe aggregate inside the matching set, where it runs per matching row.Every other sort leaves the aggregate in the outer query (R9).
 </div>
 
 
@@ -667,19 +559,13 @@ Every other sort leaves the aggregate in the outer query (R9).
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The two status dimensions, and the shape of their three-valued domains.
-
-**Undecided is the absence of a row** in `observation_review_current` (#103):
-the projection's `CHECK` permits only `reviewed|flagged` for `scientific` and
-`promoted|excluded` for `training`, and a withdrawal deletes the row. So each
-dimension has three values, one of which is an absence, and that is what shapes
-the predicate in statusPredicate.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The two status dimensions, and the shape of their three-valued domains.**Undecided is the absence of a row** in `observation_review_current` (#103):the projection's `CHECK` permits only `reviewed|flagged` for `scientific` and`promoted|excluded` for `training`, and a withdrawal deletes the row. So eachdimension has three values, one of which is an absence, and that is what shapesthe predicate in statusPredicate.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line92">line 92</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line91">line 91</a>
     </li></ul></dd>
     
 
@@ -719,13 +605,7 @@ the predicate in statusPredicate.</li></ul></dd>
 
 
 <div class="description usertext">
-    The two status dimensions, and the shape of their three-valued domains.
-
-**Undecided is the absence of a row** in `observation_review_current` (#103):
-the projection's `CHECK` permits only `reviewed|flagged` for `scientific` and
-`promoted|excluded` for `training`, and a withdrawal deletes the row. So each
-dimension has three values, one of which is an absence, and that is what shapes
-the predicate in statusPredicate.
+    The two status dimensions, and the shape of their three-valued domains.**Undecided is the absence of a row** in `observation_review_current` (#103):the projection's `CHECK` permits only `reviewed|flagged` for `scientific` and`promoted|excluded` for `training`, and a withdrawal deletes the row. So eachdimension has three values, one of which is an absence, and that is what shapesthe predicate in statusPredicate.
 </div>
 
 
@@ -757,27 +637,13 @@ the predicate in statusPredicate.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Time of day, in `interval`, from the `tc` a row carries.
-
-Mirrors `timeOfDayMs` in the mosaic's `src/model/match.js` exactly, and for the
-same reasons: the optional day group is **ignored**, because a dive crossing
-midnight writes `1.00:15:33` and the day component says the dive rolled over
-rather than which hour the observation happened in; a leading sign is ignored,
-because a negative value formats with the sign in front of everything; and the
-pattern is anchored, so a `tc` that carries a date rather than a bare clock
-yields null and is excluded from a time window exactly as the fixture excludes
-it.
-
-This extracts a clock and casts it. It does not reproduce the `TimeSpan`
-arithmetic `db/timecode.js` owns -- no tick division, no millisecond
-truncation -- because `tc` is written truncated at the second (`deriveTc`) and
-a window is a comparison rather than a computation.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Time of day, in `interval`, from the `tc` a row carries.Mirrors `timeOfDayMs` in the mosaic's `src/model/match.js` exactly, and for thesame reasons: the optional day group is **ignored**, because a dive crossingmidnight writes `1.00:15:33` and the day component says the dive rolled overrather than which hour the observation happened in; a leading sign is ignored,because a negative value formats with the sign in front of everything; and thepattern is anchored, so a `tc` that carries a date rather than a bare clockyields null and is excluded from a time window exactly as the fixture excludesit.This extracts a clock and casts it. It does not reproduce the `TimeSpan`arithmetic `db/timecode.js` owns -- no tick division, no millisecondtruncation -- because `tc` is written truncated at the second (`deriveTc`) anda window is a comparison rather than a computation.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line208">line 208</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line211">line 211</a>
     </li></ul></dd>
     
 
@@ -817,21 +683,7 @@ a window is a comparison rather than a computation.</li></ul></dd>
 
 
 <div class="description usertext">
-    Time of day, in `interval`, from the `tc` a row carries.
-
-Mirrors `timeOfDayMs` in the mosaic's `src/model/match.js` exactly, and for the
-same reasons: the optional day group is **ignored**, because a dive crossing
-midnight writes `1.00:15:33` and the day component says the dive rolled over
-rather than which hour the observation happened in; a leading sign is ignored,
-because a negative value formats with the sign in front of everything; and the
-pattern is anchored, so a `tc` that carries a date rather than a bare clock
-yields null and is excluded from a time window exactly as the fixture excludes
-it.
-
-This extracts a clock and casts it. It does not reproduce the `TimeSpan`
-arithmetic `db/timecode.js` owns -- no tick division, no millisecond
-truncation -- because `tc` is written truncated at the second (`deriveTc`) and
-a window is a comparison rather than a computation.
+    Time of day, in `interval`, from the `tc` a row carries.Mirrors `timeOfDayMs` in the mosaic's `src/model/match.js` exactly, and for thesame reasons: the optional day group is **ignored**, because a dive crossingmidnight writes `1.00:15:33` and the day component says the dive rolled overrather than which hour the observation happened in; a leading sign is ignored,because a negative value formats with the sign in front of everything; and thepattern is anchored, so a `tc` that carries a date rather than a bare clockyields null and is excluded from a time window exactly as the fixture excludesit.This extracts a clock and casts it. It does not reproduce the `TimeSpan`arithmetic `db/timecode.js` owns -- no tick division, no millisecondtruncation -- because `tc` is written truncated at the second (`deriveTc`) anda window is a comparison rather than a computation.
 </div>
 
 
@@ -873,14 +725,13 @@ a window is a comparison rather than a computation.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Collects `$n` bind parameters in order, so a fragment never has to know its own
-position in the statement.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Collects `$n` bind parameters in order, so a fragment never has to know its ownposition in the statement.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line310">line 310</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line313">line 313</a>
     </li></ul></dd>
     
 
@@ -982,21 +833,13 @@ position in the statement.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Build the status-counts statement and its bind parameters.
-
-**The non-status filters only** (R10), no sort and no `row_number`. That mirrors
-`data.js` `counts()`, which is deliberately not conditioned on either status
-dimension because the rail reads a count by value alone -- so a borrowed count
-may exceed the result total, exactly as it already could in Delete Mode.
-
-`IS NULL` rather than a `coalesce` is the point: it is what the outer join
-already knows.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Build the status-counts statement and its bind parameters.**The non-status filters only** (R10), no sort and no `row_number`. That mirrors`data.js` `counts()`, which is deliberately not conditioned on either statusdimension because the rail reads a count by value alone -- so a borrowed countmay exceed the result total, exactly as it already could in Delete Mode.`IS NULL` rather than a `coalesce` is the point: it is what the outer joinalready knows.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line689">line 689</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line692">line 692</a>
     </li></ul></dd>
     
 
@@ -1228,18 +1071,13 @@ already knows.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Build the page-set statement and its bind parameters.
-
-Exported so a test can assert against the SQL itself. R9 -- that
-`keyframe_count` is never computed over the whole matching set for a request
-that does not sort by it -- is not observable from a row count on a database
-holding one observation, so it is asserted here instead.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Build the page-set statement and its bind parameters.Exported so a test can assert against the SQL itself. R9 -- that`keyframe_count` is never computed over the whole matching set for a requestthat does not sort by it -- is not observable from a row count on a databaseholding one observation, so it is asserted here instead.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line592">line 592</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line595">line 595</a>
     </li></ul></dd>
     
 
@@ -1645,16 +1483,13 @@ holding one observation, so it is asserted here instead.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>`HH:MM[:SS]` normalised to a Postgres-castable clock, plus its seconds of day.
-
-Accepts what the rail's text fields produce -- `9:30` as well as `09:30` --
-because the ends are typed rather than chosen from a native time input (#81 B3).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>`HH:MM[:SS]` normalised to a Postgres-castable clock, plus its seconds of day.Accepts what the rail's text fields produce -- `9:30` as well as `09:30` --because the ends are typed rather than chosen from a native time input (#81 B3).</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line281">line 281</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line284">line 284</a>
     </li></ul></dd>
     
 
@@ -1863,17 +1698,13 @@ because the ends are typed rather than chosen from a native time input (#81 B3).
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Status counts for the current non-status filters.
-
-`POST /api/v2/mosaic/observations/counts`. Its `total` is over a **different and
-larger set** than the page query's (R11) -- the page query's is status-filtered
-and this is not -- and the two are never substituted for one another.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Status counts for the current non-status filters.`POST /api/v2/mosaic/observations/counts`. Its `total` is over a **different andlarger set** than the page query's (R11) -- the page query's is status-filteredand this is not -- and the two are never substituted for one another.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line814">line 814</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line810">line 810</a>
     </li></ul></dd>
     
 
@@ -2055,17 +1886,13 @@ and this is not -- and the two are never substituted for one another.</li></ul><
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Is a value narrowing anything?
-
-**An empty or absent value means not filtering** (R8), never the owning mode's
-default. Both status dimensions are sent on every query (#89) and both may be
-empty; reading an empty array as a default drops rows silently.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Is a value narrowing anything?**An empty or absent value means not filtering** (R8), never the owning mode'sdefault. Both status dimensions are sent on every query (#89) and both may beempty; reading an empty array as a default drops rows silently.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line220">line 220</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line223">line 223</a>
     </li></ul></dd>
     
 
@@ -2217,18 +2044,13 @@ empty; reading an empty array as a default drops rows silently.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The `ORDER BY` list for a set of normalised sort terms.
-
-No explicit `NULLS` clause: Postgres sorts nulls last in `ASC`, which is what
-puts the lowest-confidence *scored* rows on the first pages of the default
-question and every unscored row on the last. That is the wanted behaviour and it
-is invisible until somebody pages to the end, which is why it is written down.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The `ORDER BY` list for a set of normalised sort terms.No explicit `NULLS` clause: Postgres sorts nulls last in `ASC`, which is whatputs the lowest-confidence *scored* rows on the first pages of the defaultquestion and every unscored row on the last. That is the wanted behaviour and itis invisible until somebody pages to the end, which is why it is written down.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line568">line 568</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line571">line 571</a>
     </li></ul></dd>
     
 
@@ -2386,7 +2208,7 @@ is invisible until somebody pages to the end, which is why it is written down.</
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line398">line 398</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line401">line 401</a>
     </li></ul></dd>
     
 
@@ -2614,9 +2436,7 @@ is invisible until somebody pages to the end, which is why it is written down.</
                 </td>
             
 
-            <td class="description last">Include the two status dimensions.
-The counts query passes false: it applies the **non-status** filters only (R10),
-deliberately, because `ui/chrome.js` reads `state.counts[value]` by value alone.</td>
+            <td class="description last">Include the two status dimensions.The counts query passes false: it applies the **non-status** filters only (R10),deliberately, because `ui/chrome.js` reads `state.counts[value]` by value alone.</td>
         </tr>
 
     
@@ -2716,18 +2536,13 @@ deliberately, because `ui/chrome.js` reads `state.counts[value]` by value alone.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>A set of pages, in one request, for one question.
-
-`POST /api/v2/mosaic/observations/pages`. Every page asked for comes back, in
-ascending page order, so the caller never has to work out which arrived; a page
-past the end is `rows: []` rather than an error, because the scheduler asks for
-the tail speculatively before it knows the count.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>A set of pages, in one request, for one question.`POST /api/v2/mosaic/observations/pages`. Every page asked for comes back, inascending page order, so the caller never has to work out which arrived; a pagepast the end is `rows: []` rather than an error, because the scheduler asks forthe tail speculatively before it knows the count.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line743">line 743</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line746">line 746</a>
     </li></ul></dd>
     
 
@@ -2915,7 +2730,7 @@ the tail speculatively before it knows the count.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line256">line 256</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line259">line 259</a>
     </li></ul></dd>
     
 
@@ -3130,7 +2945,7 @@ the tail speculatively before it knows the count.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line720">line 720</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line723">line 723</a>
     </li></ul></dd>
     
 
@@ -3318,7 +3133,7 @@ the tail speculatively before it knows the count.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line499">line 499</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line502">line 502</a>
     </li></ul></dd>
     
 
@@ -3530,7 +3345,7 @@ the tail speculatively before it knows the count.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line236">line 236</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line239">line 239</a>
     </li></ul></dd>
     
 
@@ -3739,16 +3554,13 @@ the tail speculatively before it knows the count.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The sort terms to apply, with `observation_id` appended.
-
-**Appended always, unconditionally, and regardless of what the client sent**
-(R2). The client appends it too; both appending is correct and neither may stop.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The sort terms to apply, with `observation_id` appended.**Appended always, unconditionally, and regardless of what the client sent**(R2). The client appends it too; both appending is correct and neither may stop.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line533">line 533</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line536">line 536</a>
     </li></ul></dd>
     
 
@@ -3930,29 +3742,13 @@ the tail speculatively before it knows the count.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The predicate for one status dimension (R6, R7).
-
-The domain has three values and one of them is the **absence** of a projection
-row, so which join the selected set becomes depends on whether it includes that
-absent value:
-
-- a set that **excludes** it is a **semi-join** -- `EXISTS (… decision = ANY(…))`;
-- a set that **includes** it is an **anti-join over the complement** --
-  `NOT EXISTS (… decision = ANY(the values not selected))`. The default question
-  `['unreviewed','flagged']` is therefore `NOT EXISTS (… decision = 'reviewed')`;
-- a set covering **every** value is no predicate at all, which is what Delete
-  Mode's `trainingDisposition` default produces.
-
-**Never `coalesce(decision, 'unreviewed') IN (…)`.** That demotes the decision
-test to a post-join filter and loses the index-only scan on
-`observation_review_current_purpose_decision_idx`; both forms above keep it.
-Confirmed from the plans -- see *Decisions* in `.marp/task.md`.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The predicate for one status dimension (R6, R7).The domain has three values and one of them is the **absence** of a projectionrow, so which join the selected set becomes depends on whether it includes thatabsent value:- a set that **excludes** it is a **semi-join** -- `EXISTS (… decision = ANY(…))`;- a set that **includes** it is an **anti-join over the complement** --  `NOT EXISTS (… decision = ANY(the values not selected))`. The default question  `['unreviewed','flagged']` is therefore `NOT EXISTS (… decision = 'reviewed')`;- a set covering **every** value is no predicate at all, which is what Delete  Mode's `trainingDisposition` default produces.**Never `coalesce(decision, 'unreviewed') IN (…)`.** That demotes the decisiontest to a post-join filter and loses the index-only scan on`observation_review_current_purpose_decision_idx`; both forms above keep it.Confirmed from the plans -- see *Decisions* in `.marp/task.md`.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line347">line 347</a>
+        <a href="repository_mosaic.repository.js.html">repository/mosaic.repository.js</a>, <a href="repository_mosaic.repository.js.html#line350">line 350</a>
     </li></ul></dd>
     
 

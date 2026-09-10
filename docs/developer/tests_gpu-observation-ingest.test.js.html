@@ -565,6 +565,103 @@ describe('Ingesting a real result file', () => {
 });
 
 /**
+ * #118's A3, as the human reversed it on 2026-09-10: *"one of our key criteria is
+ * that the user never has to wait. So trying to load the page should not be the
+ * thing that makes the back end work. When the observation is created, it should
+ * get enqueued."*
+ *
+ * At this tier because this is the tier that can see it. The enqueue happens
+ * inside the ingest's own write transaction, and a repository-level test could
+ * assert `enqueueMissing` was called while nothing at all was written by a worker
+ * reporting a real result -- the class of defect this suite's header names.
+ */
+describe('Enqueueing a thumbnail when the observation is created', () => {
+    it('queues one thumbnail per observation, without anybody asking for a page', async () => {
+        const { job } = await runJob(REAL_RESULT);
+
+        const rows = await observationsForJob(job.id);
+
+        expect(rows).toHaveLength(REAL_RESULT.length);
+
+        const thumbnails = await query(
+            `SELECT observation_id, status, permanent, attempts, requested_at, filename
+               FROM observation_thumbnails
+              WHERE observation_id IN (:ids)
+              ORDER BY observation_id`,
+            { ids: rows.map((row) => row.observation_id) }
+        );
+
+        // One per observation. No page of this session has been requested, which
+        // is the whole point: creation is what enqueued them.
+        expect(thumbnails.map((t) => t.observation_id))
+            .toEqual(rows.map((row) => row.observation_id));
+
+        for (const thumbnail of thumbnails) {
+            expect(thumbnail.status).toBe('queued');
+            expect(thumbnail.permanent).toBe(false);
+            expect(thumbnail.attempts).toBe(0);
+            expect(thumbnail.requested_at).not.toBeNull();
+
+            // Queued means nothing has been extracted yet. A filename here would
+            // be a picture invented rather than made.
+            expect(thumbnail.filename).toBeNull();
+        }
+    });
+
+    it('enqueues nothing extra when the same job is ingested again', async () => {
+        // The ingest is idempotent and the enqueue has to be too, or a replay
+        // resets a `ready` row to `queued` and re-extracts a picture that exists.
+        const { job } = await runJob(REAL_RESULT);
+
+        const ids = (await observationsForJob(job.id)).map((row) => row.observation_id);
+
+        // `filename` is unique, so each row needs its own -- and the value is
+        // what the second assertion below reads back to prove nothing rewrote it.
+        await db.sequelize.query(
+            `UPDATE observation_thumbnails
+                SET status = 'ready',
+                    filename = 'already-made-' || observation_id || '.jpg',
+                    updated_at = NOW()
+              WHERE observation_id IN (:ids)`,
+            { replacements: { ids } }
+        );
+
+        const again = await global.api.post(`/api/v2/gpu/jobs/${job.id}/ingest`).send({});
+
+        expect(again.status).toBe(200);
+        expect(again.body.ingested).toBe(false);
+
+        const after = await query(
+            `SELECT observation_id, status, filename FROM observation_thumbnails
+              WHERE observation_id IN (:ids)
+              ORDER BY observation_id`,
+            { ids }
+        );
+
+        expect(after).toHaveLength(ids.length);
+        expect(after.every((t) => t.status === 'ready')).toBe(true);
+        expect(after.map((t) => t.filename))
+            .toEqual(ids.map((id) => `already-made-${id}.jpg`));
+    });
+
+    it('writes no thumbnail when the ingest refuses the whole result', async () => {
+        // Same transaction, so a refusal takes the queue entries with the
+        // observations rather than leaving rows pointing at nothing.
+        const [before] = await query('SELECT COUNT(*)::int AS n FROM observation_thumbnails');
+
+        const unknown = { ...REAL_RESULT[0], comname: `jest-not-a-species-${runId}` };
+        const { job, reported } = await runJob([unknown, REAL_RESULT[1]]);
+
+        expect(reported.body.ingest.ingested).toBe(false);
+        expect(await observationsForJob(job.id)).toHaveLength(0);
+
+        const [after] = await query('SELECT COUNT(*)::int AS n FROM observation_thumbnails');
+
+        expect(after.n).toBe(before.n);
+    });
+});
+
+/**
  * R7 and R8 -- the timecode columns, which are derived rather than copied.
  */
 describe('The timecode columns', () => {

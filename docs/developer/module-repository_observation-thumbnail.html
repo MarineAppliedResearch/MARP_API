@@ -180,10 +180,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Every column a caller ever wants back from one row.
-
-Written out rather than `*` so that a column added later does not silently
-join a response body.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Every column a caller ever wants back from one row.Written out rather than `*` so that a column added later does not silentlyjoin a response body.</li></ul></dd>
     
 
     
@@ -229,10 +226,7 @@ join a response body.</li></ul></dd>
 
 
 <div class="description usertext">
-    Every column a caller ever wants back from one row.
-
-Written out rather than `*` so that a column added later does not silently
-join a response body.
+    Every column a caller ever wants back from one row.Written out rather than `*` so that a column added later does not silentlyjoin a response body.
 </div>
 
 
@@ -274,27 +268,13 @@ join a response body.
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Claims a batch of queued work for one extraction pass (R18).
-
-One statement, so two API processes -- or one restarted next to itself -- cannot
-both take the same row. `FOR UPDATE SKIP LOCKED` is what lets a second claimer
-take different rows rather than waiting behind the first.
-
-A row is claimable when it is `queued` and either has never been claimed or was
-claimed longer ago than the lease. That second half is the reclaim: an
-extraction whose process died leaves a claimed row behind, and without it that
-tile says PREPARING until somebody notices.
-
-Oldest request first. R19 is backpressure by **dropping priority, never by
-rejecting** -- a long queue makes a reviewer wait behind a PREPARING tile,
-which the client already draws, rather than producing a state it has no
-rendering for.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Claims a batch of queued work for one extraction pass (R18).One statement, so two API processes -- or one restarted next to itself -- cannotboth take the same row. `FOR UPDATE SKIP LOCKED` is what lets a second claimertake different rows rather than waiting behind the first.A row is claimable when it is `queued` and either has never been claimed or wasclaimed longer ago than the lease. That second half is the reclaim: anextraction whose process died leaves a claimed row behind, and without it thattile says PREPARING until somebody notices.Oldest request first. R19 is backpressure by **dropping priority, never byrejecting** -- a long queue makes a reviewer wait behind a PREPARING tile,which the client already draws, rather than producing a state it has norendering for.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line181">line 181</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line184">line 184</a>
     </li></ul></dd>
     
 
@@ -458,19 +438,13 @@ rendering for.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Discards the queue (R24, `stop`).
-
-The rows return to being **simply absent**, which under A3 means the next page
-view re-enqueues them. So nothing is lost, and no fourth state had to be
-invented for "was queued and then abandoned".
-
-`ready` and `failed` rows are untouched: they are outcomes, not queue.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Discards the queue (R24, `stop`).The rows return to being **simply absent**, which since A3 was reversed meansthey report `failed` and the reviewer's *Ask again* re-enqueues them -- a pageview no longer will. Nothing is lost and no fourth state had to be invented for"was queued and then abandoned", but a stopped queue is now visible to areviewer as NO IMAGE rather than as a tile that stays PREPARING.`ready` and `failed` rows are untouched: they are outcomes, not queue.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line410">line 410</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line415">line 415</a>
     </li></ul></dd>
     
 
@@ -572,23 +546,13 @@ invented for "was queued and then abandoned".
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Enqueues a thumbnail for every observation that has no record at all.
-
-A3, answered by the human: **serving a mosaic page enqueues its missing
-thumbnails**, so the `queued` tile the client already draws is truthful, only
-what somebody is actually looking at is ever extracted, and the queue is
-bounded by the working set rather than by 440,000 rows.
-
-`ON CONFLICT DO NOTHING` is what keeps that safe: an observation that already
-failed permanently keeps its row and is **not** re-enqueued, which is the whole
-reason permanence is recorded. A page of hopeless legacy rows would otherwise
-ask Jellyfin again on every page view, for ever.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Enqueues a thumbnail for every observation that has no record at all.A3 as the human reversed it on 2026-09-10: **an observation is enqueued when itis created**, not when somebody reads it. *"One of our key criteria is that theuser never has to wait. So trying to load the page should not be the thing thatmakes the back end work."* The ingest calls this inside its own writetransaction, so an observation and its queue entry cannot disagree.The retry route calls it too, through `requeue`, which is how a row thatpredates the change ever gets a picture before #121's sweeper exists.`ON CONFLICT DO NOTHING` is what keeps a second caller safe: an observation thatalready failed permanently keeps its row and is **not** re-enqueued, which isthe whole reason permanence is recorded.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line79">line 79</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line82">line 82</a>
     </li></ul></dd>
     
 
@@ -687,7 +651,7 @@ ask Jellyfin again on every page view, for ever.</li></ul></dd>
 
             
 
-            <td class="description last">Observations on the page being served.</td>
+            <td class="description last">Observations to enqueue.</td>
         </tr>
 
     
@@ -790,7 +754,7 @@ ask Jellyfin again on every page view, for ever.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line387">line 387</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line390">line 390</a>
     </li></ul></dd>
     
 
@@ -942,17 +906,13 @@ ask Jellyfin again on every page view, for ever.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Reads every keyframe of a set of observations, for the box choice.
-
-One statement for the whole batch rather than one per observation: a page is 45
-tiles and 45 round trips to answer a question one query answers is the kind of
-cost that is invisible until the corpus is real.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Reads every keyframe of a set of observations, for the box choice.One statement for the whole batch rather than one per observation: a page is 45tiles and 45 round trips to answer a question one query answers is the kind ofcost that is invisible until the corpus is real.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line225">line 225</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line228">line 228</a>
     </li></ul></dd>
     
 
@@ -1110,7 +1070,7 @@ cost that is invisible until the corpus is real.</li></ul></dd>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line452">line 452</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line457">line 457</a>
     </li></ul></dd>
     
 
@@ -1212,17 +1172,13 @@ cost that is invisible until the corpus is real.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The persisted run state (R25).
-
-The row is seeded by the migration, so every reader can assume it exists -- a
-service that has to cope with its own state being absent has two code paths
-where one will do.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The persisted run state (R25).The row is seeded by the migration, so every reader can assume it exists -- aservice that has to cope with its own state being absent has two code pathswhere one will do.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line475">line 475</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line480">line 480</a>
     </li></ul></dd>
     
 
@@ -1324,22 +1280,13 @@ where one will do.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Records a failed extraction, permanently or not.
-
-**Permanent means retrying cannot help**, and the honesty of that flag is what
-protects the media server: a permanent row is never re-enqueued by a page view
-and never re-queued by the retry route, so the *Ask again* button the page
-invites the reviewer to press stops being a way to hammer Jellyfin.
-
-`lastError` reaches an operator and a reviewer-facing diagnostic, so a caller
-must never put a stream URL in it -- `buildDirectStreamUrl` embeds the Jellyfin
-access token as `api_key`.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Records a failed extraction, permanently or not.**Permanent means retrying cannot help**, and the honesty of that flag is whatprotects the media server: a permanent row is never re-queued by the retryroute, so the *Ask again* button the page invites the reviewer to press stopsbeing a way to hammer Jellyfin.`lastError` reaches an operator and a reviewer-facing diagnostic, so a callermust never put a stream URL in it -- `buildDirectStreamUrl` embeds the Jellyfinaccess token as `api_key`.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line329">line 329</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line332">line 332</a>
     </li></ul></dd>
     
 
@@ -1583,17 +1530,13 @@ access token as `api_key`.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Records a finished thumbnail.
-
-`generation` is bumped rather than set, because the URL is stable per
-observation: without it a re-extracted picture would sit invisible behind a
-cached copy in every reviewer's browser.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Records a finished thumbnail.`generation` is bumped rather than set, because the URL is stable perobservation: without it a re-extracted picture would sit invisible behind acached copy in every reviewer's browser.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line270">line 270</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line273">line 273</a>
     </li></ul></dd>
     
 
@@ -2014,17 +1957,13 @@ cached copy in every reviewer's browser.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Releases a claim without deciding an outcome.
-
-Used when the extractor is asked to pause or stop while a batch is in hand: the
-row goes back to being plain `queued` rather than being marked failed for
-something that was never tried.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Releases a claim without deciding an outcome.Used when the extractor is asked to pause or stop while a batch is in hand: therow goes back to being plain `queued` rather than being marked failed forsomething that was never tried.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line360">line 360</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line363">line 363</a>
     </li></ul></dd>
     
 
@@ -2176,23 +2115,13 @@ something that was never tried.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Puts a set of observations back in the queue, whatever they hold now.
-
-The retry route's write (R14). A **permanent** failure is refused rather than
-re-queued -- that is what `permanent` is for -- and a row that is already
-`ready` is left alone, because a retry is a request for a picture and one
-exists. Everything else, including a transient failure and a row that never had
-a record, becomes `queued`.
-
-Answers per observation, never by position: the rule #106's R3 established, and
-a caller matching a response array against a request array by index is a defect
-that hides until the two lengths differ.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Puts a set of observations back in the queue, whatever they hold now.The retry route's write (R14). A **permanent** failure is refused rather thanre-queued -- that is what `permanent` is for -- and a row that is already`ready` is left alone, because a retry is a request for a picture and oneexists. Everything else, including a transient failure and a row that never hada record, becomes `queued`.Answers per observation, never by position: the rule #106's R3 established, anda caller matching a response array against a request array by index is a defectthat hides until the two lengths differ.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line119">line 119</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line122">line 122</a>
     </li></ul></dd>
     
 
@@ -2344,17 +2273,13 @@ that hides until the two lengths differ.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>How many rows sit in each state (R23).
-
-`permanent` is counted separately rather than as a state, because it is a
-property of a failure rather than a fourth value -- the client's vocabulary is
-three, and this is what makes A7's constant tunable by observation.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>How many rows sit in each state (R23).`permanent` is counted separately rather than as a state, because it is aproperty of a failure rather than a fourth value -- the client's vocabulary isthree, and this is what makes A7's constant tunable by observation.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line431">line 431</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line436">line 436</a>
     </li></ul></dd>
     
 
@@ -2456,17 +2381,13 @@ three, and this is what makes A7's constant tunable by observation.</li></ul></d
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Writes the run state, recording who changed it and why.
-
-Persisted rather than held in memory because a service paused *because Jellyfin
-was struggling* must still be paused after an API restart, or the pause
-silently expires at the worst moment (R25).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Writes the run state, recording who changed it and why.Persisted rather than held in memory because a service paused *because Jellyfinwas struggling* must still be paused after an API restart, or the pausesilently expires at the worst moment (R25).</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line499">line 499</a>
+        <a href="repository_observation-thumbnail.repository.js.html">repository/observation-thumbnail.repository.js</a>, <a href="repository_observation-thumbnail.repository.js.html#line504">line 504</a>
     </li></ul></dd>
     
 

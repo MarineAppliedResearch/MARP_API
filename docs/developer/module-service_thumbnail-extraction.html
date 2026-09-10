@@ -180,12 +180,7 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>What the extractor is doing right now, in this process.
-
-Deliberately **not** the run state, which is persisted (R25). This is the live
-half -- whether the loop is turning and how many streams are open -- and the
-status endpoint reports both because they answer different questions: "has
-somebody paused it" and "is it actually working".</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>What the extractor is doing right now, in this process.Deliberately **not** the run state, which is persisted (R25). This is the livehalf -- whether the loop is turning and how many streams are open -- and thestatus endpoint reports both because they answer different questions: "hassomebody paused it" and "is it actually working".</li></ul></dd>
     
 
     
@@ -231,12 +226,7 @@ somebody paused it" and "is it actually working".</li></ul></dd>
 
 
 <div class="description usertext">
-    What the extractor is doing right now, in this process.
-
-Deliberately **not** the run state, which is persisted (R25). This is the live
-half -- whether the loop is turning and how many streams are open -- and the
-status endpoint reports both because they answer different questions: "has
-somebody paused it" and "is it actually working".
+    What the extractor is doing right now, in this process.Deliberately **not** the run state, which is persisted (R25). This is the livehalf -- whether the loop is turning and how many streams are open -- and thestatus endpoint reports both because they answer different questions: "hassomebody paused it" and "is it actually working".
 </div>
 
 
@@ -278,16 +268,7 @@ somebody paused it" and "is it actually working".
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Checks that ffmpeg and ffprobe are actually there (A9).
-
-Answered by the human: a system binary located through configuration, with the
-API **refusing to start the extractor, and reporting so, when it is absent**.
-A loud condition the status endpoint reports rather than a run-time surprise on
-the first thumbnail -- and deliberately not a reason for the API to refuse to
-start at all, because serving observations does not depend on it.
-
-The result is cached: the answer cannot change without a restart, and probing
-on every drain would spawn two processes a second.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Checks that ffmpeg and ffprobe are actually there (A9).Answered by the human: a system binary located through configuration, with theAPI **refusing to start the extractor, and reporting so, when it is absent**.A loud condition the status endpoint reports rather than a run-time surprise onthe first thumbnail -- and deliberately not a reason for the API to refuse tostart at all, because serving observations does not depend on it.The result is cached: the answer cannot change without a restart, and probingon every drain would spawn two processes a second.</li></ul></dd>
     
 
     
@@ -395,19 +376,13 @@ on every drain would spawn two processes a second.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Applies a control action (R24).
-
-`pause` stops *starting* new extractions and lets in-flight ones finish,
-because killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid
-for. `resume` starts taking work again. `stop` is pause plus discarding the
-queue -- the rows return to being simply absent, which under A3 means the next
-page view re-enqueues them, so nothing is lost and no fourth state is needed.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Applies a control action (R24).`pause` stops *starting* new extractions and lets in-flight ones finish,because killing an ffmpeg mid-decode wastes the Jellyfin stream it already paidfor. `resume` starts taking work again. `stop` is pause plus discarding thequeue -- the rows return to being simply absent, which since A3 was reversedreports `failed` and is re-enqueued by the reviewer's *Ask again* rather than bythe next page view. Nothing is lost and no fourth state is needed.</li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="service_thumbnail-extraction.service.js.html">service/thumbnail-extraction.service.js</a>, <a href="service_thumbnail-extraction.service.js.html#line934">line 934</a>
+        <a href="service_thumbnail-extraction.service.js.html">service/thumbnail-extraction.service.js</a>, <a href="service_thumbnail-extraction.service.js.html#line935">line 935</a>
     </li></ul></dd>
     
 
@@ -657,12 +632,7 @@ page view re-enqueues them, so nothing is lost and no fourth state is needed.</l
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Crops one decoded frame and writes the tile.
-
-**The crop is computed from the decoded frame's own pixel dimensions**, read
-from the decode itself (R6). `sharp` reporting no dimensions is a failure, not
-a reason to fall back on the probe's numbers: the probe describes the stream
-and this describes the picture that actually came out of it.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Crops one decoded frame and writes the tile.**The crop is computed from the decoded frame's own pixel dimensions**, readfrom the decode itself (R6). `sharp` reporting no dimensions is a failure, nota reason to fall back on the probe's numbers: the probe describes the streamand this describes the picture that actually came out of it.</li></ul></dd>
     
 
     
@@ -898,11 +868,7 @@ and this describes the picture that actually came out of it.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Runs one drain pass: claim what is queued, extract it, record the outcomes.
-
-Exported so a test and the measurement in R20 can drive extraction directly
-rather than waiting on the loop. **It respects the persisted pause**, so a
-caller cannot accidentally work around the control surface.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Runs one drain pass: claim what is queued, extract it, record the outcomes.Exported so a test and the measurement in R20 can drive extraction directlyrather than waiting on the loop. **It respects the persisted pause**, so acaller cannot accidentally work around the control surface.</li></ul></dd>
     
 
     
@@ -1072,11 +1038,7 @@ caller cannot accidentally work around the control surface.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Removes the Jellyfin access token from anything before it is logged or stored.
-
-The token is embedded as `api_key` by `buildDirectStreamUrl`, and ffmpeg echoes
-the URL it was given into its own stderr -- so the last few lines of a failed
-decode carry a live credential unless this runs over them first.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Removes the Jellyfin access token from anything before it is logged or stored.The token is embedded as `api_key` by `buildDirectStreamUrl`, and ffmpeg echoesthe URL it was given into its own stderr -- so the last few lines of a faileddecode carry a live credential unless this runs over them first.</li></ul></dd>
     
 
     
@@ -1234,13 +1196,7 @@ decode carry a live credential unless this runs over them first.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Cuts a set of frames from one video in a single ffmpeg pass (R17).
-
-The pass seeks to just before the earliest wanted frame and selects the wanted
-ones by timestamp with `-copyts`, so `t` inside the filter stays absolute
-source time. `showinfo` prints what actually came out, which is the only way to
-check the frame that landed is the frame that was asked for -- the spike read
-back a pts delta of 0 for all six.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Cuts a set of frames from one video in a single ffmpeg pass (R17).The pass seeks to just before the earliest wanted frame and selects the wantedones by timestamp with `-copyts`, so `t` inside the filter stays absolutesource time. `showinfo` prints what actually came out, which is the only way tocheck the frame that landed is the frame that was asked for -- the spike readback a pts delta of 0 for all six.</li></ul></dd>
     
 
     
@@ -1500,10 +1456,7 @@ back a pts delta of 0 for all six.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Extracts every wanted frame of one video, from one stream.
-
-One unit of concurrency: this is what the semaphore counts, because it is what
-holds a Jellyfin stream open.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Extracts every wanted frame of one video, from one stream.One unit of concurrency: this is what the semaphore counts, because it is whatholds a Jellyfin stream open.</li></ul></dd>
     
 
     
@@ -1685,19 +1638,7 @@ holds a Jellyfin stream open.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Why the source's frame rate makes it unsafe to seek, or null (R21).
-
-**The rate is read, never assumed, and a disagreement is a failure carrying
-both rates rather than a warning.** `observation_frame` is derived at
-`db/timecode.js`'s assumed 25, so on any other rate the seek lands on a
-different moment and produces a *confident picture of the wrong thing* -- which
-looks like a bad detection, not like a bug. Added at the human's direction:
-*"we don't want to assume it's gonna be 25 FPS all the time."*
-
-The footage MARP holds today is 25.000 exactly, so this cannot fire on it. That
-is the reason it is a separate, directly testable function rather than a
-condition buried in the extraction path: the only evidence it works will be a
-test until some other footage arrives.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Why the source's frame rate makes it unsafe to seek, or null (R21).**The rate is read, never assumed, and a disagreement is a failure carryingboth rates rather than a warning.** `observation_frame` is derived at`db/timecode.js`'s assumed 25, so on any other rate the seek lands on adifferent moment and produces a *confident picture of the wrong thing* -- whichlooks like a bad detection, not like a bug. Added at the human's direction:*"we don't want to assume it's gonna be 25 FPS all the time."*The footage MARP holds today is 25.000 exactly, so this cannot fire on it. Thatis the reason it is a separate, directly testable function rather than acondition buried in the extraction path: the only evidence it works will be atest until some other footage arrives.</li></ul></dd>
     
 
     
@@ -1861,11 +1802,7 @@ test until some other footage arrives.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Groups a claimed batch by the video it needs (R17).
-
-The key is `video_source`, not the resolved item, because grouping has to
-happen *before* anything is resolved -- resolving per observation would be one
-Jellyfin search per tile.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Groups a claimed batch by the video it needs (R17).The key is `video_source`, not the resolved item, because grouping has tohappen *before* anything is resolved -- resolving per observation would be oneJellyfin search per tile.</li></ul></dd>
     
 
     
@@ -2023,11 +1960,7 @@ Jellyfin search per tile.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>The drain loop. One pass, then a wait, then another, until stopped.
-
-Repeated looking rather than `LISTEN`/`NOTIFY`, for the reason
-`config/gpu-orchestration.js` gives about its own poll: work appears when
-somebody opens a page, and a second of latency is invisible next to the decode.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>The drain loop. One pass, then a wait, then another, until stopped.Repeated looking rather than `LISTEN`/`NOTIFY`, for the reason`config/gpu-orchestration.js` gives about its own poll: work appears whensomebody opens a page, and a second of latency is invisible next to the decode.</li></ul></dd>
     
 
     
@@ -2131,12 +2064,7 @@ somebody opens a page, and a second of latency is invisible next to the decode.<
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Works out which frame and which box one claimed observation wants.
-
-Everything that can be decided without touching Jellyfin is decided here, so an
-observation that can never have a picture -- no keyframes at all, an
-unparseable `mediaPosition` -- is failed **permanently** before a stream is
-opened rather than after.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Works out which frame and which box one claimed observation wants.Everything that can be decided without touching Jellyfin is decided here, so anobservation that can never have a picture -- no keyframes at all, anunparseable `mediaPosition` -- is failed **permanently** before a stream isopened rather than after.</li></ul></dd>
     
 
     
@@ -2318,12 +2246,7 @@ opened rather than after.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Reads a stream's real pixel dimensions and real frame rate.
-
-Both are requirements rather than diagnostics. R6: a normalised box multiplied
-by the wrong dimensions is a silent crop of the wrong part of the seabed. R21:
-`framenum` becomes a seek time through a frame rate, and the wrong rate seeks
-to the wrong moment.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Reads a stream's real pixel dimensions and real frame rate.Both are requirements rather than diagnostics. R6: a normalised box multipliedby the wrong dimensions is a silent crop of the wrong part of the seabed. R21:`framenum` becomes a seek time through a frame rate, and the wrong rate seeksto the wrong moment.</li></ul></dd>
     
 
     
@@ -2511,10 +2434,7 @@ to the wrong moment.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Runs a native command to completion, capturing both streams.
-
-Killed after FFMPEG_TIMEOUT_MS: a hung decode against a struggling
-media server must not hold one of the three streams for ever.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Runs a native command to completion, capturing both streams.Killed after FFMPEG_TIMEOUT_MS: a hung decode against a strugglingmedia server must not hold one of the three streams for ever.</li></ul></dd>
     
 
     
@@ -2696,15 +2616,7 @@ media server must not hold one of the three streams for ever.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Starts the extractor.
-
-**Called by `server.js`, never by `app.js`.** Every test suite imports the app
-directly, and a loop that started on import would have the whole suite opening
-Jellyfin streams -- so the split that keeps `app.listen` out of `app.js` keeps
-this out too.
-
-When ffmpeg is absent the extractor **does not start and says why** (A9). The
-API still serves: extraction is the only thing that needs a decoder.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Starts the extractor.**Called by `server.js`, never by `app.js`.** Every test suite imports the appdirectly, and a loop that started on import would have the whole suite openingJellyfin streams -- so the split that keeps `app.listen` out of `app.js` keepsthis out too.When ffmpeg is absent the extractor **does not start and says why** (A9). TheAPI still serves: extraction is the only thing that needs a decoder.</li></ul></dd>
     
 
     
@@ -2812,12 +2724,7 @@ API still serves: extraction is the only thing that needs a decoder.</li></ul></
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>What the extractor is doing, for the status endpoint (R23).
-
-Reports the persisted run state and the live state together, because they
-answer different questions: whether somebody paused it, and whether it is
-actually turning. A service that is `running` but has no ffmpeg is the case
-this exists to make visible.</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>What the extractor is doing, for the status endpoint (R23).Reports the persisted run state and the live state together, because theyanswer different questions: whether somebody paused it, and whether it isactually turning. A service that is `running` but has no ffmpeg is the casethis exists to make visible.</li></ul></dd>
     
 
     
@@ -2925,11 +2832,7 @@ this exists to make visible.</li></ul></dd>
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li>Stops the loop in this process.
-
-Not the same thing as the persisted `stop` action, which discards the queue.
-This is the process shutting down, and a claimed row is simply reclaimed after
-its lease expires (R18).</li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li>Stops the loop in this process.Not the same thing as the persisted `stop` action, which discards the queue.This is the process shutting down, and a claimed row is simply reclaimed afterits lease expires (R18).</li></ul></dd>
     
 
     

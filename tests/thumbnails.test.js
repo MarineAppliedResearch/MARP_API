@@ -64,7 +64,7 @@ const bytesFor = (id) => `/api/v2/observations/${id}/thumbnail`;
 /** The path a route is *declared* at. Nothing should answer here. */
 const DECLARED_STATUS = '/api/observations/thumbnails/status';
 
-/** The mosaic page route, for the enqueue-on-fetch behaviour (A3). */
+/** The mosaic page route. It must stay a **pure read** (A3, reversed). */
 const PAGES = '/api/v2/mosaic/observations/pages';
 
 /** Distinguishes this run's fixtures in a shared database. */
@@ -409,9 +409,47 @@ describe('observation thumbnails (#118)', () => {
         });
     });
 
-    describe('serving a page enqueues what is missing (A3, R11)', () => {
+    describe('serving a page enqueues nothing (A3, reversed; R11)', () => {
 
-        it('reports queued for an observation that has no record, and creates one', async () => {
+        // A3 was answered the other way on 2026-09-09 -- a page fetch enqueued
+        // what it was missing and absence reported `queued` -- and the human
+        // reversed it on 2026-09-10: *"one of our key criteria is that the user
+        // never has to wait. So trying to load the page should not be the thing
+        // that makes the back end work. When the observation is created, it
+        // should get enqueued."*
+        //
+        // These were rewritten rather than deleted, and the first one is the
+        // point: it is what stops the side effect being reinstated by accident.
+
+        it('creates no thumbnail record, however many times a page is served', async () => {
+            const [a, b] = await addObservations(2);
+
+            for (let i = 0; i < 3; i += 1) {
+                const res = await global.api.post(PAGES).send({
+                    filters: { session: [seeded.sessionId] },
+                    pageSize: 45,
+                    pages: [1],
+                });
+
+                expect(res.status).toBe(200);
+            }
+
+            // Asked of the table, not of the response: the response could report
+            // anything, and the question here is whether a read wrote.
+            const rows = await q(
+                `SELECT observation_id FROM observation_thumbnails
+                  WHERE observation_id IN (:a, :b)`,
+                { a, b }
+            );
+
+            expect(rows).toEqual([]);
+        });
+
+        it('reports failed for an observation that has no record', async () => {
+            // `failed` rather than `queued`, because nothing is coming: the row
+            // predates enqueue-on-create and only #121's sweeper or the
+            // reviewer's *Ask again* will ever make it a picture. `queued` would
+            // be a promise the API does not keep.
             const [a] = await addObservations(1);
 
             const res = await global.api.post(PAGES).send({
@@ -424,15 +462,7 @@ describe('observation thumbnails (#118)', () => {
 
             const row = res.body.pages[0].rows.find((r) => r.observation_id === a);
 
-            // Absence reports `queued`, which is only honest because the fetch
-            // enqueued it -- the two halves of A3 are one question.
-            expect(row.thumbnail_status).toBe('queued');
-
-            const record = await thumbnailRepository.findByObservationId(a);
-
-            expect(record).toBeDefined();
-            expect(record.status).toBe('queued');
-            expect(record.requested_at).not.toBeNull();
+            expect(row.thumbnail_status).toBe('failed');
         });
 
         it('reports the real status once one exists', async () => {
@@ -451,10 +481,10 @@ describe('observation thumbnails (#118)', () => {
             expect(row.thumbnail_status).toBe('ready');
         });
 
-        it('never re-enqueues a permanent failure, however many times the page is served', async () => {
-            // This is the whole reason permanence is recorded. Without it a page
-            // of hopeless legacy rows asks Jellyfin again on every page view, on a
-            // button the page invites the reviewer to press.
+        it('leaves a permanent failure exactly as it found it', async () => {
+            // Permanence is still what protects the media server, but the button
+            // it protects it from is now *Ask again* rather than paging. A page
+            // serve must not touch the row at all.
             const [a] = await addObservations(1);
 
             await setThumbnail(a, {
@@ -462,6 +492,8 @@ describe('observation thumbnails (#118)', () => {
                 permanent: true,
                 lastError: 'The observation has no keyframes.',
             });
+
+            const before = await thumbnailRepository.findByObservationId(a);
 
             for (let i = 0; i < 3; i += 1) {
                 await global.api.post(PAGES).send({
@@ -475,6 +507,7 @@ describe('observation thumbnails (#118)', () => {
 
             expect(record.status).toBe('failed');
             expect(record.permanent).toBe(true);
+            expect(record.attempts).toBe(before.attempts);
         });
     });
 
@@ -1024,9 +1057,9 @@ describe('observation thumbnails (#118)', () => {
             expect(res.body.runState).toBe('paused');
             expect(res.body.discarded).toBeGreaterThanOrEqual(1);
 
-            // The discarded row is **simply absent** again, which is what makes
-            // the next page view re-enqueue it -- so nothing is lost and no
-            // fourth state was needed.
+            // The discarded row is **simply absent** again, which reports
+            // `failed` and is re-enqueued by the reviewer's *Ask again* -- so
+            // nothing is lost and no fourth state was needed.
             expect(await thumbnailRepository.findByObservationId(queued)).toBeUndefined();
 
             expect((await thumbnailRepository.findByObservationId(ready)).status).toBe('ready');
@@ -1035,7 +1068,11 @@ describe('observation thumbnails (#118)', () => {
             await global.api.post(CONTROL).send({ action: 'resume' });
         });
 
-        it('re-enqueues on the next page view what stop discarded', async () => {
+        it('leaves what stop discarded absent until somebody asks again', async () => {
+            // This asserted a page view re-enqueueing until A3 was reversed. A
+            // page view is a pure read now, so the retry route is what recovers a
+            // discarded row -- and in between the tile says NO IMAGE rather than
+            // staying PREPARING for ever, which is the visible cost of stop.
             const [a] = await addObservations(1);
 
             await setThumbnail(a, { status: 'queued' });
@@ -1043,12 +1080,19 @@ describe('observation thumbnails (#118)', () => {
 
             expect(await thumbnailRepository.findByObservationId(a)).toBeUndefined();
 
-            await global.api.post(PAGES).send({
+            const served = await global.api.post(PAGES).send({
                 filters: { session: [seeded.sessionId] },
                 pageSize: 45,
                 pages: [1],
             });
 
+            expect(served.body.pages[0].rows.find((r) => r.observation_id === a).thumbnail_status)
+                .toBe('failed');
+            expect(await thumbnailRepository.findByObservationId(a)).toBeUndefined();
+
+            const asked = await global.api.post(RETRY).send({ observationIds: [a] });
+
+            expect(asked.status).toBe(200);
             expect((await thumbnailRepository.findByObservationId(a)).status).toBe('queued');
 
             await global.api.post(CONTROL).send({ action: 'resume' });

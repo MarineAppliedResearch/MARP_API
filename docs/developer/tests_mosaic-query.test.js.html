@@ -721,7 +721,7 @@ describe('the mosaic query (#105)', () => {
             // Asked of the `matched` CTE, which is where the status predicate
             // lives, rather than of the whole statement. The outer projection
             // grew a legitimate `coalesce` in #118 -- `thumbnail_status` reports
-            // `queued` for an observation with no thumbnail record -- and that is
+            // `failed` for an observation with no thumbnail record -- and that is
             // a different thing from a status filter degrading into one. Scoped
             // rather than deleted: this assertion is about the filter, and it is
             // exactly as strong about the filter as it was.
