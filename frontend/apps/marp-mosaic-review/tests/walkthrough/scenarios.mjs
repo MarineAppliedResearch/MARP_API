@@ -1571,12 +1571,20 @@ export const scenarios = {
   },
 
   /* ------------------------------------------ verifying: it is the real database */
-  /* Thirty seconds, seven scenes, one claim: this is MARP's own database and not the
+  /* A minute, ten scenes, one claim: this is MARP's own database and not the
      fixture. So every scene compares the screen against a read the application did not
      make — `askApi` goes straight to the endpoint from the test — because a scene that
      narrates a number the app also computed has proved nothing about where it came from.
      The spoken numbers are asserted exactly rather than loosely, so a changed corpus fails
      the run and writes no video instead of narrating a figure that is no longer true.
+
+     Which is not hypothetical: this was recorded once against 340 observations of one
+     species, and re-recorded when the corpus reached 1,062 across three dives. Every
+     figure in it moved, and every one of them is a literal in an assertion here — so
+     the next time the corpus grows, the run fails loudly and these lines get rewritten
+     rather than going quietly stale. The species chosen is the short red gorgonian
+     because nearly all of them are on one dive, which is what makes the dive filter
+     worth showing, and because all 83 have a thumbnail ready.
 
      It needs a running API and a signed-in session; see `tools/api-session.mjs` and
      `MARP_API_BASE` in `playwright.config.mjs`. */
@@ -1612,21 +1620,45 @@ export const scenarios = {
         }
       },
       {
-        caption: '340 observations, fifty a page',
-        say: "Three hundred and forty real observations.",
+        caption: 'A thousand observations, three dives',
+        say: "One thousand and sixty-two observations across three dives, and fifteen thousand keyframes.",
+        /* No action: the corpus is the subject, so nothing moves while it is described. */
         async act({ page, expect, store }) {
           const q = await question(page);
           const body = await askApi(page, store.origin, '/mosaic/observations/pages',
             { ...q, pages: [1], includeTotal: true });
 
           /* The spoken numbers, asserted. A looser check would let the line go on saying
-             three hundred and forty after the corpus had moved. */
-          expect(body.total, 'the corpus this line names').toBe(340);
+             a thousand and sixty-two after the corpus had moved again. */
+          expect(body.total, 'the corpus this line names').toBe(1062);
           expect(q.pageSize, 'fifty to a page, at this viewport').toBe(50);
+          expect(body.pageCount).toBe(22);
 
           expect(await totalShown(page), 'the screen shows the endpoint\'s own total')
             .toBe(body.total);
           expect(Number(await page.locator('#pageTotal').innerText())).toBe(body.pageCount);
+
+          /* Three dives, from the facets route rather than off the page: page one holds
+             rows from all three, so a list read off the tiles would look the same. */
+          const facets = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: q.filters });
+          store.dives = facets.facets.dive.map((f) => f.value);
+          expect(store.dives.length, 'three dives, which is what the line says').toBe(3);
+          expect(facets.facets.dive.reduce((a, f) => a + f.count, 0),
+            'and between them they hold the whole corpus').toBe(body.total);
+
+          /* "Fifteen thousand keyframes" is the one number here that only the rows carry,
+             so every row is read back. Two calls, because the pages route caps a request
+             at twelve pages and twenty-two do not fit in one. */
+          const half = (from, to) => askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: Array.from({ length: to - from + 1 }, (_, i) => from + i) });
+          const all = [await half(1, 11), await half(12, 22)]
+            .flatMap((b) => b.pages).flatMap((p) => p.rows);
+          expect(all.length, 'every row of the corpus, read back').toBe(body.total);
+          const keyframes = all.reduce((a, r) => a + r.keyframe_count, 0);
+          expect(keyframes, 'the keyframes this line names').toBe(15230);
+          expect(keyframes, 'and that is over fifteen thousand of them')
+            .toBeGreaterThan(15000);
 
           /* The strongest form of it: the tiles are the endpoint's page one, in the order
              the endpoint put them in. */
@@ -1636,13 +1668,15 @@ export const scenarios = {
             .toEqual(body.pages[0].rows.map((r) => r.observation_id));
 
           store.total = body.total;
-          await meter(page, `${body.total} observations · ${body.pageCount} pages of `
-            + `${q.pageSize} · these ${tiles.length} tiles are the endpoint's page one, in its order`);
+          store.firstPage = tiles;
+          await meter(page, `${body.total} observations · ${keyframes} keyframes · `
+            + `${body.pageCount} pages of ${q.pageSize} · dives: ${store.dives.join(', ')}`);
         }
       },
       {
         caption: 'Real frames, cut from the video',
-        say: "Real frames, cut out of the survey video.",
+        say: "Every tile is a real frame, cut out of the survey video.",
+        /* No action: the pictures are already on screen, and this is what they are. */
         async act({ page, expect, store }) {
           const tiles = await page.locator('.tile').count();
           const imgs = await page.locator('.tile img').evaluateAll((els) => els.map((i) => ({
@@ -1669,10 +1703,77 @@ export const scenarios = {
         }
       },
       {
-        caption: 'The species list comes from the data',
-        say: "Opening the species filter … four real species.",
+        caption: 'Three dives to choose from',
+        say: "Opening the dive filter … three dives, each a different transect line.",
         async act({ page, expect, store }) {
-          await beat(page, CUE);                        // "opening the species filter now"
+          await beat(page, CUE);                        // "opening the dive filter"
+          await page.locator('[data-dim="dive"]').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toBeVisible();
+
+          const offered = await menu.locator('[data-v]').evaluateAll((els) => els
+            .filter((e) => e.dataset.v)
+            .map((e) => e.dataset.v));
+          expect(offered.slice().sort(), 'the rail offers exactly the three dives')
+            .toEqual(store.dives.slice().sort());
+
+          /* "A different line of the survey" is a claim about the data, so it is asked of
+             the endpoint rather than left to the viewer: three dives, three lines. */
+          const facets = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: (await question(page)).filters });
+          expect(facets.facets.line.length, 'one transect line per dive').toBe(3);
+
+          store.dive = 'Dive 12';
+          expect(store.dives, 'the dive this walkthrough goes on to use')
+            .toContain(store.dive);
+
+          await meter(page, `dives offered: ${offered.join('  ·  ')}  ·  `
+            + `lines: ${facets.facets.line.map((f) => f.value).join(', ')}`);
+          /* Held open. It is the only chance the viewer gets to read it, and it stays
+             open across the cut into the next scene, which is where one is chosen. */
+          await beat(page, 1600);
+        }
+      },
+      {
+        caption: 'Dive twelve — four hundred and ten',
+        say: "Choosing dive twelve … four hundred and ten observations on that one transect.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                        // "choosing dive twelve"
+          await page.locator(`.menu [data-v="${store.dive}"]`).click();
+          await page.waitForTimeout(250);
+          await page.keyboard.press('Escape');
+          await settled();
+
+          const shown = await totalShown(page);
+          expect(shown, 'four hundred and ten, which is what the line says').toBe(410);
+
+          const q = await question(page);
+          expect(q.filters.dive, 'the filter goes over the wire as the dive')
+            .toEqual([store.dive]);
+
+          const ids = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+          expect(body.total).toBe(shown);
+          expect(body.pages[0].rows.map((r) => r.observation_id),
+            'the endpoint returns this dive\'s page one, in its order').toEqual(ids);
+          /* Every row of it really is that dive — and it is a different page from the one
+             before, which is what "it narrows" actually means. */
+          expect([...new Set(body.pages[0].rows.map((r) => r.dive))]).toEqual([store.dive]);
+          expect(ids, 'a different page from the unfiltered one')
+            .not.toEqual(store.firstPage);
+
+          await meter(page, `${shown} of ${store.total} · ${store.dive}, line `
+            + `${body.pages[0].rows[0].line} · ${body.pageCount} pages · `
+            + `the endpoint returns the same ${ids.length} ids`);
+        }
+      },
+      {
+        caption: 'Five of the seven species',
+        say: "Now the species … five of the seven species are on this dive.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "now the species filter"
           await page.locator('[data-dim="species"]').click();
           const menu = page.locator('.menu');
           await expect(menu).toBeVisible();
@@ -1681,46 +1782,53 @@ export const scenarios = {
             .filter((e) => e.dataset.v)
             .map((e) => ({ key: Number(e.dataset.v), label: e.textContent.trim() })));
 
-          /* Not "the species on this page": page one happens to hold all four, so a list
-             read off the rows would look identical. This is the facets route answering
-             what is still reachable under the rest of the question. */
-          const facets = await askApi(page, store.origin, '/mosaic/observations/facets',
-            { filters: (await question(page)).filters });
-          const keys = facets.facets.species.map((f) => Number(f.value)).sort((a, b) => a - b);
-          expect(keys.length, 'four species, which is what the line says').toBe(4);
+          /* Not "the species on this page": the facets route answers what is still
+             reachable under the rest of the question, which is the whole point of the
+             number — five under this dive, out of seven in the corpus. */
+          const q = await question(page);
+          const here = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: q.filters });
+          const everywhere = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: { ...q.filters, dive: [] } });
+          expect(here.facets.species.length, 'five on this dive').toBe(5);
+          expect(everywhere.facets.species.length, 'seven in the corpus').toBe(7);
           expect(offered.map((o) => o.key).sort((a, b) => a - b),
-            'the rail offers exactly what the endpoint says is reachable').toEqual(keys);
+            'the rail offers exactly what the endpoint says is reachable')
+            .toEqual(here.facets.species.map((f) => Number(f.value)).sort((a, b) => a - b));
 
-          store.pick = offered.find((o) => /Fish-eating anemone/i.test(o.label));
-          expect(store.pick, 'the survey found a fish-eating anemone').toBeTruthy();
+          store.pick = offered.find((o) => /Short red gorgonian/i.test(o.label));
+          expect(store.pick, 'the survey found a short red gorgonian').toBeTruthy();
+          store.everywhere = everywhere.facets.species
+            .find((f) => Number(f.value) === store.pick.key).count;
 
-          await meter(page, `species offered: ${offered.map((o) => `${o.key} ${o.label}`).join('  ·  ')}`);
-          /* Held open. It is the only chance the viewer gets to read it, and it stays
-             open across the cut into the next scene, which is where it is chosen. */
+          await meter(page, `species on ${store.dive}: `
+            + `${here.facets.species.map((f) => `${f.label} ${f.count}`).join('  ·  ')}`);
           await beat(page, 1600);
         }
       },
       {
-        caption: 'Twenty of three hundred and forty',
-        say: "Choosing the anemone … twenty of three hundred and forty.",
+        caption: 'Eighty-three gorgonians',
+        say: "Choosing the short red gorgonian … eighty-three, nearly all of them here.",
         async act({ page, expect, settled, store }) {
-          await beat(page, CUE);                        // "choosing the anemone"
+          await beat(page, CUE);                        // "choosing the short red gorgonian"
           await page.locator(`.menu [data-v="${store.pick.key}"]`).click();
           await page.waitForTimeout(250);
           await page.keyboard.press('Escape');
           await settled();
 
           const shown = await totalShown(page);
-          expect(shown, 'twenty, which is what the line says').toBe(20);
+          expect(shown, 'eighty-three, which is what the line says').toBe(83);
+          /* "Nearly every one": eighty-three of the eighty-five in the whole corpus. */
+          expect(store.everywhere, 'the corpus holds eighty-five of them').toBe(85);
+          expect(shown / store.everywhere, 'nearly all of them on this one dive')
+            .toBeGreaterThan(0.95);
 
           const ids = await page.locator('.tile')
             .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
-          expect(ids.length).toBe(shown);
           expect(await page.locator('.tile .cap')
             .evaluateAll((els) => [...new Set(els.map((e) => e.textContent.trim()))]),
             'every tile is the species that was chosen').toEqual([store.pick.label]);
 
-          /* The same narrowed question, asked of the endpoint directly. */
           const q = await question(page);
           expect(q.filters.species, 'the filter goes over the wire as the species key')
             .toEqual([store.pick.key]);
@@ -1728,11 +1836,44 @@ export const scenarios = {
             { ...q, pages: [1], includeTotal: true });
           expect(body.total).toBe(shown);
           expect(body.pages[0].rows.map((r) => r.observation_id)).toEqual(ids);
+          expect(body.pageCount, 'two pages of them').toBe(2);
+
+          store.q = q;
+          await meter(page, `${shown} of ${store.everywhere} in the corpus · `
+            + `species ${store.pick.key}, ${store.pick.label} · ${body.pageCount} pages · `
+            + `the endpoint returns the same ${ids.length} ids`);
+        }
+      },
+      {
+        caption: 'Page two, with no wait',
+        say: "Paging forward now … there. The last thirty-three, and nothing waited.",
+        async act({ page, expect, store }) {
+          /* A MutationObserver, because rendering here is a full re-render: a skeleton grid
+             is replaced within one notify, so anything looking afterwards cannot see it. */
+          await watchWaits(page);
+          await fromHere(page);
+
+          await beat(page, CUE);                        // "paging forward now"
+          const ms = await timedPage(page, 'next');
+
+          const ids = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(ids.length, 'the last thirty-three of the eighty-three').toBe(33);
+
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...store.q, pages: [2] });
+          expect(body.pages[0].rows.map((r) => r.observation_id),
+            'the endpoint\'s page two, in its order').toEqual(ids);
+
+          /* "Nothing waited" asserted rather than narrated, and not as a millisecond
+             budget: the loading state was never on screen at all. */
+          expect(await page.evaluate(() => window.__waits),
+            'no loading state was ever drawn').toBe(0);
 
           store.page = ids;
-          await meter(page, `${shown} of ${store.total} · species ${store.pick.key}, `
-            + `${store.pick.label} · the endpoint returns the same ${ids.length} ids`);
-          await beat(page, 1300);
+          await meter(page, `page 2 · ${ids.length} tiles in ${ms.toFixed(0)} ms · `
+            + 'no loading state drawn · the endpoint returns the same ids');
+          await beat(page, DWELL);
         }
       },
       {
@@ -1759,17 +1900,20 @@ export const scenarios = {
       },
       {
         caption: 'Read back out of the database',
-        say: "Read back from the database. Reviewed, by me.",
+        say: "Read back from the database. Thirty-three rows, reviewed, by me.",
         /* No action. The assertion is the scene: a fresh read of the record, from outside
            the application, after the write. */
         async act({ page, expect, store }) {
           const body = await askApi(page, store.origin, '/mosaic/observations/pages', {
-            filters: { species: [store.pick.key], reviewStatus: ['reviewed'] },
+            filters: {
+              dive: [store.dive], species: [store.pick.key], reviewStatus: ['reviewed']
+            },
             sort: [{ field: 'confidence', dir: 'asc' }],
             pageSize: store.page.length, pages: [1], includeTotal: true
           });
 
           const asc = (a, b) => a - b;
+          expect(store.page.length, 'thirty-three, which is what the line says').toBe(33);
           expect(body.total, 'the record now holds every one of them').toBe(store.page.length);
           expect(body.pages[0].rows.map((r) => r.observation_id).sort(asc))
             .toEqual([...store.page].sort(asc));
