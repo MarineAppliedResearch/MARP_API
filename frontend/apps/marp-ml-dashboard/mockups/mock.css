@@ -97,6 +97,10 @@ svg { display: block; }
 }
 .rail-logo { padding: 20px 16px 18px; }
 .rail-logo img { height: 30px; width: auto; }
+/* Two marks, one shown at a time. The wordmark is wide, and in the 56px rail it
+   was being cut through the middle of the letters -- so the collapsed rail gets
+   the mark on its own, larger, which is also what reads at that size. */
+.rail-logo .mark { display: none; }
 .rail-sec {
   padding: 2px 18px 10px;
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.15em;
@@ -312,10 +316,20 @@ svg { display: block; }
 .two .b { color: var(--faint); font-size: 11px; }
 /* A ceiling with an ellipsis. A 42-character video filename is what pushed this
    table 30px past the panel that holds it. */
-/* Fixed layout, so a column keeps the width the colgroup gives it and a long
-   value ellipsises instead of stretching the table past its panel. Auto layout
-   distributed the width by content and squeezed model names to `MARP-C...`. */
+/* Fixed layout, so a column keeps the width it is given and a long value
+   ellipsises instead of stretching the table past its panel. Auto layout
+   distributed width by content and squeezed model names to `MARP-C...`.
+
+   The widths live on the header classes rather than in a <colgroup> because a
+   narrower screen drops a column, and a <col> cannot be hidden reliably. */
 .tbl.fixed { table-layout: fixed; }
+.tbl.fixed .hjob    { width: 24%; }
+.tbl.fixed .hscope  { width: 15%; }
+.tbl.fixed .hmodel  { width: 17%; }
+.tbl.fixed .hstatus { width: 12%; }
+.tbl.fixed .hprog   { width: 15%; }
+.tbl.fixed .hupd    { width: 8%; }
+.tbl.fixed .hacts   { width: 9%; }
 .two .a, .two .b, .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .name { max-width: 100%; }
 .tbl td.acts { text-align: right; }
@@ -400,6 +414,40 @@ svg { display: block; }
 }
 .rpp { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
 
+/* ============================================================== the menu */
+
+/* Same object as the Picture Mosaic Reviewer's account menu -- .menuwrap, .who,
+   .menu -- so the two applications are one product rather than two that look
+   alike. Sized up a little, because this top bar is taller than that header. */
+.menuwrap { position: relative; }
+.who {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(9, 30, 51, 0.9); border: 1px solid var(--hairline-2);
+  color: var(--text); font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em;
+  display: grid; place-items: center; cursor: pointer;
+}
+.who:hover { border-color: var(--border-strong); color: var(--white); }
+.who[aria-expanded="true"] { border-color: var(--cyan-400); color: var(--white); }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
+  min-width: 214px; padding: 5px;
+  background: var(--navy-950);
+  border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(1, 5, 13, 0.72);
+}
+.menu[hidden] { display: none; }
+.menu button {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 5px; padding: 8px 10px;
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+}
+.menu button:hover { background: rgba(13, 42, 70, 0.9); color: var(--white); }
+.menu hr { border: 0; border-top: 1px solid var(--hairline); margin: 4px 2px; }
+.menu .mhead {
+  font-size: 9px; letter-spacing: 0.11em; text-transform: uppercase;
+  color: var(--faint); padding: 6px 10px 4px;
+}
+
 /* ============================================================== the donut */
 
 .pool { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 18px; align-items: center; }
@@ -416,7 +464,10 @@ svg { display: block; }
 /* A legend is a table, so it is laid out as one. Grid, not inline runs -- the
    labels and their numbers were colliding into `Busy98 69%`. */
 .legend { display: grid; grid-template-columns: auto 1fr auto auto; gap: 9px 10px;
-          align-items: center; font-size: 12px; }
+          align-items: center; font-size: 12px;
+          /* A ceiling. With a 1fr label column and a whole panel to fill, the
+             counts ended up an inch from the words they belong to. */
+          max-width: 290px; }
 .legend .k { color: var(--text); }
 .legend .v { color: var(--white); font-weight: 600; text-align: right; }
 .legend .p { color: var(--faint); font-size: 11px; text-align: right; min-width: 34px; }
@@ -437,8 +488,6 @@ svg { display: block; }
 .slots .row .v { color: var(--white); font-weight: 600; }
 .slots .row .p { color: var(--faint); font-size: 11px; }
 
-.note { font-size: 11px; color: var(--faint); margin: 12px 0 0; line-height: 1.5; }
-
 /* ============================================================== responsive */
 
 @media (max-width: 1420px) {
@@ -447,8 +496,9 @@ svg { display: block; }
 }
 @media (max-width: 1140px) {
   .app { grid-template-columns: 56px minmax(0, 1fr); }
-  .rail-logo { padding: 16px 8px; }
-  .rail-logo img { height: 24px; }
+  .rail-logo { padding: 16px 4px; display: grid; place-items: center; }
+  .rail-logo .wordmark { display: none; }
+  .rail-logo .mark { display: block; height: 32px; }
   .rail-sec { display: none; }
   .rail-nav { padding: 0 8px; }
   .rail-nav a { grid-template-columns: 18px; justify-content: center; padding: 10px 0; }
@@ -456,9 +506,35 @@ svg { display: block; }
   .rail-foot { padding: 12px 8px; display: grid; justify-items: center; }
   .rail-foot .st span, .rail-foot .ver { display: none; }
   .grid[data-cols="wide-narrow"], .grid[data-cols="2"] { grid-template-columns: minmax(0, 1fr); }
-  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .topbar h1 { font-size: 24px; }
-  .search .inp { width: 190px; }
+  /* Three-up. Two left the fifth card alone beside an empty half. */
+  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Once the right-hand column has collapsed under the table, its two panels sit
+     side by side rather than each spanning a width they cannot fill. */
+  .grid > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* The tools take a line of their own here. Sharing one row with the title
+     left `Machine Lea...` -- and the title is the thing that says where you are. */
+  .topbar { flex-wrap: wrap; }
+  .topbar h1 { font-size: 25px; }
+  .topbar .tools { width: 100%; margin-left: 0; }
+  .topbar .search { flex: 1; min-width: 0; }
+  .topbar .search .inp { width: 100%; }
+  .topbar .menuwrap { margin-left: auto; }
+
+  /* Scope goes. Dive and line are secondary to the model and the progress at
+     this width, and they are on the job's own page. The rest take the space. */
+  .tbl.fixed .hscope, .tbl.fixed td.jscope { display: none; }
+  .tbl.fixed .hjob    { width: 26%; }
+  .tbl.fixed .hmodel  { width: 20%; }
+  .tbl.fixed .hstatus { width: 13%; }
+  .tbl.fixed .hprog   { width: 18%; }
+  .tbl.fixed .hupd    { width: 12%; }
+  .tbl.fixed .hacts   { width: 11%; }
+
+  /* Donut, legend and slots read across instead of leaving the panel two thirds
+     empty once the right-hand column has collapsed underneath the table. */
+  .pool { grid-template-columns: 132px minmax(0, 1fr); }
+  .slots { margin-top: 14px; }
 }
 @media (max-width: 759px) {
   .app { grid-template-columns: minmax(0, 1fr); }
@@ -468,8 +544,9 @@ svg { display: block; }
     box-shadow: 16px 0 40px rgba(1, 5, 13, 0.65);
   }
   body[data-rail="open"] .rail { transform: none; }
-  .rail-logo { padding: 20px 16px 18px; }
-  .rail-logo img { height: 28px; }
+  .rail-logo { padding: 20px 16px 18px; display: block; }
+  .rail-logo .wordmark { display: block; height: 28px; }
+  .rail-logo .mark { display: none; }
   .rail-sec { display: block; }
   .rail-nav a { grid-template-columns: 18px 1fr auto; justify-content: start; padding: 9px 11px; }
   .rail-nav a span, .rail-nav a .badge { display: initial; }

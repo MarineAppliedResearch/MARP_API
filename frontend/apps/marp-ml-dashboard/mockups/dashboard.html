@@ -39,7 +39,10 @@
 <div class="app">
 
   <aside class="rail">
-    <div class="rail-logo"><img src="../../../shared/assets/images/marp-logo-compact.png" alt="MARP"></div>
+    <div class="rail-logo">
+      <img class="wordmark" src="../../../shared/assets/images/marp-logo-compact.png" alt="MARP">
+      <img class="mark" src="../../../shared/assets/images/marp-mark.png" alt="MARP">
+    </div>
     <div class="rail-sec">Machine Learning</div>
     <nav class="rail-nav" aria-label="Sections">
       <a href="./dashboard.html" aria-current="page"><svg class="ico"><use href="#i-dashboard"/></svg><span>Dashboard</span></a>
@@ -62,8 +65,7 @@
     <header class="topbar">
       <button class="btn icon railtoggle" aria-label="Sections"><svg class="ico"><use href="#i-menu"/></svg></button>
       <div class="heading">
-        <h1>Machine Learning Dashboard</h1>
-        <div class="sub">What the GPU pool is running, queued, and struggling with</div>
+        <h1 title="What the GPU pool is running, queued, and struggling with">Machine Learning Dashboard</h1>
       </div>
       <div class="tools">
         <span class="lab">Project</span>
@@ -79,6 +81,18 @@
         <button class="btn icon" aria-label="Reload"><svg class="ico"><use href="#i-refresh"/></svg></button>
         <button class="btn primary"><svg class="ico"><use href="#i-plus"/></svg>New Inference Job</button>
         <button class="btn accent"><svg class="ico"><use href="#i-plus"/></svg>New Training Job</button>
+        <div class="menuwrap">
+          <button class="who" id="userBtn" title="Account and preferences"
+                  aria-haspopup="true" aria-expanded="false">IT</button>
+          <div class="menu" id="userMenu" role="menu" hidden>
+            <div class="mhead">Signed in as Isaac Travers</div>
+            <button role="menuitem">Preferences</button>
+            <button role="menuitem">Keyboard shortcuts</button>
+            <button role="menuitem">Worker service tokens</button>
+            <hr>
+            <button role="menuitem">Sign out</button>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -132,14 +146,12 @@
           <div class="panel-bd flush">
             <div class="tblwrap">
               <table class="tbl stack fixed">
-                <colgroup>
-                  <col style="width:26%"><col style="width:16%"><col style="width:14%">
-                  <col style="width:12%"><col style="width:15%"><col style="width:8%"><col style="width:9%">
-                </colgroup>
                 <thead>
                   <tr>
-                    <th>Job</th><th>Scope</th><th>Model</th><th>Status</th>
-                    <th>Progress</th><th aria-sort="descending">Updated</th><th><span class="vh">Actions</span></th>
+                    <th class="hjob">Job</th><th class="hscope">Scope</th><th class="hmodel">Model</th>
+                    <th class="hstatus">Status</th><th class="hprog">Progress</th>
+                    <th class="hupd" aria-sort="descending">Updated</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -254,7 +266,7 @@
 
           <section class="panel">
             <header class="panel-hd">
-              <h2>Worker pool</h2>
+              <h2 title="124 of 143 machines are reachable. Paused machines stay reachable and take no new work. A worker counts as quiet only after 90 seconds, because an idle machine on a long poll can legitimately go a minute without speaking.">Worker pool</h2>
               <button class="more">All 143 workers <svg class="ico sm"><use href="#i-arrow"/></svg></button>
             </header>
             <div class="panel-bd">
@@ -284,9 +296,6 @@
                 <span class="row"><span class="k">In use</span><span class="v">127</span><span class="p">41%</span></span>
                 <span class="row"><span class="k">Available</span><span class="v">186</span><span class="p">59%</span></span>
               </div>
-              <p class="note">124 of 143 machines are reachable. Paused machines stay reachable and
-              take no new work. A worker is called quiet only after 90 seconds, because an idle
-              machine on a long poll can legitimately go a minute without speaking.</p>
             </div>
           </section>
 
@@ -332,6 +341,17 @@
     </main>
   </div>
 </div>
+
+<script>
+  /* The only script in these mockups. A dropdown that does not open cannot be
+     reviewed, and this is the interaction rather than the data. */
+  const btn = document.getElementById('userBtn');
+  const menu = document.getElementById('userMenu');
+  const show = (on) => { menu.hidden = !on; btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); show(menu.hidden); });
+  document.addEventListener('click', () => show(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') show(false); });
+</script>
 
 </body>
 </html>

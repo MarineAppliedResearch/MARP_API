@@ -28,6 +28,9 @@ const BASE = `http://localhost:${PORT}/apps/marp-ml-dashboard/mockups/`;
    sees before scrolling. */
 const VIEWS = {
   desktop: { width: 1672, height: 941 },
+  /* The middle width, where the rail is a 56px strip. It has its own layout and
+     its own logo, so it needs its own shot -- neither of the other two can see it. */
+  tablet: { width: 1000, height: 1500 },
   phone: { width: 390, height: 1900 },
   'phone-fold': { width: 390, height: 844 },
 };
@@ -62,6 +65,18 @@ for (const view of views) {
        not been looked at yet. */
     await page.screenshot({ path: file, fullPage: true });
     console.log(`mock-${name}-${view}.png`);
+
+    /* A dropdown that is only ever drawn shut cannot be judged, so a screen with
+       an account button gets one extra shot with it open. */
+    if (view === 'desktop' && await page.locator('#userBtn').count()) {
+      await page.locator('#userBtn').click();
+      await page.waitForTimeout(120);
+      const f = join(APP, 'shots', `mock-${name}-menu.png`);
+      await page.screenshot({ path: f, fullPage: false });
+      console.log(`mock-${name}-menu.png`);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(80);
+    }
 
     const over = await page.evaluate(() => {
       const w = window.innerWidth;
