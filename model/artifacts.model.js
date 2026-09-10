@@ -28,7 +28,6 @@ const { Model } = require('sequelize');
  *         optional contextual metadata.
  *       required:
  *         - id
- *         - training_run_id
  *         - artifact_type
  *         - path
  *       properties:
@@ -38,8 +37,14 @@ const { Model } = require('sequelize');
  *           description: Unique identifier for this artifact record.
  *         training_run_id:
  *           type: integer
+ *           nullable: true
  *           example: 12
- *           description: Foreign key referencing the training run this artifact belongs to (training_runs.id).
+ *           description: Foreign key referencing the training run this artifact belongs to (training_runs.id). Null for an artifact produced by a GPU job rather than a training run.
+ *         job_id:
+ *           type: integer
+ *           nullable: true
+ *           example: 41
+ *           description: Foreign key referencing the GPU job that produced this artifact (gpu_jobs.id). Null for an artifact produced by a training run. Exactly one of training_run_id and job_id is always set.
  *         artifact_type:
  *           type: string
  *           example: weights
@@ -112,6 +117,19 @@ module.exports = (sequelize, DataTypes) => {
         onDelete: 'CASCADE',  // Remove artifacts if run is deleted
         onUpdate: 'CASCADE',
       });
+
+      // ...or to one GPU job, for anything an inference or tracking run
+      // produced. Exactly one of the two owners is set; a database check
+      // constraint enforces that neither ends up null.
+      this.belongsTo(models.gpu_jobs, {
+        as: 'job',
+        foreignKey: 'job_id',
+        // Refused, not cleared: a result cannot outlive the record of what
+        // produced it, and nulling the only owner this row has would breach
+        // the check constraint in any case.
+        onDelete: 'RESTRICT',
+        onUpdate: 'CASCADE',
+      });
     }
   }
 
@@ -127,11 +145,21 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       training_run_id: {
-        // Foreign key reference to the training run that produced it
+        // Foreign key reference to the training run that produced it.
+        // Nullable since an inference result has no training run behind it --
+        // it belongs to a GPU job instead, through job_id below.
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         comment:
-          'Foreign key referencing the training run this artifact belongs to (training_runs.id).',
+          'Foreign key referencing the training run this artifact belongs to (training_runs.id). Null for an artifact produced by a GPU job.',
+      },
+
+      job_id: {
+        // Foreign key reference to the GPU job that produced it
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        comment:
+          'Foreign key referencing the GPU job that produced this artifact (gpu_jobs.id). Null for an artifact produced by a training run.',
       },
 
       artifact_type: {
@@ -209,6 +237,10 @@ module.exports = (sequelize, DataTypes) => {
         {
           name: 'artifacts_training_run_id_idx',      // speeds up lookups by training run
           fields: ['training_run_id'],
+        },
+        {
+          name: 'artifacts_job_id_idx',               // speeds up "what did this job produce"
+          fields: ['job_id'],
         },
         {
           name: 'artifacts_artifact_type_idx',        // speeds up filtering by artifact type

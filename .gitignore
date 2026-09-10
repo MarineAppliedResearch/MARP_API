@@ -71,6 +71,9 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
+# Backups too. A dated copy of .env is still credentials.
+.env.*
+!.env.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

@@ -394,6 +394,38 @@ class JellyfinRepository {
     }
 
     /**
+     * Loads one item by its Jellyfin id.
+     *
+     * Uses the same item-list endpoint the browse and search calls use, filtered
+     * to a single id, rather than `/Users/{id}/Items/{itemId}`: one response
+     * shape, one parser, and a missing item comes back as an empty list rather
+     * than as a 404 that has to be caught.
+     *
+     * @async
+     * @param {string} itemId - Jellyfin item id.
+     * @param {Object} [clientIdentity] - Downstream client identity, for Jellyfin session attribution.
+     * @returns {Promise<Object|null>} The parsed item (see {@link JellyfinRepository#_parseItem}), or null when Jellyfin does not have it.
+     * @throws {ApiError} 400/VALIDATION_ERROR when itemId is missing.
+     */
+    async getItem(itemId, clientIdentity = {}) {
+        if (!itemId) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A Jellyfin item id is required.');
+        }
+
+        const session = await this._ensureAuthenticated(clientIdentity);
+
+        const url =
+            `${this.baseUrl}/Users/${encodeURIComponent(session.userId)}/Items` +
+            `?Ids=${encodeURIComponent(itemId)}` +
+            `&Fields=${encodeURIComponent('Path,MediaSources,RunTimeTicks')}`;
+
+        const data = await this._authenticatedRequest(session, 'GET', url);
+        const [item] = this._parseItemsResponse(data);
+
+        return item || null;
+    }
+
+    /**
      * Negotiates playback for one item via Jellyfin's PlaybackInfo endpoint.
      * This both validates that the item exists/is playable and returns the
      * media source capability flags a caller would need to decide between

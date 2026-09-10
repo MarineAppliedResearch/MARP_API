@@ -1,412 +1,508 @@
-# Verification — MarineAppliedResearch/MARP_API#111
+# Verification — distributed GPU compute, coordinator half
 
-Phase 7: the species correction endpoint, the invalidation it causes, the last-write-wins
-unwind of two merged phases, and the permission review. Written from the 18 requirements in
-`.marp/task.md` **before anything was run**; the results are appended below verbatim,
-including whatever failed on the way.
+Covers the `MARP_API` half of `MarineAppliedResearch/marp-inference-worker#3`: the
+migrations, the models and repository, and the twelve `/api/v2/gpu` endpoints. The
+dashboard app (R15) is not in this pass and is not verified here.
 
-The three earlier phases' evidence is preserved beside this file as
-`.marp/verification-103-review-state-schema.md`, `-105-mosaic-query.md` and
-`-106-page-commit.md`. Nothing here renames or replaces them: this file did not exist on
-this branch, so there was nothing to rename.
+Two tiers are used, and the split matters:
 
-## The baseline this starts from
-
-`npm test` on `abf00b9`, before any change:
-
-```
-  Test Suites : 35 passed, 0 failed, 35 total
-  Tests       : 348 passed, 0 failed, 0 skipped, 348 total
-  Duration    : 24.4s
-```
-
-That number matters more than usual this time. **This phase rewrites tests that are already
-green**, because the rule they assert was overruled — not because they broke. Every test
-that changes is listed under *Tests that change, and why* with which of the two it is, and
-the final count has to be reconcilable from that list rather than merely larger.
-
-## The migrations changed shape mid-implementation, and this records that
-
-The plan below was written for **two new migrations superseding the two from #103**, on the
-standing rule that an applied migration is never edited. That was reversed during G2, by the
-human: *"we don't want extra migrations for no reason."*
-
-So `20260909120500` and `20260909120600` were written, applied, proved in both directions,
-and then **folded back into `20260909120100` and `20260909120200` and deleted.** The rule
-they were obeying is the right rule when a migration has reached anywhere that matters —
-these had not. Both were written the same day, both tables held **zero rows on every
-database**, nothing had ever run against production, and the only database that had applied
-them was the local disposable one. The cost of editing was a rebuild of a database with no
-data in it; the benefit is that the next person reads one honest definition per table
-instead of an archaeology of a design that was overruled the same day.
-
-**What that costs in evidence, and how it was paid.** Editing applied files means the
-files can no longer be trusted to match what ran, so the check is a rebuild from scratch:
-
-- `marp db destroy` then `marp db up` — baseline plus every migration, from nothing.
-- Structural snapshot before and after: columns, constraints, indexes and triggers, each
-  hashed, plus row counts and the ledger.
-- Then `db:migrate:undo` back past both edited files and `db:migrate` forward again, and a
-  third snapshot.
-
-All three snapshots are byte-identical. The evidence is under *Results*.
-
-## The tier that matters, and why almost nothing here is a unit test
-
-Jest against the real development PostgreSQL, through `npm test` — never `npx jest`, because
-the suite shares one database and `package.json` passes `--runInBand` for that reason.
-
-Six of this phase's requirements are observable at **no other tier**, and each names a thing
-a unit test structurally cannot see:
-
-- **R7/R8/R9/R11 — projection equals derivation.** The derivation is SQL read out of a
-  committed migration file and executed. There is no in-process representation of it to
-  assert against; a mock would be asserting the mock.
-- **R6 — the two `CHECK`s.** A constraint refusing a value is a database event. A repository
-  unit test sees a rejected promise and cannot tell a `CHECK` from a typo.
-- **R10 — last-write-wins under genuine concurrency.** Two transactions racing is not
-  simulable in one process.
-- **R17 — the row lock.** Whether `FOR NO KEY UPDATE` is held is invisible above SQL.
-
-The remaining tier is `http+db` through Supertest against the real Express app, and one
-`source` assertion about committed file text.
-
-## Seeding, because CI has an empty database
-
-**CI builds `db/baseline/schema.sql` plus the migrations and holds no observations and no
-sessions.** Every test here seeds its own project, session, observations, species and
-reviewers, and removes exactly them afterwards. A test that borrows an existing row passes
-on this machine and fails in CI — that happened on Phase 3, and it is the reason
-`tests/observation-review-current.test.js`'s `twoReviewers()` is being fixed as part of R11
-rather than left (see *Regression coverage*).
-
-`observation_id` is assigned by hand as `max(observation_id) + 1` (#62), so observations are
-inserted with SQL rather than `db.observations.create`.
-
-**Species are seeded, not borrowed.** The correction needs two real `species` rows to move
-between, and the 854 on this machine are import data that CI does not have.
-
-## Line endings
-
-Any comparison of file content against a template literal normalises `\r\n` to `\n` first.
-**ECMAScript normalises CRLF inside a template literal and `readFileSync` does not**, so such
-a test passes on Linux and fails on Windows. It already did, on `develop`, today —
-`75dc718`. R11 inherits that normalisation and so does the new "find the current definition"
-helper.
+- **HTTP tier (`tests/gpu-orchestration.test.js`)** — Supertest against the real Express
+  app and the real local PostgreSQL. This is the tier a worker meets, so the whole worker
+  contract is asserted here rather than against the repository.
+- **Transaction tier (`tests/gpu-lease-race.test.js`)** — two database transactions held
+  open at once. The lease's concurrency claim is invisible at any other tier: calling the
+  claim twice in sequence passes whether or not any locking exists.
+- **HTTP tier with Jellyfin stubbed (`tests/gpu-video-resolution.test.js`)** — the same
+  Supertest setup, with `jellyfinRepository.buildDirectStreamUrl` and `getItem` replaced per
+  test. Still the HTTP tier, because what is being asserted is the leased body a worker
+  receives; the stub is there because CI cannot reach the media server, which is also why
+  `tests/jellyfin.test.js` is excluded there. **What this cannot see: whether Jellyfin
+  actually returns a playable URL for a real item.** That needs the media server and is a
+  manual step below.
 
 ## What each test proves
 
-`tests/mosaic-correction.test.js` is new. Other files are named where they differ.
-
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | *answers at /api/v2/mosaic/observations/species and not at the declared path* | http+db | The route is registered by `registerVersionedRoute`, so the V2 prefix was derived rather than hand-mounted — which would have got the URL and silently lost `requirePermission`. The declared `/api/mosaic/...` path is `404`. |
-| R2 | *changes species_id and nothing else on the observation* | http+db | Every other column is read before and after and compared byte for byte: `comname`, `taxserial`, `taxReview`, `sizereview`, `tc`, `etc`, `mediaPosition`, `actualPosition`, `frame`. Asserted, not assumed — this is #111's one irreversible rule. |
-| R2 | *does not propagate a name to the keyframes* | db | `updateObservation` rewrites every keyframe's `comname` when the submitted one differs (`observation.repository.js:690-712`). The correction must not go through it. Keyframe `comname` is unchanged after a correction. |
-| R3 | *refuses a stale version and writes nothing at all* | http+db | The refusal is `{ok: false, error: 'conflicted'}`, and **three** things are then checked: `species_id` unmoved, no `observation_reviews` row, no projection row removed. A refusal that half-applied would still pass a status-only assertion. |
-| R3 | *refuses a request carrying no version* | http | An absent version is `400`, matching Phase 5's rule. Required, never optional: a correction destroys other people's decisions, and doing that from a stale view destroys approvals of a classification the corrector never saw. |
-| R4 | *writes nothing when the correction names the species already recorded* | http+db | No log row, no projection change, and the version does not move. |
-| R5 | *appends exactly one log row, and what it records* | db | One row: `purpose = 'scientific'`, `decision = 'corrected'`, `reviewer_id` the caller, `observation_version` the version it applied to, `previous_species_id` and `corrected_species_id` both set, `reason` null, `representative_keyframe_id` null, and the keyframe fingerprint computed server-side. |
-| R5 | *records a null previous_species_id when the observation had no species* | db | About 4% of production rows have no `species_id`; "the species before the correction" is legitimately absent. The column is nullable and the correction still records. |
-| R6 | `tests/observation-review-schema.test.js` *admits a corrected scientific decision* | db | The rebuilt vocabulary `CHECK` accepts `scientific` × `corrected` and still refuses everything outside the enumerated set. |
-| R6 | `tests/observation-review-schema.test.js` *ties corrected_species_id to the corrected decision, both ways* | db | A `corrected` row without `corrected_species_id` is refused, **and** a `reviewed` row carrying one is refused. Both directions, because a one-way check lets an ordinary decision pretend to be a correction. |
-| R7 | `tests/observation-review-current.test.js` *the definition of "current" exists once* | source | Exactly one migration carries a `-- rebuild:` block that is current, the test **finds** it rather than hard-coding a path, and the block in the file is the one the module exports and runs. |
-| R7 | `tests/observation-review-schema.test.js` *the projection's column list* | db | `first_decided_at` is gone. Its purpose evaporated with first-wins, it was `NOT NULL`, and keeping it would force every writer to invent a value. |
-| R8 | *a corrected observation is unreviewed for both purposes* | http+db | A `corrected` row never projects. The projection's `CHECK` does not name the value, so the rebuild would fail loudly rather than quietly if the derivation stopped excluding it — which is the point of D1. |
-| R9 | *a correction clears another reviewer's approval, for both purposes* | http+db | **The decisive test for A5.** Alice reviews (scientific) and Bob promotes (training); Carol corrects; both projection rows are gone, regardless of `reviewer_id`, and **both log rows survive**. Retaining the audit history is half the requirement and is asserted separately from the removal. |
-| R9, R17 | *invalidates in the same transaction as the write* | db | After a refused correction nothing is invalidated; after an accepted one everything is. The log row, the `species_id` update and the projection removal are one unit. |
-| R10 | `tests/mosaic-commit.test.js` *gives the record to the second reviewer, and keeps the first in the log* | http+db | Last write wins. The second reviewer is **not** refused, the projection carries their decision, and the first reviewer's decision is still in the log. This is the inverse of what the same test asserted before. |
-| R10 | `tests/mosaic-commit.test.js` *lets a reviewer revise their own decision* | http+db | Two log rows, one projection row. What survives from the deleted `first_decided_at` case. |
-| R10 | `tests/mosaic-commit.test.js` *lets two reviewers hold the two purposes independently* | http+db | Unchanged. Purpose independence is unaffected by last-wins. |
-| R10 | `tests/mosaic-commit.test.js` *both commits land when two arrive together, and the projection holds one of them* | http+db | Concurrency produces a consistent end state: two log rows, exactly one projection row, `reviewer_id` matching the review row the projection points at, and projection equal to derivation. It **cannot** assert which reviewer won without being flaky, and that is correct — under last-wins it is genuinely undetermined. |
-| R10 | `tests/mosaic-commit.test.js` *lets any reviewer withdraw the current decision* | http+db | Inverted from *refuses to withdraw a decision another reviewer owns*. `releaseWithdrawn` is no longer reviewer-scoped. |
-| R10 | *no outcome is ever reported as `claimed`* | source+http | `CONFLICT_CLAIMED` is gone from the repository text and no response emits it. A constant left behind reads as reachable. |
-| R11 | `tests/observation-review-current.test.js` *agrees with the derivation through a decision, a correction, and a decision by somebody else* | db | **The one that catches a half-finished change months later.** A log with several reviewers deciding in sequence, with an invalidation in the middle: decide → correct → decide as a *different* reviewer, asserting projection equals derivation **at every step**, and that the second reviewer's decision is the current one. |
-| R11 | `tests/observation-review-current.test.js` *is reproduced exactly by the committed rebuild SQL* | db | The recovery path lands on identical rows. |
-| R12 | *each of the four mosaic write routes reads its own permission constant* | source | Review, training, delete and correction each name a separate constant. They hold the same value today; the assertion is that changing one does not move the others, which is #68's *Authorization* obligation. |
-| R12 | *seeds no new permission key* | db | The catalog holds no key matching mosaic, correction or relabel. Phase 2 settled the existing model. |
-| R13 | *refuses a service token with 403 and writes nothing* | http+db | The token is granted `observations:write` **first**, so the refusal is provably about the principal and not about the key. Nothing is written: no log row, no species change. `observation_reviews.reviewer_id` references `users(user_id)` while a bearer principal's id is a `service_clients.service_client_id`, and both sequences start at 1 — so the failure is not an error but a correction silently attributed to an unrelated person in the scientific record. |
-| R14 | *refuses an anonymous caller with 401* | http | Every route is authenticated; there is no V1. |
-| R14 | *refuses a caller without observations:write with 403* | http+db | A user holding nothing, built narrowly in the style of `tests/auth.test.js` and `tests/v2_users.test.js` rather than through the full-permission fixture agent. |
-| R15 | *tells deniedObservationIds which operation is asking* | source+unit | The function takes the operation, and all four call sites pass it. It returns `[]` for every operation today; the requirement is the seam, not a rule. A per-project delete rule cannot be written inside it without knowing delete is the caller. |
-| R16 | *returns the shape the fixture returns* | http | `{ok: true, observation, previous}` on success and `{ok: false, error}` on refusal, because `store.js:597` branches on `res.ok` alone and a thrown status would surface as a transport failure in a path that has a perfectly good result to show. |
-| R16 | *carries the corrected species' name, distinct from comname* | http+db | The response's `species_comname` is the **catalogue's** `species.comname` for the new species, while `observation.comname` is unchanged. Without it a corrected tile shows the old animal's name for ever; reusing `comname` would let the catalogue's current label be mistaken for the annotator's frozen one. |
-| R17 | *the whole correction is one transaction* | db | Covered by the R3 and R9 pairs above: a refusal leaves nothing partially applied. |
-| R18 | `npm run docs:build` | build | The generated contract carries `POST /v2/mosaic/observations/species` and its request and response schemas, and the diff is generated rather than hand-edited. |
-| R19 | *serves the new species name while comname still serves the old label* | http+db | **The pairing is the requirement, not the field.** After a correction the mosaic row carries `species_comname` = the catalogue's name for the new species **and** `comname` = the annotator's original label, and the two differ. Asserted against the seeded species rather than a literal. Without it a corrected tile renders the old animal for ever, on every reload, while the species filter matches the new one. |
-| R19 | *serves a null species name where the observation has no species* | http+db | The join is outer, so a row with no `species_id` — about 4% of production — is never dropped for want of one, and reports `null` rather than being absent. |
-| R19 | `tests/mosaic-query.test.js` *is exactly the agreed key set* | http | The key is **moved into** the exact-key list, not admitted by loosening it. That list is a deliberate tripwire against a column joining the payload by accident; relaxing it to admit one field would disable the tripwire permanently. |
+| R1 | `docs/openapi.generated.json` contains 12 `/v2/gpu/…` paths and 25 `Gpu*` schemas, rebuilt by `npm run docs:build` | contract | The family is registered through `registerVersionedRoute` (a literal `/api/v2/` path throws) and documented code-first. The generated tag is `V2 · GpuCompute`, rewritten from the `V1 · GpuCompute` the route file declares. |
+| R2 | `GPU worker enrolment`, `queues one job and leases it`, `GPU heartbeat`, `GPU attempt events`, `GPU attempt result`, `GPU artifact hand-off` | HTTP | All five worker-facing calls plus the two-step hand-off answer as specified. |
+| R3 | `shows the machine, its hardware, and the job it is running` asserts the serialised pool entry matches no `host`/`hostname`/`url`/`ip`/`address`/`port` key; the migration creates no such column | HTTP + schema | Push is unrepresentable rather than unused. The assertion fails the day somebody adds such a column and returns it. |
+| R4 | `does not offer one queued job to a second transaction while the first holds it`, `gives two overlapping transactions two different jobs`, `leases one queued job to exactly one of two workers polling at once`, `shares four queued jobs among eight simultaneous polls without leasing any twice` | transaction + HTTP | Claiming is inside the poll transaction and two simultaneous pollers cannot lease one job. |
+| R4 | `negative control: without the locking clause, one job goes to both transactions` | transaction | That the tests above **can** fail. Without this, deleting `FOR UPDATE SKIP LOCKED` would leave them green. |
+| R5 | `delivers a cancel through the heartbeat, and only through the heartbeat`, `delivers a pause to a machine that has been paused`, and the three `abandon` tests | HTTP | Cancel, pause and abandon arrive only as an `{action}` in a heartbeat response. |
+| R6 | `requeues the job on a failure while attempts remain, and fails it when they run out` asserts two attempt rows, each keeping its own `failure_reason` | HTTP | A job and one machine's attempt at it are separate records, and a retry does not overwrite the account of the first failure. |
+| R7 | `refuses a worker that claims a stale lease epoch, and writes nothing`, `refuses a worker claiming another machine's attempt`, `refuses a batch from a stale lease, and writes none of it`, `will not let a worker declare itself succeeded`, and the resurrected-worker half of the expiry test | HTTP | Every state-changing call carries `(attempt_id, worker_id, lease_epoch)`; a mismatch is answered `abandon` **and writes nothing** — the assertions check the row is untouched, not just the response body. |
+| R8 | `returns an expired lease's job to the queue and tells the old worker to abandon`, `takes the lease back from an attempt that has run past the per-attempt cap` | HTTP | Expiry is judged on the coordinator's clock: both tests move a coordinator-written timestamp and assert on what the coordinator then does. |
+| R9 | `accepts a batch, and treats a replay of it as duplicates rather than new events`, `answers a replayed terminal report from the stored rows, without a second result`, `answers already_have false, accepts the bytes, then answers already_have true`, `does not let a success reported after a cancel resurrect the job`, `refuses a second attempt at the same job and epoch` | HTTP + schema | Replay is safe at all four points: events keyed `(attempt_id, seq)`, an idempotent terminal report, artifacts addressed by sha256 with an `already_have` short-circuit, and a guarded publish. |
+| R10 | Every route declares one of `workers:enrol` / `jobs:execute` / `jobs:read` / `jobs:write`; the seeding migration adds the four keys and grants none | schema + contract | The four keys exist, are held by nobody, and no worker route reuses `models:*` or `datasets:*`. |
+| R11 | No new credential mechanism exists: the suite authenticates with `tests/setup/authenticated-agent.js`, and the routes are gated by the existing `requirePermission`, fed by the existing `resolvePrincipal` | contract | Worker credentials are the existing service tokens. |
+| R12 | `extends the lease, records progress, and says continue` asserts progress overwritten in place on the attempt; the events tests assert appended rows; `records a success as an artifact…` asserts detections arrive as a hashed artifact | HTTP | Progress is small and overwritten; durable numbers are appended; per-frame detections are never inline. |
+| R13 | `records a success as an artifact belonging to the job rather than to a training run` asserts `training_run_id === null` and `job_id === job.id` on the recorded row | HTTP | An inference result now has somewhere to be recorded. |
+| R14 | Migration `20260909100200` applies against the local database; `epochs_training_run_id_epoch_number_unique` exists | schema | The constraint is present. See *Known gaps* — no test inserts a duplicate epoch. |
+| R16 | `npx sequelize-cli db:migrate` and `db:migrate:undo` run clean in both directions; each migration prints its `[label] before/after` integrity lines | schema | Every migration wraps its work in `db/data-integrity.js` and carries a working `down`. |
+| A13 | `keeps the new name when the machine enrols again, and stays one row`, `gives two machines that share a name a row each`, `does not disturb a live lease`, `refuses an empty name, and 404s an unknown machine`, `refuses an enrolment with no durable id, because that is the identity` | HTTP | A worker's identity is the durable id it generated for itself; the name is editable metadata. Enrolment keys on `local_id`, a re-enrolment does not overwrite the name, two machines may share one, and a rename touches neither the row's identity nor its lease. |
+| A13 | `does not echo the durable id back, keeping the identity internal`, and the `local_id` key assertion inside `does not disturb a live lease` | HTTP | The durable id is not in any response. `worker_id` is the handle a dashboard addresses a machine by, so exposing the value enrolment keys on would be an avoidable way to adopt somebody else's pool row. |
+| A15 | `resolves an item id into a url at lease time`, `fills source_name from the Jellyfin item when the submission left it out` | HTTP | The coordinator's guarantee: the spec a worker is handed carries `video.url`. Asserted on the leased body, which is what a worker actually receives -- a check one layer down would pass while the body handed over had no URL in it at all. |
+| A15 | `resolves an item id into a url at lease time` (its closing assertion) and `keeps the stored spec as it was submitted, resolving nothing at submit time` | HTTP | Resolution happens in the poll handler and the job row is not rewritten. A URL carries its own media credential, and one minted at submission would sit in the queue until somebody claimed it -- which is what makes a short-lived per-attempt token possible later. |
+| A15 | `resolves an item id into a url at lease time` asserts `spec.video.jellyfin_item_id` unchanged on the leased body | HTTP | The item id travels through as opaque provenance for the worker to echo into its output. A worker never resolves one. |
+| A15 | `hands a bare url through unchanged, asking Jellyfin nothing` | HTTP | A worker can process any reachable source, not only a Jellyfin item, because a URL is all the contract carries. Also asserts the media server is not touched at all for such a job. |
+| A15 | `refuses a submission carrying both an item id and a url`, `refuses a bare url with no source_name…`, `refuses a video that names neither an item id nor a url`, `refuses an empty url rather than storing one` | HTTP | Exactly one of the two at submit, and `source_name` required with a bare url because it becomes `video_source` on every observation and cannot be guessed from a URL. |
+| A15 | `does not hand out a lease when the video cannot be resolved, and lets the job fail`, `does not hand out a lease when Jellyfin does not have the item` | HTTP | A failure to resolve fails the attempt with the reason rather than handing over a spec with no URL, and spends an attempt so the job exhausts them and lands `failed` instead of being retried forever. Both halves are asserted: `queued` while an attempt remains, `failed` when none does. |
+| A15 | `never hands over an empty url, even from a spec that already holds one` | HTTP | An empty `video.url` is treated as no URL. The worker refuses a spec whose url is missing *or* empty, and a coordinator that resolved nothing is likelier to emit `""` than to omit the key; this asserts MARP emits neither. |
+
 
 ## Requirements with no test
 
-- **R17's row lock, as a lock.** The tests prove the transaction is atomic and that the
-  reported refusal reason matches what applied. They do **not** prove `FOR NO KEY UPDATE` is
-  the mechanism — removing it would not fail a named test here. Under last-wins the lock's
-  original justification is gone and the surviving one is narrow: the version comparison is
-  read before the write and reported after it, and without the lock two commits can
-  interleave so the *reported* reason is not the one that applied. That is a reporting
-  accuracy property, and a test for it would be inherently racy. **Stated as a gap rather
-  than covered by a test that would flake.** Phase 5's concurrency test used to be the lock's
-  proof; under last-wins it no longer is, and nothing replaces it.
-- **R7's `down`.** The reverse migration restores the previous definition and the column, and
-  is not exercised. No migration `down` in this repository is tested; doing it here would be
-  a new practice rather than this phase's work.
+- **R15 (the dashboard app)** — not implemented in this pass, so nothing is verified. It is
+  a separate piece of work and needs its own tiers, including one that can see what was
+  drawn.
+- ~~**A15's live half** — that a real Jellyfin item resolves to a URL a worker can actually
+  open.~~ **Closed 2026-09-09** by the manual step it names: a job carrying only
+  `jellyfin_item_id` was resolved at lease time and the worker opened the video, reporting
+  `1920x1080 at 25.000 fps, container reports 36159 frames`. The stubbed tests still prove
+  only what MARP does with a URL; this proves the URL plays. **Not closed for a transcoded
+  item** — that one direct-plays.
 
 ## Edge cases
 
-- **A correction on an observation with no previous species.** 4% of production rows.
-  `previous_species_id` is null and the correction still records — the column is deliberately
-  nullable while `corrected_species_id` is not.
-- **A correction naming the species already recorded.** Writes nothing (R4). Under the
-  version-boundary design this replaced it was a correctness landmine: the version trigger
-  fires only `WHEN (old.* IS DISTINCT FROM new.*)`, so a no-op would have recorded a boundary
-  at a version that never moved, invalidating every decision and admitting none, for ever.
-  **D3's boundary is `review_id`-keyed, not version-keyed, so that trap is gone** and this is
-  a behavioural rule rather than a load-bearing one. Tested anyway, because the trap will look
-  attractive again to anyone who reaches for a version boundary.
-- **A second correction.** The observation's current species is no longer what the first
-  correction changed *to*, which is why `previous_species_id` and `corrected_species_id` are
-  two columns rather than one. Asserted: the chain reconstructs.
-- **A correction naming a species that does not exist.** `{ok: false, error: 'not-found'}`
-  before any write, matching the fixture, which checks the species first *"so a correction
-  that cannot be made writes nothing"*.
-- **Two decisions inside one clock tick.** Ordinary under last-wins where they were
-  exceptional before. `decided_at DESC, review_id DESC` is what makes the answer deterministic
-  rather than planner-dependent, and the mid-log test decides twice in one transaction.
+- **A worker that restarts and enrols again** — asserted to be the same row with updated
+  hardware, not a second row. A pool view full of ghosts would make "which machine is
+  live?" unanswerable.
+- **A machine that was renamed and then restarts** — keeps the operator's name. The worker
+  computes its name at startup and sends it on every enrolment, so honouring it would have
+  reverted every rename at the next reboot.
+- **A machine renamed while it is running a job** — its next heartbeat is answered
+  `continue`, not `abandon`. This is where the original design broke: with the name as the
+  key, the re-enrolment after a rename opened a second row and left the first holding the
+  lease.
+- **Two machines with the same name** — two rows, because their durable ids differ.
+- **A re-enrolment that omits `slot_count`** — must leave the count alone. This was a real
+  defect found by this suite: the service defaulted it to 1, which silently cut a
+  multi-slot machine down to one slot and then looked like the scheduler refusing to give
+  it work.
+- **A machine already running as much as it said it can** — answered `204` rather than
+  handed more. Without this a single machine leases the whole queue at once.
+- **A paused machine polling** — answered `204` at once. Leasing then immediately pausing
+  would churn every job in the queue through a pointless lease.
+- **Bytes that do not match the hash in the path** — refused, and nothing kept: no file on
+  disk and no staging row. A recorded artifact that cannot be opened is worse than a
+  failed upload.
+- **A result naming an artifact never handed over** — refused with 409 rather than recorded
+  pointing at bytes MARP does not hold.
+- **A worker sending the coordinator's own `note` kind, or a negative `seq`** — refused.
+  Both would corrupt the record of why a lease was taken away, since a colliding `seq` is
+  silently swallowed by the same `ON CONFLICT DO NOTHING` that makes replay safe.
+- **A success reported after the job was cancelled** — the attempt records its success, the
+  job stays cancelled, and nothing is published.
+- **Splitting a range** — `[0, 1000)` in pieces of 300 is asserted to give `[0, 300)`,
+  `[300, 600)`, `[600, 900)`, `[900, 1000)`, with a per-frame tally over the whole range
+  showing every frame covered exactly once, the covered count equal to 1000, and the last
+  piece short rather than over-long. A second case, `[40, 47)` in pieces of 3, covers the
+  uneven remainder and a non-zero base. The tally is there because a gap and an overlap can
+  cancel each other out in a total, so counting alone would not have caught the divergence
+  described below.
 
 ## Regression coverage
 
-- **`twoReviewers()` in `tests/observation-review-current.test.js` borrowed users.** It read
-  `SELECT user_id FROM users ORDER BY user_id LIMIT 2` and asserted the second was defined —
-  the Phase 3 CI failure class exactly, passing here and failing on a database with one
-  bootstrap user. R11 rewrites parts of that file, so it seeds two reviewers of its own and
-  cleans them up. **Called out in its own commit rather than folded in silently.**
-- **The CRLF comparison.** `75dc718` on `develop` today. Inherited by the new
-  find-the-current-definition helper, which reads a second migration file.
-- **A cleanup that removes nothing looks like a cleanup that worked.** Phase 5's `afterAll`
-  counts what is left under the run's marker and throws if it is not zero. The new suite does
-  the same, for observations *and* for the species it seeds.
+Nothing here is a regression yet — this is new surface. Three tests exist specifically
+because the implementation got them wrong first, and they are the ones to keep:
+
+- `splits a range into half-open pieces that cover every frame exactly once`, which exists
+  because MARP_API and `marp-inference-worker` had diverged on the frame-range convention:
+  this side read both bounds as inclusive, the worker read the end as exclusive. Each side
+  was self-consistent, so nothing failed — the cost would have been one frame dropped at
+  every piece boundary. Settled half-open, and this test plus the uneven-remainder one are
+  what stop it coming back.
+
+- `does not give a machine more concurrent work than the slots it enrolled with`, which
+  caught the `slot_count` default described above.
+- `negative control: without the locking clause, one job goes to both transactions`, which
+  exists so the concurrency tests cannot quietly stop testing anything.
+- The four `GPU worker rename` tests, which exist because the identity and the name were
+  the wrong way round: `gpu_workers.name` was `UNIQUE` and was what re-enrolment keyed on,
+  while the durable id a worker sends on every enrolment had no column to be stored in. Each
+  was checked for vacuity by mutating the thing it guards — see *Vacuity checks* below.
 
 ## Known gaps
 
-- **Nothing verifies the client.** `frontend/` is out of scope; the five incompatibilities the
-  spec records are Phase 8's, and the fixture still contradicts the endpoint in three of them.
-- **No performance claim.** One observation on this database. Nothing is benchmarked and no
-  number is claimed, on the same agreed basis as #99, #103, #105 and #106.
-- **CI runs the fast tiers only.** A green pipeline is not G4.
+Stated plainly, because a written gap is a decision and an omitted one is a surprise.
+
+- ~~**No GPU, no worker, no Jellyfin.** Nothing here runs real inference. The worker side is
+  being built in parallel in `marp-inference-worker`; the two have never spoken.~~
+  **Superseded 2026-09-09** — the two have now spoken, repeatedly, and the results sections
+  below record it: a real worker on a real GPU ran the real MARP model over real Jellyfin
+  footage and returned observations. **What stands unchanged is the second half:** the job
+  spec's `engine`, `model`, `params` and `reduction` are passed through untouched and
+  **unvalidated** by MARP, so a mismatch in their meaning would still not be caught by any
+  test here. It was caught by running the two halves together — seven times over.
+- **The acceptance criteria are partly met, as of 2026-09-09.** Met: a real inference job
+  over a real Jellyfin video, cancelled mid-run and stopped in 18 s; **a machine vanishing
+  mid-job**, killed outright with its lease expiring on MARP's clock in 65 s and the job
+  returning to `queued`. Still unmet: **two real machines enrolling at once** (one machine
+  only, so nothing has contended for a lease outside the transaction tier); progress
+  advancing in a UI, there being no UI; and NAT traversal, home-link bandwidth and long-haul
+  latency, which an office-only run cannot prove at all.
+- **`MARP_API` restarting mid-job is untested.** Leases are rows, so it should lose
+  nothing, but no test kills and restarts the process.
+- **The long poll's waiting is only exercised at `wait_seconds: 0`.** The loop and its cap
+  are not covered by a test that actually waits; a bug in the waiting path would show as a
+  poll returning too early or too late and nothing here would see it.
+- **No duplicate-epoch test for R14.** The constraint is verified to exist by the migration
+  applying, not by an insert being refused. Epochs are a Milestone 2 concern and nothing in
+  Milestone 1 writes one.
+- **Whether the two simultaneous polls in the HTTP tests genuinely overlap inside Postgres
+  is up to the scheduler.** A pass there does not by itself prove the locking; that is what
+  the overlapping-transaction tests and the negative control are for. The HTTP tests prove
+  the whole path upholds the invariant.
+- **The attempt cap and lease expiry are tested by moving a timestamp**, not by waiting a
+  real minute. The comparison under test is against the database's `NOW()`, which an
+  `UPDATE` exercises exactly as elapsed time would, but a defect in *how long* the timeouts
+  are would not be caught.
+- **Artifact size limit untested.** The 4 GiB ceiling and its 413 are not exercised;
+  streaming that much through Supertest is not a reasonable test.
+- **Nothing verifies the raised body limit at its boundary.** A 2 MB event batch is not
+  sent by any test; the limit is asserted only by the routes working at ordinary sizes.
 
 ## Manual steps
 
-None. Everything here is automated and there is no GUI, GPU or Jellyfin dependency.
-`tests/jellyfin.test.js` is untouched by this phase but is run locally as part of the full
-suite, because CI excludes it by name and cannot report it broken.
+For a human, once a worker exists. Each step says what to expect.
+
+1. `marp db up` from the umbrella, then `npm run dev` here.
+2. Issue a worker token holding only `workers:enrol`, `jobs:execute` and `jobs:write`:
+   `node scripts/create-application-token.js --app "GPU worker (office)"`, then grant those
+   three keys through `/api/v2/tokens`. **Expect** the token to be printed once.
+   **Expect** granting `models:write` to be unnecessary — if a worker seems to need it,
+   something has gone wrong.
+3. `POST /api/v2/gpu/workers/enrol` from the worker machine. **Expect** a `worker_id` and
+   `heartbeat_seconds`, and the machine to appear in `GET /api/v2/gpu/workers` as `idle`
+   with its real GPU and VRAM.
+4. Submit an inference job over a real Jellyfin item with a real frame range. **Expect**
+   one queued job, and the worker to lease it within one poll.
+5. Watch `GET /api/v2/gpu/jobs/:id`. **Expect** `progress_done` to climb and the attempt to
+   move `assigned` → `running`.
+6. `POST /api/v2/gpu/jobs/:id/cancel` while it runs. **Expect** the worker to stop within
+   one heartbeat interval, and the attempt to end `cancelled`.
+7. Let a second job run to completion. **Expect** an `artifacts` row with `training_run_id`
+   null, `job_id` set, and its `hash` matching the file under `storage/gpu-artifacts/`.
+8. Pull the worker's network cable mid-job. **Expect** the job to return to `queued` after
+   the lease expires on the coordinator's clock, another machine to take it, and the
+   original worker — once reconnected — to be told `abandon` and to discard its work.
+9. Repeat step 3 with a machine on a home connection, not the office LAN. **Expect** it to
+   work unchanged, because nothing needs to reach the worker.
 
 ## Walkthrough videos
 
-None. This phase adds no client behaviour — `frontend/` is explicitly out of scope — so
-there is nothing rendered to narrate, and a walkthrough that narrated an API result without
-asserting it would be exactly the kind of test the doctrine warns about.
-
-## Tests that change, and why
-
-The distinction the doctrine turns on: **because the rule changed**, or **because it broke**.
-Everything below is the first. If any test in this list turns out to be the second, that is
-reported as a defect rather than edited away.
-
-| File · test | Change | Which |
-| --- | --- | --- |
-| `mosaic-commit` · *gives the record to the first reviewer and reports the second* | Becomes *gives the record to the second reviewer, and keeps the first in the log*. | rule changed — A6 |
-| `mosaic-commit` · *lets the claiming reviewer revise without moving first_decided_at* | Deleted; there is no claiming reviewer and no `first_decided_at`. What survives is *lets a reviewer revise their own decision*, two log rows and one projection row. | rule changed — A6 |
-| `mosaic-commit` · *lets two reviewers hold the two purposes independently* | Kept as is. | unaffected |
-| `mosaic-commit` · *serializes two commits arriving together, and logs only the winner* | Becomes *both commits land, and the projection holds one of them*. No longer asserts one is refused; asserts a consistent end state. | rule changed — A6 |
-| `mosaic-commit` · *refuses to withdraw a decision another reviewer owns* | Inverted: a withdrawal by anyone clears the current decision. | rule changed — A6 |
-| `mosaic-commit` · *is a no-op with no log row when there is nothing to withdraw* | Kept. The rule that a refused decision is never logged **narrows** rather than disappearing: it existed because logging a loser would make them the earliest claimant for ever, and that reason is gone — but a version-refused decision must still not be logged, or a rebuild would resurrect a decision the server refused. | rule narrowed |
-| `observation-review-current` · *agrees with the derivation through a claim, a losing claim, a revision and a withdrawal* | The "losing claim" step becomes a **superseding** decision by a second reviewer, and asserts the second reviewer's decision is current. Plus the new mid-log invalidation case. | rule changed — A6 |
-| `observation-review-current` · `twoReviewers()` | Seeds two reviewers instead of borrowing them. | it was wrong |
-| `observation-review-schema` · `describe('observation_review_current')` | The column-list assertion loses `first_decided_at`; the log's vocabulary assertion gains `corrected`. | rule changed — A2, A6 |
-| `mosaic-query` · the row-shape assertion | **Unchanged.** The read row is not touched by this phase; see *Known gaps*. | unaffected |
-| `mosaic-query` · the `decide()` helper | Stopped writing `first_decided_at` into the projection. | **it broke** — the column went, and the helper inserted it by name. Not predicted by this plan, and it took the whole suite down: 48 failures in one file, all cascading from one insert. Named here rather than quietly fixed. |
-
-Everything else in both suites is untouched: the vocabulary `CHECK`s, the delete cases, the
-fingerprint case, the append-only assertion, and the route and permission cases.
+None. There is no UI in this pass, and a narrated walkthrough of an HTTP contract would
+narrate rather than assert. They belong with R15's dashboard.
 
 ---
 
 ## Results
 
-Real output, including what failed on the way.
+Run on 2026-09-09 against the local PostgreSQL built from `db/baseline/schema.sql` plus all
+23 migrations. Verbatim.
 
-### The suite
-
-Baseline on `abf00b9`, before any change:
-
-```
-  Test Suites : 35 passed, 0 failed, 35 total
-  Tests       : 348 passed, 0 failed, 0 skipped, 348 total
-  Duration    : 24.4s
-```
-
-Final, on the rebuilt database:
+### Migrations, both directions
 
 ```
-  Test Suites : 36 passed, 0 failed, 36 total
-  Tests       : 379 passed, 0 failed, 0 skipped, 379 total
-  Duration    : 26.1s
+$ npx sequelize-cli db:migrate
+== 20260909100000-create-gpu-orchestration-tables: migrating =======
+[gpu-orchestration] before: users=1 | 9 foreign key(s) watched
+[gpu-orchestration] after: no rows deleted, dereferenced or orphaned
+== 20260909100000-create-gpu-orchestration-tables: migrated (0.231s)
+
+== 20260909100100-allow-artifacts-without-a-training-run: migrating =======
+[artifacts-job-id] before: artifacts=0 training_runs=0 | 6 foreign key(s) watched
+[artifacts-job-id] after: no rows deleted, dereferenced or orphaned
+== 20260909100100-allow-artifacts-without-a-training-run: migrated (0.055s)
+
+== 20260909100200-unique-epoch-per-training-run: migrating =======
+[unique-epoch] before: epochs=0 training_runs=0 | 6 foreign key(s) watched
+[unique-epoch] after: no rows deleted, dereferenced or orphaned
+== 20260909100200-unique-epoch-per-training-run: migrated (0.034s)
+
+== 20260909100300-seed-gpu-permissions: migrating =======
+[gpu-permissions] before: permissions=23 user_permissions=1 service_token_permissions=11 | 6 foreign key(s) watched
+[gpu-permissions] 4 added, 0 already present
+[gpu-permissions] nothing was granted -- grant through the V2 users or tokens API
+[gpu-permissions] permissions: 4 row(s) added (23 -> 27)
+[gpu-permissions] after: no rows deleted, dereferenced or orphaned
+== 20260909100300-seed-gpu-permissions: migrated (0.040s)
+```
+
+`db:migrate:undo` four times reverted all four cleanly, and `db:migrate` re-applied them.
+The rollback failed on the first attempt — `column "job_id" does not exist` — because
+`guardDataIntegrity` discovers foreign keys once, up front, and then counts them again
+afterwards, so a migration that removes a column the guard is watching makes the second
+count fail. Fixed by keeping the row-losing work inside the guard and the column removal
+after it, inside the same transaction. Worth knowing before writing the next migration that
+drops a column.
+
+### The full suite
+
+```
+$ npm test
+
+  Test Suites : 31 passed, 0 failed, 31 total
+  Tests       : 264 passed, 0 failed, 0 skipped, 264 total
+  Duration    : 103.1s
+
   Result: ALL TESTS PASSED
 ```
 
-**348 to 379 reconciles exactly**, which is the point of counting rather than reporting
-"green":
+264 = the 227 that were there plus 37 new (31 orchestration, 6 lease race). The 17
+`tests/jellyfin.test.js` tests, which CI excludes because it cannot reach the media server,
+were run and passed here.
 
-| Suite | Was | Now | Why |
-| --- | --- | --- | --- |
-| `observation-review-current` | 6 | 10 | +1 finder assertion, +1 no-`first_decided_at`, +1 mid-log invalidation, +1 corrected-cannot-project |
-| `observation-review-schema` | 28 | 32 | +1 corrected vocabulary, +1 both-way species CHECK, +1 species FK restrict, +1 projection column list |
-| `mosaic-commit` | 31 | 31 | four rewritten in place, none added or lost |
-| `mosaic-query` | 48 | 48 | one key moved into the exact-key assertion; the `decide()` helper fixed. No test added or lost — the count is unchanged and that is the tripwire working |
-| `mosaic-correction` | — | 23 | new, including R19's two |
-| everything else | 235 | 235 | untouched |
-| **total** | **348** | **379** | **+31** |
+This is the run after the frame-range convention was settled half-open (A7). The run before
+that change was 262 for 262 on the inclusive reading — which is the whole point: each
+reading passes its own tests, so nothing but comparing the two repositories was ever going
+to catch the disagreement.
 
-### What failed on the way
-
-Three failures, all real, none left standing.
-
-**1. `twoSpecies()` — the `species` table does not use the timestamp names the rest do.**
+### The two new suites, in full
 
 ```
-  ✗ observation_review_current > ... > agrees with the derivation across an invalidation
-      at twoSpecies (tests\observation-review-current.test.js:335:29)
-  ✗ observation_review_current > ... > is reproduced exactly by the committed rebuild SQL
-      at twoSpecies (tests\observation-review-current.test.js:335:29)
+$ npx jest --runInBand --forceExit tests/gpu-orchestration.test.js
+
+GPU worker enrolment > returns the same worker when the same name enrols again, with fresh hardware  PASS
+GPU worker enrolment > refuses an enrolment with no name                                             PASS
+GPU job submission and leasing > queues one job and leases it, in one poll and with no separate claim PASS
+GPU job submission and leasing > answers 204 when there is nothing to do                             PASS
+GPU job submission and leasing > splits a range into half-open pieces that cover every frame exactly once PASS
+GPU job submission and leasing > divides a range that does not divide evenly without losing or repeating a frame PASS
+GPU job submission and leasing > refuses an empty frame range rather than queueing a job that does nothing PASS
+GPU job submission and leasing > refuses a submission with no frame range, even for a whole video    PASS
+GPU job submission and leasing > refuses a job of an unknown kind                                    PASS
+GPU job submission and leasing > does not give a machine more concurrent work than the slots it enrolled with PASS
+GPU job submission and leasing > does not hand work to a paused machine                              PASS
+GPU heartbeat > extends the lease, records progress, and says continue                               PASS
+GPU heartbeat > refuses a worker that claims a stale lease epoch, and writes nothing                 PASS
+GPU heartbeat > refuses a worker claiming another machine's attempt                                  PASS
+GPU heartbeat > will not let a worker declare itself succeeded                                       PASS
+GPU heartbeat > delivers a cancel through the heartbeat, and only through the heartbeat              PASS
+GPU heartbeat > delivers a pause to a machine that has been paused                                   PASS
+GPU heartbeat > takes the lease back from an attempt that has run past the per-attempt cap           PASS
+GPU attempt events > accepts a batch, and treats a replay of it as duplicates rather than new events PASS
+GPU attempt events > refuses a batch from a stale lease, and writes none of it                       PASS
+GPU attempt events > refuses the coordinator's own event kind and its own sequence numbers           PASS
+GPU artifact hand-off > answers already_have false, accepts the bytes, then answers already_have true PASS
+GPU artifact hand-off > keeps nothing when the bytes do not hash to the sha256 in the path           PASS
+GPU artifact hand-off > refuses a hash that is not 64 lower-case hexadecimal characters              PASS
+GPU attempt result > records a success as an artifact belonging to the job rather than to a training run PASS
+GPU attempt result > answers a replayed terminal report from the stored rows, without a second result PASS
+GPU attempt result > requeues the job on a failure while attempts remain, and fails it when they run out PASS
+GPU attempt result > does not let a success reported after a cancel resurrect the job                PASS
+GPU attempt result > refuses a result naming an artifact that was never handed over                  PASS
+GPU lease expiry > returns an expired lease's job to the queue and tells the old worker to abandon    PASS
+GPU pool view > shows the machine, its hardware, and the job it is running                           PASS
+
+  Test Suites : 1 passed, 0 failed, 1 total
+  Tests       : 31 passed, 0 failed, 0 skipped, 31 total
+  Result: ALL TESTS PASSED
 ```
 
-The seed used `"createdAt"`/`"updatedAt"` and omitted `taxserial`. `species` uses
-`created_at`/`updated_at` and `taxserial` is `NOT NULL` — read from `information_schema`
-rather than guessed at the second attempt. Fixed in the helper.
-
-**2. Two schema assertions written with collapsed regex escapes.**
-
 ```
-      Expected pattern: /scientific[sS]*corrected/
-      Received string:  "CHECK (((((purpose)::text = 'scientific'::text) AND ..."
+$ npx jest --runInBand --forceExit tests/gpu-lease-race.test.js
 
-      Expected pattern: /REFERENCES species(id)/
-      Received string:  "FOREIGN KEY (previous_species_id) REFERENCES species(id) ..."
-```
+Claiming a GPU job under two overlapping transactions > does not offer one queued job to a second transaction while the first holds it  PASS
+Claiming a GPU job under two overlapping transactions > gives two overlapping transactions two different jobs                          PASS
+Claiming a GPU job under two overlapping transactions > negative control: without the locking clause, one job goes to both transactions PASS
+Simultaneous polls through the API > leases one queued job to exactly one of two workers polling at once                                PASS
+Simultaneous polls through the API > shares four queued jobs among eight simultaneous polls without leasing any twice                   PASS
+The unique attempt-per-epoch index > refuses a second attempt at the same job and epoch                                                PASS
 
-Both patterns were written through a JS template literal, where `\s` and `\(` collapse to
-`s` and `(`. Rewritten as positional `indexOf` checks and `toContain`, which say what they
-mean and cannot rot the same way. **Worth noting as the same class of bug as the CRLF one
-this plan already warns about**: an escape that survives one layer and not the next.
+  Test Suites : 1 passed, 0 failed, 1 total
+  Tests       : 6 passed, 0 failed, 0 skipped, 6 total
+  Duration    : 17.8s
 
-**3. `mosaic-query.test.js` — 48 failures from one insert.**
-
-```
-  Test Suites : 34 passed, 1 failed, 35 total
-  Tests       : 308 passed, 48 failed, 0 skipped, 356 total
+  Result: ALL TESTS PASSED
 ```
 
-Its `decide()` helper writes the projection directly and named `first_decided_at`, which
-this phase drops. Every test in the file depends on that helper, so one dead column took
-the suite down. **This is a test that broke rather than one whose rule changed**, and it
-was not predicted by the plan above — the plan's *Tests that change* table listed only the
-two review suites. Fixed by removing the column from the insert; the suite is about the
-read path and does not care which decision is current, only that one is.
+### Failures seen along the way, and what they were
 
-### The rebuild, and the three-way structural comparison
+Recorded because each was a real defect rather than a flaky test.
 
-`marp db destroy` then `marp db up`, then `db:migrate:undo` four times and `db:migrate`
-forward again:
+1. **19 tests failed with a `204` where a lease was expected.** The service defaulted a
+   missing `slot_count` to 1 on every enrolment, so a machine that enrolled with 64 slots
+   was cut to 1 the next time it re-enrolled without saying, and then refused work. Fixed
+   by leaving `slot_count` undefined when absent, which the repository reads as "unchanged";
+   a *new* machine still defaults to one slot.
+2. **`column "job_id" does not exist` on the first rollback**, described above.
+3. **The pool-view test asserted one live attempt and found fourteen.** The test's fault,
+   not the code's — the suite leaves earlier leases open — but it is what surfaced defect 1,
+   because a two-slot machine holding fourteen attempts is the same bug seen from the other
+   side.
+4. **Nothing failed for the frame-range convention, and that is the interesting one.**
+   MARP_API read both bounds as inclusive, `marp-inference-worker` read the end as
+   exclusive, and each side's tests passed against its own reading. It was caught by
+   comparing the two repositories, not by running anything. Settled half-open, changed
+   here, and now covered by two tests that assert the tiling property rather than the
+   shape of one example.
 
-```
-before (superseded chain) : {"columns":"eec58d8446c3144c","constraints":"88c7551f5420797b","indexes":"f34b1c358f2dc6e1","triggers":"aaf9df9373d23854"}
-after  (folded, rebuilt)  : {"columns":"eec58d8446c3144c","constraints":"88c7551f5420797b","indexes":"f34b1c358f2dc6e1","triggers":"aaf9df9373d23854"}
-round-trip (down then up) : {"columns":"eec58d8446c3144c","constraints":"88c7551f5420797b","indexes":"f34b1c358f2dc6e1","triggers":"aaf9df9373d23854"}
-
-folded === superseded  : true
-round-trip === folded  : true
-sizes all equal        : true
-sizes                  : {"columns":472,"constraints":235,"indexes":85,"triggers":1,"tables":37}
-```
-
-**The first equality is the one that matters**: the folded `120100` and `120200` produce a
-schema identical to the one the superseding chain produced, so the fold changed how the
-files read and nothing about what they do. The second proves the edited `down` migrations
-are correct against the edited `up`.
-
-`db:migrate:status` reports 24 up and 0 down.
-
-### What the rebuild cost, and what came back
-
-| | Before | After | |
-| --- | --- | --- | --- |
-| `species` | 854 | 854 | Reproduced in full by `20260901120200-import-species-lists`, which reads `seed-data/species/lists/*.csv`. Confirmed **before** destroying anything: `readSpeciesLists()` returns 854 records, 6 empty rows skipped, 2 duplicate keys merged. |
-| `permissions` | 23 | 23 | Seeded by migration. |
-| `users` | 16 | 1 | The 15 lost were test fixtures left behind by earlier runs; 1 is the bootstrap administrator. |
-| `observations` | 1 | 0 | Test detritus. |
-| `keyframes` | 8 | 0 | Test detritus. |
-| `sessions` | 1 | 0 | Test detritus. |
-| `SequelizeMeta` | 26 | 24 | The two phantom rows for the deleted migrations are gone, so this database and a fresh one now name exactly the same 24 files. |
-
-### Migration round-trip, verbatim
+### Documentation
 
 ```
-== 20260909120400-add-missing-foreign-key-indexes: reverting =======
-== 20260909120400-add-missing-foreign-key-indexes: reverted (0.009s)
-== 20260909120300-add-dataset-observations-observation-fk: reverting =======
-== 20260909120300-add-dataset-observations-observation-fk: reverted (0.006s)
-== 20260909120200-create-observation-review-current: reverting =======
-== 20260909120200-create-observation-review-current: reverted (0.007s)
-== 20260909120100-create-observation-reviews: reverting =======
-== 20260909120100-create-observation-reviews: reverted (0.008s)
-
-== 20260909120100-create-observation-reviews: migrating =======
-== 20260909120100-create-observation-reviews: migrated (0.012s)
-== 20260909120200-create-observation-review-current: migrating =======
-== 20260909120200-create-observation-review-current: migrated (0.007s)
-== 20260909120300-add-dataset-observations-observation-fk: migrating =======
-== 20260909120300-add-dataset-observations-observation-fk: migrated (0.021s)
-== 20260909120400-add-missing-foreign-key-indexes: migrating =======
-== 20260909120400-add-missing-foreign-key-indexes: migrated (0.006s)
+$ npm run docs:build
 ```
 
-### The generated contract
+`docs/openapi.generated.json` now carries 11 `/v2/gpu/…` paths (12 operations) and 24
+`Gpu*` component schemas, under the `V2 · GpuCompute` tag. Every operation has 401 and 403
+from `registerVersionedRoute`, and the `Artifact` schema no longer requires
+`training_run_id`. Every description that said the frame bounds were inclusive now says
+half-open, and states both the count and the tiling property. The regenerated `docs/developer/` tree changes one navigation line per
+existing file, plus the new module pages.
 
-`npm run docs:build` emits pre-existing JSDoc parse errors from
-`frontend/apps/marp-mosaic-review/src/model/schedule.js` (a `@param` documenting a
-destructured shape). They are on `develop`, unrelated to this phase, and not fixed here.
+---
 
-The contract itself carries the route and both schemas:
+## Results — A13, a worker is renameable
+
+Run on 2026-09-09 against the same local PostgreSQL, now with 24 migrations. Verbatim.
+
+### The migration, both directions
 
 ```
-path present: /v2/mosaic/observations/species
-MosaicCorrectionRequest: true
-MosaicCorrectionResult: true
-conflicted reason enum: ["version"]
+$ npx sequelize-cli db:migrate
+== 20260909100400-give-a-gpu-worker-a-durable-identity: migrating =======
+[gpu-worker-durable-id] before: gpu_workers=1 gpu_job_attempts=8 | 5 foreign key(s) watched
+[gpu-worker-durable-id] after: no rows deleted, dereferenced or orphaned
+== 20260909100400-give-a-gpu-worker-a-durable-identity: migrated (0.167s)
 ```
 
-The last line is the last-wins unwind reaching the published surface: `claimed` is gone as
-a conflict reason, because nothing can be refused for being second any more.
+The one pre-existing row was backfilled `legacy-worker-65`. A second row sharing its name
+was then inserted by hand — which the old `UNIQUE (name)` would have refused, so the insert
+succeeding is itself the check that the uniqueness is gone — and the rollback run against
+both:
 
-`MosaicRow` carries 17 properties, `species_comname` among them and `comname` unchanged
-beside it.
+```
+$ npx sequelize-cli db:migrate:undo
+== 20260909100400-give-a-gpu-worker-a-durable-identity: reverting =======
+[gpu-worker-durable-id-down] before: gpu_workers=2 gpu_job_attempts=8 | 5 foreign key(s) watched
+[gpu-worker-durable-id-down] worker 192 renamed to "SoftwareEngineering-a0294ccd-192" so that gpu_workers.name can be unique again
+[gpu-worker-durable-id-down] after: no rows deleted, dereferenced or orphaned
+== 20260909100400-give-a-gpu-worker-a-durable-identity: reverted (0.048s)
+```
 
-### R19, scoped in after the plan was written
+`UNIQUE (name)` and the original column comment are back, `local_id` and
+`gpu_workers_name_idx` are gone, and no row was lost. `db:migrate` then re-applied it.
 
-R19 did not exist when this plan was written; it was a *Known gap* here and a *Finding left
-alone* in `.marp/task.md`, because A4 settled the correction response and left the read row
-explicitly unsettled. Raised as a conflict during G2, deferred rather than guessed, and then
-scoped into this phase on 2026-09-09 as a defect the phase creates rather than an
-enhancement it declines.
+**The backfill is deliberately not a recoverable value.** A name carries at most an
+eight-character slice of the id the worker chose, so no full value can be rebuilt from it;
+the backfill only has to be something no real worker will send, so that such a machine's
+next enrolment opens a fresh row rather than adopting a history that is not its own. The
+consequence is stated rather than hidden: the one row already in this database becomes a
+ghost when its machine next enrols, and it cannot be deleted while its eight attempts exist.
 
-One thing found while building it, worth recording because the obvious edit was wrong: the
-`species` join belongs **only** in the page query. `buildCountsQuery` selects no row columns
-at all — it is seven `count(*) FILTER` aggregates over the whole matching set — so a join
-added there would have been pure cost on the largest query in the file, for a column nothing
-reads. Added to both by reflex, then removed from the counts query.
+### The full suite
 
-### Not run
+```
+$ npm test
 
-`tests/jellyfin.test.js` runs as part of the suite above and passes; nothing in this phase
-touches Jellyfin. No browser tier exists for this work and none was invented.
+  Test Suites : 32 passed, 0 failed, 32 total
+  Tests       : 274 passed, 0 failed, 0 skipped, 274 total
+  Duration    : 175.8s
+
+  Result: ALL TESTS PASSED
+```
+
+274 = the 268 before this change plus 6: four in `GPU worker rename`, and two in
+`GPU worker enrolment` for the durable id being required and never echoed back.
+
+### Vacuity checks
+
+Every new assertion was checked by mutating the thing it guards and watching it go red.
+Each mutation was reverted immediately.
+
+| Mutation | Went red |
+| --- | --- |
+| Re-enrolment overwrites `name` again | `keeps the new name when the machine enrols again`, `does not disturb a live lease` — 2 failed |
+| Enrolment keys on `name` instead of `local_id` (the original design) | `keeps the new name…` (409, the second row colliding on `local_id`), `gives two machines that share a name a row each`, `does not disturb a live lease` — 3 failed |
+| `renameWorker` does not write | `keeps the new name…`, `does not disturb a live lease` — 2 failed |
+| `local_id` falls back to the name when absent | `refuses an enrolment with no durable id` — 200 where 400 was expected |
+| The durable id is returned in the enrolment answer and the pool view | `does not echo the durable id back`, and the `local_id` assertion in `does not disturb a live lease` — 2 failed |
+
+### Documentation
+
+```
+$ npm run docs:build
+```
+
+`docs/openapi.generated.json` now carries 12 `/v2/gpu/…` paths and 25 `Gpu*` schemas —
+`GpuWorkerRenameRequest` is the new one. `GpuWorkerEnrolRequest` requires `local_id`, and
+`GpuWorker` says that the name is metadata and that the durable id is deliberately absent.
+
+### Still not verified
+
+- **Nothing exercises a real worker being renamed.** The rename tests enrol synthetic
+  machines through HTTP; the worker's own default name is still hostname plus an id slice,
+  which was chosen when uniqueness rested on the name and could now be a plain hostname.
+  That is a decision for the worker repository and was deliberately not made here.
+- **The ghost row.** No test covers what a backfilled row does when its machine re-enrols,
+  because the answer is "a new row appears", which is the accepted consequence rather than
+  behaviour worth locking in.
+
+
+## Results — A15, the coordinator resolves the video, against a live worker
+
+Run 9 Sep 2026. Every A15 test above stubs Jellyfin, because CI cannot reach a media server.
+This is the half those tests cannot cover: MARP resolving a real Jellyfin item for a real
+worker that has no media credential of its own.
+
+Worker 65 was started with **only** `MARP_WORKER_TOKEN` and `MARP_COORDINATOR_URL` in its
+environment — no `JELLYFIN_*` variables at all. Confirmed on its `/status` before submitting.
+
+### An item id in, a playable url out
+
+Job submitted with `video: { jellyfin_item_id: "4ac4749aae0a8d75ac99f2d8d50717ce" }` and
+nothing else — no `url`, no `source_name`.
+
+- **The stored job row kept exactly what was submitted**, one key, as asserted by
+  `keeps the stored spec as it was submitted`.
+- The worker then opened the video and reported
+  `opened video 1920x1080 at 25.000 fps, container reports 36159 frames`, so the url MARP
+  minted at lease time was genuinely playable rather than merely well-formed.
+- **`source_name` was filled by the coordinator** from the Jellyfin item and reached the
+  worker's output as `video_source: 20240730_171520_Fwd.mp4`.
+- `jellyfin_item_id` travelled through unchanged, and the worker never resolved it — it has
+  no code left that could.
+
+That closes the gap this file records under *Requirements with no test* for the live half of
+A15. The stubbed tests prove the branching; this proves the url works.
+
+### Cancel, delivered through a heartbeat and nowhere else
+
+Job 1258, 6,000 frames, cancelled at 18:13:06 with the attempt at 240/6000. The job went
+`cancelled` on the spot; attempt 949 was still `running` eight seconds later and reported
+itself `cancelled` at 18:13:24 with 390/6000 done.
+
+**18 seconds on a 10-second heartbeat.** Two intervals, not one: one to deliver the action and
+one for the worker's wind-down and terminal report. `MARP_API#104` describes cancellation as
+taking "up to one heartbeat interval" — that is measurably optimistic, and a dashboard should
+show the attempt's own state rather than promise a duration.
+
+### Expiry on the coordinator's clock
+
+Job 1259. The worker was killed outright at 18:14:21 at 150/6000, with no final report.
+
+```
+18:14:33 .. 18:15:14   attempt 950 still reads running   (inside the lease)
+18:15:26               attempt 950 -> abandoned
+                       "Lease expired: no heartbeat before lease_expires_at."
+                       job 1259 -> queued, re-leasable
+```
+
+**65 seconds**: the 60-second lease plus the read that swept it. Worth stating plainly for the
+dashboard — **expiry is only noticed when something asks.** With no worker polling and nobody
+reading, a dead machine's job keeps reading `running` indefinitely. The sweep now runs on
+`POST /gpu/poll`, `GET /gpu/jobs`, `GET /gpu/workers` and `GET /gpu/jobs/:id`.
+
+### Still not covered by anything
+
+- **A resolution failure against the real server.** Every failure path here is stubbed. A real
+  Jellyfin outage during a poll would fail the attempt and spend one of its three, which is
+  the sharp edge recorded in the judgement calls above.
+- **A transcoded item.** This one direct-plays. A transcoded stream's frame count may not
+  match its source, and nothing here or in the worker measures that.
+- **The ingest.** A finished job produces a hashed artifact and nothing parses it into
+  `observations`. The contract is settled in `.marp/task.md` at A16, A17 and A18; the code does
+  not exist. This run left a real six-observation JSONL in `artifacts` for it to be built
+  against.
