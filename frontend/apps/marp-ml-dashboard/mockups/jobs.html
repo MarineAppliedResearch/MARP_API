@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Jobs</title>
+<link rel="icon" href="../../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./mock.css">
+</head>
+<body data-screen="jobs">
+
+<div class="app">
+
+  <aside class="rail"></aside>
+
+  <div class="main">
+
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="One queue for training and inference, newest first">Jobs</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <div class="stats">
+        <div class="stat" data-state="running">
+          <span class="stat-ico"><svg class="ico"><use href="#i-play"/></svg></span>
+          <span class="stat-lab">Running jobs</span>
+          <b class="stat-num">6</b>
+          <span class="stat-sub"><span><b>4</b> inference</span><span><b>2</b> training</span></span>
+        </div>
+        <div class="stat" data-state="queued">
+          <span class="stat-ico"><svg class="ico"><use href="#i-queue"/></svg></span>
+          <span class="stat-lab">Queued jobs</span>
+          <b class="stat-num">8</b>
+          <span class="stat-sub"><span><b>5</b> inference</span><span><b>3</b> training</span></span>
+        </div>
+        <div class="stat" data-state="done">
+          <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
+          <span class="stat-lab">Completed today</span>
+          <b class="stat-num">18</b>
+          <span class="stat-sub"><span><b>15</b> clean</span><span><b>3</b> with issues</span></span>
+        </div>
+        <div class="stat" data-state="failed">
+          <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
+          <span class="stat-lab">Needs attention</span>
+          <b class="stat-num">7</b>
+          <span class="stat-sub"><span><b>4</b> failed</span><span><b>3</b> with issues</span></span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <header class="panel-hd">
+          <h2>Jobs <span class="count">(63)</span></h2>
+          <div class="panel-tools" id="filters">
+            <span class="search">
+              <svg class="ico sm"><use href="#i-search"/></svg>
+              <input class="inp" type="search" placeholder="Search jobs&hellip;" aria-label="Search jobs">
+            </span>
+            <select class="sel" aria-label="Job type"><option>All job types</option><option>Inference</option><option>Training</option></select>
+            <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Queued</option><option>Paused</option><option>Failed</option><option>Completed</option></select>
+            <select class="sel" aria-label="Window"><option>Last 7 days</option><option>Last 24 hours</option><option>Last 30 days</option></select>
+            <button class="btn"><svg class="ico"><use href="#i-filter"/></svg>More filters</button>
+          </div>
+          <div class="bulk" id="bulk" hidden>
+            <span><span class="n" id="bulkN">0</span> selected</span>
+            <button class="btn sm">Reprioritise</button>
+            <button class="btn sm">Retry failed</button>
+            <button class="btn sm">Cancel</button>
+            <button class="btn sm ghost sp" id="bulkClear">Clear selection</button>
+          </div>
+        </header>
+        <div class="panel-bd flush">
+          <div class="tblwrap">
+            <table class="tbl fixed rowlink stack" id="jobs">
+              <thead>
+                <tr>
+                  <th class="chk"><input class="chkbox" type="checkbox" id="all" aria-label="Select every job on this page"></th>
+                  <th class="hjob sortable">Job</th><th class="htype sortable">Type</th><th class="hscope sortable">Scope</th>
+                  <th class="hmodel sortable">Model</th><th class="hstatus sortable">Status</th><th class="hprog sortable">Progress</th>
+                  <th class="hupd sortable" aria-sort="descending">Submitted</th>
+                  <th class="hacts"><span class="vh">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                  <tr data-job="1742">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1742"></td>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Train_MARP_Multiclass_Det_XL_ALL_v5</span></span></td>
+                    <td class="jtype"><span class="tag training">Training</span></td>
+                    <td class="jscope"><span class="two"><span class="a">ALL_Projects_Inverts_v5</span><span class="b">Dataset &middot; 41,208 obs</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span><span class="b">v1.0.2</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="jprog" data-sort="86"><span class="prog" data-state="running"><span class="bar"><i style="width:86%"></i></span><span class="pct">86%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T14:36"><span class="two"><span class="a">14:36</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+                  <tr data-job="1741">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1741"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0103_L30_Crab_Count</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0103 &middot; Line 30</span><span class="b">CAMPA 2024 &middot; 1 video</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.1.4</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="jprog" data-sort="11"><span class="prog" data-state="running"><span class="bar"><i style="width:11%"></i></span><span class="pct">11%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T16:20"><span class="two"><span class="a">16:20</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+                  <tr data-job="1736">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1736"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">ARCTIC_2024_Dive_0449_Inverts</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0449 &middot; Line 08</span><span class="b">ARCTIC 2024 &middot; 1 video</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v2.0.0</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="jprog" data-sort="47"><span class="prog" data-state="running"><span class="bar"><i style="width:47%"></i></span><span class="pct">47%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T12:28"><span class="two"><span class="a">12:28</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+                  <tr data-job="1734">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1734"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">VENTS_2025_D0318_L12_Sponge_Survey</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0318 &middot; Line 12</span><span class="b">VENTS 2025 &middot; 1 video</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Sponge-Det</span><span class="b">v1.1.2</span></span></td>
+                    <td class="jstatus" data-sort="1"><span class="st" data-state="cancelling"><span class="dot"></span>Cancelling</span></td>
+                    <td class="jprog" data-sort="87"><span class="prog" data-state="cancelling"><span class="bar"><i style="width:87%"></i></span><span class="pct">87%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T15:52"><span class="two"><span class="a">15:52</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" disabled aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" disabled aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+                  <tr data-job="1733">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1733"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">PACIFIC_2023_D0070_L23_Crab_Count</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0070 &middot; Line 23</span><span class="b">PACIFIC 2023 &middot; 1 video</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.1.4</span></span></td>
+                    <td class="jstatus" data-sort="2"><span class="st" data-state="paused"><span class="dot"></span>Paused</span></td>
+                    <td class="jprog" data-sort="60"><span class="prog" data-state="paused"><span class="bar"><i style="width:60%"></i></span><span class="pct">60%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T14:35"><span class="two"><span class="a">14:35</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Resume"><svg class="ico sm"><use href="#i-play"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+                  <tr data-job="1731">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1731"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0125_L30_Rockfish_Cls</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0125 &middot; Line 30</span><span class="b">CAMPA 2024 &middot; 1 video</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Rockfish-Cls</span><span class="b">v2.0.0</span></span></td>
+                    <td class="jstatus" data-sort="3"><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
+                    <td class="jprog" data-sort="-1"><span class="dash">Not started</span></td>
+                    <td class="jtime" data-sort="2026-09-09T16:20"><span class="two"><span class="a">16:20</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Start now"><svg class="ico sm"><use href="#i-play"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+                  <tr data-job="1728">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1728"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0305_L15_Invertebrate_Detect</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0305 &middot; Line 15</span><span class="b">CAMPA 2024 &middot; 1 video</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v1.0.4</span></span></td>
+                    <td class="jstatus" data-sort="4"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
+                    <td class="jprog" data-sort="100"><span class="prog" data-state="issues"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T11:04"><span class="two"><span class="a">11:04</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm">Retry 2</button></span></td>
+                  </tr>
+                  <tr data-job="1726">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1726"></td>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Train_MARP_SeaStar_Det_SALT_2024_SeaStar_v2LT_v2</span></span></td>
+                    <td class="jtype"><span class="tag training">Training</span></td>
+                    <td class="jscope"><span class="two"><span class="a">SALT_2024_SeaStar_v2</span><span class="b">Dataset &middot; 3,880 obs</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-SeaStar-Det</span><span class="b">v1.0.1</span></span></td>
+                    <td class="jstatus" data-sort="5"><span class="st" data-state="failed"><span class="dot"></span>Failed</span></td>
+                    <td class="jprog" data-sort="-2"><span class="two"><span class="a faint">Stopped at 37%</span><span class="b">CUDA out of memory</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T09:18"><span class="two"><span class="a">09:18</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm">Retry</button></span></td>
+                  </tr>
+                  <tr data-job="1724">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1724"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">GULF_2025_D0212_L04_Fish_Count</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0212 &middot; Line 04</span><span class="b">GULF 2025 &middot; 1 video</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span><span class="b">v1.1.1</span></span></td>
+                    <td class="jstatus" data-sort="6"><span class="st" data-state="cancelled"><span class="dot"></span>Cancelled</span></td>
+                    <td class="jprog" data-sort="-2"><span class="two"><span class="a faint">Stopped at 22%</span><span class="b">Cancelled by Isaac Travers</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T08:41"><span class="two"><span class="a">08:41</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm">Run again</button></span></td>
+                  </tr>
+                  <tr data-job="1722">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1722"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">VENTS_2025_Line_32_Benthic_All</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Line 32 &middot; 24 videos</span><span class="b">VENTS 2025</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span><span class="b">v1.0.2</span></span></td>
+                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="jprog" data-sort="100"><span class="prog" data-state="done"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T08:12"><span class="two"><span class="a">08:12</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm">Run again</button></span></td>
+                  </tr>
+                  <tr data-job="1739">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1739"></td>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Finetune_MARP_Fish_Det_GULF_v1</span></span></td>
+                    <td class="jtype"><span class="tag training">Training</span></td>
+                    <td class="jscope"><span class="two"><span class="a">GULF_2025_Fish_Train_v1</span><span class="b">Dataset &middot; 9,140 obs</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span><span class="b">v1.1.3</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="jprog" data-sort="82"><span class="prog" data-state="running"><span class="bar"><i style="width:82%"></i></span><span class="pct">82%</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09T12:06"><span class="two"><span class="a">12:06</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Pause"><svg class="ico sm"><use href="#i-pause"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+                  <tr data-job="1730">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select job 1730"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_Line_28_Crab_Count</span></span></td>
+                    <td class="jtype"><span class="tag inference">Inference</span></td>
+                    <td class="jscope"><span class="two"><span class="a">Line 28 &middot; 18 videos</span><span class="b">CAMPA 2024</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Crab-Det</span><span class="b">v1.0.2</span></span></td>
+                    <td class="jstatus" data-sort="3"><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
+                    <td class="jprog" data-sort="-1"><span class="dash">Not started</span></td>
+                    <td class="jtime" data-sort="2026-09-09T16:17"><span class="two"><span class="a">16:17</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Start now"><svg class="ico sm"><use href="#i-play"/></svg></button><button class="btn sm icon" aria-label="Cancel"><svg class="ico sm"><use href="#i-stop"/></svg></button></span></td>
+                  </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <footer class="panel-ft">
+          <span>Showing <b class="strong">1&ndash;12</b> of 63 jobs</span>
+          <div class="pager">
+            <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
+            <button aria-current="page">1</button><button>2</button><button>3</button>
+            <button>4</button><button>5</button>
+            <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+          </div>
+          <span class="rpp">Rows
+            <select class="sel" aria-label="Rows per page"><option>12</option><option>25</option><option>50</option></select>
+          </span>
+        </footer>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Job detail" hidden>
+  <header class="drawer-hd">
+    <div>
+      <h2>ARCTIC_2024_Dive_0449_Inverts</h2>
+      <div class="sub">Job 1736 &middot; inference &middot; submitted by itravers at 12:28</div>
+    </div>
+    <span class="pill" data-state="running"><span class="dot"></span>Running</span>
+    <button class="btn icon" id="drawerX" aria-label="Close"><svg class="ico"><use href="#i-x"/></svg></button>
+  </header>
+
+  <div class="drawer-bd">
+
+    <div class="sect">
+      <h3>Progress</h3>
+      <div class="roll" data-state="running">
+        <div class="top">
+          <span class="big">47%</span>
+          <span class="of">8,604 of 18,300 frames &middot; 21 ranges, 2 running</span>
+        </div>
+        <span class="bar wide"><i style="width:47%"></i></span>
+        <div class="facts">
+          <span><span class="k">Elapsed</span><span class="v">12m 04s</span></span>
+          <span><span class="k">Remaining</span><span class="v">~13m</span></span>
+          <span><span class="k">Throughput</span><span class="v">11.9 fps</span></span>
+          <span><span class="k">Attempts</span><span class="v">1 of 3</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>What is running</h3>
+      <dl class="kv">
+        <dt>Model</dt>
+        <dd>MARP-Det-v3 <span class="faint">v2.0.0</span> &middot; <span class="mono">9f2c41ab</span>
+          <div class="locked">Resolved and locked when the job was submitted</div></dd>
+        <dt>Task</dt><dd>Detect &amp; track &middot; ByteTrack &middot; best frame of each track</dd>
+        <dt>Scope</dt><dd>ARCTIC 2024 &middot; Dive 0449 &middot; Line 08</dd>
+        <dt>Video</dt><dd class="mono">ARCTIC_2024_D0449_L08_CAM1.mp4</dd>
+        <dt>Range size</dt><dd>900 frames &middot; hard boundaries, no track spans a range</dd>
+        <dt>Priority</dt><dd>5</dd>
+        <dt>Results</dt><dd>Written to the observation database as they arrive</dd>
+      </dl>
+    </div>
+
+    <div class="sect pieces">
+      <h3>Ranges <span class="faint">(6 of 21)</span></h3>
+      <div class="tblwrap">
+        <table class="tbl">
+          <thead><tr><th>Frames</th><th>Worker</th><th>State</th><th class="num">Done</th></tr></thead>
+          <tbody>
+                  <tr>
+                    <td class="mono">16 200 &ndash; 17 100</td><td>campa-lab-04</td>
+                    <td><span class="st" data-state="done"><span class="dot"></span>Done</span></td>
+                    <td class="num">100%</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">17 100 &ndash; 18 000</td><td>campa-lab-07</td>
+                    <td><span class="st" data-state="done"><span class="dot"></span>Done</span></td>
+                    <td class="num">100%</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">18 000 &ndash; 18 900</td><td>bergstrom-4090</td>
+                    <td><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="num">62%</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">18 900 &ndash; 19 800</td><td>campa-lab-02</td>
+                    <td><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="num">18%</td>
+                  </tr>
+                  <tr>
+                    <td class="mono">19 800 &ndash; 20 700</td><td>&mdash;</td>
+                    <td><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
+                    <td class="num"><span class="dash">&mdash;</span></td>
+                  </tr>
+                  <tr>
+                    <td class="mono">20 700 &ndash; 21 600</td><td>&mdash;</td>
+                    <td><span class="st" data-state="queued"><span class="dot"></span>Queued</span></td>
+                    <td class="num"><span class="dash">&mdash;</span></td>
+                  </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h3>Contributing workers <span class="faint">(8 of 15)</span></h3>
+      <div class="chips">
+        <span class="tag">campa-lab-02</span>
+        <span class="tag">campa-lab-04</span>
+        <span class="tag">campa-lab-07</span>
+        <span class="tag">bergstrom-4090</span>
+        <span class="tag">reef-node-11</span>
+        <span class="tag">campa-lab-12</span>
+        <span class="tag">arctic-rig-03</span>
+        <span class="tag">volunteer-maren</span>
+      </div>
+    </div>
+
+    <details class="diag">
+      <summary>Diagnostics &mdash; attempts, leases and the event log</summary>
+      <div class="dbody">
+        <dl class="kv">
+          <dt>Attempt</dt><dd>1 of 3 &middot; leased 12:28:04 &middot; epoch 1</dd>
+          <dt>Lease expires</dt><dd>12:41:36 &middot; renewed by heartbeat every 10s</dd>
+          <dt>Last heartbeat</dt><dd>12:36:55 &middot; 4 seconds ago</dd>
+        </dl>
+        <div class="log">
+          <div><span class="t">12:28:04</span><span class="l" data-lvl="info">info</span><span class="m">lease taken, epoch 1, attempt 1 of 3</span></div>
+          <div><span class="t">12:28:06</span><span class="l" data-lvl="info">info</span><span class="m">model MARP-Det-v3 v2.0.0 already cached, sha256 9f2c41ab</span></div>
+          <div><span class="t">12:28:07</span><span class="l" data-lvl="info">info</span><span class="m">opening ARCTIC_2024_D0449_L08_CAM1.mp4 by direct play</span></div>
+          <div><span class="t">12:28:19</span><span class="l" data-lvl="info">info</span><span class="m">seek to frame 16200 exact, decoder warm</span></div>
+          <div><span class="t">12:29:48</span><span class="l" data-lvl="info">info</span><span class="m">progress 900 of 18300 frames, 12.1 fps</span></div>
+          <div><span class="t">12:31:22</span><span class="l" data-lvl="warn">warn</span><span class="m">frame 17418 decoded twice, duplicate dropped</span></div>
+          <div><span class="t">12:33:10</span><span class="l" data-lvl="info">info</span><span class="m">range 16200-17100 complete, 214 tracks reduced to 61 keyframes</span></div>
+          <div><span class="t">12:35:02</span><span class="l" data-lvl="warn">warn</span><span class="m">campa-lab-12 lease expired, range 19800-20700 returned to the pool</span></div>
+          <div><span class="t">12:36:55</span><span class="l" data-lvl="info">info</span><span class="m">progress 8604 of 18300 frames, 11.9 fps</span></div>
+        </div>
+        <p class="gapnote"><svg class="ico sm"><use href="#i-info"/></svg>
+          <span><b>Not wired (DESIGN.md 5).</b> The event rows exist &mdash; one real run wrote
+          38,101 of them &mdash; but no route returns any. This log is fixture data until one does.</span></p>
+      </div>
+    </details>
+
+  </div>
+
+  <footer class="drawer-ft">
+    <button class="btn"><svg class="ico"><use href="#i-pause"/></svg>Pause after current range</button>
+    <button class="btn"><svg class="ico"><use href="#i-stop"/></svg>Pause now</button>
+    <button class="btn danger">Cancel job</button>
+    <button class="btn"><svg class="ico"><use href="#i-copy"/></svg>Duplicate</button>
+  </footer>
+</aside>
+
+<script src="./mock.js"></script>
+
+</body>
+</html>

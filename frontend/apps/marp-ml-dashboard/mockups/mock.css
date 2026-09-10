@@ -46,6 +46,10 @@
 }
 
 * { box-sizing: border-box; }
+/* [hidden] is a presentation hint and loses to any class that sets display, so
+   a `.bulk { display: flex }` bar stayed on screen with `hidden` set on it.
+   Making it win everywhere is the fix; toggling `hidden` is then reliable. */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -287,7 +291,7 @@ svg { display: block; }
 .tblwrap { overflow-x: auto; min-width: 0; }
 .tbl { width: 100%; border-collapse: collapse; }
 .tbl thead th {
-  padding: 9px 12px; text-align: left;
+  padding: 8px 12px; text-align: left;
   background: var(--sunk);
   border-bottom: 1px solid var(--hairline);
   color: var(--faint); font-size: 10px; font-weight: 700;
@@ -296,7 +300,7 @@ svg { display: block; }
 .tbl thead th:first-child { padding-left: 16px; }
 .tbl thead th:last-child { padding-right: 16px; }
 .tbl tbody td {
-  padding: 10px 12px; font-size: 12.5px;
+  padding: 6px 12px; font-size: 12.5px;
   border-bottom: 1px solid rgba(42, 214, 220, 0.055);
   vertical-align: middle; white-space: nowrap;
 }
@@ -305,15 +309,20 @@ svg { display: block; }
 .tbl tbody tr:last-child td { border-bottom: 0; }
 .tbl tbody tr:hover { background: rgba(20, 126, 232, 0.055); }
 .tbl .num { text-align: right; }
-.tbl th[aria-sort]::after { content: ""; margin-left: 6px; }
-.tbl th[aria-sort="descending"]::after { content: "\2193"; color: var(--cyan-300); }
-.tbl th[aria-sort="ascending"]::after { content: "\2191"; color: var(--cyan-300); }
+/* aria-sort is the single source for the arrow, so what is drawn and what a
+   screen reader announces cannot disagree. */
+.tbl th.sortable { cursor: pointer; user-select: none; }
+.tbl th.sortable::after { content: "\2195"; margin-left: 6px; opacity: 0; }
+.tbl th.sortable:hover { color: var(--text); }
+.tbl th.sortable:hover::after { opacity: 0.5; }
+.tbl th[aria-sort="descending"]::after { content: "\2193"; opacity: 1; color: var(--cyan-300); }
+.tbl th[aria-sort="ascending"]::after { content: "\2191"; opacity: 1; color: var(--cyan-300); }
 
 /* A cell with a primary line and a quieter one under it. The two lines were
    running together as one string before this existed. */
-.two { display: grid; gap: 2px; line-height: 1.3; }
+.two { display: grid; gap: 0; line-height: 1.3; }
 .two .a { color: var(--white); font-weight: 500; }
-.two .b { color: var(--faint); font-size: 11px; }
+.two .b { color: var(--faint); font-size: 10.5px; line-height: 1.35; }
 /* A ceiling with an ellipsis. A 42-character video filename is what pushed this
    table 30px past the panel that holds it. */
 /* Fixed layout, so a column keeps the width it is given and a long value
@@ -383,8 +392,8 @@ svg { display: block; }
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.16) inset, 0 2px 8px rgba(35, 181, 124, 0.24);
 }
 .btn.icon { padding: 0; width: 31px; height: 31px; }
-.btn.sm { padding: 4px 9px; font-size: 11.5px; }
-.btn.sm.icon { width: 25px; height: 25px; }
+.btn.sm { padding: 3px 9px; font-size: 11.5px; }
+.btn.sm.icon { width: 23px; height: 23px; }
 .btn:disabled { opacity: 0.38; cursor: not-allowed; }
 
 .sel, .inp {
@@ -435,7 +444,6 @@ svg { display: block; }
   border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 18px 44px rgba(1, 5, 13, 0.72);
 }
-.menu[hidden] { display: none; }
 .menu button {
   display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
   background: none; border: 0; border-radius: 5px; padding: 8px 10px;
@@ -447,6 +455,133 @@ svg { display: block; }
   font-size: 9px; letter-spacing: 0.11em; text-transform: uppercase;
   color: var(--faint); padding: 6px 10px 4px;
 }
+
+/* Jobs: the extra columns this screen has that the dashboard's table does not. */
+.tbl.fixed .htype   { width: 8%; }
+.strong { color: var(--white); }
+.locked { font-size: 11px; color: var(--faint); margin-top: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.roll .bar.wide { height: 8px; }
+
+/* ============================================================== selection */
+
+.tbl .chk { width: 36px; }
+.chkbox {
+  appearance: none; width: 15px; height: 15px; border-radius: 4px; cursor: pointer;
+  background: var(--sunk); border: 1px solid var(--hairline-2); display: grid;
+  place-items: center; vertical-align: middle;
+}
+.chkbox:hover { border-color: var(--border-strong); }
+.chkbox:checked { background: var(--blue-500); border-color: var(--blue-400); }
+.chkbox:checked::after {
+  content: ""; width: 8px; height: 5px;
+  border-left: 2px solid var(--white); border-bottom: 2px solid var(--white);
+  transform: rotate(-45deg) translate(1px, -1px);
+}
+.tbl tr.on { background: rgba(20, 126, 232, 0.10); }
+
+/* The bar that replaces the panel's filters once rows are picked. It replaces
+   them rather than joining them: a filter and a bulk action look alike and do
+   opposite things, and the mockup has to make the difference obvious. */
+.bulk {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 3px 0; font-size: 12px;
+}
+.bulk .n { color: var(--white); font-weight: 700; }
+.bulk .sp { margin-left: auto; }
+
+/* A definition list read as two columns. Without this it stacks, and a detail
+   view of twelve facts becomes twenty-four lines. */
+.kv { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+      gap: 9px 18px; font-size: 12.5px; align-items: baseline; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; color: var(--white); min-width: 0; overflow-wrap: anywhere; }
+
+/* ============================================================== the drawer */
+
+.scrim { position: fixed; inset: 0; z-index: 40; background: rgba(1, 5, 13, 0.62);
+         backdrop-filter: blur(1px); }
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 41;
+  width: min(660px, 100vw);
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--navy-950);
+  border-left: 1px solid var(--hairline-2);
+  box-shadow: -22px 0 56px rgba(1, 5, 13, 0.6);
+}
+.drawer-hd {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px;
+  align-items: center; padding: 15px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.drawer-hd h2 { font-size: 15.5px; color: var(--white); overflow-wrap: anywhere; }
+.drawer-hd .sub { font-size: 11px; color: var(--faint); margin-top: 3px; }
+.drawer-bd { overflow-y: auto; padding: 18px; display: grid; gap: 18px; align-content: start; }
+.drawer-ft {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  padding: 13px 18px; border-top: 1px solid var(--hairline);
+}
+
+/* A section inside the drawer. A rule and a label, not another bordered card --
+   nesting cards inside a panel is how a detail view starts to look like a form. */
+.sect { display: grid; gap: 10px; }
+.sect > h3 {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--faint); padding-bottom: 7px; border-bottom: 1px solid var(--hairline);
+}
+
+/* The headline rollup: one wide bar and the three numbers that qualify it. */
+.roll { display: grid; gap: 9px; }
+.roll .top { display: flex; align-items: baseline; gap: 10px; }
+.roll .big { font-size: 25px; font-weight: 700; color: var(--white); letter-spacing: -0.012em; }
+.roll .of { font-size: 12px; color: var(--muted); }
+.roll .facts { display: flex; gap: 20px; flex-wrap: wrap; font-size: 11.5px; }
+.roll .facts .k { color: var(--faint); }
+.roll .facts .v { color: var(--white); font-weight: 600; margin-left: 6px; }
+
+.pieces .tbl tbody td { font-size: 11.5px; padding: 7px 10px; }
+.pieces .tbl thead th { padding: 7px 10px; }
+
+/* Diagnostics is a <details>, so the low-level detail is present and folded --
+   which is what #104 asks for: chunk, attempt and lease detail must not
+   dominate the normal job view. */
+details.diag { border: 1px solid var(--hairline); border-radius: var(--r-sm);
+               background: var(--sunk); }
+details.diag > summary {
+  cursor: pointer; padding: 10px 13px; font-size: 12px; font-weight: 600;
+  color: var(--text); display: flex; align-items: center; gap: 9px; list-style: none;
+}
+details.diag > summary::-webkit-details-marker { display: none; }
+details.diag > summary::before {
+  content: ""; width: 0; height: 0; flex: none;
+  border-left: 4px solid var(--muted); border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent; transition: transform 0.12s;
+}
+details.diag[open] > summary::before { transform: rotate(90deg) translateX(1px); }
+details.diag > summary:hover { color: var(--white); }
+details.diag .dbody { padding: 0 13px 13px; display: grid; gap: 12px; }
+
+.log { max-height: 250px; overflow: auto; background: rgba(1, 6, 14, 0.7);
+       border: 1px solid var(--hairline); border-radius: 6px; padding: 9px 11px; }
+.log div { display: grid; grid-template-columns: 52px 42px minmax(0, 1fr); gap: 10px;
+           font-family: ui-monospace, Consolas, monospace; font-size: 10.5px;
+           line-height: 1.65; }
+.log .t { color: var(--faint); }
+.log .l { font-weight: 700; text-transform: uppercase; font-size: 9px; padding-top: 2px; }
+.log .l[data-lvl="error"] { color: var(--red-400); }
+.log .l[data-lvl="warn"] { color: var(--amber-300); }
+.log .l[data-lvl="info"] { color: var(--muted); }
+.log .m { color: var(--text); overflow-wrap: anywhere; }
+
+/* Pinned to a control that has nothing behind it yet. The number points at the
+   item in DESIGN.md, so a reader can find the detail rather than rediscover it. */
+.gapnote {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 9px 11px; border-radius: var(--r-sm);
+  background: rgba(246, 196, 83, 0.06); border: 1px solid rgba(246, 196, 83, 0.24);
+  color: var(--amber-300); font-size: 11px; line-height: 1.5;
+}
+.gapnote .ico { margin-top: 1px; }
 
 /* ============================================================== the donut */
 
@@ -557,11 +692,20 @@ svg { display: block; }
   .topbar .railtoggle { display: inline-grid; }
   .topbar h1 { font-size: 20px; }
   .topbar .sub { display: none; }
-  .topbar .tools { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  /* Three rows, in this order: the search, then the scope controls and the
+     account, then the two job buttons. Left to flex-wrap alone the search
+     collapsed to its icon and one button took a whole line by itself. */
+  .topbar .tools { width: 100%; margin-left: 0; flex-wrap: wrap; flex-shrink: 1; }
   .topbar .lab { display: none; }
-  .search { flex: 1 1 150px; min-width: 0; }
-  .search .inp { width: 100%; }
-  .topbar .tools .btn.primary, .topbar .tools .btn.accent { flex: 1 1 142px; }
+  .topbar .tools > .search { order: 1; flex: 1 1 100%; min-width: 0; }
+  .topbar .tools > .search .inp { width: 100%; min-width: 0; }
+  .topbar .tools > .sel { order: 2; flex: 1 1 auto; min-width: 0; }
+  .topbar .tools > .btn.icon { order: 3; }
+  .topbar .tools > .menuwrap { order: 4; }
+  /* Both primaries keep their labels rather than becoming unlabelled icons --
+     they are the reason this screen exists. */
+  .topbar .tools > .btn.primary { order: 5; flex: 1 1 45%; }
+  .topbar .tools > .btn.accent { order: 6; flex: 1 1 45%; }
 
   .content { padding: 12px; gap: 12px; }
   /* Two-up, because five full-width cards is 600px of scrolling before the
@@ -599,6 +743,9 @@ svg { display: block; }
 
   /* Rows are named explicitly. Left to auto-placement the status chip landed
      two rows below the name it belongs to, with a gap where it should have been. */
+  /* Neither survives the trip to a phone card: bulk selection needs a pointer,
+     and the row's own icon already says inference or training, in colour. */
+  .tbl.stack td.chk, .tbl.stack th.chk, .tbl.stack td.jtype { display: none; }
   .tbl.stack td.jname   { grid-area: 1 / 1; }
   .tbl.stack td.jstatus { grid-area: 1 / 2; text-align: right; align-self: center; }
   .tbl.stack td.jscope  { grid-area: 2 / 1 / 2 / -1; }
@@ -620,5 +767,10 @@ svg { display: block; }
                      gap: 10px; align-items: center; width: 100%; }
   .tbl.stack .bar { width: auto; }
   .tbl.stack td.jacts > span { justify-content: flex-end; }
+
+  .drawer { width: 100vw; border-left: 0; }
+  .drawer-hd, .drawer-bd, .drawer-ft { padding: 13px; }
+  .roll .facts { gap: 14px; }
+  .bulk { flex-wrap: wrap; }
 }
 }
