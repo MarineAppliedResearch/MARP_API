@@ -1244,7 +1244,7 @@ tr[aria-expanded="true"] td { box-shadow: inset 0 1px 0 rgba(45, 156, 255, 0.34)
 
 #workers .wname  { width: 15%; }
 #workers .wstate { width: 8%; }
-#workers .wrole  { width: 9%; }
+#workers .wver   { width: 8%; }
 #workers .wgpu   { width: 10%; }
 #workers .wcpu   { width: 11%; }
 #workers .wmem   { width: 11%; }
@@ -1252,8 +1252,15 @@ tr[aria-expanded="true"] td { box-shadow: inset 0 1px 0 rgba(45, 156, 255, 0.34)
 #workers .wjobs  { width: 5%; }
 #workers .wup    { width: 7%; }
 #workers .whb    { width: 8%; }
-#workers td.wrole, #workers td.wmodel { overflow: hidden; text-overflow: ellipsis;
-                                        color: var(--muted); }
+#workers td.wmodel { overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+/* A fleet of 143 will not all be on the same build, and an old one explains a
+   surprising failure faster than anything else on this screen. */
+#workers td.wver { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px;
+                   color: var(--muted); }
+#workers td.wver.stale { color: var(--amber-300); }
+.gchip.stale .gn { color: var(--amber-300); }
+.gchip.stale .gbar i { background: var(--amber-300); }
+.gwrap { display: contents; }
 /* A machine that has not spoken for longer than a long poll. Below 90 seconds
    silence means nothing -- an idle worker legitimately waits that long. */
 td.whb { color: var(--muted); }
@@ -1348,7 +1355,7 @@ td.whb.quiet { color: var(--amber-300); }
   .hw { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* Eleven columns of worker will not fit; role and uptime are the
      least urgent of them. */
-  #workers .wrole, #workers td.wrole { display: none; }
+  #workers .wver, #workers td.wver { display: none; }
   #workers .wup, #workers td.wup { display: none; }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .acts2 { grid-template-columns: minmax(0, 1fr); }

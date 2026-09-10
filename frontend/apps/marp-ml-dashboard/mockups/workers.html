@@ -76,8 +76,16 @@
         </header>
         <div class="panel-bd">
           <div class="pool-strip">
-            <span class="pslab">By GPU</span>
+            <nav class="seg" data-switch="pool" aria-label="Group the pool by">
+              <button class="on" data-view="gpu">By GPU</button>
+              <button data-view="ver">By version</button>
+            </nav>
+            <span data-viewof="pool" data-view="gpu" class="gwrap">
             <button class="gchip" title="32 of 38 RTX 4090 machines are busy"><span class="gn">RTX 4090</span><span class="gc">38</span><span class="gbar"><i style="width:84%"></i></span></button><button class="gchip" title="19 of 27 RTX 3090 machines are busy"><span class="gn">RTX 3090</span><span class="gc">27</span><span class="gbar"><i style="width:70%"></i></span></button><button class="gchip" title="16 of 22 A5000 machines are busy"><span class="gn">A5000</span><span class="gc">22</span><span class="gbar"><i style="width:73%"></i></span></button><button class="gchip" title="11 of 19 RTX 4070 machines are busy"><span class="gn">RTX 4070</span><span class="gc">19</span><span class="gbar"><i style="width:58%"></i></span></button><button class="gchip" title="9 of 14 L40S machines are busy"><span class="gn">L40S</span><span class="gc">14</span><span class="gbar"><i style="width:64%"></i></span></button><button class="gchip" title="6 of 8 A100 80GB machines are busy"><span class="gn">A100 80GB</span><span class="gc">8</span><span class="gbar"><i style="width:75%"></i></span></button><button class="gchip" title="5 of 15 Other machines are busy"><span class="gn">Other</span><span class="gc">15</span><span class="gbar"><i style="width:33%"></i></span></button>
+            </span>
+            <span data-viewof="pool" data-view="ver" class="gwrap" hidden>
+              <button class="gchip" title="84 of 96 machines on build 1.0.0 are busy"><span class="gn">1.0.0</span><span class="gc">96</span><span class="gbar"><i style="width:88%"></i></span></button><button class="gchip stale" title="12 of 31 machines on build 0.9.4 are busy; this build is behind 1.0.0"><span class="gn">0.9.4</span><span class="gc">31</span><span class="gbar"><i style="width:39%"></i></span></button><button class="gchip stale" title="2 of 12 machines on build 0.9.1 are busy; this build is behind 1.0.0"><span class="gn">0.9.1</span><span class="gc">12</span><span class="gbar"><i style="width:17%"></i></span></button><button class="gchip stale" title="0 of 4 machines on build 0.8.7 are busy; this build is behind 1.0.0"><span class="gn">0.8.7</span><span class="gc">4</span><span class="gbar"><i style="width:0%"></i></span></button>
+            </span>
           </div>
         </div>
         <div class="panel-bd flush">
@@ -88,7 +96,7 @@
                   <th class="ex"><span class="vh">Expand</span></th>
                   <th class="wname sortable" title="Sort by name">Worker</th>
                   <th class="wstate sortable" title="Sort by state, busiest first">Status</th>
-                  <th class="wrole sortable" title="What this machine is set up to do">Role</th>
+                  <th class="wver sortable" title="The worker build this machine is running">Version</th>
                   <th class="wgpu sortable" title="Sort by GPU">GPU</th>
                   <th class="wcpu sortable" title="Sort by processor load">CPU</th>
                   <th class="wmem sortable" title="Sort by memory in use">Memory</th>
@@ -103,7 +111,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for campa-lab-04" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">campa-lab-04</span></span></td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
-                    <td class="wrole">Inference</td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 4090</span><span class="b">24 GB</span></span></td>
                     <td class="wcpu" data-sort="62"><span class="prog" data-state="busy"><span class="bar"><i style="width:62%"></i></span><span class="pct">62%</span></span></td>
                     <td class="wmem" data-sort="71"><span class="prog" data-state="busy"><span class="bar"><i style="width:71%"></i></span><span class="pct">71%</span></span></td>
@@ -199,8 +207,8 @@
 
                         <div class="grid" data-cols="2">
                           <div class="sect">
-                            <h3>Utilisation</h3>
-                            <div class="chart"><div class="chd"><span class="t">GPU utilisation</span><span class="key map">last 24 hours</span><span class="n">mean 62 per cent</span></div><svg viewBox="0 0 620 130" aria-hidden="true"><g class="grid"><line x1="16" x2="604" y1="16.0" y2="16.0"/><line x1="16" x2="604" y1="65.0" y2="65.0"/><line x1="16" x2="604" y1="114.0" y2="114.0"/></g><g class="ax"><text class="ax" x="10" y="22">100%</text><text class="ax" x="10" y="114">0</text></g><path class="fill map" d="M16.0,114.0 L16.0,56.4 L22.1,49.6 L28.2,44.1 L34.4,40.6 L40.5,39.2 L46.6,40.2 L52.8,43.1 L58.9,47.5 L65.0,52.6 L71.1,57.5 L77.2,61.5 L83.4,64.1 L89.5,65.0 L95.6,64.3 L101.8,62.2 L107.9,59.5 L114.0,56.7 L120.1,54.5 L126.2,53.4 L132.4,53.6 L138.5,55.0 L144.6,57.4 L150.8,60.1 L156.9,62.4 L163.0,63.8 L169.1,63.5 L175.2,61.4 L181.4,57.3 L187.5,51.7 L193.6,45.1 L199.8,38.4 L205.9,32.3 L212.0,27.7 L218.1,25.0 L224.2,24.5 L230.4,26.3 L236.5,29.8 L242.6,34.5 L248.8,39.7 L254.9,44.7 L261.0,48.8 L267.1,51.8 L273.2,53.6 L279.4,54.4 L285.5,54.8 L291.6,55.3 L297.8,56.7 L303.9,59.4 L310.0,63.7 L316.1,69.7 L322.2,76.9 L328.4,84.9 L334.5,92.8 L340.6,99.9 L346.8,105.4 L352.9,108.8 L359.0,109.9 L365.1,108.7 L371.2,105.7 L377.4,101.5 L383.5,96.9 L389.6,92.8 L395.8,89.6 L401.9,87.9 L408.0,87.8 L414.1,88.9 L420.2,90.9 L426.4,93.1 L432.5,94.9 L438.6,95.8 L444.8,95.3 L450.9,93.4 L457.0,90.3 L463.1,86.6 L469.2,82.9 L475.4,80.0 L481.5,78.5 L487.6,78.8 L493.8,81.3 L499.9,85.6 L506.0,91.4 L512.1,97.9 L518.2,104.4 L524.4,109.9 L530.5,110.1 L536.6,110.1 L542.8,110.1 L548.9,110.1 L555.0,110.1 L561.1,106.0 L567.2,101.7 L573.4,98.0 L579.5,95.2 L585.6,93.7 L591.8,93.1 L597.9,93.2 L604.0,93.3 L604.0,114.0 Z"/><polyline class="line map" points="16.0,56.4 22.1,49.6 28.2,44.1 34.4,40.6 40.5,39.2 46.6,40.2 52.8,43.1 58.9,47.5 65.0,52.6 71.1,57.5 77.2,61.5 83.4,64.1 89.5,65.0 95.6,64.3 101.8,62.2 107.9,59.5 114.0,56.7 120.1,54.5 126.2,53.4 132.4,53.6 138.5,55.0 144.6,57.4 150.8,60.1 156.9,62.4 163.0,63.8 169.1,63.5 175.2,61.4 181.4,57.3 187.5,51.7 193.6,45.1 199.8,38.4 205.9,32.3 212.0,27.7 218.1,25.0 224.2,24.5 230.4,26.3 236.5,29.8 242.6,34.5 248.8,39.7 254.9,44.7 261.0,48.8 267.1,51.8 273.2,53.6 279.4,54.4 285.5,54.8 291.6,55.3 297.8,56.7 303.9,59.4 310.0,63.7 316.1,69.7 322.2,76.9 328.4,84.9 334.5,92.8 340.6,99.9 346.8,105.4 352.9,108.8 359.0,109.9 365.1,108.7 371.2,105.7 377.4,101.5 383.5,96.9 389.6,92.8 395.8,89.6 401.9,87.9 408.0,87.8 414.1,88.9 420.2,90.9 426.4,93.1 432.5,94.9 438.6,95.8 444.8,95.3 450.9,93.4 457.0,90.3 463.1,86.6 469.2,82.9 475.4,80.0 481.5,78.5 487.6,78.8 493.8,81.3 499.9,85.6 506.0,91.4 512.1,97.9 518.2,104.4 524.4,109.9 530.5,110.1 536.6,110.1 542.8,110.1 548.9,110.1 555.0,110.1 561.1,106.0 567.2,101.7 573.4,98.0 579.5,95.2 585.6,93.7 591.8,93.1 597.9,93.2 604.0,93.3"/><g><text class="ax" x="16.0" y="127">14:00</text><text class="ax" x="163.0" y="127">20:00</text><text class="ax" x="310.0" y="127">02:00</text><text class="ax" x="457.0" y="127">08:00</text><text class="ax" x="604.0" y="127">14:00</text></g></svg></div>
+                            <h3>Utilization</h3>
+                            <div class="chart"><div class="chd"><span class="t">GPU utilization</span><span class="key map">last 24 hours</span><span class="n">mean 62 per cent</span></div><svg viewBox="0 0 620 130" aria-hidden="true"><g class="grid"><line x1="16" x2="604" y1="16.0" y2="16.0"/><line x1="16" x2="604" y1="65.0" y2="65.0"/><line x1="16" x2="604" y1="114.0" y2="114.0"/></g><g class="ax"><text class="ax" x="10" y="22">100%</text><text class="ax" x="10" y="114">0</text></g><path class="fill map" d="M16.0,114.0 L16.0,56.4 L22.1,49.6 L28.2,44.1 L34.4,40.6 L40.5,39.2 L46.6,40.2 L52.8,43.1 L58.9,47.5 L65.0,52.6 L71.1,57.5 L77.2,61.5 L83.4,64.1 L89.5,65.0 L95.6,64.3 L101.8,62.2 L107.9,59.5 L114.0,56.7 L120.1,54.5 L126.2,53.4 L132.4,53.6 L138.5,55.0 L144.6,57.4 L150.8,60.1 L156.9,62.4 L163.0,63.8 L169.1,63.5 L175.2,61.4 L181.4,57.3 L187.5,51.7 L193.6,45.1 L199.8,38.4 L205.9,32.3 L212.0,27.7 L218.1,25.0 L224.2,24.5 L230.4,26.3 L236.5,29.8 L242.6,34.5 L248.8,39.7 L254.9,44.7 L261.0,48.8 L267.1,51.8 L273.2,53.6 L279.4,54.4 L285.5,54.8 L291.6,55.3 L297.8,56.7 L303.9,59.4 L310.0,63.7 L316.1,69.7 L322.2,76.9 L328.4,84.9 L334.5,92.8 L340.6,99.9 L346.8,105.4 L352.9,108.8 L359.0,109.9 L365.1,108.7 L371.2,105.7 L377.4,101.5 L383.5,96.9 L389.6,92.8 L395.8,89.6 L401.9,87.9 L408.0,87.8 L414.1,88.9 L420.2,90.9 L426.4,93.1 L432.5,94.9 L438.6,95.8 L444.8,95.3 L450.9,93.4 L457.0,90.3 L463.1,86.6 L469.2,82.9 L475.4,80.0 L481.5,78.5 L487.6,78.8 L493.8,81.3 L499.9,85.6 L506.0,91.4 L512.1,97.9 L518.2,104.4 L524.4,109.9 L530.5,110.1 L536.6,110.1 L542.8,110.1 L548.9,110.1 L555.0,110.1 L561.1,106.0 L567.2,101.7 L573.4,98.0 L579.5,95.2 L585.6,93.7 L591.8,93.1 L597.9,93.2 L604.0,93.3 L604.0,114.0 Z"/><polyline class="line map" points="16.0,56.4 22.1,49.6 28.2,44.1 34.4,40.6 40.5,39.2 46.6,40.2 52.8,43.1 58.9,47.5 65.0,52.6 71.1,57.5 77.2,61.5 83.4,64.1 89.5,65.0 95.6,64.3 101.8,62.2 107.9,59.5 114.0,56.7 120.1,54.5 126.2,53.4 132.4,53.6 138.5,55.0 144.6,57.4 150.8,60.1 156.9,62.4 163.0,63.8 169.1,63.5 175.2,61.4 181.4,57.3 187.5,51.7 193.6,45.1 199.8,38.4 205.9,32.3 212.0,27.7 218.1,25.0 224.2,24.5 230.4,26.3 236.5,29.8 242.6,34.5 248.8,39.7 254.9,44.7 261.0,48.8 267.1,51.8 273.2,53.6 279.4,54.4 285.5,54.8 291.6,55.3 297.8,56.7 303.9,59.4 310.0,63.7 316.1,69.7 322.2,76.9 328.4,84.9 334.5,92.8 340.6,99.9 346.8,105.4 352.9,108.8 359.0,109.9 365.1,108.7 371.2,105.7 377.4,101.5 383.5,96.9 389.6,92.8 395.8,89.6 401.9,87.9 408.0,87.8 414.1,88.9 420.2,90.9 426.4,93.1 432.5,94.9 438.6,95.8 444.8,95.3 450.9,93.4 457.0,90.3 463.1,86.6 469.2,82.9 475.4,80.0 481.5,78.5 487.6,78.8 493.8,81.3 499.9,85.6 506.0,91.4 512.1,97.9 518.2,104.4 524.4,109.9 530.5,110.1 536.6,110.1 542.8,110.1 548.9,110.1 555.0,110.1 561.1,106.0 567.2,101.7 573.4,98.0 579.5,95.2 585.6,93.7 591.8,93.1 597.9,93.2 604.0,93.3"/><g><text class="ax" x="16.0" y="127">14:00</text><text class="ax" x="163.0" y="127">20:00</text><text class="ax" x="310.0" y="127">02:00</text><text class="ax" x="457.0" y="127">08:00</text><text class="ax" x="604.0" y="127">14:00</text></g></svg></div>
                           </div>
                           <div class="sect">
                             <h3>Recent work on this machine</h3>
@@ -224,7 +232,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for bergstrom-4090" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">bergstrom-4090</span></span></td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
-                    <td class="wrole">Training</td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 4090</span><span class="b">24 GB</span></span></td>
                     <td class="wcpu" data-sort="88"><span class="prog" data-state="busy"><span class="bar"><i style="width:88%"></i></span><span class="pct">88%</span></span></td>
                     <td class="wmem" data-sort="76"><span class="prog" data-state="busy"><span class="bar"><i style="width:76%"></i></span><span class="pct">76%</span></span></td>
@@ -240,7 +248,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for campa-lab-07" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">campa-lab-07</span></span></td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
-                    <td class="wrole">Inference</td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 3090</span><span class="b">24 GB</span></span></td>
                     <td class="wcpu" data-sort="54"><span class="prog" data-state="busy"><span class="bar"><i style="width:54%"></i></span><span class="pct">54%</span></span></td>
                     <td class="wmem" data-sort="48"><span class="prog" data-state="busy"><span class="bar"><i style="width:48%"></i></span><span class="pct">48%</span></span></td>
@@ -256,8 +264,8 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for arctic-rig-03" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">arctic-rig-03</span></span></td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
-                    <td class="wrole">Inference</td>
-                    <td class="wgpu"><span class="two"><span class="a">A5000</span><span class="b">24 GB</span></span></td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX A5000</span><span class="b">24 GB</span></span></td>
                     <td class="wcpu" data-sort="47"><span class="prog" data-state="busy"><span class="bar"><i style="width:47%"></i></span><span class="pct">47%</span></span></td>
                     <td class="wmem" data-sort="52"><span class="prog" data-state="busy"><span class="bar"><i style="width:52%"></i></span><span class="pct">52%</span></span></td>
                     <td class="wmodel">MARP-Det-v3</td>
@@ -272,7 +280,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for reef-node-11" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">reef-node-11</span></span></td>
                     <td class="jstatus" data-sort="1"><span class="st" data-state="idle"><span class="dot"></span>Idle</span></td>
-                    <td class="wrole">Inference</td>
+                    <td class="wver stale" data-sort="0.9.4" title="Behind the newest build, 1.0.0">0.9.4</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 4070</span><span class="b">12 GB</span></span></td>
                     <td class="wcpu" data-sort="3"><span class="prog" data-state="idle"><span class="bar"><i style="width:3%"></i></span><span class="pct">3%</span></span></td>
                     <td class="wmem" data-sort="9"><span class="prog" data-state="idle"><span class="bar"><i style="width:9%"></i></span><span class="pct">9%</span></span></td>
@@ -288,7 +296,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for volunteer-maren" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">volunteer-maren</span></span></td>
                     <td class="jstatus" data-sort="1"><span class="st" data-state="idle"><span class="dot"></span>Idle</span></td>
-                    <td class="wrole">Inference</td>
+                    <td class="wver stale" data-sort="0.9.4" title="Behind the newest build, 1.0.0">0.9.4</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 3090</span><span class="b">24 GB</span></span></td>
                     <td class="wcpu" data-sort="2"><span class="prog" data-state="idle"><span class="bar"><i style="width:2%"></i></span><span class="pct">2%</span></span></td>
                     <td class="wmem" data-sort="7"><span class="prog" data-state="idle"><span class="bar"><i style="width:7%"></i></span><span class="pct">7%</span></span></td>
@@ -304,7 +312,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for campa-lab-12" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">campa-lab-12</span></span></td>
                     <td class="jstatus" data-sort="2"><span class="st" data-state="paused"><span class="dot"></span>Paused</span></td>
-                    <td class="wrole">Inference</td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 4090</span><span class="b">24 GB</span></span></td>
                     <td class="wcpu" data-sort="1"><span class="prog" data-state="paused"><span class="bar"><i style="width:1%"></i></span><span class="pct">1%</span></span></td>
                     <td class="wmem" data-sort="4"><span class="prog" data-state="paused"><span class="bar"><i style="width:4%"></i></span><span class="pct">4%</span></span></td>
@@ -320,7 +328,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for gulf-a100-01" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">gulf-a100-01</span></span></td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
-                    <td class="wrole">Training</td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
                     <td class="wgpu"><span class="two"><span class="a">A100</span><span class="b">80 GB</span></span></td>
                     <td class="wcpu" data-sort="71"><span class="prog" data-state="busy"><span class="bar"><i style="width:71%"></i></span><span class="pct">71%</span></span></td>
                     <td class="wmem" data-sort="63"><span class="prog" data-state="busy"><span class="bar"><i style="width:63%"></i></span><span class="pct">63%</span></span></td>
@@ -336,7 +344,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for gulf-l40s-02" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">gulf-l40s-02</span></span></td>
                     <td class="jstatus" data-sort="1"><span class="st" data-state="idle"><span class="dot"></span>Idle</span></td>
-                    <td class="wrole">Training</td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
                     <td class="wgpu"><span class="two"><span class="a">L40S</span><span class="b">48 GB</span></span></td>
                     <td class="wcpu" data-sort="4"><span class="prog" data-state="idle"><span class="bar"><i style="width:4%"></i></span><span class="pct">4%</span></span></td>
                     <td class="wmem" data-sort="11"><span class="prog" data-state="idle"><span class="bar"><i style="width:11%"></i></span><span class="pct">11%</span></span></td>
@@ -352,7 +360,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for volunteer-okeanos" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">volunteer-okeanos</span></span></td>
                     <td class="jstatus" data-sort="3"><span class="st" data-state="offline"><span class="dot"></span>Offline</span></td>
-                    <td class="wrole">Inference</td>
+                    <td class="wver stale" data-sort="0.9.1" title="Behind the newest build, 1.0.0">0.9.1</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 3080</span><span class="b">10 GB</span></span></td>
                     <td class="wcpu" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
                     <td class="wmem" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
@@ -368,7 +376,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for pacific-rig-08" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">pacific-rig-08</span></span></td>
                     <td class="jstatus" data-sort="3"><span class="st" data-state="offline"><span class="dot"></span>Offline</span></td>
-                    <td class="wrole">Inference</td>
+                    <td class="wver stale" data-sort="0.9.4" title="Behind the newest build, 1.0.0">0.9.4</td>
                     <td class="wgpu"><span class="two"><span class="a">RTX 4070</span><span class="b">12 GB</span></span></td>
                     <td class="wcpu" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
                     <td class="wmem" data-sort="0"><span class="prog" data-state="offline"><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></span></td>
@@ -384,8 +392,8 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for salt-lab-02" title="Open this worker's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-workers"/></svg><span class="t">salt-lab-02</span></span></td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="busy"><span class="dot"></span>Busy</span></td>
-                    <td class="wrole">Inference</td>
-                    <td class="wgpu"><span class="two"><span class="a">A5000</span><span class="b">24 GB</span></span></td>
+                    <td class="wver" data-sort="1.0.0" title="Running the newest worker build">1.0.0</td>
+                    <td class="wgpu"><span class="two"><span class="a">RTX A5000</span><span class="b">24 GB</span></span></td>
                     <td class="wcpu" data-sort="58"><span class="prog" data-state="busy"><span class="bar"><i style="width:58%"></i></span><span class="pct">58%</span></span></td>
                     <td class="wmem" data-sort="44"><span class="prog" data-state="busy"><span class="bar"><i style="width:44%"></i></span><span class="pct">44%</span></span></td>
                     <td class="wmodel">MARP-SeaStar-Det</td>

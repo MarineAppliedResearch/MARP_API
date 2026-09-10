@@ -166,8 +166,10 @@ const ACTIONS = {
     tip: 'Add a model trained outside MARP', later: 'Later' },
   import: { text: 'Import Model', ico: 'download', cls: '',
     tip: 'Upload a model artifact', later: 'Later' },
-  enrol: { text: 'Enrol Worker', ico: 'plus', cls: 'primary',
-    tip: 'Add a machine to the pool' },
+  /* There is no add-a-worker action: a machine dials out and enrolls itself
+     with a service token. Issuing that token is the thing a person does. */
+  tokens: { text: 'Service Tokens', ico: 'chip', cls: 'primary',
+    tip: 'Issue a token so a new machine can enroll itself' },
 };
 
 /* What each screen's top bar holds. `project` is shown only where narrowing by
@@ -180,7 +182,7 @@ const TOPBAR = {
   datasets: { project: true, actions: ['dataset'] },
   models: { project: false, wide: true, actions: ['import', 'register'], kebab: true,
     search: 'Search models by name, task, dataset or description\u2026' },
-  workers: { project: false, wide: true, actions: ['enrol'], kebab: true,
+  workers: { project: false, wide: true, actions: ['tokens'], kebab: true,
     search: 'Search workers by name, GPU or job\u2026' },
   history: { project: true, actions: [] },
 };
@@ -682,7 +684,7 @@ const TIPS = {
   /* buttons */
   'More filters': 'Filter by worker, model, submitter or date',
   'Expand all': "Open every run's curves at once",
-  'Reprioritise': 'Move the selected jobs up or down the queue',
+  'Reprioritize': 'Move the selected jobs up or down the queue',
   'Retry failed': 'Re-run only the pieces that failed',
   'Clear selection': 'Deselect every row',
   'Run inference': 'Submit the job as configured',
@@ -775,7 +777,9 @@ const TIPS = {
   'Last heard': 'A healthy idle machine can go most of a minute without speaking',
   'System': 'Host, driver and worker version',
   'Hardware': 'What the machine is doing with itself',
-  'Utilisation': 'GPU load over the last day',
+  'Utilization': 'GPU load over the last day',
+  'Version': 'The worker build this machine is running',
+  'Service Tokens': 'Issue a token so a new machine can enroll itself',
   'Rename': 'Change the display name; the durable id does not change',
   'Drain': 'Finish the work in flight, then stop taking more',
   'Retire': 'Take this machine out of the pool',
