@@ -9,8 +9,8 @@
  * Two values only. `paused` stops starting new extractions and lets in-flight
  * ones finish, because killing an ffmpeg mid-decode wastes the Jellyfin stream it
  * already paid for. There is no `stopped`: stop is pause plus discarding the
- * queue, and a discarded row is simply absent again, which reports `failed` and
- * is re-enqueued by the reviewer's *Ask again*.
+ * queue, and a discarded row is simply absent again, which the next page view
+ * re-enqueues.
  *
  * Refs #118.
  *

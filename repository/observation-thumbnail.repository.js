@@ -59,23 +59,31 @@ const ROW_COLUMNS = `
     completed_at`;
 
 /**
- * Enqueues a thumbnail for every observation that has no record at all.
+ * Enqueues a thumbnail for every observation on this page that has no record.
  *
- * A3 as the human reversed it on 2026-09-10: **an observation is enqueued when it
- * is created**, not when somebody reads it. *"One of our key criteria is that the
- * user never has to wait. So trying to load the page should not be the thing that
- * makes the back end work."* The ingest calls this inside its own write
- * transaction, so an observation and its queue entry cannot disagree.
+ * **This is the backstop, not the primary trigger, and the difference is the whole
+ * of A3.** The primary trigger is `keyframes_enqueue_thumbnail_trigger` on
+ * `keyframes` (`migrations/20260910120000-...`), so by the time anybody looks the
+ * work is normally already done or in flight -- which is what makes *"the user
+ * never has to wait"* true. This catches what slipped through: the ~440,000
+ * observations that predate the trigger, and anything an interrupted extraction
+ * left with no row at all.
  *
- * The retry route calls it too, through `requeue`, which is how a row that
- * predates the change ever gets a picture before #121's sweeper exists.
+ * The human's words, 2026-09-10: *"If a page tries to view something and those
+ * thumbnails aren't available, that page should enqueue the observations that are
+ * trying to be seen."* So `POST /api/mosaic/observations/pages` does have a side
+ * effect, deliberately, and A10's answer to that stands: the concurrency constant
+ * bounds it, not the permission.
  *
- * `ON CONFLICT DO NOTHING` is what keeps a second caller safe: an observation that
- * already failed permanently keeps its row and is **not** re-enqueued, which is
- * the whole reason permanence is recorded.
+ * `ON CONFLICT DO NOTHING` is what makes two triggers safe rather than a race. A
+ * row that is already `ready` is **never** reset to `queued` by a page view, and a
+ * row recorded as permanently failed is never re-enqueued -- which is the whole
+ * reason permanence is recorded. A page of hopeless legacy rows would otherwise
+ * ask the media server again on every page view, for ever, on a button the page
+ * invites the reviewer to press.
  *
  * @async
- * @param {Array<number>} observationIds - Observations to enqueue.
+ * @param {Array<number>} observationIds - Observations on the page being served.
  * @param {Object} [transaction] - Transaction to run inside.
  * @returns {Promise<number>} How many rows were newly enqueued.
  */
@@ -315,9 +323,10 @@ async function recordReady(observationId, result) {
  * Records a failed extraction, permanently or not.
  *
  * **Permanent means retrying cannot help**, and the honesty of that flag is what
- * protects the media server: a permanent row is never re-queued by the retry
- * route, so the *Ask again* button the page invites the reviewer to press stops
- * being a way to hammer Jellyfin.
+ * protects the media server: a permanent row is never re-enqueued by a page view,
+ * never re-enqueued by a later keyframe, and never re-queued by the retry route --
+ * so neither paging nor the *Ask again* button the page invites the reviewer to
+ * press is a way to hammer Jellyfin.
  *
  * `lastError` reaches an operator and a reviewer-facing diagnostic, so a caller
  * must never put a stream URL in it -- `buildDirectStreamUrl` embeds the Jellyfin
@@ -401,11 +410,9 @@ async function findByObservationId(observationId) {
 /**
  * Discards the queue (R24, `stop`).
  *
- * The rows return to being **simply absent**, which since A3 was reversed means
- * they report `failed` and the reviewer's *Ask again* re-enqueues them -- a page
- * view no longer will. Nothing is lost and no fourth state had to be invented for
- * "was queued and then abandoned", but a stopped queue is now visible to a
- * reviewer as NO IMAGE rather than as a tile that stays PREPARING.
+ * The rows return to being **simply absent**, which is what makes the next page
+ * view re-enqueue them (R28). So nothing is lost, and no fourth state had to be
+ * invented for "was queued and then abandoned".
  *
  * `ready` and `failed` rows are untouched: they are outcomes, not queue.
  *
@@ -520,9 +527,9 @@ async function writeRunState(runState, userId, note = null) {
 }
 
 module.exports = {
+    enqueueMissing,
     claimBatch,
     discardQueue,
-    enqueueMissing,
     findByObservationId,
     keyframesFor,
     lastFailure,

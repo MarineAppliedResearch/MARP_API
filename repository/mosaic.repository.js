@@ -41,6 +41,7 @@
  */
 
 const db = require('../model');
+const thumbnailRepository = require('./observation-thumbnail.repository');
 
 /**
  * The cap on one page-set request: 12 pages or 600 rows, whichever binds first.
@@ -163,12 +164,11 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  * the version has to be in the row either way.
  *
  * `thumbnail_status` is Phase 6's one addition (#118, R11) and it is **never
- * null**: an observation with no record at all reports **`failed`** rather than an
- * absence the client has no rendering for. `failed` rather than `queued` because
- * A3 was reversed (2026-09-10) and a page fetch no longer enqueues anything -- so
- * for a row that predates enqueue-on-create nothing is coming, and `queued` would
- * be a promise MARP does not keep. `failed` is honest, the client already draws it
- * as NO IMAGE with an *Ask again* that works, and #121 is what will backfill.
+ * null**: an observation with no record at all reports `queued` rather than an
+ * absence the client has no rendering for. That is honest because of the two
+ * triggers behind it -- a thumbnail is enqueued when its keyframes are written,
+ * and serving this page enqueues anything that still has no record, so a row
+ * reporting `queued` really does have work behind it.
  * Only the status -- the picture's address is
  * `/api/v2/observations/{observation_id}/thumbnail`, derivable from a key the row
  * already carries, so a second field would be a URL repeated 45 times a page.
@@ -202,7 +202,7 @@ const ROW_COLUMNS = `
         rt.reviewer_id AS training_reviewer_id,
         k.keyframe_count,
         k.first_framenum,
-        coalesce(th.status, 'failed') AS thumbnail_status`;
+        coalesce(th.status, 'queued') AS thumbnail_status`;
 
 /**
  * Time of day, in `interval`, from the `tc` a row carries.
@@ -990,17 +990,35 @@ async function queryPages(request = {}) {
         byPage.get(Math.ceil(Number(rn) / pageSize)).push(served);
     }
 
-    // **No enqueue here, deliberately** -- #118's A3 as the human reversed it on
-    // 2026-09-10: *"one of our key criteria is that the user never has to wait.
-    // So trying to load the page should not be the thing that makes the back end
-    // work."* This is a pure read again, `observations:read` means what it says,
-    // and #99's prefetcher costs Jellyfin nothing. An observation is enqueued
-    // when it is created, in the ingest's own transaction.
+    // **The backstop, not the trigger.** A3 moved twice on 2026-09-10 and this is
+    // where it landed. The primary trigger is now
+    // `keyframes_enqueue_thumbnail_trigger`, so a page normally finds every row
+    // already `queued` or `ready` and this call inserts nothing -- which is what
+    // makes the human's first requirement true: *"one of our key criteria is that
+    // the user never has to wait. So trying to load the page should not be the
+    // thing that makes the back end work."*
     //
-    // The consequence is carried by the row rather than hidden: an observation
-    // that predates the change has no record and nothing here will make one, so
-    // `thumbnail_status` reports `failed` for it and the reviewer's *Ask again*
-    // is what starts the work. #121 is the sweeper that backfills them.
+    // But it is still here, on the human's second word: *"if a page tries to view
+    // something and those thumbnails aren't available, that page should enqueue
+    // the observations that are trying to be seen."* It is the safety net for what
+    // the trigger cannot reach -- the ~440,000 observations that predate it, and
+    // anything an interrupted extraction left with no row -- and it is what keeps
+    // absence honestly `queued` rather than a promise nobody keeps.
+    //
+    // The cost is accepted with open eyes rather than hidden: this route is
+    // declared `observations:read` and does have a side effect, and #99's
+    // prefetcher asks for adjacent pages, so one reviewer's navigation can enqueue
+    // up to three pages at once. A10 answered that with the rate limit rather than
+    // a permission and that answer stands -- the concurrency constant bounds it
+    // whatever the caller does.
+    //
+    // Idempotent, and it has to be with two triggers: `enqueueMissing` inserts
+    // only where nothing exists, so a row that is already `ready` is not reset and
+    // a permanent failure is not re-enqueued.
+    await thumbnailRepository.enqueueMissing(
+        [...byPage.values()].flat().map((row) => row.observation_id)
+    );
+
     return {
         pageSize,
         ...(includeTotal

@@ -3,7 +3,7 @@
 <head>
     
     <meta charset="utf-8">
-    <title>repository/observation-ingest.repository.js - Documentation</title>
+    <title>migrations/20260910120000-enqueue-a-thumbnail-when-a-keyframe-is-written.js - Documentation</title>
     
     
     <script src="scripts/prettify/prettify.js"></script>
@@ -37,7 +37,7 @@
 
 <div id="main">
     
-    <h1 class="page-title">repository/observation-ingest.repository.js</h1>
+    <h1 class="page-title">migrations/20260910120000-enqueue-a-thumbnail-when-a-keyframe-is-written.js</h1>
     
 
     
@@ -48,489 +48,193 @@
     <section>
         <article>
             <pre class="prettyprint source linenums"><code>/**
- * Writing a GPU job's observations into the annotation record.
+ * Enqueues a thumbnail when a **keyframe** is written, from a database trigger.
  *
- * One transaction per job, because half a run's observations is worse than none:
- * somebody would have to work out which tracks were missing before they could
- * ingest the rest, and a partial set silently understates what the model found.
+ * #118's A3 was reversed by the human on 2026-09-10 -- *"one of our key criteria
+ * is that the user never has to wait. So trying to load the page should not be
+ * the thing that makes the back end work. When the observation is created, it
+ * should get enqueued."* -- and this is the second half of that correction.
  *
- * **Three things here are deliberate and each was a trap first.**
+ * **Why a trigger rather than a call in the application.** The first attempt put
+ * the enqueue in `repository/observation-ingest.repository.js`, which covers the
+ * GPU path and **silently misses every hand-annotated observation**: the
+ * annotation GUI creates them through `POST /api/v2/observation` and
+ * `POST /api/v2/keyframe`, which go through two different repositories, and the
+ * ingest goes through a third with its own raw SQL. That is three write paths, and
+ * a second call site is how one of them gets forgotten -- the failure would look
+ * fine for months, because the machine path is the one anybody tests.
  *
- * 1. *The keys are assigned by hand, and the sequence is not used.*
- *    `observations.observation_id` has a sequence that has never been advanced by
- *    the annotation GUI's writes, so it sits far behind the table and `nextval`
- *    would collide immediately. `repository/observation.repository.js` assigns
- *    `max + 1`; so does this, because two conventions for one column is worse
- *    than one awkward convention. Tracked in #62.
- * 2. *An advisory lock covers the whole assignment.* `max + 1` computed by two
- *    transactions at once yields the same number twice, and two workers finishing
- *    within a second of each other is the normal case, not the unlucky one. The
- *    lock is transaction-scoped, so it is released by the commit or the rollback
- *    and cannot be leaked.
- * 3. *Rows are inserted with SQL rather than `db.observations.create`.* The model
- *    declares `observation_id` as a primary key that Sequelize believes is
- *    generated, so `create()` sends an explicit null for it and the insert fails.
+ * This repository has already answered exactly this question once.
+ * `observations.version` is maintained by `observations_bump_version_trigger`
+ * rather than by the application, and its own column comment says why: *"not by
+ * the application or the ORM, so it moves whatever code path performs the
+ * write."* The same reasoning applies here and nothing about it is weaker. One
+ * place, and it covers the ingest's raw SQL, the ORM's nested `include` on an
+ * observation create, the ORM's `bulkCreate` on the keyframe route, and a hand
+ * `INSERT` by somebody fixing data.
  *
- * @fileoverview Persistence for observations produced by a GPU inference job.
+ * **Why the keyframe rather than the observation.** A thumbnail is a crop of a
+ * box, and the box comes from keyframes -- #118's F6 is explicit that an
+ * observation with no keyframes can never have a picture, which is why permanent
+ * failure exists at all. So enqueueing when an *observation* is created is wrong
+ * wherever the keyframes arrive afterwards: the extractor would claim a row with
+ * no box, record a **permanent** failure, and never look again. That is worse than
+ * the gap it was meant to close. Hanging off the keyframe is order-independent --
+ * whether the keyframes come nested in the observation create or in a later
+ * request, the enqueue happens when the box exists and not before.
+ *
+ * An observation that never gets a keyframe gets no row from **this** trigger, which
+ * is right: there is no box, so enqueueing it would earn a permanent failure that no
+ * later keyframe could undo. R28's page backstop may still enqueue it when somebody
+ * actually looks, and that is the honest moment to record that it can never have a
+ * picture.
+ *
+ * **Idempotent, and it has to be.** `ON CONFLICT (observation_id) DO NOTHING`, so
+ * a track's 38 keyframes enqueue once, a later keyframe on the same observation
+ * adds nothing, and a row that is already `ready` is never reset to `queued` --
+ * re-extracting a picture that exists is what the retry route is for.
+ *
+ * **Statement-level with a transition table**, not `FOR EACH ROW`: the ingest
+ * writes thousands of keyframes per job and `bulkCreate` sends them as one
+ * statement, so a per-row trigger would do thousands of upserts where one
+ * `SELECT DISTINCT` does. PostgreSQL 10 introduced transition tables and this
+ * platform runs 18.
+ *
+ * INSERT only. An **updated** keyframe box does change what the right picture is,
+ * but re-extracting on update would fight with `ready` rows for no request from
+ * anybody; the retry route is the way to ask for a new one. DELETE is not a
+ * trigger either -- `ON DELETE CASCADE` from `observations` already takes the
+ * thumbnail row with the observation, and deleting one keyframe of a track does
+ * not invalidate the picture.
+ *
+ * No data is transformed and no existing row is touched -- in particular **nothing
+ * is backfilled**, so R4 still holds for the ~440,000 observations that predate
+ * this and #121 is still what gives them a picture. So this does not go through
+ * `db/data-integrity.js`, for the same reason
+ * `20260909130000-create-observation-thumbnails.js` does not.
+ *
+ * Refs #118, #121, MarineAppliedResearch/MARP_API#68.
+ *
+ * @fileoverview Migration adding the keyframe trigger that enqueues a thumbnail.
  * @author Isaac Travers
- * @module repository/observation-ingest
+ * @module migrations/enqueue-a-thumbnail-when-a-keyframe-is-written
  */
 
 'use strict';
 
-const { QueryTypes } = require('sequelize');
-
 /**
- * Shared database registry containing the configured Sequelize connection,
- * initialized models, and model associations.
+ * The trigger function's name. Named once so `up` and `down` cannot disagree.
  *
  * @constant
- * @type {Object}
+ * @type {string}
  */
-const db = require('../model');
+const FUNCTION_NAME = 'thumbnails_enqueue_for_keyframe';
 
 /**
- * Application logger used to record repository errors.
+ * The trigger's name.
  *
  * @constant
- * @type {Object}
+ * @type {string}
  */
-const logger = require('../logger/api.logger');
+const TRIGGER_NAME = 'keyframes_enqueue_thumbnail_trigger';
 
-/**
- * Key for the advisory lock that serialises observation-key assignment.
- *
- * An arbitrary constant, but a fixed one: every writer that assigns
- * `observation_id` as `max + 1` has to take the *same* lock or it does not
- * serialise anything.
- *
- * @constant
- * @type {number}
- */
-const OBSERVATION_KEY_LOCK = 87301;
-
-/**
- * The observation columns this module writes, in the order the insert sends
- * them. Named once so the statement and the value list cannot drift apart.
- *
- * @constant
- * @type {Array&lt;string>}
- */
-const OBSERVATION_COLUMNS = [
-    'observation_id', 'obsID', 'PobsID', 'project_id', 'session_id', 'user_id',
-    'tc', 'frame', 'taxserial', 'species_id', 'comname', 'count',
-    'video_source', 'videoLocation', 'mediaPosition', 'actualPosition',
-    'confidence', 'ml_model_id', 'gpu_job_id', 'jellyfin_item_id',
-    'createdAt', 'updatedAt',
-];
-
-
-/**
- * Persistence for observations produced by a GPU inference job.
- *
- * @class ObservationIngestRepository
- */
-class ObservationIngestRepository {
-
-    db = {};
-
-    constructor() {
-        this.db = db;
-    }
-
+/** @type {Object} */
+module.exports = {
     /**
-     * How many observations a job has already produced.
-     *
-     * This is the idempotency check. A replayed terminal report must not write a
-     * second set of rows, and a job's own id is the only thing that distinguishes
-     * its output from an identical re-run's -- which is a separate job and is
-     * meant to produce a separate set.
+     * Creates the trigger function and the statement-level trigger.
      *
      * @async
-     * @param {number} jobId - GPU job identifier.
-     * @param {Object} [transaction] - Transaction to read inside.
-     * @returns {Promise&lt;number>} Rows already written for this job.
+     * @param {Object} queryInterface - Sequelize QueryInterface used to run schema changes.
+     * @returns {Promise&lt;void>} Resolves once the trigger exists.
+     * @throws {Error} Re-throws after rolling back if creation fails.
      */
-    async countObservationsForJob(jobId, transaction) {
-        const [row] = await this.db.sequelize.query(
-            'SELECT COUNT(*)::int AS n FROM observations WHERE gpu_job_id = :jobId',
-            { replacements: { jobId }, type: QueryTypes.SELECT, transaction }
-        );
-
-        return row ? row.n : 0;
-    }
-
-    /**
-     * Find a session by dive, line and type within a project, or create one.
-     *
-     * Find-or-create rather than create, because a job is one piece of a video
-     * and a dive-and-line will be submitted many times over. `lineId` is written
-     * as `dive_line`, which is the shape every existing session uses.
-     *
-     * @async
-     * @param {Object} params - Session identity.
-     * @param {number} params.projectId - Project the session belongs to.
-     * @param {string} params.dive - Dive name.
-     * @param {string} params.line - Line name.
-     * @param {string} params.type - Session type, e.g. `Invert`.
-     * @param {number|null} params.userId - User to record as the session's owner.
-     * @param {Object} [transaction] - Transaction to work inside.
-     * @returns {Promise&lt;{session: Object, created: boolean}>} The session row.
-     */
-    async findOrCreateSession({ projectId, dive, line, type, userId }, transaction) {
-        const [existing] = await this.db.sequelize.query(
-            `SELECT * FROM sessions
-              WHERE project_id = :projectId AND dive = :dive AND line = :line AND type = :type
-              ORDER BY session_id
-              LIMIT 1`,
-            {
-                replacements: { projectId, dive, line, type },
-                type: QueryTypes.SELECT,
-                transaction,
-            }
-        );
-
-        if (existing) {
-            return { session: existing, created: false };
-        }
-
-        const [rows] = await this.db.sequelize.query(
-            `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-             VALUES (:projectId, :userId, :dive, :line, :lineId, :type, NOW(), NOW())
-             RETURNING *`,
-            {
-                replacements: {
-                    projectId,
-                    userId,
-                    dive,
-                    line,
-                    lineId: `${dive}_${line}`,
-                    type,
-                },
-                transaction,
-            }
-        );
-
-        return { session: rows[0], created: true };
-    }
-
-    /**
-     * Fetch one session.
-     *
-     * @async
-     * @param {number} sessionId - Session identifier.
-     * @param {Object} [transaction] - Transaction to read inside.
-     * @returns {Promise&lt;Object|null>} The session row, or null.
-     */
-    async getSession(sessionId, transaction) {
-        const [row] = await this.db.sequelize.query(
-            'SELECT * FROM sessions WHERE session_id = :sessionId',
-            { replacements: { sessionId }, type: QueryTypes.SELECT, transaction }
-        );
-
-        return row || null;
-    }
-
-    /**
-     * The species rows a model was trained with whose common name matches.
-     *
-     * `model_species` is a record of which species a model was trained with, not
-     * a class-index translation table, and this reads it only in that sense: it
-     * is the model's own trained-species list, which is what settles a common
-     * name that more than one species row carries.
-     *
-     * @async
-     * @param {number} mlModelId - Registered model identifier.
-     * @param {string} comname - Common name as the worker reported it.
-     * @param {Object} [transaction] - Transaction to read inside.
-     * @returns {Promise&lt;Array&lt;Object>>} Matching species rows.
-     */
-    async findTrainedSpeciesByName(mlModelId, comname, transaction) {
-        return this.db.sequelize.query(
-            `SELECT s.id, s.taxserial, s.comname, s.species_list, s.observation_type
-               FROM model_species ms
-               JOIN species s ON s.id = ms.species_id
-              WHERE ms.model_id = :mlModelId AND s.comname = :comname
-              ORDER BY s.id`,
-            {
-                replacements: { mlModelId, comname },
-                type: QueryTypes.SELECT,
-                transaction,
-            }
-        );
-    }
-
-    /**
-     * Every species row carrying a common name, whatever list it is on.
-     *
-     * The fallback for a model whose trained-species list does not name the
-     * class. Still requires exactly one match: two rows means the name is
-     * ambiguous and nothing here may choose between them.
-     *
-     * @async
-     * @param {string} comname - Common name as the worker reported it.
-     * @param {Object} [transaction] - Transaction to read inside.
-     * @returns {Promise&lt;Array&lt;Object>>} Matching species rows.
-     */
-    async findSpeciesByName(comname, transaction) {
-        return this.db.sequelize.query(
-            `SELECT id, taxserial, comname, species_list, observation_type
-               FROM species
-              WHERE comname = :comname
-              ORDER BY id`,
-            { replacements: { comname }, type: QueryTypes.SELECT, transaction }
-        );
-    }
-
-    /**
-     * The distinct species lists a model was trained against.
-     *
-     * What the session type is checked against: an inverts model writing into a
-     * `Fish` session is wrong in a way no error would otherwise surface.
-     *
-     * @async
-     * @param {number} mlModelId - Registered model identifier.
-     * @param {Object} [transaction] - Transaction to read inside.
-     * @returns {Promise&lt;Array&lt;string>>} Species list names, ascending.
-     */
-    async listModelSpeciesLists(mlModelId, transaction) {
-        const rows = await this.db.sequelize.query(
-            `SELECT DISTINCT s.species_list
-               FROM model_species ms
-               JOIN species s ON s.id = ms.species_id
-              WHERE ms.model_id = :mlModelId AND s.species_list IS NOT NULL
-              ORDER BY s.species_list`,
-            { replacements: { mlModelId }, type: QueryTypes.SELECT, transaction }
-        );
-
-        return rows.map((row) => row.species_list);
-    }
-
-    /**
-     * Fetch one registered model.
-     *
-     * @async
-     * @param {number} mlModelId - Registered model identifier.
-     * @param {Object} [transaction] - Transaction to read inside.
-     * @returns {Promise&lt;Object|null>} The model row, or null.
-     */
-    async getModel(mlModelId, transaction) {
-        const [row] = await this.db.sequelize.query(
-            'SELECT * FROM ml_models WHERE id = :mlModelId',
-            { replacements: { mlModelId }, type: QueryTypes.SELECT, transaction }
-        );
-
-        return row || null;
-    }
-
-    /**
-     * Write a job's observations and their keyframes, all or nothing.
-     *
-     * Each entry in `observations` is a fully-resolved row: the caller has already
-     * turned a class name into a species and a frame index into timecodes. This
-     * method's only remaining decisions are the three key columns, which is why
-     * it holds the advisory lock.
-     *
-     * **A thumbnail is enqueued for every keyframe this writes, and nothing here
-     * does it** (#118's A3, reversed by the human 2026-09-10). `insertKeyframes`
-     * below fires `keyframes_enqueue_thumbnail_trigger`, so the queue entry is
-     * written inside this transaction and a rollback takes it too.
-     *
-     * **There is deliberately no call to the thumbnail repository here.** One was
-     * written first and it was wrong: it covered this path and silently missed
-     * every hand-annotated observation, which reaches the database through two
-     * other repositories. The trigger moves whatever code path performs the write,
-     * which is the same reason `observations.version` is a trigger.
-     *
-     * @async
-     * @param {Object} params - What to write.
-     * @param {number} params.jobId - GPU job the rows are attributed to.
-     * @param {number} params.sessionId - Session the observations belong to.
-     * @param {number|null} params.projectId - Project, from the session.
-     * @param {string} params.sessionType - Session type, for the `PobsID` series.
-     * @param {Array&lt;Object>} params.observations - `{row, keyframes}` entries.
-     * @returns {Promise&lt;Object>} `{observations, keyframes, observation_ids}`.
-     * @throws {Error} Re-throws after rolling back if any statement fails.
-     */
-    async writeJobObservations({ jobId, sessionId, projectId, sessionType, observations }) {
-        const transaction = await this.db.sequelize.transaction();
+    async up(queryInterface) {
+        const { sequelize } = queryInterface;
+        const transaction = await sequelize.transaction();
 
         try {
-            // Serialise every writer that assigns observation_id as max + 1.
-            // Transaction-scoped, so the commit below releases it.
-            await this.db.sequelize.query(
-                'SELECT pg_advisory_xact_lock(:key)',
-                { replacements: { key: OBSERVATION_KEY_LOCK }, type: QueryTypes.SELECT, transaction }
+            await sequelize.query(
+                `CREATE FUNCTION ${FUNCTION_NAME}() RETURNS trigger AS $$
+                 BEGIN
+                     -- DISTINCT because one statement carries every keyframe of a
+                     -- track and they all name the same observation.
+                     --
+                     -- The column list is spelled out here rather than left to
+                     -- defaults on purpose: a migration is a record of what was
+                     -- done to a database on a particular day, and it has to keep
+                     -- saying the same thing even after the table's defaults
+                     -- change.
+                     INSERT INTO observation_thumbnails
+                         (observation_id, status, permanent, generation, attempts,
+                          requested_at, created_at, updated_at)
+                     SELECT DISTINCT i.observation_id, 'queued', false, 1, 0,
+                            NOW(), NOW(), NOW()
+                       FROM inserted i
+                     -- DO NOTHING, never DO UPDATE: a row that is already ready
+                     -- must not be reset to queued by a later keyframe, and a
+                     -- row recorded as permanently failed must not be re-queued
+                     -- behind the media server's back. Asking again is the retry
+                     -- route's job, on a button a person pressed.
+                     ON CONFLICT (observation_id) DO NOTHING;
+
+                     -- AFTER STATEMENT, so the return value is ignored.
+                     RETURN NULL;
+                 END;
+                 $$ LANGUAGE plpgsql`,
+                { transaction }
             );
 
-            // Taken again inside the lock, because the check the service made
-            // before calling was outside it and two replays could both have
-            // passed it.
-            const already = await this.countObservationsForJob(jobId, transaction);
-
-            if (already > 0) {
-                await transaction.commit();
-
-                return {
-                    observations: 0,
-                    keyframes: 0,
-                    observation_ids: [],
-                    already_ingested: already,
-                };
-            }
-
-            const nextObservationId = await this.nextKey(
-                'SELECT COALESCE(MAX(observation_id), 0)::int AS m FROM observations',
-                {},
-                transaction
+            await sequelize.query(
+                `CREATE TRIGGER ${TRIGGER_NAME}
+                 AFTER INSERT ON keyframes
+                 REFERENCING NEW TABLE AS inserted
+                 FOR EACH STATEMENT
+                 EXECUTE FUNCTION ${FUNCTION_NAME}()`,
+                { transaction }
             );
-
-            const nextObsId = await this.nextKey(
-                'SELECT COALESCE(MAX("obsID"), 0)::int AS m FROM observations WHERE session_id = :sessionId',
-                { sessionId },
-                transaction
-            );
-
-            // PobsID runs across every session in the project sharing this type,
-            // which is what `observation.repository.js#getMaxPobsID` computes.
-            const nextPobsId = await this.nextKey(
-                `SELECT COALESCE(MAX(o."PobsID"), 0)::int AS m
-                   FROM observations o
-                   JOIN sessions s ON s.session_id = o.session_id
-                  WHERE s.project_id = :projectId AND s.type = :sessionType`,
-                { projectId, sessionType },
-                transaction
-            );
-
-            const observationIds = [];
-            let keyframesWritten = 0;
-
-            for (let index = 0; index &lt; observations.length; index += 1) {
-                const { row, keyframes } = observations[index];
-                const observationId = nextObservationId + index;
-
-                await this.insertObservation({
-                    ...row,
-                    observation_id: observationId,
-                    obsID: nextObsId + index,
-                    PobsID: nextPobsId + index,
-                    session_id: sessionId,
-                    project_id: projectId,
-                    gpu_job_id: jobId,
-                }, transaction);
-
-                keyframesWritten += await this.insertKeyframes(observationId, keyframes, transaction);
-                observationIds.push(observationId);
-            }
 
             await transaction.commit();
-
-            return {
-                observations: observationIds.length,
-                keyframes: keyframesWritten,
-                observation_ids: observationIds,
-                already_ingested: 0,
-            };
         } catch (error) {
             await transaction.rollback();
-            logger.error('Error::' + error);
             throw error;
         }
-    }
+    },
 
     /**
-     * Read a maximum and return the next value after it.
+     * Drops the trigger and then its function.
+     *
+     * The trigger goes first: dropping the function while a trigger depends on it
+     * fails. The queue rows it created are left alone -- they are re-derivable
+     * work orders, not a record, and dropping them would strand a tile at
+     * PREPARING.
      *
      * @async
-     * @param {string} sql - Query selecting a single `m` column.
-     * @param {Object} replacements - Query replacements.
-     * @param {Object} transaction - Transaction to read inside.
-     * @returns {Promise&lt;number>} The maximum plus one, or 1 when there is none.
+     * @param {Object} queryInterface - Sequelize QueryInterface used to run schema changes.
+     * @returns {Promise&lt;void>} Resolves once both are gone.
+     * @throws {Error} Re-throws after rolling back if the drop fails.
      */
-    async nextKey(sql, replacements, transaction) {
-        const [row] = await this.db.sequelize.query(
-            sql,
-            { replacements, type: QueryTypes.SELECT, transaction }
-        );
+    async down(queryInterface) {
+        const { sequelize } = queryInterface;
+        const transaction = await sequelize.transaction();
 
-        return (row &amp;&amp; row.m ? Number(row.m) : 0) + 1;
-    }
-
-    /**
-     * Insert one observation row.
-     *
-     * Written as SQL because `db.observations.create` sends an explicit null for
-     * `observation_id` and fails; see this module's header.
-     *
-     * @async
-     * @param {Object} row - A value for every column in `OBSERVATION_COLUMNS`
-     * except the two timestamps, which are set to now.
-     * @param {Object} transaction - Transaction to write inside.
-     * @returns {Promise&lt;void>} Resolves once the row exists.
-     */
-    async insertObservation(row, transaction) {
-        const columns = OBSERVATION_COLUMNS
-            .filter((column) => column !== 'createdAt' &amp;&amp; column !== 'updatedAt');
-
-        const quoted = columns.map((column) => `"${column}"`).join(', ');
-        const bound = columns.map((column) => `:${column}`).join(', ');
-
-        const replacements = {};
-
-        for (const column of columns) {
-            replacements[column] = row[column] === undefined ? null : row[column];
-        }
-
-        await this.db.sequelize.query(
-            `INSERT INTO observations (${quoted}, "createdAt", "updatedAt")
-             VALUES (${bound}, NOW(), NOW())`,
-            { replacements, transaction }
-        );
-    }
-
-    /**
-     * Insert one observation's keyframes.
-     *
-     * Geometry is passed through exactly as the worker sent it. A width over 1.0
-     * is not clamped: it is what the reduction produced, and correcting it here
-     * would replace a recorded value with a guess.
-     *
-     * @async
-     * @param {number} observationId - Observation the keyframes belong to.
-     * @param {Array&lt;Object>} keyframes - `{subset, comname, type, framenum, x, y, width, height}`.
-     * @param {Object} transaction - Transaction to write inside.
-     * @returns {Promise&lt;number>} How many rows were written.
-     */
-    async insertKeyframes(observationId, keyframes, transaction) {
-        for (const keyframe of keyframes) {
-            await this.db.sequelize.query(
-                `INSERT INTO keyframes
-                     (observation_id, subset, comname, type, framenum, x, y, width, height, confidence, "createdAt", "updatedAt")
-                 VALUES
-                     (:observationId, :subset, :comname, :type, :framenum, :x, :y, :width, :height, :confidence, NOW(), NOW())`,
-                {
-                    replacements: {
-                        observationId,
-                        subset: keyframe.subset,
-                        comname: keyframe.comname,
-                        type: keyframe.type,
-                        framenum: keyframe.framenum,
-                        x: keyframe.x,
-                        y: keyframe.y,
-                        width: keyframe.width,
-                        height: keyframe.height,
-                        confidence: keyframe.confidence === undefined ? null : keyframe.confidence,
-                    },
-                    transaction,
-                }
+        try {
+            await sequelize.query(
+                `DROP TRIGGER IF EXISTS ${TRIGGER_NAME} ON keyframes`,
+                { transaction }
             );
+
+            await sequelize.query(
+                `DROP FUNCTION IF EXISTS ${FUNCTION_NAME}()`,
+                { transaction }
+            );
+
+            await transaction.commit();
+        } catch (error) {
+            await transaction.rollback();
+            throw error;
         }
-
-        return keyframes.length;
-    }
-}
-
-module.exports = new ObservationIngestRepository();
+    },
+};
 </code></pre>
         </article>
     </section>
