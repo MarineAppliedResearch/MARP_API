@@ -442,7 +442,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   **Recommendation: (i)**, and the contract check gains a request count beside its render
   count.
 
-- [ ] **A10 · product/UI + scientific · blocking** — **The species filter: what is its value,
+- [x] **A10 · product/UI + scientific · blocking** — **The species filter: what is its value,
   what is its label, and what is the default question?** Three parts, from F1 and F15.
   (a) The wire value becomes the species key, so the rail must carry `(key, label)` pairs where
   it carries bare values today — `DIMENSION.species.one(v)` renders the value itself
@@ -460,7 +460,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   whether two rows with the same comname from two lists are one thing or two is answerable by
   the person who recorded them.
 
-- [ ] **A11 · API contract · blocking** — **How does the correction picker work against a real
+- [x] **A11 · API contract · blocking** — **How does the correction picker work against a real
   taxonomy?** F14 and F15. `searchSpecies('')` 400s; the route needs a list.
   **Recommendation:** the list comes from the tile's own `session_type` through
   `db/species-lists.js`'s map — which means either a small endpoint exposing that map or a
@@ -473,7 +473,7 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   (`docs/openapi.js` `MosaicCorrectionResult`). Whether the *picker* should offer that is a
   scientific call.
 
-- [ ] **A12 · product/UI · blocking** — **Which name does a tile show?** F6. The row carries
+- [x] **A12 · product/UI · blocking** — **Which name does a tile show?** F6. The row carries
   both the annotator's frozen `comname` and the current `species_comname`.
   **Recommendation:** the tile's primary label is `species_comname` falling back to `comname`;
   the "was" indicator draws `comname` whenever it differs from `species_comname`, which
@@ -496,14 +496,43 @@ Listed in the order they block work: A1 and A2 shape everything under them.
   (R25), never appended by loosening it. This is a published contract change, so it is
   ask-first and it is here.
 
-- [ ] **A14 · product/UI · blocking** — **What happens to the three dimensions with nothing
-  behind them?** F16: `date` is refused by the endpoint (#76), `model` has no column populated
-  (Phase 3), `session` cannot have an option list. **Recommendation:** remove all three
-  controls from the rail for now and say on the rail why — a control that 400s or returns an
-  empty list teaches a reviewer the tool is broken. The alternative — leave them and let them
-  fail — is worse. But removing a control the reviewer has been using is visible, and `date`
-  in particular carries the `excludedForNoDate` note that #76 built specifically so a filter
-  would not silently omit.
+- [ ] **A14 · product/UI · blocking** — **What happens to the dimensions with nothing behind
+  them?**
+
+  **This assumption was written on two wrong facts and is corrected.** It claimed `date`,
+  `model` and `session` all have nothing behind them. The human challenged it — *"the api does
+  have endpoints for those though?"* — and checking the code says he is right about two of the
+  three. Recorded rather than quietly amended, because the wrong version recommended deleting
+  two working controls.
+
+  **What is actually true, read from `repository/mosaic.repository.js:417-427`** — the
+  complete set of filters the mosaic query accepts is `project`, `dive`, `line`, `sessionType`,
+  `session`, `species`, `model`:
+
+  - **`session` is filterable and always was** — `set('session', 'o.session_id', 'int[]')`, and
+    the client already declares `field: 'session_id'` (`model/dimensions.js:69`), so it already
+    sends the right *kind* of value. All 6 observations carry a `session_id`. It lacks only an
+    **option list**, which is exactly what A6's facets route is for. Nothing to withdraw.
+  - **`model` is filterable and is now populated** — `set('model', 'o.ml_model_id', 'int[]')`.
+    The "no column populated" claim was true when Phase 3 was written and is **stale**: the GPU
+    pipeline ran on 2026-09-09 and all 6 observations carry `ml_model_id`. What `model` really
+    has is **the same defect as `species`**: the client declares `field: 'model_name'`
+    (`model/dimensions.js:112`) and sends a name where the filter takes an `int[]` key. So it
+    is A10's problem again, not a dead control.
+  - **`date` is the only one with genuinely nothing behind it.** There is no filter for it, and
+    there is no column to build one from: `observations` carries `tc`, `etc` and `timelog` as
+    `varchar` TimeSpans — a time of day, not a date — plus `createdAt`/`updatedAt`, which are
+    when the *row* was written and not when the observation was made. #76 is open for exactly
+    this. The client meanwhile declares `key: 'date', field: 'tc'`
+    (`model/dimensions.js:98`), i.e. a date filter pointed at a time-of-day string.
+
+  **Recommendation, revised:** withdraw **`date` only**, and say on the rail that it is waiting
+  on #76 — it also carries the `excludedForNoDate` reporting that #76 built so a date filter
+  could never silently omit rows, and that reporting has nothing to report until the column
+  exists. Give `session` its option list from A6's facets. Fix `model` the way A10 fixes
+  `species`: send the key, render the label.
+  **What is left for the human:** whether withdrawing `date` is acceptable at all, given it is
+  a control a reviewer may have been using against the fixture.
 
 - [ ] **A15 · environment · blocking** — **What seeds the database the browser tier runs
   against, and does it hold real thumbnails?** The measured state above is 6 observations, one
@@ -545,6 +574,31 @@ Listed in the order they block work: A1 and A2 shape everything under them.
 
 Nothing is decided until the assumptions above are answered. Recorded here so they are not
 re-litigated:
+
+- **2026-09-10 · A12** — **The tile's "was X" indicator keeps today's behaviour: it appears
+  only after a correction made in the current session.** Answered by the human, against the
+  recommendation. So legacy drift between `comname` and `species_comname` stays invisible,
+  and this phase is a port rather than a behaviour change. The tile's primary label is still
+  the current species. **Note the reasoning that was offered and not accepted:** the drift
+  figure cited (*"roughly 50,000 production observations"*) comes from a migration comment
+  measured against production by somebody else — it is **not** verified here, and this
+  database holds six observations, so nobody working locally can see the effect either way.
+  Do not repeat that number as though this project had measured it.
+
+- **2026-09-10 · A11** — **The correction picker offers the observation's own species list,
+  with an explicit action to widen to the full catalogue.** Answered by the human. So an
+  off-list correction stays possible — which the contract already contemplates, *"after an
+  off-list correction `taxserial` and `species_id` name different organisms — deliberately,
+  and auditably"* — but it is a decision the reviewer makes knowingly rather than by
+  accident. This also answers the `Other` session type, which maps to no list
+  (`db/species-lists.js:19-21`): widening is how those observations get a picker at all.
+
+- **2026-09-10 · A10** — **(a) the rail carries `(key, label)` pairs; (b) the default species
+  is the most numerous under the rest of the question, from A6's facets; (c) a label is
+  qualified with its list only when the current question spans more than one list.** Answered
+  by the human, taking the recommendation on all three parts. (c) keeps the common
+  single-list page clean and is explicit exactly when a common name could stand for two
+  organisms.
 
 - **2026-09-10** — **`species_id` is `species.id`**, the foreign-key naming and not a second
   key. Answered by the human after an earlier draft of this spec read it as a discrepancy.
