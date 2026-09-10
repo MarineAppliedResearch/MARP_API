@@ -35,9 +35,10 @@ decide something and no number exists, it says what to measure instead.
 
 - **The live development database, read only.** Queried through `information_schema` and
   `pg_catalog` for the `keyframes` and `observations` column lists and the seeded permission
-  keys. It holds **0 observations, 0 keyframes, 0 sessions and 0 projects** — the pipeline
-  exists and has never been run. So this phase's *correctness* is specifiable now and its
-  *throughput* is not, and nothing below is benchmarked. Same agreed basis as #99, #103, #105
+  keys. **Superseded on 2026-09-09 — see *What the first real run changed* below.** It held
+  **0 observations, 0 keyframes, 0 sessions and 0 projects** when this spec was written; the
+  pipeline has since been run. Throughput is still not benchmarked and nothing below is
+  benchmarked. Same agreed basis as #99, #103, #105
   and #106.
 - **The repository's files**, in this repository and three others: `MARP_API`,
   `VIDEO_PROCESSING_GUI`, `marp-inference-worker` and the mosaic client under
@@ -125,9 +126,13 @@ several of these are the reason a recommendation is what it is rather than the o
   `migrations/20260909120500-record-which-job-wrote-an-observation.js` added it as *"the video
   reference the settled design puts on the observation rather than on the session"*, nullable,
   **nothing backfilled** — *"no observation in MARP was written by a GPU job, and no existing
-  row has a Jellyfin item recorded anywhere to backfill from."* So a machine-written
-  observation names its video exactly, and the ~440,000 legacy rows name it only as a
-  filename in `video_source`.
+  row has a Jellyfin item recorded anywhere to backfill from."*
+  **Do not read this as "the proper key, which legacy rows lack."** It is provenance. The
+  worker contract is explicit (`jobs/job_spec.py`, `VideoRef`): the item id is *"opaque
+  provenance… never resolved, parsed or acted on."* **`video_source` is how a video is named
+  in MARP**, it is populated on every row including the six the pipeline just wrote, and it is
+  what resolution goes through. Corrected by the human on 2026-09-09 after A8 was written the
+  other way round.
 - **F8 — the API can resolve a filename to a video on its own.**
   `repository/jellyfin.repository.js:1276` is
   `resolveVideoSource(videoSource, minScore = 60, clientIdentity)`, scoring candidates with
@@ -421,12 +426,119 @@ Numbered so a test can cite one.
   reviewer wait behind a PREPARING tile, which Phase 1 already draws, and never produces a
   state the client has no rendering for.
 
+- **R20** — **The concurrency ceiling is measured, not assumed.** A8's 3 is a starting value,
+  and the phase ships a check that establishes what the development Jellyfin actually
+  sustains: extraction throughput and error rate at 1, 3 and 6 concurrent streams over one
+  real video, recorded as numbers. Required because every other number in this phase is
+  derived from *"five or six"*, which is an estimate nobody has tested. Runs against the
+  development Jellyfin only, on demand rather than in CI, and never against the live service.
+
+- **R21** — **The frame rate is read, never assumed.** The extractor ffprobes the source's real
+  rate and converts `framenum` to a seek time with it. On a rate that disagrees with the 25 fps
+  `db/timecode.js` used to derive `observation_frame`, the extraction is **recorded as a
+  failure with the two rates in `last_error`** — not warned about and continued. F38: this
+  footage is 25.000 so the bug cannot appear here, and on any other footage it silently seeks
+  to the wrong moment and produces a confident picture of the wrong thing. Added at the
+  human's direction, 2026-09-09: *"we don't want to assume it's gonna be 25 FPS all the time."*
+
+- **R22** — **Clamping is proven by a unit test, not by a run.** F37: no real extraction so far
+  has produced an out-of-frame box, so R7's clamp is unexercised. A test constructs boxes that
+  overhang each edge and both corners and asserts the intersection, because the only evidence
+  that path works will be a test until real data happens to contain one.
+
+### The control surface
+
+Added at the human's direction, 2026-09-09: *"maybe we'll need API endpoints so we could query
+the service, and we could run the service and pause the service and stop the service."*
+Extraction is background work against a shared, rate-limited media server, so an operator needs
+to be able to see it and stop it without restarting the API.
+
+- **R23** — **Status is queryable.** One endpoint reports what the extractor is doing: run
+  state, how many are `queued`, `ready`, `failed` and `permanent`, how many are in flight
+  against the configured limit, and the last error. This is what makes A7's constant tunable
+  by observation rather than by guess, and it is what R20's measurement reads.
+
+- **R24** — **Pause, resume and stop are distinct, and each says what happens to work already
+  running.** `pause` stops *starting* new extractions and lets in-flight ones finish, because
+  killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for. `resume` starts
+  taking work again. `stop` is pause plus discarding the queue — the rows return to being
+  simply absent, which under A3 means the next page view re-enqueues them, so nothing is lost
+  and no fourth state is needed.
+
+- **R25** — **The run state is persisted, not in-memory.** A service paused because Jellyfin
+  was struggling must still be paused after an API restart, or the pause silently expires at
+  the worst moment. It lives in the database with the rest of the phase's state.
+
+- **R26** — **Reading status is `observations:read`; changing the run state is `admin`.** No new
+  permission keys, per #68 Phase 2 — both already exist in the 27-key catalogue. The split is
+  the point: a reviewer legitimately wants to know whether their pictures are coming, but
+  pausing extraction affects everyone using the mosaic and throttles a shared media server,
+  which is not a reviewer's decision. This does not disturb A10, which governs what *causes*
+  extraction rather than what controls it.
+
+## What the first real run changed
+
+On 2026-09-09 the GPU pipeline ran end to end for the first time (job 132, session 142,
+`marp-inference-worker` on this machine, Jellyfin item `4ac4749a…`, frames `[18000, 18300)`).
+It wrote **6 observations and 78 keyframes**. Four things below were written against an empty
+database and are now measurable, so they are restated as measurements rather than left as
+assumptions.
+
+- **F30 · No observation has a keyframe at its own frame.** **0 of 6**, not the fixture's 4 of
+  6. `absoluteFrame(parseTimeSpan(mediaPosition))` never coincides with a `framenum`. So A4 is
+  not an edge case to handle, it is the only case.
+- **F31 · But every observation's frame falls *inside* its keyframe span.** **6 of 6.** Each
+  has a keyframe before and a keyframe after the counted moment, so a box at the observation
+  frame is always **interpolatable** on this data and the fallback would not have fired once.
+  This is what makes the answer to A4 buildable rather than aspirational.
+- **F32 · The stored box is already padded, and not by us.** The worker's
+  `_apply_directional_pad` (`reduction/keyframes.py`) widens every box by local track
+  velocity before it is ever written — faster motion, more padding, biased along the direction
+  of travel. **A5's padding recommendation therefore pads an already-padded box.** Whatever
+  fraction is chosen, it is a second application, and that has to be a stated choice rather
+  than an accident.
+- **F33 · `keyframes.confidence` is NULL on all 78 rows.** The reduction emits no per-keyframe
+  score; the ingest maps it correctly when present
+  (`service/observation-ingest.service.js:772`). So **A4 option (iv), highest-confidence
+  keyframe, is not available** for machine-written observations and cannot be chosen without
+  the worker change first. Tracked as `MarineAppliedResearch/marp-inference-worker#9`.
+
+Measured box areas, as a fraction of the frame: **0.49% to 4.09%, median ≈ 0.85%** — the same
+order as the fixture's 1.29%, so A5's sizing arithmetic still stands.
+
+### What the geometry spike established (`scripts/thumbnail-spike.js`, 2026-09-09)
+
+Six real frames pulled from the real video and cropped, then looked at. Source is
+**1920 × 1080, h264, 25.000 fps exactly**, so `db/timecode.js`'s assumed 25 is right *for this
+footage*.
+
+- **F34 · F1 is confirmed by eye, not only by inference.** `obs-4-control.jpg` draws the box
+  both ways: the centre-origin box sits on the animal, the top-left box is shifted half a box
+  right and down, runs off the frame edge, and contains bare rubble. **Centre-origin stands.**
+- **F35 · 320 × 320 is already upsampling, and this answers the open half of A5.** Five of the
+  six crops are *smaller than 320 px at source* — 127, 210, 213, 271, 298 — and only the
+  largest (415) is downscaled. **Raising the output to 512 would buy nothing**: the limit is
+  the detection's size at 1920 × 1080, not the tile. 320 is kept, now on a measurement rather
+  than on an estimate of storage.
+- **F36 · Every frame landed exactly.** `showinfo` `pts_time` read back for all six: **delta 0**.
+  One ffprobe plus one ffmpeg, six frames from one stream in **1.5 s** — A7's batching
+  recommendation, demonstrated rather than assumed.
+- **F37 · The clamp path is written but untested.** After a defect in the spike's own
+  clamp-detection was fixed, **0 of 6 boxes clamped** — every one sat well inside the frame.
+  F3 says out-of-frame boxes exist in the wider fixture, so **R7's clamping must be proven by
+  a unit test**, because no real extraction so far has exercised it. Do not read "0 of 6
+  clamped" as "clamping works."
+- **F38 · The 25 fps assumption is load-bearing at the seek.** `framenum → seek time` uses 25
+  because `absoluteFrame` produced the number that way. This footage is 25.000 so it did not
+  bite; on any other rate it silently seeks to the wrong moment. The extractor must ffprobe the
+  real rate and refuse, or record a failure, on a mismatch — not warn and continue.
+
 ## Open assumptions
 
 Ten, and each one changes the schema, the contract, the data or where the work runs. **Every
 recommendation below is a recommendation. Nothing is implemented while one is open.**
 
-- [ ] **A1 · architectural · blocking** — **Where does extraction run?** The whole spec above
+- [x] **A1 · architectural · blocking** — **Where does extraction run?** The whole spec above
   assumes the answer. **Recommendation: in the API**, with worker-at-inference-time named as
   the eventual optimisation for machine-written observations and not built now. The reasoning
   is in *Where extraction runs* above and rests on F22–F28: the ceiling is Jellyfin's and does
@@ -444,7 +556,7 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   recommendation*, an ffmpeg binary not being allowed on that host, or a whole-corpus backlog
   becoming a requirement.
 
-- [ ] **A2 · database/schema · blocking** — **A table or columns on `observations`, and what
+- [x] **A2 · database/schema · blocking** — **A table or columns on `observations`, and what
   the states are.** **Recommendation: a table, `observation_thumbnails`, one row per
   observation, with `queued | ready | failed` plus a `permanent` flag.** Two findings decide
   the table on their own: `updatedAt` is a mosaic **sort field** (F17), so thumbnail writes
@@ -460,7 +572,7 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   `updatedAt` and `version` by hand, for ever, with nothing checking that it did. **I would
   not choose it.**
 
-- [ ] **A3 · product/UI · blocking** — **What does the absence of a thumbnail row report, and
+- [x] **A3 · product/UI · blocking** — **What does the absence of a thumbnail row report, and
   does serving a mosaic page enqueue the pictures it is missing?** These are one question
   because the answer to the first is only honest if the second is yes.
   **Recommendation: serving a page enqueues its missing thumbnails, and absence reports
@@ -479,8 +591,8 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   explicit client call to request a page's thumbnails. Honest, no side effect, and it costs a
   client change plus a tile rendering that does not exist.
 
-- [ ] **A4 · scientific or data-meaning · blocking** — **Which keyframe does the picture come
-  from?** F5 is the problem: **4 of 6** fixture observations have no keyframe at their own
+- [x] **A4 · scientific or data-meaning · blocking** — **Which keyframe does the picture come
+  from?** *Answered, and the answer is none of the four below — see Decisions.* F5 is the problem: **4 of 6** fixture observations have no keyframe at their own
   `observation_frame`, so *the frame the observation was counted at* and *a frame that has a
   box* are different frames. Four candidates, all defensible:
   (i) the keyframe **nearest the observation's absolute frame**, computable with
@@ -504,7 +616,7 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   worker keys its lists `observation_id_subset`). If a legacy observation has more than one
   subset, which one is the picture from?
 
-- [ ] **A5 · product/UI · blocking** — **How much padding, and what size is the output?**
+- [x] **A5 · product/UI · blocking** — **How much padding, and what size is the output?**
   Both follow from the box being normalised, and neither has a default that is obviously
   right. The measured facts: the median fixture box is **1.29% of the frame — 235 × 108 px at
   1920 × 1080** — with a minimum of **87 × 71** (F4); the tile is **square with `object-fit:
@@ -523,7 +635,7 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   about how much context around an animal helps identification, and 512 may simply be what you
   want because the reviewer sometimes enlarges a tile.
 
-- [ ] **A6 · API contract · blocking** — **Does the mosaic row gain `thumbnail_status` only,
+- [x] **A6 · API contract · blocking** — **Does the mosaic row gain `thumbnail_status` only,
   or `thumb` as well?** #68's schema audit lists both as this phase's. Per this repository's
   own rule — *"a requirement taken from #68 is checked with the human, not inherited"* — it is
   cited and asked rather than inherited, and the citation cuts against it: the fixture's
@@ -538,7 +650,7 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   **What it costs:** it is a change to a merged contract, `docs/openapi.generated.json` has to
   be rebuilt, and it joins the list of Phase 8 client changes.
 
-- [ ] **A7 · performance/concurrency · blocking** — **What share of Jellyfin's five or six
+- [x] **A7 · performance/concurrency · blocking** — **What share of Jellyfin's five or six
   concurrent streams may extraction take?** The ceiling is shared with people: a reviewer
   watching a clip and the annotation GUI are streams too, so extraction taking all of it means
   a reviewer's video stalls while their own thumbnails are made.
@@ -556,24 +668,44 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   lower it. That is the observation to watch for, and it is the reason the number is one
   constant in one file.
 
-- [ ] **A8 · behavioural · blocking** — **Do the ~440,000 legacy observations get thumbnails
-  at all, and may a fuzzy match decide which video a scientific record's picture comes from?**
-  Legacy rows carry no `jellyfin_item_id` (F7); the only route to their video is
-  `resolveVideoSource`, whose default `minScore` of 60 admits matches well below the 96–100
-  an exact filename scores (F8). A wrong match produces a **confident, plausible picture of
-  the wrong dive** — which a reviewer would read as a bad detection and might delete.
-  **Recommendation: yes, legacy rows are in scope — that is most of the corpus and the
-  mosaic is largely useless without them — but only on a high-confidence match.** Require a
-  score at or above the exact-match band (96) to extract; anything below is recorded as a
-  permanent failure with the score in `last_error`, so the misses are countable and a human
-  can decide later whether to lower the bar.
-  **What it costs:** an unknown fraction of legacy rows will never get a picture, and nobody
-  can say what fraction until it is run — the database holds no observations to try it on.
-  **This is yours because it is about the scientific record**, not about code: a picture
-  attached to the wrong video is a worse outcome than no picture, and only you can say by how
-  much.
+- [x] **A8 · behavioural · blocking** — **What match score is good enough to attach a picture
+  to a scientific record?**
 
-- [ ] **A9 · environment · blocking** — **Where does ffmpeg come from?** The API has `sharp`
+  **This assumption was originally written on a false premise and has been rewritten.** It
+  framed video lookup as happening by `jellyfin_item_id`, with legacy rows as the deficient
+  case that must fall back to a filename match. That is backwards, and the human corrected it:
+  *"we're not supposed to be looking things up by jellyfin id."* Recorded here rather than
+  quietly fixed, because the wrong framing produced a wrong question.
+
+  **What is actually true, checked:** `observations.video_source` holds the filename and is
+  populated on every row — the six the pipeline just wrote all carry
+  `20240730_171520_Fwd.mp4`. `jellyfin_item_id` is nullable and is **provenance**, not a key.
+  The worker contract says so in as many words (`jobs/job_spec.py`, `VideoRef`): *"Opaque
+  provenance, optional. Echoed into the observation output exactly as received and never
+  resolved, parsed or acted on."* Jellyfin is one video server, and its internal item id is
+  not MARP's identifier for a video.
+
+  **So there is no legacy special case.** `video_source` → a playable stream is the same
+  operation for every observation ever recorded, and it goes through `VideoSourceResolver`,
+  which normalises the differences that actually occur — `20240727_185645 Fwd.mp4` in the
+  database against `20240727_185645_Fwd` as the item name, spaces versus underscores, with or
+  without the extension. An exact filename scores **96–100**; the resolver's default
+  `minScore` is **60**.
+
+  **The one real question, which applies to the whole corpus and not to a subset:** what score
+  is high enough. A match at 60 can produce a **confident, plausible picture of the wrong
+  dive**, which a reviewer would read as a bad detection and might delete — so the failure
+  mode is silent corruption of the review, not a missing tile.
+  **Recommendation: require the exact-match band, 96 or above.** Anything lower is recorded as
+  a permanent failure with the score in `last_error`, so the misses are countable and the bar
+  can be lowered later against evidence rather than guessed at now.
+  **What it costs:** an unknown fraction of rows never get a picture, and nobody can say what
+  fraction until it is run against a real corpus — six observations over one video is not a
+  sample.
+  **This is yours because it is about the scientific record**, not about code: a picture
+  attached to the wrong video is worse than no picture, and only you can say by how much.
+
+- [x] **A9 · environment · blocking** — **Where does ffmpeg come from?** The API has `sharp`
   and no video decoder (F22), and adding a dependency is *ask first* under the harness's
   permissions. Three ways: a bundled npm package (`ffmpeg-static`, ~80 MB per platform, no
   system install, pinned version); a system binary the deployment must provide, invoked by
@@ -589,7 +721,7 @@ recommendation below is a recommendation. Nothing is implemented while one is op
   and is the friendlier choice for the workspace — at the price of a new ~80 MB dependency in
   the API. If you would rather the workspace just work, say so and it is that instead.
 
-- [ ] **A10 · security/permissions · blocking** — **Which permission causes extraction work to
+- [x] **A10 · security/permissions · blocking** — **Which permission causes extraction work to
   happen?** #68 settled that this phase seeds no new keys, and serving bytes is plainly
   `observations:read`. But *causing* MARP to open streams against Jellyfin is a different act
   from reading a row, and under A3's recommendation an `observations:read` page fetch would do
@@ -625,6 +757,102 @@ recommendation below is a recommendation. Nothing is implemented while one is op
 
 Nothing is decided until the assumptions above are answered. These are the ones already
 settled elsewhere that this spec is recording so they are not re-litigated.
+
+- **2026-09-09 · A2** — **A table, `observation_thumbnails`, but a smaller one than proposed.**
+  The human challenged the premise: *"Why would the thumbnail state have to live anywhere? The
+  thumbnail is a file. If the file doesn't serve, then we know that its state isn't there."*
+  That is right about `ready`, and it shrinks the design — **readiness is not stored, the file
+  is the truth for the bytes.** What the filesystem cannot express is the negative space, and
+  three things force a row anyway:
+  **(1)** absence cannot distinguish *not made yet* from *tried and failed* from *can never be
+  made*, and F6 proves the third exists — an observation with no keyframes has no box and can
+  never have a picture. **(2)** Under A3 a page fetch enqueues whatever is missing, so without
+  a record of permanence a hopeless observation is re-enqueued on every page view, for ever,
+  against the media server A7 exists to protect. **(3)** A8 requires the match score to be
+  written to `last_error` so misses are countable; a file's absence records no score.
+  **The precedent is already in this repository**: species pictures are a row indexing a file,
+  and `routes/species.routes.js` handles the disagreement explicitly — *"the row can outlive
+  the file if storage is restored separately from the database"* — answering 404 rather than
+  throwing. Follow that split exactly. It also matters for #120: if storage ever moves behind
+  a network, per-tile `existsSync` in the mosaic query stops being cheap.
+  Rejected on the human's reasoning, not merely unchosen: columns on `observations`, because
+  `updatedAt` is a mosaic sort field and `version` is the commit concurrency token.
+
+- **2026-09-09 · A6** — **`thumbnail_status` only.** Delegated by the human: *"you're getting
+  kind of into an implementation level I haven't dived into… I don't know."* Taken as
+  recommended. The address is derivable from a key the row already carries, so a second field
+  would be a URL repeated 45 times a page. The key is **moved into** the row-shape snapshot
+  test's list, never appended by loosening it.
+
+- **2026-09-09 · A7** — **3 concurrent extractions to begin with, and the ceiling gets
+  measured.** Answered by the human: *"let's say three to begin with. But it might not be a
+  bad idea to put a test in there to see what's actually possible."* The measurement is not
+  optional and is written up as **R20** — the *"five or six"* figure every other number here
+  derives from is an estimate nobody has tested. Batching by video stands as recommended.
+
+- **2026-09-09 · A10** — **`observations:read` for both, bounded by A7's constant.** Delegated
+  by the human: *"just make the decision."* Taken as recommended. The counter-argument is
+  recorded rather than dismissed: a script walking every page of a 440,000-row mosaic would
+  enqueue the whole corpus, and the rate limit rather than the permission is what stops that
+  hurting. Revisit if it ever does.
+
+- **2026-09-09 · A8** — **A video match must score 96 or above to attach a picture.**
+  Answered by the human, taking the recommendation. Anything below the exact-match band is
+  recorded as a permanent failure with the score in `last_error`, so the misses are countable
+  and the threshold can be lowered later against evidence. Applies to every observation, not
+  to a legacy subset — see the rewritten A8 and the correction to F7.
+
+- **2026-09-09 · A3** — **Serving a mosaic page enqueues its missing thumbnails, and absence
+  reports `queued`.** Answered by the human, taking the recommendation. The costs stand as
+  written and are accepted: `POST /api/mosaic/observations/pages` is `observations:read` and
+  acquires a side effect, and #99's prefetcher means one reviewer's navigation can enqueue up
+  to three pages at once. A7's constant is what bounds it.
+
+- **2026-09-09 · A5** — **Pad by 10% of the box on each side**, then expand to square, clamp,
+  and resize. Answered by the human after F32: the stored box is *already* velocity-padded by
+  the worker, so this is a second, deliberate application — modest rather than the 20% the
+  spec recommended before that was known. 10% also hedges the legacy and hand-drawn boxes,
+  which carry no velocity padding and would otherwise crop tighter than machine-written ones.
+  **Output size is taken as the recommendation, 320 × 320 JPEG**, and is not something the
+  human was asked to adjudicate — it is re-derivable (R10) and reversible. Say so and it is
+  512.
+
+- **2026-09-09 · A9** — **ffmpeg is a system binary, located through configuration.** Answered
+  by the human, taking the recommendation. The API refuses to start the extractor, and reports
+  why, when it is absent. Accepted cost: a new deployment prerequisite on the production VM
+  and on every developer machine, and `marp doctor` should learn to check for it.
+
+- **2026-09-09 · A1** — **Extraction runs in the API.** Answered by the human: *"for now, let's
+  skip the idea of having the GPU do it. We might do that later."* So the recommendation
+  stands, and worker-side extraction is explicitly deferred rather than rejected.
+
+- **2026-09-09 · A4** — **The picture comes from the frame at the observation's own time, with
+  the box interpolated between the two surrounding keyframes.** Answered by the human: *"we
+  want to use a frame at the observation time even if it's not a key frame, because we can
+  extrapolate where the frames are in between key frames."*
+  **This is not one of the four candidates the assumption listed** — all four picked an
+  existing keyframe, and the answer is to extract a frame that is not a keyframe at all and
+  compute its box. The four are superseded, not chosen between.
+  **The stated fallback:** *"if that's too hard at the moment, if we haven't got the code in
+  there to linear extrapolate where it is, then just use the largest keyframe."* So the
+  fallback is A4 option (iii), box area, and **not** option (iv) — which F33 has made
+  unavailable anyway.
+  F30 and F31 say what this costs: interpolation is the only path (0 of 6 have an exact
+  keyframe) and it is always available (6 of 6 fall inside their span), so on machine-written
+  data the fallback is dead code that still has to exist for legacy rows.
+  **The second part of A4, answered 2026-09-09:** *"if it has more than one subset it should
+  always be the subset first, subsets are labeled by number starting at 0."* So **the subset is
+  chosen before the box, and nothing about the box can change it** — not bracketing, not area.
+  An implementation that asked every subset and preferred whichever bracketed the counted
+  frame was written first and has been removed: it let a picture come from a track nobody
+  chose. `subset` is a `varchar`, so the labels are ordered **as numbers** — a string sort puts
+  `"10"` before `"2"` — with a non-numeric label sorting after every numeric one rather than
+  throwing.
+  **Noted, not resolved:** the ingest defaults a machine-written keyframe's subset to `'1'`
+  (`service/observation-ingest.service.js:760`, *"the '1' every reduction in the live script
+  writes"*), while the human states the numbering starts at 0. Nothing in this phase depends
+  on which is right — "the first subset" is well defined either way — but the two statements
+  disagree and somebody should reconcile them.
 
 - **2026-09-09** — The keyframe box values are **normalised**, fractions of the frame.
   Answered by the human. Not derived here.
