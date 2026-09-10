@@ -433,3 +433,69 @@ $ npm run docs:build
   because the answer is "a new row appears", which is the accepted consequence rather than
   behaviour worth locking in.
 
+
+## Results — A15, the coordinator resolves the video, against a live worker
+
+Run 9 Sep 2026. Every A15 test above stubs Jellyfin, because CI cannot reach a media server.
+This is the half those tests cannot cover: MARP resolving a real Jellyfin item for a real
+worker that has no media credential of its own.
+
+Worker 65 was started with **only** `MARP_WORKER_TOKEN` and `MARP_COORDINATOR_URL` in its
+environment — no `JELLYFIN_*` variables at all. Confirmed on its `/status` before submitting.
+
+### An item id in, a playable url out
+
+Job submitted with `video: { jellyfin_item_id: "4ac4749aae0a8d75ac99f2d8d50717ce" }` and
+nothing else — no `url`, no `source_name`.
+
+- **The stored job row kept exactly what was submitted**, one key, as asserted by
+  `keeps the stored spec as it was submitted`.
+- The worker then opened the video and reported
+  `opened video 1920x1080 at 25.000 fps, container reports 36159 frames`, so the url MARP
+  minted at lease time was genuinely playable rather than merely well-formed.
+- **`source_name` was filled by the coordinator** from the Jellyfin item and reached the
+  worker's output as `video_source: 20240730_171520_Fwd.mp4`.
+- `jellyfin_item_id` travelled through unchanged, and the worker never resolved it — it has
+  no code left that could.
+
+That closes the gap this file records under *Requirements with no test* for the live half of
+A15. The stubbed tests prove the branching; this proves the url works.
+
+### Cancel, delivered through a heartbeat and nowhere else
+
+Job 1258, 6,000 frames, cancelled at 18:13:06 with the attempt at 240/6000. The job went
+`cancelled` on the spot; attempt 949 was still `running` eight seconds later and reported
+itself `cancelled` at 18:13:24 with 390/6000 done.
+
+**18 seconds on a 10-second heartbeat.** Two intervals, not one: one to deliver the action and
+one for the worker's wind-down and terminal report. `MARP_API#104` describes cancellation as
+taking "up to one heartbeat interval" — that is measurably optimistic, and a dashboard should
+show the attempt's own state rather than promise a duration.
+
+### Expiry on the coordinator's clock
+
+Job 1259. The worker was killed outright at 18:14:21 at 150/6000, with no final report.
+
+```
+18:14:33 .. 18:15:14   attempt 950 still reads running   (inside the lease)
+18:15:26               attempt 950 -> abandoned
+                       "Lease expired: no heartbeat before lease_expires_at."
+                       job 1259 -> queued, re-leasable
+```
+
+**65 seconds**: the 60-second lease plus the read that swept it. Worth stating plainly for the
+dashboard — **expiry is only noticed when something asks.** With no worker polling and nobody
+reading, a dead machine's job keeps reading `running` indefinitely. The sweep now runs on
+`POST /gpu/poll`, `GET /gpu/jobs`, `GET /gpu/workers` and `GET /gpu/jobs/:id`.
+
+### Still not covered by anything
+
+- **A resolution failure against the real server.** Every failure path here is stubbed. A real
+  Jellyfin outage during a poll would fail the attempt and spend one of its three, which is
+  the sharp edge recorded in the judgement calls above.
+- **A transcoded item.** This one direct-plays. A transcoded stream's frame count may not
+  match its source, and nothing here or in the worker measures that.
+- **The ingest.** A finished job produces a hashed artifact and nothing parses it into
+  `observations`. The contract is settled in `.marp/task.md` at A16, A17 and A18; the code does
+  not exist. This run left a real six-observation JSONL in `artifacts` for it to be built
+  against.
