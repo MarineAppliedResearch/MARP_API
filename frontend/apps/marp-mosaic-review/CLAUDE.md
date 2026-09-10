@@ -39,8 +39,9 @@ lets a reviewer return to a page and see, and undo, what they submitted. The
 query-derived decision is about *reload* — on a fresh load the filters apply normally and
 finished work is expected to have left the view. Do not remove the pin.
 
-Nothing in this app talks to MARP_API yet, and no review or training column exists in
-the database. `src/data.js` is the seam where that arrives, in phase 8.
+**The app talks to MARP_API.** `src/api/` is the seam; `src/data.js` survives as a
+**test** fixture and nothing else. Which backing is in force is `src/backend.js`, and the
+application never points it at the fixture — see *The two backings* below.
 
 ### How this app is worked on
 
@@ -67,9 +68,10 @@ more effective at finding defects than the suite, so:
 ## The layers, and which way they point
 
 ```
-ui/  ──calls──▶  store.js  ──asks──▶  model/     (pure rules)
+ui/  ──calls──▶  store.js  ──asks──▶  model/       (pure rules)
                     │
-                    └────asks──▶  data.js        (the only backend knowledge)
+                    └────asks──▶  backend.js  ──▶  api/     (the real thing)
+                                       └────────▶  data.js  (the fixture, tests only)
 ```
 
 Dependencies point one way only. Nothing lower ever imports something higher.
@@ -77,8 +79,9 @@ Dependencies point one way only. Nothing lower ever imports something higher.
 | Layer | May touch | Must never touch |
 | --- | --- | --- |
 | `model/` | its own arguments | the DOM, the network, `state` |
-| `data.js` | the fixture, later `fetch` | the DOM, `state`, `model/` |
-| `store.js` | `model/`, `data.js`, `state` | the DOM |
+| `api/` | `fetch`, a URL, a header, a status | the DOM, `state` |
+| `data.js` | the fixture | the DOM, `state` |
+| `store.js` | `model/`, `backend.js`, `state` | the DOM, a URL, a status |
 | `ui/` | `state`, `actions`, the DOM | `state` **as a writable thing** |
 
 **`model/` touches neither the DOM nor the network.** That is what makes the rules
@@ -91,12 +94,57 @@ and its test belongs in `tests/unit/`.
 `state.anything` has broken the one rule that keeps rendering predictable. Call an
 action instead.
 
-**`data.js` is the only file that knows where observations come from.** Everything else
-goes through `MarpData.query()`, `commitPage()`, `setSpecies()` and friends, which
-already return the shapes the API is expected to return — including the per-observation
-`reviewed` / `flagged` / `skipped` / `reverted` results that bulk operations require.
-Phase 8 of #68 replaces this file with `src/api/` and claims that nothing above it
-changes. Every rule that leaks upward out of this file makes that claim less true.
+**`src/api/` is the only place that knows a URL, a header, an HTTP status or a JSON body
+shape.** `grep -nE "/api/|fetch\(" src/` outside `src/api/` finds nothing, and that is a
+requirement rather than tidiness — it is what let the fixture be swapped for the endpoint
+without rewriting the interface.
+
+### The two backings
+
+`src/backend.js` holds one of them, and the **selection is per entry point, never a
+runtime flag the application can be subject to**:
+
+- **`index.html` imports the store and nothing else**, so the app is on `src/api/` however
+  it is launched. It has no reference to the fixture to reach for.
+- **`tests.html`** — the contract tier — installs the fixture explicitly. Those checks are
+  about the *rules* and they drive `failNextCommit`, `slowNextCommit`, `breakThumbnails`,
+  `bumpVersion` and `reload`; none of that is expressible against a real server.
+- **the unit tier** imports `src/data.js` directly, as it always has.
+
+There is **one exception and it is deliberately loud**: `?backing=fixture` puts the app on
+the fixture, paints a permanent `FIXTURE — not the API` banner, and stamps
+`documentElement.dataset.backing`. The render tier passes it — it has no seeded database to
+run against yet — and asserts the banner, so a run cannot grade the fixture while claiming
+to be the API. Both come out when that database lands.
+
+The cost of two backings is that they can drift, and the answer is that **they present the
+same method set**: `backend.js` writes the list out rather than proxying, so a method one
+of them lacks fails by name.
+
+### Two names for a species, and they are not interchangeable
+
+`model/row.js` is the whole rule and it is worth reading before touching a caption:
+
+- **`comname`** is the label the species list entry carried **when the annotator chose
+  it**. A correction never rewrites it. Keeping it frozen is what makes the drift from
+  `species_id` auditable rather than silently tidied away.
+- **`species_comname`** is the **current** catalogue name of whatever `species_id` now
+  points at.
+
+So drawing `comname` shows the old animal for ever on any corrected observation, while the
+species *filter* — which is `species_id` — matches the new one. The tile draws
+`currentSpeciesName(row)`. The "was X" chip draws `state.changed`, and **only a correction
+made in this session**: making legacy drift visible is a behaviour change rather than a
+port, and that was decided against.
+
+### The row's neutral state is null
+
+`review_decision` and `training_decision` carry `null` for "nobody has decided" — the
+absence of a projection row. The **filter** vocabulary still spells that `'unreviewed'` and
+`'undecided'`, because that is what the endpoint's filters take and what the rail's counts
+are keyed by. `STATUS_DIMENSIONS` declares both and `dimensionState` is the one place they
+are reconciled. Comparing a filter value against a row column directly is the mistake, and
+it passed for months because the fixture invented a string for the neutral state.
 
 ## How a gesture becomes a render
 
@@ -292,10 +340,25 @@ mode's display of it, and the next query reads the record back.
 Overlapping queries land out of order otherwise, and the screen shows an older result
 than the one that was asked for last.
 
-**A committed page keeps its membership.** `state.pinnedIds` holds the exact ids that
-were on screen, and `refresh()` fetches those by id rather than re-running the filter.
-Returning to a page must show what was submitted, not whatever the filter now matches.
-This is why `data.js` has `byIds()` at all.
+**A committed page keeps its membership, and it costs no request.** `state.pageMembers`
+holds the exact ids that were on screen and `refresh()` serves them from the cache —
+`cache.rowsFor(ids)`, and `evict` never gives up a row a pinned page needs. Returning to a
+page must show what was submitted, not whatever the filter now matches.
+
+There is **no by-ids endpoint and there does not need to be**: the design asked for one and
+the capability already existed. If the cache ever cannot serve a pinned page the pin is
+dropped, a named action fires, and the ordinary query runs — better than an empty grid, and
+visible rather than silent.
+
+**A retry cannot conjure a picture.** The retry endpoint answers `queued` and never a
+synchronous `ready`; what turns a queued tile into a picture is the poll, which re-reads
+the visible page on a backoff and notifies **once per round**. A permanent failure is
+refused rather than re-queued, and the client learns `permanent` from the retry *answer* —
+never from a row, which has never carried it.
+
+**A conflict is not a refusal for being second.** The last commit wins, always. `conflicted`
+fires only where a row moved *underneath the page the reviewer was looking at*; nothing was
+written, the marks are kept, and the page offers to re-read.
 
 **A committed page is not finished.** The reviewer can take a flag back and commit
 again. Anything that treats a commit as terminal — clearing marks, locking tiles,
@@ -420,9 +483,17 @@ choosing the wrong one is how bugs ship.
 | Tier | Command | Catches | Cannot catch |
 | --- | --- | --- | --- |
 | Parse | `npm run lint` | a file that will not parse | anything else |
-| Unit | `npm run test:unit` | the rules in `model/` — per mode, per commit | anything rendered |
+| Unit | `npm run test:unit` | the rules in `model/`, and **what reaches the wire** | anything rendered |
 | Contract | part of `test:e2e` | store behaviour against the requirements in #68, by name | whether it was drawn |
 | Render | `npm run test:e2e` | badges actually drawn, panels on-screen, colours, no console errors | meaning |
+
+**`tests/unit/api-requests.test.mjs` is the tier that can see a serialisation defect**, and
+every assertion in it goes through `JSON.parse(JSON.stringify(body))`. That is not
+pedantry: `JSON.stringify(new Set([1,2,3]))` is `{}` and `JSON.stringify(new Map(...))` is
+`{}` too, so `deepEqual` on the request *object* passes while the wire carries nothing.
+An exclusion set left this client as an empty object for months — the endpoint excluded
+nothing, every committed page came back among the pages still to do, and the arithmetic on
+screen stayed plausible throughout. **Assert the serialised body, never the argument.**
 
 `npm test` runs all of them. `npm run test:unit` runs the parse check first.
 

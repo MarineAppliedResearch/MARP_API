@@ -8,6 +8,44 @@
  */
 import { test, expect } from '@playwright/test';
 
+/**
+ * Every navigation in this file asks for the **fixture** backing, and says so.
+ *
+ * The application itself runs against the API (A2): `src/backend.js` defaults to
+ * `src/api/` and `index.html` never points it anywhere else. This tier cannot yet —
+ * A15 settled that the seeded database a browser tier needs is **not built in this
+ * phase**, and the six real observations of one species in one dive cannot exercise
+ * paging, filtering or a second species.
+ *
+ * So the parameter is passed here, in **one place**, and the page makes the choice
+ * unmissable: it paints a permanent `FIXTURE — not the API` banner and stamps
+ * `documentElement.dataset.backing`, which the check below asserts. A2's objection to a
+ * runtime flag was that it is "how a render test comes to grade a fixture and report it
+ * as the API"; a flag the page announces and the tier asserts cannot do that silently.
+ *
+ * Both come out when the seeded database lands and this tier is repointed.
+ */
+const FIXTURE = 'backing=fixture';
+
+const withFixture = (url) => {
+  const [path, query = ''] = String(url).split('?');
+  return `${path}?${query ? `${query}&` : ''}${FIXTURE}`;
+};
+
+test.beforeEach(async ({ page }) => {
+  const go = page.goto.bind(page);
+  page.goto = (url, options) => go(withFixture(url), options);
+});
+
+test('this tier grades the fixture, and the page says so', async ({ page }) => {
+  /* The assertion that makes the arrangement above safe: if the parameter is ever
+     dropped, or the page stops honouring it, this fails rather than a hundred tests
+     quietly grading something else. */
+  await page.goto('./');
+  await expect(page.locator('#backingFlag')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-backing', 'fixture');
+});
+
 /** Wait for the first page of tiles, and for the grid to stop changing size. */
 async function ready(page) {
   await expect(page.locator('.tile').first()).toBeVisible();
@@ -345,7 +383,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     await page.goto('./');
     await ready(page);
 
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
     const tag = tile.locator('.rtag');
     await expect(tag).toBeVisible();
     await expect(tag).toContainText('EXCLUDED');
@@ -358,7 +396,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
   test('R1: a training promotion is drawn while reviewing science', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const tile = await tileCarrying(page, 'training_disposition', 'promoted');
+    const tile = await tileCarrying(page, 'training_decision', 'promoted');
     await expect(tile.locator('.rtag')).toContainText('PROMOTED');
     await expect(tile).not.toHaveClass(/has-promoted/);
   });
@@ -369,7 +407,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
     await ready(page);
 
-    const tile = await tileCarrying(page, 'review_status', 'reviewed');
+    const tile = await tileCarrying(page, 'review_decision', 'reviewed');
     const tag = tile.locator('.rtag');
     await expect(tag).toBeVisible();
     await expect(tag).toContainText('REVIEWED');
@@ -387,7 +425,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     /* Delete always read the scientific dimension — the training one is what was missing,
        and it is the sharpest case in #85: an observation already excluded from training
        looked untouched at the moment somebody was deciding whether to destroy it. */
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
     await expect(tile.locator('.rtag')).toContainText('EXCLUDED');
     expect(errors).toEqual([]);
   });
@@ -400,7 +438,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
       /* An undecided row, so training's own default filter still shows it afterwards. */
       const id = await page.evaluate(() => {
         const row = window.MARP.state.rows.find((r) => r.thumbnail_status === 'ready'
-          && r.training_disposition === 'undecided');
+          && r.training_decision == null);
         return row ? row.observation_id : null;
       });
       expect(id, 'the first page must hold a ready, undecided row').not.toBeNull();
@@ -432,7 +470,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     async ({ page }) => {
       await page.goto('./');
       await ready(page);
-      const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+      const tile = await tileCarrying(page, 'training_decision', 'excluded');
 
       /* Clicking the tag itself, which is the click most likely to be swallowed. */
       await tile.locator('.rtag').click();
@@ -447,7 +485,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
   test('R7: the tag stays inside the tile and clear of the caption', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
 
     const tileBox = await tile.boundingBox();
     const tagBox = await tile.locator('.rtag').boundingBox();
@@ -2409,10 +2447,10 @@ const expectedDefault = (page) => page.evaluate(async () => {
   const db = await res.json();
   const rows = db.observations.filter((r) => !r.deleted
     && r.comname === 'Bat Star'
-    && ['unreviewed', 'flagged'].includes(r.review_status));
+    && ['flagged', null].includes(r.review_decision));
   return {
     total: rows.length,
-    decided: rows.filter((r) => r.training_disposition !== 'undecided').length
+    decided: rows.filter((r) => r.training_decision != null).length
   };
 });
 
@@ -2512,7 +2550,7 @@ test.describe('every mode filters on both workflow statuses', () => {
       await expect(page.locator('.tile .rtag', { hasText: 'EXCLUDED' })).toHaveCount(tiles);
 
       const only = await page.evaluate(() =>
-        window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+        window.MARP.state.rows.every((r) => r.training_decision === 'excluded'));
       expect(only, 'the borrowed filter must actually narrow the query').toBe(true);
 
       /* Still Scientific: what a tap records is the mode's own, not the borrowed one. */
@@ -2527,7 +2565,7 @@ test.describe('every mode filters on both workflow statuses', () => {
     const got = await question(page);
     expect(got.trainingDisposition).toEqual(['excluded']);
     const only = await page.evaluate(() =>
-      window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+      window.MARP.state.rows.every((r) => r.training_decision === 'excluded'));
     expect(only).toBe(true);
 
     /* The app must not rewrite the address it was given into something else. */

@@ -107,6 +107,11 @@ const baseFor = (id) => baseIndex().get(baseIdOf(id)) || null;
 const overlay = new Map();            // virtual id -> a full row, copied on first write
 const overlaid = new Map();           // base id -> the replicas that have an overlay
 
+/* A version another reviewer moved, per virtual id, without touching the row this client
+   is holding. `bumpVersion` is the only thing that writes it and it exists so R9 -- the
+   `conflicted` outcome -- has a tier that can reach it. Empty in every other case. */
+const drift = new Map();
+
 /**
  * The row a virtual id names, as it would come back over the wire.
  *
@@ -232,6 +237,51 @@ function speciesListOf(row) {
   const entry = (db.species || []).find((s) => s.species_id === row.species_id);
   return (entry && entry.species_list) || null;
 }
+
+/**
+ * The thumbnail extractor, as far as the fixture is concerned.
+ *
+ * **Serving a page enqueues the thumbnails it is missing** -- that is the endpoint's own
+ * behaviour (#118's A3), and it is what makes the `queued` tile the client draws truthful.
+ * So the fixture does it too: a `queued` row is handed to a timer that turns it `ready`,
+ * exactly as a real extraction eventually would.
+ *
+ * Without this, `queued` was a **terminal** state against the fixture. That is not a
+ * theoretical tidiness point: once the retry stopped inventing a synchronous `ready`
+ * (F10), a broken tile stayed at PREPARING for ever, the store's poll ran its full eight
+ * rounds against it, and the render tier went from under a minute to ten. A fixture that
+ * cannot finish extracting is a fixture that cannot exercise the thing the poll exists for.
+ *
+ * `_permanent` rows are never resolved: retrying cannot help them, and neither can waiting.
+ */
+const EXTRACT_MS = 220;
+const extracting = new Set();
+
+function extractSoon(id) {
+  if (extracting.has(id)) return;
+  const base = baseFor(id);
+  if (!base) return;
+  const current = served(base, replicaOf(id));
+  if (current._permanent || current.thumbnail_status !== 'queued') return;
+
+  extracting.add(id);
+  setTimeout(() => {
+    extracting.delete(id);
+    const row = editable(id);
+    /* It may have moved on -- a reload, a scale change, a permanent failure recorded
+       since -- in which case the extraction is simply no longer wanted. */
+    if (row && row.thumbnail_status === 'queued' && !row._permanent) {
+      row.thumbnail_status = 'ready';
+    }
+  }, instant ? 0 : EXTRACT_MS);
+}
+
+/** Every queued row a page served, handed to the simulated extractor. */
+const enqueueMissing = (rows) => {
+  for (const row of rows) {
+    if (row.thumbnail_status === 'queued') extractSoon(row.observation_id);
+  }
+};
 
 /** The ids a caller wants suppressed, from whichever of the two places they arrived in. */
 function excludedIds(...sources) {
@@ -519,6 +569,7 @@ export const MarpData = {
     scaleFactor = next;
     overlay.clear();
     overlaid.clear();
+    drift.clear();
     return scaleFactor;
   },
 
@@ -633,9 +684,19 @@ export const MarpData = {
         const current = served(base, replicaOf(id));
 
         if (current._permanent) {
+          /**
+           * **`failed`, not whatever the row currently says.**
+           *
+           * The store paints the page `queued` optimistically before it asks -- that is
+           * paint one of the two -- and at scale 1 the served row *is* the fixture row, so
+           * echoing `current.thumbnail_status` would hand the client back its own guess.
+           * The endpoint has no such problem: a permanently failed row is stored `failed`
+           * and is never re-queued, so `failed` is what it answers. The client's optimistic
+           * paint is a guess the answer corrects, which is the whole point of paint two.
+           */
           return {
             observation_id: id,
-            status: current.thumbnail_status,
+            status: 'failed',
             permanent: true,
             reason: current._permanentReason
           };
@@ -646,6 +707,9 @@ export const MarpData = {
         }
 
         editable(id).thumbnail_status = 'queued';
+        /* Accepted work, so the simulated extractor picks it up -- which is what the
+           store's poll then observes. `queued` is not a terminal state. */
+        extractSoon(id);
         return { observation_id: id, status: 'queued', permanent: false, reason: null };
       })
     };
@@ -662,6 +726,7 @@ export const MarpData = {
     byId = null;
     overlay.clear();
     overlaid.clear();
+    drift.clear();
     return db;
   },
 
@@ -868,8 +933,11 @@ export const MarpData = {
 
     const total = plan.total;
     const start = (page - 1) * pageSize;
+    const rows = plan.slice(start, start + pageSize);
+    /* Serving a page enqueues what it is missing, the way the endpoint does. */
+    enqueueMissing(rows);
     return {
-      rows: plan.slice(start, start + pageSize), total,
+      rows, total,
       pageCount: Math.max(1, Math.ceil(total / pageSize)),
       page, pageSize,
       excludedForNoDate: noDateCount(filters),
@@ -918,6 +986,7 @@ export const MarpData = {
       pages: wanted.map((page) => {
         const start = (page - 1) * pageSize;
         const rows = plan.slice(start, start + pageSize);
+        enqueueMissing(rows);
         return { page, rows, rowCount: rows.length };
       }),
       excludedForNoDate: noDateCount(filters),
@@ -952,7 +1021,7 @@ export const MarpData = {
    * point of the mandatory version. The fixture can produce that: `bumpVersion(ids)` moves
    * a row under the reviewer, so R9's rendering has a tier that can reach it.
    */
-  async commitPage({ mode, observations = [], marks = [], withdraw = [], signal } = {}) {
+  async commitPage({ mode, rows = [], marks = new Map(), withdraw = [], signal } = {}) {
     /* `slowNextCommit` holds this one open; it applies once and then forgets itself, the
        same way `failNextCommit` does. */
     const held = slowNext; slowNext = 0;
@@ -961,11 +1030,23 @@ export const MarpData = {
     if (failNext) { failNext = false; throw new Error('the commit could not be saved'); }
     const reviewed = [], flagged = [], skipped = [], reverted = [], conflicted = [];
 
-    /* Both take the contract's array-of-objects shape. A missing version is the caller's
-       mistake and is refused rather than treated as "overwrite whatever is there" -- an
-       optional version hides exactly the failure the version exists to catch. */
-    const marked = new Map();
-    for (const mark of marks) marked.set(mark.observation_id, mark);
+    /**
+     * **The same arguments `src/api/` takes**, which is R2 and is not a detail.
+     *
+     * The store hands over the rows it is holding and its marks `Map`; `src/api/` turns
+     * those into `observations: [{ observation_id, version }]` and
+     * `marks: [{ observation_id, reason }]` on the way to the wire. This took the *wire*
+     * shape for a while, so the store's call reached the fixture with an `observations`
+     * key it did not send and every commit silently wrote nothing -- forty contract checks
+     * failed at once, which is exactly the substitutability the two backings exist to
+     * keep honest.
+     */
+    const observations = rows.map((r) => ({
+      observation_id: r.observation_id, version: r.version
+    }));
+    const marked = marks instanceof Map
+      ? marks
+      : new Map(marks.map((m) => [m.observation_id, m]));
     const withdrawn = new Set(withdraw);
 
     for (const entry of observations) {
@@ -982,8 +1063,9 @@ export const MarpData = {
 
       /* The annotation moved since the page was fetched. Nothing is written -- not even
          partially -- and the reviewer is told, rather than their stale decision being
-         applied to a classification they never saw. */
-      if (row.version !== entry.version) {
+         applied to a classification they never saw. `drift` is `bumpVersion`'s simulated
+         second writer; it is 0 for every row nothing has moved. */
+      if (row.version + (drift.get(id) || 0) !== entry.version) {
         conflicted.push({ observation_id: id, reason: 'version' });
         continue;
       }
@@ -1120,9 +1202,12 @@ export const MarpData = {
   bumpVersion(ids) {
     let moved = 0;
     for (const id of new Set(ids)) {
-      const row = editable(id);
-      if (!row) continue;
-      row.version += 1;
+      if (!baseFor(id)) continue;
+      /* **Not `row.version += 1`.** At scale 1 the served row *is* the fixture row, so
+         bumping it would bump the very object the store is holding -- the versions would
+         still agree and nothing would conflict. A second writer's change is one the
+         reviewer's copy has not seen, so it is recorded beside the row rather than in it. */
+      drift.set(id, (drift.get(id) || 0) + 1);
       moved++;
     }
     return moved;

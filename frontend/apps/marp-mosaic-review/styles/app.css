@@ -679,3 +679,78 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 @media (prefers-reduced-motion: reduce) {
   .commit.nudge { animation: none; outline: 2px solid var(--red-400, #e2707a) }
 }
+
+/* --- The failure panel (#124, A4/R20) -------------------------------------
+   Expired, refused and failed are three states and they read differently. The
+   colour carries the difference the copy states: amber for a session that
+   lapsed and can be fixed, red for a refusal that cannot, and the ordinary
+   error red for a transport failure. Tokens only -- no hex here; see the app's
+   CLAUDE.md.
+
+   It interrupts, because a reviewer who does not notice a 401 goes on marking
+   a page that cannot be committed. It never covers the whole viewport: the
+   marks are still on screen behind it, and seeing them is the reassurance the
+   copy is making. */
+#failure {
+  /* Fixed rather than absolute:  is a flex row with no positioning of its own, so
+     an absolute panel would anchor to whatever ancestor happened to be positioned. */
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--navy-1000) 72%, transparent);
+  backdrop-filter: blur(1.5px);
+}
+.fail {
+  max-width: 46ch; padding: 18px 20px; border-radius: 10px;
+  background: var(--navy-900); border: 1px solid var(--border);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+}
+.fail h3 {
+  margin: 0 0 8px; font-size: 14.5px; color: var(--white); font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.fail h3 svg { width: 15px; height: 15px; flex: none }
+.fail p { margin: 0 0 9px; font-size: 12.5px; line-height: 1.55; color: var(--text) }
+.fail code {
+  font: 500 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--cyan-300);
+}
+/* The one sentence every panel carries, because it is the one thing a reviewer
+   actually wants to know. Distinct from the body copy so it is read. */
+.fail .keep { color: var(--mint-300); font-weight: 500 }
+.fail .failmsg {
+  font: 400 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--muted); background: var(--navy-950);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+  max-height: 8em; overflow: auto; word-break: break-word;
+}
+.fail .failfoot { display: flex; gap: 8px; margin-top: 13px; align-items: center }
+.fail .failfoot .btn { text-decoration: none }
+.fail--expired { border-color: rgba(246, 196, 83, .5) }
+.fail--expired h3 { color: var(--amber-300) }
+.fail--refused { border-color: rgba(224, 97, 107, .55) }
+.fail--refused h3 { color: var(--red-400) }
+.fail--failed h3 { color: var(--red-400) }
+
+/* A commit the server refused because the rows moved (R9). Amber rather than
+   red: nothing was written and nothing is lost, so it is a "look again"
+   rather than a failure. */
+.pagestate--conflict {
+  background: rgba(246, 196, 83, .10); border-color: rgba(246, 196, 83, .38);
+}
+.pagestate--conflict b { color: var(--amber-300) }
+
+/* A thumbnail no retry can produce (F11, R13). Dimmer than an ordinary
+   failure, because the tile is not waiting for anything. */
+.tile.permanent .fallback .na-t { color: var(--faint) }
+.tile.permanent { opacity: .82 }
+
+/* The picker's widen action (A11). A quiet control: going off the
+   observation's own species list is a decision, not the normal path. */
+.sugghead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px }
+.widen {
+  border: 1px solid var(--line); background: none; color: var(--muted);
+  border-radius: 5px; padding: 1px 6px; font-size: 10.5px; cursor: pointer;
+}
+.widen:hover { color: var(--cyan-300); border-color: var(--border) }
+.widen.on { color: var(--cyan-300); border-color: var(--border-strong) }

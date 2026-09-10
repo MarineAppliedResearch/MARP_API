@@ -54,12 +54,8 @@ const { sortTerms } = await import('../../src/model/filters.js');
  * @param {Map} [marks] - The exception set.
  * @returns {Promise<Object>} The commit result.
  */
-const commit = (mode, rows, marks = new Map()) => MarpData.commitPage({
-  mode,
-  observations: rows.map((r) => ({ observation_id: r.observation_id, version: r.version })),
-  marks: [...marks.entries()].map(([observation_id, mark]) =>
-    ({ observation_id, reason: (mark && mark.reason) || null }))
-});
+const commit = (mode, rows, marks = new Map()) =>
+  MarpData.commitPage({ mode, rows, marks });
 
 /* ------------------------------------------------------- the reference implementation */
 

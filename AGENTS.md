@@ -541,8 +541,11 @@ why a mark is not a decision). Read it before changing anything structural there
 `README.md` covers running it and recording walkthrough videos.
 
 That app is the MARP Picture Mosaic Reviewer, designed in #68, which also carries the
-phased plan for the schema and endpoints it will need. The app still runs entirely against
-a fixture, and its `src/data.js` is the seam where the API will arrive.
+phased plan for the schema and endpoints it will need. **It talks to this API now**:
+`src/api/` is the seam and `src/data.js` survives as a test fixture, with
+`src/backend.js` deciding which is in force. The application never chooses the fixture —
+that app's `CLAUDE.md` has the reasoning, under *The two backings*, and it is worth reading
+before pointing any tier at either one.
 
 **#68 is a record of thinking, not a specification, and a line in it is not automatically a
 decision somebody made deliberately.** It has been written and rewritten over months, it

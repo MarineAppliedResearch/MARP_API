@@ -498,6 +498,35 @@ app.use('/apps/dashboard/admin.html', requirePermissionSession('admin'));
 // any of its files to an unauthenticated request.
 app.use('/apps/dashboard', requireAuthenticatedSession);
 
+/**
+ * The picture mosaic reviewer, gated on the permission it cannot work without.
+ *
+ * #124's A3, answered by the human: **the normal MARP login.** *"We log in on the MARP
+ * front end, and that's how they will log in."* The session cookie authenticates every
+ * request the app makes, including a tile's `<img>` -- `resolvePrincipal` prefers the
+ * session over a bearer token and the cookie is `httpOnly` / `sameSite: lax`, so a
+ * same-origin request is authorised with no scheme invented and nothing for the client to
+ * store.
+ *
+ * **`requirePermissionSession('observations:read')` rather than
+ * `requireAuthenticatedSession`**, and that is the decision rather than the default. The
+ * dashboard's guard admits any logged-in user; here that would produce a page that loads,
+ * draws its chrome, and then 403s on every request it makes -- a working page where
+ * nothing works, which is harder to diagnose than being refused at the door.
+ *
+ * The reviewer needs three permissions and this checks one. That is deliberate:
+ * `observations:read` is the one without which there is nothing to look at, while
+ * `observations:write` (commit, correct, delete) and `species:read` (the correction
+ * picker) are degraded in the interface instead -- a reader who cannot write is a
+ * supported state, and A4's `refused` panel names whichever permission the server says is
+ * missing.
+ *
+ * Registered **before** the static mount below, the way the dashboard's guard is: after
+ * it, `express.static` would have answered first and served every file to an
+ * unauthenticated request.
+ */
+app.use('/apps/marp-mosaic-review', requirePermissionSession('observations:read'));
+
 app.use('/apps', express.static(frontendAppsDirectory, { index: false }));
 
 /**
