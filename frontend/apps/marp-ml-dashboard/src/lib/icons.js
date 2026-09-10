@@ -63,10 +63,14 @@ export function icon(name, cls) {
   const d = P[name];
   if (!d) throw new Error(`no icon named ${name}`);
   const wrap = document.createElement('span');
+  /* Every icon carries `ico`, which gives it a size in app.css. Without a
+     default an icon dropped somewhere app.css has no rule for -- a field label,
+     a summary line -- renders at its container's width and fills the screen.
+     That happened, and it took a tab down. */
   wrap.innerHTML =
     `<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor"` +
     ` stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"` +
-    (cls ? ` class="${cls}"` : '') + `>${d}</svg>`;
+    ` class="ico${cls ? ' ' + cls : ''}">${d}</svg>`;
   return wrap.firstChild;
 }
 

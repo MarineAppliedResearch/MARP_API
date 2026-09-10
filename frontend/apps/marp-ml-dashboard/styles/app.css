@@ -79,6 +79,10 @@ a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--cyan-300); outline-offset: 2px; border-radius: 3px; }
 h1, h2, h3 { margin: 0; font-weight: 600; }
 svg { display: block; }
+/* The default size for every icon from src/lib/icons.js. An icon with no size
+   takes its container's width -- one in a field label filled a whole tab. Hand
+   built SVG (the donut, the training curves) carries no .ico and is unaffected. */
+.ico { width: 15px; height: 15px; flex: none; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
 /* ============================================================== the shell */

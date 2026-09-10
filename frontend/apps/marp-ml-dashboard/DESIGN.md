@@ -247,6 +247,22 @@ A `job` row, which is the shape most of the app reads:
 }
 ```
 
+Fields the generator carries beyond that example, because a screen needs them:
+`failure_reason` on a failed job, `dataset` and `run_id` on a training job, `scope.video`,
+and `model.version_id`. A worker carries `current_job`, `current_model` and `attempts`
+beyond the nine real columns — `current_model` is in #104's *Normal worker information* and
+has no API representation at all, so without it the Workers tab would invent one. An event
+carries `seq`, a real `gpu_job_events` column, because timestamps tie.
+
+**`lease_expires_at` is the only field in the fixture dated in the future**, and it has to
+be: a live lease that has already expired reads as a dead machine.
+
+**What "online" counts.** 143 workers are enrolled: 118 `online`, 6 `paused`, 19 `offline`.
+`counts.workers_online` is 124 — *reachable*, meaning not offline, with the paused six a
+subset of the reachable rather than a fourth bucket. That is how the Dashboard mockup's
+"124 / 143, 86% online" adds up. A reading where the pool is 149 machines is the other
+available one and is not what this fixture means.
+
 `state` is one of `queued running succeeded issues failed cancelled cancelling paused`.
 Two of those are derived rather than stored, and the fixture carries them as states anyway
 because that is what a screen shows: **`cancelling`** is `job.state == 'cancelled'` with a
@@ -286,6 +302,19 @@ are #104's measurement comment and its two decision comments.
     as a disabled sub-tab (assumption A4 in `.marp/task.md`).
 14. **Annotated video generation and detection crops** — output options in the Inference
     mockup with no pipeline behind them.
+15. **Three of the fixture's shapes are not the shapes of the tables they will come from**,
+    so wiring them is a mapping and not a rename. `runs[].epochs` here is
+    `{epoch, train_loss, val_loss, map50, seconds}`; the real `epochs` table carries
+    `box_loss`, `cls_loss`, `dfl_loss`, `precision`, `recall`, `map50`, `map5095`.
+    `datasets` here carries a class breakdown and a split; the real table carries
+    `num_samples`, `num_classes`, `location`, `source`. `models` here carries a `versions`
+    array; `ml_models` carries `parent_model_id`, `model_type`, `architecture_version`,
+    `storage_path` and `status`, and **has no versions array at all** — a version chain is
+    a self-join. These shapes were chosen for what the screens need; the mapping is the
+    implementation phase's work.
+16. **How many machines worked on a finished job** is not recorded anywhere, so
+    `workers.using` is 0 on every terminal row and a History column cannot show it.
+    "Using" is present tense.
 
 ## Running it
 
