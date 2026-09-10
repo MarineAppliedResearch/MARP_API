@@ -21,23 +21,34 @@ export const FILTER_KEYS = DIMENSIONS.map((d) => d.key);
 export const DEFAULT_FILTERS = {
   ...Object.fromEntries(DIMENSIONS.map((d) => [d.key, emptyValue(d)])),
   /**
-   * One exception, and it is the fixture's rather than the rail's: opening on every
-   * species at once is a wall of unrelated animals, and the mosaic's whole premise is
-   * that a page holds one predicted species.
+   * **No species literal. A10(b), now built.**
    *
-   * **A key, not a name** (F1). This was `['Bat Star']`, which the endpoint rejects
-   * outright — `filters.species takes integer ids, not "Bat Star"` — because the filter is
-   * `observations.species_id` and only that.
+   * The mosaic's premise is that a page holds one predicted species, so opening on all of
+   * them is a wall of unrelated animals — but a *literal* here is worse, because it is
+   * wrong on every database except the one it was written for. It was `['Bat Star']`,
+   * which the endpoint rejects outright since the filter is `observations.species_id`;
+   * then `[41]`, the fixture's Bat Star key, which matches **nothing** in a real database
+   * and opens the app on an empty mosaic reading *"nothing to do"*. That is how it looks
+   * broken to somebody who has just logged in.
    *
-   * **This literal is a placeholder and A10(b) replaces it.** The settled answer is "the
-   * most numerous species under the rest of the default question, taken from the facets
-   * call", which needs A6's facets route; that route is on hold pending the human's review
-   * of A5/A6/A13, so the literal stays until it lands. It is the fixture's own Bat Star
-   * key, so the default question is exactly what it has always been against the fixture —
-   * and it will be wrong against any other database, which is precisely why A10(b) says
-   * not to keep a literal here.
+   * So the honest value is **empty** — not filtering. The mosaic opens on every species,
+   * which is a mixed page rather than an empty one, and is right on any database.
+   *
+   * **A10(b)'s facets-derived default is NOT built here, and the reason is worth keeping**,
+   * because it looks like a small change and is not. Seeding the opening species from the
+   * facets answer needs the app to know whether the reviewer *chose* to see everything or
+   * simply has not chosen yet — and with no literal here those two are the same question,
+   * so they write the same address. `query-url`'s *clearing every filter is not the same
+   * address as the default question* exists to close exactly that trap, and its own
+   * comment names it: *"a reviewer who deliberately cleared the species filter would be
+   * handed it straight back on the next reload."* That test passed only because this
+   * literal made the two questions differ.
+   *
+   * So seeding from the facets requires first deciding **what a bare address means** once
+   * the default narrows nothing — which is a design question about the address, not a line
+   * of code here. Attempted 2026-09-10 and reverted for that reason.
    */
-  species: [41],
+  species: [],
   /* The status filters of the *default question*, which is Scientific's — so review status
      opens at Scientific's default and training disposition opens **not filtering**.
      `trainingDisposition: MODES.training.defaultStatus` was safe only while `queryFilters`

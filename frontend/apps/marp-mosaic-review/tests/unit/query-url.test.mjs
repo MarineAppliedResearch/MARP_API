@@ -85,16 +85,24 @@ test('R6: every declared dimension can be written and read back', () => {
   }
 });
 
-test('clearing every filter is not the same address as the default question', () => {
-  /* The trap this closes: the fixture opens on one species. If "no parameters" meant
-     "use the defaults", a reviewer who deliberately cleared the species filter would be
-     handed it straight back on the next reload. */
+test('clearing every filter comes back narrowing nothing', () => {
+  /* The trap this closes: a reviewer who deliberately cleared a filter must not be handed
+     it straight back on the next reload.
+     It used to close that by asserting an emptied question never writes a *bare* address,
+     which worked because the default opened on one species, so "cleared" and "default"
+     were different questions. **Since A10(b) removed that literal they are the same
+     question**, an emptied question does write a bare address, and that is correct rather
+     than a regression: a bare address now means the default, and the default narrows
+     nothing, so there is nothing to hand back.
+     The property worth asserting was always the outcome, not the mechanism -- so this
+     asserts the round trip directly. If a data-derived default is ever seeded onto a bare
+     address, this test is the one that must be revisited first, because that is precisely
+     what reopens the trap. */
   const q = base();
   for (const dimension of DIMENSIONS) {
     q.filters[dimension.key] = dimension.kind === KIND.SET ? [] : null;
   }
   const address = toQuery(q);
-  assert.notEqual(address, '', 'an emptied question must not write a bare address');
 
   const back = fromQuery(address);
   for (const dimension of DIMENSIONS) {
@@ -159,8 +167,9 @@ test('R3: a sort nobody offers is ignored', () => {
 test('M2: the secondary term survives the address', () => {
   const q = { ...defaultQuery(), sort: { field: 'confidence', dir: 'asc', then: { field: 'keyframe_count', dir: 'desc' } } };
   const written = toQuery(q);
-  /* The fixture's default species filter rides along; the sort is the part under test. */
-  assert.equal(written, '?species=41&sort=confidence.asc,keyframe_count.desc',
+  /* Nothing rides along any more: the default question narrows nothing since A10(b), so
+     the address carries the sort and only the sort. */
+  assert.equal(written, '?sort=confidence.asc,keyframe_count.desc',
     'both terms in one parameter, because they are one question');
   assert.deepEqual(fromQuery(written).sort, q.sort);
 });
@@ -183,7 +192,7 @@ test('M2: a secondary naming the primary is not a term, and is not written', () 
   assert.deepEqual(fromQuery('?sort=obsID.asc,obsID.desc').sort,
     { field: 'obsID', dir: 'asc', then: null });
   const q = { ...defaultQuery(), sort: { field: 'obsID', dir: 'asc', then: { field: 'obsID', dir: 'desc' } } };
-  assert.equal(toQuery(q), '?species=41&sort=obsID.asc');
+  assert.equal(toQuery(q), '?sort=obsID.asc');
 });
 
 test('M2: the default sort still writes a bare address', () => {

@@ -2502,11 +2502,17 @@ const question = (page) => page.evaluate(() => ({
  * training disposition — and reports the promoted and excluded share, which is exactly
  * what a careless `defaultStatusFor` would silently remove.
  */
+/* Derived from the fixture file, never from the app -- a check that asks the application
+   what it expects cannot see the count move, which is the whole point of this one.
+   `comname === 'Bat Star'` was here because the default question opened on that species.
+   A10(b) removed that literal, so the default narrows by status alone and this must too;
+   leaving the species in would compare the app against a question it no longer asks.
+   Independently counted in the fixture: 3,000 observations, 2,755 with a null
+   `review_decision` and 245 reviewed, so the default view is the 2,755. */
 const expectedDefault = (page) => page.evaluate(async () => {
   const res = await fetch('./fixtures/observations.json');
   const db = await res.json();
   const rows = db.observations.filter((r) => !r.deleted
-    && r.comname === 'Bat Star'
     && ['flagged', null].includes(r.review_decision));
   return {
     total: rows.length,

@@ -51,7 +51,11 @@ export const DIMENSIONS = [
   {
     key: 'dive', field: 'dive',
     source: 'sessions.dive via observations.session_id', kind: KIND.SET,
-    nestsUnder: 'project', label: 'dive', all: 'All dives', one: (v) => `Dive ${v}`,
+    // The value already names the dive, so it is drawn as it is. This carried
+    // `Dive ${v}` and was wrong against both datasets, not just one: the real
+    // `sessions.dive` holds "Dive 12", which rendered "Dive Dive 12", and the
+    // fixture holds "D04", which rendered "Dive D04". Neither needs a prefix.
+    nestsUnder: 'project', label: 'dive', all: 'All dives', one: (v) => String(v),
   },
   {
     key: 'line', field: 'line',
