@@ -275,6 +275,12 @@ svg { display: block; }
 [data-state="busy"]       { --s: var(--st-busy); }
 [data-state="idle"]       { --s: var(--st-idle); }
 [data-state="offline"]    { --s: var(--st-offline); }
+/* A model has its own small lifecycle. These borrow the job colours rather than
+   inventing new ones -- settled, in progress, broken -- but keep their own names
+   so the markup says what it means. */
+[data-state="ready"]      { --s: var(--st-done); }
+[data-state="testing"]    { --s: var(--st-running); }
+[data-state="error"]      { --s: var(--st-failed); }
 
 .dot {
   display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none;
@@ -1075,6 +1081,94 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 
 
 
+/* ============================================================== models */
+
+.tbl.fixed .htask  { width: 11%; }
+.tbl.fixed .hver   { width: 7%; }
+.tbl.fixed .hbase  { width: 10%; }
+.tbl.fixed .hcache { width: 6%; }
+
+/* The preference marker. Task-specific, so its hover says what for; an unmarked
+   model shows the outline rather than nothing, because a missing star and a
+   missing column look the same. */
+.starbtn {
+  width: 20px; height: 20px; padding: 0; flex: none;
+  display: grid; place-items: center;
+  background: none; border: 0; border-radius: 4px; color: var(--faint);
+}
+.starbtn:hover { color: var(--amber-300); }
+.starbtn.on { color: var(--amber-300); }
+.starbtn.on .ico { fill: currentColor; }
+
+/* What a version is preferred for, and the note that comes with it. */
+.prefbox {
+  display: flex; gap: 9px; align-items: flex-start;
+  margin-top: 12px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: rgba(246, 196, 83, 0.07); border: 1px solid rgba(246, 196, 83, 0.24);
+}
+.prefbox .ico { color: var(--amber-300); fill: currentColor; margin-top: 1px; }
+.prefbox b { display: block; color: var(--amber-300); font-size: 11.5px; }
+.prefbox em { display: block; font-style: normal; color: var(--muted);
+              font-size: 10.5px; margin-top: 2px; }
+
+/* Four scores, read across. */
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.metrics > span {
+  display: grid; gap: 1px; padding: 9px 10px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--hairline);
+  font-size: 9.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint);
+}
+.metrics b { font-size: 17px; font-weight: 700; color: var(--white);
+             letter-spacing: -0.01em; text-transform: none; }
+
+.cachebox {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px;
+  align-items: center; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--hairline);
+}
+.cachebox .ico { color: var(--cyan-300); }
+.cachebox b { display: block; color: var(--white); font-size: 12px; }
+.cachebox em { display: block; font-style: normal; color: var(--faint); font-size: 10.5px; }
+
+/* Every version of a model. A grid rather than a table: this sits inside a
+   `<td>` of the registry, and a nested table there had its rows parsed into the
+   outer table -- an empty thead and four rows appended to the registry itself. */
+.vlist { display: grid; gap: 1px; border: 1px solid var(--hairline);
+         border-radius: var(--r-sm); overflow: hidden; background: var(--hairline); }
+.vrow {
+  display: grid; align-items: center; gap: 12px;
+  grid-template-columns: 130px 74px 74px 96px minmax(0, 1.1fr) minmax(0, 1.4fr);
+  padding: 7px 12px; background: var(--card-flat); font-size: 11.5px;
+}
+.vrow > .num { text-align: right; }
+.vrow > .tr { color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; }
+.vrow.vhead {
+  background: var(--sunk); color: var(--faint);
+  font-size: 10px; font-weight: 700; letter-spacing: 0.11em; text-transform: uppercase;
+}
+.vrow .tag { margin-left: 7px; }
+.vrow.is-current { background: rgba(20, 126, 232, 0.10); }
+.vrow.is-current > .mono { color: var(--white); font-weight: 600; }
+
+/* Where a version came from: upstream checkpoint, first transfer, current. */
+.lineage { display: flex; align-items: stretch; gap: 8px; }
+.lnode {
+  flex: 1 1 0; min-width: 0;
+  display: grid; gap: 2px; justify-items: start;
+  padding: 10px 11px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--hairline);
+}
+.lnode .ico { color: var(--muted); margin-bottom: 3px; }
+.lnode b { color: var(--white); font-size: 11px; overflow-wrap: anywhere; }
+.lnode span { color: var(--muted); font-size: 10px; }
+.lnode em { font-style: normal; color: var(--faint); font-size: 9.5px;
+            overflow-wrap: anywhere; }
+.lnode.is-current { border-color: rgba(34, 215, 220, 0.42);
+                    background: rgba(34, 215, 220, 0.06); }
+.lnode.is-current .ico, .lnode.is-current b { color: var(--cyan-300); }
+.larrow { align-self: center; color: var(--faint); flex: none; }
+
 /* ============================================================== responsive */
 
 @media (max-width: 1420px) {
@@ -1103,6 +1197,15 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
   .grid[data-cols="wide-narrow"] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* Three charts side by side stop being readable well before this. */
   .rundetail .charts { grid-template-columns: minmax(0, 1fr); }
+  /* Three lineage nodes side by side stop being readable here. */
+  .lineage { flex-direction: column; }
+  .larrow { transform: rotate(90deg); align-self: start; margin-left: 18px; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Six columns of version history do not fit; each becomes a block. */
+  .vrow { grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; }
+  .vrow.vhead { display: none; }
+  .vrow > .num { text-align: right; }
+  .vrow > .tr { white-space: normal; grid-column: 1 / -1; }
 
   /* The tools take a line of their own here. Sharing one row with the title
      left `Machine Lea...` -- and the title is the thing that says where you are. */
