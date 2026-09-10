@@ -20,9 +20,35 @@
  * @module tests/observation-review-schema
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const db = require('../model');
 
 const { QueryTypes } = db.Sequelize;
+
+/**
+ * The two migrations that create the review tables.
+ *
+ * Read as source by the *is created empty* assertions. Those once counted rows
+ * in the live tables, which stopped being possible the moment the application
+ * recorded a real decision -- see the comments there. The property they guard is
+ * about what the migration does, so the migration is what they read.
+ *
+ * @constant
+ * @type {string}
+ */
+const REVIEWS_MIGRATION = path.join(
+    __dirname, '..', 'migrations', '20260909120100-create-observation-reviews.js'
+);
+
+/** @constant @type {string} */
+const CURRENT_MIGRATION = path.join(
+    __dirname, '..', 'migrations', '20260909120200-create-observation-review-current.js'
+);
+
+/** The same migration as a module, for the SQL it exports. @constant @type {Object} */
+const currentMigration = require(CURRENT_MIGRATION);
 
 /**
  * Runs a read-only query and returns its rows.
@@ -258,9 +284,23 @@ describe('#103 schema objects', () => {
             ]);
         });
 
-        it('ships empty: having no review row is being unreviewed, and nothing is backfilled', async () => {
-            const [count] = await rows('SELECT COUNT(*)::int AS n FROM observation_reviews');
-            expect(count.n).toBe(0);
+        it('is created empty: having no review row is being unreviewed, and nothing is backfilled', () => {
+            // Asserted against the migration, not against the live table.
+            //
+            // This once read `COUNT(*) === 0`, which asserted the *database* was
+            // empty rather than that the migration inserts nothing. It held only
+            // while nothing had ever been reviewed, and failed the moment the
+            // application wrote its first real decision -- at which point the
+            // property it was guarding had become permanently unobservable that
+            // way. The property itself is worth keeping: creating the table must
+            // not invent review history for observations nobody has looked at.
+            //
+            // Same source tier as `mosaic-commit`'s *emits no UPDATE or DELETE
+            // against observation_reviews*, and it fails the moment somebody adds
+            // a backfill.
+            const source = fs.readFileSync(REVIEWS_MIGRATION, 'utf8');
+
+            expect(source).not.toMatch(/INSERT\s+INTO\s+observation_reviews/i);
         });
     });
 
@@ -324,9 +364,34 @@ describe('#103 schema objects', () => {
             expect(index.indexdef).toMatch(/\(purpose, decision, observation_id\)/);
         });
 
-        it('ships empty', async () => {
-            const [count] = await rows('SELECT COUNT(*)::int AS n FROM observation_review_current');
-            expect(count.n).toBe(0);
+        it('is populated only by deriving from the log, never by inventing rows', () => {
+            // Same move as the reviews table above -- asserted against the
+            // migration rather than the live row count, which stopped being
+            // observable once the application recorded a real decision.
+            //
+            // But the property here is *not* "inserts nothing". This `up`
+            // deliberately runs `REBUILD_CURRENT_SQL`, which is right: the
+            // projection is derived, so creating it means deriving it from
+            // whatever log already exists. On a fresh database that lands nothing
+            // because the log is empty too, which is why the old row count read
+            // zero — a consequence, not the rule.
+            //
+            // What must stay true is that the only way a row gets in is that
+            // derivation. An `INSERT` in `up` that does not read
+            // `observation_reviews` would be inventing review history for
+            // observations nobody has looked at, and that is what this catches.
+            const source = fs.readFileSync(CURRENT_MIGRATION, 'utf8');
+            const up = source.slice(source.indexOf('async up'), source.indexOf('async down'));
+
+            expect(up).toContain('createTable');
+            expect(up).toContain('REBUILD_CURRENT_SQL');
+
+            // The rebuild derives; it does not fabricate.
+            expect(currentMigration.REBUILD_CURRENT_SQL)
+                .toMatch(/FROM\s+observation_reviews/i);
+
+            // And `up` populates the table by no other route.
+            expect(up).not.toMatch(/INSERT\s+INTO\s+observation_review_current/i);
         });
     });
 
