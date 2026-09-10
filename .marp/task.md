@@ -580,7 +580,14 @@ Nothing is decided until the assumptions above are answered. Recorded here so th
 re-litigated:
 
 - **2026-09-10 · A1-A9, A13-A16 — answered by the human**, one at a time. Three differ from
-  the recommendation and are the reason this phase adds **no new routes at all**.
+  the recommendation.
+
+  **A new route is allowed where one is genuinely needed.** The human's answers to A5 and A6
+  questioned whether the two proposed routes were *necessary*, not whether routes may be
+  added — *"I didn't say to drop routes. I said it's okay to add them if needed."* An earlier
+  draft of this section read those answers as a no-new-routes constraint and was wrong. A5 is
+  struck because the capability already exists, not because a route was forbidden; A6 is left
+  as an implementation choice.
 
   - **A1** — the client adopts the schema's names; no translation adapter. #68's claim that
     nothing above `api/` changes is a *measurement*, and an adapter would make it pass by
@@ -594,16 +601,29 @@ re-litigated:
     before the static mount, as `/apps/dashboard` already is.
   - **A4** — refused, failed and expired are three distinct states; a 401 re-authenticates in
     place so a reviewer's marks survive it.
-  - **A5 — STRUCK. There is no by-ids route.** *"I don't see why we need to reread a page we
-    just committed. We already have it built into the system that if we go back to a previous
-    page, we keep a cache of those previous items."* Correct, and `model/cache.js:163` says so
-    in as many words. #99 already built this; the recommendation had missed it. See R14.
-  - **A6 — the option lists ride on the page response, not on a new route.** *"I figured the
-    filter was gonna be able to be baked right into the observation query. I didn't think we
-    would need a whole new route for that."* New **queries** are expected and fine — *"you'll
-    have to create new queries that query your dives and your lines per dive"* — but they
-    answer on the existing pages endpoint. Put them behind a flag on the request so #99's
-    prefetch, which asks for up to three pages a navigation, does not pay for them.
+  - **A5 — struck, because the capability already exists.** *"I don't see why we need to
+    reread a page we just committed. We already have it built into the system that if we go
+    back to a previous page, we keep a cache of those previous items."* Correct, and
+    `model/cache.js:163` says so in as many words — `rowsFor(ids)` is there to answer it. #99
+    already built this and the recommendation had missed it. **Not a prohibition on routes:**
+    if something later needs rows by id for a reason the cache cannot serve, that is a new
+    question, not a settled no. See R14.
+  - **A6 — the option lists are needed; how they are served is the implementer's choice.**
+    The human: *"I figured the filter was gonna be able to be baked right into the observation
+    query. I didn't think we would need a whole new route for that"* — and separately, *"you'll
+    have to create new queries that query your dives and your lines per dive and stuff like
+    that. That was expected."* So the **queries** are settled and a route is permitted.
+    Two shapes, and the trade-off is real rather than a preference:
+    **(i) riding on the existing pages endpoint** — one round trip, but it makes that
+    response variable-shaped and couples the option lists to a contract that already has an
+    exact-key tripwire over it; it must then sit behind a request flag, because #99's
+    prefetcher asks for up to three pages a navigation and must not pay for lists it will not
+    draw. **(ii) a small facets route** — a second round trip, but the page contract is left
+    alone, the lists are cacheable on their own cadence, and the prefetch question does not
+    arise.
+    **Either is acceptable. Choose on which keeps the page contract cleaner and say why in
+    the report.** Whichever is chosen, the lists must be the values still reachable under the
+    filters already selected (R15) — that is the requirement, not the transport.
   - **A7** — the store sends rows carrying their own `version`. An `api/`-side version cache is
     **rejected on reasoning**: a prefetch would substitute a version the reviewer never saw,
     which defeats the check. The human's own model is unchanged and worth restating: **last
