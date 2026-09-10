@@ -6,6 +6,12 @@
  * itself can be imported without side effects (e.g. by tests using
  * Supertest, which talk to the app in-process and never need a real port).
  *
+ * Starting the server is also what starts the thumbnail extractor. It is
+ * deliberately not started from `app.js`: every test suite imports the app
+ * directly, and a background loop that began on import would have the whole
+ * suite opening Jellyfin streams. Same split, same reason `app.listen` is here
+ * rather than there.
+ *
  * @fileoverview Starts the MARP API HTTP server.
  * @author Isaac Travers
  * @module server
@@ -14,6 +20,7 @@
 const fs = require('fs');
 const https = require('https');
 const app = require('./app');
+const thumbnailExtraction = require('./service/thumbnail-extraction.service');
 
 /**
  * TCP port used by the HTTP server.
@@ -56,3 +63,14 @@ if (httpsKeyPath && httpsCertPath) {
         console.log(`Server listening on the port  ${port}`);
     });
 }
+
+// Thumbnail extraction (#118). Reports and declines rather than throwing when
+// ffmpeg is absent: extraction is the only thing that needs a decoder, and an
+// API host without one must still serve observations.
+thumbnailExtraction.start().then((result) => {
+    if (result.started) {
+        console.log('Thumbnail extraction started.');
+    } else {
+        console.log(`Thumbnail extraction is not running: ${result.reason}`);
+    }
+});
