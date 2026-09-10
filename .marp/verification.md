@@ -199,5 +199,122 @@ this phase's visual evidence instead.
 
 ## Results
 
-<!-- Appended by `marp verify run` after the plan above is approved. Real output, including
-     failures, verbatim. Empty until then, deliberately: the G2 run is not this package. -->
+Run 2026-09-10 after the plan was approved at G3. Real output, failures included.
+
+### The suites
+
+```
+  Test Suites : 43 passed, 0 failed, 43 total
+  Tests       : 559 passed, 0 failed, 0 skipped, 559 total
+  Duration    : 40.7s
+
+  Result: ALL TESTS PASSED
+```
+
+`npm run test:subsystems` — `ok   every suite belongs to exactly one subsystem`.
+
+`spec-check` — `10 assumptions answered · 2 open, not blocking · 26 numbered requirements ·
+clear to implement`.
+
+`marp harness check` — `everything the harness can verify is consistent`.
+
+### `npm run docs:build` exits 1, and it is not this phase's
+
+Reported rather than smoothed over. Four jsdoc parse errors, all four from **one file this
+branch does not touch**:
+
+```
+ERROR: Unable to parse a tag's type expression for source file
+  frontend/apps/marp-mosaic-review/src/model/schedule.js in line 167 with tag title "param"
+  ... Invalid type expression "page, ids, lastUsed"
+```
+
+`schedule.js` is byte-identical to `develop` (`git diff develop` is empty) and carries the
+same malformed `@param {...}` — commas inside braces, from #99. No file this phase added
+produced an error. The generated output is still written; the exit code is not swallowed by
+`--lenient`, contrary to a note made during G2. **Left alone, and named:** it is pre-existing
+breakage on `develop` and fixing it here would be a different task.
+
+**One thing that was this phase's and is fixed:** the generated docs had gone stale, because
+the subset comparator added jsdoc after the docs were last rebuilt. Regenerated and committed
+(`9f11fa2`) — `compareSubsets` appears in 567 generated files now and in 0 before.
+
+### Manual step 1 — the spike, reproduced
+
+```
+video_source: 20240730_171520_Fwd.mp4  (6 observations)
+  match score 100 on search term "20240730_171520_Fwd" -> item "20240730_171520_Fwd"
+  stream: 1920x1080 h264 @ 25 fps, 1446.4s
+  ffmpeg: 6 frames in 1.5s from one stream
+  obs 2: frame 18037 (landed 18037), box 174x115px, crop 210x210px
+  obs 3: frame 18070 (landed 18070), box 177x82px, crop 213x213px
+  obs 1: frame 18084 (landed 18084), box 247x95px, crop 298x298px
+  obs 4: frame 18190 (landed 18190), box 345x115px, crop 415x416px
+  obs 5: frame 18251 (landed 18251), box 225x113px, crop 271x271px
+  obs 6: frame 18278 (landed 18278), box 92x105px, crop 127x127px
+```
+
+Identical to the first run: same score, same frames landed, same crop sizes, same 1.5 s. Every
+`landed` equals the frame asked for.
+
+### Manual steps 2 and 3 — the pictures
+
+Reviewed by the human on 2026-09-09 and accepted, including observation 6 and the
+centre-origin control (`obs-4-control.jpg`). Not re-judged here; the images regenerated
+byte-for-identically by the numbers above.
+
+### Manual step 4 — the control surface against a live server
+
+Against `node server.js` on 3000, with two freshly minted service tokens.
+
+**R26, a reader may read:**
+```
+GET /api/v2/observations/thumbnails/status   [HTTP 200]
+{"runState":"running", ..., "loopStarted":true, "inFlight":0, "concurrencyLimit":3,
+ "extractorAvailable":true, "counts":{"queued":0,"ready":0,"failed":0,"permanent":0,"claimed":0}}
+```
+
+**R26, a reader may not change it:**
+```
+POST /api/v2/observations/thumbnails/control {"action":"pause"}   [HTTP 403]
+{"error":{"code":"FORBIDDEN","message":"The \"admin\" permission is required.", ...}}
+```
+
+**R24, an admin may:**
+```
+POST .../control {"action":"pause"}   [HTTP 200]
+{"action":"pause","discarded":0,"runState":"paused","runStateChangedAt":"2026-09-10T06:07:09.655Z", ...}
+```
+
+**R25, the pause survives a full restart.** The process was killed and `node server.js`
+started again:
+```
+GET .../status   [HTTP 200]
+{"runState":"paused","runStateChangedAt":"2026-09-10T06:07:09.655Z", ...}
+```
+Still paused, and the original change timestamp intact — so it was read from
+`thumbnail_extraction_state` and not defaulted. **This is the step no suite can prove**, and
+it is the failure it guards: a pause that silently expires on restart, at the moment somebody
+paused it because Jellyfin was struggling.
+
+Resumed afterwards (`runState: "running"`), so nothing is left paused.
+
+### Two failures that were the operator's, not the code's
+
+Recorded so a reader does not chase them as defects.
+
+- `POST /api/v2/observations/thumbnails/run-state` → `404 ROUTE_NOT_FOUND`. **The route is
+  `/control`.** `run-state` was a name used in conversation and never in the code.
+- The first two tokens gave `401 UNAUTHORIZED`. The extraction grepped a long alphanumeric run
+  out of Sequelize's SQL logging instead of the token. Tokens are `svc_`-prefixed and printed
+  under a marker line; extracting by the marker fixed it.
+
+### Noted, expected, not a defect
+
+`runStateChangedBy` is `null` after an admin **service token** changed the state. A bearer
+principal's id is a `service_clients.service_client_id`, not a `users.user_id`, and recording
+it in a column that references `users` is the trap Phase 5 recorded as D4. Null is the correct
+answer for a token; the suite's *records who changed the run state* covers the user case.
+
+`extractorAvailable: true` — ffmpeg 8.0.1 was located through configuration (A9), which is the
+condition R23 reports and the extractor refuses to start without.
