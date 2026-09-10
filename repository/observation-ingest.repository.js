@@ -49,14 +49,6 @@ const db = require('../model');
 const logger = require('../logger/api.logger');
 
 /**
- * The thumbnail queue, written to in the same transaction as the observations.
- *
- * @constant
- * @type {Object}
- */
-const thumbnailRepository = require('./observation-thumbnail.repository');
-
-/**
  * Key for the advisory lock that serialises observation-key assignment.
  *
  * An arbitrary constant, but a fixed one: every writer that assigns
@@ -290,13 +282,16 @@ class ObservationIngestRepository {
      * method's only remaining decisions are the three key columns, which is why
      * it holds the advisory lock.
      *
-     * **A thumbnail is enqueued for every observation written, in this same
-     * transaction** (#118's A3, reversed by the human 2026-09-10: *"trying to load
-     * the page should not be the thing that makes the back end work. When the
-     * observation is created, it should get enqueued."*). In the transaction
-     * rather than after it, so the observation and its queue entry cannot
-     * disagree: a rollback takes both, and there is no window in which an
-     * observation exists with nothing intending to picture it.
+     * **A thumbnail is enqueued for every keyframe this writes, and nothing here
+     * does it** (#118's A3, reversed by the human 2026-09-10). `insertKeyframes`
+     * below fires `keyframes_enqueue_thumbnail_trigger`, so the queue entry is
+     * written inside this transaction and a rollback takes it too.
+     *
+     * **There is deliberately no call to the thumbnail repository here.** One was
+     * written first and it was wrong: it covered this path and silently missed
+     * every hand-annotated observation, which reaches the database through two
+     * other repositories. The trigger moves whatever code path performs the write,
+     * which is the same reason `observations.version` is a trigger.
      *
      * @async
      * @param {Object} params - What to write.
@@ -378,11 +373,6 @@ class ObservationIngestRepository {
                 keyframesWritten += await this.insertKeyframes(observationId, keyframes, transaction);
                 observationIds.push(observationId);
             }
-
-            // A read must not be what triggers work, so creation is: #118's A3 as
-            // the human reversed it. Inside the transaction, so the observation
-            // and its queue entry commit or roll back together.
-            await thumbnailRepository.enqueueMissing(observationIds, transaction);
 
             await transaction.commit();
 

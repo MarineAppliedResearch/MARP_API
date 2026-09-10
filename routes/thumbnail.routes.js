@@ -19,10 +19,11 @@
  * - serving the bytes is `observations:read`, plainly;
  * - **retrying is `observations:read` too** (A10, delegated by the human: *"just
  *   make the decision"*), bounded by the concurrency constant rather than by a
- *   permission. A3's reversal on 2026-09-10 took most of the sting out of this:
- *   reading a mosaic page no longer enqueues anything, so **this route is the only
- *   place a read permission causes a Jellyfin stream**, and it does so because a
- *   person pressed *Ask again* rather than as a side effect of paging;
+ *   permission. The counter-argument is recorded rather than dismissed: a script
+ *   walking every page of a 440,000-row mosaic would enqueue the whole corpus, and
+ *   the rate limit is what stops that hurting. A3's second trigger makes this
+ *   milder in practice than in theory -- a page normally finds every row already
+ *   enqueued by its keyframes, so the backstop has nothing to do;
  * - **changing the run state is `admin`** (R26). The split is the point. A
  *   reviewer legitimately wants to know whether their pictures are coming, but
  *   pausing extraction affects everyone using the mosaic and throttles a shared
@@ -177,9 +178,8 @@ function registerThumbnailRoutes(app) {
             'Three distinct actions, and each says what happens to work already running. '
             + '**`pause`** stops *starting* new extractions and lets in-flight ones finish, because killing an ffmpeg mid-decode '
             + 'wastes the Jellyfin stream it already paid for. **`resume`** starts taking work again. **`stop`** is pause plus '
-            + 'discarding the queue: the queued rows return to being simply absent, which reports `failed` on the mosaic row, so '
-            + 'the reviewer\'s *Ask again* re-enqueues them -- nothing is lost and no fourth state is needed, but a stopped queue '
-            + 'is visible as NO IMAGE rather than as a tile that stays PREPARING. Rows that '
+            + 'discarding the queue: the queued rows return to being simply absent, and since serving a mosaic page enqueues what '
+            + 'it is missing, the next page view re-enqueues them -- so nothing is lost and no fourth state is needed. Rows that '
             + 'are already `ready` or `failed` are outcomes rather than queue and are untouched. '
             + 'The run state is **persisted**: a service paused because the media server was struggling must still be paused after '
             + 'an API restart, or the pause silently expires at the worst moment. '

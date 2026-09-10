@@ -47,9 +47,13 @@ can invalidate the whole package.
 | R1 | *is a table of its own, and writing it does not touch the observation* | http+db | The decisive test for A2. A thumbnail write moves neither `observations.version` nor `updatedAt` — the two columns that would have reordered the mosaic under a reviewer and conflicted every commit. |
 | R2 | *holds at most one row per observation* / *goes with the observation when it is deleted* | http+db | Uniqueness, and the `ON DELETE CASCADE` actually firing rather than being declared. |
 | R3 | *refuses a status outside queued, ready and failed* / *refuses to call a queued row permanent* | http+db | Both `CHECK`s refuse at the database, not in application code. The second is the one that stops a permanent `queued` row that would never drain and never retry. |
-| R4 | *pre-creates nothing: an observation with no record has none* / *reports failed for an observation that has no record* | http+db | Absence is a state. Nothing is pre-created for 440,000 rows, and since A3's reversal absence reports `failed` rather than `queued` — nothing is coming for such a row until #121. |
-| R27 | `tests/gpu-observation-ingest.test.js` *queues one thumbnail per observation, without anybody asking for a page* / *enqueues nothing extra when the same job is ingested again* / *writes no thumbnail when the ingest refuses the whole result* | http+db | The positive half of A3's reversal, at the tier that can see it: a real worker reporting a real result file, with no page request anywhere in the test. The third proves the enqueue is inside the ingest's transaction — a refusal leaves no row behind. |
-| R27 | *creates no thumbnail record, however many times a page is served* / *leaves a permanent failure exactly as it found it* | http+db | The **negative** half, and the one that matters most. A side effect on a read path is reinstated by accident, not by decision, so the assertion is over `observation_thumbnails` itself rather than over the response. Mutation-checked: re-adding the `enqueueMissing` call to `queryPages` fails it with *Expected `Array []`, Received 2 rows*. |
+| R4 | *pre-creates nothing: an observation with no record has none* / *reports queued for an observation that had no record* | http+db | Absence is a state. Nothing is pre-created for 440,000 rows, and the creation trigger does not backfill them — the page backstop is what makes `queued` honest for one. |
+| R27 | `tests/gpu-observation-ingest.test.js` *queues one thumbnail per observation, without anybody asking for a page* / *enqueues nothing extra when the same job is ingested again* / *writes no thumbnail when the ingest refuses the whole result* | http+db | The **primary** trigger on the machine path, at the tier that can see it: a real worker reporting a real result file, with no page request anywhere in the test. The third proves the enqueue is inside the write transaction — a refused ingest leaves no row behind. |
+| R27 | *creates no row for an observation written with no keyframes* / *enqueues when the GUI posts the keyframes, one request later* | http+db | The **manual** path, in the order `VIDEO_PROCESSING_GUI` really writes it: `POST /api/v2/observation` with no keyframes, then `POST /api/v2/keyframe` with a bare array. The first is what stops a boxless observation being enqueued and permanently failed; the second is the test the first implementation would have failed. |
+| R27 | *enqueues from a plain INSERT that goes through no repository at all* / *writes exactly one row for a track of many keyframes* / *takes the queue entry with the write when the transaction rolls back* | db | Why it is a trigger and not a call. The first covers a writer that bypasses all three repositories; the second is the `SELECT DISTINCT` over the transition table; the third asserts the row exists *inside* the transaction and is gone after the rollback, so it cannot pass vacuously. |
+| R27 | *adds nothing when more keyframes arrive later for the same observation* / *never resets a ready row when a later keyframe arrives* / *never re-queues a permanent failure when a later keyframe arrives* | db | Idempotency, which is load-bearing with two triggers. The second is the expensive one: `DO UPDATE` instead of `DO NOTHING` would re-open a Jellyfin stream every time an annotator nudged a box. |
+| R28 | *enqueues an observation on the page that has no record* / *reports queued for an observation that had no record* | http+db | The backstop. The first asks `observation_thumbnails` itself rather than the response, because the `coalesce` would report `queued` from a read that wrote nothing — which is exactly the dishonesty A3's two halves exist to prevent. |
+| R28 | *finds the row already there after creation, and leaves it alone* / *never resets a ready row, however many times the page is served* / *never re-enqueues a permanent failure, however many times the page is served* | http+db | The two triggers must not fight. `requested_at` is compared before and after, so a second enqueue would show even though the row count would not. |
 | R5 | *records where the picture came from, so it can be made again* | http+db | Resolution is through `video_source`. `jellyfin_item_id` is never consulted — F7's correction. |
 | R6 | *the source dimensions are required* | unit | A crop without real pixel dimensions throws rather than guessing 1920×1080. |
 | R7 | the eight *clamp* tests, and *puts the box centre at x, y rather than its corner* | unit | Centre-origin, pad, square, clamp, in that order. |
@@ -70,7 +74,7 @@ can invalidate the whole package.
 | R21 | *refuses a frame rate that disagrees with the derived frame* | http+db | Nine rates: 25, 25.001, 29.97, 30, 50, 24, 0, null, NaN. A mismatch is a recorded failure carrying both rates, never a warning that continues. |
 | R22 | *the clamp*: each of the four edges, both diagonal corners, the real measured span, two boxes entirely outside the frame | unit | **The requirement that already paid for itself** — see *Regression coverage*. |
 | R23 | *reports the run state, the counts and the configured limit* | http+db | What makes A7's constant tunable by observation rather than by argument. |
-| R24 | *pauses* / *starts no new extraction while paused* / *stop discards the queue* / *leaves what stop discarded absent until somebody asks again* / *resumes* | http+db | The three verbs are distinct and each says what happens to work already running. The fourth was *re-enqueues on the next page view what stop discarded* until A3's reversal; rewritten to assert the retry route recovers the row and the page view does not. |
+| R24 | *pauses* / *starts no new extraction while paused* / *stop discards the queue* / *re-enqueues on the next page view what stop discarded* | http+db | The three verbs are distinct and each says what happens to work already running. The fourth is why `stop` needs no fourth state: a discarded row is simply absent, and R28's backstop recovers it. |
 | R25 | *pauses, and the pause is persisted rather than held in memory* | http+db | Read back from `thumbnail_extraction_state` directly, so an API restart cannot silently un-pause a service somebody paused because Jellyfin was struggling. |
 | R26 | *is readable with observations:read alone* / *refuses a run-state change to a caller who is not an admin* | http+db | The split, and the refusal proved by the state **not** moving rather than only by the status code. |
 | A4 | *takes the first subset even when a later one brackets the frame and it does not* | unit | The human's rule: the subset is chosen before the box, and neither bracketing nor area can change it. Adversarial by construction — subset `0` neither brackets nor is larger, and still wins. |
@@ -97,22 +101,40 @@ Each traces to a defect or to a measured fact rather than to imagination.
 - **A frame rate that is nearly 25** (25.001) as well as plainly not (29.97). The near-miss is
   the one a tolerance check gets wrong.
 - **A row that outlived its file**, from the species-picture precedent.
-- **A permanent failure served a page repeatedly**, which was the enqueue loop A3 could
-  otherwise create — and which, since A3's reversal, asserts the page view does not touch the
-  row at all.
+- **A permanent failure served a page repeatedly**, and a permanent failure receiving a
+  *later keyframe* — the enqueue loop each of the two triggers could otherwise create.
 - **Two subsets where the first is the worse-looking choice.** Constructed to fail if anyone
   reinstates the preference rule.
 
 ## Regression coverage
 
-- **A3's reversal (2026-09-10).** Four existing tests asserted enqueue-on-page-serve and were
-  **rewritten to assert the new rule rather than deleted**, because the rule they used to
-  guard still needs a guard pointing the other way. `serving a page enqueues what is missing`
-  became `serving a page enqueues nothing`; `re-enqueues on the next page view what stop
-  discarded` became `leaves what stop discarded absent until somebody asks again`. Three new
-  tests in `tests/gpu-observation-ingest.test.js` cover the positive half. Mutation-checked in
-  both directions: with the `enqueueMissing` call restored to `queryPages` the tripwire fails
-  and reports the two rows it found.
+- **A3 moved twice on 2026-09-10, and both triggers are now tested separately.** The
+  page-serve tests were rewritten twice and **never deleted** — first to assert that a page
+  serve writes nothing, then, when the backstop was restored, to assert that it enqueues a
+  row that has none and is a no-op on one that does not. Ten new tests: three at the machine
+  ingest, seven at the keyframe trigger and the backstop.
+
+  **Each trigger was mutation-checked against the other's removal**, because with two of them
+  a test can pass on the wrong one:
+
+  - `db:migrate:undo`, dropping `keyframes_enqueue_thumbnail_trigger`: **5 of the 8 creation
+    tests fail**, including the GUI's two-request sequence and the rollback case. 3 pass, and
+    correctly so — they assert that something is *not* enqueued.
+  - The `enqueueMissing` call removed from `queryPages`: *enqueues an observation on the page
+    that has no record* **fails**. Notably *reports queued for an observation that had no
+    record* still passes, because the `coalesce` answers `queued` whether or not anything was
+    written — which is exactly why the first test asks the table instead, and why a
+    response-only assertion would have been worthless here.
+
+- **A defect of mine, found by the suite rather than by reading, and it is issue #62.** After
+  the new tests started calling `POST /api/v2/observation`, two *later* tests in the file
+  began failing with an empty sequelize error. `observation.repository.js#createObservation`
+  inserts an explicit `max + 1` and never advances the `observations` sequence, so the
+  suite's own helper — which relied on the sequence default — eventually collided on the
+  primary key. Measured: `MAX(observation_id)` 652 against `last_value` 3937, and the
+  collision arrives once the explicit inserts catch the sequence up. The helper now assigns
+  `max + 1` like every other writer in MARP. **The failure surfaced in a different test from
+  the one that caused it**, which is worth knowing before debugging it again.
 
 - **The clamp (R22).** During G2 the new test failed with `Expected: <= 1920 / Received: 2765`:
   a box entirely outside the frame produced a rectangle ending past the frame edge, which

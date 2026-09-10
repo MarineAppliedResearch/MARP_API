@@ -16,8 +16,8 @@
  * cannot express is the negative space, and three things force a row anyway:
  * absence cannot distinguish *not made yet* from *tried and failed* from *can
  * never be made*, and an observation with no keyframes proves the third exists;
- * a retry re-queues whatever is missing, so without a record of permanence a
- * hopeless observation is re-enqueued on every press of *Ask again* for ever,
+ * a page fetch and a retry each re-queue whatever is missing, so without a record
+ * of permanence a hopeless observation is re-enqueued on every page view for ever,
  * against the media server the concurrency bound exists to protect; and A8
  * requires the match score to be written down so the misses are countable, which
  * a file's absence records nothing about.

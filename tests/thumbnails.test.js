@@ -101,11 +101,21 @@ function q(sql, replacements = {}) {
  * @returns {Promise<Array<number>>} The new ids, ascending.
  */
 async function addObservations(count, options = {}) {
+    // `observation_id` is assigned here as `max + 1` rather than left to the
+    // column's sequence, because **the sequence cannot be relied on** (#62):
+    // `repository/observation.repository.js#createObservation` inserts an explicit
+    // `max + 1` and never advances the sequence, so once a test in this file goes
+    // through that route the sequence is behind the table and the next
+    // sequence-assigned insert collides on the primary key. That failure arrives
+    // in a *later* test than the one that caused it, with an empty error, which is
+    // as confusing as it sounds. Every writer in MARP assigns this key by hand;
+    // this helper now does too.
     const rows = await q(
         `INSERT INTO observations
-             (session_id, project_id, "obsID", confidence, comname, tc,
+             (observation_id, session_id, project_id, "obsID", confidence, comname, tc,
               video_source, "mediaPosition", "createdAt", "updatedAt")
-         SELECT :sessionId, :projectId, 970000 + g, 0.5, :comname, '10:00:00',
+         SELECT (SELECT COALESCE(MAX(observation_id), 0) FROM observations) + g,
+                :sessionId, :projectId, 970000 + g, 0.5, :comname, '10:00:00',
                 :videoSource, :mediaPosition, NOW(), NOW()
            FROM generate_series(1, :count) AS g
          RETURNING observation_id`,
@@ -124,6 +134,43 @@ async function addObservations(count, options = {}) {
     seeded.observationIds.push(...ids);
 
     return ids;
+}
+
+/**
+ * Inserts keyframes for an observation in **one statement**, and returns how many.
+ *
+ * One statement on purpose: `keyframes_enqueue_thumbnail_trigger` is statement-level
+ * with a transition table, so a multi-row insert is the shape that would break if
+ * somebody "fixed" the trigger to `FOR EACH ROW` or dropped the `DISTINCT`.
+ *
+ * Raw SQL, through no repository at all, which is also the point -- the trigger has
+ * to cover a writer that bypasses every one of them.
+ *
+ * @param {number} observationId - Whose keyframes.
+ * @param {Array<number>} framenums - One keyframe per frame number.
+ * @param {string} [subset] - Track label.
+ * @returns {Promise<number>} How many rows were written.
+ */
+async function addKeyframes(observationId, framenums, subset = '1') {
+    // `bind` rather than `replacements`: a named replacement holding an array is
+    // expanded to `(1,2,3)`, which is a syntax error inside `unnest(...::int[])`.
+    // The same trap `observation-thumbnail.repository.js` records against
+    // `= ANY(...)`.
+    const rows = await db.sequelize.query(
+        `INSERT INTO keyframes
+             (observation_id, subset, comname, type, framenum, x, y, width, height,
+              "createdAt", "updatedAt")
+         SELECT $1::int, $2::varchar, $3::varchar, 'middle', f, 0.5, 0.5, 0.1, 0.1,
+                NOW(), NOW()
+           FROM unnest($4::int[]) AS f
+         RETURNING keyframe_id`,
+        {
+            bind: [observationId, subset, `Jest Thumbnail ${runId}`, framenums],
+            type: QueryTypes.SELECT,
+        }
+    );
+
+    return rows.length;
 }
 
 /**
@@ -409,52 +456,279 @@ describe('observation thumbnails (#118)', () => {
         });
     });
 
-    describe('serving a page enqueues nothing (A3, reversed; R11)', () => {
+    describe('writing a keyframe enqueues a thumbnail (R27)', () => {
 
-        // A3 was answered the other way on 2026-09-09 -- a page fetch enqueued
-        // what it was missing and absence reported `queued` -- and the human
-        // reversed it on 2026-09-10: *"one of our key criteria is that the user
-        // never has to wait. So trying to load the page should not be the thing
-        // that makes the back end work. When the observation is created, it
-        // should get enqueued."*
+        // The **primary** trigger. The page-serve backstop is below, and the
+        // point of having this one is that by the time anybody looks the work is
+        // normally already done or in flight.
         //
-        // These were rewritten rather than deleted, and the first one is the
-        // point: it is what stops the side effect being reinstated by accident.
+        // The first attempt at it put the enqueue in the GPU ingest's own
+        // repository. That covered the machine path and **silently missed every
+        // hand-annotated observation**, which is the kind of gap that looks fine
+        // for months.
+        //
+        // It hangs off the **keyframe** rather than the observation because a
+        // thumbnail is a crop of a box, and because of what the annotation GUI
+        // actually does, read rather than assumed
+        // (`VIDEO_PROCESSING_GUI/MAREGUI_PROOFofCONCEPT/FishWindow.xaml.cs:2772`
+        // then `:2857`): it POSTs the observation, waits for the server-assigned
+        // `observation_id`, and only then POSTs the keyframes. Enqueueing at
+        // observation-creation would hand the extractor a boxless row, which R9
+        // records as a **permanent** failure -- and the keyframes arriving a
+        // moment later would never recover it.
 
-        it('creates no thumbnail record, however many times a page is served', async () => {
+        it('creates no row for an observation written with no keyframes', async () => {
+            // The GUI's first request, and F6's state: it skips the keyframe POST
+            // entirely when the annotator drew no box
+            // (`FishWindow.xaml.cs:2848`, its own comment cites issue #183), so
+            // a boxless observation is routine rather than exotic. **Creation**
+            // must not enqueue it -- there is no box, so the extractor would
+            // record a permanent failure that no later keyframe could undo. The
+            // page backstop may still enqueue it later, which is fine: by then a
+            // person is looking, and a permanent failure is the honest answer.
+            const created = await global.api.post('/api/v2/observation').send({
+                observation: {
+                    session_id: seeded.sessionId,
+                    comname: `Jest Thumbnail ${runId}`,
+                    tc: '10:00:00',
+                    count: 1,
+                    video_source: `jest-thumbnail-${runId}.mp4`,
+                    mediaPosition: '00:12:00.0000000',
+                },
+            });
+
+            expect(created.status).toBe(200);
+
+            const observationId = Number(created.body.observation_id);
+
+            expect(Number.isInteger(observationId)).toBe(true);
+            seeded.observationIds.push(observationId);
+
+            expect(await thumbnailRepository.findByObservationId(observationId)).toBeUndefined();
+        });
+
+        it('enqueues when the GUI posts the keyframes, one request later', async () => {
+            // The two requests in the order the GUI issues them. This is the test
+            // that would have failed on the first implementation.
+            const created = await global.api.post('/api/v2/observation').send({
+                observation: {
+                    session_id: seeded.sessionId,
+                    comname: `Jest Thumbnail ${runId}`,
+                    tc: '10:00:01',
+                    count: 1,
+                    video_source: `jest-thumbnail-${runId}.mp4`,
+                    mediaPosition: '00:12:01.0000000',
+                },
+            });
+
+            const observationId = Number(created.body.observation_id);
+
+            seeded.observationIds.push(observationId);
+
+            expect(await thumbnailRepository.findByObservationId(observationId)).toBeUndefined();
+
+            // A bare array, not `{ keyframes: [...] }` -- the shape that route
+            // takes and the shape `Functions.GetAnnotationsAsJson` sends.
+            const posted = await global.api.post('/api/v2/keyframe').send([
+                {
+                    observation_id: observationId,
+                    subset: '1',
+                    comname: `Jest Thumbnail ${runId}`,
+                    type: 'start',
+                    framenum: 18000,
+                    x: 0.5,
+                    y: 0.5,
+                    width: 0.1,
+                    height: 0.1,
+                },
+            ]);
+
+            expect(posted.status).toBe(200);
+
+            const record = await thumbnailRepository.findByObservationId(observationId);
+
+            expect(record).toBeDefined();
+            expect(record.status).toBe('queued');
+            expect(record.permanent).toBe(false);
+            expect(record.attempts).toBe(0);
+            expect(record.requested_at).not.toBeNull();
+            expect(record.filename).toBeNull();
+        });
+
+        it('enqueues from a plain INSERT that goes through no repository at all', async () => {
+            // The reason this is a trigger. Three repositories write keyframes --
+            // the ingest with raw SQL, the observation create through a nested
+            // `include`, and the keyframe route through `bulkCreate` -- and a
+            // fourth writer is a person fixing data by hand. One place covers all
+            // four; a second call site is how one of them gets forgotten.
+            const [a] = await addObservations(1);
+
+            expect(await thumbnailRepository.findByObservationId(a)).toBeUndefined();
+            expect(await addKeyframes(a, [18000, 18013, 18028])).toBe(3);
+
+            const record = await thumbnailRepository.findByObservationId(a);
+
+            expect(record).toBeDefined();
+            expect(record.status).toBe('queued');
+        });
+
+        it('writes exactly one row for a track of many keyframes', async () => {
+            // `SELECT DISTINCT` over the transition table. Without it the insert
+            // conflicts with itself inside one statement, which Postgres refuses
+            // outright rather than ignoring -- so this fails loudly if the
+            // DISTINCT is ever dropped.
+            const [a] = await addObservations(1);
+
+            expect(await addKeyframes(a, [100, 200, 300, 400, 500, 600, 700, 800])).toBe(8);
+
+            const rows = await q(
+                'SELECT observation_id FROM observation_thumbnails WHERE observation_id = :a',
+                { a }
+            );
+
+            expect(rows).toHaveLength(1);
+        });
+
+        it('adds nothing when more keyframes arrive later for the same observation', async () => {
+            // The GUI does exactly this: `attachToSelectedAnnotation` and
+            // `commitKeyframeAtCurrentFrame` post single keyframes onto an
+            // observation that already has some.
+            const [a] = await addObservations(1);
+
+            await addKeyframes(a, [100, 200]);
+
+            const first = await thumbnailRepository.findByObservationId(a);
+
+            await addKeyframes(a, [300]);
+            await addKeyframes(a, [400], '2');
+
+            const after = await q(
+                'SELECT observation_id, requested_at FROM observation_thumbnails WHERE observation_id = :a',
+                { a }
+            );
+
+            expect(after).toHaveLength(1);
+            expect(after[0].requested_at.getTime()).toBe(first.requested_at.getTime());
+        });
+
+        it('never resets a ready row when a later keyframe arrives', async () => {
+            // `ON CONFLICT DO NOTHING`, never `DO UPDATE`. This is the dangerous
+            // one: `DO UPDATE` would throw away a picture that exists and re-open
+            // a Jellyfin stream every time an annotator nudged a box. Asking for
+            // a fresh picture is the retry route's job, on a button a person
+            // pressed.
+            const [a] = await addObservations(1);
+
+            await setThumbnail(a, { status: 'ready', filename: `${a}-settled.jpg`, generation: 3 });
+            await addKeyframes(a, [900, 901]);
+
+            const record = await thumbnailRepository.findByObservationId(a);
+
+            expect(record.status).toBe('ready');
+            expect(record.filename).toBe(`${a}-settled.jpg`);
+            expect(record.generation).toBe(3);
+        });
+
+        it('never re-queues a permanent failure when a later keyframe arrives', async () => {
+            const [a] = await addObservations(1);
+
+            await setThumbnail(a, {
+                status: 'failed',
+                permanent: true,
+                lastError: 'The video matched at 61, below the bar.',
+            });
+
+            await addKeyframes(a, [1000]);
+
+            const record = await thumbnailRepository.findByObservationId(a);
+
+            expect(record.status).toBe('failed');
+            expect(record.permanent).toBe(true);
+        });
+
+        it('takes the queue entry with the write when the transaction rolls back', async () => {
+            // Inside the transaction rather than after it, so an observation can
+            // never exist with nothing intending to picture it -- and a failed
+            // write can never leave a queue entry behind.
+            const [a] = await addObservations(1);
+
+            await expect(db.sequelize.transaction(async (transaction) => {
+                await db.sequelize.query(
+                    `INSERT INTO keyframes
+                         (observation_id, subset, comname, type, framenum, x, y, width, height,
+                          "createdAt", "updatedAt")
+                     VALUES (:a, '1', 'Jest rollback', 'start', 2000, 0.5, 0.5, 0.1, 0.1, NOW(), NOW())`,
+                    { replacements: { a }, transaction }
+                );
+
+                // The row exists inside the transaction, which is what proves the
+                // trigger fired rather than the assertion below being vacuous.
+                const inside = await db.sequelize.query(
+                    'SELECT observation_id FROM observation_thumbnails WHERE observation_id = :a',
+                    { replacements: { a }, type: QueryTypes.SELECT, transaction }
+                );
+
+                expect(inside).toHaveLength(1);
+
+                throw new Error('deliberate rollback');
+            })).rejects.toThrow('deliberate rollback');
+
+            expect(await thumbnailRepository.findByObservationId(a)).toBeUndefined();
+        });
+    });
+
+    describe('serving a page is the backstop, not the trigger (A3, R11, R28)', () => {
+
+        // A3 moved twice on 2026-09-10 and this is where it landed. It was
+        // answered on 2026-09-09 as *a page fetch enqueues what it is missing*;
+        // the human then reversed that -- *"trying to load the page should not be
+        // the thing that makes the back end work"* -- and then refined it: *"if a
+        // page tries to view something and those thumbnails aren't available, that
+        // page should enqueue the observations that are trying to be seen."*
+        //
+        // So there are two triggers, and each needs its own test. Creation is the
+        // primary one and is above; this is the safety net for what creation
+        // cannot reach -- the ~440,000 rows that predate the trigger.
+
+        it('enqueues an observation on the page that has no record', async () => {
+            // These observations are written straight to `observations` with no
+            // keyframes, which is exactly the shape of a legacy row: the creation
+            // trigger never fired for it and nothing else will.
             const [a, b] = await addObservations(2);
 
-            for (let i = 0; i < 3; i += 1) {
-                const res = await global.api.post(PAGES).send({
-                    filters: { session: [seeded.sessionId] },
-                    pageSize: 45,
-                    pages: [1],
-                });
+            expect(await thumbnailRepository.findByObservationId(a)).toBeUndefined();
 
-                expect(res.status).toBe(200);
-            }
+            const res = await global.api.post(PAGES).send({
+                filters: { session: [seeded.sessionId] },
+                // Big enough to hold everything this suite seeds into the
+                // session. At 45 a row created late falls onto page 2 and the
+                // lookup below finds nothing, which reads as the endpoint being
+                // wrong rather than as the question being too narrow.
+                pageSize: 400,
+                pages: [1],
+            });
 
-            // Asked of the table, not of the response: the response could report
-            // anything, and the question here is whether a read wrote.
+            expect(res.status).toBe(200);
+
+            // Asked of the table as well as the response: the response could
+            // report `queued` from the coalesce while nothing was written, which
+            // is precisely the dishonesty the two halves of A3 exist to prevent.
             const rows = await q(
-                `SELECT observation_id FROM observation_thumbnails
-                  WHERE observation_id IN (:a, :b)`,
+                `SELECT observation_id, status FROM observation_thumbnails
+                  WHERE observation_id IN (:a, :b) ORDER BY observation_id`,
                 { a, b }
             );
 
-            expect(rows).toEqual([]);
+            expect(rows.map((row) => row.observation_id)).toEqual([a, b].sort((x, y) => x - y));
+            expect(rows.every((row) => row.status === 'queued')).toBe(true);
         });
 
-        it('reports failed for an observation that has no record', async () => {
-            // `failed` rather than `queued`, because nothing is coming: the row
-            // predates enqueue-on-create and only #121's sweeper or the
-            // reviewer's *Ask again* will ever make it a picture. `queued` would
-            // be a promise the API does not keep.
+        it('reports queued for an observation that had no record', async () => {
             const [a] = await addObservations(1);
 
             const res = await global.api.post(PAGES).send({
                 filters: { session: [seeded.sessionId] },
-                pageSize: 45,
+                pageSize: 400,
                 pages: [1],
             });
 
@@ -462,7 +736,59 @@ describe('observation thumbnails (#118)', () => {
 
             const row = res.body.pages[0].rows.find((r) => r.observation_id === a);
 
-            expect(row.thumbnail_status).toBe('failed');
+            // Honest, because the fetch enqueued it. That is the half of A3 that
+            // makes the other half true.
+            expect(row.thumbnail_status).toBe('queued');
+        });
+
+        it('finds the row already there after creation, and leaves it alone', async () => {
+            // The two triggers must not fight. The creation trigger has already
+            // enqueued this observation, so the page serve has to be a no-op on
+            // it -- not a second row, and not a reset of the first.
+            const [a] = await addObservations(1);
+
+            await addKeyframes(a, [4000, 4010]);
+
+            const created = await thumbnailRepository.findByObservationId(a);
+
+            expect(created.status).toBe('queued');
+
+            await global.api.post(PAGES).send({
+                filters: { session: [seeded.sessionId] },
+                pageSize: 400,
+                pages: [1],
+            });
+
+            const after = await q(
+                'SELECT observation_id, requested_at FROM observation_thumbnails WHERE observation_id = :a',
+                { a }
+            );
+
+            expect(after).toHaveLength(1);
+            expect(after[0].requested_at.getTime()).toBe(created.requested_at.getTime());
+        });
+
+        it('never resets a ready row, however many times the page is served', async () => {
+            // The expensive mistake this guards: a page serve that reset a `ready`
+            // row to `queued` would re-open a Jellyfin stream for every tile on
+            // every navigation, for a picture that already exists.
+            const [a] = await addObservations(1);
+
+            await setThumbnail(a, { status: 'ready', filename: `${a}-backstop.jpg`, generation: 2 });
+
+            for (let i = 0; i < 3; i += 1) {
+                await global.api.post(PAGES).send({
+                    filters: { session: [seeded.sessionId] },
+                    pageSize: 400,
+                    pages: [1],
+                });
+            }
+
+            const record = await thumbnailRepository.findByObservationId(a);
+
+            expect(record.status).toBe('ready');
+            expect(record.filename).toBe(`${a}-backstop.jpg`);
+            expect(record.generation).toBe(2);
         });
 
         it('reports the real status once one exists', async () => {
@@ -472,7 +798,11 @@ describe('observation thumbnails (#118)', () => {
 
             const res = await global.api.post(PAGES).send({
                 filters: { session: [seeded.sessionId] },
-                pageSize: 45,
+                // Big enough to hold everything this suite seeds into the
+                // session. At 45 a row created late falls onto page 2 and the
+                // lookup below finds nothing, which reads as the endpoint being
+                // wrong rather than as the question being too narrow.
+                pageSize: 400,
                 pages: [1],
             });
 
@@ -481,10 +811,10 @@ describe('observation thumbnails (#118)', () => {
             expect(row.thumbnail_status).toBe('ready');
         });
 
-        it('leaves a permanent failure exactly as it found it', async () => {
-            // Permanence is still what protects the media server, but the button
-            // it protects it from is now *Ask again* rather than paging. A page
-            // serve must not touch the row at all.
+        it('never re-enqueues a permanent failure, however many times the page is served', async () => {
+            // This is the whole reason permanence is recorded. Without it a page
+            // of hopeless legacy rows asks the media server again on every page
+            // view, on a button the page invites the reviewer to press.
             const [a] = await addObservations(1);
 
             await setThumbnail(a, {
@@ -877,12 +1207,36 @@ describe('observation thumbnails (#118)', () => {
             // queue makes a reviewer wait behind a PREPARING tile, which the
             // client already draws, rather than producing a state it has no
             // rendering for.
+            //
+            // Through real keyframe writes rather than a repository call, because
+            // since A3's reversal that is the only thing that enqueues.
             const ids = await addObservations(5);
 
-            expect(await thumbnailRepository.enqueueMissing(ids)).toBe(5);
+            for (const id of ids) {
+                await addKeyframes(id, [3000, 3010]);
+            }
 
-            // A second enqueue of the same page adds nothing and refuses nothing.
-            expect(await thumbnailRepository.enqueueMissing(ids)).toBe(0);
+            const rows = await q(
+                `SELECT observation_id, status FROM observation_thumbnails
+                  WHERE observation_id IN (:ids) ORDER BY observation_id`,
+                { ids }
+            );
+
+            expect(rows.map((row) => row.observation_id)).toEqual(ids);
+            expect(rows.every((row) => row.status === 'queued')).toBe(true);
+
+            // A second write for the same observations adds nothing and refuses
+            // nothing.
+            for (const id of ids) {
+                await addKeyframes(id, [3020]);
+            }
+
+            const again = await q(
+                'SELECT observation_id FROM observation_thumbnails WHERE observation_id IN (:ids)',
+                { ids }
+            );
+
+            expect(again).toHaveLength(ids.length);
         });
     });
 
@@ -1057,9 +1411,9 @@ describe('observation thumbnails (#118)', () => {
             expect(res.body.runState).toBe('paused');
             expect(res.body.discarded).toBeGreaterThanOrEqual(1);
 
-            // The discarded row is **simply absent** again, which reports
-            // `failed` and is re-enqueued by the reviewer's *Ask again* -- so
-            // nothing is lost and no fourth state was needed.
+            // The discarded row is **simply absent** again, which is what makes
+            // the next page view re-enqueue it -- so nothing is lost and no
+            // fourth state was needed.
             expect(await thumbnailRepository.findByObservationId(queued)).toBeUndefined();
 
             expect((await thumbnailRepository.findByObservationId(ready)).status).toBe('ready');
@@ -1068,11 +1422,10 @@ describe('observation thumbnails (#118)', () => {
             await global.api.post(CONTROL).send({ action: 'resume' });
         });
 
-        it('leaves what stop discarded absent until somebody asks again', async () => {
-            // This asserted a page view re-enqueueing until A3 was reversed. A
-            // page view is a pure read now, so the retry route is what recovers a
-            // discarded row -- and in between the tile says NO IMAGE rather than
-            // staying PREPARING for ever, which is the visible cost of stop.
+        it('re-enqueues on the next page view what stop discarded', async () => {
+            // A discarded row is simply absent again, and the page backstop is
+            // what makes that safe -- so nothing is lost and no fourth state was
+            // needed for "was queued and then abandoned".
             const [a] = await addObservations(1);
 
             await setThumbnail(a, { status: 'queued' });
@@ -1080,19 +1433,12 @@ describe('observation thumbnails (#118)', () => {
 
             expect(await thumbnailRepository.findByObservationId(a)).toBeUndefined();
 
-            const served = await global.api.post(PAGES).send({
+            await global.api.post(PAGES).send({
                 filters: { session: [seeded.sessionId] },
-                pageSize: 45,
+                pageSize: 400,
                 pages: [1],
             });
 
-            expect(served.body.pages[0].rows.find((r) => r.observation_id === a).thumbnail_status)
-                .toBe('failed');
-            expect(await thumbnailRepository.findByObservationId(a)).toBeUndefined();
-
-            const asked = await global.api.post(RETRY).send({ observationIds: [a] });
-
-            expect(asked.status).toBe(200);
             expect((await thumbnailRepository.findByObservationId(a)).status).toBe('queued');
 
             await global.api.post(CONTROL).send({ action: 'resume' });
