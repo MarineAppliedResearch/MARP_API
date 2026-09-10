@@ -191,5 +191,105 @@ survive an earlier take and an outcome cannot* · read back from the database by
 
 ## Results
 
-<!-- Appended after this plan is approved and run. Real output, failures included. Empty
-     until then, deliberately: G2's run is not this package. -->
+Plan approved by the human on 2026-09-10 (*"I think this is a good plan"*) and run against it.
+Real output, including what went wrong.
+
+### The automated tiers
+
+**API, `npm test`:**
+```
+  Test Suites : 44 passed, 0 failed, 44 total
+  Tests       : 593 passed, 0 failed, 0 skipped, 593 total
+  Duration    : 42.7s
+
+  Result: ALL TESTS PASSED
+```
+
+**Client unit and wire tiers, `npm run test:unit`** (lint plus `tests/unit/*.test.mjs`, so the
+21 wire tests are inside this figure):
+```
+ℹ pass 244
+ℹ fail 0
+ℹ duration_ms 890.6629
+```
+
+**Contract and render tiers, `npm run test:e2e`** (desktop and phone):
+```
+  4 skipped
+  244 passed (1.8m)
+```
+The 4 skips are the pre-existing viewport-conditional cases — phone-only tests in the desktop
+project and the reverse.
+
+### Manual step 3 — the three failure states, which the plan recorded as not done
+
+Now done, against the running API. **All three are distinguishable**, which is R20's premise:
+
+```
+--- 1. no credential (expect 401) ---
+{"error":{"code":"UNAUTHORIZED","message":"Authentication is required.","status":401,
+          "requestId":"req_mtvw83qx_mgwi9g3i"}}
+[HTTP 401]
+
+--- 2. read-only principal committing (expect 403) ---
+{"error":{"code":"FORBIDDEN","message":"The \"observations:write\" permission is required.",
+          "status":403,"requestId":"req_mtvw83rg_bmrd7tlk"}}
+[HTTP 403]
+
+--- 3. transport failure: a port with nothing on it ---
+[HTTP 000] exit=7
+```
+
+The third is the one that matters for telling them apart: **no HTTP status at all** — curl
+reports `000` and exit 7. A client cannot mistake it for either of the other two, which is
+what lets `ui/failure.js` draw three panels rather than one generic error.
+
+The 403 message names the missing permission, so *refused* is distinguishable from *not
+signed in* without inspecting anything.
+
+A read-only service client was created for check 2 and **revoked afterwards** (`removed 1
+probe client`).
+
+### A failure that was the operator's, not the code's
+
+Recorded so nobody chases it. The first attempt at checks 1 and 2 returned **500
+INTERNAL_ERROR** for both. That looked like a real defect in the permission middleware. It was
+not:
+
+```
+[API Error] {
+  code: 'INTERNAL_ERROR',
+  status: 500,
+  message: `Unexpected token 'L', ..."ation_id":Loading mo"... is not valid JSON`
+}
+```
+
+`require('./model')` prints `Loading model: …` to **stdout**, and the shell substitution
+building the request body captured it — so the body was malformed and the JSON parser answered
+before any auth middleware ran. Reading the server log rather than reporting the 500 is what
+caught it. Body written to a file instead, and both checks then answered correctly.
+
+### Manual steps 1 and 2
+
+- **Step 1, opening the mosaic:** done by the human, who logged in as the walkthrough user and
+  reviewed the app against this corpus.
+- **Step 2, judging the tiles:** done on 2026-09-09 for the crops and the centre-origin
+  control, and again on 2026-09-10 against the larger corpus. The human's verdict on the
+  species labelling was *"so far, this actually looks good"*, after checking whether tiles
+  labelled *Fish-eating anemone* were misclassified fish — they are not; that is the common
+  name of *Urticina piscivora*.
+
+### Unchanged from the plan
+
+- **R23 is still unmet.** Nothing in this run closes it.
+- **`npm run docs:build` still exits 1** on the four pre-existing jsdoc errors in
+  `schedule.js`. Identical on `develop`; not touched.
+- **`DEFAULT_FILTERS.species` is still a placeholder**, and the bare address still opens on an
+  empty mosaic.
+- **The dive menu still reads "Dive Dive 12".**
+
+### Corpus this ran against
+
+1,062 observations, 15,230 keyframes, 3 dives, 7 species, 1,056 thumbnails ready — from three
+GPU inference runs over real Jellyfin video. Larger than any figure quoted in `.marp/task.md`,
+which was written when the database held six observations of one species.
