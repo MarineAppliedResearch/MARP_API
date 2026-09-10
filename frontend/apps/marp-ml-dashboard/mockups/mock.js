@@ -327,6 +327,164 @@ function wireSorting() {
   });
 }
 
+/**
+ * Any group of buttons that swaps a set of panels: the in-page tab strip, and
+ * the segmented controls for scope and output mode. One implementation, because
+ * three screens want the same gesture and three copies would behave three ways.
+ *
+ *   <nav class="seg" data-switch="scope"> <button data-view="dive"> ... </nav>
+ *   <div data-viewof="scope" data-view="dive" hidden> ... </div>
+ */
+function wireSwitchers() {
+  $$('[data-switch]').forEach((root) => {
+    const group = root.dataset.switch;
+    const btns = $$('button[data-view]', root);
+    const panels = $$('[data-viewof="' + group + '"]');
+    if (!btns.length) return;
+
+    const show = (view) => {
+      btns.forEach((b) => {
+        const on = b.dataset.view === view;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-current', on ? 'true' : 'false');
+      });
+      panels.forEach((p) => { p.hidden = p.dataset.view !== view; });
+      root.dispatchEvent(new CustomEvent('switched', { detail: view, bubbles: true }));
+    };
+
+    btns.forEach((b) => {
+      b.addEventListener('click', () => { if (!b.disabled) show(b.dataset.view); });
+    });
+    const start = btns.find((b) => b.classList.contains('on')) || btns[0];
+    show(start.dataset.view);
+  });
+}
+
+/**
+ * A range and its number box, bound both ways.
+ *
+ * Typing in the box has to move the handle, or the read-out is a label
+ * pretending to be a control.
+ */
+function wireSliders() {
+  $$('.slider').forEach((wrap) => {
+    const range = $('input[type="range"]', wrap);
+    const out = $('.slider-out', wrap);
+    if (!range || !out) return;
+    const push = (v) => {
+      const n = Math.min(Number(range.max), Math.max(Number(range.min), Number(v) || 0));
+      range.value = n;
+      out.value = n;
+      range.dispatchEvent(new CustomEvent('slid', { bubbles: true }));
+    };
+    range.addEventListener('input', () => push(range.value));
+    out.addEventListener('change', () => push(out.value));
+  });
+}
+
+/* ================================================= the inference form */
+
+/* What each scope actually covers. The consequence line and the range count are
+   computed from this rather than typed, which is the only reason showing them
+   is worth anything. */
+const SCOPES = {
+  project: { videos: 1842, frames: 43000000, what: 'every dive and line in CAMPA 2024' },
+  dive: { videos: 31, frames: 742000, what: 'every line in CAMPA 2024 dive 0103' },
+  line: { videos: 1, frames: 18300, what: 'CAMPA 2024 dive 0103 line L30' },
+  custom: { videos: 3, frames: 55000, what: '3 chosen videos' },
+};
+
+const big = (n) => (n >= 1000000 ? '~' + Math.round(n / 1000000) + 'M'
+  : n >= 100000 ? '~' + Math.round(n / 1000) + 'k'
+    : n.toLocaleString('en-US'));
+
+function wireInferenceForm() {
+  const run = $('#runBtn');
+  if (!run) return;
+
+  const val = (id) => { const el = $('#' + id); return el ? el.value : ''; };
+  const picked = (group) => {
+    const b = $('[data-switch="' + group + '"] button.on');
+    return b ? b.dataset.view : '';
+  };
+
+  /* The Advanced fold says what is inside it while it is shut. A fold that
+     hides four settings and gives no hint of them is where a wrong threshold
+     goes unnoticed. */
+  const now = $('details.fold .now');
+  const refreshNow = () => {
+    if (!now) return;
+    now.textContent = 'conf ' + val('conf') + ' · IoU ' + val('iou')
+      + ' · ' + val('tracker') + ' · ' + val('chunk') + 'f ranges';
+  };
+
+  const sum = $('#scopeSum');
+  const refreshSum = () => {
+    if (!sum) return;
+    const s = SCOPES[picked('scope')] || SCOPES.project;
+    const chunk = Math.max(1, Number(val('chunk')) || 900);
+    const ranges = Math.ceil(s.frames / chunk);
+    $('.a', sum).textContent = 'Run inference on ' + s.what;
+    const plural = (n, word) => n.toLocaleString('en-US') + ' ' + word + (n === 1 ? '' : 's');
+    $('.b', sum).textContent = plural(s.videos, 'video') + ' · '
+      + big(s.frames) + ' frames · ' + plural(ranges, 'range')
+      + ' of ' + chunk + ' frames';
+  };
+
+  const cap = $('#cap');
+  const capOn = $('#capOn');
+  if (cap && capOn) {
+    capOn.addEventListener('change', () => { cap.disabled = !capOn.checked; });
+  }
+
+  document.addEventListener('switched', () => { refreshSum(); });
+  document.addEventListener('slid', () => { refreshNow(); });
+  $$('#conf, #iou, #tracker, #chunk, #reduce, #imgsz, #maxdet').forEach((el) => {
+    el.addEventListener('change', () => { refreshNow(); refreshSum(); });
+  });
+
+  /* The primary action reports the request it would send. A mockup whose main
+     button does nothing teaches nothing; one that says "submitted" teaches
+     something false. */
+  run.addEventListener('click', () => {
+    const scope = picked('scope');
+    const s = SCOPES[scope] || SCOPES.project;
+    const chunk = Math.max(1, Number(val('chunk')) || 900);
+    const spec = {
+      kind: 'inference',
+      name: val('jobname') || null,
+      scope: { type: scope, project: 'CAMPA 2024', videos: s.videos },
+      model: { name: val('model'), version: val('version'), sha256: '9f2c41ab…' },
+      spec: {
+        engine: 'ultralytics',
+        task: val('preset').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''),
+        conf: Number(val('conf')),
+        iou: Number(val('iou')),
+        max_det: Number(val('maxdet')),
+        imgsz: Number(val('imgsz')),
+        tracker: val('tracker'),
+        reduction: val('reduce'),
+        range_frames: chunk,
+      },
+      output: {
+        mode: picked('out') === 'csv' ? 'csv' : 'observations',
+        confidence: true,
+      },
+      workers: {
+        select: val('workers'),
+        cap: capOn && capOn.checked ? Number(val('cap')) : null,
+      },
+      priority: 5,
+    };
+    $('#specText').textContent = JSON.stringify(spec, null, 2);
+    $('#specOut').hidden = false;
+    $('#specOut').scrollIntoView({ block: 'nearest' });
+  });
+
+  refreshNow();
+  refreshSum();
+}
+
 /* ==================================================================== boot */
 
 document.body.dataset.rail = 'closed';
@@ -337,4 +495,7 @@ wireRailSheet();
 wireMenu();
 wireDrawer();
 wireSelection();
+wireSwitchers();
+wireSliders();
+wireInferenceForm();
 wireSorting();

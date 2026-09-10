@@ -199,6 +199,7 @@ svg { display: block; }
 .grid { display: grid; gap: var(--gap); align-items: start; min-width: 0; }
 .grid[data-cols="wide-narrow"] { grid-template-columns: minmax(0, 1fr) 372px; }
 .grid[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .more {
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
@@ -623,6 +624,176 @@ details.diag .dbody { padding: 0 13px 13px; display: grid; gap: 12px; }
 .slots .row .v { color: var(--white); font-weight: 600; }
 .slots .row .p { color: var(--faint); font-size: 11px; }
 
+/* ============================================================== in-page tabs */
+
+.tabstrip {
+  display: flex; align-items: center; gap: 3px; padding: 4px;
+  background: var(--card-flat); border: 1px solid var(--hairline);
+  border-radius: var(--r); box-shadow: var(--lift);
+  /* Scrolls sideways on a phone, where four sub-tabs do not fit.
+     `overflow-x: auto` makes this a scroll container in *both* axes -- an
+     `overflow-y: visible` beside it computes to `auto` -- and a scroll
+     container's automatic block size is zero, so as a grid item this strip
+     collapsed to its own padding and squashed the buttons inside it to nothing.
+     The min-height is what keeps it a row rather than a sliver. */
+  overflow-x: auto;
+  min-height: 45px;
+}
+.tabstrip button {
+  display: inline-flex; align-items: center; gap: 8px; flex: none;
+  padding: 9px 15px; border-radius: var(--r-sm);
+  background: none; border: 0; color: var(--muted);
+  font-size: 13px; font-weight: 500; white-space: nowrap;
+}
+.tabstrip button:hover:not(:disabled) { color: var(--white); background: rgba(9, 30, 51, 0.8); }
+.tabstrip button.on {
+  background: linear-gradient(180deg, var(--blue-400), var(--blue-500));
+  color: var(--white); font-weight: 600;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.10) inset;
+}
+.tabstrip button:disabled { color: var(--faint); cursor: not-allowed; }
+/* A sub-tab nothing implements yet says so, so a dead control reads as
+   deferred rather than broken. */
+.tabstrip button[data-later]::after {
+  content: attr(data-later);
+  padding: 1px 6px; border-radius: 9px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+  background: rgba(9, 30, 51, 0.9); border: 1px solid var(--hairline); color: var(--faint);
+}
+
+/* ============================================================== forms */
+
+/* The numbered panel heading the creation flows use: 1. Model & settings. */
+.stepnum { display: inline-flex; align-items: baseline; gap: 9px; }
+.stepnum b { font-size: 16px; font-weight: 700; color: var(--cyan-300); }
+.panel-hd .sub { display: block; font-size: 11.5px; color: var(--faint);
+                 font-weight: 400; margin-top: 3px; }
+
+.field { display: grid; gap: 6px; margin-bottom: 15px; }
+.field:last-child { margin-bottom: 0; }
+.field > label { font-size: 11.5px; font-weight: 600; color: var(--text); }
+.field.req > label::after { content: " *"; color: var(--red-400); }
+.field .hint { font-size: 10.5px; color: var(--faint); line-height: 1.45; }
+.fieldrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; }
+
+/* A segmented control. The Mosaic Reviewer's markup, so the two applications
+   are the same object rather than two things that look alike. */
+.seg { display: inline-flex; border: 1px solid var(--hairline-2); border-radius: var(--r-sm);
+       overflow: hidden; flex-wrap: wrap; }
+.seg button {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 13px; font-size: 12px; font-weight: 500; color: var(--muted);
+  background: none; border: 0; border-right: 1px solid var(--hairline-2);
+}
+.seg button:last-child { border-right: 0; }
+.seg button:hover:not(.on) { color: var(--white); background: rgba(9, 30, 51, 0.8); }
+.seg button.on { background: var(--blue-500); color: var(--white); font-weight: 600; }
+.seg.wide { display: grid; grid-auto-flow: column; }
+
+.slider { display: grid; grid-template-columns: minmax(0, 1fr) 70px; gap: 12px; align-items: center; }
+.slider input[type="range"] {
+  appearance: none; width: 100%; height: 4px; border-radius: 3px;
+  background: var(--sunk); box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--blue-400); border: 2px solid var(--navy-950); cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(100, 190, 255, 0.4);
+}
+.slider-out { text-align: center; font-weight: 600; color: var(--white); }
+.slider-ends { display: flex; justify-content: space-between; font-size: 10px;
+               color: var(--faint); margin-top: 3px; padding-right: 82px; }
+
+.check { display: flex; align-items: flex-start; gap: 9px; padding: 5px 0;
+         cursor: pointer; font-size: 12px; }
+.check input { margin: 1px 0 0; }
+.check .lock { color: var(--faint); font-size: 10px; letter-spacing: 0.07em;
+               text-transform: uppercase; margin-left: 6px; }
+.checks { display: grid; gap: 2px; }
+
+/* A value the system resolved rather than the operator typing: the model
+   version and hash a job is locked to. Read-only on purpose, and it looks it. */
+.ro {
+  display: grid; gap: 4px;
+  padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--hairline);
+}
+.ro .a { color: var(--white); font-weight: 600; }
+.ro .b { font-size: 11px; color: var(--muted); }
+
+/* The computed consequence of a scope choice. Never typed -- it is derived from
+   the selection, which is the whole reason it is worth showing. */
+.sum {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px;
+  align-items: start;
+  padding: 11px 13px; border-radius: var(--r-sm);
+  background: rgba(20, 126, 232, 0.07); border: 1px solid rgba(45, 156, 255, 0.24);
+}
+.sum .ico { color: var(--blue-400); margin-top: 1px; }
+.sum .a { display: block; color: var(--white); font-weight: 600; font-size: 12.5px; }
+.sum .b { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+
+/* Counts about a chosen scope, laid out as a grid so the numbers line up. */
+.facts2 { display: grid; grid-template-columns: auto auto; gap: 5px 14px;
+          font-size: 11.5px; align-content: start; }
+.facts2 .k { color: var(--muted); }
+.facts2 .v { color: var(--white); font-weight: 600; text-align: right; }
+
+/* A fold. Same object as the drawer's diagnostics: present, and out of the way
+   until asked for. #104 requires the technical settings to be here rather than
+   on the front of the form. */
+details.fold { border: 1px solid var(--hairline); border-radius: var(--r-sm);
+               background: var(--sunk); }
+details.fold > summary {
+  cursor: pointer; padding: 10px 12px; font-size: 12px; font-weight: 600;
+  color: var(--text); display: flex; align-items: center; gap: 9px; list-style: none;
+}
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before {
+  content: ""; width: 0; height: 0; flex: none;
+  border-left: 4px solid var(--muted);
+  border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+}
+details.fold[open] > summary::before { transform: rotate(90deg) translateX(1px); }
+details.fold > summary:hover { color: var(--white); }
+details.fold > summary .now { margin-left: auto; font-weight: 500; color: var(--faint);
+                              font-size: 11px; }
+details.fold[open] > summary .now { display: none; }
+details.fold .fbody { padding: 4px 12px 14px; }
+
+/* What the Run button produces: the request this form would send. A mockup
+   whose primary action does nothing teaches nothing, and one that claims to
+   have submitted teaches something false. */
+.spec {
+  margin-top: 12px; padding: 12px 14px; border-radius: var(--r-sm);
+  background: rgba(1, 6, 14, 0.72); border: 1px solid var(--hairline-2);
+}
+.spec h4 { margin: 0 0 8px; font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+           text-transform: uppercase; color: var(--faint); }
+.spec pre { margin: 0; font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+            line-height: 1.6; color: var(--cyan-300); white-space: pre-wrap;
+            overflow-wrap: anywhere; }
+
+/* The run bar under the three columns. Worker choice, the name, and the button
+   the whole screen exists for -- which must never sit below the fold. */
+.runrow { display: grid; grid-template-columns: 1.4fr 0.8fr 1.4fr 1fr; gap: 18px;
+          align-items: start; }
+.runrow .field { margin-bottom: 0; }
+.runrow .check { padding: 0 0 4px; }
+
+@media (max-width: 1140px) { .runrow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 759px) {
+  .runrow { grid-template-columns: minmax(0, 1fr); }
+  /* Four scope options in one row do not fit 342px. This reflows them into a
+     grid instead, with the dividers running the other way. */
+  .seg.wide { display: grid; grid-auto-flow: row;
+              grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); }
+  .seg.wide button { justify-content: center; min-width: 0; padding: 7px 6px;
+                     border-right: 0; border-top: 1px solid var(--hairline-2); }
+  .seg.wide button:nth-child(-n+2) { border-top: 0; }
+  .tabstrip button { padding: 8px 11px; font-size: 12.5px; }
+}
+
 /* ============================================================== responsive */
 
 @media (max-width: 1420px) {
@@ -640,12 +811,15 @@ details.diag .dbody { padding: 0 13px 13px; display: grid; gap: 12px; }
   .rail-nav a span, .rail-nav a .badge { display: none; }
   .rail-foot { padding: 12px 8px; display: grid; justify-items: center; }
   .rail-foot .st span, .rail-foot .ver { display: none; }
-  .grid[data-cols="wide-narrow"], .grid[data-cols="2"] { grid-template-columns: minmax(0, 1fr); }
+  .grid[data-cols="wide-narrow"], .grid[data-cols="2"],
+  .grid[data-cols="3"] { grid-template-columns: minmax(0, 1fr); }
   /* Three-up. Two left the fifth card alone beside an empty half. */
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   /* Once the right-hand column has collapsed under the table, its two panels sit
-     side by side rather than each spanning a width they cannot fill. */
-  .grid > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+     side by side rather than each spanning a width they cannot fill. Scoped to
+     the dashboard's own split: as a bare `.grid > .grid` it also caught the
+     creation flows' three-column form and pinned it to two. */
+  .grid[data-cols="wide-narrow"] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   /* The tools take a line of their own here. Sharing one row with the title
      left `Machine Lea...` -- and the title is the thing that says where you are. */
@@ -695,17 +869,23 @@ details.diag .dbody { padding: 0 13px 13px; display: grid; gap: 12px; }
   /* Three rows, in this order: the search, then the scope controls and the
      account, then the two job buttons. Left to flex-wrap alone the search
      collapsed to its icon and one button took a whole line by itself. */
-  .topbar .tools { width: 100%; margin-left: 0; flex-wrap: wrap; flex-shrink: 1; }
-  .topbar .lab { display: none; }
-  .topbar .tools > .search { order: 1; flex: 1 1 100%; min-width: 0; }
-  .topbar .tools > .search .inp { width: 100%; min-width: 0; }
-  .topbar .tools > .sel { order: 2; flex: 1 1 auto; min-width: 0; }
-  .topbar .tools > .btn.icon { order: 3; }
-  .topbar .tools > .menuwrap { order: 4; }
-  /* Both primaries keep their labels rather than becoming unlabelled icons --
-     they are the reason this screen exists. */
-  .topbar .tools > .btn.primary { order: 5; flex: 1 1 45%; }
-  .topbar .tools > .btn.accent { order: 6; flex: 1 1 45%; }
+  /* Three rows: the search, then the scope controls and the account, then the
+     two job buttons. Flex wrapping could not be made to do this -- the first
+     job button kept fitting on the row above and the second wrapped alone -- so
+     the rows are placed. mock.js builds these children in one place and in this
+     order, which is what makes placing them by position safe. */
+  .topbar .tools {
+    width: 100%; margin-left: 0;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px;
+  }
+  .topbar .tools > :nth-child(1) { display: none; }                  /* "Project" */
+  .topbar .tools > :nth-child(3) { grid-area: 1 / 1 / 1 / -1; }      /* search   */
+  .topbar .tools > :nth-child(2) { grid-area: 2 / 1; }               /* project  */
+  .topbar .tools > :nth-child(4) { grid-area: 2 / 2; }               /* reload   */
+  .topbar .tools > :nth-child(7) { grid-area: 2 / 3; }               /* account  */
+  .topbar .tools > :nth-child(5) { grid-area: 3 / 1 / 3 / 3; }       /* inference */
+  .topbar .tools > :nth-child(6) { grid-area: 3 / 3; }               /* training  */
+  .topbar .tools .search .inp { width: 100%; min-width: 0; }
 
   .content { padding: 12px; gap: 12px; }
   /* Two-up, because five full-width cards is 600px of scrolling before the
@@ -746,6 +926,10 @@ details.diag .dbody { padding: 0 13px 13px; display: grid; gap: 12px; }
   /* Neither survives the trip to a phone card: bulk selection needs a pointer,
      and the row's own icon already says inference or training, in colour. */
   .tbl.stack td.chk, .tbl.stack th.chk, .tbl.stack td.jtype { display: none; }
+  /* Scope comes back. The mid-width rule drops that column for want of room,
+     but a card has a line to spare and the dive and line are what identify the
+     work. */
+  .tbl.stack td.jscope { display: block; }
   .tbl.stack td.jname   { grid-area: 1 / 1; }
   .tbl.stack td.jstatus { grid-area: 1 / 2; text-align: right; align-self: center; }
   .tbl.stack td.jscope  { grid-area: 2 / 1 / 2 / -1; }
@@ -772,5 +956,4 @@ details.diag .dbody { padding: 0 13px 13px; display: grid; gap: 12px; }
   .drawer-hd, .drawer-bd, .drawer-ft { padding: 13px; }
   .roll .facts { gap: 14px; }
   .bulk { flex-wrap: wrap; }
-}
 }
