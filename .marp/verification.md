@@ -56,11 +56,12 @@ Two tiers are used, and the split matters:
 - **R15 (the dashboard app)** — not implemented in this pass, so nothing is verified. It is
   a separate piece of work and needs its own tiers, including one that can see what was
   drawn.
-- **A15's live half** — that a real Jellyfin item resolves to a URL a worker can actually
-  open. Every resolution test stubs the media server, so what is proven is what MARP does
-  with a URL, not that the URL plays. Submitting a job naming a real item and leasing it
-  from a real worker is the manual step, and it is the one that would catch a
-  `buildDirectStreamUrl` that returns something Jellyfin no longer accepts.
+- ~~**A15's live half** — that a real Jellyfin item resolves to a URL a worker can actually
+  open.~~ **Closed 2026-09-09** by the manual step it names: a job carrying only
+  `jellyfin_item_id` was resolved at lease time and the worker opened the video, reporting
+  `1920x1080 at 25.000 fps, container reports 36159 frames`. The stubbed tests still prove
+  only what MARP does with a URL; this proves the URL plays. **Not closed for a transcoded
+  item** — that one direct-plays.
 
 ## Edge cases
 
@@ -126,15 +127,21 @@ because the implementation got them wrong first, and they are the ones to keep:
 
 Stated plainly, because a written gap is a decision and an omitted one is a surprise.
 
-- **No GPU, no worker, no Jellyfin.** Nothing here runs real inference. The worker side is
-  being built in parallel in `marp-inference-worker`; the two have never spoken. The job
+- ~~**No GPU, no worker, no Jellyfin.** Nothing here runs real inference. The worker side is
+  being built in parallel in `marp-inference-worker`; the two have never spoken.~~
+  **Superseded 2026-09-09** — the two have now spoken, repeatedly, and the results sections
+  below record it: a real worker on a real GPU ran the real MARP model over real Jellyfin
+  footage and returned observations. **What stands unchanged is the second half:** the job
   spec's `engine`, `model`, `params` and `reduction` are passed through untouched and
-  unvalidated by MARP, so a mismatch in their meaning would not be caught by any test here.
-- **The acceptance criteria are not met by this pass**, and cannot be by the coordinator
-  alone: two real machines enrolling, a real inference job over a real Jellyfin video,
-  progress advancing in a UI (there is no UI), and NAT traversal, home-link bandwidth,
-  long-haul latency and a machine vanishing mid-job. The last group is explicitly not
-  provable by an office-only run at all.
+  **unvalidated** by MARP, so a mismatch in their meaning would still not be caught by any
+  test here. It was caught by running the two halves together — seven times over.
+- **The acceptance criteria are partly met, as of 2026-09-09.** Met: a real inference job
+  over a real Jellyfin video, cancelled mid-run and stopped in 18 s; **a machine vanishing
+  mid-job**, killed outright with its lease expiring on MARP's clock in 65 s and the job
+  returning to `queued`. Still unmet: **two real machines enrolling at once** (one machine
+  only, so nothing has contended for a lease outside the transaction tier); progress
+  advancing in a UI, there being no UI; and NAT traversal, home-link bandwidth and long-haul
+  latency, which an office-only run cannot prove at all.
 - **`MARP_API` restarting mid-job is untested.** Leases are rows, so it should lose
   nothing, but no test kills and restarts the process.
 - **The long poll's waiting is only exercised at `wait_seconds: 0`.** The loop and its cap
