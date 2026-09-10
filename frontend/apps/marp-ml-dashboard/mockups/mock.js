@@ -685,7 +685,26 @@ const TIPS = {
   'Class breakdown': 'How many observations each class contributes',
   'Purpose': 'What this dataset is meant to be used for',
   'Frozen on save': 'Membership and split, fixed at this moment',
-  'Sample frames': 'Thumbnails of matching observations',
+  'Sample images': 'Thumbnails of observations this query matched',
+  'Transect': 'One transect within a dive',
+  'Species': 'Which species to include',
+  'Confidence range': 'Only observations scored inside this range',
+  'Date range': 'When the video was captured, not when it was annotated',
+  'Review status': 'Only promoted observations are eligible',
+  'Advanced filters': 'Annotator, box size and exclusions',
+  'Dataset name': 'What this dataset is called when a run selects it',
+  'Description': 'A note for whoever picks this dataset later',
+  'Dataset type': 'What this dataset is meant to be used for',
+  'Split strategy': 'A preset for the three shares below',
+  'Added subsets': 'Each query contributes its matches; duplicates are dropped',
+  'Dataset composition': 'How many observations each class contributes',
+  'Save query': 'Keep these filters for next time',
+  'Add all matching to dataset': 'Add every match; duplicates are ignored',
+  'Reassign': 'Assign the groups again from a new seed',
+  'Total (deduplicated)': 'The union of the subsets, each observation counted once',
+  'Query promoted observations': 'Filters that find observations to add',
+  'Query results': 'What these filters match',
+  'Current dataset': 'Name, composition and what went in',
   'Dataset': 'The saved dataset',
   'Observations': 'How many observations it holds',
   'Classes': 'How many distinct classes it covers',
@@ -728,37 +747,55 @@ function applyTips() {
 /* ============================================== the dataset split control */
 
 /**
- * The split, assigned by overlap group.
+ * The train / validation / test split.
  *
- * This is the one control on the screen that has to demonstrate a rule rather
- * than just collect a number: #104 requires the partition be assigned to whole
- * groups of observations whose key frames share screen time, never to single
- * observations. So the arithmetic is done here for real -- largest group first,
- * into whichever partition is furthest from its target -- and what comes back
- * is the share the grouping actually allowed, beside the share that was asked
- * for. Typing 33/33/34 shows the difference immediately.
+ * The numbers are what an operator sets. The arithmetic behind them is not:
+ * MARP_API#104 requires the partition be assigned to whole groups of
+ * observations whose key frames share screen time, so the shares land near the
+ * request rather than exactly on it. That is computed here for real, and the
+ * panel says where it landed.
+ *
+ * An earlier version drew all 1,204 groups as a barcode, with a timeline
+ * explaining why a group cannot be separated. Both were teaching diagrams for
+ * whoever implements this rather than controls for whoever uses it, and they
+ * went the same way as the explanatory paragraphs did. The rule is in DESIGN.md.
  */
 function wireSplit() {
-  const strip = $('.groupstrip');
-  if (!strip || !strip.dataset.sizes) return;
-
-  const sizes = strip.dataset.sizes.split(',').map(Number);
-  const total = sizes.reduce((a, b) => a + b, 0);
-  const blocks = $$('i', strip);
   const inputs = [$('#pTrain'), $('#pVal'), $('#pTest')];
-  const outs = [$('#trOut'), $('#vaOut'), $('#teOut')];
-  const nums = [$('#trN'), $('#vaN'), $('#teN')];
-  const CLS = ['tr', 'va', 'te'];
+  if (inputs.some((el) => !el)) return;
+
+  /* Group sizes, so the assignment is a real one rather than a percentage of a
+     total. Mostly small -- a lone animal or a pair -- with occasional dense
+     patches of seabed. */
+  const sizes = [];
+  let gen = 4711;
+  for (let i = 0; i < 1204; i++) {
+    gen = (gen * 1103515 + 12345) % 2147483647;
+    const r = gen / 2147483647;
+    sizes.push(r < 0.55 ? 1 + Math.floor(r * 4)
+      : r < 0.9 ? 4 + Math.floor(r * 14)
+        : 18 + Math.floor(r * 30));
+  }
+  const total = sizes.reduce((a, b) => a + b, 0);
   let seed = 1;
 
-  const assign = (want) => {
+  const bars = [$('#barTr'), $('#barVa'), $('#barTe')];
+  const pcs = [$('#pcTr'), $('#pcVa'), $('#pcTe')];
+  const nums = [$('#trN'), $('#vaN'), $('#teN')];
+  const note = $('#splitNote');
+
+  const draw = () => {
+    let want = inputs.map((el) => Math.max(0, Number(el.value) || 0));
+    const sum = want.reduce((a, b) => a + b, 0) || 1;
+    want = want.map((w) => w * 100 / sum);
+
+    /* Largest group first, into whichever partition is furthest from its
+       target: one dense aggregation must not overshoot a small partition and
+       leave it unfillable. */
     const targets = want.map((w) => total * w / 100);
     const got = [0, 0, 0];
-    const kind = new Array(sizes.length);
-    /* Largest first, so one dense aggregation cannot overshoot a small
-       partition and leave it impossible to fill. */
-    const order = sizes.map((v, i) => i).sort((a, b) => sizes[b] - sizes[a]
-      || ((a * seed) % 7) - ((b * seed) % 7));
+    const order = sizes.map((v, i) => i)
+      .sort((a, b) => sizes[b] - sizes[a] || ((a * seed) % 7) - ((b * seed) % 7));
     for (const i of order) {
       let k = 0;
       let worst = -Infinity;
@@ -766,35 +803,27 @@ function wireSplit() {
         const room = targets[c] - got[c];
         if (room > worst) { worst = room; k = c; }
       }
-      kind[i] = k;
       got[k] += sizes[i];
     }
-    return { kind, got };
-  };
 
-  const draw = () => {
-    let want = inputs.map((el) => Math.max(0, Number(el.value) || 0));
-    const sum = want.reduce((a, b) => a + b, 0) || 1;
-    want = want.map((w) => w * 100 / sum);          // normalise, whatever was typed
-
-    const { kind, got } = assign(want);
-    blocks.forEach((b, i) => {
-      b.className = CLS[kind[i]];
-      b.style.flexGrow = String(sizes[i]);
-    });
-    const fmt = (n) => n.toLocaleString('en-US');
+    let drift = 0;
     for (let k = 0; k < 3; k++) {
-      const pct = Math.round(got[k] / total * 1000) / 10;
-      if (outs[k]) outs[k].textContent = fmt(got[k]) + ' observations · ' + pct + '% actual';
-      if (nums[k]) nums[k].textContent = fmt(got[k]);
+      const pct = got[k] / total * 100;
+      drift = Math.max(drift, Math.abs(pct - want[k]));
+      if (bars[k]) bars[k].style.width = pct.toFixed(2) + '%';
+      if (pcs[k]) pcs[k].textContent = Math.round(pct) + '%';
+      if (nums[k]) nums[k].textContent = got[k].toLocaleString('en-US');
+    }
+    if (note) {
+      note.textContent = drift < 0.05
+        ? 'Whole groups only, and these shares land on the request'
+        : 'Whole groups only \u2014 within ' + drift.toFixed(1) + ' points of the request';
     }
   };
 
-  inputs.forEach((el) => el && el.addEventListener('input', draw));
+  inputs.forEach((el) => el.addEventListener('input', draw));
   const again = $('#reshuffle');
-  if (again) {
-    again.addEventListener('click', () => { seed = (seed * 7 + 3) % 101 || 1; draw(); });
-  }
+  if (again) again.addEventListener('click', () => { seed = (seed * 7 + 3) % 101 || 1; draw(); });
   draw();
 }
 

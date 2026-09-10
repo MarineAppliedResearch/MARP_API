@@ -177,6 +177,12 @@ svg { display: block; }
 .topbar .railtoggle { display: none; }   /* .btn is declared later and sets inline-flex */
 
 .content {
+  /* A containing block for absolutely positioned descendants. Without it the
+     visually-hidden table captions -- position: absolute with no positioned
+     ancestor -- resolve against the initial containing block, land at their
+     static offset deep inside the scrolled content, and grow the document to
+     1378px behind a 941px viewport. */
+  position: relative;
   overflow-y: auto; overflow-x: hidden;
   padding: 18px;
   display: grid; gap: var(--gap); align-content: start;
@@ -984,15 +990,6 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
 .dist.wide, .dist.pct { grid-template-columns: auto minmax(36px, 1fr) auto auto; }
 .dist .p { color: var(--faint); font-size: 10.5px; text-align: right; min-width: 30px; }
 
-/* Where thumbnails will go. Empty on purpose -- inventing marine imagery for a
-   design review would make the screen look finished when it is not. */
-.samples { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.samples i {
-  aspect-ratio: 4 / 3; border-radius: 5px;
-  background: repeating-linear-gradient(135deg, rgba(42, 214, 220, 0.05) 0 6px,
-                                        transparent 6px 12px), var(--sunk);
-  border: 1px solid var(--hairline);
-}
 
 /* The queries a dataset was assembled from. Each keeps its own colour so the
    composition bars can be traced back to where the rows came from. */
@@ -1029,45 +1026,49 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
                font-size: 21px; font-weight: 700; color: var(--white); letter-spacing: -0.01em; }
 .totalrow .n { color: var(--faint); font-size: 10.5px; }
 
+/* Real MARP thumbnails, borrowed from the Picture Mosaic Reviewer's fixtures.
+   Not invented: a design review should not be judging imagery that does not
+   exist anywhere in this system. */
+.thumbs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.thumbs figure { margin: 0; display: grid; gap: 4px; }
+.thumbs img {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block;
+  border-radius: 5px; border: 1px solid var(--hairline); background: var(--sunk);
+}
+.thumbs figure:hover img { border-color: var(--border-strong); }
+.thumbs figcaption { font-size: 9.5px; color: var(--faint); overflow: hidden;
+                     text-overflow: ellipsis; white-space: nowrap; }
+
+/* A confirmation rather than a warning: something the screen does for you. */
+.okline { display: flex; align-items: center; gap: 8px; margin: 9px 0 0;
+          font-size: 11px; color: var(--mint-300); }
+.okline .ico { flex: none; }
+
+/* A value chosen from a list too long to be a select. */
+.picker { display: inline-flex; align-items: center; justify-content: space-between;
+          background-image: none; text-align: left; }
+
+/* Two inputs with a word between them. */
+.pairrow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+           gap: 8px; align-items: center; }
+.pairrow .to { color: var(--muted); font-size: 11.5px; }
+
+textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
+
+/* A label with a link on the far side of it. */
+.field > label { display: flex; align-items: baseline; gap: 8px; }
+.field > label .more { margin-left: auto; }
+
 /* ---- the split ---------------------------------------------------------- */
 
-.splitgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;
+.splitgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;
              align-items: start; margin-bottom: 16px; }
 .splitgrid .field { margin-bottom: 0; }
 .pctrow { display: flex; align-items: center; gap: 7px; }
 .pctrow .inp { width: 78px; }
 .pcs { color: var(--muted); font-size: 12px; }
 
-/* One block per overlap group, sized by how many observations it holds. This is
-   the whole point of the control: the split moves groups, never observations. */
-.groupstrip {
-  display: flex; gap: 1px; height: 34px; overflow: hidden;
-  border-radius: var(--r-sm); border: 1px solid var(--hairline); background: var(--sunk);
-}
-.groupstrip i { flex-basis: 0; min-width: 1px; }
-.groupstrip i.tr { background: rgba(34, 215, 220, 0.55); }
-.groupstrip i.va { background: rgba(155, 124, 240, 0.55); }
-.groupstrip i.te { background: rgba(246, 196, 83, 0.5); }
-.groupstrip i:hover { filter: brightness(1.5); }
 
-/* ---- why a group cannot be split --------------------------------------- */
-
-.tlwrap { overflow-x: auto; }
-.tl { width: 100%; min-width: 620px; height: auto; display: block; }
-.tl .gl { stroke: rgba(42, 214, 220, 0.12); stroke-width: 1; }
-.tl .ax, .tl .lb, .tl .tm, .tl .bt, .tl .tag {
-  font-family: var(--body-font); font-size: 9.5px;
-}
-.tl .ax { fill: var(--faint); text-anchor: middle; }
-.tl .lb { fill: var(--text); text-anchor: end; font-size: 10.5px; }
-.tl .tm { fill: var(--faint); }
-.tl .bt { fill: var(--cyan-300); font-weight: 700; font-size: 9px;
-          letter-spacing: 0.04em; }
-.tl .tag { fill: var(--navy-1000); font-weight: 700; }
-.tl .ob { fill: var(--cyan-400); }
-.tl .band { fill: rgba(34, 215, 220, 0.09); stroke: rgba(34, 215, 220, 0.34); }
-.tlkey { margin-top: 9px; font-size: 11.5px; color: var(--muted); }
-.tlkey b { color: var(--white); }
 
 /* ============================================================== responsive */
 
@@ -1245,7 +1246,7 @@ tr[aria-expanded="true"] { background: rgba(20, 126, 232, 0.07); }
      has two, with base rules in between, and an override in the earlier one
      loses to a base rule declared after it. */
   .splitgrid { grid-template-columns: minmax(0, 1fr); }
-  .samples { grid-template-columns: repeat(3, 1fr); }
+  .thumbs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .subsets li { grid-template-columns: minmax(0, 1fr) auto; }
   .subsets .btn { grid-area: 2 / 2; }
   .totalrow .v { font-size: 18px; }
