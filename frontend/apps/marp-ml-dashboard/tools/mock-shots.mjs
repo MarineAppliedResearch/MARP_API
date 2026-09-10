@@ -36,7 +36,10 @@ const VIEWS = {
 };
 
 const all = (await readdir(join(APP, 'mockups')))
-  .filter((f) => f.endsWith('.html')).map((f) => f.replace(/\.html$/, ''));
+  /* A leading underscore marks a template rather than a screen. One got shot as
+     a page, placeholders and all, and reported four console errors. */
+  .filter((f) => f.endsWith('.html') && !f.startsWith('_'))
+  .map((f) => f.replace(/\.html$/, ''));
 const which = process.argv[2] && all.includes(process.argv[2]) ? [process.argv[2]] : all;
 const views = process.argv[3] && VIEWS[process.argv[3]] ? [process.argv[3]] : Object.keys(VIEWS);
 
@@ -87,6 +90,31 @@ for (const view of views) {
       console.log(`mock-${name}-menu.png`);
       await page.keyboard.press('Escape');
       await page.waitForTimeout(80);
+    }
+
+    /* A drawer is the point of the screen it lives on, so it gets a shot of its
+       own rather than only ever being photographed shut. */
+    if (view === 'desktop' && await page.locator('#drawer').count()) {
+      await page.locator('table tbody tr').nth(2).click();
+      await page.waitForTimeout(140);
+      /* Opened folded, then opened again with the diagnostics expanded -- the
+         folded state is the normal view and the open one is what it hides. */
+      const d = join(APP, 'shots', `mock-${name}-drawer.png`);
+      await page.screenshot({ path: d, fullPage: false });
+      console.log(`mock-${name}-drawer.png`);
+      if (await page.locator('details.diag').count()) {
+        await page.locator('details.diag summary').click();
+        await page.waitForTimeout(140);
+        /* The drawer body is its own scroller, so opening the fold is not enough
+           -- what it revealed is below the fold until this scrolls to it. */
+        await page.locator('.drawer-bd').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+        await page.waitForTimeout(120);
+        const d2 = join(APP, 'shots', `mock-${name}-drawer-diag.png`);
+        await page.screenshot({ path: d2, fullPage: false });
+        console.log(`mock-${name}-drawer-diag.png`);
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(100);
     }
 
     const over = await page.evaluate(() => {

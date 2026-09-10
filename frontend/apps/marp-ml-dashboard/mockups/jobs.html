@@ -274,13 +274,13 @@
       <dl class="kv">
         <dt>Model</dt>
         <dd>MARP-Det-v3 <span class="faint">v2.0.0</span> &middot; <span class="mono">9f2c41ab</span>
-          <div class="locked">Resolved and locked when the job was submitted</div></dd>
+          <div class="locked">Locked at submit</div></dd>
         <dt>Task</dt><dd>Detect &amp; track &middot; ByteTrack &middot; best frame of each track</dd>
         <dt>Scope</dt><dd>ARCTIC 2024 &middot; Dive 0449 &middot; Line 08</dd>
         <dt>Video</dt><dd class="mono">ARCTIC_2024_D0449_L08_CAM1.mp4</dd>
-        <dt>Range size</dt><dd>900 frames &middot; hard boundaries, no track spans a range</dd>
+        <dt>Range size</dt><dd>900 frames &middot; hard boundaries</dd>
         <dt>Priority</dt><dd>5</dd>
-        <dt>Results</dt><dd>Written to the observation database as they arrive</dd>
+        <dt>Results</dt><dd>Observation database</dd>
       </dl>
     </div>
 
@@ -340,7 +340,7 @@
     </div>
 
     <details class="diag">
-      <summary>Diagnostics &mdash; attempts, leases and the event log</summary>
+      <summary>Diagnostics<span class="later">Log not served yet</span></summary>
       <div class="dbody">
         <dl class="kv">
           <dt>Attempt</dt><dd>1 of 3 &middot; leased 12:28:04 &middot; epoch 1</dd>
@@ -358,9 +358,6 @@
           <div><span class="t">12:35:02</span><span class="l" data-lvl="warn">warn</span><span class="m">campa-lab-12 lease expired, range 19800-20700 returned to the pool</span></div>
           <div><span class="t">12:36:55</span><span class="l" data-lvl="info">info</span><span class="m">progress 8604 of 18300 frames, 11.9 fps</span></div>
         </div>
-        <p class="gapnote"><svg class="ico sm"><use href="#i-info"/></svg>
-          <span><b>Not wired (DESIGN.md 5).</b> The event rows exist &mdash; one real run wrote
-          38,101 of them &mdash; but no route returns any. This log is fixture data until one does.</span></p>
       </div>
     </details>
 

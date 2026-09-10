@@ -33,6 +33,16 @@ Mosaic Reviewer uses.
 5. **Numbers are `tabular-nums`** and right-aligned in a table. The base size is 12px and
    the app is dense on purpose; this is an operator console, not a marketing page.
 6. **No emoji, anywhere.** Icons are inline SVG from `src/lib/icons.js`.
+7. **The interface does not explain itself.** No paragraph of prose on a screen,
+   ever. What appears is what changes what a person does: a label, a value, a
+   computed consequence, and at most one short line where a field is genuinely
+   ambiguous. Rationale — why a split is frozen, why a tracker resets at a
+   boundary, why a control is not wired — belongs in this file and in #104.
+   Writing it into the UI is how a design review's commentary ends up shipping
+   as product copy, and it happened here across four screens before it was
+   caught. A control with nothing behind it carries a `later` chip and no
+   explanation; anything that genuinely needs attention gets a one-line
+   `.warn`, and if it will not fit on one line it is documentation.
 
 ## Layout
 

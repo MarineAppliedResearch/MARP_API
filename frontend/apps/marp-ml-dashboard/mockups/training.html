@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Training</title>
+<link rel="icon" href="../../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./mock.css">
+</head>
+<body data-screen="training">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Fine-tune a registered model over one saved training dataset">Training</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <nav class="tabstrip" data-switch="tr" aria-label="Training section">
+        <button class="on" data-view="new"><svg class="ico"><use href="#i-plus"/></svg>New training run</button>
+        <button data-view="runs"><svg class="ico"><use href="#i-chart"/></svg>Runs</button>
+        <button data-view="eval"><svg class="ico"><use href="#i-star"/></svg>Evaluation</button>
+      </nav>
+
+      <!-- ============================================== a new training run -->
+      <div data-viewof="tr" data-view="new" class="grid">
+
+        <div class="grid" data-cols="3">
+
+          <!-- 1 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>1.</b>Start from</span>
+                <span class="sub">Base model and training settings</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field req">
+                <label for="base">Base model</label>
+                <select class="sel wide" id="base">
+                  <option>MARP-Multiclass-Det-XL &mdash; 1.0.2</option>
+                  <option>MARP-Det-v3 &mdash; 2.0.0</option>
+                  <option>MARP-Fish-Det &mdash; 1.1.3</option>
+                  <option>yolov8m &mdash; upstream checkpoint</option>
+                  <option>yolov8l &mdash; upstream checkpoint</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label>What that gives you</label>
+                <div class="ro">
+                  <span class="a">MARP-Multiclass-Det-XL &nbsp;1.0.2 &nbsp;<span class="mono">4b81c07e</span></span>
+                  <span class="b">YOLOv8 detection &middot; 24 classes &middot; mAP@50 0.784</span>
+                  <span class="b">Trained 2026-08-14 on ALL_Projects_Inverts_v4</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="task">Task</label>
+                <nav class="seg wide" data-switch="task" aria-label="Task">
+                  <button class="on" data-view="det">Detection</button>
+                  <button data-view="cls">Classification</button>
+                  <button data-view="seg">Segmentation</button>
+                </nav>
+              </div>
+
+              <div class="fieldrow">
+                <div class="field">
+                  <label for="epochs">Epochs</label>
+                  <input class="inp wide" type="number" id="epochs" value="100">
+                </div>
+                <div class="field">
+                  <label for="batch">Batch size</label>
+                  <select class="sel wide" id="batch">
+                    <option>16</option><option>8</option><option>32</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="fieldrow">
+                <div class="field">
+                  <label for="lr">Learning rate</label>
+                  <input class="inp wide" type="text" id="lr" value="0.001">
+                </div>
+                <div class="field">
+                  <label for="tsize">Image size</label>
+                  <select class="sel wide" id="tsize">
+                    <option>640</option><option>960</option><option>1280</option>
+                  </select>
+                </div>
+              </div>
+
+              <details class="fold">
+                <summary>Advanced settings
+                  <span class="now">AdamW &middot; 3 warm-up &middot; patience 10</span></summary>
+                <div class="fbody">
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="opt">Optimiser</label>
+                      <select class="sel wide" id="opt"><option>AdamW</option><option>SGD</option></select>
+                    </div>
+                    <div class="field">
+                      <label for="warm">Warm-up epochs</label>
+                      <input class="inp wide" type="number" id="warm" value="3">
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="check"><input type="checkbox" id="earlyOn" checked>
+                      <span>Stop early when validation stalls</span></label>
+                    <div class="fieldrow">
+                      <input class="inp" type="number" id="patience" value="10"
+                             aria-label="Patience, in epochs">
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>Augmentation</label>
+                    <div class="checks two-up">
+                      <label class="check"><input type="checkbox" checked><span>Horizontal flip</span></label>
+                      <label class="check"><input type="checkbox" checked><span>Colour jitter</span></label>
+                      <label class="check"><input type="checkbox"><span>Vertical flip</span></label>
+                      <label class="check"><input type="checkbox" checked><span>Random crop</span></label>
+                      <label class="check"><input type="checkbox" checked><span>Rotation &plusmn;15&deg;</span></label>
+                      <label class="check"><input type="checkbox"><span>Mosaic</span></label>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+            </div>
+          </section>
+
+          <!-- 2 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>2.</b>Training data</span>
+                <span class="sub">Exactly one saved dataset</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field req">
+                <label for="dataset">Saved dataset</label>
+                <select class="sel wide" id="dataset">
+                  <option>ALL_Projects_Inverts_v5</option>
+                  <option>CAMPA_2024_Rockfish_v3</option>
+                  <option>GULF_2025_Fish_Train_v1</option>
+                  <option>SALT_2024_SeaStar_v2</option>
+                </select>
+                <span class="hint">Built on the Datasets screen.</span>
+              </div>
+
+              <div class="quad">
+                <span><b>12,846</b>observations</span>
+                <span><b>24</b>classes</span>
+                <span><b>142</b>videos</span>
+                <span><b>36</b>dives</span>
+              </div>
+
+              <div class="field" style="margin-top:15px">
+                <label>Saved split <span class="ro-tag">read-only</span></label>
+                <div class="splitbar" role="img"
+                     aria-label="70 per cent train, 20 per cent validation, 10 per cent test">
+                  <i class="tr" style="width:70%"><span>70%</span></i>
+                  <i class="va" style="width:20%"><span>20%</span></i>
+                  <i class="te" style="width:10%"><span>10%</span></i>
+                </div>
+                <div class="splitkey">
+                  <span class="tr"><b>8,992</b> train</span>
+                  <span class="va"><b>2,569</b> validation</span>
+                  <span class="te"><b>1,285</b> test</span>
+                </div>
+                <span class="hint">Set when the dataset was saved &middot; 1,204 overlap groups</span>
+              </div>
+
+              <div class="field">
+                <label>Class distribution <span class="faint">(8 of 24)</span></label>
+                <div class="dist">
+<span class="k">California sea cucumber</span><span class="b"><i style="width:100%"></i></span><span class="v">3,418</span><span class="k">Sunflower star</span><span class="b"><i style="width:85%"></i></span><span class="v">2,914</span><span class="k">Red urchin</span><span class="b"><i style="width:62%"></i></span><span class="v">2,106</span><span class="k">Basket star</span><span class="b"><i style="width:49%"></i></span><span class="v">1,688</span><span class="k">Orange sea pen</span><span class="b"><i style="width:35%"></i></span><span class="v">1,204</span><span class="k">Giant plumose anemone</span><span class="b"><i style="width:28%"></i></span><span class="v">942</span><span class="k">Dungeness crab</span><span class="b"><i style="width:18%"></i></span><span class="v">604</span><span class="k">Cloud sponge</span><span class="b"><i style="width:12%"></i></span><span class="v">418</span>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- 3 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>3.</b>Result</span>
+                <span class="sub">The model version this produces</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label>On success</label>
+                <div class="ro">
+                  <span class="a">Registers MARP-Multiclass-Det-XL &nbsp;1.0.3</span>
+                  <span class="b">A new version of the base model</span>
+                  <span class="b"><b>Not marked preferred</b> &mdash; that stays a human decision</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="newname">Version name <span class="faint">(optional)</span></label>
+                <input class="inp wide" type="text" id="newname" value="1.0.3">
+                <span class="hint">Blank takes the next patch version.</span>
+              </div>
+
+              <div class="field">
+                <label>Traceability</label>
+                <dl class="kv">
+                  <dt>Base</dt><dd>MARP-Multiclass-Det-XL 1.0.2</dd>
+                  <dt>Dataset</dt><dd>ALL_Projects_Inverts_v5</dd>
+                  <dt>Observations</dt><dd>12,846, by membership</dd>
+                  <dt>Run by</dt><dd>itravers</dd>
+                </dl>
+              </div>
+
+
+            </div>
+          </section>
+
+        </div>
+
+        <section class="panel">
+          <header class="panel-hd">
+            <h2><span class="stepnum"><b>4.</b>Start</span>
+              <span class="sub">Worker and name</span></h2>
+          </header>
+          <div class="panel-bd">
+            <div class="runrow">
+              <div class="field">
+                <label for="trworkers">Worker selection</label>
+                <select class="sel wide" id="trworkers">
+                  <option>Auto &mdash; best available GPU</option>
+                  <option>Only workers with 24 GB or more</option>
+                  <option>Choose a worker&hellip;</option>
+                </select>
+                <span class="hint">One worker, start to finish. No resume.</span>
+              </div>
+              <div class="field">
+                <label for="trname">Run name</label>
+                <input class="inp wide" type="text" id="trname" value="2026-CAMPA-Group2">
+              </div>
+              <div class="field">
+                <label>Estimated</label>
+                <div class="facts2">
+                  <span class="k">Duration</span><span class="v">~4h 10m</span>
+                  <span class="k">VRAM</span><span class="v">~18 GB</span>
+                </div>
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button class="btn accent big block" id="trainBtn">
+                  <svg class="ico"><use href="#i-play"/></svg>Start training</button>
+                <span class="hint">Mockup &mdash; submits nothing.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- =============================================================== runs -->
+      <div data-viewof="tr" data-view="runs" class="grid" hidden>
+
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>2026-CAMPA-Group1 <span class="count">&mdash; running now</span></h2>
+            <span class="pill" data-state="running"><span class="dot"></span>Epoch 35 of 100</span>
+            <div class="panel-tools">
+              <button class="btn sm"><svg class="ico sm"><use href="#i-stop"/></svg>Stop</button>
+            </div>
+          </header>
+          <div class="panel-bd">
+            <div class="grid" data-cols="2">
+              <div class="chart"><div class="chd"><span class="t">Loss</span><span class="key train">train</span><span class="key val">validation</span><span class="n">train 0.703 · val 0.917</span></div><svg viewBox="0 0 640 150" aria-hidden="true"><g class="grid"><line x1="16" x2="624" y1="16.0" y2="16.0"/><line x1="16" x2="624" y1="55.3" y2="55.3"/><line x1="16" x2="624" y1="94.7" y2="94.7"/><line x1="16" x2="624" y1="134.0" y2="134.0"/></g><g class="ax"><text x="12" y="19.0">3.2</text><text x="12" y="58.3">2.3</text><text x="12" y="97.7">1.3</text><text x="12" y="137.0">0.4</text></g><path class="fill train" d="M16.0,134.0 L16.0,28.4 L33.9,37.6 L51.8,45.3 L69.6,51.6 L87.5,57.4 L105.4,65.4 L123.3,68.7 L141.2,73.7 L159.1,79.9 L176.9,83.8 L194.8,87.5 L212.7,89.9 L230.6,92.7 L248.5,95.9 L266.4,100.2 L284.2,102.6 L302.1,103.8 L320.0,105.1 L337.9,107.3 L355.8,109.8 L373.6,111.8 L391.5,111.9 L409.4,114.1 L427.3,113.5 L445.2,115.3 L463.1,116.5 L480.9,116.2 L498.8,117.9 L516.7,118.1 L534.6,119.6 L552.5,120.2 L570.4,120.9 L588.2,120.4 L606.1,122.4 L624.0,121.2 L624.0,134.0 Z"/><polyline class="line train" points="16.0,28.4 33.9,37.6 51.8,45.3 69.6,51.6 87.5,57.4 105.4,65.4 123.3,68.7 141.2,73.7 159.1,79.9 176.9,83.8 194.8,87.5 212.7,89.9 230.6,92.7 248.5,95.9 266.4,100.2 284.2,102.6 302.1,103.8 320.0,105.1 337.9,107.3 355.8,109.8 373.6,111.8 391.5,111.9 409.4,114.1 427.3,113.5 445.2,115.3 463.1,116.5 480.9,116.2 498.8,117.9 516.7,118.1 534.6,119.6 552.5,120.2 570.4,120.9 588.2,120.4 606.1,122.4 624.0,121.2"/><circle class="tip train" cx="624.0" cy="121.2" r="3.4"/><path class="fill val" d="M16.0,134.0 L16.0,21.5 L33.9,30.7 L51.8,38.9 L69.6,47.2 L87.5,53.4 L105.4,56.5 L123.3,63.3 L141.2,68.4 L159.1,72.0 L176.9,76.0 L194.8,79.4 L212.7,83.8 L230.6,88.2 L248.5,89.5 L266.4,93.8 L284.2,93.4 L302.1,96.2 L320.0,97.8 L337.9,101.7 L355.8,103.6 L373.6,104.3 L391.5,105.7 L409.4,107.5 L427.3,109.0 L445.2,107.3 L463.1,109.7 L480.9,109.4 L498.8,110.2 L516.7,113.0 L534.6,111.5 L552.5,113.1 L570.4,113.3 L588.2,112.7 L606.1,115.0 L624.0,112.2 L624.0,134.0 Z"/><polyline class="line val" points="16.0,21.5 33.9,30.7 51.8,38.9 69.6,47.2 87.5,53.4 105.4,56.5 123.3,63.3 141.2,68.4 159.1,72.0 176.9,76.0 194.8,79.4 212.7,83.8 230.6,88.2 248.5,89.5 266.4,93.8 284.2,93.4 302.1,96.2 320.0,97.8 337.9,101.7 355.8,103.6 373.6,104.3 391.5,105.7 409.4,107.5 427.3,109.0 445.2,107.3 463.1,109.7 480.9,109.4 498.8,110.2 516.7,113.0 534.6,111.5 552.5,113.1 570.4,113.3 588.2,112.7 606.1,115.0 624.0,112.2"/><circle class="tip val" cx="624.0" cy="112.2" r="3.4"/></svg></div>
+              <div class="chart"><div class="chd"><span class="t">mAP@50</span><span class="key map">mAP@50</span><span class="n">epoch 35 · 0.585</span></div><svg viewBox="0 0 640 150" aria-hidden="true"><g class="grid"><line x1="16" x2="624" y1="16.0" y2="16.0"/><line x1="16" x2="624" y1="55.3" y2="55.3"/><line x1="16" x2="624" y1="94.7" y2="94.7"/><line x1="16" x2="624" y1="134.0" y2="134.0"/></g><g class="ax"><text x="12" y="19.0">0.8</text><text x="12" y="58.3">0.53</text><text x="12" y="97.7">0.27</text><text x="12" y="137.0">0</text></g><path class="fill map" d="M16.0,134.0 L16.0,119.2 L33.9,113.4 L51.8,108.0 L69.6,103.0 L87.5,98.4 L105.4,94.1 L123.3,90.2 L141.2,86.5 L159.1,83.2 L176.9,80.1 L194.8,77.2 L212.7,74.6 L230.6,72.1 L248.5,69.9 L266.4,67.8 L284.2,65.9 L302.1,64.1 L320.0,62.4 L337.9,60.9 L355.8,59.5 L373.6,58.2 L391.5,57.0 L409.4,55.9 L427.3,54.9 L445.2,54.0 L463.1,53.1 L480.9,52.3 L498.8,51.5 L516.7,50.9 L534.6,50.2 L552.5,49.6 L570.4,49.1 L588.2,48.6 L606.1,48.1 L624.0,47.7 L624.0,134.0 Z"/><polyline class="line map" points="16.0,119.2 33.9,113.4 51.8,108.0 69.6,103.0 87.5,98.4 105.4,94.1 123.3,90.2 141.2,86.5 159.1,83.2 176.9,80.1 194.8,77.2 212.7,74.6 230.6,72.1 248.5,69.9 266.4,67.8 284.2,65.9 302.1,64.1 320.0,62.4 337.9,60.9 355.8,59.5 373.6,58.2 391.5,57.0 409.4,55.9 427.3,54.9 445.2,54.0 463.1,53.1 480.9,52.3 498.8,51.5 516.7,50.9 534.6,50.2 552.5,49.6 570.4,49.1 588.2,48.6 606.1,48.1 624.0,47.7"/><circle class="tip map" cx="624.0" cy="47.7" r="3.4"/></svg></div>
+            </div>
+            <div class="roll" data-state="running" style="margin-top:16px">
+              <span class="bar wide"><i style="width:35%"></i></span>
+              <div class="facts">
+                <span><span class="k">Epoch</span><span class="v">35 / 100</span></span>
+                <span><span class="k">mAP@50</span><span class="v">0.585</span></span>
+                <span><span class="k">Best</span><span class="v">0.585 at 35</span></span>
+                <span><span class="k">Elapsed</span><span class="v">2h 14m</span></span>
+                <span><span class="k">Remaining</span><span class="v">~4h 08m</span></span>
+                <span><span class="k">Worker</span><span class="v">bergstrom-4090</span></span>
+              </div>
+            </div>
+            <p class="warn"><svg class="ico sm"><use href="#i-alert"/></svg>
+              Validation loss rising since epoch 28 &middot; early stopping patience 10</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>Training runs <span class="count">(28)</span></h2>
+            <div class="panel-tools">
+              <span class="search">
+                <svg class="ico sm"><use href="#i-search"/></svg>
+                <input class="inp" type="search" placeholder="Search runs&hellip;" aria-label="Search runs">
+              </span>
+              <select class="sel" aria-label="Status"><option>All statuses</option><option>Running</option><option>Completed</option><option>Failed</option></select>
+            </div>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable">Run</th>
+                    <th class="hscope sortable">Dataset</th>
+                    <th class="hmodel sortable">Produces</th>
+                    <th class="hstatus sortable">Status</th>
+                    <th class="hprog sortable">Progress</th>
+                    <th class="htype sortable num">Epochs</th>
+                    <th class="hupd sortable num">mAP@50</th>
+                    <th class="hupd sortable" aria-sort="descending">Started</th>
+                    <th class="htype sortable num">Took</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">2026-CAMPA-Group1</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">ALL_Projects_Inverts_v5</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="jprog" data-sort="35"><span class="prog" data-state="running"><span class="bar"><i style="width:35%"></i></span><span class="pct">35%</span></span></td>
+                    <td class="num" data-sort="35">35 / 100</td>
+                    <td class="num" data-sort="0.585">0.585</td>
+                    <td class="jtime" data-sort="2026-09-09T14:36"><span class="two"><span class="a">14:36</span><span class="b">2026-09-09</span></span></td>
+                    <td class="num" data-sort="2h 14mS">2h 14m</td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Finetune_Fish_GULF_v1</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">GULF_2025_Fish_Train_v1</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="jprog" data-sort="82"><span class="prog" data-state="running"><span class="bar"><i style="width:82%"></i></span><span class="pct">82%</span></span></td>
+                    <td class="num" data-sort="82">82 / 100</td>
+                    <td class="num" data-sort="0.588">0.588</td>
+                    <td class="jtime" data-sort="2026-09-09T12:06"><span class="two"><span class="a">12:06</span><span class="b">2026-09-09</span></span></td>
+                    <td class="num" data-sort="4h 02mS">4h 02m</td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Habitat_Classifier_v2</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">SALT_2024_Habitat_v2</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Habitat-Cls</span></span></td>
+                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="jprog" data-sort="100"><span class="prog" data-state="done"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
+                    <td class="num" data-sort="100">100 / 100</td>
+                    <td class="num" data-sort="0.892">0.892</td>
+                    <td class="jtime" data-sort="2026-09-09T10:15"><span class="two"><span class="a">10:15</span><span class="b">2026-09-09</span></span></td>
+                    <td class="num" data-sort="4h 21mS">4h 21m</td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Invertebrate_Detect_v1</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">GULF_2025_Inverts_v1</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span></span></td>
+                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="jprog" data-sort="100"><span class="prog" data-state="done"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
+                    <td class="num" data-sort="100">100 / 100</td>
+                    <td class="num" data-sort="0.756">0.756</td>
+                    <td class="jtime" data-sort="2026-09-09T16:03"><span class="two"><span class="a">16:03</span><span class="b">2026-09-09</span></span></td>
+                    <td class="num" data-sort="3h 12mS">3h 12m</td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">SeaStar_Det_SALT_v2</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">SALT_2024_SeaStar_v2</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-SeaStar-Det</span></span></td>
+                    <td class="jstatus" data-sort="5"><span class="st" data-state="failed"><span class="dot"></span>Failed</span></td>
+                    <td class="jprog" data-sort="37"><span class="prog" data-state="failed"><span class="bar"><i style="width:37%"></i></span><span class="pct">37%</span></span></td>
+                    <td class="num" data-sort="37">37 / 100</td>
+                    <td class="num" data-sort="0.421">0.421</td>
+                    <td class="jtime" data-sort="2026-09-09T09:18"><span class="two"><span class="a">09:18</span><span class="b">2026-09-09</span></span></td>
+                    <td class="num" data-sort="1h 48mS">1h 48m</td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Rockfish_Cls_CAMPA_v3</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">CAMPA_2024_Rockfish_v3</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Rockfish-Cls</span></span></td>
+                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="jprog" data-sort="100"><span class="prog" data-state="done"><span class="bar"><i style="width:100%"></i></span><span class="pct">100%</span></span></td>
+                    <td class="num" data-sort="60">60 / 60</td>
+                    <td class="num" data-sort="0.688">0.688</td>
+                    <td class="jtime" data-sort="2026-09-09T09:12"><span class="two"><span class="a">09:12</span><span class="b">2026-09-09</span></span></td>
+                    <td class="num" data-sort="52mS">52m</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <footer class="panel-ft">
+            <span>Showing <b class="strong">1&ndash;6</b> of 28 runs</span>
+            <div class="pager">
+              <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
+              <button aria-current="page">1</button><button>2</button><button>3</button>
+              <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+            </div>
+          </footer>
+        </section>
+
+      </div>
+
+      <!-- ========================================================= evaluation -->
+      <div data-viewof="tr" data-view="eval" class="grid" hidden>
+        <section class="panel">
+          <header class="panel-hd"><h2>Evaluation</h2><span class="later">Later</span></header>
+          <div class="panel-bd">
+            <div class="blank">
+              <b>Compare two versions on one dataset</b>
+              <span>Scored against the dataset's held-out test split.</span>
+              <span class="later">Later</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./mock.js"></script>
+</body>
+</html>

@@ -1,1 +1,347 @@
-/* Owned by the agent drawing these tabs. See DESIGN.md. */
+/* ==========================================================================
+   Datasets, Models and Workers.
+
+   Only what these three screens need and app.css does not already carry. Every
+   colour resolves through a token or through --s, which the nearest
+   [data-state] sets; nothing here restates the palette (DESIGN.md rule 1).
+
+   Several of these are probably shared components rather than private ones --
+   .cbars, .fchip, .lockbox/.frozenbox and .metricrow are all things another
+   tab will want. They are here because a tab may not edit app.css, and they
+   are named in the report so they can be promoted.
+   ========================================================================== */
+
+/* The tab root is a child of .content's grid, so it carries its own. */
+.tab-workers,
+.tab-models,
+.tab-datasets,
+.builder {
+  display: grid;
+  gap: var(--pad);
+  align-content: start;
+  min-width: 0;
+}
+
+/* Every wrapper in these trees is a grid item, and a grid item's default
+   min-width is auto -- one wide table then pushes the whole page sideways.
+   This is the rule that keeps the phone layout honest. */
+.tab-workers > *,
+.tab-models > *,
+.tab-datasets > *,
+.builder > *,
+.pool-summary,
+.pool-list,
+.split-wrap,
+.saved-wrap,
+.model-list { min-width: 0; }
+
+/* A one-line explanation under a panel heading. */
+.panel-bd > .sub { font-size: 11px; color: var(--muted); margin: -2px 0 10px; }
+.panel-bd > .hint,
+.panel-bd .hint { font-size: 10.5px; color: var(--faint); line-height: 1.5; }
+.hint.err { color: var(--red-400); }
+.notes { font-size: 11.5px; color: var(--text); line-height: 1.55; margin: 8px 0 0; }
+.brk { overflow-wrap: anywhere; }
+
+/* ============================================================== workers */
+
+/* Name over durable id. The id is on screen because #104 makes the durable
+   generated id the identity and the name editable metadata -- a screen that
+   showed only the name would hide the distinction it is meant to teach. */
+.wname { display: grid; gap: 1px; }
+.wname b { color: var(--white); font-weight: 600; }
+.wname .mono { font-size: 9.5px; letter-spacing: 0.01em; }
+.wname .tag { justify-self: start; }
+
+.renamer { display: inline-flex; align-items: center; gap: 4px; }
+.renamer .inp { width: 150px; padding: 3px 7px; }
+
+.stcell { display: inline-flex; align-items: center; gap: 6px; }
+.tag.pend { color: var(--amber-300); border-color: rgba(246, 196, 83, 0.34); }
+.tag.pref { color: var(--amber-300); border-color: rgba(246, 196, 83, 0.34); }
+
+.seen { display: inline-flex; align-items: center; gap: 5px; justify-content: flex-end; }
+.seen.quiet { color: var(--amber-300); }
+.seen svg { width: 11px; height: 11px; stroke: currentColor; fill: none; }
+
+.rowacts { display: inline-flex; gap: 3px; }
+.capbar { display: inline-flex; align-items: center; gap: 0; }
+.capbar .bar { width: 74px; }
+.jobcell .nm { display: inline-block; max-width: 220px; overflow: hidden;
+               text-overflow: ellipsis; vertical-align: bottom; }
+
+.poolfoot { padding: 10px 12px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+
+/* The pool summary's drill-down row reads as chosen, not as merely hovered. */
+.pool-summary .tbl tr.sel td { box-shadow: inset 2px 0 0 var(--cyan-400); }
+
+.fchips { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+.fchip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 4px 2px 8px; border-radius: 10px;
+  background: rgba(20, 126, 232, 0.14); border: 1px solid rgba(45, 156, 255, 0.34);
+  color: var(--cyan-300); font-size: 10.5px; font-weight: 600;
+}
+.fchip button { background: none; border: 0; padding: 0; color: inherit; display: grid;
+                place-items: center; opacity: 0.7; }
+.fchip button:hover { opacity: 1; }
+.fchip svg { width: 10px; height: 10px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+.wdetail, .mdetail, .dsdetail, .grpdetail { display: grid; gap: 10px; align-content: start; }
+.namerow { display: flex; gap: 6px; align-items: center; }
+.namerow .inp { flex: 1; min-width: 0; }
+.tagrow { display: flex; gap: 5px; flex-wrap: wrap; }
+.tagrow.classes { max-height: 148px; overflow-y: auto; }
+
+.jobbox { background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-sm);
+          padding: 10px; display: grid; gap: 9px; }
+.jobline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jobline b { color: var(--white); }
+.jobline .btn { margin-left: auto; }
+.progrow { display: flex; align-items: center; gap: 9px; }
+.progrow .bar { flex: 1; }
+.pendline { display: flex; align-items: center; gap: 8px; margin: 0; }
+
+/* ============================================================== models */
+
+.mname b { color: var(--white); font-weight: 600; }
+.star { display: inline-flex; }
+.star svg { width: 12px; height: 12px; stroke: currentColor; }
+.star.on { color: var(--amber-300); }
+.star.on svg { fill: currentColor; }
+
+/* Metric names are case-sensitive -- mAP is not MAP -- so these two headers
+   keep the case they were authored in while the rest stay upper. */
+.t-modelreg .tbl th:nth-child(7),
+.t-versions .tbl th:nth-child(6) { text-transform: none; letter-spacing: 0.02em; }
+
+.prefrow.link { cursor: pointer; }
+.prefrow.link:hover { border-color: rgba(246, 196, 83, 0.5); }
+.prefrow.none { background: var(--sunk); border-color: var(--line); }
+.prefrow.none .star { color: var(--faint); }
+.prefrow > svg { width: 13px; height: 13px; stroke: currentColor; fill: none; color: var(--faint);
+                 margin-top: 2px; }
+
+.metricrow { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+.metric {
+  background: var(--sunk); border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 9px 10px; display: grid; gap: 2px;
+}
+.metric .ml { font-size: 10px; color: var(--muted); text-transform: uppercase;
+              letter-spacing: 0.06em; font-weight: 700; }
+.metric b { font-size: 18px; color: var(--white); font-weight: 700; }
+
+.preflist { display: grid; gap: 7px; }
+.prefrow {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: start;
+  padding: 9px 10px; border-radius: var(--r-sm);
+  background: rgba(246, 196, 83, 0.07); border: 1px solid rgba(246, 196, 83, 0.24);
+}
+.prefrow b { color: var(--white); }
+.prefrow p { margin: 3px 0 0; font-size: 11px; line-height: 1.5; }
+.preferform {
+  padding: 11px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--border);
+}
+.preferform .field:last-of-type { margin-bottom: 8px; }
+.preferform textarea { resize: vertical; }
+
+/* ============================================================== datasets */
+
+/* Two explanation boxes. The green one states a constraint the user cannot
+   change; the blue one answers the question this screen always provokes --
+   what exactly is frozen. Neither is a gap note: nothing here is unbuilt. */
+.lockbox, .frozenbox {
+  display: flex; gap: 9px; align-items: flex-start;
+  padding: 9px 11px; border-radius: var(--r-sm); font-size: 10.5px; line-height: 1.55;
+  margin-bottom: 11px;
+}
+.lockbox { background: rgba(90, 214, 154, 0.08); border: 1px solid rgba(90, 214, 154, 0.28);
+           color: var(--green-300); }
+.frozenbox { background: rgba(45, 156, 255, 0.08); border: 1px solid rgba(45, 156, 255, 0.26);
+             color: var(--cyan-300); margin: 4px 0 11px; }
+.lockbox b, .frozenbox b { display: block; margin-bottom: 2px; }
+.lockbox span, .frozenbox span { color: var(--text); }
+.lockbox svg, .frozenbox svg { width: 14px; height: 14px; flex: none; margin-top: 1px;
+                               stroke: currentColor; fill: none; }
+
+.bignums { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+           margin-bottom: 12px; }
+.bignums > div { display: grid; gap: 1px; }
+.bignums b { font-size: 20px; font-weight: 700; color: var(--white); line-height: 1.1; }
+.bignums span { font-size: 10px; color: var(--muted); }
+
+/* The class breakdown. A bar per class, the count, and the share. */
+.cbars { display: grid; gap: 4px; }
+.cbar {
+  display: grid; grid-template-columns: minmax(78px, 1.4fr) minmax(0, 2fr) auto 40px;
+  gap: 8px; align-items: center; font-size: 10.5px;
+}
+.cb-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-track { height: 8px; border-radius: 3px; background: var(--sunk);
+            border: 1px solid var(--line); overflow: hidden; }
+.cb-track i { display: block; height: 100%; background: var(--cyan-400); border-radius: 3px; }
+.cbar:nth-child(2) .cb-track i { background: var(--green-400); }
+.cbar:nth-child(3) .cb-track i { background: var(--amber-300); }
+.cbar:nth-child(4) .cb-track i { background: var(--violet-300); }
+.cbar:nth-child(5) .cb-track i { background: var(--blue-400); }
+.cbar.rest .cb-track i { background: var(--grey-400); }
+.cb-num { color: var(--white); font-weight: 600; text-align: right; }
+.cb-pct { color: var(--faint); text-align: right; }
+
+.subsets { display: grid; gap: 6px; }
+.subset {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 9px; align-items: center;
+  padding: 8px 9px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--line);
+  border-left: 2px solid var(--cyan-400);
+}
+.subset .n { width: 17px; height: 17px; border-radius: 50%; display: grid; place-items: center;
+             background: var(--panel-hi); border: 1px solid var(--line);
+             font-size: 9.5px; font-weight: 700; color: var(--muted); }
+.subset .body { display: grid; gap: 1px; min-width: 0; }
+.subset .body b { color: var(--white); font-size: 11.5px; overflow: hidden;
+                  text-overflow: ellipsis; white-space: nowrap; }
+.subset .body span { font-size: 10px; }
+.subset .right { text-align: right; display: grid; gap: 0; }
+.subset .right b { color: var(--white); font-size: 12.5px; }
+.subset .right span { font-size: 9.5px; }
+
+.totline {
+  display: flex; align-items: baseline; gap: 9px;
+  margin: 11px 0 4px; padding-top: 9px; border-top: 1px solid var(--line);
+  font-size: 11.5px;
+}
+.totline b { font-size: 17px; color: var(--white); margin-left: auto; }
+.totline .muted { font-size: 10.5px; }
+
+/* ------------------------------------------------------------- the split */
+
+.partrow { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr));
+           margin-bottom: 11px; }
+.partcard {
+  padding: 10px 11px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--line);
+  border-top: 2px solid var(--line);
+  display: grid; gap: 6px;
+}
+.partcard[data-part="train"] { border-top-color: var(--green-400); }
+.partcard[data-part="val"] { border-top-color: var(--blue-400); }
+.partcard[data-part="test"] { border-top-color: var(--violet-300); }
+.partcard header { display: flex; align-items: baseline; gap: 8px; }
+.partcard header b { color: var(--white); font-size: 12.5px; }
+.partcard .share { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 600; }
+.partcard .pnum { font-size: 19px; font-weight: 700; color: var(--white); line-height: 1.1; }
+.partcard .pnum span { font-size: 10.5px; font-weight: 500; color: var(--muted); }
+.partcard .psub { display: flex; gap: 11px; font-size: 10px; color: var(--faint); }
+
+/* One split group. The unit the split assigns, drawn so that is obvious. */
+.groups { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
+          margin-top: 11px; }
+.grp {
+  padding: 9px 10px; border-radius: var(--r-sm);
+  background: var(--sunk); border: 1px solid var(--line);
+  border-left: 2px solid var(--line);
+  display: grid; gap: 7px; min-width: 0;
+}
+.grp[data-part="train"] { border-left-color: var(--green-400); }
+.grp[data-part="val"] { border-left-color: var(--blue-400); }
+.grp[data-part="test"] { border-left-color: var(--violet-300); }
+.grp header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.grp header b { color: var(--white); font-size: 11px; }
+.grp header .vid { margin-left: auto; font-size: 9.5px; max-width: 130px;
+                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The overlap chain. One row per observation, positioned by its key-frame
+   span, so a group of four reads as a staircase in which each bar overlaps its
+   neighbour and the first and last do not touch -- which is the transitive
+   rule in #104 drawn rather than described. */
+.chain { display: grid; gap: 2px; padding: 3px 0; }
+.obsbar { position: relative; height: 7px; border-radius: 2px; background: rgba(1, 5, 13, 0.5);
+          border: 1px solid var(--line); }
+.obsbar i { position: absolute; top: -1px; bottom: -1px; border-radius: 2px;
+            background: color-mix(in srgb, var(--cyan-400) 78%, transparent);
+            border: 1px solid var(--cyan-300); }
+.grp[data-part="val"] .obsbar i { background: color-mix(in srgb, var(--blue-400) 78%, transparent);
+                                  border-color: var(--blue-400); }
+.grp[data-part="test"] .obsbar i { background: color-mix(in srgb, var(--violet-300) 78%, transparent);
+                                   border-color: var(--violet-300); }
+.chain.big { gap: 5px; }
+.chain.big .obsbar { height: 15px; }
+.chain.big .obsbar .lab { position: absolute; left: 4px; top: 1px; z-index: 1;
+                          font-size: 9.5px; color: var(--muted); }
+.chain.big .obsbar i { opacity: 0.85; }
+
+.grpfoot { display: flex; gap: 9px; align-items: baseline; font-size: 9.5px; }
+.grpfoot .why { margin-left: auto; color: var(--faint); text-align: right; }
+.grpmove { display: flex; align-items: center; gap: 6px; }
+.grpmove .seg { flex: 1; }
+.grpmove .seg button { flex: 1; justify-content: center; padding: 3px 6px; font-size: 10.5px; }
+
+.tag.part-train { color: var(--green-400); border-color: rgba(90, 214, 154, 0.34); }
+.tag.part-val { color: var(--blue-400); border-color: rgba(45, 156, 255, 0.34); }
+.tag.part-test { color: var(--violet-300); border-color: rgba(155, 124, 240, 0.34); }
+
+/* ============================================================== responsive */
+
+@media (max-width: 1360px) {
+  .cbar { grid-template-columns: minmax(70px, 1fr) minmax(0, 1.6fr) auto 38px; }
+}
+
+@media (max-width: 1099px) {
+  .partrow { grid-template-columns: minmax(0, 1fr); }
+  .groups { grid-template-columns: minmax(0, 1fr); }
+  .jobcell .nm { max-width: 150px; }
+}
+
+@media (max-width: 759px) {
+  /* A nine-column operator table does not belong on a 390px screen, and a
+     horizontally scrolled one hides the columns rather than dropping them.
+     So each of these tables keeps the columns that identify a row and answer
+     the first question, and the row still opens the drawer, which carries
+     everything -- including the controls the Actions column held.
+     Addressed by position because `table()` builds the cells; if this pattern
+     spreads, the column list wants a `phone: false` flag instead. */
+  .t-workers .tbl th:nth-child(4), .t-workers .tbl td:nth-child(4),
+  .t-workers .tbl th:nth-child(5), .t-workers .tbl td:nth-child(5),
+  .t-workers .tbl th:nth-child(6), .t-workers .tbl td:nth-child(6),
+  .t-workers .tbl th:nth-child(7), .t-workers .tbl td:nth-child(7),
+  .t-workers .tbl th:nth-child(9), .t-workers .tbl td:nth-child(9),
+  .t-pool .tbl th:nth-child(3), .t-pool .tbl td:nth-child(3),
+  .t-pool .tbl th:nth-child(4), .t-pool .tbl td:nth-child(4),
+  .t-pool .tbl th:nth-child(6), .t-pool .tbl td:nth-child(6),
+  .t-modelreg .tbl th:nth-child(2), .t-modelreg .tbl td:nth-child(2),
+  .t-modelreg .tbl th:nth-child(4), .t-modelreg .tbl td:nth-child(4),
+  .t-modelreg .tbl th:nth-child(5), .t-modelreg .tbl td:nth-child(5),
+  .t-modelreg .tbl th:nth-child(6), .t-modelreg .tbl td:nth-child(6),
+  .t-modelreg .tbl th:nth-child(8), .t-modelreg .tbl td:nth-child(8),
+  .t-modelreg .tbl th:nth-child(9), .t-modelreg .tbl td:nth-child(9),
+  .t-modelreg .tbl th:nth-child(10), .t-modelreg .tbl td:nth-child(10),
+  .t-versions .tbl th:nth-child(3), .t-versions .tbl td:nth-child(3),
+  .t-versions .tbl th:nth-child(4), .t-versions .tbl td:nth-child(4),
+  .t-versions .tbl th:nth-child(5), .t-versions .tbl td:nth-child(5),
+  .t-versions .tbl th:nth-child(7), .t-versions .tbl td:nth-child(7),
+  .t-versions .tbl th:nth-child(8), .t-versions .tbl td:nth-child(8),
+  .t-versions .tbl th:nth-child(9), .t-versions .tbl td:nth-child(9),
+  .t-versions .tbl th:nth-child(10), .t-versions .tbl td:nth-child(10),
+  .t-versions .tbl th:nth-child(11), .t-versions .tbl td:nth-child(11),
+  .t-saved .tbl th:nth-child(2), .t-saved .tbl td:nth-child(2),
+  .t-saved .tbl th:nth-child(4), .t-saved .tbl td:nth-child(4),
+  .t-saved .tbl th:nth-child(5), .t-saved .tbl td:nth-child(5),
+  .t-saved .tbl th:nth-child(6), .t-saved .tbl td:nth-child(6),
+  .t-saved .tbl th:nth-child(7), .t-saved .tbl td:nth-child(7),
+  .t-saved .tbl th:nth-child(8), .t-saved .tbl td:nth-child(8),
+  .t-saved .tbl th:nth-child(9), .t-saved .tbl td:nth-child(9) { display: none; }
+  .tbl tbody td, .tbl thead th { padding: 6px 7px; }
+  .wname .mono { font-size: 9px; }
+  .jobcell .nm { max-width: 110px; }
+  .bignums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metricrow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .subset { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .subset .right { grid-column: 2; text-align: left; }
+  .cbar { grid-template-columns: minmax(62px, 1fr) minmax(0, 1.2fr) auto; }
+  .cb-pct { display: none; }
+  .grp header .vid { max-width: 92px; }
+  .grpmove { flex-wrap: wrap; }
+  .poolfoot { padding: 9px 10px; }
+}

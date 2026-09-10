@@ -574,15 +574,42 @@ details.diag .dbody { padding: 0 13px 13px; display: grid; gap: 12px; }
 .log .l[data-lvl="info"] { color: var(--muted); }
 .log .m { color: var(--text); overflow-wrap: anywhere; }
 
-/* Pinned to a control that has nothing behind it yet. The number points at the
-   item in DESIGN.md, so a reader can find the detail rather than rediscover it. */
-.gapnote {
-  display: flex; gap: 9px; align-items: flex-start;
-  padding: 9px 11px; border-radius: var(--r-sm);
-  background: rgba(246, 196, 83, 0.06); border: 1px solid rgba(246, 196, 83, 0.24);
-  color: var(--amber-300); font-size: 11px; line-height: 1.5;
+
+/* ============================================================== notices */
+
+/* A control that has nothing behind it yet. Small, inline, and silent about
+   why -- the reason lives in DESIGN.md, not on the screen. */
+.later {
+  display: inline-flex; align-items: center;
+  margin-left: 7px; padding: 1px 6px; border-radius: 9px;
+  background: rgba(9, 30, 51, 0.9); border: 1px solid var(--hairline-2);
+  color: var(--faint); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
 }
-.gapnote .ico { margin-top: 1px; }
+h2 > .later, summary > .later { vertical-align: middle; }
+
+/* One line, when something on screen actually needs attention. Never a
+   paragraph: if it takes a paragraph it is documentation, not a notice. */
+.warn {
+  display: flex; align-items: center; gap: 8px; margin: 12px 0 0;
+  padding: 8px 11px; border-radius: var(--r-sm);
+  background: rgba(246, 196, 83, 0.07); border: 1px solid rgba(246, 196, 83, 0.24);
+  color: var(--amber-300); font-size: 11.5px;
+}
+.warn .ico { flex: none; }
+
+/* What a section with nothing in it says. A name, one line about what would be
+   here, and its state. */
+.blank { display: grid; gap: 5px; justify-items: start; padding: 26px 4px; }
+.blank b { font-size: 14px; color: var(--white); font-weight: 600; }
+.blank > span { font-size: 12px; color: var(--muted); }
+.blank .later { margin-left: 0; margin-top: 4px; }
+
+/* Next to a label whose value is not editable here. */
+.ro-tag {
+  margin-left: 7px; font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--faint);
+}
 
 /* ============================================================== the donut */
 
@@ -780,10 +807,16 @@ details.fold .fbody { padding: 4px 12px 14px; }
           align-items: start; }
 .runrow .field { margin-bottom: 0; }
 .runrow .check { padding: 0 0 4px; }
+.runrow .facts2 { grid-template-columns: auto auto; justify-content: start;
+                  gap: 4px 12px; }
 
 @media (max-width: 1140px) { .runrow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 759px) {
   .runrow { grid-template-columns: minmax(0, 1fr); }
+  .quad { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .quad > span:nth-child(2) { border-right: 0; }
+  .checks.two-up { grid-template-columns: minmax(0, 1fr); }
+  .dist .k { max-width: 15ch; }
   /* Four scope options in one row do not fit 342px. This reflows them into a
      grid instead, with the dividers running the other way. */
   .seg.wide { display: grid; grid-auto-flow: row;
@@ -793,6 +826,89 @@ details.fold .fbody { padding: 4px 12px 14px; }
   .seg.wide button:nth-child(-n+2) { border-top: 0; }
   .tabstrip button { padding: 8px 11px; font-size: 12.5px; }
 }
+
+/* ============================================================== training */
+
+/* Four numbers about the chosen dataset. */
+.quad { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+        border: 1px solid var(--hairline); border-radius: var(--r-sm);
+        background: var(--sunk); overflow: hidden; }
+.quad > span { display: grid; gap: 1px; padding: 10px 8px; text-align: center;
+               border-right: 1px solid var(--hairline);
+               font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+               color: var(--faint); }
+.quad > span:last-child { border-right: 0; }
+.quad b { font-size: 19px; font-weight: 700; color: var(--white); letter-spacing: -0.01em;
+          text-transform: none; letter-spacing: 0; }
+
+/* The dataset's saved train / validation / test split. Read-only on purpose:
+   re-splitting on every run leaks frames between partitions, so there is
+   deliberately no control here. */
+.splitbar { display: flex; height: 26px; border-radius: var(--r-sm); overflow: hidden;
+            border: 1px solid var(--hairline); }
+.splitbar i { display: grid; place-items: center; font-style: normal;
+              font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; }
+.splitbar .tr { background: rgba(34, 215, 220, 0.30); color: var(--cyan-300); }
+.splitbar .va { background: rgba(155, 124, 240, 0.30); color: var(--violet-300); }
+.splitbar .te { background: rgba(246, 196, 83, 0.26); color: var(--amber-300); }
+/* The counts live under the bar. Inside it, the ten per cent segment could not
+   hold "Test 1,285" and clipped it mid-number. */
+.splitkey { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 7px; font-size: 11px; }
+.splitkey span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.splitkey span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; }
+.splitkey b { color: var(--white); font-weight: 600; }
+.splitkey .tr::before { background: rgba(34, 215, 220, 0.55); }
+.splitkey .va::before { background: rgba(155, 124, 240, 0.55); }
+.splitkey .te::before { background: rgba(246, 196, 83, 0.5); }
+
+/* A class breakdown: label, bar, count -- a grid, so the counts line up. */
+.dist { display: grid; grid-template-columns: auto minmax(40px, 1fr) auto;
+        gap: 5px 10px; align-items: center; font-size: 11.5px; }
+.dist .k { color: var(--text); white-space: nowrap; overflow: hidden;
+           text-overflow: ellipsis; max-width: 21ch; }
+.dist .b { height: 7px; border-radius: 4px; background: var(--sunk);
+           box-shadow: inset 0 0 0 1px var(--hairline); overflow: hidden; }
+.dist .b i { display: block; height: 100%; border-radius: 4px;
+             background: linear-gradient(90deg, var(--blue-500), var(--cyan-400)); }
+.dist .v { color: var(--white); font-weight: 600; text-align: right; }
+
+/* A small chart. Hand-drawn SVG rather than a library: two lines and a grid do
+   not need three hundred kilobytes. */
+.chart { display: grid; gap: 7px; }
+.chart .chd { display: flex; align-items: baseline; gap: 10px; }
+.chart .chd .t { font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+                 text-transform: uppercase; color: var(--faint); }
+.chart .chd .n { font-size: 11.5px; color: var(--white); font-weight: 600;
+                 margin-left: auto; }
+/* Which line is which, beside the title rather than floating in the plot. */
+.chart .chd .key { display: inline-flex; align-items: center; gap: 5px;
+                   font-size: 11px; color: var(--muted); }
+.chart .chd .key::before { content: ""; width: 10px; height: 2px; border-radius: 1px; }
+.chart .chd .key.train::before { background: var(--cyan-400); }
+.chart .chd .key.val::before { background: var(--violet-300); }
+.chart .chd .key.map::before { background: var(--green-400); }
+/* The aspect comes from the viewBox now. `preserveAspectRatio: none` stretched
+   the box to the panel, which is right for the lines and wrong for the
+   emphasised end point -- it came out an ellipse. */
+.chart svg { width: 100%; height: auto; display: block;
+             background: var(--sunk); border: 1px solid var(--hairline);
+             border-radius: var(--r-sm); }
+.chart .ax text { fill: var(--faint); font-size: 9px; text-anchor: end;
+                  font-family: var(--body-font); }
+.chart .grid line { stroke: rgba(42, 214, 220, 0.09); stroke-width: 1; }
+.chart .line { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.chart .fill { stroke: none; }
+.chart .line.train { stroke: var(--cyan-400); }
+.chart .fill.train { fill: rgba(34, 215, 220, 0.10); }
+.chart .tip.train { fill: var(--cyan-300); }
+.chart .line.val { stroke: var(--violet-300); }
+.chart .fill.val { fill: rgba(155, 124, 240, 0.08); }
+.chart .tip.val { fill: var(--violet-300); }
+.chart .line.map { stroke: var(--green-400); }
+.chart .fill.map { fill: rgba(167, 236, 53, 0.10); }
+.chart .tip.map { fill: var(--green-300); }
+
+.checks.two-up { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* ============================================================== responsive */
 

@@ -38,7 +38,7 @@
           <section class="panel">
             <header class="panel-hd">
               <h2><span class="stepnum"><b>1.</b>Model &amp; settings</span>
-                <span class="sub">Choose the task, then confirm the model that will run</span></h2>
+                <span class="sub">Task, model and version</span></h2>
             </header>
             <div class="panel-bd">
 
@@ -49,9 +49,7 @@
                   <option>Detect only</option>
                   <option>Detect, track &amp; classify</option>
                 </select>
-                <span class="hint">A preset only fills the settings below. The model, tracker
-                  and reduction stay visible and stay editable &mdash; MARP does not hide which
-                  model is running.</span>
+                <span class="hint">Fills the settings below; all stay editable.</span>
               </div>
 
               <div class="field req">
@@ -89,9 +87,7 @@
                   <span class="b">Preferred for general benthic detection &mdash; the workhorse for
                     CAMPA and PACIFIC transect video</span>
                 </div>
-                <span class="hint">The version and its hash are resolved and <b>locked when the
-                  job is submitted</b>. Marking a different version preferred afterwards does not
-                  change work already queued.</span>
+                <span class="hint">Locked at submit.</span>
               </div>
 
               <details class="fold">
@@ -149,9 +145,7 @@
                   <div class="field">
                     <label for="chunk">Frame range size</label>
                     <input class="inp wide" type="number" id="chunk" value="900" step="100">
-                    <span class="hint">Ranges have hard boundaries: the tracker resets at each
-                      one and no observation spans two. An interrupted range is re-run from its
-                      start, so a smaller range is cheaper to lose.</span>
+                    <span class="hint">Hard boundaries &mdash; the tracker resets at each one.</span>
                   </div>
                 </div>
               </details>
@@ -163,12 +157,12 @@
           <section class="panel">
             <header class="panel-hd">
               <h2><span class="stepnum"><b>2.</b>Input data</span>
-                <span class="sub">Choose the MARP data to run over</span></h2>
+                <span class="sub">Which MARP data</span></h2>
             </header>
             <div class="panel-bd">
 
               <div class="field">
-                <label>Scope</label>
+                <label>Scope <span class="later">One video for now</span></label>
                 <nav class="seg wide" data-switch="scope" aria-label="Inference scope">
                   <button class="on" data-view="project">Project</button>
                   <button data-view="dive">Dive</button>
@@ -271,11 +265,6 @@
                 </div>
               </div>
 
-              <p class="gapnote"><svg class="ico sm"><use href="#i-info"/></svg>
-                <span><b>Not wired (DESIGN.md 1).</b> A job over a project, dive or line has
-                nowhere to store the selection that produced it &mdash; a batch is one video cut
-                into frame ranges and cannot span videos. Until that exists, a scope wider than
-                one video submits one job per video. Milestone 2.</span></p>
 
             </div>
           </section>
@@ -284,7 +273,7 @@
           <section class="panel">
             <header class="panel-hd">
               <h2><span class="stepnum"><b>3.</b>Output &amp; options</span>
-                <span class="sub">Decide where the results go, then run</span></h2>
+                <span class="sub">Where the results go</span></h2>
             </header>
             <div class="panel-bd">
 
@@ -292,7 +281,7 @@
                 <label>Output mode</label>
                 <nav class="seg wide" data-switch="out" aria-label="Output mode">
                   <button class="on" data-view="obs"><svg class="ico sm"><use href="#i-datasets"/></svg>Write observations</button>
-                  <button data-view="csv"><svg class="ico sm"><use href="#i-download"/></svg>CSV test &amp; export</button>
+                  <button data-view="csv"><svg class="ico sm"><use href="#i-download"/></svg>CSV test &amp; export<span class="later">Later</span></button>
                 </nav>
               </div>
 
@@ -302,9 +291,7 @@
                   <select class="sel wide" id="dest">
                     <option>Project detections &mdash; CAMPA 2024</option>
                   </select>
-                  <span class="hint">Detections become MARP observations through the coordinator;
-                    the worker never writes them itself. Nothing is marked reviewed &mdash; an
-                    observation with no completed review is already in the human-review queue.</span>
+                  <span class="hint">Written as unreviewed observations.</span>
                 </div>
                 <div class="field">
                   <label>Output options</label>
@@ -314,23 +301,19 @@
                     <label class="check"><input type="checkbox" checked>
                       <span>Include confidence scores</span></label>
                     <label class="check"><input type="checkbox">
-                      <span>Generate annotated video</span></label>
+                      <span>Generate annotated video <span class="later">Later</span></span></label>
                     <label class="check"><input type="checkbox">
-                      <span>Save detection crops</span></label>
+                      <span>Save detection crops <span class="later">Later</span></span></label>
                   </div>
                 </div>
-                <p class="gapnote"><svg class="ico sm"><use href="#i-info"/></svg>
-                  <span><b>Not wired (DESIGN.md 14).</b> Annotated video and detection crops have
-                  no pipeline behind them yet.</span></p>
               </div>
 
               <div data-viewof="out" data-view="csv" hidden>
                 <div class="field">
                   <label>What this mode does</label>
                   <div class="ro">
-                    <span class="a">A downloadable CSV, and nothing else</span>
-                    <span class="b">The observation database is not touched. This is how a model
-                      or a setting gets tested without a separate application.</span>
+                    <span class="a">A downloadable CSV</span>
+                    <span class="b">The observation database is not touched.</span>
                   </div>
                 </div>
                 <div class="field">
@@ -340,9 +323,6 @@
                     <option>Frame, class, confidence, box, track id</option>
                   </select>
                 </div>
-                <p class="gapnote"><svg class="ico sm"><use href="#i-info"/></svg>
-                  <span><b>Not wired (DESIGN.md 6).</b> The artifact path is recorded but nothing
-                  serves the bytes, so this mode has no delivery route yet.</span></p>
               </div>
 
             </div>
@@ -354,7 +334,7 @@
         <section class="panel" id="runbar">
           <header class="panel-hd">
             <h2><span class="stepnum"><b>4.</b>Run</span>
-              <span class="sub">Who runs it, what it is called, and what gets sent</span></h2>
+              <span class="sub">Worker and name</span></h2>
           </header>
           <div class="panel-bd">
             <div class="runrow">
@@ -365,12 +345,10 @@
                   <option>Only workers with this model cached</option>
                   <option>Choose workers&hellip;</option>
                 </select>
-                <span class="hint">Scheduling stays with the coordinator &mdash; this is a preference,
-                  not an assignment. There is no per-job cap or affinity field yet
-                  (DESIGN.md 9).</span>
+                <span class="hint">A preference, not an assignment.</span>
               </div>
               <div class="field">
-                <label for="cap">Worker limit</label>
+                <label for="cap">Worker limit <span class="later">Later</span></label>
                 <label class="check"><input type="checkbox" id="capOn">
                   <span>Cap how many this job may use</span></label>
                 <input class="inp wide" type="number" id="cap" value="8" disabled
@@ -380,15 +358,13 @@
                 <label for="jobname">Job name <span class="faint">(optional)</span></label>
                 <input class="inp wide" type="text" id="jobname"
                        value="CAMPA_2024_MARP_Det_v3_Inverts">
-                <span class="hint">Letters, numbers, hyphen and underscore. Left blank, the
-                  scope and the model name it.</span>
+                <span class="hint">Letters, numbers, hyphen, underscore.</span>
               </div>
               <div class="field">
                 <label>&nbsp;</label>
                 <button class="btn primary big block" id="runBtn">
                   <svg class="ico"><use href="#i-play"/></svg>Run inference</button>
-                <span class="hint">This mockup submits nothing &mdash; it shows the request
-                  this form would send.</span>
+                <span class="hint">Mockup &mdash; shows the request, sends nothing.</span>
               </div>
             </div>
             <div class="spec" id="specOut" hidden>
@@ -412,7 +388,7 @@
                     <th class="hscope sortable">Scope</th>
                     <th class="hmodel sortable">Model</th>
                     <th class="hstatus sortable">Status</th>
-                    <th class="hprog sortable">Detections</th>
+                    <th class="hprog sortable">Detections <span class="later">Later</span></th>
                     <th class="hupd sortable" aria-sort="descending">Started</th>
                     <th class="htype sortable">Took</th>
                     <th class="hacts"><span class="vh">Actions</span></th>
@@ -501,11 +477,6 @@
               </table>
             </div>
           </div>
-          <footer class="panel-ft">
-            <span><b class="strong">Detections</b> and <b class="strong">Download</b> are drawn
-              but not answerable &mdash; nothing rolls a detection count up per job
-              (DESIGN.md 11) and no route serves an artifact (DESIGN.md 6).</span>
-          </footer>
         </section>
 
       </div>
@@ -513,16 +484,13 @@
       <!-- ============================================================ batch -->
       <div data-viewof="inf" data-view="batch" class="grid" hidden>
         <section class="panel">
-          <header class="panel-hd"><h2>Batch inference</h2></header>
+          <header class="panel-hd"><h2>Batch inference</h2><span class="later">Later</span></header>
           <div class="panel-bd">
-            <p class="hint" style="max-width:70ch">One model, one setting, many scopes &mdash; the
-              same form as Run, submitted once per line or per dive instead of once per video.
-              Until a logical job can hold a selection, this is the surface that would submit
-              those jobs and show them grouped.</p>
-            <p class="gapnote" style="margin-top:12px"><svg class="ico sm"><use href="#i-info"/></svg>
-              <span><b>Not wired (DESIGN.md 1).</b> `batch_id` is a bare uuid with no row of its
-              own &mdash; no name, no owner, no selection, no state and no progress rollup. This
-              screen needs that object before it is worth drawing in full.</span></p>
+            <div class="blank">
+              <b>One model over many scopes</b>
+              <span>Submitted once per line or dive, grouped as one job.</span>
+              <span class="later">Later</span>
+            </div>
           </div>
         </section>
       </div>
@@ -532,10 +500,11 @@
         <section class="panel">
           <header class="panel-hd"><h2>Scheduled inference</h2></header>
           <div class="panel-bd">
-            <p class="gapnote"><svg class="ico sm"><use href="#i-info"/></svg>
-              <span><b>Not asked for, and not represented.</b> Nothing in #104 asks for
-              scheduling and no API expresses it. The sub-tab is here because the reference
-              mockup drew it; it stays disabled until somebody decides it is wanted.</span></p>
+            <div class="blank">
+              <b>Nothing scheduled</b>
+              <span>Runs on a repeating schedule, unattended.</span>
+              <span class="later">Not planned</span>
+            </div>
           </div>
         </section>
       </div>
@@ -572,11 +541,8 @@
                 </div>
               </div>
             </div>
-            <p class="gapnote" style="margin-top:14px"><svg class="ico sm"><use href="#i-info"/></svg>
-              <span><b>Drawing detections onto the frame is a later milestone.</b> It needs the
-              MARP video player embedded here, and there is no artifact download route to fetch a
-              result with (DESIGN.md 6). What this screen can honestly show today is the
-              observations the ingest wrote, which is what it shows.</span></p>
+            <p class="warn" style="margin-top:14px"><svg class="ico sm"><use href="#i-info"/></svg>
+              Detections drawn on the frame needs the video player <span class="later">Later</span></p>
           </div>
         </section>
       </div>
