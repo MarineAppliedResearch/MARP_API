@@ -15,10 +15,19 @@
  * must never be able to reach it. Seeders run only when somebody asks for them, which is
  * the whole difference and the reason this file lives here.
  *
- * **Depends on the pipeline context** -- project 43, session 142 and `ml_models` 91 -- the
- * same way this directory's observations seed depends on its sessions seed. Run
- * `node scripts/seed-inference-context.js --apply` first. This refuses with that
- * instruction rather than failing on a foreign key.
+ * **Self-sufficient: it brings everything the observations relate to.** Project 43, session
+ * 142, `ml_models` 91 and that model's seven `model_species` rows are seeded here, in
+ * dependency order, before the observations that reference them. An earlier version depended
+ * on `scripts/seed-inference-context.js` and refused when the context was absent; that made
+ * the seed useless on any checkout without that script, which is most of them. A seed that
+ * cannot run on a fresh database is not a seed.
+ *
+ * The only thing it takes as given is the **species catalogue**, which the baseline builds.
+ *
+ * `scripts/seed-inference-context.js` (in an open pull request) now overlaps this file
+ * deliberately: the script exists for the pipeline path, where the ids have to be pinned
+ * before a GPU job is submitted, and this seeder exists for `db:seed`. Worth consolidating to
+ * one copy later.
  *
  * **`gpu_job_id` is deliberately null.** The real rows carry job 132, but a `gpu_jobs` row
  * records an execution on a particular machine, and inventing one here would claim a job
@@ -140,29 +149,62 @@ module.exports = {
    * @throws {Error} When the pipeline context is missing, naming the fix.
    */
   async up(queryInterface, Sequelize) {
-    const [context] = await queryInterface.sequelize.query(
-      `SELECT (SELECT count(*) FROM projects WHERE project_id = 43) AS project,
-              (SELECT count(*) FROM sessions WHERE session_id = 142) AS session,
-              (SELECT count(*) FROM ml_models WHERE id = 91) AS model`,
-      { type: Sequelize.QueryTypes.SELECT }
-    );
-
-    const missing = Object.entries(context)
-      .filter(([, count]) => Number(count) === 0)
-      .map(([name]) => name);
-
-    if (missing.length) {
-      throw new Error(
-        `Cannot seed the GPU observations: missing ${missing.join(', ')}. `
-        + 'Run `node scripts/seed-inference-context.js --apply` first -- it creates '
-        + 'project 43, session 142 and ml_models 91, which these rows reference.'
-      );
-    }
-
     const transaction = await queryInterface.sequelize.transaction();
 
     try {
       const now = new Date();
+
+      // The context first, in dependency order. `ON CONFLICT DO UPDATE` rather than
+      // an insert, because a database that already has these rows -- the machine the
+      // pipeline was run on, or a second run of this seeder -- must not fail here.
+      await queryInterface.sequelize.query(
+        `INSERT INTO projects (project_id, name, "createdAt", "updatedAt")
+         VALUES (43, 'CAMPA2024', NOW(), NOW())
+         ON CONFLICT (project_id) DO UPDATE SET name = EXCLUDED.name, "updatedAt" = NOW()`,
+        { transaction }
+      );
+
+      // `type` is 'Invert', which is what routes these observations to the `Inverts`
+      // species list -- see db/species-lists.js. A different type here would make the
+      // model's own output unreconcilable, by design.
+      await queryInterface.sequelize.query(
+        `INSERT INTO sessions (session_id, project_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+         VALUES (142, 43, 'Dive 8', '1000', '1000', 'Invert', NOW(), NOW())
+         ON CONFLICT (session_id) DO UPDATE
+            SET project_id = EXCLUDED.project_id, dive = EXCLUDED.dive, line = EXCLUDED.line,
+                "lineId" = EXCLUDED."lineId", type = EXCLUDED.type, "updatedAt" = NOW()`,
+        { transaction }
+      );
+
+      await queryInterface.sequelize.query(
+        `INSERT INTO ml_models (id, name, model_type, architecture_version, storage_path,
+                                status, notes, created_at, updated_at)
+         VALUES (91, 'CAMPA_GR1_TEST6-mixed', 'detection', 'yolo',
+                 'models/CAMPA_GR1_TEST6/mixed/weights/best.pt', 'active',
+                 'Third training phase (mixed) of CAMPA_GR1_TEST6.', NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name, model_type = EXCLUDED.model_type,
+                architecture_version = EXCLUDED.architecture_version,
+                storage_path = EXCLUDED.storage_path, status = EXCLUDED.status,
+                notes = EXCLUDED.notes, updated_at = NOW()`,
+        { transaction }
+      );
+
+      // What the model was trained with. Not a lookup table and not a class index --
+      // but the ingest resolves a detection's class *name* against `species.comname`
+      // and requires exactly one match, and it narrows to a model's trained species
+      // before falling back to the whole catalogue. `Red sea urchin` is on two lists,
+      // so without these rows that fallback finds two and refuses the whole run.
+      await queryInterface.sequelize.query(
+        `INSERT INTO model_species (model_id, species_id, created_at, updated_at)
+         SELECT 91, s.id, NOW(), NOW()
+           FROM species s
+          WHERE s.id IN (622, 769, 775, 789, 790, 795, 796)
+            AND NOT EXISTS (
+                SELECT 1 FROM model_species ms
+                 WHERE ms.model_id = 91 AND ms.species_id = s.id)`,
+        { transaction }
+      );
 
       // Remove first, so a second run is a no-op rather than a key violation.
       // Keyframes go with them by cascade.
@@ -172,9 +214,27 @@ module.exports = {
         { transaction }
       );
 
+      // Decide the job link *before* inserting, never by updating afterwards.
+      // `observations` carries a BEFORE UPDATE trigger, `observations_bump_version_trigger`,
+      // so any UPDATE here would bump `version` on every seeded row -- and `version` is
+      // the token the mosaic's commit routes check to detect a row that moved under a
+      // reviewer. A seed whose rows arrive at version 2 is a seed that lies about its
+      // own history. Found by diffing a re-seed against the original rows.
+      const [job] = await queryInterface.sequelize.query(
+        'SELECT count(*)::int AS present FROM gpu_jobs WHERE id = 132',
+        { type: Sequelize.QueryTypes.SELECT, transaction }
+      );
+
+      // Null on a database that never ran the job, 132 on the machine that did. A
+      // `gpu_jobs` row records an execution, and inventing one would claim a run that
+      // never happened here; where it did happen the link is a true fact worth keeping.
+      const gpuJobId = job.present ? 132 : null;
+
       await queryInterface.bulkInsert(
         'observations',
-        OBSERVATIONS.map((r) => ({ ...r, createdAt: now, updatedAt: now })),
+        OBSERVATIONS.map((r) => ({
+          ...r, gpu_job_id: gpuJobId, createdAt: now, updatedAt: now,
+        })),
         { transaction }
       );
 
@@ -184,17 +244,21 @@ module.exports = {
         { transaction }
       );
 
-      // Re-link the job, but only on a database that actually has it. The rows
-      // ship with `gpu_job_id` null because a `gpu_jobs` row records an execution
-      // on one machine; where that execution really happened -- the machine the
-      // pipeline was run on -- the link is a true fact and worth keeping rather
-      // than discarding just because the seeder had to be portable.
-      await queryInterface.sequelize.query(
-        `UPDATE observations SET gpu_job_id = 132
-          WHERE observation_id IN (:ids)
-            AND EXISTS (SELECT 1 FROM gpu_jobs WHERE id = 132)`,
-        { replacements: { ids: OBSERVATIONS.map((r) => r.observation_id) }, transaction }
-      );
+      // Every id above is pinned, which leaves each sequence behind its own table --
+      // so the next ordinary insert would collide. Advance them past what now exists.
+      for (const [table, column] of [
+        ['projects', 'project_id'],
+        ['sessions', 'session_id'],
+        ['ml_models', 'id'],
+        ['model_species', 'id'],
+        ['keyframes', 'keyframe_id'],
+      ]) {
+        await queryInterface.sequelize.query(
+          `SELECT setval(pg_get_serial_sequence('${table}', '${column}'),
+                         GREATEST((SELECT COALESCE(MAX(${column}), 0) FROM ${table}), 1))`,
+          { transaction }
+        );
+      }
 
       await transaction.commit();
     } catch (error) {
@@ -205,6 +269,11 @@ module.exports = {
 
   /**
    * Removes the observations. The keyframes go with them by cascade.
+   *
+   * **Deliberately does not remove the project, the session or the model.** Deleting
+   * project 43 or session 142 cascades to *every* observation attached to them, which
+   * on a working database is not only this seeder's six. Leaving inert context rows
+   * behind is the lesser harm, and re-running `up` reconciles them anyway.
    *
    * @async
    * @param {Object} queryInterface - Sequelize QueryInterface.
