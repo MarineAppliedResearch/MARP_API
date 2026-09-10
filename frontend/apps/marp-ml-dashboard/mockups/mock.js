@@ -769,7 +769,7 @@ const TIPS = {
   'Train from this': 'Fine-tune a new version from this one',
   'Assign to workers': 'Cache it on chosen workers and prefer them for matching jobs',
   'Change preference': 'Choose the task it is preferred for, and say why',
-  'Lineage': 'Where this version came from',
+  'Lineage': 'Every version this one descends from, oldest first',
   'Versions': 'Every version of this model, newest first',
   'Key metrics': 'Scored on the dataset held-out test split',
   'Caching': 'Which workers already hold this model',
@@ -899,6 +899,20 @@ function wireSplit() {
   draw();
 }
 
+/**
+ * A long lineage keeps its middle folded until asked. One line of behaviour,
+ * because a chain of ten otherwise fills the column it lives in.
+ */
+function wireLineage() {
+  $$('.lmorebtn').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const list = b.closest('.lin');
+      if (list) list.classList.add('open');
+    });
+  });
+}
+
 /* ==================================================================== boot */
 
 document.body.dataset.rail = 'closed';
@@ -915,4 +929,5 @@ wireInferenceForm();
 wireSorting();
 wireAccordions();
 wireSplit();
+wireLineage();
 applyTips();

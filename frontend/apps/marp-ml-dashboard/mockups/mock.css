@@ -1140,23 +1140,51 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 .cachebox em { display: block; font-style: normal; color: var(--faint); font-size: 10.5px; }
 
 
-/* Where a version came from: upstream checkpoint, first transfer, current. */
-.lineage { display: flex; align-items: stretch; gap: 8px; }
-.lnode {
-  flex: 1 1 0; min-width: 0;
-  display: grid; gap: 2px; justify-items: start;
-  padding: 10px 11px; border-radius: var(--r-sm);
-  background: var(--sunk); border: 1px solid var(--hairline);
+
+/* Where a version came from, oldest first.
+   A vertical rail because a chain is one step deep or ten, and three cards
+   across a column can only ever show three. */
+.lin { list-style: none; margin: 0; padding: 0 0 0 16px; position: relative; }
+.lin::before {
+  content: ""; position: absolute; left: 3px; top: 6px; bottom: 6px;
+  width: 1px; background: var(--hairline-2);
 }
-.lnode .ico { color: var(--muted); margin-bottom: 3px; }
-.lnode b { color: var(--white); font-size: 11px; overflow-wrap: anywhere; }
-.lnode span { color: var(--muted); font-size: 10px; }
-.lnode em { font-style: normal; color: var(--faint); font-size: 9.5px;
-            overflow-wrap: anywhere; }
-.lnode.is-current { border-color: rgba(34, 215, 220, 0.42);
-                    background: rgba(34, 215, 220, 0.06); }
-.lnode.is-current .ico, .lnode.is-current b { color: var(--cyan-300); }
-.larrow { align-self: center; color: var(--faint); flex: none; }
+.lstep {
+  position: relative; display: grid; gap: 0 10px;
+  grid-template-columns: 62px minmax(0, 1fr);
+  padding: 4px 0; font-size: 11px;
+}
+.lstep::before {
+  content: ""; position: absolute; left: -16px; top: 9px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--navy-950); box-shadow: 0 0 0 1.5px var(--hairline-2);
+}
+.lstep .lv { color: var(--text); font-weight: 600;
+             font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }
+.lstep .lw { color: var(--text); overflow: hidden; text-overflow: ellipsis;
+             white-space: nowrap; }
+.lstep .ld { grid-column: 2; color: var(--faint); font-size: 10px;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lstep.is-base::before { background: var(--muted); box-shadow: 0 0 0 1.5px var(--muted); }
+.lstep.is-base .lv { color: var(--muted); }
+.lstep.is-current::before { background: var(--cyan-400);
+                            box-shadow: 0 0 0 1.5px var(--cyan-400); }
+.lstep.is-current .lv, .lstep.is-current .lw { color: var(--cyan-300); font-weight: 600; }
+
+/* The folded middle of a long chain. */
+.lstep.is-folded { display: none; }
+.lin.open .lstep.is-folded { display: grid; }
+.lstep.lmore { grid-template-columns: minmax(0, 1fr); padding: 2px 0; }
+.lstep.lmore::before { background: none; box-shadow: none;
+                       border-left: 1px dashed var(--hairline-2); height: 12px;
+                       width: 0; border-radius: 0; left: -13px; top: 4px; }
+.lin.open .lstep.lmore { display: none; }
+.lmorebtn {
+  background: none; border: 0; padding: 0; text-align: left;
+  color: var(--cyan-300); font-size: 10.5px; font-weight: 600;
+}
+.lmorebtn:hover { text-decoration: underline; }
 
 /* The registry's own column widths, scoped to the table. Sharing Jobs' header
    classes meant Jobs' mid-width rules hid a header here while its cell stayed,
@@ -1234,9 +1262,6 @@ tr[aria-expanded="true"] td { box-shadow: inset 0 1px 0 rgba(45, 156, 255, 0.34)
   .grid[data-cols="wide-narrow"] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* Three charts side by side stop being readable well before this. */
   .rundetail .charts { grid-template-columns: minmax(0, 1fr); }
-  /* Three lineage nodes side by side stop being readable here. */
-  .lineage { flex-direction: column; }
-  .larrow { transform: rotate(90deg); align-self: start; margin-left: 18px; }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .acts2 { grid-template-columns: minmax(0, 1fr); }
   /* Four columns of history do not fit; the note takes its own line. */

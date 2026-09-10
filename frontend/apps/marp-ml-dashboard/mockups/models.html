@@ -100,7 +100,7 @@
                     <td class="ex"><button class="exbtn" aria-label="Show details for MARP-Multiclass-Det-XL" title="Open this model's details"><svg class="ico sm"><use href="#i-right"/></svg></button></td>
                     <td class="jname"><span class="name"><svg class="ico"><use href="#i-models"/></svg><span class="t">MARP-Multiclass-Det-XL</span><button class="starbtn on" aria-label="Preferred for General benthic detection" title="Preferred for General benthic detection"><svg class="ico sm"><use href="#i-star"/></svg></button></span></td>
                     <td class="jtask">Object detection</td>
-                    <td class="mono">1.0.3</td>
+                    <td class="mono">1.2.1</td>
                     <td class="jstatus" data-sort="0"><span class="st" data-state="ready"><span class="dot"></span>Ready</span></td>
                     <td class="jbase">YOLOv8l</td>
                     <td class="jdset">ALL_Projects_Inverts_v5</td>
@@ -121,7 +121,7 @@
                             <dl class="kv">
                               <dt>Model name</dt><dd>MARP-Multiclass-Det-XL</dd>
                               <dt>Task / type</dt><dd>Object detection (YOLOv8)</dd>
-                              <dt>Version</dt><dd>1.0.3</dd>
+                              <dt>Version</dt><dd>1.2.1</dd>
                               <dt>Status</dt><dd><span class="st" data-state="ready"><span class="dot"></span>Ready</span></dd>
                               <dt>Preferred use</dt><dd>General benthic detection</dd>
                               <dt>Base model</dt><dd>YOLOv8l <span class="faint">(Ultralytics)</span></dd>
@@ -161,21 +161,28 @@
                           </div>
 
                           <div class="sect">
-                            <h3>Lineage</h3>
-                            <div class="lineage"><div class="lnode"><svg class="ico"><use href="#i-models"/></svg><b>YOLOv8l</b><span>Base model</span><em>Ultralytics</em></div><svg class="ico larrow"><use href="#i-arrow"/></svg><div class="lnode"><svg class="ico"><use href="#i-datasets"/></svg><b>ALL_Projects v3</b><span>Transfer learning</span><em>v1.0.0</em></div><svg class="ico larrow"><use href="#i-arrow"/></svg><div class="lnode is-current"><svg class="ico"><use href="#i-models"/></svg><b>Multiclass-Det-XL</b><span>Fine-tuned model</span><em>v1.0.3</em></div></div>
-                            <p class="hint">Most MARP models are transfer-trained from an
-                              existing one.</p>
-
+                            <h3>Lineage <span class="faint">(8 steps)</span></h3>
+                            <ol class="lin" data-depth="8">
+                              <li class="lstep is-base"><span class="lv">YOLOv8l</span><span class="lw">Upstream checkpoint</span><span class="ld">Ultralytics</span></li>
+                              <li class="lstep"><span class="lv">1.0.0</span><span class="lw">First transfer</span><span class="ld">ALL_Projects_Inverts_v1</span></li>
+                              <li class="lstep lmore"><button class="lmorebtn" title="Show the 3 versions in between">3 more versions</button></li>
+                              <li class="lstep is-folded"><span class="lv">1.0.1</span><span class="lw">More epochs</span><span class="ld">ALL_Projects_Inverts_v2</span></li>
+                              <li class="lstep is-folded"><span class="lv">1.0.2</span><span class="lw">Augmentation added</span><span class="ld">ALL_Projects_Inverts_v2</span></li>
+                              <li class="lstep is-folded"><span class="lv">1.1.0</span><span class="lw">Six classes added</span><span class="ld">ALL_Projects_Inverts_v3</span></li>
+                              <li class="lstep"><span class="lv">1.1.1</span><span class="lw">Rebalanced classes</span><span class="ld">ALL_Projects_Inverts_v4</span></li>
+                              <li class="lstep"><span class="lv">1.2.0</span><span class="lw">Longer schedule</span><span class="ld">ALL_Projects_Inverts_v4</span></li>
+                              <li class="lstep is-current"><span class="lv">1.2.1</span><span class="lw">Small-object recall</span><span class="ld">ALL_Projects_Inverts_v5</span></li>
+                            </ol>
                             <h3 style="margin-top:14px">Training history</h3>
                             <div class="hlist">
                               <div class="hrow hhead">
                                 <span>Date</span><span>Version</span>
                                 <span>Dataset</span><span>What changed</span>
                               </div>
-                              <div class="hrow"><span>2026-09-10</span><span class="mono">1.0.3</span><span class="tr">ALL_Projects_Inverts_v5</span><span class="tr">Improved small object detection</span></div>
-                              <div class="hrow"><span>2026-08-14</span><span class="mono">1.0.2</span><span class="tr">ALL_Projects_Inverts_v4</span><span class="tr">Extended training, more augmentation</span></div>
-                              <div class="hrow"><span>2026-07-22</span><span class="mono">1.0.1</span><span class="tr">ALL_Projects_Inverts_v3</span><span class="tr">Increased training epochs</span></div>
-                              <div class="hrow"><span>2026-07-03</span><span class="mono">1.0.0</span><span class="tr">ALL_Projects_Inverts_v3</span><span class="tr">Initial release from transfer learning</span></div>
+                              <div class="hrow"><span>2026-09-10</span><span class="mono">1.2.1</span><span class="tr">ALL_Projects_Inverts_v5</span><span class="tr">Improved small object detection</span></div>
+                              <div class="hrow"><span>2026-08-14</span><span class="mono">1.2.0</span><span class="tr">ALL_Projects_Inverts_v4</span><span class="tr">Extended training, longer schedule</span></div>
+                              <div class="hrow"><span>2026-07-22</span><span class="mono">1.1.1</span><span class="tr">ALL_Projects_Inverts_v4</span><span class="tr">Rebalanced the class weights</span></div>
+                              <div class="hrow"><span>2026-07-03</span><span class="mono">1.1.0</span><span class="tr">ALL_Projects_Inverts_v3</span><span class="tr">Six classes added</span></div>
                             </div>
                           </div>
 
