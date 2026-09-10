@@ -504,7 +504,7 @@ anything was lost, and carries a `down` that restores what it changed.
 
 ## Running the inference pipeline needs context the baseline does not carry
 
-The baseline builds the schema and the 854-row species catalogue. It does **not** build a
+The baseline builds the schema and the species catalogue. It does **not** build a
 project, a session, or a registered model — those are survey data, and a `marp db destroy`
 takes them. A GPU job spec names a session and an `ml_models` row *by id*, so a rebuilt
 database rejects the same job spec that worked yesterday, and the error arrives from the
