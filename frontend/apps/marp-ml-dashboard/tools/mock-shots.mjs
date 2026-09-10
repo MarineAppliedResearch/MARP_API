@@ -66,6 +66,17 @@ for (const view of views) {
     await page.screenshot({ path: file, fullPage: true });
     console.log(`mock-${name}-${view}.png`);
 
+    /* A tab icon that points at nothing fails silently -- the tab just shows the
+       browser's default and nobody notices for months. So it is asserted. */
+    const fav = await page.evaluate(async () => {
+      const link = document.querySelector('link[rel="icon"]');
+      if (!link) return { missing: true };
+      const res = await fetch(link.href, { method: 'GET' });
+      return { href: link.getAttribute('href'), status: res.status };
+    });
+    if (fav.missing) problems.push(`${name}/${view}: no <link rel="icon"> -- the tab has no icon`);
+    else if (fav.status !== 200) problems.push(`${name}/${view}: tab icon ${fav.href} answered ${fav.status}`);
+
     /* A dropdown that is only ever drawn shut cannot be judged, so a screen with
        an account button gets one extra shot with it open. */
     if (view === 'desktop' && await page.locator('#userBtn').count()) {
