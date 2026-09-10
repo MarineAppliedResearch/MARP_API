@@ -25,6 +25,8 @@ const crypto = require('crypto');
 
 const gpuRepository = require('../repository/gpu.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
+const observationIngestService = require('./observation-ingest.service');
+const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const {
     HEARTBEAT_SECONDS,
@@ -37,6 +39,7 @@ const {
     MAX_EVENTS_PER_BATCH,
     ARTIFACT_PATH_PREFIX,
     JOB_KINDS,
+    INGESTIBLE_JOB_KINDS,
     JOB_STATES,
     REPORTABLE_ATTEMPT_STATES,
     WORKER_EVENT_KINDS,
@@ -611,7 +614,7 @@ class GpuService {
             }
         }
 
-        return gpuRepository.publishResult({
+        const published = await gpuRepository.publishResult({
             attemptId: this.attemptIdFromPath(attemptId),
             workerId,
             leaseEpoch,
@@ -619,6 +622,67 @@ class GpuService {
             failureReason: body.failure_reason,
             artifacts: named,
         });
+
+        const ingest = await this.ingestPublishedJob(published);
+
+        return ingest === null ? published : { ...published, ingest };
+    }
+
+    /**
+     * Turn a job that has just published a successful result into observations.
+     *
+     * **After the result transaction has committed, and in its own transaction.**
+     * A parse failure must not roll back a job whose compute succeeded, or the
+     * worker would be asked to redo hours of GPU work because a species name was
+     * missing from a list -- and the bytes are already held, so the fix is to
+     * correct the data and call the ingest route, not to run the model again.
+     *
+     * A failure is therefore recorded rather than thrown: as a coordinator note
+     * on the attempt, in the log, and in the `ingest` block of the answer the
+     * worker gets. That is what makes it loud without making it the worker's
+     * problem.
+     *
+     * @async
+     * @param {Object} published - What `publishResult` returned.
+     * @returns {Promise<Object|null>} What was ingested, why it was not, or null
+     * when this result was never a candidate.
+     */
+    async ingestPublishedJob(published) {
+        if (!published || !published.published || published.outcome !== 'succeeded') {
+            return null;
+        }
+
+        const detail = await gpuRepository.getJobDetail(published.job_id);
+
+        if (!detail || !INGESTIBLE_JOB_KINDS.includes(detail.job.kind)) {
+            return null;
+        }
+
+        // A job submitted without a session has nowhere to put observations.
+        // Skipped rather than failed: producing only a detections artifact is a
+        // legitimate run, and every job predating spec.session is one.
+        if (!detail.job.spec || !detail.job.spec.session) {
+            return { ingested: false, skipped: 'the job spec names no session' };
+        }
+
+        try {
+            return await observationIngestService.ingestJob({
+                ...detail.job,
+                artifacts: detail.artifacts,
+            });
+        } catch (error) {
+            const reason = error && error.message ? error.message : String(error);
+
+            logger.error(`Error::observation ingest failed for job ${published.job_id}: ${reason}`);
+
+            await gpuRepository.appendCoordinatorNote(published.published_attempt_id, {
+                note: 'observation ingest failed',
+                job_id: published.job_id,
+                reason,
+            });
+
+            return { ingested: false, failed: reason };
+        }
     }
 
     // -----------------------------------------------------------------
@@ -908,6 +972,7 @@ class GpuService {
         }
 
         this.validateSubmittedVideo(spec.video);
+        this.validateSubmittedObservationTarget(kind, spec);
 
         // The range is always present, even for a whole video, so nothing
         // downstream has to special-case the undivided case -- and the
@@ -989,6 +1054,35 @@ class GpuService {
         return result;
     }
 
+    /**
+     * Ingest one job's observations on request.
+     *
+     * The recovery path for R14: automatic ingest runs when a result publishes,
+     * and when it fails -- an unknown species name, a session type that does not
+     * match the model -- the bytes are still held and the fix is to correct the
+     * data and call this. Idempotent, so calling it on a job that already
+     * ingested changes nothing and says so.
+     *
+     * @async
+     * @param {number|string} jobId - Job identifier from the path.
+     * @returns {Promise<Object>} What was written, and what it resolved to.
+     * @throws {ApiError} 404 when there is no such job, 400 when it cannot be
+     * ingested, 409 when its result cannot be reconciled.
+     */
+    async ingestJobObservations(jobId) {
+        const id = this.jobIdFromPath(jobId);
+        const detail = await gpuRepository.getJobDetail(id);
+
+        if (!detail) {
+            throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `GPU job ${jobId} was not found.`);
+        }
+
+        return observationIngestService.ingestJob({
+            ...detail.job,
+            artifacts: detail.artifacts,
+        });
+    }
+
     // -----------------------------------------------------------------
     // Shared validation
     // -----------------------------------------------------------------
@@ -1032,6 +1126,43 @@ class GpuService {
         }
 
         return ranges;
+    }
+
+    /**
+     * Validate the part of a submitted spec that says where its observations go.
+     *
+     * Checked here rather than only at ingest so that a malformed session or a
+     * missing model is a 400 on the submission, not a surprise hours later when a
+     * GPU has already done the work.
+     *
+     * **Optional, and deliberately so.** A run whose only purpose is a raw
+     * detections artifact is legitimate, and a `training` or `diagnostic` job has
+     * no observations at all. But a job that *does* say where its observations go
+     * must also say which registered model made them: `observations.ml_model_id`
+     * is on every ingested row, and the model's trained-species list is what
+     * settles a common name that more than one species carries.
+     *
+     * @param {string} kind - The job kind being submitted.
+     * @param {Object} spec - The submitted spec.
+     * @returns {void}
+     * @throws {ApiError} 400 when the session or the model is malformed, or when
+     * a session is named without a model.
+     */
+    validateSubmittedObservationTarget(kind, spec) {
+        const session = observationIngestService.validateSpecSession(spec.session);
+
+        if (!session) {
+            return;
+        }
+
+        if (!INGESTIBLE_JOB_KINDS.includes(kind)) {
+            invalid(
+                `spec.session says where observations go, but a ${kind} job produces none. `
+                + `Only ${INGESTIBLE_JOB_KINDS.join(' and ')} jobs write observations.`
+            );
+        }
+
+        observationIngestService.validateSpecModel(spec.model);
     }
 
     /**

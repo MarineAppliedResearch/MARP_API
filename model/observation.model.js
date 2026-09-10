@@ -538,6 +538,50 @@ module.exports = (sequelize, DataTypes) => {
                     examples: [0.93],
                 },
             },
+
+            // The ML model identity that produced the observation, where one did.
+            ml_model_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: {
+                    model: 'ml_models',
+                    key: 'id',
+                },
+                jsonSchema: {
+                    description: 'Identifier of the ML model that produced the observation. '
+                        + 'Null means no model was recorded, which does not assert hand entry.',
+                    examples: [91],
+                },
+            },
+
+            // The GPU job whose result produced the observation, where one did.
+            gpu_job_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+                references: {
+                    model: 'gpu_jobs',
+                    key: 'id',
+                },
+                jsonSchema: {
+                    description: 'Identifier of the GPU job whose result produced the observation. '
+                        + 'Re-running inference produces a second set of observations rather than '
+                        + 'replacing the first, so this is what tells the sets apart.',
+                    examples: [1256],
+                },
+            },
+
+            // The Jellyfin item the observation was made in, where there is one.
+            jellyfin_item_id: {
+                type: DataTypes.STRING(255),
+                allowNull: true,
+                defaultValue: null,
+                jsonSchema: {
+                    description: 'Identifier of the Jellyfin item the observation was made in. '
+                        + 'video_source holds the filename a person reads; this holds the identity '
+                        + 'a request can use. Null for a video that did not come from Jellyfin.',
+                    examples: ['4ac4749aae0a8d75ac99f2d8d50717ce'],
+                },
+            },
         },
         {
             // Use the shared Sequelize connection supplied to the model factory.

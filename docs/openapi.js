@@ -2240,6 +2240,11 @@ const buildOpenApiSpec = () => {
                                 properties: {
                                     name: { type: 'string', example: 'yolov8-marine-fish-2025' },
                                     sha256: { type: 'string', example: 'd5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3' },
+                                    ml_model_id: {
+                                        type: 'integer',
+                                        example: 91,
+                                        description: 'Which registered `ml_models` row this is. Required whenever `session` is given, because every ingested observation records the model that produced it and the model\'s trained-species list is what settles a common name that more than one species carries. `sha256` identifies the weights the worker verifies; it cannot identify a registry row, since `ml_models` holds no hash column.',
+                                    },
                                 },
                             },
                             video: {
@@ -2266,6 +2271,22 @@ const buildOpenApiSpec = () => {
                                         example: 'MARE_2024_Dive07_cam1.mp4',
                                         description: 'What appears as `video_source` on every observation the run produces. Required on submission with a bare `url`, since it cannot be guessed from one; optional with an item id, where the Jellyfin item supplies it.',
                                     },
+                                },
+                            },
+                            session: {
+                                type: 'object',
+                                description:
+                                    'Where this job\'s observations go. Optional -- a run whose only purpose is a raw detections artifact is legitimate -- but a job that gives it must also give `model.ml_model_id`, and a job without it produces no observations at all.\n\n'
+                                    + '**Exactly one form.** `session_id` names a session that already exists; `project_id`, `dive`, `line` and `type` together carry enough for one to be found or created. Both together is refused rather than one silently winning.\n\n'
+                                    + '**A session is a dive and a line, never a video.** `sessions` has no video column, so a session may span several videos and the video reference lives on the observation instead, as `video_source` and `jellyfin_item_id`. The submitter owns this: project, dive and line are human decisions and are not recoverable from a video and a frame range, so the coordinator does not invent scientific groupings.\n\n'
+                                    + '`type` is checked against the model rather than trusted -- an inverts model\'s output belongs in an inverts session, and a mismatch is wrong in a way nothing downstream would complain about.',
+                                additionalProperties: false,
+                                properties: {
+                                    session_id: { type: 'integer', example: 142, description: 'An existing session. Given on its own.' },
+                                    project_id: { type: 'integer', example: 43, description: 'Project the session belongs to.' },
+                                    dive: { type: 'string', example: 'Dive 8', description: 'Dive name.' },
+                                    line: { type: 'string', example: '1000', description: 'Line name.' },
+                                    type: { type: 'string', example: 'Invert', description: 'Session type: `Fish`, `Invert` or `GULF_Fish`. What the annotation GUI routes on.' },
                                 },
                             },
                             range: {
@@ -2763,6 +2784,22 @@ const buildOpenApiSpec = () => {
                                 example: true,
                                 description: 'False for a job that had already finished, which is not an error -- cancelling something finished simply does nothing.',
                             },
+                        },
+                    },
+                    GpuJobIngestResponse: {
+                        type: 'object',
+                        description:
+                            'What one job\'s result became in the annotation record. `ingested` is false without being an error when the job\'s observations were already present -- `already_ingested` then says how many rows there are.',
+                        properties: {
+                            job_id: { type: 'integer', example: 1256 },
+                            ingested: { type: 'boolean', example: true, description: 'Whether this call wrote anything.' },
+                            already_ingested: { type: 'integer', example: 0, description: 'Observations this job had already produced. Non-zero means nothing was written this time.' },
+                            session_id: { type: 'integer', example: 142, description: 'Session the observations were written into.' },
+                            session_created: { type: 'boolean', example: false, description: 'Whether that session had to be created.' },
+                            ml_model_id: { type: 'integer', example: 91, description: 'Model recorded on every row written.' },
+                            observations: { type: 'integer', example: 6, description: 'Observation rows written. Zero is a valid outcome: the job detected nothing.' },
+                            keyframes: { type: 'integer', example: 78, description: 'Keyframe rows written.' },
+                            observation_ids: { type: 'array', items: { type: 'integer' }, example: [440103, 440104], description: 'The rows written, in file order.' },
                         },
                     },
                     MosaicQueryFilters: {

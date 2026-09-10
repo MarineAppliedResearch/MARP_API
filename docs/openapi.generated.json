@@ -2550,6 +2550,11 @@
               "sha256": {
                 "type": "string",
                 "example": "d5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3"
+              },
+              "ml_model_id": {
+                "type": "integer",
+                "example": 91,
+                "description": "Which registered `ml_models` row this is. Required whenever `session` is given, because every ingested observation records the model that produced it and the model's trained-species list is what settles a common name that more than one species carries. `sha256` identifies the weights the worker verifies; it cannot identify a registry row, since `ml_models` holds no hash column."
               }
             }
           },
@@ -2573,6 +2578,38 @@
                 "nullable": true,
                 "example": "MARE_2024_Dive07_cam1.mp4",
                 "description": "What appears as `video_source` on every observation the run produces. Required on submission with a bare `url`, since it cannot be guessed from one; optional with an item id, where the Jellyfin item supplies it."
+              }
+            }
+          },
+          "session": {
+            "type": "object",
+            "description": "Where this job's observations go. Optional -- a run whose only purpose is a raw detections artifact is legitimate -- but a job that gives it must also give `model.ml_model_id`, and a job without it produces no observations at all.\n\n**Exactly one form.** `session_id` names a session that already exists; `project_id`, `dive`, `line` and `type` together carry enough for one to be found or created. Both together is refused rather than one silently winning.\n\n**A session is a dive and a line, never a video.** `sessions` has no video column, so a session may span several videos and the video reference lives on the observation instead, as `video_source` and `jellyfin_item_id`. The submitter owns this: project, dive and line are human decisions and are not recoverable from a video and a frame range, so the coordinator does not invent scientific groupings.\n\n`type` is checked against the model rather than trusted -- an inverts model's output belongs in an inverts session, and a mismatch is wrong in a way nothing downstream would complain about.",
+            "additionalProperties": false,
+            "properties": {
+              "session_id": {
+                "type": "integer",
+                "example": 142,
+                "description": "An existing session. Given on its own."
+              },
+              "project_id": {
+                "type": "integer",
+                "example": 43,
+                "description": "Project the session belongs to."
+              },
+              "dive": {
+                "type": "string",
+                "example": "Dive 8",
+                "description": "Dive name."
+              },
+              "line": {
+                "type": "string",
+                "example": "1000",
+                "description": "Line name."
+              },
+              "type": {
+                "type": "string",
+                "example": "Invert",
+                "description": "Session type: `Fish`, `Invert` or `GULF_Fish`. What the annotation GUI routes on."
               }
             }
           },
@@ -3652,6 +3689,62 @@
             "type": "boolean",
             "example": true,
             "description": "False for a job that had already finished, which is not an error -- cancelling something finished simply does nothing."
+          }
+        }
+      },
+      "GpuJobIngestResponse": {
+        "type": "object",
+        "description": "What one job's result became in the annotation record. `ingested` is false without being an error when the job's observations were already present -- `already_ingested` then says how many rows there are.",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "example": 1256
+          },
+          "ingested": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether this call wrote anything."
+          },
+          "already_ingested": {
+            "type": "integer",
+            "example": 0,
+            "description": "Observations this job had already produced. Non-zero means nothing was written this time."
+          },
+          "session_id": {
+            "type": "integer",
+            "example": 142,
+            "description": "Session the observations were written into."
+          },
+          "session_created": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether that session had to be created."
+          },
+          "ml_model_id": {
+            "type": "integer",
+            "example": 91,
+            "description": "Model recorded on every row written."
+          },
+          "observations": {
+            "type": "integer",
+            "example": 6,
+            "description": "Observation rows written. Zero is a valid outcome: the job detected nothing."
+          },
+          "keyframes": {
+            "type": "integer",
+            "example": 78,
+            "description": "Keyframe rows written."
+          },
+          "observation_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "example": [
+              440103,
+              440104
+            ],
+            "description": "The rows written, in file order."
           }
         }
       },
@@ -6037,6 +6130,26 @@
             "description": "Machine-learning confidence score between zero and one.",
             "example": 0.93
           },
+          "ml_model_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Identifier of the ML model that produced the observation. Null means no model was recorded, which does not assert hand entry.",
+            "example": 91
+          },
+          "gpu_job_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Identifier of the GPU job whose result produced the observation. Re-running inference produces a second set of observations rather than replacing the first, so this is what tells the sets apart.",
+            "example": 1256
+          },
+          "jellyfin_item_id": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true,
+            "default": null,
+            "description": "Identifier of the Jellyfin item the observation was made in. video_source holds the filename a person reads; this holds the identity a request can use. Null for a video that did not come from Jellyfin.",
+            "example": "4ac4749aae0a8d75ac99f2d8d50717ce"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -6077,6 +6190,7 @@
           "substrate_shell_hash",
           "substrate_shell_rubble",
           "substrate_algal",
+          "jellyfin_item_id",
           "createdAt",
           "updatedAt"
         ],
@@ -13330,6 +13444,56 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/gpu/jobs/{id}/ingest": {
+      "post": {
+        "summary": "Turn a finished job's result into observations",
+        "description": "Parses the job's `observations` artifact and writes one observation per finished track, with its keyframes, into the annotation record. This runs by itself when a successful result publishes; the route is the recovery path for when it did not -- a class name that is not a species MARP knows, or a session whose type does not match the model. Those failures leave the bytes held and nothing written, so the fix is to correct the data and call this rather than to run the model again.\n\nIdempotent per job: a job whose observations are already present reports `already_ingested` and writes nothing. **Re-running inference over the same range is a different job and therefore a different set of observations** -- it does not replace or merge the earlier model's results, because comparing two models depends on both surviving.\n\nThe class name is resolved to a species by MARP, not by the worker: the worker holds the model's own class-index-to-name mapping and sends the name, and where a name matches more than one species row the model's trained-species list settles it. An unresolvable or ambiguous name fails the whole ingest rather than skipping an observation. Requires the `jobs:write` permission.",
+        "tags": [
+          "V2 · GpuCompute"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the job whose result should be ingested."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was written, and what it resolved to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GpuJobIngestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "409": {
+            "$ref": "#/components/responses/ConflictError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

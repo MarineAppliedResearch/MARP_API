@@ -2,9 +2,9 @@
  * GPU orchestration routes, registered code-first through the OpenAPI route
  * registry.
  *
- * Thirteen endpoints under `/api/v2/gpu`, declared here in V1 terms because
+ * Fourteen endpoints under `/api/v2/gpu`, declared here in V1 terms because
  * `registerVersionedRoute` rewrites both the path and the tag and refuses a
- * literal `/api/v2/` path. Five are worker-facing, six are human-facing, and
+ * literal `/api/v2/` path. Five are worker-facing, seven are human-facing, and
  * two are the artifact hand-off.
  *
  * **Every direction of travel is worker-to-MARP.** There is no route in this
@@ -628,6 +628,35 @@ function registerGpuRoutes(app) {
         },
         handler: asyncHandler(async (req, res) => {
             const data = await gpuController.cancelJob(req.params.id);
+            res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: 'jobs:write',
+        path: '/api/gpu/jobs/:id/ingest',
+        summary: 'Turn a finished job\'s result into observations',
+        description:
+            'Parses the job\'s `observations` artifact and writes one observation per finished track, with its keyframes, into the annotation record. This runs by itself when a successful result publishes; the route is the recovery path for when it did not -- a class name that is not a species MARP knows, or a session whose type does not match the model. Those failures leave the bytes held and nothing written, so the fix is to correct the data and call this rather than to run the model again.\n\n'
+            + 'Idempotent per job: a job whose observations are already present reports `already_ingested` and writes nothing. **Re-running inference over the same range is a different job and therefore a different set of observations** -- it does not replace or merge the earlier model\'s results, because comparing two models depends on both surviving.\n\n'
+            + 'The class name is resolved to a species by MARP, not by the worker: the worker holds the model\'s own class-index-to-name mapping and sends the name, and where a name matches more than one species row the model\'s trained-species list settles it. An unresolvable or ambiguous name fails the whole ingest rather than skipping an observation.',
+        tags: [GPU_TAG],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the job whose result should be ingested.' },
+        ],
+        responses: {
+            200: {
+                description: 'What was written, and what it resolved to.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/GpuJobIngestResponse' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            409: { $ref: '#/components/responses/ConflictError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const data = await gpuController.ingestJobObservations(req.params.id);
             res.json(data);
         }),
     });

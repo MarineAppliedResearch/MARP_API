@@ -189,6 +189,18 @@ const JOB_KINDS = ['inference', 'tracking', 'training', 'diagnostic'];
 const JOB_STATES = ['queued', 'leased', 'succeeded', 'failed', 'cancelled', 'expired'];
 
 /**
+ * Job kinds whose results become observations in the annotation record.
+ *
+ * A `training` job produces weights and a `diagnostic` job produces a number;
+ * neither has a session to write into, so neither is ingested.
+ *
+ * @constant
+ * @type {Array<string>}
+ */
+const INGESTIBLE_JOB_KINDS = ['inference', 'tracking'];
+
+
+/**
  * Job states that cannot change again. A cancel or a claim against one of these
  * is refused rather than applied.
  *
@@ -282,6 +294,7 @@ module.exports = {
     MEDIA_CLIENT_IDENTITY,
     WORKER_STATES,
     JOB_KINDS,
+    INGESTIBLE_JOB_KINDS,
     JOB_STATES,
     TERMINAL_JOB_STATES,
     ATTEMPT_STATES,
