@@ -212,6 +212,19 @@ MARP get built. One agent settles the assumptions with the human; then the work 
 - **Do not tell it to skip the gate.** Instructing an agent to pick a default for an
   ambiguous question instead of stopping converts a five-minute question into an hour of
   rework, and it has already happened here.
+- **Scale the brief to the change.** A fifteen-line change does not need a research brief.
+  Asking for a baseline established twice, a mutation per assertion, a real-hardware run and
+  a deliberation on an edge case is right for a contract spanning two repositories and
+  absurd for adding one field — it turns minutes of work into an hour, and the agent will do
+  every part of it because you asked. Say which parts to skip. Keep the *rules* whatever the
+  size: authorship, no push, no pull request, no issues.
+- **Do not ask a question the spec already answers.** Before listing open questions for the
+  human, check `.marp/task.md` and the issue comments for the ones already settled. Sending
+  an agent to ask about a decision recorded an hour earlier wastes their time and teaches
+  them the record is not trustworthy. Note that `marp spec retire` takes the spec off the
+  integration branch once it merges, so the answers are reached with
+  `git show <task-branch>:.marp/task.md` — give an agent that command rather than letting it
+  conclude the decisions were never made.
 - **Its report is the only thing anyone sees.** Ask for what it did per requirement, real
   test output including failures, the branch and its commits, every judgement call it made,
   and anything broken it found and left alone.
@@ -390,19 +403,21 @@ executable by the `pg` driver without psql.
 ## Tests
 
 **The suite runs in CI**, against a PostgreSQL built from `db/baseline/schema.sql` plus
-the migrations — the same sequence `marp db up` uses. 210 of 227 run there; the 17 in
-`tests/jellyfin.test.js` are excluded by name because they drive the central media server,
-which a runner cannot reach. **Run those locally before merging anything that touches
-Jellyfin** — CI cannot tell you they broke. It is 227 for 227 on a database with
-no data in it, which is what makes that job meaningful. If you add a test that depends on
+the migrations — the same sequence `marp db up` uses. Everything runs there except
+`tests/jellyfin.test.js`, excluded by name because it drives the central media server,
+which a runner cannot reach — that is the `media` subsystem, and `npm run test:media` is
+how you run it. **Run it locally before merging anything that touches Jellyfin**, because
+CI cannot tell you it broke. CI builds its database from the baseline and the migrations
+and puts no data in it, which is what makes that job meaningful. If you add a test that depends on
 rows the development server happens to hold, seed them in the suite; see
 `tests/species-lists.test.js`, where a block used to fail in one place and pass vacuously
 in three.
 
 **There is a fast tier and a slow tier. Use the fast one between changes.**
-`npm test` is the whole suite -- 41 suites, ~195 s -- and it is for the end of a change
-set, not the working loop. The suites are grouped into subsystems, and running the one
-you touched takes 14--46 s:
+`npm test` is the whole suite -- minutes, not seconds -- and it is for the end of a change
+set, not the working loop. The suites are grouped into subsystems, and running the one you
+touched is tens of seconds. `npm run test:subsystems` lists them and says which suites
+each one owns:
 
 ```bash
 npm run test:gpu           # orchestration, leases, video resolution, ingest
@@ -432,8 +447,8 @@ than looking broken.
 **`npm test`, not `npx jest`.** The suite runs against the real development
 PostgreSQL, and `package.json` passes `--runInBand` for that reason. Running Jest
 directly lets workers race each other over one database and produces a wave of
-failures that look like real breakage — 27 suites failing on a green codebase, in one
-case.
+failures that look like real breakage — most of the suite failing on a green codebase, in
+one case.
 
 Every route requires a permission (see below), so an anonymous request gets 401 and
 nothing else. `tests/setup/authenticated-agent.js` builds a per-file fixture user
