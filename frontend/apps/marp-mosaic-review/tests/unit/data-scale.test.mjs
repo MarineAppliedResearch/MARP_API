@@ -549,9 +549,12 @@ test('the date filter reports what it could not answer for, at depth', async () 
      open at the top matches the whole set. Under the old reading this asserted `total: 0`
      and `excludedForNoDate` equal to the whole set -- a filter that excluded everything
      and said so, which is why it had to be refused rather than served. */
-  assert.equal(got.excludedForNoDate, 0, 'every tc in this fixture carries a clock');
-  assert.equal(got.total, (await MarpData.query({ page: 1 })).total,
-    'a range open at the top narrows nothing');
+  /* Two rows carry no `tc` at all, deliberately -- see the generator. So the note has
+     something to say, and it scales with the set exactly as the result does. */
+  assert.equal(got.excludedForNoDate, 2 * 147,
+    'a row with no readable clock cannot answer, and the reviewer is told');
+  assert.equal(got.total, (await MarpData.query({ page: 1 })).total - 2 * 147,
+    'and those rows are the only ones a range open at the top leaves out');
 });
 
 /* ------------------------------------------------------------ the page-set contract */

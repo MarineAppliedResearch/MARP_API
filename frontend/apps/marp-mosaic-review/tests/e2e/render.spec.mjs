@@ -27,9 +27,23 @@ import { test, expect } from '@playwright/test';
  */
 const FIXTURE = 'backing=fixture';
 
+/**
+ * **In the hash, never the query string.**
+ *
+ * The query string *is* the question: `model/query-url.js` reads an address literally, and
+ * a **bare** one means the default question — that is what makes a deliberately cleared
+ * species filter survive a reload instead of being handed back. So `?backing=fixture`
+ * made every address non-bare, the app opened on nothing-narrowing rather than on its
+ * default question, and ten tests here reported a total of 2,755 where 1,083 was expected.
+ *
+ * The hash is not part of the question, and `rememberQuery()` preserves it across the
+ * `replaceState` the app does on every refresh — so it survives paging and filtering.
+ */
 const withFixture = (url) => {
-  const [path, query = ''] = String(url).split('?');
-  return `${path}?${query ? `${query}&` : ''}${FIXTURE}`;
+  const text = String(url);
+  const [before, hash = ''] = text.split('#');
+  const merged = hash ? `${hash}&${FIXTURE}` : FIXTURE;
+  return `${before}#${merged}`;
 };
 
 test.beforeEach(async ({ page }) => {
@@ -44,6 +58,9 @@ test('this tier grades the fixture, and the page says so', async ({ page }) => {
   await page.goto('./');
   await expect(page.locator('#backingFlag')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-backing', 'fixture');
+  /* And it is not in the question. A backing in the query string would make every
+     address non-bare, which silently costs the app its default question. */
+  expect(new URL(page.url()).search).toBe('');
 });
 
 /** Wait for the first page of tiles, and for the grid to stop changing size. */
@@ -550,6 +567,21 @@ test.describe('the correction panel', () => {
     await tile.locator('[data-badge]').click();
     await page.locator('.pick [data-act="correct"]').click();
     await expect(page.locator('.pick #spSearch')).toBeVisible();
+    /**
+     * **Two characters before anything is offered** (F14, A11).
+     *
+     * The panel used to fill itself with six entries on open, from
+     * `searchSpecies('')` — and `GET /api/v2/species/list/:list/search` **rejects an
+     * empty `q` with a 400**, deliberately, because "an empty search returning all 224
+     * entries reads as a working search". So there is nothing to click until something is
+     * typed, and this used to click `.srow` straight away.
+     */
+    await expect(page.locator('.pick #spList')).toContainText('Type 2 letters');
+    /* Something the tile is **not** already. The default page is Bat Stars, and "Bat Star"
+       itself contains "st" -- so a two-letter search matched the species the observation
+       already carries, the correction came back `unchanged`, and nothing was written. That
+       is correct behaviour and a useless test. */
+    await page.locator('.pick #spSearch').fill('urch');
     await page.locator('.pick .srow').first().click();
 
     await expect(page.locator('.pick')).toHaveCount(0);
@@ -1095,17 +1127,29 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
       const note = page.locator('[data-note="date"]');
       await expect(note).toBeHidden();          // nothing to say until a date is asked for
 
-      /* No observation in the fixture carries a date on its `tc`, which is the production
-         case this exists for: the clock was never synced. The filter therefore excludes
-         everything, and the ONLY thing standing between the reviewer and an empty mosaic
-         they cannot explain is this line. It was drawn by the rail and counted by the data
-         layer, and nothing carried the number between them, so it never appeared. */
-      await setSpan(page, 'date', 'from', '2019-01-01');
+      /**
+       * **A17 changed what this filter compares, and so what it can fail to answer.**
+       *
+       * It used to compare the *date component* of `tc`, which no observation carries — so
+       * the filter excluded everything and the note reported the whole result. That is why
+       * the endpoint refused it outright. Answered differently by the human: the range
+       * compares `tc` as a **point in time**, so a row answers whenever its `tc` carries a
+       * readable clock.
+       *
+       * Which leaves the note with something narrower and truer to say: the rows whose
+       * `tc` says nothing at all. The fixture carries two, deliberately, because a rule
+       * with nothing to report is a rule nothing watches — and this line is still the ONLY
+       * thing standing between the reviewer and a result they cannot explain.
+       *
+       * The ends are times now, not dates. That is the control keeping its shape while
+       * what it can discriminate grows, which is what A14 meant.
+       */
+      await setSpan(page, 'date', 'from', '00:00');
 
       await expect(note).toBeVisible();
       const said = await note.innerText();
       expect(said).toMatch(/\d+/);
-      expect(Number(said.replace(/\D/g, ''))).toBeGreaterThan(0);
+      expect(Number(said.replace(/\D/g, ''))).toBe(2);
       expect(said.toLowerCase()).toContain('no recorded date');
     });
 });
@@ -1847,9 +1891,25 @@ test.describe('the states never rendered', () => {
       await actions.refresh();
     });
     await page.locator('[data-act="retry-thumbnails"]').click();
-    /* The tiles come back, so the banner has nothing left to say. */
-    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 20000 });
-    await expect(page.locator('#commit')).toBeEnabled();
+
+    /**
+     * **The retry asks; it does not deliver** (F10, R12, A9).
+     *
+     * The endpoint answers `queued` and never a synchronous `ready` — an accepted retry
+     * has not happened yet, and extraction runs at three concurrent Jellyfin streams. So
+     * the first thing the reviewer sees is a page of PREPARING tiles, and the commit stays
+     * disabled because accepting a tile means somebody looked at it.
+     *
+     * This asserted `#commit` was enabled the moment the click returned, which was only
+     * ever true because the fixture invented the picture on the spot.
+     */
+    await expect(page.locator('.tile.queued').first()).toBeVisible();
+    await expect(page.locator('#commit')).toBeDisabled();
+
+    /* And then the poll turns them into pictures: one request and one repaint per round,
+       on a backoff, stopping when nothing is queued. That is what clears the banner. */
+    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 30000 });
+    await expect(page.locator('#commit')).toBeEnabled({ timeout: 30000 });
   });
 
   test('R5: the button says how many will be skipped', async ({ page }) => {

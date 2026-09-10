@@ -42,6 +42,42 @@ export function pinPage(members, page, ids) {
   return next;
 }
 
+/**
+ * Remember the rows a page was committed with, keyed by id.
+ *
+ * Merged rather than replaced: a reviewer commits several pages in a session and each
+ * one's rows have to survive the next.
+ *
+ * @param {Map} held - `state.pinnedRows`.
+ * @param {Array<Object>} rows - The page as it was committed.
+ * @returns {Map} A new map, so subscribers see the change.
+ */
+export function pinRows(held, rows) {
+  const next = new Map(held);
+  for (const row of rows) next.set(row.observation_id, row);
+  return next;
+}
+
+/**
+ * The rows a pinned page named, in the order it named them, or null if any is missing.
+ *
+ * Null rather than a short page, for the same reason `cache.rowsFor` does it: a hole and a
+ * suppression look identical on screen and mean opposite things.
+ *
+ * @param {Map} held - `state.pinnedRows`.
+ * @param {Array<number>} ids - The page's membership.
+ * @returns {Array<Object>|null} The rows, or null.
+ */
+export function rowsFrom(held, ids) {
+  const out = [];
+  for (const id of (ids || [])) {
+    const row = held.get(id);
+    if (!row) return null;
+    out.push(row);
+  }
+  return out;
+}
+
 export const pinnedIds = (members) => {
   const all = new Set();
   members.forEach((ids) => ids.forEach((id) => all.add(id)));

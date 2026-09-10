@@ -691,9 +691,25 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
    a page that cannot be committed. It never covers the whole viewport: the
    marks are still on screen behind it, and seeing them is the reassurance the
    copy is making. */
-#failure {
-  /* Fixed rather than absolute:  is a flex row with no positioning of its own, so
-     an absolute panel would anchor to whatever ancestor happened to be positioned. */
+/**
+ * `display: none` first, and **that ordering is the whole of a defect worth recording.**
+ *
+ * `renderFailure` sets `host.hidden = true`, and the `hidden` attribute works by applying
+ * `display: none` from the browser's own stylesheet -- which any author rule carrying
+ * `display` beats. So `#failure { display: flex }` on its own left a **fixed,
+ * full-viewport, invisible** panel over the mosaic, and every click on a tile was
+ * swallowed by it: Playwright reported `<div hidden id="failure"> intercepts pointer
+ * events` on twenty-six tests at once, which reads as the tiles being broken rather than
+ * as one CSS rule.
+ *
+ * Anything positioned over the interface has to be hidden by the same property it is
+ * shown with. `#confirm` gets away without this because it has no `display` of its own.
+ */
+#failure { display: none }
+#failure:not([hidden]) {
+  /* Fixed rather than absolute: the rail's row is a flex container with no positioning of
+     its own, so an absolute panel would anchor to whatever ancestor happened to be
+     positioned. */
   position: fixed; inset: 0; z-index: 40;
   display: flex; align-items: center; justify-content: center;
   padding: 20px;

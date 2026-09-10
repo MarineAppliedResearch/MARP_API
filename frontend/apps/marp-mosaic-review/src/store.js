@@ -142,6 +142,24 @@ export const state = {
   committedPages: new Set(),
   pageMembers: new Map(),  // page -> the ids it was committed with
   /**
+   * The rows a committed page held, by id. **R14, and the reason it is here rather than
+   * in the page cache.**
+   *
+   * The design asked for a by-ids route; the human struck it because the capability
+   * already existed — `model/cache.js:163` serves a committed page from the cache with no
+   * request. That is true, and it is not enough on its own: `cache.use()` **empties the
+   * cache whenever the question changes**, and `pageSize` is part of the question. So a
+   * layout settle after a commit — which is routine, since the grid re-measures once the
+   * field stops moving — threw away the rows the pin needed, and before this phase
+   * `byIds` was what fetched them back.
+   *
+   * Holding them here needs no endpoint and is strictly more faithful than the cache:
+   * these are the very objects the reviewer was looking at when they committed, so
+   * "returning to a page shows what was submitted" is exact rather than approximate. The
+   * cache is still asked first for an ordinary page; this is only for a pinned one.
+   */
+  pinnedRows: new Map(),   // observation_id -> the row as it was committed
+  /**
    * The three above, parked per mode while another mode is in front.
    *
    * They are this reviewer's *session* work — which pages they committed, with which
@@ -348,10 +366,19 @@ async function pollRoundOnce() {
   const stillQueued = state.rows.filter((r) => r.thumbnail_status === 'queued').length;
   fire('thumbnail:polled', { round: pollRound + 1, moved, queued: stillQueued });
 
-  /* **One notify per round**, and only when something actually changed. Rendering is a
-     full re-render from state, so a notify per row is a full rebuild of the grid per row —
-     which is what made `retryFailedThumbnails` cost a hundred renders for one press. */
-  if (moved) notify();
+  /**
+   * **One notify per round.** Not one per row, which is what `retryFailedThumbnails` used
+   * to cost — a hundred full re-renders for one button press — and not one per *change*
+   * either.
+   *
+   * "Only when something moved" was the first version and it is wrong against the fixture
+   * for a reason worth knowing: at scale 1 the fixture serves the row object itself, so the
+   * simulated extractor writes `thumbnail_status` on the very row the store is holding.
+   * The poll then sees nothing to move, skips the notify, and the screen never redraws a
+   * picture that has in fact arrived. One notify per round is what R12 asks for and it is
+   * correct in both backings.
+   */
+  notify();
 
   if (!stillQueued) return;
   pollRound++;
@@ -392,6 +419,7 @@ function cancelPrefetchWait() {
 function reorder() {
   state.pageMembers = page.clearPins();
   state.committedPages.clear();
+  state.pinnedRows = new Map();
   /* Every mode's pinned pages were pinned under the old order, so page 2 is not the same
      page 2 any more. Parking them would restore pins that describe a result that is gone. */
   state.parked = new Map();
@@ -415,6 +443,7 @@ function resetForNewQuery() {
   state.conflicted = [];
   state.pageMembers = page.clearPins();
   state.committedPages.clear();
+  state.pinnedRows = new Map();
   /* A different question means the other modes' pinned pages are about a result set that
      no longer exists, so parking them would resurrect pages the filter no longer returns. */
   state.parked = new Map();
@@ -459,7 +488,10 @@ function park(mode) {
   state.parked.set(mode, {
     pageMembers: state.pageMembers,
     committedPages: state.committedPages,
-    outcomes: state.outcomes
+    outcomes: state.outcomes,
+    /* Parked with the pins, because they are the pins' rows. Left shared, a page
+       committed in Training would be served Scientific's copy of the same ids. */
+    pinnedRows: state.pinnedRows
   });
 }
 
@@ -476,6 +508,7 @@ function resume(mode) {
   state.pageMembers = held ? held.pageMembers : page.clearPins();
   state.committedPages = held ? held.committedPages : new Set();
   state.outcomes = held ? held.outcomes : new Map();
+  state.pinnedRows = held ? held.pinnedRows : new Map();
 }
 
 export const actions = {
@@ -563,7 +596,16 @@ export const actions = {
      * It still takes a sequencing token. A slower visible query already in flight must
      * not land on top of the page the reviewer is now looking at.
      */
-    const held = pinned ? cache.rowsFor(pinned) : cache.serve(state.page, pinnedIds);
+    /**
+      * A pinned page is served from the rows it was committed with; an ordinary page from
+      * the page cache. Neither costs a request (R14).
+      *
+      * `state.pinnedRows` first and the cache second: the cache is emptied by any change
+      * of question, and a page-size change *is* one — see the field's own comment.
+      */
+    const held = pinned
+      ? (page.rowsFrom(state.pinnedRows, pinned) || cache.rowsFor(pinned))
+      : cache.serve(state.page, pinnedIds);
     if (held) {
       reqSeq++;
       fire(pinned ? 'cache:pinned' : 'cache:hit', { page: state.page, rows: held.length });
@@ -591,6 +633,7 @@ export const actions = {
       state.committedPages.delete(state.page);
       return actions.refresh();
     }
+
 
     /* Requests can overlap — a page change during a page-size change, say — and the
        slower one must not win. Only the newest response is allowed to land. */
@@ -922,7 +965,18 @@ export const actions = {
 
     /* Applied and refused are both a 200 and the client branches on `ok` alone, so a
        refusal that has a perfectly good result to show is not a transport failure. */
-    if (!res.ok) { fire('changeSpecies:refused', { id, error: res.error }); notify(); return; }
+    if (!res.ok) {
+      fire('changeSpecies:refused', { id, error: res.error });
+      /* `unchanged` means the observation already carries that species, so nothing was
+         written — deliberately, because doing it anyway would destroy live review
+         decisions in exchange for no change. The panel still closes: choosing a species is
+         what it was opened to do, and leaving it up makes the click look like it failed. */
+      if (res.error === 'unchanged' && state.picker && state.picker.id === id) {
+        state.picker = null;
+      }
+      notify();
+      return;
+    }
     clearFailure();
 
     /**
@@ -1236,6 +1290,9 @@ export const actions = {
 
     state.committedPages.add(state.page);
     state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
+    /* And the rows themselves, so returning to this page needs nothing from the cache and
+       nothing from the network. These are the objects the reviewer was looking at. */
+    state.pinnedRows = page.pinRows(state.pinnedRows, state.rows);
     /* Keyed by `observation_id`. This read `r.id`, which no entry of the result has ever
        carried, so one entry landed under `undefined` and **every tile on a committed page
        showed no outcome at all** (F5, R8). */

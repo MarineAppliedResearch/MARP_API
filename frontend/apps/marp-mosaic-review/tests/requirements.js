@@ -177,9 +177,23 @@ test('Delete mode',
 test('What counts as reviewed',
   'an observation without ready imagery is skipped, and does not block the batch', async () => {
     await reset();
+    /**
+     * **Broken deliberately, rather than hunted for.**
+     *
+     * This searched page one for a tile that happened not to be ready, and returned
+     * `'skipped'` when it found none — and **a skipped check looks green**, which this
+     * repository has paid for before. It became a live problem the moment the fixture
+     * started finishing what a page serve enqueued, the way the endpoint does: the
+     * incidental `queued` row resolves while `reset()` is still running, so the case the
+     * check exists for was simply not there most of the time.
+     */
+    const bad = state.rows[1];
+    MarpData.breakThumbnails([bad.observation_id]);
+    await actions.refresh();
     const rows = state.rows;
-    const bad = rows.find((r) => r.thumbnail_status !== 'ready');
-    if (!bad) return 'skipped — no unavailable thumbnail on page 1';
+    eq(rows.find((r) => r.observation_id === bad.observation_id).thumbnail_status, 'failed',
+      'the row has to be genuinely without imagery for the rest of this to mean anything');
+
     const res = await commitRows('scientific', rows);
     ok(res.skipped.some((s) => s.observation_id === bad.observation_id && s.reason === 'no-imagery'),
        'unavailable imagery must be skipped');
@@ -1022,7 +1036,8 @@ test('The states never rendered',
      * retry leaves the tile at PREPARING and the poll (A8) is what clears it.
      */
     ok(state.rows.every((r) => r.thumbnail_status === 'queued'),
-      'an accepted retry is queued work, not a picture');
+      `an accepted retry is queued work, not a picture; got ${
+        JSON.stringify([...new Set(state.rows.map((r) => r.thumbnail_status))])}`);
   });
 
 test('The states never rendered',
@@ -1037,7 +1052,8 @@ test('The states never rendered',
     /* Queued, not ready -- see the check above. The case that motivated a page-level retry
        is a page where everything failed, and what it buys is one request. */
     ok(state.rows.every((r) => r.thumbnail_status === 'queued'),
-      'the whole page was accepted for extraction in one request');
+      `the whole page was accepted for extraction in one request; got ${
+        JSON.stringify([...new Set(state.rows.map((r) => r.thumbnail_status))])}`);
   });
 
 /**

@@ -115,17 +115,26 @@
    * a backing chosen silently is how a browser test comes to grade a fixture and report it
    * as the API.
    *
-   * `?backing=fixture` is the one exception and it is **deliberately loud**. A15 settled
+   * `#backing=fixture` is the one exception and it is **deliberately loud**. A15 settled
    * that the seeded database the browser tier needs is not built in this phase, so the
    * render tier and the walkthroughs still have to run against the fixture — and the way
    * to make that safe is not to hide it but to make it impossible to miss. A run on the
    * fixture paints a permanent banner and sets `document.documentElement.dataset.backing`,
    * so a test can assert which backing it graded rather than assuming.
    *
+   * **The hash, not the query string, and that is not cosmetic.** The query string *is*
+   * the question — `model/query-url.js` reads an address literally and a bare one means
+   * the default question, precisely so that clearing the species filter survives a reload
+   * rather than being handed back. So a `?backing=fixture` made every address non-bare,
+   * the default question was lost on load, and the mosaic opened on every species at once.
+   * Ten render tests said so. The hash is not part of the question, and `rememberQuery`
+   * already preserves it.
+   *
    * Both come out when the seeded database lands and the tier is repointed.
    */
   const params = new URLSearchParams(location.search);
-  if (params.get('backing') === 'fixture') {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (hash.get('backing') === 'fixture') {
     const { MarpData } = await import('./src/data.js');
     useBackend(MarpData);
     window.MARP_FIXTURE = MarpData;

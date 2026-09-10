@@ -4,7 +4,7 @@
  * The grid fills the field rather than sitting in it, and a page holds exactly the
  * tiles that fit — so page size follows the viewport, per #68.
  */
-import { state } from '../store.js';
+import { state, actions } from '../store.js';
 import { pageState } from '../model/modes.js';
 import { $ } from './dom.js';
 import { tile } from './tile.js';

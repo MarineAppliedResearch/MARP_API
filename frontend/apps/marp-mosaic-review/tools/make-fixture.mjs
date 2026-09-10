@@ -333,6 +333,24 @@ rows[20] = { ...rows[20], review_decision: 'reviewed', review_reviewer_id: 3 };
 rows[28] = { ...rows[28], thumbnail_status: 'queued' };
 rows[38] = { ...rows[38], thumbnail_status: 'failed' };
 
+/**
+ * Two observations whose `tc` says nothing, so #76's reporting has something to report.
+ *
+ * `observations.tc` is nullable and rows really do carry nothing there. Until A17 the
+ * *date* filter could not answer for any row — it compared a date component no `tc`
+ * carries — so "the count it had to exclude" was the whole result and the filter had to be
+ * refused rather than served. Now that it compares `tc` as a **point in time**, a row can
+ * answer whenever its `tc` carries a readable clock, which in this fixture is all of them.
+ *
+ * That would leave the exclusion note permanently hidden and the rule it protects
+ * untested — a filter that silently omits is worse than no filter, and the only way to
+ * know the note works is to have something for it to say. So two rows carry no clock.
+ * They are on page one deliberately, where the reviewer meets them.
+ */
+for (const at of [45, 46]) {
+  rows[at] = { ...rows[at], tc: null, etc: null };
+}
+
 const payload = {
   generated: '2026-09-03',
   note: 'Fabricated data for the Mosaic Reviewer prototype. No scientific meaning.',

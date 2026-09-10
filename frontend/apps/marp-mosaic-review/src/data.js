@@ -253,9 +253,32 @@ function speciesListOf(row) {
  * cannot finish extracting is a fixture that cannot exercise the thing the poll exists for.
  *
  * `_permanent` rows are never resolved: retrying cannot help them, and neither can waiting.
+ *
+ * **A pending extraction is cancellable, and it has to be.** The guard was "is this row
+ * still `queued`", which is not enough at scale 1, where the served row *is* the fixture
+ * row: `store._retry` writes `queued` optimistically before it asks, so an extraction
+ * enqueued by an **earlier** page view — even one from a previous contract check — found
+ * that write and resolved a row nobody had asked it to. Two checks reported
+ * `["ready","queued"]` where the whole page should have been queued, intermittently,
+ * depending on timing. So a reload cancels everything in flight (a reload is a different
+ * database) and breaking a thumbnail cancels its own.
  */
-const EXTRACT_MS = 220;
-const extracting = new Set();
+/**
+ * How long the simulated extraction takes.
+ *
+ * **Longer than `LATENCY.thumb`, deliberately**, and getting that ordering wrong cost a
+ * confusing hour. At 220 ms the extraction finished *before* a retry's 900 ms round trip
+ * answered, so the retry saw a `ready` row and reported `ready` — reintroducing exactly
+ * the synchronous shortcut F10 removed, and only sometimes, depending on whether the
+ * prefetcher had enqueued the row first. Extraction is slower than an HTTP call in
+ * reality too: three concurrent Jellyfin streams for a page of 45.
+ */
+const EXTRACT_MS = 1200;
+
+/** Observation id -> the token of the extraction in flight for it. */
+const extracting = new Map();
+
+let extractSeq = 0;
 
 function extractSoon(id) {
   if (extracting.has(id)) return;
@@ -264,8 +287,11 @@ function extractSoon(id) {
   const current = served(base, replicaOf(id));
   if (current._permanent || current.thumbnail_status !== 'queued') return;
 
-  extracting.add(id);
+  const token = ++extractSeq;
+  extracting.set(id, token);
   setTimeout(() => {
+    /* Cancelled, or superseded by a later enqueue of the same row. */
+    if (extracting.get(id) !== token) return;
     extracting.delete(id);
     const row = editable(id);
     /* It may have moved on -- a reload, a scale change, a permanent failure recorded
@@ -570,6 +596,7 @@ export const MarpData = {
     overlay.clear();
     overlaid.clear();
     drift.clear();
+    extracting.clear();
     return scaleFactor;
   },
 
@@ -633,6 +660,9 @@ export const MarpData = {
       const row = editable(id);
       if (!row) continue;
       row.thumbnail_status = status;
+      /* Breaking a thumbnail cancels any extraction of it: the row is not waiting for a
+         picture any more, it is broken. Without this a pending timer resolves it back. */
+      extracting.delete(id);
       /* Fixture-internal, and deliberately **not** part of the row shape the client
          reads: the client learns `permanent` from a retry answer, never from a page. */
       row._permanent = Boolean(permanent);
@@ -727,6 +757,9 @@ export const MarpData = {
     overlay.clear();
     overlaid.clear();
     drift.clear();
+    /* A reload is a different database, so nothing that was extracting still is. This is
+       what keeps one contract check's pending extraction out of the next one's page. */
+    extracting.clear();
     return db;
   },
 
