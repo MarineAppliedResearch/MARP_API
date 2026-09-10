@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP Machine Learning Dashboard</title>
+<link rel="icon" href="../../shared/assets/images/marp-mark.png">
+<!-- The palette. Linked, never restated -- see DESIGN.md rule 1. -->
+<link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./styles/app.css">
+<link rel="stylesheet" href="./styles/tabs-jobs.css">
+<link rel="stylesheet" href="./styles/tabs-run.css">
+<link rel="stylesheet" href="./styles/tabs-assets.css">
+</head>
+<body>
+
+<!-- The shell is built in src/app.js, so there is exactly one description of
+     the rail and the top bar rather than one here and one there. -->
+<div class="app" id="app"></div>
+
+<script type="module">
+  import { start } from './src/app.js';
+  start().catch((err) => console.error(err));
+</script>
+</body>
+</html>
