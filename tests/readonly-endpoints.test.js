@@ -239,6 +239,14 @@ describe('PUT /api/metaInfo/dbName', () => {
           + ' "updatedAt" = CAST(:updatedAt AS timestamptz) WHERE id = :id',
           { replacements: original }
         );
+      } else {
+        // There was no row at all, which is the state a freshly built database
+        // is in -- the baseline seeds no `metaInfos`, so this is what CI runs
+        // against. The PUT creates one, so putting the table back means
+        // removing it: restoring "what was there" is zero rows, not a row with
+        // the old name. Caught by the guard in CI after it passed locally,
+        // where the development database happened to have a row already (#142).
+        await db.sequelize.query('DELETE FROM "metaInfos"');
       }
     }
   });
