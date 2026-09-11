@@ -8,6 +8,61 @@
  */
 import { test, expect } from '@playwright/test';
 
+/**
+ * Every navigation in this file asks for the **fixture** backing, and says so.
+ *
+ * The application itself runs against the API (A2): `src/backend.js` defaults to
+ * `src/api/` and `index.html` never points it anywhere else. This tier cannot yet —
+ * A15 settled that the seeded database a browser tier needs is **not built in this
+ * phase**, and the six real observations of one species in one dive cannot exercise
+ * paging, filtering or a second species.
+ *
+ * So the parameter is passed here, in **one place**, and the page makes the choice
+ * unmissable: it paints a permanent `FIXTURE — not the API` banner and stamps
+ * `documentElement.dataset.backing`, which the check below asserts. A2's objection to a
+ * runtime flag was that it is "how a render test comes to grade a fixture and report it
+ * as the API"; a flag the page announces and the tier asserts cannot do that silently.
+ *
+ * Both come out when the seeded database lands and this tier is repointed.
+ */
+const FIXTURE = 'backing=fixture';
+
+/**
+ * **In the hash, never the query string.**
+ *
+ * The query string *is* the question: `model/query-url.js` reads an address literally, and
+ * a **bare** one means the default question — that is what makes a deliberately cleared
+ * species filter survive a reload instead of being handed back. So `?backing=fixture`
+ * made every address non-bare, the app opened on nothing-narrowing rather than on its
+ * default question, and ten tests here reported a total of 2,755 where 1,083 was expected.
+ *
+ * The hash is not part of the question, and `rememberQuery()` preserves it across the
+ * `replaceState` the app does on every refresh — so it survives paging and filtering.
+ */
+const withFixture = (url) => {
+  const text = String(url);
+  const [before, hash = ''] = text.split('#');
+  const merged = hash ? `${hash}&${FIXTURE}` : FIXTURE;
+  return `${before}#${merged}`;
+};
+
+test.beforeEach(async ({ page }) => {
+  const go = page.goto.bind(page);
+  page.goto = (url, options) => go(withFixture(url), options);
+});
+
+test('this tier grades the fixture, and the page says so', async ({ page }) => {
+  /* The assertion that makes the arrangement above safe: if the parameter is ever
+     dropped, or the page stops honouring it, this fails rather than a hundred tests
+     quietly grading something else. */
+  await page.goto('./');
+  await expect(page.locator('#backingFlag')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-backing', 'fixture');
+  /* And it is not in the question. A backing in the query string would make every
+     address non-bare, which silently costs the app its default question. */
+  expect(new URL(page.url()).search).toBe('');
+});
+
 /** Wait for the first page of tiles, and for the grid to stop changing size. */
 async function ready(page) {
   await expect(page.locator('.tile').first()).toBeVisible();
@@ -345,7 +400,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     await page.goto('./');
     await ready(page);
 
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
     const tag = tile.locator('.rtag');
     await expect(tag).toBeVisible();
     await expect(tag).toContainText('EXCLUDED');
@@ -358,7 +413,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
   test('R1: a training promotion is drawn while reviewing science', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const tile = await tileCarrying(page, 'training_disposition', 'promoted');
+    const tile = await tileCarrying(page, 'training_decision', 'promoted');
     await expect(tile.locator('.rtag')).toContainText('PROMOTED');
     await expect(tile).not.toHaveClass(/has-promoted/);
   });
@@ -369,7 +424,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
     await ready(page);
 
-    const tile = await tileCarrying(page, 'review_status', 'reviewed');
+    const tile = await tileCarrying(page, 'review_decision', 'reviewed');
     const tag = tile.locator('.rtag');
     await expect(tag).toBeVisible();
     await expect(tag).toContainText('REVIEWED');
@@ -387,7 +442,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     /* Delete always read the scientific dimension — the training one is what was missing,
        and it is the sharpest case in #85: an observation already excluded from training
        looked untouched at the moment somebody was deciding whether to destroy it. */
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
     await expect(tile.locator('.rtag')).toContainText('EXCLUDED');
     expect(errors).toEqual([]);
   });
@@ -400,7 +455,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
       /* An undecided row, so training's own default filter still shows it afterwards. */
       const id = await page.evaluate(() => {
         const row = window.MARP.state.rows.find((r) => r.thumbnail_status === 'ready'
-          && r.training_disposition === 'undecided');
+          && r.training_decision == null);
         return row ? row.observation_id : null;
       });
       expect(id, 'the first page must hold a ready, undecided row').not.toBeNull();
@@ -432,7 +487,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     async ({ page }) => {
       await page.goto('./');
       await ready(page);
-      const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+      const tile = await tileCarrying(page, 'training_decision', 'excluded');
 
       /* Clicking the tag itself, which is the click most likely to be swallowed. */
       await tile.locator('.rtag').click();
@@ -447,7 +502,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
   test('R7: the tag stays inside the tile and clear of the caption', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
 
     const tileBox = await tile.boundingBox();
     const tagBox = await tile.locator('.rtag').boundingBox();
@@ -512,6 +567,21 @@ test.describe('the correction panel', () => {
     await tile.locator('[data-badge]').click();
     await page.locator('.pick [data-act="correct"]').click();
     await expect(page.locator('.pick #spSearch')).toBeVisible();
+    /**
+     * **Two characters before anything is offered** (F14, A11).
+     *
+     * The panel used to fill itself with six entries on open, from
+     * `searchSpecies('')` — and `GET /api/v2/species/list/:list/search` **rejects an
+     * empty `q` with a 400**, deliberately, because "an empty search returning all 224
+     * entries reads as a working search". So there is nothing to click until something is
+     * typed, and this used to click `.srow` straight away.
+     */
+    await expect(page.locator('.pick #spList')).toContainText('Type 2 letters');
+    /* Something the tile is **not** already. The default page is Bat Stars, and "Bat Star"
+       itself contains "st" -- so a two-letter search matched the species the observation
+       already carries, the correction came back `unchanged`, and nothing was written. That
+       is correct behaviour and a useless test. */
+    await page.locator('.pick #spSearch').fill('urch');
     await page.locator('.pick .srow').first().click();
 
     await expect(page.locator('.pick')).toHaveCount(0);
@@ -1057,17 +1127,29 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
       const note = page.locator('[data-note="date"]');
       await expect(note).toBeHidden();          // nothing to say until a date is asked for
 
-      /* No observation in the fixture carries a date on its `tc`, which is the production
-         case this exists for: the clock was never synced. The filter therefore excludes
-         everything, and the ONLY thing standing between the reviewer and an empty mosaic
-         they cannot explain is this line. It was drawn by the rail and counted by the data
-         layer, and nothing carried the number between them, so it never appeared. */
-      await setSpan(page, 'date', 'from', '2019-01-01');
+      /**
+       * **A17 changed what this filter compares, and so what it can fail to answer.**
+       *
+       * It used to compare the *date component* of `tc`, which no observation carries — so
+       * the filter excluded everything and the note reported the whole result. That is why
+       * the endpoint refused it outright. Answered differently by the human: the range
+       * compares `tc` as a **point in time**, so a row answers whenever its `tc` carries a
+       * readable clock.
+       *
+       * Which leaves the note with something narrower and truer to say: the rows whose
+       * `tc` says nothing at all. The fixture carries two, deliberately, because a rule
+       * with nothing to report is a rule nothing watches — and this line is still the ONLY
+       * thing standing between the reviewer and a result they cannot explain.
+       *
+       * The ends are times now, not dates. That is the control keeping its shape while
+       * what it can discriminate grows, which is what A14 meant.
+       */
+      await setSpan(page, 'date', 'from', '00:00');
 
       await expect(note).toBeVisible();
       const said = await note.innerText();
       expect(said).toMatch(/\d+/);
-      expect(Number(said.replace(/\D/g, ''))).toBeGreaterThan(0);
+      expect(Number(said.replace(/\D/g, ''))).toBe(2);
       expect(said.toLowerCase()).toContain('no recorded date');
     });
 });
@@ -1809,9 +1891,25 @@ test.describe('the states never rendered', () => {
       await actions.refresh();
     });
     await page.locator('[data-act="retry-thumbnails"]').click();
-    /* The tiles come back, so the banner has nothing left to say. */
-    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 20000 });
-    await expect(page.locator('#commit')).toBeEnabled();
+
+    /**
+     * **The retry asks; it does not deliver** (F10, R12, A9).
+     *
+     * The endpoint answers `queued` and never a synchronous `ready` — an accepted retry
+     * has not happened yet, and extraction runs at three concurrent Jellyfin streams. So
+     * the first thing the reviewer sees is a page of PREPARING tiles, and the commit stays
+     * disabled because accepting a tile means somebody looked at it.
+     *
+     * This asserted `#commit` was enabled the moment the click returned, which was only
+     * ever true because the fixture invented the picture on the spot.
+     */
+    await expect(page.locator('.tile.queued').first()).toBeVisible();
+    await expect(page.locator('#commit')).toBeDisabled();
+
+    /* And then the poll turns them into pictures: one request and one repaint per round,
+       on a backoff, stopping when nothing is queued. That is what clears the banner. */
+    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 30000 });
+    await expect(page.locator('#commit')).toBeEnabled({ timeout: 30000 });
   });
 
   test('R5: the button says how many will be skipped', async ({ page }) => {
@@ -2404,15 +2502,21 @@ const question = (page) => page.evaluate(() => ({
  * training disposition — and reports the promoted and excluded share, which is exactly
  * what a careless `defaultStatusFor` would silently remove.
  */
+/* Derived from the fixture file, never from the app -- a check that asks the application
+   what it expects cannot see the count move, which is the whole point of this one.
+   `comname === 'Bat Star'` was here because the default question opened on that species.
+   A10(b) removed that literal, so the default narrows by status alone and this must too;
+   leaving the species in would compare the app against a question it no longer asks.
+   Independently counted in the fixture: 3,000 observations, 2,755 with a null
+   `review_decision` and 245 reviewed, so the default view is the 2,755. */
 const expectedDefault = (page) => page.evaluate(async () => {
   const res = await fetch('./fixtures/observations.json');
   const db = await res.json();
   const rows = db.observations.filter((r) => !r.deleted
-    && r.comname === 'Bat Star'
-    && ['unreviewed', 'flagged'].includes(r.review_status));
+    && ['flagged', null].includes(r.review_decision));
   return {
     total: rows.length,
-    decided: rows.filter((r) => r.training_disposition !== 'undecided').length
+    decided: rows.filter((r) => r.training_decision != null).length
   };
 });
 
@@ -2512,7 +2616,7 @@ test.describe('every mode filters on both workflow statuses', () => {
       await expect(page.locator('.tile .rtag', { hasText: 'EXCLUDED' })).toHaveCount(tiles);
 
       const only = await page.evaluate(() =>
-        window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+        window.MARP.state.rows.every((r) => r.training_decision === 'excluded'));
       expect(only, 'the borrowed filter must actually narrow the query').toBe(true);
 
       /* Still Scientific: what a tap records is the mode's own, not the borrowed one. */
@@ -2527,7 +2631,7 @@ test.describe('every mode filters on both workflow statuses', () => {
     const got = await question(page);
     expect(got.trainingDisposition).toEqual(['excluded']);
     const only = await page.evaluate(() =>
-      window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+      window.MARP.state.rows.every((r) => r.training_decision === 'excluded'));
     expect(only).toBe(true);
 
     /* The app must not rewrite the address it was given into something else. */

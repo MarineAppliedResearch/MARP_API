@@ -141,6 +141,20 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  * filtering for one species returns tiles labelled as another. Both are here, and
  * the difference between them is what #68's "was Bat Star" indicator draws from.
  *
+ * **`review_reviewer_id` and `training_reviewer_id` are owed to Phase 8's A13** (#124).
+ * The client draws "REVIEWED &middot; you" and derives `byMe`, and it was reading
+ * `reviewed_by` / `flagged_by` / `training_approved_by` / `excluded_by` -- four columns
+ * this row has never carried, so the attribution, the borrowed tag's tooltip and `byMe`
+ * all silently became nothing (#124's F8). `observation_review_current` holds
+ * `reviewer_id`, so the answer is one column per purpose.
+ *
+ * **Ids and not names**, which is what keeps #118's A10 reasoning intact: the permission
+ * catalog separates `reports:read` from `observations:read` because it exposes who did how
+ * much work, and the row's freedom from `processor_name` is what keeps this an
+ * `observations:read` route. An id the caller can only compare against their own principal
+ * gives "by you" and exposes nobody. Like the three fields above, both keys were **moved
+ * into** `tests/mosaic-query.test.js`'s exact-key list rather than the list being loosened.
+ *
  * `version` is here and is **owed to Phase 5** (#106's D1) rather than wanted by
  * the tile. It is the only channel by which the reviewer's client can learn the
  * version it saw, and the three commit routes reject a request that omits one --
@@ -182,8 +196,10 @@ const ROW_COLUMNS = `
         p.name AS project_name,
         rc.decision AS review_decision,
         rc.reason   AS flag_reason,
+        rc.reviewer_id AS review_reviewer_id,
         rt.decision AS training_decision,
         rt.reason   AS exclusion_reason,
+        rt.reviewer_id AS training_reviewer_id,
         k.keyframe_count,
         k.first_framenum,
         coalesce(th.status, 'queued') AS thumbnail_status`;
@@ -442,14 +458,33 @@ function predicates(filters, bind, { status = true } = {}) {
         }
     }
 
-    // A3: `date` is not "limited pending #76", it is unanswerable. Nothing holds
-    // the date an observation was made -- not `observations`, and not `sessions`,
-    // whose timestamps are when the row was written rather than when the dive
-    // happened. Rejecting is more honest than a control that excludes everything.
+    // A17 (#124), answered by the human: **`date` compares `tc` as a point in
+    // time.** "If there is no date, it'll just default to the time. And if there is
+    // a date, then the date will also work." So it discriminates time of day today
+    // and starts discriminating dates the moment #76 gives an observation a real
+    // one, without the control changing shape.
+    //
+    // This used to throw a 400 naming #76, on the earlier reading that nothing
+    // holds the date an observation was made. That is still true of the *date*, and
+    // it is not a reason to refuse the filter: the reviewer is asking about a
+    // moment, `tc` is the moment MARP records, and answering with what `tc` can
+    // discriminate is more useful than refusing.
+    //
+    // **It does not wrap, and `timeOfDay` does.** That is the whole difference
+    // between the two controls now and it is deliberate: a time *window* of 22:00
+    // to 02:00 is one night, where a range from later to earlier is empty. Writing
+    // this one as a wrap would silently turn an empty question into a night.
     if (isActive(filters.date)) {
-        throw new MosaicRequestError(
-            'filters.date cannot be served: no column holds the date an observation was made. See #76.'
-        );
+        const from = clockEnd(filters.date.from, 'filters.date.from');
+        const to = clockEnd(filters.date.to, 'filters.date.to');
+
+        if (from) {
+            where.push(`${TIME_OF_DAY} >= ${bind.add(from.text)}::interval`);
+        }
+
+        if (to) {
+            where.push(`${TIME_OF_DAY} <= ${bind.add(to.text)}::interval`);
+        }
     }
 
     if (isActive(filters.timeOfDay)) {
@@ -674,6 +709,191 @@ SELECT t.total,
 }
 
 /**
+ * How many rows the date filter **could not answer for**, for one question.
+ *
+ * #76 built this reporting so a date filter could never silently omit, and until A17 it had
+ * nothing to report: the filter was refused rather than served. Under A17 a row is
+ * unanswerable when its `tc` carries no readable clock — `TIME_OF_DAY` is anchored, so a
+ * `tc` that is null, empty or not a clock yields null and is excluded by the predicate
+ * above. A number the reviewer can see is the difference between a filter and a lie.
+ *
+ * **Computed only while the date filter is active**, because it is a second pass over the
+ * matching set and the answer is zero by definition when nothing is filtering on it.
+ *
+ * The predicates are built **without** the date terms, so this counts over the set the
+ * reviewer would have had — otherwise it would count over a set the filter has already
+ * removed them from, which is zero always and reads as working.
+ *
+ * @async
+ * @param {Object} filters - The request's `filters`.
+ * @returns {Promise<number>} How many matching rows have no readable clock.
+ */
+async function countUnanswerableForDate(filters) {
+    if (!isActive(filters.date)) {
+        return 0;
+    }
+
+    const bind = binder();
+    const where = predicates({ ...filters, date: null }, bind);
+
+    const sql = `
+SELECT count(*)::int AS n
+  FROM observations o
+  LEFT JOIN sessions s ON s.session_id = o.session_id
+  LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN observation_review_current rc
+         ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
+  LEFT JOIN observation_review_current rt
+         ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+ ${where.length ? `WHERE ${where.join('\n   AND ')}\n   AND` : 'WHERE'} ${TIME_OF_DAY} IS NULL`;
+
+    const [row] = await db.sequelize.query(sql, {
+        bind: bind.values,
+        type: db.Sequelize.QueryTypes.SELECT,
+    });
+
+    return row ? row.n : 0;
+}
+
+/**
+ * The set dimensions the rail can offer, and where each one's value and label come from.
+ *
+ * A6 (#124): the rail must offer only what is **still reachable under the filters already
+ * chosen** — "offering a dive that returns nothing is worse than not offering it" — and
+ * before this there was no query that could answer it. The client's fixture scanned 3,000
+ * rows in memory, synchronously, which is not available at 440,000.
+ *
+ * `value` is what a filter takes and `label` is what a reviewer reads, and for three of
+ * the seven they are different columns. That asymmetry is the schema's rather than a
+ * choice: a species name lives on `species`, a model name on `ml_models`, and a session
+ * has no name at all, so its id is the honest label.
+ *
+ * `list` is only meaningful for species, and it is here because a common name identifies a
+ * species **only within its list** — taxserials below 10000 are local codes invented per
+ * list and reused (`db/species-lists.js`). A10(c) has the client qualify a label with its
+ * list only when the current question spans more than one, and it cannot know that without
+ * being told.
+ *
+ * @constant
+ * @type {Object}
+ */
+const FACET_DIMENSIONS = {
+    project: { value: 'p.name', label: 'p.name' },
+    dive: { value: 's.dive', label: 's.dive' },
+    line: { value: 's.line', label: 's.line' },
+    sessionType: { value: 's.type', label: 's.type' },
+    session: { value: 'o.session_id', label: 'o.session_id::text' },
+    species: { value: 'o.species_id', label: 'sp.comname', list: 'sp.species_list' },
+    model: { value: 'o.ml_model_id', label: 'm.name', joins: '\n  LEFT JOIN ml_models m ON m.id = o.ml_model_id' },
+};
+
+/**
+ * Build one dimension's reachable-value statement.
+ *
+ * **The dimension being enumerated is excluded from its own predicate** (A6). A dive list
+ * narrowed by the dives already chosen would only ever offer what is already selected,
+ * which is the one thing a reviewer cannot use it for.
+ *
+ * **Every other filter applies, the two status dimensions included.** That is what option
+ * (i) buys over building the lists from `/api/v2/projects`: the lists stay narrowed by
+ * species, by confidence and by review state, so the rail never offers a combination that
+ * returns nothing. The client's fixture `optionsFor` had the same rule and applied it to
+ * the rail dimensions only, which is a divergence this closes rather than inherits.
+ *
+ * `count` rides along free — it is the aggregate that groups the values anyway — and A10(b)
+ * needs it: the default species is the most numerous under the rest of the question, which
+ * is only answerable if the list says how many.
+ *
+ * @param {string} key - A key of {@link FACET_DIMENSIONS}.
+ * @param {Object} filters - The request's `filters`.
+ * @returns {{sql: string, bind: Array}} The statement and its parameters.
+ * @throws {MosaicRequestError} If a filter cannot be served.
+ */
+function buildFacetQuery(key, filters) {
+    const dimension = FACET_DIMENSIONS[key];
+
+    if (!dimension) {
+        throw new MosaicRequestError(
+            `${JSON.stringify(key)} is not a facetable dimension; they are ${Object.keys(FACET_DIMENSIONS).join(', ')}`
+        );
+    }
+
+    const bind = binder();
+    // Everything except this dimension.
+    const where = predicates({ ...filters, [key]: null }, bind);
+
+    const sql = `
+SELECT ${dimension.value} AS value,
+       ${dimension.label} AS label,
+       ${dimension.list ? `min(${dimension.list})` : 'NULL::varchar'} AS list,
+       count(*)::int AS count
+  FROM observations o
+  LEFT JOIN sessions s ON s.session_id = o.session_id
+  LEFT JOIN projects p ON p.project_id = o.project_id
+  LEFT JOIN species sp ON sp.id = o.species_id
+  LEFT JOIN observation_review_current rc
+         ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
+  LEFT JOIN observation_review_current rt
+         ON rt.observation_id = o.observation_id AND rt.purpose = 'training'${dimension.joins || ''}
+ ${where.length ? `WHERE ${where.join('\n   AND ')}\n   AND` : 'WHERE'} ${dimension.value} IS NOT NULL
+ GROUP BY ${dimension.value}, ${dimension.label}
+ ORDER BY ${dimension.label}`;
+
+    return { sql, bind: bind.values };
+}
+
+/**
+ * Which values of each set dimension are still reachable under one question.
+ *
+ * `POST /api/v2/mosaic/observations/facets`. **A route of its own rather than a flag on
+ * the page response**, and the reasoning is recorded because the other shape was offered:
+ *
+ * - the page response already carries an **exact-key tripwire** over its row shape, and
+ *   its envelope is published as `MosaicPageSet`. Making that answer variable-shaped — the
+ *   lists present only when a flag asked for them — puts two differently-shaped answers
+ *   behind one contract, and the tripwire's whole value is that the shape is exactly one
+ *   thing;
+ * - #99's prefetcher asks for up to three page-sets per navigation. On the page response
+ *   that has to be guarded by a request flag so a prefetch does not pay for lists nobody
+ *   will draw. As its own request the question does not arise;
+ * - the lists are a **different question over a different set** — every filter but one —
+ *   which is exactly what the counts route beside it already is, and that route's own
+ *   comment says its `total` and the page query's are never substitutable. Facets are the
+ *   same kind of thing and belong beside it.
+ *
+ * The cost is one extra round trip per question, which is what the counts route already
+ * costs, and it is asked once per question rather than once per page.
+ *
+ * @async
+ * @param {Object} request - `{ filters, dimensions }`.
+ * @returns {Promise<Object>} `{ facets: { <dimension>: [{ value, label, list, count }] } }`
+ * @throws {MosaicRequestError} If a filter or a dimension cannot be served.
+ */
+async function facets(request = {}) {
+    const wanted = request.dimensions == null
+        ? Object.keys(FACET_DIMENSIONS)
+        : request.dimensions;
+
+    if (!Array.isArray(wanted)) {
+        throw new MosaicRequestError('dimensions must be an array of dimension names');
+    }
+
+    const out = {};
+
+    // One statement per dimension, because each one drops a different predicate. They are
+    // independent, so they are awaited together rather than in series.
+    await Promise.all([...new Set(wanted)].map(async (key) => {
+        const { sql, bind } = buildFacetQuery(key, request.filters || {});
+        out[key] = await db.sequelize.query(sql, {
+            bind,
+            type: db.Sequelize.QueryTypes.SELECT,
+        });
+    }));
+
+    return { facets: out };
+}
+
+/**
  * Build the status-counts statement and its bind parameters.
  *
  * **The non-status filters only** (R10), no sort and no `row_number`. That mirrors
@@ -805,9 +1025,10 @@ async function queryPages(request = {}) {
             ? { total, pageCount: Math.max(1, Math.ceil(total / pageSize)) }
             : {}),
         pages: pages.map((page) => ({ page, rows: byPage.get(page), rowCount: byPage.get(page).length })),
-        // A3: always 0 in this phase. The date dimension is rejected rather than
-        // served, so nothing is silently omitted for want of a date.
-        excludedForNoDate: 0,
+        // A17: the date filter is served now, so this finally reports something --
+        // the matching rows whose `tc` carries no readable clock, which the filter
+        // had to leave out. Zero, and free, whenever the filter is not active.
+        excludedForNoDate: await countUnanswerableForDate(request.filters || {}),
         // Diagnostic. Nothing depends on it.
         servedAt: new Date().toISOString(),
     };
@@ -837,13 +1058,16 @@ async function counts(request = {}) {
 }
 
 module.exports = {
+    FACET_DIMENSIONS,
     MAX_PAGES,
     MAX_ROWS,
     MosaicRequestError,
     SORT_FIELDS,
     STATUS_DIMENSIONS,
     buildCountsQuery,
+    buildFacetQuery,
     buildPageSetQuery,
     counts,
+    facets,
     queryPages,
 };

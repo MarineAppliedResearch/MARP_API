@@ -197,7 +197,10 @@ export function deleteImpact({ rows, marks }) {
   return {
     count: targets.length,
     reviewed: targets.filter((r) => existingState('scientific', r)).length,
-    promoted: targets.filter((r) => r.training_disposition === 'promoted').length,
+    /* Through `dimensionState` rather than naming the column again: the column moved
+       from `training_disposition` to `training_decision` (F3) and this was the one place
+       outside `STATUS_DIMENSIONS` that spelled it out. */
+    promoted: targets.filter((r) => dimensionState('trainingDisposition', r) === 'promoted').length,
   };
 }
 
@@ -228,6 +231,27 @@ export function commitOutcome({ mode, rows, marks }) {
   const skips = rows.filter((r) => !marked(r) && !ready(r)).length;
   return { acts: flags + accepts, accepts, flags, deletes: 0, skips };
 }
+
+/**
+ * Which of a page's tiles a retry can actually help.
+ *
+ * **A permanent failure is left out** (F11, R13). The endpoint refuses one rather than
+ * re-queueing it -- an observation with no keyframes has no bounding box and can never
+ * have a cropped picture -- and without that the page's "Ask again" button becomes a way
+ * to hammer a shared media server for something that cannot exist.
+ *
+ * A named rule rather than a filter written inline in the store, because `permanent` is a
+ * state the client had code for and no data had ever reached: `src/data.js:494`
+ * short-circuited on `thumbnail_permanent` and no row has ever carried the key. A rule
+ * nothing can observe is a rule that quietly stops being true, so this is the tier that
+ * observes it.
+ *
+ * @param {Array<Object>} rows - The page.
+ * @returns {Array<number>} The observation ids worth asking again for.
+ */
+export const retryablePage = (rows) => (rows || [])
+  .filter((r) => r.thumbnail_status === 'failed' && !r.thumbnail_permanent)
+  .map((r) => r.observation_id);
 
 /**
  * What state this page is in, beyond "here are some tiles".
@@ -269,33 +293,72 @@ export function pageState({ rows, loading, total }) {
 export const STATUS_DIMENSIONS = {
   reviewStatus: {
     key: 'reviewStatus',
-    column: 'review_status',
-    /* The value that means nobody has decided yet, and so carries no tag. */
+    /* `review_decision`, not `review_status` (F3, A1). The column this used to name has
+       not existed since #103: a review belongs to the reviewer, so the current decision
+       is a projection row rather than a column on `observations`. The client now uses the
+       schema's word for it, rather than an adapter translating one into the other -- see
+       A1, where the reasoning is that "nothing above `api/` changes" is a *measurement*
+       and an adapter would make it pass by hiding what it measures. */
+    column: 'review_decision',
+    /**
+     * The **filter** value that means nobody has decided yet.
+     *
+     * On the row the same state is **null** -- the absence of a review record -- and the
+     * two really are different words for one thing: the endpoint accepts
+     * `reviewStatus: ['unreviewed', ...]` as a filter and sends `review_decision: null`
+     * in the row. `dimensionState` is where that is reconciled, once.
+     */
     neutral: 'unreviewed',
     workflow: 'Scientific data review',
     label: 'Review status',
     statuses: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']],
     reasonColumn: 'flag_reason',
-    byColumns: ['reviewed_by', 'flagged_by']
+    /**
+     * Which column says **who** decided. A13, and F8 is the defect it closes.
+     *
+     * This was `byColumns: ['reviewed_by', 'flagged_by']`, and the mosaic row has never
+     * carried either — nor `training_approved_by` or `excluded_by`. So the "REVIEWED by
+     * you" badge, the borrowed tag's attribution and the whole `byMe` derivation silently
+     * became nothing: no error, no log, just an interface that stopped being able to tell
+     * the reviewer which decisions were theirs.
+     *
+     * **An id, not a name.** The permission catalog separates `reports:read` from
+     * `observations:read` because it exposes who did how much work, and the row's freedom
+     * from `processor_name` is what keeps the mosaic an `observations:read` route. An id
+     * the client can only compare against its own authenticated principal gives "by you"
+     * and exposes nobody — which is why `borrowedTags` below answers `byMe` rather than a
+     * person.
+     */
+    reviewerColumn: 'review_reviewer_id'
   },
   trainingDisposition: {
     key: 'trainingDisposition',
-    column: 'training_disposition',
+    /* `training_decision` on the row, for the same reason as `review_decision` above. */
+    column: 'training_decision',
     neutral: 'undecided',
     workflow: 'Training data review',
     label: 'Training disposition',
     statuses: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']],
     reasonColumn: 'exclusion_reason',
-    byColumns: ['training_approved_by', 'excluded_by']
+    reviewerColumn: 'training_reviewer_id'
   }
 };
 
-/** The state a record carries in one dimension, or null when it carries none. */
+/**
+ * The state a record carries in one dimension, or null when it carries none.
+ *
+ * **Null on the row is the neutral state** — "the absence of a record" — which is what
+ * the endpoint sends and is the one place the row vocabulary and the filter vocabulary
+ * are reconciled (F3). The neutral *filter* string is accepted too, because
+ * `state.counts` and the rail are keyed by it and a row is easy to build by hand in a
+ * test; anything else is a decision and is returned as one.
+ */
 export function dimensionState(key, row) {
   const dim = STATUS_DIMENSIONS[key];
   if (!dim) return null;
   const value = row[dim.column];
-  return value && value !== dim.neutral ? value : null;
+  if (value == null || value === dim.neutral) return null;
+  return value;
 }
 
 /**
@@ -342,13 +405,52 @@ export function borrowedTags(mode, row) {
         value,
         workflow: dim.workflow,
         reason: row[dim.reasonColumn] || null,
-        by: dim.byColumns.map((c) => row[c]).find(Boolean) || null
+        /* Who decided, as an id -- and `byMe` is derived from it by the caller, which is
+           the only thing the interface may say about a person (A13). `by: <a name>` is
+           what this used to be, from a column the row does not carry (F8). */
+        reviewerId: row[dim.reviewerColumn] == null ? null : row[dim.reviewerColumn]
       };
     })
     .filter(Boolean);
 }
 
-/** Whose decision it was, when the record carries one. */
-export function decidedBy(row) {
-  return row.reviewed_by || row.training_approved_by || row.flagged_by || row.excluded_by || null;
+/**
+ * Who made the decision **this mode acts on**, as a `users.user_id`, or null.
+ *
+ * Mode-scoped for the same reason `existingState` is: it answers a question about the one
+ * dimension whose badge the tile is drawing, and the two have to agree about which
+ * decision they are describing. `decidedBy(row)` was neither — it returned the first
+ * non-null of four columns across both workflows, so a training approver could have been
+ * reported as the scientific reviewer — and all four columns were absent from the row
+ * anyway, so it always returned null (F8).
+ *
+ * @param {string} mode - The active mode.
+ * @param {Object} row - A mosaic row.
+ * @returns {number|null} The reviewer's user id.
+ */
+export function reviewerIdFor(mode, row) {
+  const m = MODES[mode];
+  const dim = m && STATUS_DIMENSIONS[m.statusKey];
+  if (!dim || !row) return null;
+  const id = row[dim.reviewerColumn];
+  return id == null ? null : id;
+}
+
+/**
+ * Was this the signed-in reviewer's own decision?
+ *
+ * The comparison A13 exists for: an id against the authenticated principal's id, which
+ * answers "by you" without the row ever carrying a name. `me` may be null — the identity
+ * arrives from `/api/v2/auth/me` and a page can render before it does — and a null `me`
+ * must read as "not mine" rather than matching a row with no reviewer either.
+ *
+ * @param {string} mode - The active mode.
+ * @param {Object} row - A mosaic row.
+ * @param {Object|null} me - The signed-in user, or null.
+ * @returns {boolean} True only when both ids are present and equal.
+ */
+export function decidedByMe(mode, row, me) {
+  const mine = me && me.user_id;
+  const theirs = reviewerIdFor(mode, row);
+  return Boolean(mine != null && theirs != null && mine === theirs);
 }

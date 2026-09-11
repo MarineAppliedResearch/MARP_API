@@ -913,13 +913,83 @@ describe('the mosaic query (#105)', () => {
 
     describe('the date and time-of-day dimensions (A3)', () => {
 
-        it('rejects an active date filter with 400', async () => {
-            const res = await global.api.post(PAGES).send({
-                ...tiedQuestion(), pages: [1], filters: { date: { from: '2026-08-01', to: null } },
+        /**
+         * **This asserted the opposite until #124's A17, and the reversal is the point.**
+         *
+         * Phase 4 read `date` as unanswerable -- nothing holds the date an observation was
+         * made -- and refusing was more honest than a control that excluded everything.
+         * A17 was answered differently by the human: *"if there is no date, it'll just
+         * default to the time. And if there is a date, then the date will also work."* The
+         * reviewer is asking about a **moment**, `tc` is the moment MARP records, and
+         * answering with what `tc` can discriminate beats refusing.
+         *
+         * So the range is served, over the same clock expression `timeOfDay` uses, and it
+         * **does not wrap** -- which is now the whole difference between the two controls.
+         */
+        it('serves an active date filter as a range over tc (A17)', async () => {
+            // **Scoped, and `...tiedQuestion()` cannot do it**: a spread whose `filters`
+            // is overwritten loses the session scope, and the question then matches every
+            // row in a shared database. The first draft of this check did exactly that and
+            // asserted 6 against 14.
+            const scoped = (date) => ({
+                filters: { session: [seeded.sessions.tied], date }, pageSize: 45, pages: [1],
             });
 
-            expect(res.status).toBe(400);
-            expect(res.body.error.message).toContain('#76');
+            const res = await global.api.post(PAGES).send(scoped({ from: '00:00', to: '23:59' }));
+
+            expect(res.status).toBe(200);
+            // Every seeded row in this group carries tc 10:00:00.
+            expect(res.body.pages[0].rowCount).toBe(6);
+
+            const outside = await global.api.post(PAGES).send(scoped({ from: '11:00', to: '12:00' }));
+
+            expect(outside.status).toBe(200);
+            expect(outside.body.pages[0].rowCount).toBe(0);
+        });
+
+        it('does not wrap a date range, where a time window does (A17)', async () => {
+            // 22:00 to 02:00 is one night as a *window* and an empty question as a
+            // *range*. Writing the range with the wrapping rule would silently turn the
+            // second into the first.
+            const asRange = await global.api.post(PAGES).send({
+                filters: {
+                    session: [seeded.sessions.tied], date: { from: '22:00', to: '02:00' },
+                },
+                pageSize: 45, pages: [1],
+            });
+
+            expect(asRange.status).toBe(200);
+            expect(asRange.body.pages[0].rowCount).toBe(0);
+        });
+
+        it('reports the rows a date filter could not answer for (#76)', async () => {
+            // What #76 built the reporting for, and it had nothing to report while the
+            // filter was refused. A row whose `tc` carries no readable clock cannot answer,
+            // so it is excluded *and counted* -- a number the reviewer can see is the
+            // difference between a filter and a lie.
+            const [nulls] = await q(
+                `SELECT count(*)::int AS n FROM observations o
+                  WHERE o.ml_model_id = :modelId
+                    AND substring(o.tc from '^-?(?:[0-9]+\.)?([0-9]{1,2}:[0-9]{2}:[0-9]{2})') IS NULL`,
+                { modelId: seeded.modelId }
+            );
+
+            const res = await global.api.post(PAGES).send({
+                filters: { model: [seeded.modelId], date: { from: '00:00', to: '23:59' } },
+                pageSize: 45, pages: [1],
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.body.excludedForNoDate).toBe(nulls.n);
+            expect(nulls.n).toBeGreaterThan(0);
+        });
+
+        it('reports zero when the date dimension is not filtering, and costs nothing', async () => {
+            const res = await global.api.post(PAGES).send({
+                ...tiedQuestion(), pages: [1],
+            });
+
+            expect(res.body.excludedForNoDate).toBe(0);
         });
 
         it('does not reject a date dimension that is not filtering', async () => {
@@ -1023,6 +1093,16 @@ describe('the mosaic query (#105)', () => {
                 'observation_id',
                 'project_name',
                 'review_decision',
+                // Owed to #124's A13, and F8 is the defect it closes: the client draws
+                // "REVIEWED by you", the borrowed tag's attribution and `byMe` from
+                // `reviewed_by` / `flagged_by` / `training_approved_by` / `excluded_by`,
+                // and this row has never carried any of the four -- so all three silently
+                // became nothing. **Ids and not names**, which keeps #118's A10 reasoning
+                // intact: the catalog separates `reports:read` because it exposes who did
+                // how much work, and an id the caller can only compare with its own
+                // principal exposes nobody. **Moved into this list rather than the list
+                // being loosened** -- naming the exact keys is the tripwire.
+                'review_reviewer_id',
                 'session_type',
                 // Owed to #111, not wanted by the tile either: `comname` above
                 // is the annotator's frozen label and a species correction never
@@ -1041,6 +1121,9 @@ describe('the mosaic query (#105)', () => {
                 // derivable from observation_id, so no `thumb` joins it.
                 'thumbnail_status',
                 'training_decision',
+                // The training half of A13's pair. Same reasoning, same list, same rule
+                // about being moved in rather than admitted by loosening.
+                'training_reviewer_id',
                 // Owed to #106's D1, not wanted by the tile: the commit routes
                 // require the version the reviewer saw, and this row is the only
                 // channel that can carry it.

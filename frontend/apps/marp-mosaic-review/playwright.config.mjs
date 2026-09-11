@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { SESSION_FILE } from './tools/api-session.mjs';
 
 /**
  * A port belonging to this checkout, and to no other.
@@ -32,6 +33,23 @@ const PORT = Number(process.env.MARP_TEST_PORT)
 const WALKTHROUGH = process.env.MARP_WALKTHROUGH === '1'
   || process.argv.some((a) => a === 'walkthrough' || a.endsWith('=walkthrough'));
 if (WALKTHROUGH) process.env.MARP_WALKTHROUGH = '1';
+
+/**
+ * Run the walkthrough against a real MARP API instead of the static file server.
+ *
+ * `tools/serve.mjs` serves files and nothing else — it does not proxy `/api` — so a run
+ * against it can only ever exercise the fixture. The API, on the other hand, already serves
+ * this app at `/apps/marp-mosaic-review/`, so pointing `baseURL` at the API needs no proxy
+ * at all: set `MARP_API_BASE` to wherever it is listening.
+ *
+ * **Opt-in, and only for the walkthrough.** Every other tier depends on the static server
+ * and on a fixture it can break on purpose, so the default is untouched. In particular
+ * `reuseExistingServer: false` below stays exactly as it is — that flag exists because the
+ * tests once graded a different checkout without saying so. This does not weaken it; it
+ * declines to start a server at all, and says which API it is talking to instead.
+ */
+const API_BASE = String(process.env.MARP_API_BASE || '').replace(/\/+$/, '');
+const ON_API = Boolean(API_BASE) && WALKTHROUGH;
 
 export default defineConfig({
   testDir: './tests',
@@ -81,7 +99,13 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1600, height: 900 },
-        video: { mode: 'on', size: { width: 1600, height: 900 } }
+        video: { mode: 'on', size: { width: 1600, height: 900 } },
+        /* On the API the app is session-gated, so the context arrives already signed in.
+           `globalSetup` below is what puts that file there. */
+        ...(!ON_API ? {} : {
+          baseURL: `${API_BASE}/apps/marp-mosaic-review/`,
+          storageState: SESSION_FILE
+        })
       }
     }]),
     { name: 'desktop', testDir: './tests/e2e', use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 } } },
@@ -90,7 +114,11 @@ export default defineConfig({
     { name: 'phone', testDir: './tests/e2e', use: { ...devices['Pixel 7'] } }
   ],
 
-  webServer: {
+  /* Signing in is only needed when there is an API to sign in to. */
+  ...(ON_API ? { globalSetup: './tools/api-session.mjs' } : {}),
+
+  /* Nothing to start when the API is already serving the app. */
+  webServer: ON_API ? undefined : {
     command: `node tools/serve.mjs ${PORT}`,
     url: `http://localhost:${PORT}/apps/marp-mosaic-review/`,
     /* Never adopt a server this run did not start. Reusing one is how the tests came

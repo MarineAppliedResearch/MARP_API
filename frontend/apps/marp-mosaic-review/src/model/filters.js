@@ -20,10 +20,35 @@ export const FILTER_KEYS = DIMENSIONS.map((d) => d.key);
 /** Nothing selected anywhere: every dimension starts not filtering. */
 export const DEFAULT_FILTERS = {
   ...Object.fromEntries(DIMENSIONS.map((d) => [d.key, emptyValue(d)])),
-  /* One exception, and it is the fixture's rather than the rail's: opening on every
-     species at once is a wall of unrelated animals, and the mosaic's whole premise is
-     that a page holds one predicted species. */
-  species: ['Bat Star'],
+  /**
+   * **No species literal. A10(b), now built.**
+   *
+   * The mosaic's premise is that a page holds one predicted species, so opening on all of
+   * them is a wall of unrelated animals — but a *literal* here is worse, because it is
+   * wrong on every database except the one it was written for. It was `['Bat Star']`,
+   * which the endpoint rejects outright since the filter is `observations.species_id`;
+   * then `[41]`, the fixture's Bat Star key, which matches **nothing** in a real database
+   * and opens the app on an empty mosaic reading *"nothing to do"*. That is how it looks
+   * broken to somebody who has just logged in.
+   *
+   * So the honest value is **empty** — not filtering. The mosaic opens on every species,
+   * which is a mixed page rather than an empty one, and is right on any database.
+   *
+   * **A10(b)'s facets-derived default is NOT built here, and the reason is worth keeping**,
+   * because it looks like a small change and is not. Seeding the opening species from the
+   * facets answer needs the app to know whether the reviewer *chose* to see everything or
+   * simply has not chosen yet — and with no literal here those two are the same question,
+   * so they write the same address. `query-url`'s *clearing every filter is not the same
+   * address as the default question* exists to close exactly that trap, and its own
+   * comment names it: *"a reviewer who deliberately cleared the species filter would be
+   * handed it straight back on the next reload."* That test passed only because this
+   * literal made the two questions differ.
+   *
+   * So seeding from the facets requires first deciding **what a bare address means** once
+   * the default narrows nothing — which is a design question about the address, not a line
+   * of code here. Attempted 2026-09-10 and reverted for that reason.
+   */
+  species: [],
   /* The status filters of the *default question*, which is Scientific's — so review status
      opens at Scientific's default and training disposition opens **not filtering**.
      `trainingDisposition: MODES.training.defaultStatus` was safe only while `queryFilters`
@@ -161,8 +186,35 @@ export function withSortThen(sort, field, dir) {
  */
 export function queryFilters(mode, filters, { excludeIds } = {}) {
   const out = { ...filters };
-  if (excludeIds && excludeIds.size) out.excludeIds = excludeIds;
+  const excluded = excludeIdList(excludeIds);
+  if (excluded.length) out.excludeIds = excluded;
   return out;
+}
+
+/**
+ * The exclusion set as **an array of integers**, which is the only shape it may leave in.
+ *
+ * F2, and it is the one #68 calls the defect that costs an afternoon. `page.pinnedIds()`
+ * returns a `Set` because the cache and the scheduler ask it `.has()` questions — and
+ * `JSON.stringify(new Set([1, 2, 3]))` is `{}`. So the ids left the client as an empty
+ * object, the endpoint read no exclusion at all, and **every committed page reappeared**
+ * among the pages still to do. Nothing throws, nothing logs, and the arithmetic on screen
+ * stays plausible.
+ *
+ * Converting here rather than only at the transport is deliberate: this is where the Set
+ * gets in, so this is where it stops. `src/api/requests.js` converts and rejects again on
+ * the way to the wire, because R4 asks for it to be *impossible* to send one, and a single
+ * guard is a guard somebody routes around.
+ *
+ * Sorted, so two callers holding the same ids in a different order produce the same body.
+ *
+ * @param {Set<number>|Array<number>|null} ids - Whatever the caller is holding.
+ * @returns {Array<number>} The ids, ascending. Empty when there are none.
+ */
+export function excludeIdList(ids) {
+  if (!ids) return [];
+  if (!(ids instanceof Set) && !Array.isArray(ids)) return [];
+  return [...ids].filter((id) => Number.isInteger(id)).sort((a, b) => a - b);
 }
 
 /**

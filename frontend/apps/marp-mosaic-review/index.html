@@ -20,7 +20,9 @@
       <button data-mode="delete" class="danger">Delete</button>
     </nav>
     <span class="mode-note" id="modeNote"></span>
-    <div class="right menuwrap"><button class="who" id="userBtn" title="Account and preferences">IT</button></div>
+    <!-- The initials are written from `state.me` once `/api/v2/auth/me` has answered.
+         They were hard-coded "IT", which is the same literal `ui/dom.js` held. -->
+    <div class="right menuwrap"><button class="who" id="userBtn" title="Account and preferences">&mdash;</button></div>
   </header>
 
   <div class="sub">
@@ -72,6 +74,10 @@
     </main>
 
     <div id="confirm" hidden></div>
+    <!-- Expired, refused and failed, as three distinct states (A4, R20). Interrupting
+         rather than a toast, because a reviewer who does not notice a 401 goes on marking
+         a page that cannot be committed — and none of the three ever discards a mark. -->
+    <div id="failure" hidden></div>
   </div>
 
   <footer class="foot">
@@ -98,7 +104,49 @@
 <script type="module">
   import { actions, state, subscribe } from './src/store.js';
   import { mount } from './src/ui/mount.js';
-  import { MarpData } from './src/data.js';
+  import { useBackend, backendName } from './src/backend.js';
+  import { initialsOf } from './src/ui/dom.js';
+
+  /**
+   * Which backing this page is running on.
+   *
+   * **The application is the API.** `src/backend.js` defaults to `src/api/` and this file
+   * does not change that — A2's rule is that the app never points at the fixture, because
+   * a backing chosen silently is how a browser test comes to grade a fixture and report it
+   * as the API.
+   *
+   * `#backing=fixture` is the one exception and it is **deliberately loud**. A15 settled
+   * that the seeded database the browser tier needs is not built in this phase, so the
+   * render tier and the walkthroughs still have to run against the fixture — and the way
+   * to make that safe is not to hide it but to make it impossible to miss. A run on the
+   * fixture paints a permanent banner and sets `document.documentElement.dataset.backing`,
+   * so a test can assert which backing it graded rather than assuming.
+   *
+   * **The hash, not the query string, and that is not cosmetic.** The query string *is*
+   * the question — `model/query-url.js` reads an address literally and a bare one means
+   * the default question, precisely so that clearing the species filter survives a reload
+   * rather than being handed back. So a `?backing=fixture` made every address non-bare,
+   * the default question was lost on load, and the mosaic opened on every species at once.
+   * Ten render tests said so. The hash is not part of the question, and `rememberQuery`
+   * already preserves it.
+   *
+   * Both come out when the seeded database lands and the tier is repointed.
+   */
+  const params = new URLSearchParams(location.search);
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (hash.get('backing') === 'fixture') {
+    const { MarpData } = await import('./src/data.js');
+    useBackend(MarpData);
+    window.MARP_FIXTURE = MarpData;
+    const flag = document.createElement('div');
+    flag.id = 'backingFlag';
+    flag.textContent = 'FIXTURE \u2014 not the API';
+    flag.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:100;'
+      + 'background:#4a2d0a;color:#ffd08a;border:1px solid #d08a2a;border-top:0;'
+      + 'padding:2px 10px;font:11px/1.6 monospace;border-radius:0 0 4px 4px';
+    document.body.appendChild(flag);
+  }
+  document.documentElement.dataset.backing = backendName();
 
   /* Surface failures rather than swallowing them — an async render error is
      otherwise invisible, which cost real time during the first build. */
@@ -123,6 +171,8 @@
 
   /* progress is derived, not stored */
   subscribe(() => {
+    /* The reviewer's initials, from the server. R19: no name is written into this app. */
+    document.getElementById('userBtn').textContent = initialsOf(state.me);
     const done = state.committedPages.size * state.pageSize;
     const pct = state.total ? Math.min(100, Math.round((done / state.total) * 100)) : 0;
     document.getElementById('progPct').textContent = pct + '%';
@@ -133,7 +183,6 @@
 
   /* Query params for quick looks and screenshots:
      ?mode=training  ?status=excluded  ?demo=picker|correct|menu */
-  const params = new URLSearchParams(location.search);
   const wantMode = params.get('mode');
   const wantStatus = params.get('status');
   if (wantMode) state.mode = wantMode;
@@ -186,10 +235,16 @@
        served over HTTP rather than opened from the filesystem.</span></div>`;
   });
 
-  /* `data` is here so the testing affordances can be reached by hand: `failNextCommit`,
-     `breakThumbnails` and `slowNextCommit` all exist to reach states the fixture is too
-     healthy or too fast to produce on its own. */
-  window.MARP = { state, actions, data: MarpData };   // handy from the console
+  /**
+   * The console handle.
+   *
+   * `data` is the **fixture's** testing affordances — `failNextCommit`,
+   * `breakThumbnails`, `slowNextCommit`, `bumpVersion` — and it is present only on a run
+   * that asked for the fixture. Against the API it is undefined, deliberately: there is
+   * nothing to fail on command, and a handle that silently did nothing would let a test
+   * believe it had broken a thumbnail when it had not.
+   */
+  window.MARP = { state, actions, data: window.MARP_FIXTURE, backing: backendName() };
 </script>
 </body>
 </html>

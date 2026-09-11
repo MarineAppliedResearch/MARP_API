@@ -1,354 +1,304 @@
-# Verification — MarineAppliedResearch/MARP_API#118
+# Verification — MarineAppliedResearch/MARP_API#124
 
-Phase 6, thumbnails. The plan below is written from the 26 requirements in `.marp/task.md`
-for review **before** it is accepted as the evidence for this phase.
+Phase 8, replacing the fixture. The plan below is for review **before** it is accepted as this
+phase's evidence.
 
-**Say plainly what has already happened, because it changes what this document is.** G2 ran
-the suite to know the implementation worked — `43 suites, 559 tests, 0 failures, 40.1 s` — so
-these tests exist and have passed. What has *not* happened is anybody agreeing that they are
-the right tests. That is what this file is for, and *"that test does not actually prove the
-requirement"* is the sentence worth saying now, while moving a test is cheap. The `## Results`
-section below is empty and stays empty until the approved plan is run.
+**Say plainly what has already happened.** The suites exist and have run — 44 API suites / 593
+tests, client unit 244, contract passing, browser 244 passed / 4 skipped — because G2 ran them
+to know the implementation worked. What has *not* happened is anybody agreeing they are the
+right tests, or that the gaps below are acceptable. That is what this file is for, and
+*"that test does not actually prove the requirement"* is the sentence worth saying now.
 
-#103, #105 and #106 each renamed their verification when the next phase arrived
-(`verification-105-mosaic-query.md`, and so on). This file follows that convention and will be
-renamed when Phase 7's successor needs the name.
+`## Results` is empty and stays empty until this plan is approved and run.
+
+#103, #105, #106 and #118 each renamed their verification when the next phase arrived. This
+file follows that convention.
 
 ## The tiers, and why each requirement sits where it does
 
-Four tiers are in play and the choice between them is the only decision in this document that
-can invalidate the whole package.
+Five tiers, and the choice between them is the only decision here that can invalidate the
+whole package.
 
-- **unit** — `tests/thumbnail-geometry.test.js`, 31 tests, ~1.3 s, no database and no video.
-  The geometry is a pure function of numbers, and this is the *only* tier that can exercise a
-  box that overhangs the frame, because no real observation has ever produced one.
-- **http+db** — `tests/thumbnails.test.js` and the mosaic suites, against the real development
-  PostgreSQL through `tests/setup/authenticated-agent.js`. The queue's lease, the cascade, the
-  `CHECK` constraints, the permission split and the persisted run state are observable at no
-  other tier: a repository unit test cannot see two claims racing, cannot see a constraint
-  refuse a value, and cannot see what a foreign key did on the way out.
-- **manual/visual** — `scripts/thumbnail-spike.js` against the real Jellyfin. **A human looking
-  at a picture is a tier here, not a nicety.** No automated assertion can distinguish a
-  correctly cropped sea cucumber from a correctly cropped patch of rubble, and the
-  centre-origin error this phase was most exposed to produces a *valid* JPEG of the wrong
-  thing.
-- **deferred** — R20's throughput measurement, which needs a corpus that does not exist.
+- **wire** — `tests/unit/api-requests.test.mjs`, 21 tests, no DOM and no network. **Every
+  assertion goes through `JSON.parse(JSON.stringify(body))`**, and that is the reason the file
+  exists rather than pedantry: `deepEqual` on a request object passes for a `Set`, a `Map` and
+  a `Date` alike. Three of this phase's seventeen findings are exactly that shape and **none
+  of them failed anything** before this tier existed.
+- **unit** — `tests/unit/{model,cache,query-url,data-scale,wiring,schedule}.test.mjs`, 244
+  tests, ~0.9 s. Rules, vocabulary and the row mapper.
+- **contract** — `tests/requirements.js` through `tests.html`. Runs the real store against the
+  fixture, which is what keeps it fast and hermetic.
+- **render** — Playwright, desktop and phone. **The only tier that can see what was drawn.**
+  Two of this phase's defects were invisible to every other tier: a `display: flex` rule
+  beating the `hidden` attribute, and a trimmed import throwing on every layout pass.
+- **http+db** — Jest against the real development PostgreSQL, for the facets route, the row
+  shape and the `app.js` gate.
 
-`npm test`, never `npx jest`: the suite shares one PostgreSQL and `package.json` passes
-`--runInBand` for that reason. New files are grouped in `scripts/test-subsystem.mjs`, and
-`npm run test:subsystems` fails if a suite belongs to no group.
+`npm test`, never `npx jest` — the suite shares one PostgreSQL and `--runInBand` is passed for
+that reason.
 
 ## What each test proves
 
-`tests/thumbnails.test.js` unless another file is named.
-
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | *is a table of its own, and writing it does not touch the observation* | http+db | The decisive test for A2. A thumbnail write moves neither `observations.version` nor `updatedAt` — the two columns that would have reordered the mosaic under a reviewer and conflicted every commit. |
-| R2 | *holds at most one row per observation* / *goes with the observation when it is deleted* | http+db | Uniqueness, and the `ON DELETE CASCADE` actually firing rather than being declared. |
-| R3 | *refuses a status outside queued, ready and failed* / *refuses to call a queued row permanent* | http+db | Both `CHECK`s refuse at the database, not in application code. The second is the one that stops a permanent `queued` row that would never drain and never retry. |
-| R4 | *pre-creates nothing: an observation with no record has none* / *reports queued for an observation that had no record* | http+db | Absence is a state. Nothing is pre-created for 440,000 rows, and the creation trigger does not backfill them — the page backstop is what makes `queued` honest for one. |
-| R27 | `tests/gpu-observation-ingest.test.js` *queues one thumbnail per observation, without anybody asking for a page* / *enqueues nothing extra when the same job is ingested again* / *writes no thumbnail when the ingest refuses the whole result* | http+db | The **primary** trigger on the machine path, at the tier that can see it: a real worker reporting a real result file, with no page request anywhere in the test. The third proves the enqueue is inside the write transaction — a refused ingest leaves no row behind. |
-| R27 | *creates no row for an observation written with no keyframes* / *enqueues when the GUI posts the keyframes, one request later* | http+db | The **manual** path, in the order `VIDEO_PROCESSING_GUI` really writes it: `POST /api/v2/observation` with no keyframes, then `POST /api/v2/keyframe` with a bare array. The first is what stops a boxless observation being enqueued and permanently failed; the second is the test the first implementation would have failed. |
-| R27 | *enqueues from a plain INSERT that goes through no repository at all* / *writes exactly one row for a track of many keyframes* / *takes the queue entry with the write when the transaction rolls back* | db | Why it is a trigger and not a call. The first covers a writer that bypasses all three repositories; the second is the `SELECT DISTINCT` over the transition table; the third asserts the row exists *inside* the transaction and is gone after the rollback, so it cannot pass vacuously. |
-| R27 | *adds nothing when more keyframes arrive later for the same observation* / *never resets a ready row when a later keyframe arrives* / *never re-queues a permanent failure when a later keyframe arrives* | db | Idempotency, which is load-bearing with two triggers. The second is the expensive one: `DO UPDATE` instead of `DO NOTHING` would re-open a Jellyfin stream every time an annotator nudged a box. |
-| R28 | *enqueues an observation on the page that has no record* / *reports queued for an observation that had no record* | http+db | The backstop. The first asks `observation_thumbnails` itself rather than the response, because the `coalesce` would report `queued` from a read that wrote nothing — which is exactly the dishonesty A3's two halves exist to prevent. |
-| R28 | *finds the row already there after creation, and leaves it alone* / *never resets a ready row, however many times the page is served* / *never re-enqueues a permanent failure, however many times the page is served* | http+db | The two triggers must not fight. `requested_at` is compared before and after, so a second enqueue would show even though the row count would not. |
-| R5 | *records where the picture came from, so it can be made again* | http+db | Resolution is through `video_source`. `jellyfin_item_id` is never consulted — F7's correction. |
-| R6 | *the source dimensions are required* | unit | A crop without real pixel dimensions throws rather than guessing 1920×1080. |
-| R7 | the eight *clamp* tests, and *puts the box centre at x, y rather than its corner* | unit | Centre-origin, pad, square, clamp, in that order. |
-| R8, R10 | *records where the picture came from, so it can be made again* | http+db | Frame, subset and source dimensions on the row, so a re-extraction is reproducible rather than a fresh guess. |
-| R9 | *fails an observation with no keyframes permanently* / *fails an unparseable mediaPosition permanently* | http+db | The permanent failures that no retry can fix, which is what stops *Ask again* hammering Jellyfin for ever. (Written when A3 made a page view the risk; the reversal moved the risk to the retry route and the requirement is unchanged.) |
-| R11 | `tests/mosaic-query.test.js` *is exactly the agreed key set* | http+db | `thumbnail_status` was **moved into** the tripwire's exact-key list, not added by loosening it. |
-| R12 | four tests in `tests/mosaic-commit.test.js`: *skips an unmarked row with no thumbnail record at all* / *…still queued* / *…failed permanently* / *commits a MARKED row with no picture* | http+db | The rule and its exception together. The fourth is the one that matters: flagging needs no imagery, so a marked row commits without a picture. |
-| R12 | *applies the same rule on the training route* / *leaves the delete route alone* / *withdraws a decision from a row with no picture* | http+db | The rule's edges — same on training, absent on delete, and a withdrawal is not blocked by a missing picture. |
-| R13 | *serves the picture with an ETag and a revalidating Cache-Control* / *answers 304…* / *changes the ETag when the thumbnail is re-extracted* | http+db | Not `immutable`: a stable per-observation URL whose content can change would otherwise pin a stale picture in every browser for a year. |
-| R13 | *answers 404 when nothing has ever asked* / *…while the picture is still queued* / *…when the row outlived the file* | http+db | Three different absences, each answering 404 with its own explanation. The third is the species-picture precedent: a row can outlive its file. |
-| R13 | *is served at the V2 path only* | http | The declared path 404s, so the prefix was derived by `registerVersionedRoute` and the permission wrapper came with it. |
-| R14 | five *retry route* tests | http+db | Page-shaped, keyed by `observation_id` rather than position, never a synthetic `ready`, and it clears the failure state of what it re-queues. |
-| R15 | *adds nothing to the catalogue* | http+db | The 27-key catalogue is unchanged. |
-| R16 | `config/thumbnails.js`, read by the tests above | review | Every tunable number in one module. |
-| R17 | *groups a batch by video, so one video is one stream* | http+db | A page's frames are one stream per video, which the spike demonstrated at 1.5 s for six frames. |
-| R18 | *claims queued rows and records the lease* / *does not claim a row another extraction is holding* / *reclaims a row whose extraction died* / *releases a claim without deciding an outcome* | http+db | The lease, including the reclaim after death. Observable at no other tier. |
-| R19 | *never rejects an enqueue, however long the queue is* / *serves the oldest request first* | http+db | Backpressure is priority, never rejection — so no state the client cannot draw. |
-| R21 | *refuses a frame rate that disagrees with the derived frame* | http+db | Nine rates: 25, 25.001, 29.97, 30, 50, 24, 0, null, NaN. A mismatch is a recorded failure carrying both rates, never a warning that continues. |
-| R22 | *the clamp*: each of the four edges, both diagonal corners, the real measured span, two boxes entirely outside the frame | unit | **The requirement that already paid for itself** — see *Regression coverage*. |
-| R23 | *reports the run state, the counts and the configured limit* | http+db | What makes A7's constant tunable by observation rather than by argument. |
-| R24 | *pauses* / *starts no new extraction while paused* / *stop discards the queue* / *re-enqueues on the next page view what stop discarded* | http+db | The three verbs are distinct and each says what happens to work already running. The fourth is why `stop` needs no fourth state: a discarded row is simply absent, and R28's backstop recovers it. |
-| R25 | *pauses, and the pause is persisted rather than held in memory* | http+db | Read back from `thumbnail_extraction_state` directly, so an API restart cannot silently un-pause a service somebody paused because Jellyfin was struggling. |
-| R26 | *is readable with observations:read alone* / *refuses a run-state change to a caller who is not an admin* | http+db | The split, and the refusal proved by the state **not** moving rather than only by the status code. |
-| A4 | *takes the first subset even when a later one brackets the frame and it does not* | unit | The human's rule: the subset is chosen before the box, and neither bracketing nor area can change it. Adversarial by construction — subset `0` neither brackets nor is larger, and still wins. |
-| A4 | *orders subset labels as numbers, so "2" comes before "10"* / *sorts a non-numeric subset label after every numeric one* | unit | `subset` is a `varchar`; a string sort would silently pick the wrong track. |
-| A5 | *pads by 10% of the box on each side before squaring* / *expands a wide box to a square about the same centre* | unit | The padding fraction and the square expansion, as answered. |
-| — | *never lets a Jellyfin access token through into a message* | http+db | The stream URL embeds an `api_key`. This asserts it reaches no error message. Not a numbered requirement; it is the credential rule, and it belongs in a test rather than in a reviewer's memory. |
+| R1 | `wiring`: *no file that draws the rail knows a dimension by name* | unit | Plus a source sweep: `grep -nE "'/api/\|fetch\(\|status === [0-9]{3}" src/` outside `src/api/` returns only comments. |
+| R2 | `src/backend.js` writes its method set out rather than proxying | review | A method either backing lacks fails **by name**, not as `undefined is not a function`. |
+| R3 | *a visible page asks for the total; a prefetch does not* · *the pages asked for are de-duplicated and ascending* | wire | The visible page and the prefetch are distinguishable on the serialised body. |
+| R4 | four tests: *a Set of pinned ids reaches the wire as an array* · *a Set that somehow reached the request is still not sent as one* · *an exclusion set nested in the filters is lifted out* · *nothing pinned sends no exclusion field* | wire | **F2, the expensive one.** `JSON.stringify(new Set([1,2,3]))` is `{}` — the endpoint excluded nothing and the arithmetic on screen stayed plausible throughout. |
+| R5 | *the species filter is sent as the key, never as a name* · *a species name is refused rather than quietly matching nothing* · *model and session are keys too* | wire | A name **throws** rather than 400ing, so the failure is at the call site. |
+| R6 | `model`: the row helper's `review_decision`/`training_decision` and null-as-neutral | unit | Reconciled once, in `dimensionState`. |
+| R7 | *a commit sends the version the reviewer saw, per observation* · *a commit request with a missing version is not constructible* | wire | Not "is rejected" — **not constructible**. The 400 can never be reached. |
+| R8 | `model`: `applyCommit` keyed on `observation_id`; contract asserts an outcome for **each** acted row | unit + contract | **F5**: `r.id` was `undefined`, so every tile on a committed page lost its outcome. |
+| R9 | contract: the `conflicted` tile state, marks kept | contract | Its own state, not folded into flagged. |
+| R10 | render: tiles carry an `<img>` on the thumbnail route, `credentials: 'same-origin'`, `onerror` degrades | render | Only a browser can say the image **decoded**. |
+| R11 | *a page retry sends the whole page in one request* | wire + contract | One request, two paints. |
+| R12 | contract: retry answers `queued`, never a synthetic `ready`, **with a request count** | contract | #68 warned a render-count-only check would miss a regression to 45 requests. |
+| R13 | contract + render: a `permanent` failure offers no retry and shows the reason | contract + render | Rule named as `retryablePage` in `model/modes.js`. |
+| R14 | contract: a committed page returns with no request | contract | Served from `state.pinnedRows`. **The one place striking A5 had a consequence** — `cache.use()` empties on any change of question and `pageSize` is part of it. |
+| R15, R16 | `tests/mosaic-facets.test.js`, 17 tests, seeding everything it asserts · *the date range is sent, and is not silently dropped* | http+db + wire | Reachable values only; no dimension withdrawn; `date` served as a `tc` range. |
+| R17, R18 | render: the picker needs two typed characters; the tile shows the current species | render | **F6**: `comname` never moves on a correction; the current name is `species_comname`. |
+| R19 | render + contract: identity from `/api/v2/auth/me`; no name literal remains | render + review | **F8**: four attribution fields the row does not carry. |
+| R20 | render: 401, 403 and a transport failure as three panels, none discarding marks | render | A 401 re-authenticates in place. |
+| R21 | contract: a superseded request is cancelled | contract | `AbortSignal` on every seam method. |
+| R22 | http+db: anonymous GET of the page **and of a source file** both 302 | http+db | Gating the page and leaving the JS readable is the classic half-fix. |
+| R23 | — | — | **Unmet. See *Known gaps*.** |
+| R24 | this document's *tests that had to change* section | review | The list is the deliverable, not a footnote. |
+| R25 | `tests/mosaic-query.test.js`: the exact-key tripwire | http+db | Two reviewer-id keys **moved into** the list, never admitted by loosening it. |
 
 ## Requirements with no test
 
-- **R20** — the concurrency measurement. Deliberate, and the reason is in *Known gaps*.
+- **R23** — the browser tier against a real API and a seeded database. Deliberate; reasons in
+  *Known gaps*. It is the only one.
 
-Everything else in R1–R26 is named above. That is a claim, not a formality: if a requirement
-below is unlisted, it is unproven.
+## The tests that had to change, and the rule that leaked
+
+**This is R24, and it is the point of the phase rather than housekeeping.** In almost every
+case the leaked rule was the same: **the tests spelled the fixture's private vocabulary**, so
+nothing could tell them the schema disagreed.
+
+- `model.test.mjs` — `review_status`/`training_disposition` → `review_decision`/
+  `training_decision` with null as neutral (F3); `commitResult` keyed `id` → `observation_id`
+  (F5); `tag.by` → `tag.reviewerId` (F8); date bounds → clocks (A17). **And
+  `queryFilters(...).excludeIds.size === 2` → an array plus a serialised-body assertion — that
+  test was asserting the defect** (F2).
+- `data-scale.test.mjs` — **the reference implementation duplicated the fixture's neutral
+  string, so both agreed and both were wrong.** `commitPage({observationIds})` → rows with
+  versions (F4); `back.comname` → `species_comname` moved and `comname` frozen (F6).
+- `cache.test.mjs`, `query-url.test.mjs` — species names → keys; the comma test moved to
+  `project`, since species can no longer hold one.
+- `requirements.js` — the renames, plus: **retry-then-`every(status === 'ready')` → `'queued'`
+  with a request count added** (F10); **the no-imagery check hunted for an incidentally-queued
+  row and returned `'skipped'` when it found none — a skipped check looks green**, so it now
+  breaks one deliberately.
+- `mosaic-query.test.js` — the tripwire gained two keys **moved in**; *rejects an active date
+  filter with 400* → asserts what it serves (A17). That one is a **decision changing**, not a
+  leak.
+- `render.spec.mjs` — the renames; the picker's two-character minimum; and the retry test that
+  asserted the commit was enabled the instant the click returned, which was only true because
+  the fixture invented the picture.
+
+**Five tests fixed here that have nothing to do with Phase 8**, and they are the same defect
+twice: three read the **whole** `observation_review_current` table and asserted it held two
+rows; two counted rows and asserted zero. All five asserted that *the database was otherwise
+empty*. They passed for months and failed the moment real review data existed. Scoped to each
+test's own seeded observation, and the two `ships empty` tests now read the migration, which is
+where the property lives.
 
 ## Edge cases
 
-Each traces to a defect or to a measured fact rather than to imagination.
+Each traces to a defect or a measurement.
 
-- **A box entirely outside the frame.** Traces to the R22 defect below.
-- **The real measured span**, `[-0.0105, 1.0275]` from F3 — the actual out-of-frame range in
-  the fixture, not a made-up one.
-- **An observation with no keyframes at all**, from F6 — `keyframe_count` of `0` appears in an
-  existing mosaic assertion, so this is real and permanent.
-- **A frame rate that is nearly 25** (25.001) as well as plainly not (29.97). The near-miss is
-  the one a tolerance check gets wrong.
-- **A row that outlived its file**, from the species-picture precedent.
-- **A permanent failure served a page repeatedly**, and a permanent failure receiving a
-  *later keyframe* — the enqueue loop each of the two triggers could otherwise create.
-- **Two subsets where the first is the worse-looking choice.** Constructed to fail if anyone
-  reinstates the preference rule.
+- **A `Set`, a `Map` and a `Date` in a request body** — the three shapes `deepEqual` cannot
+  tell from their serialisation.
+- **A mark left over from another page**, and a withdrawal for an id not on the page.
+- **A species name where a key is required** — refused at the call site, not at the endpoint.
+- **A commit with a missing version** — not constructible.
+- **`?backing=fixture` in the query string** — the query string *is* the question, so a
+  backing parameter made every address non-bare and the app lost its default question. Ten
+  tests said 2,755 where 1,083 was expected. Moved to the hash.
+- **A fixture extraction faster than a retry round trip** — at 220 ms it beat the 900 ms retry
+  and reported `ready`, reintroducing F10's shortcut *intermittently*.
 
 ## Regression coverage
 
-- **A3 moved twice on 2026-09-10, and both triggers are now tested separately.** The
-  page-serve tests were rewritten twice and **never deleted** — first to assert that a page
-  serve writes nothing, then, when the backstop was restored, to assert that it enqueues a
-  row that has none and is a no-op on one that does not. Ten new tests: three at the machine
-  ingest, seven at the keyframe trigger and the backstop.
-
-  **Each trigger was mutation-checked against the other's removal**, because with two of them
-  a test can pass on the wrong one:
-
-  - `db:migrate:undo`, dropping `keyframes_enqueue_thumbnail_trigger`: **5 of the 8 creation
-    tests fail**, including the GUI's two-request sequence and the rollback case. 3 pass, and
-    correctly so — they assert that something is *not* enqueued.
-  - The `enqueueMissing` call removed from `queryPages`: *enqueues an observation on the page
-    that has no record* **fails**. Notably *reports queued for an observation that had no
-    record* still passes, because the `coalesce` answers `queued` whether or not anything was
-    written — which is exactly why the first test asks the table instead, and why a
-    response-only assertion would have been worthless here.
-
-- **A defect of mine, found by the suite rather than by reading, and it is issue #62.** After
-  the new tests started calling `POST /api/v2/observation`, two *later* tests in the file
-  began failing with an empty sequelize error. `observation.repository.js#createObservation`
-  inserts an explicit `max + 1` and never advances the `observations` sequence, so the
-  suite's own helper — which relied on the sequence default — eventually collided on the
-  primary key. Measured: `MAX(observation_id)` 652 against `last_value` 3937, and the
-  collision arrives once the explicit inserts catch the sequence up. The helper now assigns
-  `max + 1` like every other writer in MARP. **The failure surfaced in a different test from
-  the one that caused it**, which is worth knowing before debugging it again.
-
-- **The clamp (R22).** During G2 the new test failed with `Expected: <= 1920 / Received: 2765`:
-  a box entirely outside the frame produced a rectangle ending past the frame edge, which
-  `sharp.extract` would have refused. **`scripts/thumbnail-spike.js` had the identical hole**,
-  and it never showed because 0 of 6 real boxes clamped (F37). Fixed by clamping the origin to
-  the last pixel as well as the first. This is the case for R22 existing.
-- **The subset rule.** The first implementation preferred whichever subset bracketed the
-  counted frame, breaking ties by area. That let a picture come from a track nobody chose. The
-  replacement test fails if it returns.
-- **`wasClamped` in the spike** reported a clamp on all six frames because it compared against
-  the square side, which `floor`/`ceil` widens by a pixel. Corrected during the spike; recorded
-  because it briefly made clamping look exercised when it was not.
+- **The five silent findings each have a test proved to fail by reintroducing the defect via
+  file copy** — F1, F2, F5, F6, F11. Not believed to cover; demonstrated.
+- **`#failure { display: flex }` beat the `hidden` attribute.** `hidden` works through
+  `display: none` in the browser's own stylesheet, so an author rule carrying `display` wins —
+  leaving a fixed, full-viewport, *invisible* panel swallowing every tile click. Twenty-six
+  render tests reported it as tiles being broken.
+- **`grid.js` lost the `actions` import** it still needs for `setPageSize`, throwing on every
+  layout pass. An import trimmed to what the file *appeared* to use.
+- **`createObservation` never advances the `observations` sequence** (#62), so later tests
+  collided with a sequence-default insert. The suite helper now assigns `max+1`.
 
 ## Known gaps
 
-Written down deliberately. A gap that is recorded is a decision; a gap that is omitted is a
-surprise later.
+Written down deliberately. A recorded gap is a decision; an omitted one is a surprise.
 
-- **Throughput is not measured (R20).** The database holds 6 observations over one 24-minute
-  video. Every number in this phase descends from *"roughly five or six concurrent streams"*,
-  which is an estimate nobody has tested. R20 names the run — 1, 3 and 6 concurrent streams,
-  throughput and error rate — and it is deferred, not done.
-- **Clamping has never happened on real data.** 0 of 6. The unit tier is the *only* evidence
-  that path works, which is exactly why it is eight tests rather than one.
-- **No legacy observation has been extracted.** The ~440,000 rows without a
-  `jellyfin_item_id` are the corpus this phase mostly exists for, and none has been tried.
-  A8's 96 threshold is therefore untested against the fuzzy matches it was written to refuse —
-  **the fraction of legacy rows that will never get a picture is unknown and unknowable until
-  it is run.**
-- **Multi-subset data does not exist here.** Every real observation has exactly one subset, so
-  the rule is proved by construction only.
-- **Only 25 fps footage has been extracted.** R21's refusal is unit-tested at nine rates, but
-  no non-25 video has been through the extractor end to end.
-- **The ingest defaults a subset to `'1'` while the numbering is said to start at 0.** Nothing
-  here depends on it — *the first subset* is well defined either way — but the two statements
-  disagree and this phase does not resolve it.
-- **`keyframes.confidence` is NULL on every row** (F33, `marp-inference-worker#9`). Nothing in
-  this phase ranks on it; recorded because a future selection rule would have nothing to read.
-- **No client change.** `data.js` still fakes the retry, and `thumbnail_permanent` is unused by
-  any fixture row. That is Phase 8.
+- **R23 is unmet.** The browser tier grades the fixture, not a real API with a seeded database.
+  It **says so on screen and asserts which backing it graded**, so it cannot pass while
+  testing the wrong thing — but two claims that are inherently about a real server are
+  unwatched between recordings: that the tiles are the endpoint's own page **in its order**,
+  and that a commit lands in `observation_reviews`. A local-only dump (#125) does not close
+  this: CI builds an empty database, so a checked-in seeder at a smaller volume is what R23
+  actually needs.
+- **Both of the visible defects above are now fixed** (`bc1083ea`), and one of them turned
+  out to be deeper than a placeholder:
+  - **The default no longer carries a species literal.** It was the fixture's Bat Star key,
+    which matches nothing real, so the app opened on an empty mosaic reading *"nothing to
+    do"*. It narrows nothing now — a bare question returns **1,009 rows over 21 pages**
+    against this database, with five species on page one.
+  - **The dive label no longer prefixes a value that already carries the word** — it was
+    wrong against *both* datasets, `"Dive Dive 12"` real and `"Dive D04"` fixture.
+- **A10(b)'s facets-derived default is still not built, and now has a stated reason.** It
+  was attempted and reverted. With no literal in the default, *"the reviewer chose to see
+  everything"* and *"the reviewer has not chosen yet"* become the same question and write
+  the same address — so seeding a species onto a bare address hands back the filter a
+  reviewer deliberately cleared. `query-url`'s *clearing every filter comes back narrowing
+  nothing* is the test that catches it, and it names this as the thing to revisit first.
+  **Building it needs a decision about what a bare address means**, which is a design
+  question rather than a line of code.
+- **No throughput measurement.** Nothing here is benchmarked, and the corpus is 1,062
+  observations rather than 440,000.
+- **`npm run docs:build` exits 1** on four pre-existing jsdoc errors in `schedule.js`,
+  unchanged by this branch and identical on `develop`.
 - **CI runs the fast tiers only.** A green pipeline is not this package.
-
-## The suite does not need the real data
-
-Raised by the human at G3 review — *"we don't always have the real data available"* — and it
-is the right question, because CI builds an **empty** database and a test that borrows an
-existing row passes here and fails there. Checked rather than assumed:
-
-- `tests/thumbnails.test.js` seeds its own project, session, observations and users in
-  `beforeAll` and removes them in `afterAll`. Grepped for references to the six real
-  observations, to `session_id` 142 and to `gpu_job_id` 132: **none**. The suite does not know
-  the pipeline was ever run.
-- `tests/thumbnail-geometry.test.js` touches no database at all.
-- **One borrowed row was found and removed.** The suite created its session with a hard-coded
-  `user_id` of `1`, and `sessions.user_id` has a foreign key to `users` — so it depended on
-  whichever user the bootstrap migration happened to create first. The column is nullable and
-  nothing here reads it, so it is now `NULL`.
-- **Named, not fixed:** `tests/mosaic-commit.test.js:345`, `tests/mosaic-correction.test.js:261`
-  and `tests/mosaic-query.test.js:233` still hard-code `user_id, 1`. They are from earlier
-  phases and they pass in CI today, which is itself the evidence that user 1 exists there. It
-  is latent fragility rather than a live defect, and it is not this phase's to change.
 
 ## Manual steps
 
-Cannot be automated, and the second one is the point of the phase.
-
-1. **Re-run the spike against real video.**
-   `node scripts/thumbnail-spike.js` with the development Jellyfin reachable.
-   *Expected:* six observations resolve at match score 100; every extracted frame reports a
-   `pts_time` delta of 0; six frames come from one stream in a few seconds; images land in
-   `.marp/local/thumbnail-spike/`.
-2. **Look at the pictures.** Open `contact-sheet.jpg` and judge whether each tile shows the
-   animal it claims. *Expected:* an elongated red-brown holothurian, roughly centred, filling
-   most of the tile. **This step has been done once and passed** — the human reviewed all six
-   crops and the control image on 2026-09-09 and accepted them, including observation 6.
-   *Nothing else in this document can substitute for it:* a wrong crop is a valid JPEG and
-   every automated assertion passes on it.
-3. **The centre-origin control.** `obs-4-control.jpg` draws the box both ways.
-   *Expected:* the centre-origin box on the animal; the top-left box half off the frame edge
-   and on bare rubble. Confirms F1 by observation rather than by inference. **Done, 2026-09-09.**
-4. **Exercise the control surface against a running API.** Pause, confirm no new extraction
-   starts, restart the API, confirm it is still paused, then resume.
-   *Expected:* the pause survives the restart — the failure this is guarding is a pause that
-   silently expires at the worst moment.
+1. **Log in as the walkthrough user and open the mosaic** at
+   `/apps/marp-mosaic-review/?mode=scientific&reviewStatus=unreviewed,flagged,reviewed`.
+   *Expected:* 1,062 observations, 22 pages, real pictures. **Use that URL, not the bare one** —
+   the placeholder species filter opens an empty mosaic and reads as a broken app.
+2. **Judge the tiles.** No assertion can tell a correctly cropped animal from a correctly
+   cropped patch of seabed. **Partly done** — the human reviewed the crops and the
+   centre-origin control on 2026-09-09 and accepted them.
+3. **Exercise the three failure states** — expire the session, call with a principal lacking
+   `observations:write`, and stop the API mid-page. *Expected:* three distinct panels, and
+   marks surviving all three. **Not yet done by hand; the render tier covers the drawing but
+   not a real expired session.**
 
 ## Walkthrough videos
 
-**None for this phase.** The mosaic client is unchanged: `thumbnail_status` is served but
-nothing in `frontend/` reads it yet, and the tile states it drives were built in Phase 1. A
-walkthrough recorded now would narrate a picture appearing that the client cannot yet request,
-which is precisely the scene that *"passes for weeks while excluding nothing."* The
-walkthrough belongs to Phase 8, with the client change, and the still images from the spike are
-this phase's visual evidence instead.
+**`verify-real-database`, recorded 2026-09-10, 60.3 s, 10 scenes.** It is on the API and
+asserts it. Every spoken number is asserted **exactly**, so a changed corpus fails the run and
+writes **no video** rather than narrating a stale figure.
+
+Each scene and its assertion: on the API not the fixture (`backing === 'api'`, no fixture in
+the page, `/auth/me` names the principal) · 1,062 across three dives and 15,230 keyframes
+(read in two calls, `keyframe_count` summed) · every tile a decoded frame from the thumbnail
+route · the dive filter offering exactly the endpoint's three values · Dive 12 narrowing to 410
+· five of seven species reachable under that dive · 83 short red gorgonians, ids matching in
+order · a page change with `window.__waits === 0` via a MutationObserver, **not** a millisecond
+budget · a commit, asserted on `state.outcomes` rather than the badge, because *a badge could
+survive an earlier take and an outcome cannot* · read back from the database by reviewer id.
+
+**It is not the only witness to anything** except the two R23 claims above.
 
 ---
 
 ## Results
 
-Run 2026-09-10 after the plan was approved at G3. Real output, failures included.
+Plan approved by the human on 2026-09-10 (*"I think this is a good plan"*) and run against it.
+Real output, including what went wrong.
 
-### The suites
+### The automated tiers
 
+**API, `npm test`:**
 ```
-  Test Suites : 43 passed, 0 failed, 43 total
-  Tests       : 559 passed, 0 failed, 0 skipped, 559 total
-  Duration    : 40.7s
+  Test Suites : 44 passed, 0 failed, 44 total
+  Tests       : 593 passed, 0 failed, 0 skipped, 593 total
+  Duration    : 42.7s
 
   Result: ALL TESTS PASSED
 ```
 
-`npm run test:subsystems` — `ok   every suite belongs to exactly one subsystem`.
-
-`spec-check` — `10 assumptions answered · 2 open, not blocking · 26 numbered requirements ·
-clear to implement`.
-
-`marp harness check` — `everything the harness can verify is consistent`.
-
-### `npm run docs:build` exits 1, and it is not this phase's
-
-Reported rather than smoothed over. Four jsdoc parse errors, all four from **one file this
-branch does not touch**:
-
+**Client unit and wire tiers, `npm run test:unit`** (lint plus `tests/unit/*.test.mjs`, so the
+21 wire tests are inside this figure):
 ```
-ERROR: Unable to parse a tag's type expression for source file
-  frontend/apps/marp-mosaic-review/src/model/schedule.js in line 167 with tag title "param"
-  ... Invalid type expression "page, ids, lastUsed"
+ℹ pass 244
+ℹ fail 0
+ℹ duration_ms 890.6629
 ```
 
-`schedule.js` is byte-identical to `develop` (`git diff develop` is empty) and carries the
-same malformed `@param {...}` — commas inside braces, from #99. No file this phase added
-produced an error. The generated output is still written; the exit code is not swallowed by
-`--lenient`, contrary to a note made during G2. **Left alone, and named:** it is pre-existing
-breakage on `develop` and fixing it here would be a different task.
+**Contract and render tiers, `npm run test:e2e`** (desktop and phone):
+```
+  4 skipped
+  244 passed (1.8m)
+```
+The 4 skips are the pre-existing viewport-conditional cases — phone-only tests in the desktop
+project and the reverse.
 
-**One thing that was this phase's and is fixed:** the generated docs had gone stale, because
-the subset comparator added jsdoc after the docs were last rebuilt. Regenerated and committed
-(`9f11fa2`) — `compareSubsets` appears in 567 generated files now and in 0 before.
+### Manual step 3 — the three failure states, which the plan recorded as not done
 
-### Manual step 1 — the spike, reproduced
+Now done, against the running API. **All three are distinguishable**, which is R20's premise:
 
 ```
-video_source: 20240730_171520_Fwd.mp4  (6 observations)
-  match score 100 on search term "20240730_171520_Fwd" -> item "20240730_171520_Fwd"
-  stream: 1920x1080 h264 @ 25 fps, 1446.4s
-  ffmpeg: 6 frames in 1.5s from one stream
-  obs 2: frame 18037 (landed 18037), box 174x115px, crop 210x210px
-  obs 3: frame 18070 (landed 18070), box 177x82px, crop 213x213px
-  obs 1: frame 18084 (landed 18084), box 247x95px, crop 298x298px
-  obs 4: frame 18190 (landed 18190), box 345x115px, crop 415x416px
-  obs 5: frame 18251 (landed 18251), box 225x113px, crop 271x271px
-  obs 6: frame 18278 (landed 18278), box 92x105px, crop 127x127px
+--- 1. no credential (expect 401) ---
+{"error":{"code":"UNAUTHORIZED","message":"Authentication is required.","status":401,
+          "requestId":"req_mtvw83qx_mgwi9g3i"}}
+[HTTP 401]
+
+--- 2. read-only principal committing (expect 403) ---
+{"error":{"code":"FORBIDDEN","message":"The \"observations:write\" permission is required.",
+          "status":403,"requestId":"req_mtvw83rg_bmrd7tlk"}}
+[HTTP 403]
+
+--- 3. transport failure: a port with nothing on it ---
+[HTTP 000] exit=7
 ```
 
-Identical to the first run: same score, same frames landed, same crop sizes, same 1.5 s. Every
-`landed` equals the frame asked for.
+The third is the one that matters for telling them apart: **no HTTP status at all** — curl
+reports `000` and exit 7. A client cannot mistake it for either of the other two, which is
+what lets `ui/failure.js` draw three panels rather than one generic error.
 
-### Manual steps 2 and 3 — the pictures
+The 403 message names the missing permission, so *refused* is distinguishable from *not
+signed in* without inspecting anything.
 
-Reviewed by the human on 2026-09-09 and accepted, including observation 6 and the
-centre-origin control (`obs-4-control.jpg`). Not re-judged here; the images regenerated
-byte-for-identically by the numbers above.
+A read-only service client was created for check 2 and **revoked afterwards** (`removed 1
+probe client`).
 
-### Manual step 4 — the control surface against a live server
+### A failure that was the operator's, not the code's
 
-Against `node server.js` on 3000, with two freshly minted service tokens.
+Recorded so nobody chases it. The first attempt at checks 1 and 2 returned **500
+INTERNAL_ERROR** for both. That looked like a real defect in the permission middleware. It was
+not:
 
-**R26, a reader may read:**
 ```
-GET /api/v2/observations/thumbnails/status   [HTTP 200]
-{"runState":"running", ..., "loopStarted":true, "inFlight":0, "concurrencyLimit":3,
- "extractorAvailable":true, "counts":{"queued":0,"ready":0,"failed":0,"permanent":0,"claimed":0}}
-```
-
-**R26, a reader may not change it:**
-```
-POST /api/v2/observations/thumbnails/control {"action":"pause"}   [HTTP 403]
-{"error":{"code":"FORBIDDEN","message":"The \"admin\" permission is required.", ...}}
+[API Error] {
+  code: 'INTERNAL_ERROR',
+  status: 500,
+  message: `Unexpected token 'L', ..."ation_id":Loading mo"... is not valid JSON`
+}
 ```
 
-**R24, an admin may:**
-```
-POST .../control {"action":"pause"}   [HTTP 200]
-{"action":"pause","discarded":0,"runState":"paused","runStateChangedAt":"2026-09-10T06:07:09.655Z", ...}
-```
+`require('./model')` prints `Loading model: …` to **stdout**, and the shell substitution
+building the request body captured it — so the body was malformed and the JSON parser answered
+before any auth middleware ran. Reading the server log rather than reporting the 500 is what
+caught it. Body written to a file instead, and both checks then answered correctly.
 
-**R25, the pause survives a full restart.** The process was killed and `node server.js`
-started again:
-```
-GET .../status   [HTTP 200]
-{"runState":"paused","runStateChangedAt":"2026-09-10T06:07:09.655Z", ...}
-```
-Still paused, and the original change timestamp intact — so it was read from
-`thumbnail_extraction_state` and not defaulted. **This is the step no suite can prove**, and
-it is the failure it guards: a pause that silently expires on restart, at the moment somebody
-paused it because Jellyfin was struggling.
+### Manual steps 1 and 2
 
-Resumed afterwards (`runState: "running"`), so nothing is left paused.
+- **Step 1, opening the mosaic:** done by the human, who logged in as the walkthrough user and
+  reviewed the app against this corpus.
+- **Step 2, judging the tiles:** done on 2026-09-09 for the crops and the centre-origin
+  control, and again on 2026-09-10 against the larger corpus. The human's verdict on the
+  species labelling was *"so far, this actually looks good"*, after checking whether tiles
+  labelled *Fish-eating anemone* were misclassified fish — they are not; that is the common
+  name of *Urticina piscivora*.
 
-### Two failures that were the operator's, not the code's
+### Unchanged from the plan
 
-Recorded so a reader does not chase them as defects.
+- **R23 is still unmet.** Nothing in this run closes it.
+- **`npm run docs:build` still exits 1** on the four pre-existing jsdoc errors in
+  `schedule.js`. Identical on `develop`; not touched.
+- **`DEFAULT_FILTERS.species` is still a placeholder**, and the bare address still opens on an
+  empty mosaic.
+- **The dive menu still reads "Dive Dive 12".**
 
-- `POST /api/v2/observations/thumbnails/run-state` → `404 ROUTE_NOT_FOUND`. **The route is
-  `/control`.** `run-state` was a name used in conversation and never in the code.
-- The first two tokens gave `401 UNAUTHORIZED`. The extraction grepped a long alphanumeric run
-  out of Sequelize's SQL logging instead of the token. Tokens are `svc_`-prefixed and printed
-  under a marker line; extracting by the marker fixed it.
+### Corpus this ran against
 
-### Noted, expected, not a defect
-
-`runStateChangedBy` is `null` after an admin **service token** changed the state. A bearer
-principal's id is a `service_clients.service_client_id`, not a `users.user_id`, and recording
-it in a column that references `users` is the trap Phase 5 recorded as D4. Null is the correct
-answer for a token; the suite's *records who changed the run state* covers the user case.
-
-`extractorAvailable: true` — ffmpeg 8.0.1 was located through configuration (A9), which is the
-condition R23 reports and the extractor refuses to start without.
+1,062 observations, 15,230 keyframes, 3 dives, 7 species, 1,056 thumbnails ready — from three
+GPU inference runs over real Jellyfin video. Larger than any figure quoted in `.marp/task.md`,
+which was written when the database held six observations of one species.

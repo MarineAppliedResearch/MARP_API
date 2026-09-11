@@ -3,10 +3,10 @@
 An interactive prototype of the MARP Picture Mosaic Reviewer, built against the design
 record in [MARP_API#68](https://github.com/MarineAppliedResearch/MARP_API/issues/68).
 
-**This is a prototype, not the finished application.** It runs entirely against a fake
-data fixture, has no build step and no dependencies, and exists so the interactions can
-be used rather than looked at. It may be rewritten — possibly in a different stack, and
-possibly as its own repository — once the design settles.
+**It talks to MARP_API.** `src/api/` is the seam; the fake data fixture survives as a
+*test* fixture and the application never runs on it. There is still no build step and no
+dependencies, and it may still be rewritten — possibly in a different stack, and possibly
+as its own repository — once the design settles.
 
 What it is good for: proving the review workflow actually works, feeling the pace of
 scanning and committing pages, and giving the requirements something concrete to be
@@ -14,15 +14,26 @@ tested against.
 
 ## Running it
 
-It uses ES modules and `fetch`, so it needs to be served rather than opened from disk.
-From `frontend/`:
+**The application is served by MARP_API**, because that is where its API is and because
+the session cookie only travels same-origin. Start the API and sign in the way you would
+for any MARP page; the app is gated on `observations:read` before its files are served, so
+an unauthenticated request is redirected rather than handed a page that cannot work.
 
 ```bash
-npm run serve                  # or: python -m http.server 8123 from frontend/
+npm run dev                    # from the repository root
 ```
 
-- Prototype — <http://localhost:8123/apps/marp-mosaic-review/>
-- Requirement checks — <http://localhost:8123/apps/marp-mosaic-review/tests.html>
+`npm run serve` still exists and serves the app standalone, with no API behind it. That is
+for the **requirement checks**, which run against the fixture on purpose:
+
+```bash
+npm run serve
+```
+
+- Requirement checks — `/apps/marp-mosaic-review/tests.html` on the port it prints.
+- The app on the fixture — add `?backing=fixture`. It paints a permanent
+  `FIXTURE — not the API` banner, because a page that looks like the real thing and is not
+  is the one outcome worth making impossible to miss.
 
 Opening `index.html` directly will show an explanatory error rather than a blank page.
 
@@ -62,8 +73,15 @@ src/model/              the rules. No DOM, no network.
   modes.js                what a mark means, what a commit does per mode
   page.js                 marks, page membership, commit outcomes, paging
   filters.js              the query each mode asks for
-src/data.js             the data seam — fixture today, MARP_API later
-src/store.js            state and named actions; orchestrates model and data
+  row.js                  the two species names, and why they are not interchangeable
+src/api/                the only place that knows a URL, a header or a status
+  transport.js            fetch, the session cookie, the error taxonomy, cancellation
+  requests.js             the request bodies. Tested by asserting the serialised body
+  errors.js               expired / refused / failed, as three separate states
+  index.js                the seam MARP_API is behind
+src/backend.js          which backing the seam has. The app never chooses the fixture
+src/data.js             the fixture. **Tests only** — see CLAUDE.md, *The two backings*
+src/store.js            state and named actions; orchestrates model and the seam
 src/ui/                 state in, DOM out. Never mutates state.
   dom.js                  helpers and icons
   tile.js                 one tile, and the three things it must show at once
@@ -71,12 +89,13 @@ src/ui/                 state in, DOM out. Never mutates state.
   picker.js               the panel a badge opens
   menus.js                dropdowns, anchored to the viewport
   chrome.js               header, sub-bar, rail, pager, action log
+  failure.js              expired, refused and failed, as three distinct panels
   mount.js                wiring — the only place that binds events
 
 styles/app.css          appearance; palette from shared/assets/css/tokens.css
 fixtures/               fabricated observations, and placeholder crops
 tools/make-fixture.mjs  regenerates the fixture deterministically
-tests/unit/             model unit tests — Node, no browser, no database
+tests/unit/             model unit tests, and what reaches the wire — Node, no browser
 tests/requirements.js   contract checks, each naming the requirement it holds us to
 ```
 
@@ -85,11 +104,13 @@ rules testable in milliseconds, and it is where most of the defects found so far
 actually lived — what a mark means per mode, the inverted commit in Delete Mode,
 what a committed page holds afterwards.
 
-**`src/data.js` is the only place that knows where data comes from.** Everything else
-goes through `MarpData.query()`, `MarpData.commitPage()`, `MarpData.setSpecies()` and
-friends, which already return the shapes the API is expected to return — including the
-per-observation `reviewed` / `skipped` results that bulk operations require. Swapping
-the fixture for real endpoints should not require touching the UI.
+**`src/api/` is the only place that knows a URL, a header, an HTTP status or a JSON body
+shape.** Everything else goes through `MarpBackend.query()`, `commitPage()`,
+`setSpecies()`, `retryThumbnails()`, `facets()` and friends. That was the claim the
+prototype was built on — swapping the fixture for real endpoints should not require
+touching the UI — and it held: the interface changed where the *vocabulary* was wrong and
+nowhere else. Every place it was wrong is a finding rather than something an adapter
+absorbed, which is why there is no adapter.
 
 ## The fixture
 
@@ -232,12 +253,15 @@ follows is only what the code itself cannot tell you.
   while the record agrees with neither.
 - **There is no live multi-reviewer view.** Two people reviewing the same filter will not
   see each other's commits until they re-query.
-- **The Model filter has no column behind it.** The fixture simulates `model_name`, because
-  a control nobody can exercise is a control nobody can judge, but nothing in the real
-  schema links an observation to the model that produced it. Phase 3 of #68.
-- **The date filter can only answer where a clock was synced.** `tc` carries a date only
-  sometimes, so the filter reports the count it had to exclude rather than looking
-  complete. Recovering the missing dates is #76.
-- **Nothing here has met a real server.** `src/data.js` is a fixture with a simulated
-  latency, so no claim this prototype makes about ordering, failure or timing has been
-  tested against MARP_API.
+- **The date filter reads a time, not a date.** It compares `tc` as a point in time, so
+  today it discriminates time of day and reports the rows whose `tc` carries no readable
+  clock rather than looking complete. It starts discriminating dates, with no change to the
+  control, once an observation carries one — #76.
+- **The browser tier still grades the fixture.** The seeded database it needs is not built
+  yet, and the six real observations in the development database are one species in one
+  dive, which cannot exercise paging or filtering. The tier says which backing it graded
+  and asserts it, so this is visible rather than assumed.
+- **The identity is the only thing read at start-up.** A reviewer who is signed in but
+  lacks `observations:write` or `species:read` meets a refusal panel naming the missing
+  permission when they try to commit or correct, rather than a degraded interface that
+  hides those controls up front.

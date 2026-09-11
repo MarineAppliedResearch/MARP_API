@@ -13,7 +13,7 @@
  * question, which is why the rules about rejecting nonsense are testable in a millisecond.
  */
 
-import { DIMENSIONS, KIND, emptyValue, isActive } from './dimensions.js';
+import { DIMENSIONS, KIND, emptyValue, isActive, setValueOf } from './dimensions.js';
 import { isMode, statusDimensions } from './modes.js';
 import { DEFAULT_FILTERS, DEFAULT_SORT, isSort, sortTerms, defaultStatusFor } from './filters.js';
 
@@ -159,7 +159,15 @@ function readValue(dimension, raw) {
   if (raw == null || raw === '') return null;
 
   if (dimension.kind === KIND.SET) {
-    const values = raw.split(',').map(dec).filter((v) => v != null && v !== '');
+    /* A `numeric` dimension filters on an integer key, and an address only ever carries
+       text — so `species=41` has to come back as the number 41 or the endpoint rejects it
+       and the fixture matches nothing. `setValueOf` returns null for anything that is not
+       a key, and a value that cannot be read is dropped rather than applied
+       half-understood, exactly as every other malformed value here is (R3). */
+    const values = raw.split(',').map(dec)
+      .filter((v) => v != null && v !== '')
+      .map((v) => setValueOf(dimension, v))
+      .filter((v) => v != null);
     return values.length ? values : null;
   }
 
@@ -179,10 +187,13 @@ function readValue(dimension, raw) {
     return { from: from || null, to: to || null };
   }
 
-  if (dimension.key === 'date') {
-    const date = /^\d{4}-\d{2}-\d{2}$/;
-    if (from !== '' && !date.test(from)) return null;
-    if (to !== '' && !date.test(to)) return null;
+  /* A `clock` range carries times, not dates (A17). The pattern is the same one the
+     window above uses; what differs is that an out-of-order pair is discarded here rather
+     than read as a wrap, because a range does not wrap. */
+  if (dimension.clock) {
+    const clock = /^([01]?\d|2[0-3]):[0-5]\d$/;
+    if (from !== '' && !clock.test(from)) return null;
+    if (to !== '' && !clock.test(to)) return null;
     if (from && to && from > to) return null;
     return { from: from || null, to: to || null };
   }
