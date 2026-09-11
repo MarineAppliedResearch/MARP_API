@@ -669,8 +669,15 @@ describe('the mosaic query (#105)', () => {
 
             expect(matchedCte(whole.sql)).not.toContain('EXISTS');
 
+            // Asked of the `matched` CTE, which is where the status predicate
+            // lives, rather than of the whole statement. The outer projection
+            // grew a legitimate `coalesce` in #118 -- `thumbnail_status` reports
+            // `failed` for an observation with no thumbnail record -- and that is
+            // a different thing from a status filter degrading into one. Scoped
+            // rather than deleted: this assertion is about the filter, and it is
+            // exactly as strong about the filter as it was.
             for (const built of [anti, semi, whole]) {
-                expect(built.sql.toLowerCase()).not.toContain('coalesce');
+                expect(matchedCte(built.sql).toLowerCase()).not.toContain('coalesce');
             }
         });
 
@@ -1026,6 +1033,13 @@ describe('the mosaic query (#105)', () => {
                 // tripwire permanently to admit one field.
                 'species_comname',
                 'tc',
+                // Owed to #118 R11, and the last field Phase 6 adds to this row:
+                // whether the tile has a picture yet. **Moved into this list
+                // rather than the list being loosened** -- naming the exact keys
+                // is the tripwire, and relaxing it would disable the tripwire
+                // permanently to admit one field. The picture's address is
+                // derivable from observation_id, so no `thumb` joins it.
+                'thumbnail_status',
                 'training_decision',
                 // Owed to #106's D1, not wanted by the tile: the commit routes
                 // require the version the reviewer saw, and this row is the only

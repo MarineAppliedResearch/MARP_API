@@ -109,6 +109,26 @@ async function addObservations(count, speciesId = null) {
 
     seeded.observationIds.push(...ids);
 
+    // A `ready` thumbnail each (#118 R12). Several tests here use the review
+    // route as a *setup* step -- approve, then correct, then re-approve -- and
+    // since Phase 6 an unmarked row with no picture is skipped rather than
+    // accepted. This suite is about species corrections, not about imagery, so
+    // its fixtures are tiles a reviewer could actually have looked at.
+    //
+    // `IN (:ids)` rather than `= ANY(:ids)`: a named replacement holding an
+    // array expands to `(1,2,3)`, which makes ANY a syntax error.
+    await q(
+        `INSERT INTO observation_thumbnails
+             (observation_id, status, permanent, filename, content_type, generation,
+              attempts, requested_at, completed_at, created_at, updated_at)
+         SELECT o.observation_id, 'ready', false,
+                o.observation_id || '-jest-correction.jpg', 'image/jpeg', 1,
+                1, NOW(), NOW(), NOW(), NOW()
+           FROM observations o
+          WHERE o.observation_id IN (:ids)`,
+        { ids }
+    );
+
     return ids;
 }
 

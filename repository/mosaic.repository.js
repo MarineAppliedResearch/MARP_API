@@ -41,6 +41,7 @@
  */
 
 const db = require('../model');
+const thumbnailRepository = require('./observation-thumbnail.repository');
 
 /**
  * The cap on one page-set request: 12 pages or 600 rows, whichever binds first.
@@ -148,6 +149,19 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  * beside it is not a finished read path. Delete-only would have saved nothing:
  * the version has to be in the row either way.
  *
+ * `thumbnail_status` is Phase 6's one addition (#118, R11) and it is **never
+ * null**: an observation with no record at all reports `queued` rather than an
+ * absence the client has no rendering for. That is honest because of the two
+ * triggers behind it -- a thumbnail is enqueued when its keyframes are written,
+ * and serving this page enqueues anything that still has no record, so a row
+ * reporting `queued` really does have work behind it.
+ * Only the status -- the picture's address is
+ * `/api/v2/observations/{observation_id}/thumbnail`, derivable from a key the row
+ * already carries, so a second field would be a URL repeated 45 times a page.
+ * Like the two above it, the key was **moved into**
+ * `tests/mosaic-query.test.js`'s exact-key list rather than the list being
+ * loosened -- naming the exact keys is the tripwire.
+ *
  * The column list is written out rather than `o.*` so that a column added to
  * `observations` does not silently join the payload.
  *
@@ -171,7 +185,8 @@ const ROW_COLUMNS = `
         rt.decision AS training_decision,
         rt.reason   AS exclusion_reason,
         k.keyframe_count,
-        k.first_framenum`;
+        k.first_framenum,
+        coalesce(th.status, 'queued') AS thumbnail_status`;
 
 /**
  * Time of day, in `interval`, from the `tc` a row carries.
@@ -651,6 +666,7 @@ SELECT t.total,
          ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
   LEFT JOIN observation_review_current rt
          ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+  LEFT JOIN observation_thumbnails th ON th.observation_id = o.observation_id
   ${keyframeLateral}k ON true
  ORDER BY m.rn`;
 
@@ -753,6 +769,35 @@ async function queryPages(request = {}) {
 
         byPage.get(Math.ceil(Number(rn) / pageSize)).push(served);
     }
+
+    // **The backstop, not the trigger.** A3 moved twice on 2026-09-10 and this is
+    // where it landed. The primary trigger is now
+    // `keyframes_enqueue_thumbnail_trigger`, so a page normally finds every row
+    // already `queued` or `ready` and this call inserts nothing -- which is what
+    // makes the human's first requirement true: *"one of our key criteria is that
+    // the user never has to wait. So trying to load the page should not be the
+    // thing that makes the back end work."*
+    //
+    // But it is still here, on the human's second word: *"if a page tries to view
+    // something and those thumbnails aren't available, that page should enqueue
+    // the observations that are trying to be seen."* It is the safety net for what
+    // the trigger cannot reach -- the ~440,000 observations that predate it, and
+    // anything an interrupted extraction left with no row -- and it is what keeps
+    // absence honestly `queued` rather than a promise nobody keeps.
+    //
+    // The cost is accepted with open eyes rather than hidden: this route is
+    // declared `observations:read` and does have a side effect, and #99's
+    // prefetcher asks for adjacent pages, so one reviewer's navigation can enqueue
+    // up to three pages at once. A10 answered that with the rate limit rather than
+    // a permission and that answer stands -- the concurrency constant bounds it
+    // whatever the caller does.
+    //
+    // Idempotent, and it has to be with two triggers: `enqueueMissing` inserts
+    // only where nothing exists, so a row that is already `ready` is not reset and
+    // a permanent failure is not re-enqueued.
+    await thumbnailRepository.enqueueMissing(
+        [...byPage.values()].flat().map((row) => row.observation_id)
+    );
 
     return {
         pageSize,

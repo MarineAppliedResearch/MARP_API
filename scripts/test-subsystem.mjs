@@ -42,8 +42,18 @@ const SUBSYSTEMS = {
         ],
     },
     mosaic: {
-        describe: 'the picture mosaic reviewer: query, commit, correction',
-        suites: ['mosaic-query', 'mosaic-commit', 'mosaic-correction'],
+        describe: 'the picture mosaic reviewer: query, commit, correction, thumbnails',
+        suites: [
+            'mosaic-query',
+            'mosaic-commit',
+            'mosaic-correction',
+            // Phase 6 (#118). Here rather than in a group of their own: the
+            // thumbnail is what a mosaic tile draws, and the row key, the
+            // enqueue-on-page-fetch and the `no-imagery` skip are all changes to
+            // the mosaic's own contract.
+            'thumbnails',
+            'thumbnail-geometry',
+        ],
     },
     review: {
         describe: 'observation review and training state, and observation versioning',

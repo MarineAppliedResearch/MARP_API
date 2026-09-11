@@ -2868,6 +2868,65 @@ const buildOpenApiSpec = () => {
                             exclusion_reason: { type: 'string', nullable: true, example: null },
                             keyframe_count: { type: 'integer', example: 8, description: 'How many keyframes the observation carries. Computed per returned row, not over the matching set, unless the sort names it.' },
                             first_framenum: { type: 'integer', nullable: true, example: 3457 },
+                            thumbnail_status: { type: 'string', enum: ['queued', 'ready', 'failed'], example: 'ready', description: 'Whether the tile has a picture. **Never null**: an observation with no record at all reports `queued` rather than an absence the client has no rendering for. Two things make that honest rather than a promise nobody keeps -- a thumbnail is enqueued when its keyframes are written, and serving this page enqueues anything on it that still has no record. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page.' },
+                        },
+                    },
+                    ThumbnailExtractorStatus: {
+                        type: 'object',
+                        description:
+                            'What the thumbnail extractor is doing. The **persisted** run state and the **live** loop state are separate questions and both are answered: whether somebody has paused extraction, and whether it is actually turning on this host.',
+                        properties: {
+                            action: { type: 'string', enum: ['pause', 'resume', 'stop'], example: 'pause', description: 'Present only on a control response: the action just applied.' },
+                            discarded: { type: 'integer', example: 0, description: 'Present only on a control response: how many queued rows `stop` discarded. Those observations become simply absent again, and the next page view re-enqueues them.' },
+                            runState: { type: 'string', enum: ['running', 'paused'], example: 'running', description: 'Persisted, so a pause survives an API restart. There is no `stopped`: stop is pause plus discarding the queue.' },
+                            runStateChangedAt: { type: 'string', format: 'date-time', nullable: true },
+                            runStateChangedBy: { type: 'integer', nullable: true, description: 'users.user_id of whoever last changed it.' },
+                            runStateNote: { type: 'string', nullable: true, example: 'Jellyfin under load', description: 'The only place the reason for a pause is recorded.' },
+                            loopStarted: { type: 'boolean', example: true, description: 'Whether the drain loop is turning in this process. False in a process that imported the app without starting the server, which is how the test suite runs.' },
+                            draining: { type: 'boolean', example: false },
+                            inFlight: { type: 'integer', example: 1, description: 'Jellyfin streams open for extraction right now.' },
+                            concurrencyLimit: { type: 'integer', example: 3, description: 'The configured bound. Deliberately below the media server ceiling, which is shared with people watching video.' },
+                            extractorAvailable: { type: 'boolean', example: true, description: 'Whether ffmpeg and ffprobe answered. False means this API host has no decoder: extraction cannot run, and everything else still serves.' },
+                            extractorUnavailableReason: { type: 'string', nullable: true },
+                            counts: {
+                                type: 'object',
+                                properties: {
+                                    queued: { type: 'integer', example: 45 },
+                                    ready: { type: 'integer', example: 1203 },
+                                    failed: { type: 'integer', example: 7 },
+                                    permanent: { type: 'integer', example: 5, description: 'Failures retrying cannot help. Counted separately rather than as a fourth state.' },
+                                    claimed: { type: 'integer', example: 3, description: 'Queued rows an extraction currently holds. A claim lapses after a timeout, so a process that died does not strand its tiles.' },
+                                },
+                            },
+                            lastError: { type: 'string', nullable: true },
+                            lastFailure: {
+                                type: 'object',
+                                nullable: true,
+                                properties: {
+                                    observation_id: { type: 'integer', example: 100123 },
+                                    last_error: { type: 'string', example: 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.' },
+                                    at: { type: 'string', format: 'date-time', nullable: true },
+                                },
+                            },
+                        },
+                    },
+                    ThumbnailRetryResult: {
+                        type: 'object',
+                        description:
+                            'One entry per requested observation, found by `observation_id` and never by position.',
+                        properties: {
+                            thumbnails: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100123 },
+                                        status: { type: 'string', enum: ['queued', 'ready', 'failed'], example: 'queued', description: '`queued` for work accepted. Never a terminal `ready` invented synchronously -- an accepted retry has not happened yet.' },
+                                        permanent: { type: 'boolean', example: false, description: 'True where retrying cannot help, which is why the request was refused rather than queued.' },
+                                        reason: { type: 'string', nullable: true, example: 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.' },
+                                    },
+                                },
+                            },
                         },
                     },
                     MosaicPageSet: {
@@ -2978,12 +3037,12 @@ const buildOpenApiSpec = () => {
                             },
                             skipped: {
                                 type: 'array',
-                                description: 'Left unwritten. **`not-found` is the only reason this API emits today** -- an id that is no longer an observations row. Imagery is not judged by the server until server-generated thumbnails exist, so no skip is ever reported for it.',
+                                description: 'Left unwritten, for one of two reasons. **`not-found`**: an id that is no longer an observations row. **`no-imagery`**: an **unmarked** row whose thumbnail is not `ready`, because accepting it would be a reviewer saying "this is right" about a picture they were never shown. A **marked** row is committed whether or not it has a picture -- flagging needs no imagery -- and the delete route is unaffected because it never touches an unmarked row.',
                                 items: {
                                     type: 'object',
                                     properties: {
                                         observation_id: { type: 'integer', example: 100126 },
-                                        reason: { type: 'string', enum: ['not-found'], example: 'not-found' },
+                                        reason: { type: 'string', enum: ['not-found', 'no-imagery'], example: 'not-found' },
                                     },
                                 },
                             },

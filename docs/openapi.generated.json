@@ -3995,6 +3995,178 @@
             "type": "integer",
             "nullable": true,
             "example": 3457
+          },
+          "thumbnail_status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "ready",
+              "failed"
+            ],
+            "example": "ready",
+            "description": "Whether the tile has a picture. **Never null**: an observation with no record at all reports `queued` rather than an absence the client has no rendering for. Two things make that honest rather than a promise nobody keeps -- a thumbnail is enqueued when its keyframes are written, and serving this page enqueues anything on it that still has no record. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page."
+          }
+        }
+      },
+      "ThumbnailExtractorStatus": {
+        "type": "object",
+        "description": "What the thumbnail extractor is doing. The **persisted** run state and the **live** loop state are separate questions and both are answered: whether somebody has paused extraction, and whether it is actually turning on this host.",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "pause",
+              "resume",
+              "stop"
+            ],
+            "example": "pause",
+            "description": "Present only on a control response: the action just applied."
+          },
+          "discarded": {
+            "type": "integer",
+            "example": 0,
+            "description": "Present only on a control response: how many queued rows `stop` discarded. Those observations become simply absent again, and the next page view re-enqueues them."
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "paused"
+            ],
+            "example": "running",
+            "description": "Persisted, so a pause survives an API restart. There is no `stopped`: stop is pause plus discarding the queue."
+          },
+          "runStateChangedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "runStateChangedBy": {
+            "type": "integer",
+            "nullable": true,
+            "description": "users.user_id of whoever last changed it."
+          },
+          "runStateNote": {
+            "type": "string",
+            "nullable": true,
+            "example": "Jellyfin under load",
+            "description": "The only place the reason for a pause is recorded."
+          },
+          "loopStarted": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the drain loop is turning in this process. False in a process that imported the app without starting the server, which is how the test suite runs."
+          },
+          "draining": {
+            "type": "boolean",
+            "example": false
+          },
+          "inFlight": {
+            "type": "integer",
+            "example": 1,
+            "description": "Jellyfin streams open for extraction right now."
+          },
+          "concurrencyLimit": {
+            "type": "integer",
+            "example": 3,
+            "description": "The configured bound. Deliberately below the media server ceiling, which is shared with people watching video."
+          },
+          "extractorAvailable": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether ffmpeg and ffprobe answered. False means this API host has no decoder: extraction cannot run, and everything else still serves."
+          },
+          "extractorUnavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "queued": {
+                "type": "integer",
+                "example": 45
+              },
+              "ready": {
+                "type": "integer",
+                "example": 1203
+              },
+              "failed": {
+                "type": "integer",
+                "example": 7
+              },
+              "permanent": {
+                "type": "integer",
+                "example": 5,
+                "description": "Failures retrying cannot help. Counted separately rather than as a fourth state."
+              },
+              "claimed": {
+                "type": "integer",
+                "example": 3,
+                "description": "Queued rows an extraction currently holds. A claim lapses after a timeout, so a process that died does not strand its tiles."
+              }
+            }
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastFailure": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "observation_id": {
+                "type": "integer",
+                "example": 100123
+              },
+              "last_error": {
+                "type": "string",
+                "example": "The observation has no keyframes, so it has no bounding box and can never have a cropped picture."
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "ThumbnailRetryResult": {
+        "type": "object",
+        "description": "One entry per requested observation, found by `observation_id` and never by position.",
+        "properties": {
+          "thumbnails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100123
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "ready",
+                    "failed"
+                  ],
+                  "example": "queued",
+                  "description": "`queued` for work accepted. Never a terminal `ready` invented synchronously -- an accepted retry has not happened yet."
+                },
+                "permanent": {
+                  "type": "boolean",
+                  "example": false,
+                  "description": "True where retrying cannot help, which is why the request was refused rather than queued."
+                },
+                "reason": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "The observation has no keyframes, so it has no bounding box and can never have a cropped picture."
+                }
+              }
+            }
           }
         }
       },
@@ -4193,7 +4365,7 @@
           },
           "skipped": {
             "type": "array",
-            "description": "Left unwritten. **`not-found` is the only reason this API emits today** -- an id that is no longer an observations row. Imagery is not judged by the server until server-generated thumbnails exist, so no skip is ever reported for it.",
+            "description": "Left unwritten, for one of two reasons. **`not-found`**: an id that is no longer an observations row. **`no-imagery`**: an **unmarked** row whose thumbnail is not `ready`, because accepting it would be a reviewer saying \"this is right\" about a picture they were never shown. A **marked** row is committed whether or not it has a picture -- flagging needs no imagery -- and the delete route is unaffected because it never touches an unmarked row.",
             "items": {
               "type": "object",
               "properties": {
@@ -4204,7 +4376,8 @@
                 "reason": {
                   "type": "string",
                   "enum": [
-                    "not-found"
+                    "not-found",
+                    "no-imagery"
                   ],
                   "example": "not-found"
                 }
@@ -13834,6 +14007,207 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/thumbnails/status": {
+      "get": {
+        "summary": "What the thumbnail extractor is doing",
+        "description": "Reports the persisted run state, the live loop state, how many streams are open against the configured limit, the queued/ready/failed/permanent counts and the last error. **The run state and the loop state are different questions** and both are answered: whether somebody has paused extraction, and whether it is actually turning. A service reported as running with `extractorAvailable: false` is an API host with no ffmpeg, which is the condition this endpoint exists to make visible rather than leave as a surprise on the first thumbnail. Reading this is `observations:read`: a reviewer legitimately wants to know whether their pictures are coming. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "responses": {
+          "200": {
+            "description": "The extractor status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailExtractorStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/thumbnails/control": {
+      "post": {
+        "summary": "Pause, resume or stop thumbnail extraction",
+        "description": "Three distinct actions, and each says what happens to work already running. **`pause`** stops *starting* new extractions and lets in-flight ones finish, because killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for. **`resume`** starts taking work again. **`stop`** is pause plus discarding the queue: the queued rows return to being simply absent, and since serving a mosaic page enqueues what it is missing, the next page view re-enqueues them -- so nothing is lost and no fourth state is needed. Rows that are already `ready` or `failed` are outcomes rather than queue and are untouched. The run state is **persisted**: a service paused because the media server was struggling must still be paused after an API restart, or the pause silently expires at the worst moment. **`admin` rather than `observations:read`**: pausing extraction affects everyone using the mosaic and throttles a media server shared with people watching video, which is not a reviewer's decision. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "pause",
+                      "resume",
+                      "stop"
+                    ],
+                    "example": "pause"
+                  },
+                  "note": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Jellyfin under load during the afternoon dive review",
+                    "description": "Why, in the operator's words. The only place the reason for a pause is recorded."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The action taken, how many queued rows it discarded, and the resulting status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailExtractorStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/thumbnails/retry": {
+      "post": {
+        "summary": "Ask again for a page of thumbnails",
+        "description": "Takes **a page of observation ids in one request** and answers per observation, so a page-level retry is one round trip and two paints rather than one request per tile. Every entry is found by `observation_id`, never by position. It answers `queued` for work it accepted and **the status the observation now holds** for anything it refused -- never a terminal `ready` invented synchronously, which is only the fixture's shortcut. **A permanent failure is refused rather than re-queued**: an observation with no keyframes, or whose video does not resolve, can never have a picture, and without that refusal this button becomes a way to hammer a shared media server. A row that is already `ready` is left alone, because a retry is a request for a picture and one exists. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "observationIds"
+                ],
+                "properties": {
+                  "observationIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "maxItems": 600,
+                    "example": [
+                      100123,
+                      100456
+                    ],
+                    "description": "The observations to ask again for. De-duplicated server-side."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One entry per requested observation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailRetryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/{observationId}/thumbnail": {
+      "get": {
+        "summary": "Fetch an observation thumbnail",
+        "description": "Serves the cropped picture for one observation: the frame at the moment the observation was recorded, cropped to the box the detector or the annotator drew, padded, squared and resized. The ETag carries a generation that every re-extraction bumps, and `Cache-Control` **revalidates rather than being `immutable`**: the species picture routes may be immutable because a stored picture never changes and a replacement is a new record, but a thumbnail lives at a stable per-observation URL, so `immutable` would pin a stale picture in every reviewer's browser for a year. A recorded thumbnail whose file is missing answers **404 with an explanation** rather than a stack trace: `storage/` is restored separately from the database, and a thumbnail is re-derivable from the row, so this is a recoverable state rather than a lost one. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "observationId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the observation."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnail.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; the client's cached copy is current."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

@@ -114,6 +114,7 @@ const { mountGpuBodyParsing } = require('./routes/gpu.routes');
 const registerMosaicRoutes = require('./routes/mosaic.routes');
 const registerMosaicCommitRoutes = require('./routes/mosaic-commit.routes');
 const registerMosaicCorrectionRoutes = require('./routes/mosaic-correction.routes');
+const registerThumbnailRoutes = require('./routes/thumbnail.routes');
 const { configureAuthentication } = require('./auth/auth.setup');
 
 
@@ -351,6 +352,7 @@ registerGpuRoutes(app);
 registerMosaicRoutes(app);
 registerMosaicCommitRoutes(app);
 registerMosaicCorrectionRoutes(app);
+registerThumbnailRoutes(app);
 
 const generatedSwaggerDocument = buildOpenApiSpec();
 

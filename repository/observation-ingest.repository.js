@@ -282,6 +282,17 @@ class ObservationIngestRepository {
      * method's only remaining decisions are the three key columns, which is why
      * it holds the advisory lock.
      *
+     * **A thumbnail is enqueued for every keyframe this writes, and nothing here
+     * does it** (#118's A3, reversed by the human 2026-09-10). `insertKeyframes`
+     * below fires `keyframes_enqueue_thumbnail_trigger`, so the queue entry is
+     * written inside this transaction and a rollback takes it too.
+     *
+     * **There is deliberately no call to the thumbnail repository here.** One was
+     * written first and it was wrong: it covered this path and silently missed
+     * every hand-annotated observation, which reaches the database through two
+     * other repositories. The trigger moves whatever code path performs the write,
+     * which is the same reason `observations.version` is a trigger.
+     *
      * @async
      * @param {Object} params - What to write.
      * @param {number} params.jobId - GPU job the rows are attributed to.
