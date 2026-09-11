@@ -42,6 +42,35 @@ const { QueryTypes } = db.Sequelize;
 const PROJECT = { project_id: 43, name: 'CAMPA2024' };
 
 /**
+ * The project the CAMPA 2026 survey is recorded under.
+ *
+ * Seeded here rather than by `scripts/process-dive.js`, which is what actually
+ * needs it. A project is pipeline context of exactly the same kind as the model
+ * and the `model_species` rows: survey data the baseline does not carry, that a
+ * `marp db destroy` takes with it. A project created only by the per-dive script
+ * would be lost on a rebuild and re-running this seeder -- which the runbook says
+ * to do after every rebuild -- would not bring it back. So this script owns it,
+ * `process-dive.js` resolves it by name, and a missing project is an error there
+ * telling you to run this.
+ *
+ * No sessions are pinned for it: CAMPA2026 sessions are created a dive at a time
+ * by `process-dive.js`, whose ids are therefore not fixed and must not be quoted
+ * as though they were facts about MARP.
+ *
+ * @constant
+ * @type {Object}
+ */
+const PROJECT_2026 = { project_id: 44, name: 'CAMPA2026' };
+
+/**
+ * Every project this seeds, in id order.
+ *
+ * @constant
+ * @type {Array<Object>}
+ */
+const PROJECTS = [PROJECT, PROJECT_2026];
+
+/**
  * The session the pipeline's observations land in.
  *
  * `type` is `Invert`, which is what routes the ingest to the `Inverts` species
@@ -195,15 +224,17 @@ async function resolveClasses() {
 async function seed(apply) {
     const classes = await resolveClasses();
 
-    console.log(`project  ${PROJECT.project_id}  ${PROJECT.name}`);
-    await write(
-        apply,
-        `INSERT INTO projects (project_id, name, "createdAt", "updatedAt")
-         VALUES (:project_id, :name, NOW(), NOW())
-         ON CONFLICT (project_id) DO UPDATE SET name = EXCLUDED.name, "updatedAt" = NOW()
-         RETURNING project_id`,
-        PROJECT
-    );
+    for (const project of PROJECTS) {
+        console.log(`project  ${project.project_id}  ${project.name}`);
+        await write(
+            apply,
+            `INSERT INTO projects (project_id, name, "createdAt", "updatedAt")
+             VALUES (:project_id, :name, NOW(), NOW())
+             ON CONFLICT (project_id) DO UPDATE SET name = EXCLUDED.name, "updatedAt" = NOW()
+             RETURNING project_id`,
+            project
+        );
+    }
 
     console.log(`session  ${SESSION.session_id}  ${SESSION.dive} / line ${SESSION.line} / ${SESSION.type}`);
     await write(

@@ -171,14 +171,24 @@ export const MarpApi = {
    */
   thumbnailUrl: (row) => thumbnailUrl(row && row.observation_id),
 
-  /** Free-text search over one annotation list, as the correction picker needs (A11). */
+  /**
+   * Free-text search over the taxonomy, as the correction picker needs (A11).
+   *
+   * **A null `list` is a search over every list, not a refusal.** It used to be
+   * `if (!q || !list) return []`, which meant the picker drew "Nothing matches" having
+   * sent nothing at all — and the widen action, which sets the list to null by design,
+   * could never have returned anything either (#130). Both halves are the same line.
+   *
+   * The empty term stays answered here, without a round trip: both routes reject an empty
+   * `q` with a 400, deliberately, because "an empty search returning all 224 entries reads
+   * as a working search".
+   */
   async searchSpecies(term, { list, signal } = {}) {
     const q = String(term || '').trim();
-    /* The route rejects an empty `q` with 400, deliberately: "an empty search returning
-       all 224 entries reads as a working search". So an empty term is answered here,
-       without a round trip, rather than being turned into a failure. */
-    if (!q || !list) return [];
-    const path = `/species/list/${encodeURIComponent(list)}/search?q=${encodeURIComponent(q)}`;
+    if (!q) return [];
+    const path = list
+      ? `/species/list/${encodeURIComponent(list)}/search?q=${encodeURIComponent(q)}`
+      : `/species/search?q=${encodeURIComponent(q)}`;
     return request(path, { signal });
   },
 

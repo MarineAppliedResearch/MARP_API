@@ -23,7 +23,11 @@ import { test, expect } from '@playwright/test';
  * runtime flag was that it is "how a render test comes to grade a fixture and report it
  * as the API"; a flag the page announces and the tier asserts cannot do that silently.
  *
- * Both come out when the seeded database lands and this tier is repointed.
+ * **Neither comes out, and this line used to promise both would** (#132). The real server is
+ * now tested against — `tests/api/`, `--project=api` — but as a tier *beside* this one and
+ * not a replacement: this is the fast loop, at two viewports, and it can break a commit on
+ * purpose, which no real server will do. It stays on the fixture and stays fast; what moved
+ * is that the fixture is no longer the only thing a browser test can see.
  */
 const FIXTURE = 'backing=fixture';
 
@@ -559,8 +563,23 @@ test.describe('a committed page is still editable', () => {
 });
 
 test.describe('the correction panel', () => {
+
+  /**
+   * One session type, so the list the search is scoped to is determinate.
+   *
+   * **This address is #130 showing up in a test that used to pass without it.** The
+   * scoped search is real now: it asks the observation's own annotation list, where the
+   * fixture used to ignore the `list` argument outright and match the whole taxonomy.
+   * A term therefore has to be on the list the page's sessions read against, and on an
+   * unfiltered page that is whichever session the first tile happens to belong to.
+   *
+   * `Inverts` sessions read against the `Inverts` list, and `urch` is Red Urchin, which
+   * is on `Inverts` and on nothing else in the fixture's catalogue.
+   */
+  const INVERTS = './?sessionType=Inverts';
+
   test('choosing a species closes it, and it does not flash back', async ({ page }) => {
-    await page.goto('./');
+    await page.goto(INVERTS);
     await ready(page);
     const tile = page.locator('.tile:not(.failed):not(.queued)').first();
     await tile.click();
@@ -611,6 +630,113 @@ test.describe('the correction panel', () => {
       await page.waitForTimeout(40);
     }
     await expect(page.locator('.pick #spSearch')).toBeVisible();
+  });
+
+  /** Flag the first usable tile and open its species chooser. */
+  async function openChooser(page, address) {
+    await page.goto(address);
+    await ready(page);
+    const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await page.locator('.pick [data-act="correct"]').click();
+    await expect(page.locator('.pick #spSearch')).toBeVisible();
+    return tile;
+  }
+
+  /**
+   * #130 R1. The defect as reported: *"trying to change a species, nothing comes up in
+   * the list as you type."*
+   *
+   * **The render tier is the only one that can see it as the reviewer met it** — a panel
+   * drawing an empty state. The store was correct throughout; it asked the seam, the seam
+   * returned an empty array without sending a request, and every layer behaved properly
+   * on the way to showing something untrue.
+   */
+  test('#130 R1: two characters offer candidates from the observation own list', async ({ page }) => {
+    await openChooser(page, INVERTS);
+
+    await expect(page.locator('.pick #spScope')).toContainText('Inverts');
+    await page.locator('.pick #spSearch').fill('ur');
+
+    await expect(page.locator('.pick .srow').first()).toBeVisible();
+    await expect(page.locator('.pick #spList')).not.toContainText('Nothing');
+    /* Scoped, so no list tag: the whole answer is one list and labelling every row with
+       it would be noise (A3). */
+    await expect(page.locator('.pick .srow .slist')).toHaveCount(0);
+
+    /**
+     * And it really is scoped.
+     *
+     * Without this the check passes while the scope is not applied at all — which *is*
+     * #130. Reintroducing the defect proved exactly that: with `speciesListFor` returning
+     * null again the search widened instead of being refused, candidates still appeared,
+     * and everything above held. `Rockfish` is on `Fish` and on no `Inverts` entry, so a
+     * genuinely scoped search has to find nothing.
+     */
+    await page.locator('.pick #spSearch').fill('rockfish');
+    await expect(page.locator('.pick #spList')).toContainText('Nothing on Inverts matches');
+    await expect(page.locator('.pick .srow')).toHaveCount(0);
+  });
+
+  /**
+   * #130 R3 and R4. "Search all lists" had no route behind it and could never have
+   * returned anything; and a widened answer has to say which list each candidate is on,
+   * because a common name is not unique across lists and a correction is written to the
+   * record.
+   */
+  test('#130 R3/R4: widening returns candidates, each showing its list', async ({ page }) => {
+    await openChooser(page, INVERTS);
+
+    await page.locator('.pick [data-act="widen"]').click();
+    await expect(page.locator('.pick #spScope')).toContainText('whole MARP taxonomy');
+    /* `st` is on three of the fixture's lists -- the sea stars on Inverts, Sebastes on
+       Fish, Macrocystis on Habitat -- so this can tell a label apart from a constant. */
+    await page.locator('.pick #spSearch').fill('st');
+
+    await expect(page.locator('.pick .srow').first()).toBeVisible();
+    const tags = page.locator('.pick .srow .slist');
+    await expect(tags.first()).toBeVisible();
+    /* Every candidate carries one, and between them they name more than one list. */
+    expect(await tags.count()).toBe(await page.locator('.pick .srow').count());
+    const named = new Set(await tags.allInnerTexts());
+    expect(named.size).toBeGreaterThan(1);
+  });
+
+  /**
+   * #130 R5. The panel must never offer an action that cannot work, and must not report
+   * the catalogue empty when it never asked.
+   *
+   * `INVERTS_GULF` is one of the five session types the fixture holds (#81 D1) and the
+   * species-list map does not name it, so these rows carry no list — the same position a
+   * real `Other` session is in. The old panel said *"Nothing matches. Try Search all
+   * lists"* here, which was two untruths: nothing had been searched, and the widen action
+   * it recommended was itself dead.
+   */
+  test('#130 R5: no list for the session type is said, not drawn as no match', async ({ page }) => {
+    await openChooser(page, './?sessionType=INVERTS_GULF');
+
+    await expect(page.locator('.pick #spScope')).toContainText('no list for this session type');
+    await expect(page.locator('.pick #spList')).toContainText('names no species list');
+    await expect(page.locator('.pick #spList')).not.toContainText('Nothing');
+
+    /* And widening is a real way out of it, rather than advice that does nothing. */
+    await page.locator('.pick [data-act="widen"]').click();
+    await page.locator('.pick #spSearch').fill('ur');
+    await expect(page.locator('.pick .srow').first()).toBeVisible();
+  });
+
+  /**
+   * The other half of R5: a search that really was made and really found nothing says so,
+   * and says which list it looked on.
+   */
+  test('#130 R5: a genuine miss names the list it searched', async ({ page }) => {
+    await openChooser(page, INVERTS);
+
+    await page.locator('.pick #spSearch').fill('zzq');
+
+    await expect(page.locator('.pick #spList')).toContainText('Nothing on Inverts matches');
+    await expect(page.locator('.pick .srow')).toHaveCount(0);
   });
 });
 
@@ -1634,6 +1760,82 @@ test.describe('the commit button reports on itself', () => {
     await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/marked/);
     await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
     await expect(page.locator('.pg.done')).toHaveCount(0);
+  });
+});
+
+test.describe('each commit button reports only on itself', () => {
+  /* #131. `state.commit` was one `{ busy, status }` serving two controls, so committing
+     only the marked tiles also turned the page sweep green with a tick -- the one
+     interaction #126 exists to keep apart, saying the whole page had been accepted. The
+     store was correct throughout, which is why no store-level check could see this. */
+  const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.marked)').first();
+
+  test('committing the marked tiles leaves the sweep untouched', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await freshTile(page).getAttribute('data-id');
+    const sweep = page.locator('#commit');
+    const main = page.locator('#commitMarked');
+    const sweepLabel = (await sweep.innerText()).split('·')[0].trim();
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await main.click();
+
+    /* While it saves, the idle button keeps its own default -- not spun, not blanked,
+       not disabled (A4). "Saving..." on a button that is saving nothing is the same lie
+       as "Saved", one step earlier. */
+    await expect(main).toContainText('Saving');
+    await expect(sweep.locator('.spin')).toHaveCount(0);
+    await expect(sweep).toContainText(sweepLabel);
+    await expect(sweep).toBeEnabled();
+
+    await expect(main).toContainText('Saved');
+    await expect(main).toHaveClass(/ok/);
+    /* The fill is what made this read as "the whole page was accepted": `.commit.sweep.ok`
+       turns the outlined secondary button solid green, indistinguishable from the primary.
+       Classes alone would pass if the fill came back through another selector. */
+    await expect(sweep).not.toHaveClass(/ok/);
+    await expect(sweep).not.toContainText('Saved');
+    await expect(sweep).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  });
+
+  test('sweeping the page leaves the marked button untouched', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const sweep = page.locator('#commit');
+    const main = page.locator('#commitMarked');
+    const mainLabel = (await main.innerText()).split('·')[0].trim();
+
+    await sweep.click();
+
+    await expect(sweep).toContainText('Saving');
+    await expect(main.locator('.spin')).toHaveCount(0);
+    await expect(main).toContainText(mainLabel);
+
+    await expect(sweep).toContainText('Saved');
+    await expect(sweep).toHaveClass(/ok/);
+    await expect(main).not.toHaveClass(/ok/);
+    await expect(main).not.toContainText('Saved');
+  });
+
+  test('a committed accept mark stops claiming it is uncommitted', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await freshTile(page).getAttribute('data-id');
+    const badge = page.locator(`.tile[data-id="${id}"] .badge`);
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await expect(badge).toHaveAttribute('title', /Not committed yet/);
+
+    await page.locator('#commitMarked').click();
+    await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+    /* The mark survives its own commit by design (#126) and a mark outranks an outcome --
+       both load-bearing, neither changed here. So the tile keeps the mark badge, and the
+       badge has to stop saying something that is no longer true. */
+    await expect(badge).toHaveAttribute('title', /^Recorded as reviewed/);
+    await expect(badge).toHaveAttribute('title', /click to flag it instead/);
+    await expect(badge).toHaveText(/REVIEWED/);
   });
 });
 

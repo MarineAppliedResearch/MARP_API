@@ -488,6 +488,58 @@ class SpeciesRepository {
     }
 
     /**
+     * Search every list at once, by common name, scientific name or display name.
+     *
+     * The same query as `searchSpeciesInList` minus the list predicate, and that is
+     * the whole of it -- the `is_active` filter stays, because this answers "what
+     * may be annotated" exactly as the scoped search does, and a retired entry is
+     * not made offerable by widening the search.
+     *
+     * **Rows come back on more than one list, and that is the point.** A common
+     * name is not unique across the seven -- 'Red sea urchin' is one id on
+     * `Inverts` and another on `GULF_Inverts` -- so a caller showing these must say
+     * which list each is on. Built for #130 R3: the mosaic's correction picker
+     * offers "search all lists" and until now had no route behind it.
+     *
+     * `species_list` leads the ordering for a reason: without it the seven lists
+     * interleave by tab position, and a reader cannot see that two identically
+     * named rows are two different organisms.
+     *
+     * @async
+     * @param {string} query - Substring to match, case-insensitive.
+     * @returns {Promise<Array<Object>>} Matching entries, grouped by list and then
+     * in display order. Empty array when nothing matches or the query fails.
+     */
+    async searchSpecies(query) {
+        try {
+            const { Op, literal } = this.db.Sequelize;
+            const pattern = '%' + query + '%';
+
+            return await this.db.species.findAll({
+                where: {
+                    is_active: true,
+                    // Entries on no list stay out, the same rule `getSpeciesLists`
+                    // applies and for the same reason: they are kept only because
+                    // ML metrics reference them, and nothing should offer one for
+                    // annotation. Dropping the list predicate must not smuggle
+                    // them in through the widened search.
+                    species_list: { [Op.ne]: null },
+                    [Op.or]: [
+                        { comname: { [Op.iLike]: pattern } },
+                        { species: { [Op.iLike]: pattern } },
+                        { gui_display_name: { [Op.iLike]: pattern } },
+                    ],
+                },
+                include: this.PICTURES_INCLUDE,
+                order: [literal('species_list ASC'), ...this.LIST_ORDER],
+            });
+        } catch (err) {
+            logger.error('Error in searchSpecies(' + query + '):' + err);
+            return [];
+        }
+    }
+
+    /**
      * Fetch one entry by its list and taxserial -- the pair that identifies it.
      *
      * Unlike the list and search methods this does not filter on `is_active`.

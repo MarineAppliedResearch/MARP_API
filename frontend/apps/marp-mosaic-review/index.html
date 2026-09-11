@@ -138,7 +138,11 @@
    * Ten render tests said so. The hash is not part of the question, and `rememberQuery`
    * already preserves it.
    *
-   * Both come out when the seeded database lands and the tier is repointed.
+   * **Neither comes out, and this line used to promise both would** (#132). The browser tier
+   * is repointed — `--project=api` runs `tests/api/` against a real server — but that is a
+   * tier *beside* this one rather than a replacement: the fixture tier is the fast loop, and
+   * it can break a commit on purpose, which no real server will do. The flag is what keeps
+   * the two honest, so it stays and every tier goes on asserting the backing it graded.
    */
   const params = new URLSearchParams(location.search);
   const hash = new URLSearchParams(location.hash.replace(/^#/, ''));

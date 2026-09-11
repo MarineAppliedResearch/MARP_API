@@ -287,3 +287,61 @@ test('the counts and the facets take the same filters object the page query take
   assert.equal('dimensions' in onWire(facetsBody({ filters })), false,
     'absent means every dimension');
 });
+
+/* --------------------------------------------- #130: the request that was never sent */
+
+/**
+ * The picker's search is a GET, so what reaches the wire is a **path** rather than a body
+ * — and the whole of #130 was that no path reached it at all. `api/index.js` opened
+ * `if (!q || !list) return []`, the row never carried a list, and the panel drew "Nothing
+ * matches" having asked nobody. A one-character search-and-replace could put that back,
+ * and nothing above this tier would fail: both the store and the picker behave correctly
+ * when handed an empty array.
+ *
+ * `fetch` is stubbed rather than mocked at a higher layer, because the assertion is about
+ * `transport.js` being reached at all.
+ */
+const { MarpApi } = await import('../../src/api/index.js');
+
+/** Runs `fn` with `fetch` recording every URL it is given. */
+async function withFetch(fn) {
+  const urls = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (url) => {
+    urls.push(String(url));
+    return Promise.resolve({ ok: true, status: 200, json: async () => [] });
+  };
+  try {
+    await fn();
+  } finally {
+    globalThis.fetch = real;
+  }
+  return urls;
+}
+
+test('#130: a scoped species search asks the list route', async () => {
+  const urls = await withFetch(() => MarpApi.searchSpecies('se', { list: 'Inverts' }));
+  assert.deepEqual(urls, ['/api/v2/species/list/Inverts/search?q=se']);
+});
+
+test('#130 R3: a widened species search asks the cross-list route, not nothing', async () => {
+  /* A null list used to mean "return [] and send nothing", which is what made the
+     "Search all lists" action dead on arrival. */
+  const urls = await withFetch(() => MarpApi.searchSpecies('se', { list: null }));
+  assert.deepEqual(urls, ['/api/v2/species/search?q=se']);
+});
+
+test('#130: a term with a slash or a space is escaped into the query, both ways', async () => {
+  const scoped = await withFetch(() => MarpApi.searchSpecies('a/b c', { list: 'GULF_Inverts' }));
+  const wide = await withFetch(() => MarpApi.searchSpecies('a/b c', {}));
+  assert.deepEqual(scoped, ['/api/v2/species/list/GULF_Inverts/search?q=a%2Fb%20c']);
+  assert.deepEqual(wide, ['/api/v2/species/search?q=a%2Fb%20c']);
+});
+
+test('#130: an empty term still sends nothing, because both routes refuse it', async () => {
+  const urls = await withFetch(async () => {
+    assert.deepEqual(await MarpApi.searchSpecies('', { list: 'Inverts' }), []);
+    assert.deepEqual(await MarpApi.searchSpecies('   ', { list: null }), []);
+  });
+  assert.deepEqual(urls, []);
+});

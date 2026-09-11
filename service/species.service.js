@@ -190,6 +190,17 @@ class SpeciesService {
     }
 
     /**
+     * Search every list at once, by common, scientific or display name.
+     *
+     * @async
+     * @param {string} query - Substring to match, case-insensitive.
+     * @returns {Promise<Array<Object>>} Matching entries, grouped by list.
+     */
+    async searchSpecies(query) {
+        return await speciesRepository.searchSpecies(query);
+    }
+
+    /**
      * Fetch one entry by the list and taxserial pair that identifies it.
      *
      * @async
