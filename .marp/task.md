@@ -68,7 +68,7 @@ on the right hand side that will do what it currently does."*
 
 ## Open assumptions
 
-- [ ] **A1 · product/UI · blocking** — **What is the accept gesture on a touch screen?**
+- [x] **A1 · product/UI · blocking** — **What is the accept gesture on a touch screen?**
   Right click does not exist on a phone, and the render tier runs the whole suite at phone
   width on purpose. This is the gesture the human expects to use *most*, so it cannot be
   desktop-only.
@@ -80,7 +80,7 @@ on the right hand side that will do what it currently does."*
   **Recommendation: long press, with the phone cost said out loud rather than hidden.** The
   human's call — he is the one who will do it thousands of times.
 
-- [ ] **A2 · product/UI · blocking** — **What does right click mean in Delete Mode?**
+- [x] **A2 · product/UI · blocking** — **What does right click mean in Delete Mode?**
   `MODES.delete.accepts` is `null`: the opposite of deleting is leaving a row alone, which
   needs no record, so an accept mark has nothing to mean there.
   Candidates: **inert**; **clears a mark**, which is useful and consistent; or Delete is
@@ -89,7 +89,7 @@ on the right hand side that will do what it currently does."*
   button and today's Delete button would do the identical thing, so showing both would be two
   controls with one meaning.
 
-- [ ] **A3 · behavioural · blocking** — **Does a page still arrive with its existing exceptions
+- [x] **A3 · behavioural · blocking** — **Does a page still arrive with its existing exceptions
   marked, now that a mark has a kind?**
   `seedMarks` exists because committing a page holding untouched flags silently cleared them —
   **under the sweep.** The new main button cannot clear what it was never told about, so that
@@ -103,7 +103,7 @@ on the right hand side that will do what it currently does."*
   **Recommendation: the third.** The only one that keeps both buttons honest, and the data to
   do it already exists.
 
-- [ ] **A4 · product/UI · blocking** — **What does an accept mark on a tile with no picture
+- [x] **A4 · product/UI · blocking** — **What does an accept mark on a tile with no picture
   do?** Accepting needs imagery and flagging does not; that rule is settled and on the record.
   An explicit accept mark is the reviewer saying *"I have judged this one"*, which they cannot
   have done without seeing it.
@@ -114,7 +114,7 @@ on the right hand side that will do what it currently does."*
   reviewer never singled the tile out; refusing a deliberate click is clearer than accepting it
   and quietly not doing it.
 
-- [ ] **A5 · API contract · blocking** — **Does the commit request change shape?**
+- [x] **A5 · API contract · blocking** — **Does the commit request change shape?**
   The endpoint takes `observations: [{ observation_id, version }]` plus `marks`. The main
   button must send only the marked, each with its kind — which the existing request can express
   if `marks` carries the kind and cannot if it does not.
@@ -124,12 +124,58 @@ on the right hand side that will do what it currently does."*
   **This is a change to a published contract with a snapshot tripwire over it**, so whatever is
   chosen is *moved into* that list, never admitted by loosening it.
 
-- [ ] **A6 · product/UI · non-blocking** — **What does a tile look like for each kind?**
+- [x] **A6 · product/UI · non-blocking** — **What does a tile look like for each kind?**
   The tile already derives four things at once — marked, existing, outcome, borrowed — with a
   fixed precedence, and it is the area of the app that has produced the most reported bugs. A
   fifth distinction has to fit that table rather than sit beside it.
   Recommendation: today's mark styling for an exception mark and the mode's accept colour for
   an accept mark, with no new slot — `.badge` stays exactly one element per tile.
+
+## Decisions
+
+Answered by the human on 2026-09-10 unless noted.
+
+- **A1 — the accept gesture on touch is a double tap, with a long press as the fallback.**
+  *"I'm thinking A1 might be a double tap, and if it can't be a double tap, then a long tap
+  will be okay for now."* Double tap is the faster gesture and this is the one repeated
+  hundreds of times a page, so it is worth attempting first. **If double tap cannot be made
+  reliable** — it competes with the browser's own double-tap-to-zoom on a phone, and
+  distinguishing it from two separate marks needs a timing window that will feel wrong if it
+  is tuned badly — **fall back to long press and say so in the report rather than shipping a
+  flaky gesture.**
+
+- **A3 — the page still arrives looking pre-marked, and the main button ignores what the
+  reviewer did not touch.** *"I want it to look pre-marked before you touch anything. You can
+  change it if you want it."*
+  So `seedMarks` is unchanged: flags already on the record are drawn as marks the moment the
+  page loads, which is what the reviewer asked to see.
+  The second half is settled here rather than by him, as offered: **the main button acts only
+  on marks the reviewer made in this sitting.** `state.touched` already holds exactly that set.
+  Without it, pressing the main button on a freshly loaded page would re-commit flags nobody
+  touched, under this reviewer's name and today's date — and `observation_reviews` records a
+  reviewer per row, so that is the record asserting a decision that was never made. The sweep
+  is unaffected and keeps working as it does today.
+
+- **A2 — right click is inert in Delete Mode, and Delete keeps one button.** Taken as
+  recommended. `MODES.delete.accepts` is `null` because the opposite of deleting is leaving a
+  row alone, which needs no record — so an accept mark has nothing to mean. And the new main
+  button would do exactly what today's Delete button does, so showing both would be two
+  controls with one meaning.
+
+- **A4 — an accept mark is refused at click time on a tile with no picture**, with the tile
+  saying why. Taken as recommended. Accepting needs imagery and flagging does not; the skip
+  count exists to explain a *sweep*, where the reviewer never singled the tile out. Refusing a
+  deliberate click is clearer than accepting it and quietly not doing it.
+
+- **A5 — `marks` carries the kind; no second list.** Taken as recommended. One list keyed by
+  `observation_id` is what `applyCommit` already folds by, and two lists reintroduce the
+  question of what an id appearing in both means. **This changes a published contract with a
+  snapshot tripwire over it, so the key is moved into that list and the test is never
+  loosened.**
+
+- **A6 — non-blocking, taken as recommended.** Today's mark styling for an exception mark, the
+  mode's accept colour for an accept mark, no new slot, and `.badge` stays exactly one element
+  per tile.
 
 ## Requirements
 
