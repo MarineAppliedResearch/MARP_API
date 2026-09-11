@@ -703,6 +703,37 @@ entirely unless something names it — a bare `playwright test` used to pull it 
 turned a ninety-second loop into four and a half minutes and recorded videos nobody had
 asked for.
 
+**A walkthrough is for the human to watch. It is not automated testing, and it must never
+be counted as coverage.** Settled again on 2026-09-11: *"walkthrough tests are for me to
+review, those aren't for automated testing."*
+
+So a walkthrough is never the evidence that something works, never cited in place of a
+test, and never added to make a tier look complete. If a behaviour needs proving, it needs
+a test at a tier that can observe it; the walkthrough is what the user watches afterwards
+to decide whether he likes it. The assertions inside a scenario exist for one narrow
+reason — so a broken app fails instead of producing a convincing film of something that
+does not work — and that is quality control on the film, not coverage of the feature.
+
+Two consequences that are easy to get wrong:
+
+- **A walkthrough runs on test data. Never the corpus.** Settled 2026-09-11: *"the narrated
+  walkthrough should only happen on test data — we're not doing actual data work during
+  these times, it's so I can review development work."*
+  A recording signs in as a real reviewer and commits real decisions, so pointed at the
+  corpus it **writes to the scientific record while demonstrating a feature**. That is a
+  defect, not a side effect: 60 review rows landed in the development corpus during one
+  recording on 2026-09-11 and are still there, indistinguishable from decisions a person
+  made on purpose.
+  The recording still has to *do* the review — a film of a review tool that reviews nothing
+  is worthless — so the fix is the database it does it to, not the doing. Point it at a
+  disposable copy: `marp db up --port` plus `marp db load` (#125) makes one in a couple of
+  commands, and #132 wants the same thing for the browser tier.
+- **#142's corpus guard cannot see any of it.** That guard runs inside Jest, and a
+  walkthrough is Playwright. **Do not "fix" that by pulling walkthroughs into the guarded
+  path or into `npm test`** — they are not tests, and putting them there would both slow
+  the loop and start recording videos nobody asked for, which is exactly what
+  `playwright.config.mjs` excludes the project to prevent.
+
 **And a walkthrough never belongs in a verification plan.** It is not a verification step,
 it does not appear in `.marp/verification.md`, and no plan proposes one — *"a walkthrough
 video is just supposed to be something I specifically ask for"* (2026-09-10). The user asks

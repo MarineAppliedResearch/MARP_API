@@ -70,6 +70,15 @@ const PAGES = '/api/v2/mosaic/observations/pages';
 /** Distinguishes this run's fixtures in a shared database. */
 const runId = Date.now();
 
+/**
+ * The extractor's run-state row exactly as it was found, put back verbatim in
+ * `afterAll`. This suite did not create it, so it may not leave it different
+ * (#142) -- and it is the human's own extractor, running or paused as he chose.
+ *
+ * @type {Object|null}
+ */
+let runStateBefore = null;
+
 /** Everything seeded, so `afterAll` removes exactly it. */
 const seeded = {
     projectId: null,
@@ -288,6 +297,20 @@ describe('observation thumbnails (#118)', () => {
     let reader;
 
     beforeAll(async () => {
+        // Read before anything below can move it. The control tests pause and
+        // resume the extractor, which writes `changed_at` and
+        // `changed_by_user_id` as well as `run_state`.
+        // `changed_at` as text, not as a Date. PostgreSQL keeps microseconds and
+        // a JS Date only milliseconds, so reading it as a Date and writing it
+        // back truncates the value and leaves the row changed by a fraction of a
+        // millisecond -- which the guard's digest sees, and which cost a run to
+        // find.
+        [runStateBefore = null] = await q(
+            `SELECT id, run_state, changed_by_user_id, changed_at::text AS changed_at, note
+               FROM thumbnail_extraction_state
+              WHERE id = 1`
+        );
+
         const [project] = await q(
             `INSERT INTO projects (name, "createdAt", "updatedAt")
              VALUES (:name, NOW(), NOW()) RETURNING project_id`,
@@ -357,10 +380,24 @@ describe('observation thumbnails (#118)', () => {
             fs.rmSync(path.join(STORAGE_DIR, filename), { force: true });
         }
 
-        // Leave the service running, whatever a control test did to it. A paused
-        // extractor outliving this suite would silently stop the workspace's own
-        // thumbnails arriving.
-        await thumbnailRepository.writeRunState('running', null, null);
+        // Put the run-state row back exactly as it was found, every column of
+        // it. Writing `running` was not enough: `changed_at` and
+        // `changed_by_user_id` move too, and a row left different is a row this
+        // suite modified without having created it (#142). Restoring rather
+        // than forcing `running` also keeps the stronger property the old line
+        // was reaching for -- the extractor is left in the state the human
+        // chose, not the state a control test happened to end on.
+        if (runStateBefore) {
+            await db.sequelize.query(
+                `UPDATE thumbnail_extraction_state
+                    SET run_state = :run_state,
+                        changed_by_user_id = :changed_by_user_id,
+                        changed_at = CAST(:changed_at AS timestamptz),
+                        note = :note
+                  WHERE id = :id`,
+                { replacements: runStateBefore }
+            );
+        }
     });
 
     describe('the record (R1, R2, R3, R4)', () => {

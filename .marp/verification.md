@@ -1,179 +1,217 @@
-# Verification — MarineAppliedResearch/MARP_API#130 and #131
+# Verification — MarineAppliedResearch/MARP_API#142
 
-The picker finds species, and a commit says which commit ran. The plan below is for review
-**before** it is accepted as this phase's evidence.
+A test never touches data it did not create. The plan below is for review **before** it is
+accepted as this phase's evidence.
 
-**What has already happened.** G2 ran the targeted tiers to know the work functioned — the
-mosaic and species API groups, the client unit tier, and the render specs that touch what
-changed. What has *not* happened is anybody agreeing they are the right tests, or that the
-gaps below are acceptable. `## Results` stays empty until this plan is approved and run.
+**What has already happened.** The guard was built and exercised against scratch databases,
+and the full suite was run once against a throwaway copy of the corpus to see what it would
+catch. Those results are quoted below as evidence for *why the plan is shaped this way*;
+`## Results` stays empty until this plan is approved and run.
 
-**The whole suite has deliberately not been run.** It is the supervisor's single run at the
-end of the phase, not each agent's — three agents worked here and a full run each would be
-the same minutes spent three times, none of them on the assembled branch. Settled by the
-human on 2026-09-11: *"the agent doesn't end the feature, you do."*
+**Do not run `marp verify plan` against this file.** It drafts a plan from `task.md` and
+overwrites what is here. It already destroyed one plan this way.
 
-**Do not run `marp verify plan` against this file.** It *drafts* a plan from `task.md` and
-overwrites what is here; it does not check it. It already destroyed this plan once. Run it
-before hand-writing, never after.
+## The one thing that makes this phase different
 
-## Why the tier choices are unusual here
+**The subject under test is the thing that would destroy the evidence.** Verifying a guard
+against corpus loss by running the suite against the corpus is how you lose a second
+observation to learn about the first.
 
-This phase fixed three defects that **no existing tier could observe**, and that is the
-story of the verification rather than a footnote:
+So every run in this plan happens against **`mare_guard_test`** — a local database restored
+from the 08:20 dump with `pg_restore`, holding 2,094 observations, 29,693 keyframes and
+observation 1233, which the corpus itself no longer has. R8 of the spec says nothing in
+`mare_v1` changes, and the way to keep that promise is to never point at it.
 
-- **#130's cause is invisible to the browser tier.** The render tier runs on
-  `?backing=fixture`, and the fixture's `searchSpecies` ignores its `list` argument
-  entirely — so the picker cannot fail there however broken the real path is. Mutating
-  `speciesListFor` back to `return null` left every new render test green until a
-  discriminator was added.
-- **#131's two defects are invisible to the store tier.** `state.commit.status === 'ok'` is
-  a *true* statement about the commit that ran; the defect is one field being mapped onto
-  two DOM elements. There is nothing store-level to see.
-- **The take-back defect is invisible to both.** It only arises when the record disagrees
-  with this sitting's outcome, which happens under the API and never under the fixture,
-  because `src/data.js` mutates the row's status column in place.
-
-So this phase added a tier rather than only tests: `tests/api/`, running against the real
-API and the real corpus. That is R14, and it exists because the alternative — a fixture
-affordance simulating the endpoint — was started and then rejected by the human: *"why are
-we doing tests on the fixture instead of the actual system? If the fixture doesn't trigger
-the error and the actual system does, that doesn't make any sense."*
+That is also the shape the platform is moving to anyway: #125 built the dump and the load,
+#132 wants the browser tier on a disposable database, and #144 wants walkthrough recordings
+on one. This phase is the third consumer of one idea.
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | render: two characters in the picker return candidates | render | The gesture works end to end at the tier that draws it. |
-| R1, R2 | `tests/mosaic-query.test.js` exact-key list gains `species_list` | API | **Red before green**, captured verbatim. The row now carries the list. |
-| R2 | the list is a SQL `CASE` generated from `db/species-lists.js` | API | One copy of the type-to-list map, on the server. The client does no mapping, which is what A1 settled and what `store.js:268-277` objected to. |
-| R3 | `tests/v2_species.test.js`: the cross-list route, with `is_active` and its permission | API | The widen action has something to call. It never had. |
-| R4 | render: a widened result carries `.slist`; a scoped one does not | render | A common name is not unique across lists — `Red sea urchin` is 769 on `Inverts` and 544 on `GULF_Inverts` — and a correction is written to the record. |
-| R5 | render: three distinct empty states | render | *No list*, *nothing on this list*, *nothing in the taxonomy* are different facts. The old single message was false twice over: no request had been sent, and the remedy it suggested was itself broken. |
-| R6 | render × 2 viewports: committing the marked leaves the sweep untouched, and the reverse | render | Both directions, and the **fill** is asserted at `rgba(0,0,0,0)` — classes alone would pass if the fill returned through another selector, and the fill is what made this read as "the whole page was accepted". |
-| R6 | the same tests assert the idle button keeps its label, is not spun and stays enabled | render | A4: nothing happens to the button that did not run. |
-| R7 | render: the badge title before and after a commit | render | `Not committed yet` becomes `Recorded as reviewed — click to flag it instead`. Only a DOM tier can read a `title`. |
-| R8 | **`tests/api/take-back.spec.mjs`**, against the real API | API-backed render | The one test in this phase that could not exist before it. Proven to fail with the fix reverted. |
-| R9 | the existing tile tests, unchanged | render | The `.badge` chain keeps its order; both fixes change a string or a condition inside a branch that was already chosen. |
-| R10 | **`tests/unit/row-shape.test.mjs`** — 5 checks, ~70 ms | unit | The durable part. The endpoint's generated `MosaicRow` against the fixture's row **both ways**, plus every row field the client reads. Mutation-proven three ways. |
-| R11 | every fix has a tier that can see it | all | The table above is the claim. |
-| R12 | the exact-key tripwire is *moved into*, never widened | API | A published contract gained a field deliberately. |
-| R13 | `migrations/` untouched | review | No schema change, so nothing can reach production by accident. |
-| R14 | the `api` Playwright project, `MARP_API_BASE` ungated from `WALKTHROUGH` | API-backed render | The tier exists, asserts `data-backing`, and refuses loudly if named without the environment variable. |
+| R1 | `tests/corpus-guard.test.js` drives four fixture suites as a child Jest run | API (jest-in-jest) | The rule holds in all three directions and does not misfire on the fourth. |
+| R1, R2 | `deletes-a-row.fixture.js` | fixture | `1 row(s) deleted that the suite did not create (4 -> 3)` — **the case that lost observation 1233**. |
+| R1, R2 | `mutates-a-row.fixture.js` | fixture | `row(s) modified, count unchanged at 3` — **the case a row count cannot see**, and the reason the check is a digest. |
+| R1, R2 | `leaves-a-row.fixture.js` | fixture | `1 row(s) added and left behind (3 -> 4)` — the 358 review rows already in the corpus. |
+| R1 | `tidies-up.fixture.js` | fixture | A suite that creates a row and removes it **passes**. A guard that fails everything is not a guard. |
+| R2 | `tests/reporters/summary-reporter.js` gained `onTestResult` | reporter | Without it the run said `1 failed` and never said why — a suite-level failure printed no message at all. |
+| R3 | `EXEMPTIONS` in `tests/setup/corpus-guard.js` | review | Every table is watched; each exemption carries its reason. |
+| R4 | `tests/setup/local-database-guard.js` as Jest `globalSetup` | review + manual | The suite refuses a non-local `DB_HOST`. `MARP_TEST_ALLOW_REMOTE_DB` overrides. |
+| R5 | the suite against an empty, CI-shaped database | API | 25 tests pass, guard silent. CI stays green for the right reason. |
+| R6 | the four fixtures above | — | This requirement *is* the guard's own test. |
+| R7 | measured overhead | API | 250 ms per test file against the full corpus; ~11 s across 44. |
+| R8 | `observations` and `observation_reviews` on `mare_v1`, before and after | review | The corpus is untouched by this phase. |
 
-## Requirements with no test
+## What the full-suite run already showed, and why it is in the plan
 
-- **R13** is verified by reading the diff, not by a test. `migrations/` has no change; there
-  is nothing to assert.
+Run once against `mare_guard_test`, not the corpus:
 
-Everything else has a named test. If that is wrong, this gate is the place to say so.
+```
+Test Suites : 42 passed, 3 failed, 45 total
+Tests       : 623 passed, 0 failed, 0 skipped, 623 total
 
-## Edge cases
+tests/thumbnails.test.js          - thumbnail_extraction_state: row(s) modified, count unchanged at 1
+tests/readonly-endpoints.test.js  - metaInfos: row(s) modified, count unchanged at 1
+tests/sessions-by-project.test.js - users: 1 row(s) added and left behind (33 -> 34)
+```
 
-- **A species list the row names but the catalogue has nothing active on** — the *nothing on
-  this list* empty state, distinct from *no list at all*.
-- **A common name on two lists.** `Red sea urchin` is 769 on `Inverts` and 544 on
-  `GULF_Inverts`; the widened result labels both.
-- **A row whose session type maps to no list.** The fixture's `Fish_GULF` and
-  `INVERTS_GULF` do exactly this and are deliberately left untidy — they are the only way a
-  browser test can reach the no-list path.
-- **Committing with one button while the other is idle**, in both directions.
-- **A take-back committed, then the page not re-read.** The record disagrees with the
-  outcome for the rest of the sitting; the outcome wins.
-- **An accept mark committed, then a reload.** No mark survives a reload, so the tile falls
-  to a badge with no tooltip — nothing false is left behind, which is why "committed" means
-  *this sitting*.
+**623 tests passed and three suites changed the database.** That is the whole case for the
+guard in one line, and it is why fixing those three is in this phase rather than after it:
+a guard that leaves `npm test` permanently red would be switched off within a week.
 
-## Regression coverage
+`thumbnails.test.js` is the one worth naming. `thumbnail_extraction_state` is the
+extraction worker's running/paused switch, held as a single row — so that suite could leave
+the human's thumbnail extractor in a state he did not choose, and nothing reported it.
 
-- **The fixture/endpoint shape gap.** `tests/unit/row-shape.test.mjs` exists because this
-  gap produced #130 and, before it, #124's F6 (`comname` read where `species_comname` is
-  sent) and F8 (four attribution fields the row does not carry). It found a **fourth** on
-  its first run: the endpoint sends `flag_reason` and `exclusion_reason` and the fixture
-  rows carried neither.
-- **`tests/requirements.js:607`** no longer reads `state.rows[0].species_id`, a fixture-only
-  field it was reading back as its own input.
-- **The existing render spec now pins `?sessionType=Inverts`.** It was passing only because
-  the fixture ignored its `list` argument.
+## What this does not prove, stated plainly
 
-## What the tests cannot see, stated plainly
-
-- **The take-back fix cannot be observed at the fixture render tier**, and never will be.
-  `src/data.js` writes the row's status column in place, so the condition the fix addresses
-  cannot arise there. It is covered only by `tests/api/take-back.spec.mjs`, which needs a
-  server and the corpus. **If that tier is not run, R8 has no evidence.**
-- **#130's cause likewise.** The render tests prove the picker works; they cannot prove it
-  was broken. The tiers that can are the API tripwire and
-  `tests/unit/api-requests.test.mjs`.
-- **`tests/api/` writes to the corpus.** One row, chosen because species 622 has exactly
-  one observation so a page sweep touches one decision, restored through `withdraw` in a
-  `finally`. `observation_review_log` keeps its rows by contract — that is the endpoint's
-  design, not litter. A test that cannot restore what it wrote must fail loudly rather than
-  pass quietly.
+- **It did not find the suite that deleted observation 1233.** The deletion **did not
+  reproduce** against the same data: the scratch copy still holds 2,094 observations and
+  1233 is still there. So the culprit is non-deterministic — the shape that fits is a query
+  that usually matches its own seeded row and occasionally matches a real one. Finding it is
+  explicitly out of scope; **the guard is what makes the next occurrence name itself**
+  instead of being discovered hours later by counting rows.
+- **The guard detects; it does not prevent.** By the time it fires the rows are already
+  gone. R4's refusal is the preventive half, and it only covers a non-local host.
+- **It cannot see anything outside Jest.** A walkthrough recording writes real review
+  decisions through Playwright — sixty of them reached the corpus on 2026-09-11 — and this
+  guard is structurally blind to it. That is #144, and **pulling walkthroughs into the
+  guarded path would be the wrong fix**: they are not tests.
+- **`auth_sessions` is exempted as a whole table**, which by this spec's own argument is a
+  blind spot. Every suite logs in and the session store writes asynchronously; the honest
+  alternative is the login fixture deleting its own session row, which is racy. Traded
+  deliberately, and recorded rather than hidden.
+- **One decision in the spec named a column that does not exist.** `users.last_used_at` is
+  really `last_login_at`. The implementation used the real name.
 
 ## Known gaps
 
-- **The full API suite and the full Playwright suite have not been run on the assembled
-  branch.** That is the end-of-phase run and it is the human's call when it happens. A
-  green targeted run is not that.
-- **CI runs the fast tiers only**, deliberately, and CI does not run the `api` project at
-  all — it has no server and no corpus. So CI going green says nothing about R8 or R14.
-- **`tests/walkthrough/scenarios.mjs:1161`** (`verify-correction`) types `lea` on an
-  unfiltered page. Now that the scoped search is real, whether that matches depends which
-  session the first fresh tile belongs to, so that scene will fail or narrate nothing when
-  next recorded. Found and left alone.
-- **`src/ui/picker.js` reads `row.species_list` directly** while `src/store.js` has
-  `speciesListFor`. Two readers of one fact. Left as a plain field read rather than
-  refactored, and the test strengthened instead.
-- **`npm run docs:build` exits 1** on four pre-existing jsdoc errors in
-  `model/schedule.js`. Unchanged by this branch.
-- **The species picker needs a current server.** It is an API change, and `express.static`
-  serves client files from disk — so a long-running server has the client fixes and not the
-  server one.
-
-## Found in real use during this phase, and not fixed here
-
-Three defects the human hit while reviewing the ten-dive corpus. **None is in this branch**,
-and #135 and #137 are the same family as #131 — state written for one commit button now
-read by two:
-
-- **#135** — promoting and committing labels the tile as taken back. The outcome
-  `reverted` is arriving from the server inside `reviewed`; `applyCommit` ignores
-  `result.reverted` deliberately.
-- **#137** — a page fully committed with *Commit Marked* never colours in the pager.
-  `committedPages.add` shares an `if (!selective)` with the pin, and the documented reason
-  covers the pin only.
-- **#138** — a committed delete leaves the tile fully interactive, and the next commit
-  reports the reviewer's own deletion as somebody else's race.
-
-Folding #135 and #137 into this phase was offered and is the human's call.
-
-## Also on this branch, outside #130 and #131
-
-Declared because it will appear in the pull request and is not a picker or a commit fix:
-
-- **`scripts/process-dive.js`** and project 44 in `scripts/seed-inference-context.js` — the
-  parameterised dive runner that replaced a copy-per-dive family of scripts, and the
-  CAMPA2026 project row it needs. Operational tooling, used to build the corpus this phase
-  was verified against. `Refs #68`.
+- **CI cannot exercise any of this.** CI builds an empty database, so the guard is inert
+  there and R5 is the only requirement CI can confirm. A green pipeline says nothing about
+  R1.
+- **The exemption list will grow, and each entry is a blind spot.** That is the accepted
+  cost of watching every table rather than a hand-picked few; the mitigation is that an
+  exemption has to be written down with a reason.
+- **`marp harness check` reports `marp-api/AGENTS.md — drifted from the umbrella`**, as do
+  all four component repositories. Pre-existing: the umbrella's shared-block changes are on
+  its `develop` and have not been promoted to `master`, which is the documented state its
+  own `AGENTS.md` describes.
+- **`.nvmrc` pins Node 22 and this machine has only Node 24.** Everything ran on 24.
 
 ## Manual steps
 
-1. **Correct a species in the mosaic, against a current server.** Open the correction
-   panel, type two characters. *Expected:* candidates from the observation's own list.
-   Then *Search all lists*: candidates from every list, each labelled with its list.
-2. **Commit with each button and watch the other one.** *Expected:* only the button pressed
-   says `Saving…` then `Saved`; the other keeps its label and its outline.
-3. **Right-click a tile, commit, hover the badge.** *Expected:* `Recorded as reviewed —
-   click to flag it instead`, not `Not committed yet`.
-
-**The phone is not a manual step.** Playwright's `phone` project is how this project tests
-a phone — it honours the real viewport width and runs touch gestures in a genuine
-`hasTouch` context. Settled by the human, 2026-09-10: *"You're supposed to test it on an
-emulated phone… we don't need to test it on a real phone for now."*
+1. **Point `DB_HOST` at something that is not local and run the suite.** *Expected:* it
+   refuses before any test runs, naming the host and the override variable. This is the half
+   that answers *"if I ever accidentally run the test on the production server"*, and it is
+   worth seeing refuse once.
 
 ---
 
 ## Results
 
-*Empty until the plan above is approved.*
+Plan approved by the human on 2026-09-11 — *"okay, well, let's continue"* — and run against
+it. **Every run below used `mare_guard_test`, the restored copy. `mare_v1` was never the
+target of a test.**
+
+### The full suite, and the claim it demonstrates
+
+```
+Test Suites : 45 passed, 0 failed, 45 total
+Tests       : 623 passed, 0 failed, 0 skipped, 623 total
+Duration    : 55.7s
+Result: ALL TESTS PASSED
+```
+
+The database, before and after that run:
+
+```
+                 before   after
+observations       2094    2094
+keyframes         29693   29693
+users                34      34
+observation_reviews 219     219
+```
+
+Identical. That is R1 demonstrated rather than asserted — a whole suite run that leaves the
+database exactly as it found it.
+
+### R4 — the refusal, verbatim
+
+```
+Error: Jest: Got error running globalSetup - tests/setup/local-database-guard.js, reason:
+Refusing to run the test suite against a database that is not local.
+  DB_HOST is 10.0.0.5; the suite only runs against 127.0.0.1 or localhost.
+  The tests write to whatever DB_* points at, and the development database
+  carries the same name as production, so only the host tells them apart.
+  If this really is a disposable database, set MARP_TEST_ALLOW_REMOTE_DB=1.
+```
+
+It fires in `globalSetup`, before any test file is loaded. This is the only preventive half
+of the phase: everything else detects after the fact.
+
+### R1, R2, R6 — the guard's own tests
+
+The four fixtures all behave as the plan required — the three violations fail and name the
+file, the tidy suite passes. Verbatim in the child run:
+
+```
+- guard_rows: 1 row(s) deleted that the suite did not create (4 -> 3)
+- guard_rows: row(s) modified, count unchanged at 3
+- guard_rows: 1 row(s) added and left behind (3 -> 4)
+Test Suites: 3 failed, 1 passed, 4 total
+Tests:       4 passed, 4 total
+```
+
+**Four tests pass and three suites fail.** That is the point of the phase in one block.
+
+### The three violations it found, and what they actually were
+
+None was a tidy-up. The guard found three defects:
+
+- **`tests/thumbnails.test.js` was un-pausing the extractor.** Its `afterAll` "restored" the
+  run state by calling `writeRunState('running', null, null)` — forcing a value rather than
+  putting back what was there. A test run would silently resume a thumbnail extractor the
+  human had deliberately paused.
+- **`tests/readonly-endpoints.test.js` restored through the API**, which stamps a fresh
+  `updatedAt`. It was trying to put the row back and structurally could not. It now restores
+  with `UPDATE`, bypassing the route.
+- **`tests/sessions-by-project.test.js` cleaned up through a route that does not exist.** It
+  called `DELETE /api/v2/processors/by-name/${userId}`; there is no delete under `by-name`,
+  and it passed an id into a name path. The request 404'd silently and **leaked a user every
+  run**. It now uses the real route and asserts the row is gone, because that endpoint
+  swallows database failures and answers 200 regardless.
+
+A trap worth recording: **`timestamptz` holds microseconds and a JS `Date` holds
+milliseconds**, so reading a timestamp and writing it back truncates it by a fraction of a
+millisecond — enough for the digest to catch. Both restores round-trip timestamps as text.
+
+### R5 — inert against an empty database
+
+25 tests pass against an empty CI-shaped database with the guard active and silent.
+
+### R7 — the cost
+
+250 ms per test file against the full corpus, about 11 s across 44 files. The full run came
+in at 55.7 s, against 81.8 s for the same suite earlier the same day without the guard — so
+the overhead is inside the noise of what else the machine is doing.
+
+### R8 — the corpus is untouched
+
+`mare_v1`, read-only, at the end of the phase:
+
+```
+observations 2093 · keyframes 29682 · observation_reviews 487 · users 35
+```
+
+Unchanged by this phase. The counts differ from the dump because of things that happened
+*before* it: one observation and its 11 keyframes lost to the still-unidentified suite, 268
+review rows from test runs and a walkthrough recording, and two users — the `isaac` account
+created on request, and **one leaked by `sessions-by-project.test.js`**, which is the defect
+fixed above, visible in the data.
+
+### Unchanged from the plan
+
+Every *What this does not prove* stands. In particular **the suite that deleted observation
+1233 was not identified** — it did not reproduce against the same data, and the guard is
+what will name it next time rather than a row count discovered hours later.
