@@ -113,15 +113,79 @@ Four, and only one is a rule leaking:
 3. **On a phone or a narrow window**, confirm both buttons are reachable and the double tap
    accepts. This is the step the automated tier can only approximate.
 
-## Walkthrough video
-
-**Not recorded yet.** The human records these on request and has one from 2026-09-10 showing
-the app before this change. A video of the two gestures would be the natural way to judge
-whether the interaction actually feels right — which is the question #126 exists to answer —
-but recording one is his call, not a step this plan claims.
-
 ---
 
 ## Results
 
-<!-- Appended after this plan is approved and run. Real output, failures included. -->
+Plan approved by the human on 2026-09-10 — *"go ahead and approve this test plan"* — and run
+against it.
+
+### The automated tiers
+
+```
+API,    npm test         44 suites, 603 passed, 0 failed
+client, npm run test:unit           273 passed, 0 failed, 866 ms
+client, npm run test:e2e            272 passed, 4 skipped   (desktop and phone)
+```
+
+The 4 skips are the pre-existing viewport-conditional cases.
+
+### Manual step 1 — a selective commit, against the real database
+
+The claim #126 exists to test. A page holding observations 1–5, with **only 1 and 3 named** —
+1 accepted, 3 flagged with a reason — and 2, 4 and 5 left untouched:
+
+```
+POST /api/v2/mosaic/observations/review
+{"observations":[{"observation_id":1,...},{"observation_id":3,...}],
+ "marks":[{"observation_id":1,"kind":"accept"},
+          {"observation_id":3,"kind":"except","reason":"False detection"}]}
+
+{"reviewed":[{"observation_id":1,"outcome":"reviewed"}],
+ "flagged":[{"observation_id":3,"outcome":"flagged"}],
+ "reverted":[],"skipped":[],"conflicted":[]}
+```
+
+Read back from `observation_review_current`:
+
+```
+observation_id 1  decision reviewed  reason null              reviewer 1496
+observation_id 3  decision flagged   reason False detection   reviewer 1496
+```
+
+**Two rows, not five.** Observations 2, 4 and 5 carry no review record at all — they were on
+the page and were not touched, and the record says nothing about them. Both kinds landed
+correctly in one request. That is R3, and it is what the human asked for.
+
+### A failure that was the operator's, not the code's
+
+Recorded so nobody chases it. The first attempt returned **`flagged` for both**, which read as
+`kind: accept` being ignored on the server. It was not: the API on port 3000 had been running
+since **07:36 the previous day**, nineteen hours before any #126 commit, so the request was
+served by code that predates the feature. Checking the process start time rather than reading
+the repository is what caught it. The two rows it wrote were removed, a current server was
+started on its own port, and the result above is from that.
+
+A service token was also refused before this, with *"a review belongs to the person who made
+it, and a bearer principal is not a user"* — Phase 5's D4 working as designed. The check was
+re-run under a signed-in session.
+
+### Manual step 2 — the sweep
+
+Not re-run by hand. It is unchanged by construction — `commitOutcome` swapped `marks.has` for
+`isExcepted`, and before #126 every mark was an exception — and the existing sweep tests cover
+it at the contract and render tiers, all passing above.
+
+### Manual step 3 — a phone
+
+**Not done, and it is the one gap that matters.** The render tier exercises the double tap in
+an emulated touch context at phone width and it passes, but that is Chromium with `hasTouch`,
+not glass. Whether 320 ms is the right window, and whether the gesture feels right in the hand,
+is unverified and only the human can answer it.
+
+### Unchanged from the plan
+
+Every *Known gap* stands: touch is emulated, `DOUBLE_TAP_MS` carries its named cost,
+Ctrl+Enter still fires the sweep, `marksAfterCommit` still discards other pages' marks,
+`willAct` is still dead, and `npm run docs:build` still exits 1 on the pre-existing jsdoc
+errors in `model/schedule.js`.

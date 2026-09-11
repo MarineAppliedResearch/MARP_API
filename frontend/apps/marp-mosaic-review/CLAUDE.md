@@ -641,6 +641,20 @@ entirely unless something names it — a bare `playwright test` used to pull it 
 turned a ninety-second loop into four and a half minutes and recorded videos nobody had
 asked for.
 
+**And a walkthrough never belongs in a verification plan.** It is not a verification step,
+it does not appear in `.marp/verification.md`, and no plan proposes one — *"a walkthrough
+video is just supposed to be something I specifically ask for"* (2026-09-10). The user asks
+for one when he wants to watch something; that is the whole of when they happen.
+
+The confusion had a cause worth naming, because a sentence alone would not have fixed it:
+`.marp/verification.template.md` carried a `## Walkthrough videos` heading, so every plan
+written from the template was invited to promise a video nobody had requested. **The heading
+is gone from the template**, in this repository and in the umbrella, and a comment in its
+place says not to add it back. That is the check; this paragraph is the reason.
+
+None of that weakens the rule below — a scene still has to assert what it narrates. That is
+about not filming a broken app, not about a video being evidence that a phase is done.
+
 **A walkthrough must never be the only thing asserting a behaviour.** Its job is to show
 the user that a new feature works; every claim a scene makes has to already be proved by
 the unit, contract or render tier, which run constantly. When a walkthrough is the only
