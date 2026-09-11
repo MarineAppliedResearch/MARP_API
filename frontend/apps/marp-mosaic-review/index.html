@@ -91,7 +91,15 @@
     <!-- The one case where the number on the commit button is not the number of
          tiles on screen. Saying so is R5. -->
     <span class="skip-note" id="skipNote" hidden></span>
-    <button class="commit" id="commit">Mark Page Reviewed</button>
+    <!-- Two buttons, and which is which is the point (#126 R5). The main one commits
+         only what the reviewer marked, each tile by its own kind; the sweep beside it
+         is today's button, doing exactly what it has always done. Delete keeps one:
+         its existing button already acts only on the marked, so a second would be two
+         controls with one meaning. -->
+    <div class="commits">
+      <button class="commit" id="commitMarked">Commit Marked</button>
+      <button class="commit" id="commit">Mark Page Reviewed</button>
+    </div>
   </footer>
 </div>
 

@@ -16,6 +16,15 @@ export const MODES = {
     verb: 'Flag',
     /** What the page commit is called, and what it does to unmarked tiles. */
     commit: 'Mark Page Reviewed',
+    /**
+     * The same button's label once it is the **secondary** one (#126 R5).
+     *
+     * Shorter, because it sits beside the main button in a footer that is 412 pixels wide
+     * on a phone -- the full label pushed the pair past the edge, and `.app` clips rather
+     * than scrolls, so the button was cut off rather than reachable. It keeps the verb, so
+     * it still says what it records rather than only that it is the big one.
+     */
+    sweep: 'Review page',
     accepts: 'reviewed',
     /** What a marked tile becomes when the page is committed. */
     marks: 'flagged',
@@ -38,6 +47,7 @@ export const MODES = {
     mark: 'Excluded',
     verb: 'Exclude',
     commit: 'Promote Page',
+    sweep: 'Promote page',
     accepts: 'promoted',
     marks: 'excluded',
     note: 'Commit promotes unmarked tracks to training data — it does not change scientific status',
@@ -52,6 +62,8 @@ export const MODES = {
     mark: 'Delete',
     verb: 'Mark',
     commit: 'Delete Marked',
+    /* Delete keeps one button, so this label is never the secondary one (A2). */
+    sweep: null,
     /* The one mode where the commit acts on the marked tiles rather than the
        unmarked ones. Everything that reports a commit has to respect that. */
     accepts: null,
@@ -134,6 +146,119 @@ export const pendingException = (modeId) =>
   commitActsOnMarked(modeId) ? null : MODES[modeId].marks;
 
 /**
+ * The two kinds a mark can carry (#126).
+ *
+ * **A mark had no kind before this.** `state.marks` was a set of ids and the commit read
+ * it with a bare `marks.has(id)`, so every mark meant "this is the exception". The human
+ * reviewed 1,062 real observations and that model did not hold up: *"There are times when
+ * you just want to exclude things, or just approve certain items, without it affecting
+ * anything else."*
+ *
+ * So the kind is on the mark rather than in a second list (A5). One list keyed by
+ * `observation_id` is what `applyCommit` already folds by, and two lists reintroduce the
+ * question of what an id appearing in both means.
+ *
+ * `EXCEPT` is what a left click has always recorded, and is the default everywhere a kind
+ * is absent — a seeded mark, an older stored shape, a caller that has not been told.
+ */
+export const MARK_EXCEPT = 'except';
+export const MARK_ACCEPT = 'accept';
+
+/** The kind a mark carries, defaulting to the one a mark has always had. */
+export const markKind = (mark) => (mark && mark.kind === MARK_ACCEPT ? MARK_ACCEPT : MARK_EXCEPT);
+
+/** Is this id marked as the exception? The question every commit rule used to ask as `has`. */
+export const isExcepted = (marks, id) => marks.has(id) && markKind(marks.get(id)) === MARK_EXCEPT;
+
+/** Is this id marked as accepted? */
+export const isAccepted = (marks, id) => marks.has(id) && markKind(marks.get(id)) === MARK_ACCEPT;
+
+/**
+ * What an accept mark would record in this mode, or null where it can record nothing.
+ *
+ * Delete is the null (A2): `MODES.delete.accepts` is null because the opposite of deleting
+ * is leaving a row alone, which needs no record — so an accept mark has nothing to mean
+ * there and the gesture is inert.
+ */
+export const acceptedValue = (modeId) => (MODES[modeId] ? MODES[modeId].accepts : null);
+
+/**
+ * May this tile be marked accepted? (A4)
+ *
+ * **Accepting needs imagery; flagging does not.** That rule is older than this feature and
+ * is why an unmarked row without a picture is skipped rather than accepted. An *explicit*
+ * accept mark is the reviewer saying "I have judged this one", which they cannot have done
+ * without seeing it — so the mark is refused at click time, with the tile saying why,
+ * rather than taken and quietly not acted on. The skip count explains a **sweep**, where
+ * the reviewer never singled the tile out; it does not explain a deliberate click.
+ *
+ * @param {string} modeId - The active mode.
+ * @param {Object} row - The row the gesture landed on.
+ * @returns {{ok: boolean, reason: string|null}} Why not, in the reviewer's words.
+ */
+export function acceptRefusal(modeId, row) {
+  if (!acceptedValue(modeId)) {
+    return { ok: false, reason: null };           // inert, not refused: nothing to say
+  }
+  if (!row || row.thumbnail_status !== 'ready') {
+    return {
+      ok: false,
+      reason: `No picture, so it cannot be marked ${MODES[modeId].accepts}`
+    };
+  }
+  return { ok: true, reason: null };
+}
+
+/**
+ * The rows a **selective** commit will be sent for (#126 R3, A3).
+ *
+ * Only what the reviewer marked **by hand in this sitting**. `state.touched` is the whole
+ * of that second half, and it is not a nicety: a page still arrives with the record's
+ * existing exceptions already marked, because the human asked to see it that way — so
+ * without the `touched` filter, pressing this button on a freshly loaded page would
+ * re-commit flags nobody touched, under this reviewer's name and today's date.
+ * `observation_reviews` records a reviewer per row, so that is the scientific record
+ * asserting a decision that was never made.
+ *
+ * A take-back is not a mark, so it is not here: clicking a mark off leaves the tile
+ * untouched by this button (R7). The sweep still accepts it, which is R4.
+ *
+ * @param {Object} args
+ * @param {Array<Object>} args.rows - The page.
+ * @param {Map} args.marks - `state.marks`.
+ * @param {Set<number>} args.touched - `state.touched`.
+ * @returns {Array<Object>} The rows, in page order.
+ */
+export function selectedRows({ rows, marks, touched }) {
+  return rows.filter((r) => marks.has(r.observation_id) && touched.has(r.observation_id));
+}
+
+/**
+ * What the **main** button will do to this page, split by outcome (R6).
+ *
+ * The same shape `commitOutcome` answers in, so the chrome draws both buttons through one
+ * code path and they cannot disagree about what the five numbers mean.
+ *
+ * `skips` is zero by construction outside Delete: an accept mark on a tile with no picture
+ * is refused at click time (A4), and an exception mark never needed one.
+ */
+export function selectionOutcome({ mode, rows, marks, touched }) {
+  const picked = selectedRows({ rows, marks, touched });
+
+  if (commitActsOnMarked(mode)) {
+    /* Delete has one button, not two (A2) -- this exists so a caller asking anyway gets
+       the same answer the single button gives rather than a second opinion. */
+    return { acts: picked.length, accepts: 0, flags: 0, deletes: picked.length, skips: 0 };
+  }
+
+  const flags = picked.filter((r) => isExcepted(marks, r.observation_id)).length;
+  const ready = picked.filter((r) => isAccepted(marks, r.observation_id)
+    && r.thumbnail_status === 'ready').length;
+  const skips = picked.length - flags - ready;
+  return { acts: flags + ready, accepts: ready, flags, deletes: 0, skips };
+}
+
+/**
  * How many observations a commit will act on, given what is on the page and what
  * the reviewer marked. Only observations with imagery are eligible, per
  * "What counts as reviewed".
@@ -148,8 +273,11 @@ export const pendingException = (modeId) =>
  * Worst of the three was Delete Mode's note, which put a cross-page total in front of a
  * permanent deletion. Reported 2026-09-08.
  */
-export function markedOnPage({ rows, marks }) {
-  return rows.filter((r) => marks.has(r.observation_id)).length;
+export function markedOnPage({ rows, marks, kind = null }) {
+  return rows.filter((r) => marks.has(r.observation_id)
+    /* `kind` narrows it to one of #126's two. Absent, it counts both -- which is what
+       every caller meant while a mark could only be the exception. */
+    && (kind === null || markKind(marks.get(r.observation_id)) === kind)).length;
 }
 
 export function commitCount({ mode, rows, marks }) {
@@ -162,7 +290,10 @@ export function commitCount({ mode, rows, marks }) {
     return rows.filter((r) => marks.has(r.observation_id)).length;
   }
   const eligible = rows.filter((r) => r.thumbnail_status === 'ready');
-  return eligible.filter((r) => !marks.has(r.observation_id)).length;
+  /* **Excepted**, not merely marked (#126). An accept mark is not an exception, so the
+     sweep accepts it exactly as it accepts an untouched tile -- which is why the sweep's
+     behaviour is unchanged by this feature rather than quietly widened by it. */
+  return eligible.filter((r) => !isExcepted(marks, r.observation_id)).length;
 }
 
 /**
@@ -217,7 +348,10 @@ export function deleteImpact({ rows, marks }) {
  */
 export function commitOutcome({ mode, rows, marks }) {
   const ready = (r) => r.thumbnail_status === 'ready';
-  const marked = (r) => marks.has(r.observation_id);
+  /* The exception set, which is what a mark used to be by definition. An accept mark is
+     not an exception: under the sweep it is accepted, which is what an unmarked tile is
+     too, so the sweep does exactly what it did before #126 existed (R4). */
+  const marked = (r) => isExcepted(marks, r.observation_id);
 
   if (commitActsOnMarked(mode)) {
     /* Delete acts on what is marked. Destroying something nobody could see is a decision

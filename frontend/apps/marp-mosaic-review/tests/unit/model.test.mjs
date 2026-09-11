@@ -13,7 +13,9 @@ import { readFileSync } from 'node:fs';
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, reviewerIdFor,
   decidedByMe, pendingException, statusDimensions, commitIsDestructive, borrowedTags,
   deleteImpact, commitOutcome, pageState, markedOnPage,
-  retryablePage } from '../../src/model/modes.js';
+  retryablePage, markKind, isExcepted, isAccepted, acceptedValue, acceptRefusal,
+  selectedRows, selectionOutcome,
+  MARK_EXCEPT, MARK_ACCEPT } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
 import { resolveKey, hintFor, SHORTCUTS } from '../../src/model/keys.js';
@@ -210,7 +212,10 @@ test('"by you" needs both ids, and a missing identity is never a match (A13)', (
 test('a tap toggles a mark, and a mark starts without a reason', () => {
   let marks = new Map();
   marks = page.toggleMark(marks, 7);
-  assert.deepEqual(marks.get(7), { reason: null });
+  /* **`kind` moved into this assertion rather than the assertion being loosened** (#126
+     R9). A mark now carries which of the two things it means, and the default is the one
+     a mark has always had -- so a left click is still the exception. */
+  assert.deepEqual(marks.get(7), { kind: 'except', reason: null });
   marks = page.toggleMark(marks, 7);
   assert.equal(marks.has(7), false);
 });
@@ -1245,4 +1250,278 @@ test('D1: a session has one type, because sessions.type is one column on one row
   /* And why it matters: L2 says the type narrows which sessions are available, which is
      only true if the two are correlated at all. Rolled per observation, they were not. */
   assert.ok(new Set(types.values()).size > 1, 'more than one type across the sessions');
+});
+
+
+/* =========================================================== #126: two kinds of mark
+ *
+ * The rules behind "left click marks the exception, right click marks accepted, and the
+ * main button commits only what was marked". Every one of these is a rule in `model/`,
+ * which is the tier that can see meaning; what gets *drawn* is `render.spec.mjs` and what
+ * reaches the wire is `api-requests.test.mjs`.
+ */
+
+/** A mark of a given kind, written the way the store writes one. */
+const mark = (kind = MARK_EXCEPT, reason = null) => ({ kind, reason });
+
+test('R1: a left click marks the exception, which is what a mark has always meant', () => {
+  const marks = page.toggleMark(new Map(), 7);
+  assert.equal(markKind(marks.get(7)), MARK_EXCEPT);
+  assert.equal(isExcepted(marks, 7), true);
+  assert.equal(isAccepted(marks, 7), false);
+});
+
+test('R2: a right click marks accepted, in every mode that has an accepted value', () => {
+  const marks = page.toggleMark(new Map(), 7, MARK_ACCEPT);
+  assert.equal(markKind(marks.get(7)), MARK_ACCEPT);
+  assert.equal(isAccepted(marks, 7), true);
+  assert.equal(isExcepted(marks, 7), false);
+
+  assert.equal(acceptedValue('scientific'), 'reviewed');
+  assert.equal(acceptedValue('training'), 'promoted');
+});
+
+test('A2: delete has no accepted value, so an accept mark has nothing to mean there', () => {
+  assert.equal(acceptedValue('delete'), null);
+  /* Inert rather than refused: there is nothing to tell the reviewer, because nothing
+     about the gesture was wrong -- this mode simply records no acceptance. */
+  assert.deepEqual(acceptRefusal('delete', row(1)), { ok: false, reason: null });
+});
+
+test('R7: a tile marked one way and then the other ends with the later mark', () => {
+  let marks = page.toggleMark(new Map(), 7);                  // left: exception
+  marks = page.toggleMark(marks, 7, MARK_ACCEPT);             // right: accepted
+  assert.equal(markKind(marks.get(7)), MARK_ACCEPT, 'the later mark wins');
+
+  marks = page.toggleMark(marks, 7);                          // left again
+  assert.equal(markKind(marks.get(7)), MARK_EXCEPT, 'and wins the other way too');
+});
+
+test('R7: the same gesture twice takes the mark off, for both kinds', () => {
+  let marks = page.toggleMark(new Map(), 7, MARK_ACCEPT);
+  marks = page.toggleMark(marks, 7, MARK_ACCEPT);
+  assert.equal(marks.has(7), false);
+
+  marks = page.toggleMark(new Map(), 7);
+  marks = page.toggleMark(marks, 7);
+  assert.equal(marks.has(7), false);
+});
+
+test('R7: switching kind drops the reason, because a reason says what is wrong', () => {
+  let marks = page.toggleMark(new Map(), 7);
+  marks = page.setReason(marks, 7, 'Duplicate');
+  assert.equal(marks.get(7).reason, 'Duplicate');
+
+  marks = page.toggleMark(marks, 7, MARK_ACCEPT);
+  assert.equal(marks.get(7).reason, null,
+    'carrying it across would put "Duplicate" on a record saying the observation is right');
+});
+
+test('a reason cannot be set on an accept mark', () => {
+  const marks = page.setReason(new Map([[7, mark(MARK_ACCEPT)]]), 7, 'Duplicate');
+  assert.equal(marks.get(7).reason, null);
+  /* The endpoint refuses one too, so a client that could set it would build a 400. */
+});
+
+test('marking all on the page overwrites an accept mark, because it is the later gesture', () => {
+  const rows = [row(1), row(2)];
+  const marks = page.markAll(new Map([[1, mark(MARK_ACCEPT)]]), rows);
+  assert.equal(markKind(marks.get(1)), MARK_EXCEPT);
+  assert.equal(markKind(marks.get(2)), MARK_EXCEPT);
+});
+
+test('marking all leaves an exception mark alone, so its reason survives', () => {
+  const marks = page.markAll(new Map([[1, mark(MARK_EXCEPT, 'Duplicate')]]), [row(1)]);
+  assert.equal(marks.get(1).reason, 'Duplicate');
+});
+
+test('A3: a seeded mark is an exception, and nothing ever seeds an acceptance', () => {
+  const flagged = row(1, { review_decision: 'flagged', flag_reason: 'Duplicate' });
+  const marks = page.seedMarks(new Map(), new Set(), [flagged],
+    (r) => existingState('scientific', r) === 'flagged');
+  assert.equal(markKind(marks.get(1)), MARK_EXCEPT);
+  assert.equal(marks.get(1).reason, 'Duplicate');
+});
+
+/* --------------------------------------------------- A4: accepting needs imagery */
+
+test('A4: an accept mark is refused on a tile with no picture, and the tile says why', () => {
+  const blind = row(1, { thumbnail_status: 'failed' });
+  const refusal = acceptRefusal('scientific', blind);
+  assert.equal(refusal.ok, false);
+  assert.match(refusal.reason, /No picture/,
+    'a refusal with nothing to say would be a click that appeared to do nothing');
+  assert.match(refusal.reason, /reviewed/, 'and it names what it would have recorded');
+});
+
+test('A4: a queued thumbnail is not a picture either', () => {
+  assert.equal(acceptRefusal('training', row(1, { thumbnail_status: 'queued' })).ok, false);
+});
+
+test('A4: an exception mark needs no picture, which is the older rule and still holds', () => {
+  /* Flagging a tile nobody could see is exactly what "No imagery" is a flag reason for. */
+  const blind = row(1, { thumbnail_status: 'failed' });
+  const marks = page.toggleMark(new Map(), 1);
+  assert.equal(commitOutcome({ mode: 'scientific', rows: [blind], marks }).flags, 1);
+});
+
+test('A4: a tile with a picture may be accepted', () => {
+  assert.deepEqual(acceptRefusal('scientific', row(1)), { ok: true, reason: null });
+});
+
+/* ------------------------------------ R4: the sweep does exactly what it did before */
+
+test('R4: the sweep accepts an accept-marked tile, exactly as it accepts an untouched one', () => {
+  const rows = [row(1), row(2), row(3)];
+  const marks = new Map([[1, mark(MARK_ACCEPT)], [2, mark(MARK_EXCEPT)]]);
+
+  const outcome = commitOutcome({ mode: 'scientific', rows, marks });
+  assert.equal(outcome.flags, 1, 'only the exception is flagged');
+  assert.equal(outcome.accepts, 2, 'the accept mark and the untouched tile');
+  assert.equal(outcome.skips, 0);
+  assert.equal(commitCount({ mode: 'scientific', rows, marks }), 2);
+});
+
+test('R4: before #126 every mark was the exception, so a kindless mark still flags', () => {
+  /* The compatibility this rests on: `{ reason: null }` with no kind is what the client
+     wrote for months, and it has to keep meaning what it meant. */
+  const rows = [row(1), row(2)];
+  const marks = new Map([[1, { reason: null }]]);
+  assert.equal(commitOutcome({ mode: 'scientific', rows, marks }).flags, 1);
+});
+
+/* --------------------------------------------- R3: the main button, and only the marked */
+
+test('R3: the main button sends only what is marked', () => {
+  const rows = [row(1), row(2), row(3)];
+  const marks = new Map([[1, mark(MARK_EXCEPT)], [3, mark(MARK_ACCEPT)]]);
+  const touched = new Set([1, 3]);
+
+  assert.deepEqual(selectedRows({ rows, marks, touched }).map((r) => r.observation_id), [1, 3]);
+
+  const outcome = selectionOutcome({ mode: 'scientific', rows, marks, touched });
+  assert.equal(outcome.acts, 2);
+  assert.equal(outcome.flags, 1);
+  assert.equal(outcome.accepts, 1);
+  assert.equal(outcome.skips, 0);
+});
+
+test('R3: a tile nobody marked is not in the main button count, whatever the record says', () => {
+  const rows = [row(1), row(2, { review_decision: 'reviewed' })];
+  const outcome = selectionOutcome({
+    mode: 'scientific', rows, marks: new Map(), touched: new Set()
+  });
+  assert.equal(outcome.acts, 0, 'and the button is therefore disabled');
+});
+
+test('A3: the main button ignores a seeded mark the reviewer never touched', () => {
+  /**
+   * The rule the whole assumption turns on. A page arrives with the record's flags already
+   * marked, because the human asked to see it that way -- so without the `touched` filter,
+   * pressing this button on a freshly loaded page re-commits flags nobody touched, under
+   * this reviewer's name and today's date. `observation_reviews` carries a reviewer per
+   * row, so that is the record asserting a decision that was never made.
+   */
+  const flagged = row(1, { review_decision: 'flagged', flag_reason: 'Duplicate' });
+  const rows = [flagged, row(2)];
+  const marks = page.seedMarks(new Map(), new Set(), rows,
+    (r) => existingState('scientific', r) === 'flagged');
+
+  assert.equal(marks.size, 1, 'the page does arrive looking pre-marked');
+  assert.equal(selectedRows({ rows, marks, touched: new Set() }).length, 0,
+    'and the main button still has nothing to do');
+
+  /* Touch it -- take the flag off and put it back, say -- and it is the reviewer's. */
+  const touched = new Set([1]);
+  assert.deepEqual(
+    selectedRows({ rows, marks, touched }).map((r) => r.observation_id), [1]);
+});
+
+test('R7: clicking a mark off leaves the tile untouched by the main button', () => {
+  const flagged = row(1, { review_decision: 'flagged' });
+  const rows = [flagged];
+  /* Taking a mark back leaves `touched` set and `marks` empty -- which is a take-back,
+     not a mark, so this button says nothing about it at all. The sweep still accepts it,
+     which is R4 and is today's behaviour unchanged. */
+  const outcome = selectionOutcome({
+    mode: 'scientific', rows, marks: new Map(), touched: new Set([1])
+  });
+  assert.equal(outcome.acts, 0);
+  assert.equal(commitOutcome({ mode: 'scientific', rows, marks: new Map() }).accepts, 1);
+});
+
+test('A4: the main button cannot be asked to accept a tile with no picture', () => {
+  /* Refused at click time, so this can only be reached by building the state by hand --
+     which is worth doing, because it is the rule the endpoint enforces at the other end. */
+  const blind = row(1, { thumbnail_status: 'failed' });
+  const outcome = selectionOutcome({
+    mode: 'scientific',
+    rows: [blind],
+    marks: new Map([[1, mark(MARK_ACCEPT)]]),
+    touched: new Set([1])
+  });
+  assert.equal(outcome.acts, 0, 'nothing to do');
+  assert.equal(outcome.skips, 1, 'and it is counted as the skip it would be');
+});
+
+/* --------------------------------------------------- what stays marked afterwards */
+
+test('an accept mark survives the commit that honoured it, so the gesture keeps its meaning', () => {
+  const outcomes = new Map([[1, 'reviewed'], [2, 'flagged']]);
+  const marks = page.marksAfterCommit(
+    new Map([[1, mark(MARK_ACCEPT)], [2, mark(MARK_EXCEPT, 'Duplicate')]]),
+    outcomes, [1, 2], 'flagged', 'reviewed');
+
+  assert.equal(markKind(marks.get(1)), MARK_ACCEPT);
+  assert.equal(markKind(marks.get(2)), MARK_EXCEPT);
+  assert.equal(marks.get(2).reason, 'Duplicate');
+});
+
+test('a selective commit leaves every mark it did not send exactly where it was', () => {
+  /**
+   * The difference between the two, and the reason there are two. A page arrives
+   * pre-marked; the reviewer marks one more tile and commits only that. Rebuilding the
+   * page's marks from the sent ids -- which is what the sweep does, correctly -- would
+   * drop every seeded mark on the page, and the record's flags would vanish off the
+   * screen without anything being written.
+   */
+  const marks = new Map([
+    [1, mark(MARK_EXCEPT, 'Duplicate')],           // seeded, not sent
+    [2, mark(MARK_ACCEPT)]                         // marked by hand, sent
+  ]);
+  const outcomes = new Map([[2, 'reviewed']]);
+
+  const after = page.marksAfterSelection(marks, outcomes, [2], 'flagged', 'reviewed');
+  assert.equal(after.has(1), true, 'the seeded mark is still there');
+  assert.equal(after.get(1).reason, 'Duplicate');
+  assert.equal(markKind(after.get(2)), MARK_ACCEPT);
+});
+
+test('a selective commit drops a mark the record refused to take', () => {
+  /* Skipped for no imagery: nothing was written, and nothing on the page should go on
+     claiming it was. A conflicted one is the opposite case and keeps its mark. */
+  const marks = new Map([[1, mark(MARK_ACCEPT)], [2, mark(MARK_EXCEPT)]]);
+  const outcomes = new Map([[2, 'conflicted']]);
+
+  const after = page.marksAfterSelection(marks, outcomes, [1, 2], 'flagged', 'reviewed');
+  assert.equal(after.has(1), false, 'skipped, so the mark goes');
+  assert.equal(after.has(2), true, 'conflicted, so nothing was written and it stays');
+});
+
+test('delete keeps nothing marked, selective or not', () => {
+  const outcomes = new Map([[1, 'deleted']]);
+  assert.equal(
+    page.marksAfterCommit(new Map([[1, mark()]]), outcomes, [1], pendingException('delete')).size,
+    0);
+});
+
+/* ------------------------------------------------------------- the two counts */
+
+test('the two kinds are counted separately, so neither number is a lie', () => {
+  const rows = [row(1), row(2), row(3)];
+  const marks = new Map([[1, mark(MARK_EXCEPT)], [2, mark(MARK_ACCEPT)]]);
+
+  assert.equal(markedOnPage({ rows, marks }), 2, 'both, as every caller meant before');
+  assert.equal(markedOnPage({ rows, marks, kind: MARK_EXCEPT }), 1);
+  assert.equal(markedOnPage({ rows, marks, kind: MARK_ACCEPT }), 1);
 });

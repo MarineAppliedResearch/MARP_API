@@ -6,7 +6,10 @@
  * what the last commit did. Everything here is derived; nothing is stored.
  */
 import { state, MODES } from '../store.js';
-import { existingState, decidedByMe, pendingException, borrowedTags } from '../model/modes.js';
+import {
+  existingState, decidedByMe, pendingException, borrowedTags,
+  acceptedValue, markKind, MARK_ACCEPT
+} from '../model/modes.js';
 import { currentSpeciesName } from '../model/row.js';
 import { MarpBackend } from '../backend.js';
 import { ICON } from './dom.js';
@@ -16,6 +19,20 @@ export const markIcon = (mode = state.mode) =>
 
 export const markClass = (mode = state.mode) =>
   ({ scientific: 'b-flag', training: 'b-exc', delete: 'b-del' }[mode]);
+
+/**
+ * The other half of the pair, for an **accept** mark (#126 A6).
+ *
+ * The same class and icon the mode's accepted value already wears wherever it appears --
+ * green REVIEWED for scientific, violet PROMOTED for training -- so a pending acceptance
+ * and a recorded one are the same colour, and what separates them is the mark's outline
+ * and the tile not stepping back. Delete has no accepted value and never reaches here.
+ */
+export const acceptClass = (mode = state.mode) =>
+  ({ reviewed: 'b-out', promoted: 'b-pro' }[acceptedValue(mode)] || 'b-out');
+
+export const acceptIcon = (mode = state.mode) =>
+  ({ reviewed: ICON.tick, promoted: ICON.pro }[acceptedValue(mode)] || ICON.tick);
 
 /** What the last commit did to this observation. */
 function outcomeBadge(outcome, row, id) {
@@ -190,11 +207,20 @@ export function tile(row) {
   const byMe = decidedByMe(state.mode, row, state.me);
   const noImage = row.thumbnail_status !== 'ready';
 
+  /* Which of the two things this mark says (#126). It fits **inside** the existing
+     precedence rather than beside it: a mark still outranks an outcome, which still
+     outranks the record, and the kind only decides what the mark itself looks like. */
+  const accepted = Boolean(marked) && markKind(marked) === MARK_ACCEPT;
+  /* The one accept mark the reviewer just tried to make and could not (A4). */
+  const refused = state.refused && state.refused.id === id ? state.refused : null;
+
   const cls = ['tile'];
   if (row.thumbnail_status === 'queued') cls.push('queued');
   if (row.thumbnail_status === 'failed') cls.push('failed');
   if (row.thumbnail_permanent) cls.push('permanent');
   if (marked) cls.push('marked');
+  if (accepted) cls.push('accept');
+  if (refused) cls.push('refused');
   if (state.picker && state.picker.id === id) cls.push('active');
   if (changed) cls.push('changed');
   /* A mark outranks the last commit. Once the reviewer touches a committed tile
@@ -208,6 +234,12 @@ export function tile(row) {
      the panel. That keeps marking a single uninterrupted gesture. */
   const badge = takingBack
       ? `<span class="badge b-rev" title="Not committed yet — the next commit accepts it">${markIcon()}TAKING BACK</span>`
+    /* An accept mark, and **still exactly one `.badge`** (A6). It carries no `data-badge`:
+       the panel chooses a flag or exclusion reason, and an acceptance has nothing in that
+       vocabulary to say, so its badge is not a target rather than opening a panel that
+       cannot describe it. */
+    : accepted ? `<span class="badge ${acceptClass()}"
+        title="Not committed yet — the next commit records this one as ${acceptedValue(state.mode)}">${acceptIcon()}${String(acceptedValue(state.mode)).toUpperCase()}</span>`
     : marked ? `<span class="badge ${markClass()}" data-badge="${id}"
         title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`
     /* A refused commit is its own state: the annotation moved underneath the page and
@@ -232,7 +264,14 @@ export function tile(row) {
       ? `${name} · no image — markable, but excluded from the page commit`
       : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
 
+  /* Its own slot, never the badge's (A4, A6). A refusal is an acknowledgement that a
+     gesture did not take, not a state the tile is in, and letting it reach `.badge` is
+     how a record tag comes to outrank a mark. It fades on its own. */
+  const refusal = refused
+    ? `<span class="refusal" data-refused="${id}">${ICON.cross}${refused.reason}</span>`
+    : '';
+
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}">
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      ${borrowed(row)}<span class="cap">${name}</span></button>`;
+      ${refusal}${borrowed(row)}<span class="cap">${name}</span></button>`;
 }

@@ -131,6 +131,17 @@ const MODES = {
     },
 };
 
+/**
+ * The two kinds a mark can carry (#126 A5).
+ *
+ * `except` is what a mark has always meant -- flag it, exclude it, destroy it.
+ * `accept` is the new one, and it is what makes "approve just these, and say
+ * nothing about the rest of the page" expressible: the client sends only the
+ * marked observations as the page, and each mark says what it becomes.
+ */
+const MARK_EXCEPT = 'except';
+const MARK_ACCEPT = 'accept';
+
 /** What the response says about itself (R6). A value, not a boolean, so a later
  * change is expressible without a rename. */
 const ATOMICITY = 'per-observation';
@@ -228,17 +239,28 @@ function readPage(observations) {
 }
 
 /**
- * The exception set: what the reviewer flagged, excluded or marked for deletion.
+ * What the reviewer marked, and which of the two things each mark means.
  *
  * A mark must name an observation on the page, because the page is what the
  * commit is about and a mark outside it is a client bug rather than a request to
  * reach further.
  *
+ * **A mark carries a kind** (#126 A5). It used to be the exception set and
+ * nothing else: marked meant flag it, exclude it or destroy it, and unmarked
+ * meant accept it. The reviewer needs to be able to accept one tile without that
+ * saying anything about the rest of the page, so `accept` joins `except` -- **in
+ * this list, keyed by `observation_id`, rather than as a second list**, because
+ * one list is what the client's own `applyCommit` folds by and two reintroduce
+ * the question of what an id appearing in both means.
+ *
+ * An absent kind is `except`, which is what every mark meant before the field
+ * existed, so an older client is read exactly as it always was.
+ *
  * @param {*} marks - The request's `marks`.
  * @param {Map<number, number>} page - The page, from {@link readPage}.
  * @param {Object} mode - The entry from {@link MODES}.
- * @returns {Map<number, string|null>} observation_id to its reason, or null.
- * @throws {MosaicRequestError} If a mark is malformed, off the page, repeated, or carries an unknown reason.
+ * @returns {Map<number, {kind: string, reason: string|null}>} observation_id to its mark.
+ * @throws {MosaicRequestError} If a mark is malformed, off the page, repeated, or carries an unknown kind or reason.
  */
 function readMarks(marks, page, mode) {
     if (marks == null) {
@@ -267,6 +289,34 @@ function readMarks(marks, page, mode) {
         }
 
         const reason = entry.reason == null || entry.reason === '' ? null : entry.reason;
+        const kind = entry.kind == null ? MARK_EXCEPT : entry.kind;
+
+        if (kind !== MARK_EXCEPT && kind !== MARK_ACCEPT) {
+            throw new MosaicRequestError(
+                `${JSON.stringify(kind)} is not a kind of mark. Expected ${MARK_EXCEPT} or ${MARK_ACCEPT}.`
+            );
+        }
+
+        // Delete has no accepted state: the opposite of destroying an
+        // observation is leaving it alone, which needs no record (#126 A2). So
+        // an accept mark here has nothing to mean, and a request carrying one
+        // has misunderstood the route rather than asked for something subtle.
+        if (kind === MARK_ACCEPT && !mode.accepts) {
+            throw new MosaicRequestError(
+                `observation ${id} is marked ${MARK_ACCEPT}, and this route records no acceptance.`
+            );
+        }
+
+        // The reason vocabularies are the flag and exclusion lists: they say
+        // what is wrong with an observation. An acceptance has nothing to
+        // explain, and storing one against `reviewed` would put "Wrong species"
+        // on a record that says the species was right.
+        if (kind === MARK_ACCEPT && reason !== null) {
+            throw new MosaicRequestError(
+                `observation ${id} is marked ${MARK_ACCEPT} and carries a reason. `
+                + 'A reason says what is wrong with an observation, so only an exception takes one.'
+            );
+        }
 
         if (reason !== null && !mode.reasons.includes(reason)) {
             throw new MosaicRequestError(
@@ -277,10 +327,26 @@ function readMarks(marks, page, mode) {
             );
         }
 
-        out.set(id, reason);
+        out.set(id, { kind, reason });
     }
 
     return out;
+}
+
+/**
+ * Is this observation marked as the **exception**?
+ *
+ * The question every rule below used to ask as a bare `marks.has(id)`, and the
+ * one line where #126 changes what a commit does: an accept mark is not an
+ * exception, so it is accepted exactly as an unmarked row is. That is what keeps
+ * the page sweep doing precisely what it did before any of this existed.
+ *
+ * @param {Map<number, Object>} marks - From {@link readMarks}.
+ * @param {number} id - The observation.
+ * @returns {boolean} True only for an exception mark.
+ */
+function excepted(marks, id) {
+    return marks.has(id) && marks.get(id).kind === MARK_EXCEPT;
 }
 
 /**
@@ -726,11 +792,16 @@ async function commitReview(mode, request, principal, reviewerId) {
                 continue;
             }
 
-            // R12. An unmarked row is an acceptance, and accepting a tile with
-            // no picture is a reviewer saying "this is right" about something
-            // they were never shown. A marked row goes through: flagging needs
-            // no imagery.
-            if (!marks.has(id) && !withImagery.has(id)) {
+            // R12. A row that is not the exception is an acceptance, and
+            // accepting a tile with no picture is a reviewer saying "this is
+            // right" about something they were never shown. An excepted row goes
+            // through: flagging needs no imagery.
+            //
+            // #126 widens this by one word rather than changing it. An *accept*
+            // mark is an acceptance too, so it is skipped here for the same
+            // reason an untouched tile is. The client refuses that mark at click
+            // time (A4); this is the same rule at the end that has to hold.
+            if (!excepted(marks, id) && !withImagery.has(id)) {
                 out.skip(id, SKIP_NO_IMAGERY);
 
                 continue;
@@ -739,8 +810,8 @@ async function commitReview(mode, request, principal, reviewerId) {
             attempt.push({
                 observation_id: id,
                 version,
-                decision: marks.has(id) ? mode.marks : mode.accepts,
-                reason: marks.has(id) ? marks.get(id) : null,
+                decision: excepted(marks, id) ? mode.marks : mode.accepts,
+                reason: excepted(marks, id) ? marks.get(id).reason : null,
             });
         }
 

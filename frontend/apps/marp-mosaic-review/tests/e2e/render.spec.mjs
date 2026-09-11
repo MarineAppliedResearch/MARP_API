@@ -754,25 +754,43 @@ test.describe('the two workflows do not wear the same colour', () => {
   test('the commit button follows the mode that owns the decision', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const read = () => page.locator('#commit')
+    /**
+     * **The filled button, which since #126 is the main one.**
+     *
+     * This read `#commit`, and that button is now the *secondary* of a pair: it wears the
+     * same mode hue as an outline rather than a fill, so its background is transparent and
+     * reading it returned `rgba(0,0,0,0)` in every mode. The rule being asserted has not
+     * changed -- what a commit does is coloured by the mode that owns the decision -- so
+     * the assertion follows the button that carries the fill rather than being loosened to
+     * accept a transparent one. Delete has one button and it is `#commit`.
+     */
+    const read = (id) => page.locator(id)
       .evaluate((el) => getComputedStyle(el).backgroundColor);
 
-    const sci = (await read()).match(/\d+/g).map(Number);
+    const sci = (await read('#commitMarked')).match(/\d+/g).map(Number);
     await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
     await ready(page);
-    const tra = (await read()).match(/\d+/g).map(Number);
+    const tra = (await read('#commitMarked')).match(/\d+/g).map(Number);
 
-    expect(sci[1], 'Mark Page Reviewed is green').toBeGreaterThan(sci[2]);
-    expect(tra[2], 'Promote Page is violet').toBeGreaterThan(tra[1]);
+    expect(sci[1], 'the scientific commit is green').toBeGreaterThan(sci[2]);
+    expect(tra[2], 'the training commit is violet').toBeGreaterThan(tra[1]);
 
     /* #93: Delete Marked is red. It always was — `body[data-mode="delete"] .commit`
        outranked the accept family — but nothing asserted it, so the family could be
        renamed out from under it without a test noticing. */
     await page.locator('.seg button', { hasText: 'Delete' }).click();
     await ready(page);
-    const del = (await read()).match(/\d+/g).map(Number);
+    const del = (await read('#commit')).match(/\d+/g).map(Number);
     expect(del[0], `Delete Marked is red, got rgb(${del.join(',')})`).toBeGreaterThan(del[1] + 40);
     expect(del[0], 'and not violet').toBeGreaterThan(del[2]);
+
+    /* And the secondary wears the same hue as an outline, so the pair reads as one
+       mode's commit rather than as two unrelated controls. */
+    await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+    await ready(page);
+    const edge = (await page.locator('#commit')
+      .evaluate((el) => getComputedStyle(el).borderTopColor)).match(/\d+/g).map(Number);
+    expect(edge[1], 'the sweep is outlined in the same green').toBeGreaterThan(edge[2]);
   });
 });
 
@@ -1662,6 +1680,24 @@ test.describe('how many pages are done', () => {
     /* The footer must still not wrap, which is what hid the legend in the first place. */
     const bar = await page.locator('.foot').boundingBox();
     expect(bar.height).toBeLessThan(80);
+
+    /* And it must fit across, which nothing asserted until #126.
+       `.app` clips rather than scrolls, so a footer wider than the viewport is not a
+       scrollbar -- it is a control silently cut off the right-hand edge, and the commit
+       button is the rightmost thing there. It was **already overflowing before #126**, at
+       524px of content in a 412px viewport with only one button; two buttons made it
+       obvious rather than causing it. Measured on the row that holds them, because `.foot`
+       itself is the clipping box and cannot report its own overflow. */
+    const fits = await page.evaluate(() => {
+      const foot = document.querySelector('.foot');
+      const kids = [...foot.children];
+      const right = Math.max(...kids.map((k) => k.getBoundingClientRect().right));
+      const left = Math.min(...kids.map((k) => k.getBoundingClientRect().left));
+      return { content: Math.ceil(right - left), available: foot.clientWidth };
+    });
+    expect(fits.content,
+      `the footer needs ${fits.content}px in ${fits.available}px; the commit button is what gets cut`)
+      .toBeLessThanOrEqual(fits.available);
   });
 });
 
@@ -3267,4 +3303,345 @@ test.describe('the summary says where you are', () => {
     expect(Number(at.shown)).toBe(at.tiles);
     expect(errors).toEqual([]);
   });
+});
+
+
+/* ================================================= #126: two kinds of mark, two buttons
+ *
+ * R8 asks for the gestures and both buttons at **both** viewports, and this file is run at
+ * both -- the accept gesture is the one the human said they will use most, and there is no
+ * right click on a phone.
+ */
+test.describe('two kinds of mark, and two commit buttons', () => {
+
+  /** The first tile with a picture, pinned by id so a state change cannot slide it. */
+  async function firstReady(page) {
+    const id = await page.locator('.tile:not(.failed):not(.queued)').first()
+      .getAttribute('data-id');
+    return { id, tile: page.locator(`.tile[data-id="${id}"]`) };
+  }
+
+  test('R2: a right click marks the tile accepted, and says so', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click({ button: 'right' });
+
+    await expect(tile).toHaveClass(/marked/);
+    await expect(tile).toHaveClass(/accept/);
+    await expect(tile.locator('.badge')).toContainText('REVIEWED');
+    /* Still exactly one badge per tile (A6). A second element able to reach that slot is
+       how a click on a committed tile comes to look like it did nothing. */
+    await expect(tile.locator('.badge')).toHaveCount(1);
+    /* And it is not the panel's target: an acceptance has nothing in the reason
+       vocabulary to say. */
+    await expect(tile.locator('[data-badge]')).toHaveCount(0);
+  });
+
+  test('R2: in training the accept mark is PROMOTED, in training’s own colour',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      const { tile } = await firstReady(page);
+
+      await tile.click({ button: 'right' });
+
+      await expect(tile.locator('.badge')).toContainText('PROMOTED');
+      await expect(tile.locator('.badge')).toHaveClass(/b-pro/);
+      await expect(tile.locator('.badge')).toHaveCount(1);
+    });
+
+  test('R7: the later mark wins, whichever way round', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click();
+    await expect(tile.locator('.badge')).toContainText('FLAGGED');
+
+    await tile.click({ button: 'right' });
+    await expect(tile.locator('.badge')).toContainText('REVIEWED');
+    await expect(tile).toHaveClass(/accept/);
+
+    await tile.click();
+    await expect(tile.locator('.badge')).toContainText('FLAGGED');
+    await expect(tile).not.toHaveClass(/accept/);
+
+    /* The same gesture twice takes the mark off. */
+    await tile.click();
+    await expect(tile).not.toHaveClass(/marked/);
+  });
+
+  test('R7: a second right click takes the acceptance off', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click({ button: 'right' });
+    await expect(tile).toHaveClass(/accept/);
+    await tile.click({ button: 'right' });
+    await expect(tile).not.toHaveClass(/marked/);
+  });
+
+  test('A4: an accept mark on a tile with no picture is refused, and the tile says why',
+    async ({ page }) => {
+      /* Broken deliberately rather than hoped for: a check that returns early when it
+         cannot find a broken tile reports green while proving nothing. */
+      const id = await page.goto('./').then(() => ready(page)).then(() => page.evaluate(async () => {
+        const { state, actions } = await import('./src/store.js');
+        const { MarpData } = await import('./src/data.js');
+        const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+        MarpData.breakThumbnails([target.observation_id]);
+        await actions.refresh();
+        return target.observation_id;
+      }));
+      await ready(page);
+
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+      await expect(tile).toHaveClass(/failed/);
+
+      await tile.click({ button: 'right' });
+
+      await expect(tile.locator('.refusal')).toBeVisible();
+      await expect(tile.locator('.refusal')).toContainText('No picture');
+      await expect(tile).not.toHaveClass(/marked/);
+      /* Never the badge slot, which stays one element and belongs to the mark. */
+      await expect(tile.locator('.badge')).toHaveCount(0);
+
+      /* Flagging the same tile is still allowed: a picture that never arrived is itself
+         worth flagging, and that rule is older than this one. */
+      await tile.click();
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+    });
+
+  test('A2: a right click does nothing in Delete Mode, which keeps one button',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Delete' }).click();
+      await ready(page);
+      const { tile } = await firstReady(page);
+
+      await tile.click({ button: 'right' });
+
+      await expect(tile).not.toHaveClass(/marked/);
+      await expect(tile.locator('.refusal')).toHaveCount(0);
+      /* One control, because the main button and today's Delete button would do the
+         identical thing and two controls with one meaning is worse than one. */
+      await expect(page.locator('#commitMarked')).toBeHidden();
+      await expect(page.locator('#commit')).toBeVisible();
+      await expect(page.locator('#commit')).not.toHaveClass(/sweep/);
+    });
+
+  test('R5: the main button is primary and the sweep is smaller, to its right',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const main = page.locator('#commitMarked');
+      const sweep = page.locator('#commit');
+      await expect(main).toBeVisible();
+      await expect(sweep).toBeVisible();
+      await expect(sweep).toHaveClass(/sweep/);
+
+      const a = await main.boundingBox();
+      const b = await sweep.boundingBox();
+      expect(b.x, 'the sweep sits to the right of the main button').toBeGreaterThan(a.x);
+
+      /* Type size and fill rather than height. Height is not the measure here: the sweep
+         carries the Ctrl+Enter hint badge, which makes it the taller of the two while
+         being plainly the lesser one. What makes the main button primary is that it is
+         filled and set larger, and that is what this measures. */
+      const size = (el) => el.evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
+      expect(await size(main), 'the main button is set larger')
+        .toBeGreaterThan(await size(sweep));
+      const fill = await sweep.evaluate((n) => getComputedStyle(n).backgroundColor);
+      expect(fill, 'and the sweep is outlined rather than filled')
+        .toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+
+      /* And the pair fits: `.app` clips rather than scrolls, so a footer wider than the
+         viewport does not scroll to reveal the button, it cuts it off. */
+      const foot = await page.locator('.foot').boundingBox();
+      expect(b.x + b.width, 'both buttons are inside the footer')
+        .toBeLessThanOrEqual(foot.x + foot.width + 1);
+    });
+
+  test('R6: both buttons say what they will do, and disable when they would do nothing',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const main = page.locator('#commitMarked');
+      /* Nothing marked by hand yet, whatever the record put on screen (A3). */
+      await expect(main).toBeDisabled();
+      await expect(main).toContainText('nothing to do');
+      /* The sweep has a whole page to act on, so it is live. */
+      await expect(page.locator('#commit')).toBeEnabled();
+
+      const { tile } = await firstReady(page);
+      await tile.click({ button: 'right' });
+      await expect(main).toBeEnabled();
+      await expect(main).toContainText('1 tiles');
+    });
+
+  test('R3: the main button writes only what was marked', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('./');
+    await ready(page);
+
+    const { id, tile } = await firstReady(page);
+    const before = await page.locator('.tile .badge').count();
+
+    await tile.click({ button: 'right' });
+    await page.locator('#commitMarked').click();
+
+    /* The committed tile carries its outcome... */
+    await expect(page.locator(`.tile[data-id="${id}"] .badge`)).toContainText('REVIEWED');
+    /* ...and nothing else on the page gained one. A sweep would have painted the lot. */
+    await expect(page.locator('.tile .badge')).toHaveCount(before + 1);
+    /* The page is not finished, so the pager does not claim it is. */
+    await expect(page.locator('#pagesDone')).toContainText('0');
+    expect(errors).toEqual([]);
+  });
+
+  test('R4: the sweep still paints the whole page', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click();
+    await page.locator('#commit').click();
+
+    await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+    const reviewed = page.locator('.tile .badge', { hasText: 'REVIEWED' });
+    await expect(reviewed.first()).toBeVisible();
+    expect(await reviewed.count(), 'the sweep accepts everything unflagged')
+      .toBeGreaterThan(1);
+  });
+
+  test('A1: a double tap on a touch screen marks the tile accepted', async ({ browser, page }) => {
+    /**
+     * A real touchscreen, in **both** projects.
+     *
+     * The desktop project has no touch, so the obvious shape of this test is a skip there
+     * -- and a skipped check looks green. A context of its own with `hasTouch` on gives
+     * the same gesture at both viewports instead, which is what R8 asks for.
+     *
+     * Low-level `touchscreen.tap` rather than two `locator.tap()` calls: a locator re-runs
+     * its actionability checks each time, and the two taps have to land inside the
+     * gesture's window to be one double tap.
+     */
+    await page.goto('./');
+    await ready(page);
+    const url = page.url();
+
+    const context = await browser.newContext({ viewport: page.viewportSize(), hasTouch: true });
+    try {
+      const touch = await context.newPage();
+      await touch.goto(url);
+      await ready(touch);
+
+      const id = await touch.locator('.tile:not(.failed):not(.queued)').first()
+        .getAttribute('data-id');
+      const tile = touch.locator(`.tile[data-id="${id}"]`);
+      const box = await tile.boundingBox();
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+
+      /* One tap marks the exception at once -- the first tap is deliberately not
+         deferred, because a third of a second of lag on the most repeated gesture in the
+         tool is the badly tuned window A1 warned about. */
+      await touch.touchscreen.tap(x, y);
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+
+      /* A second tap inside the window turns it into an acceptance. */
+      await touch.touchscreen.tap(x, y);
+      await expect(tile.locator('.badge')).toContainText('REVIEWED');
+      await expect(tile).toHaveClass(/accept/);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('A1: two taps far enough apart are two separate marks, not a double tap',
+    async ({ browser, page }) => {
+      await page.goto('./');
+      await ready(page);
+      const url = page.url();
+
+      const context = await browser.newContext({ viewport: page.viewportSize(), hasTouch: true });
+      try {
+        const touch = await context.newPage();
+        await touch.goto(url);
+        await ready(touch);
+
+        const id = await touch.locator('.tile:not(.failed):not(.queued)').first()
+          .getAttribute('data-id');
+        const tile = touch.locator(`.tile[data-id="${id}"]`);
+        const box = await tile.boundingBox();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+
+        await touch.touchscreen.tap(x, y);
+        await expect(tile).toHaveClass(/marked/);
+        await touch.waitForTimeout(600);           // past the window
+        await touch.touchscreen.tap(x, y);
+        await expect(tile).not.toHaveClass(/marked/);
+      } finally {
+        await context.close();
+      }
+    });
+
+  test('A1: the main button works from a touch screen too', async ({ browser, page }) => {
+    /* There is no right click on a phone, so this is the path the human will actually
+       use: double tap to accept, then the main button. */
+    await page.goto('./');
+    await ready(page);
+    const url = page.url();
+
+    const context = await browser.newContext({ viewport: page.viewportSize(), hasTouch: true });
+    try {
+      const touch = await context.newPage();
+      await touch.goto(url);
+      await ready(touch);
+
+      const id = await touch.locator('.tile:not(.failed):not(.queued)').first()
+        .getAttribute('data-id');
+      const tile = touch.locator(`.tile[data-id="${id}"]`);
+      const box = await tile.boundingBox();
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+
+      await touch.touchscreen.tap(x, y);
+      await touch.touchscreen.tap(x, y);
+      await expect(tile).toHaveClass(/accept/);
+
+      await touch.locator('#commitMarked').tap();
+      await expect(touch.locator(`.tile[data-id="${id}"] .badge`)).toContainText('REVIEWED');
+      await expect(touch.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('A6: an accept mark does not dim the picture the way an exception does',
+    async ({ page }) => {
+      /* Colour is not carrying the distinction on its own: a judgement against a tile
+         makes it step back, and an acceptance is the opposite of that. */
+      await page.goto('./');
+      await ready(page);
+      const { id, tile } = await firstReady(page);
+      const img = page.locator(`.tile[data-id="${id}"] img`);
+
+      await tile.click();
+      const dimmed = await img.evaluate((el) => getComputedStyle(el).filter);
+      expect(dimmed).not.toBe('none');
+
+      await tile.click({ button: 'right' });
+      const bright = await img.evaluate((el) => getComputedStyle(el).filter);
+      expect(bright).toBe('none');
+    });
 });

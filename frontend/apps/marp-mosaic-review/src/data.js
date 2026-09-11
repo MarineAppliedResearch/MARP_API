@@ -1103,20 +1103,35 @@ export const MarpData = {
         continue;
       }
 
-      const isMarked = marked.has(id);
+      /**
+       * **A mark carries a kind** (#126 A5). `except` is what a mark has always meant --
+       * flag it, exclude it, destroy it -- and `accept` is the new one: this particular
+       * tile is right, said about this tile and about nothing else on the page. An absent
+       * kind is `except`, because that is what every mark was before the field existed.
+       */
+      const mark = marked.get(id);
+      const kind = !mark ? null : (mark.kind === 'accept' ? 'accept' : 'except');
+      const isExcepted = kind === 'except';
 
       /* Accepting means somebody looked at it, so it needs a picture. Flagging means
          somebody is saying something is wrong, and a thumbnail that never arrived is
-         itself worth flagging -- so a marked row is written whether or not it has
+         itself worth flagging -- so an **excepted** row is written whether or not it has
          imagery. This check used to come first and dropped the row before it ever saw
-         the mark, which silently threw away flags. */
-      if (!isMarked && !withdrawn.has(id) && row.thumbnail_status !== 'ready') {
+         the mark, which silently threw away flags. An accept mark is refused at click
+         time on a tile with no picture (#126 A4); this is the same rule at the other end,
+         where a request that got past that is skipped rather than believed. */
+      if (!isExcepted && !withdrawn.has(id) && row.thumbnail_status !== 'ready') {
         skipped.push({ observation_id: id, reason: 'no-imagery' });
         continue;
       }
 
       if (mode === 'delete') {
-        if (isMarked) { row.deleted = true; reviewed.push({ observation_id: id, outcome: 'deleted' }); }
+        /* Delete has no accepted state -- the opposite of deleting is leaving a row
+           alone, which needs no record -- so an accept mark here is a client bug (A2). */
+        if (kind === 'accept') {
+          throw badRequest(`observation ${id} is marked accepted, and this route records no acceptance`);
+        }
+        if (isExcepted) { row.deleted = true; reviewed.push({ observation_id: id, outcome: 'deleted' }); }
         continue;                                   // unmarked rows are untouched
       }
 
@@ -1142,8 +1157,8 @@ export const MarpData = {
         continue;
       }
 
-      if (isMarked) {
-        const reason = (marked.get(id) || {}).reason || null;
+      if (isExcepted) {
+        const reason = (mark || {}).reason || null;
         const wasAccepted = row[dim.column] === accepted;
 
         row[dim.column] = exception;

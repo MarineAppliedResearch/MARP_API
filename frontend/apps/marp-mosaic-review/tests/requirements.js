@@ -109,6 +109,9 @@ async function reset(mode = 'scientific') {
   state.changed.clear();
   state.committedPages.clear();
   state.picker = null;
+  /* The refused accept mark fades on a timer in the application, and these checks run
+     faster than that -- so one check's refusal would still be on screen for the next. */
+  state.refused = null;
   await actions.refresh();
 }
 
@@ -1246,6 +1249,204 @@ test('Keyboard shortcuts',
   });
 
 /* ------------------------------------------------------------------ runner */
+
+/* ============================================ #126: two kinds of mark, two commits
+ *
+ * The store-level half. What is *drawn* is `render.spec.mjs`; these drive the same actions
+ * the interface drives and check what reaches the record.
+ */
+
+test('Two kinds of mark',
+  'a right click marks accepted, and the main button records it', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && r.review_decision == null);
+    ok(target, 'page 1 should hold an unreviewed row with imagery');
+    const id = target.observation_id;
+
+    actions.acceptMark(id);
+    eq(state.marks.get(id).kind, 'accept', 'the mark carries its kind');
+
+    await actions.commitMarked();
+
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_decision, 'reviewed', 'this one is reviewed');
+  });
+
+test('Two kinds of mark',
+  'the main button says nothing at all about a tile nobody touched', async () => {
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && r.review_decision == null);
+    const id = target.observation_id;
+    /* Everything else on the page, and what the record says about it now. */
+    const before = new Map(state.rows.map((r) => [r.observation_id, r.review_decision]));
+    ok(state.rows.length > 1, 'a page of one would make this vacuous');
+
+    actions.toggleMark(id);                        // flag exactly one tile
+    await actions.commitMarked();
+
+    const moved = state.rows
+      .filter((r) => r.review_decision !== before.get(r.observation_id))
+      .map((r) => r.observation_id);
+    eq(moved, [id], 'only the marked tile moved');
+    eq(state.rows.find((r) => r.observation_id === id).review_decision, 'flagged');
+  });
+
+test('Two kinds of mark',
+  'the main button ignores marks the page arrived with', async () => {
+    /**
+     * A3. The page still arrives looking pre-marked, because the human asked for that --
+     * but pressing this button then would re-commit flags nobody touched, under this
+     * reviewer's name and today's date, and `observation_reviews` carries a reviewer per
+     * row. `state.touched` is what tells them apart.
+     */
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready'
+      && r.review_decision == null);
+    const id = target.observation_id;
+
+    /* Put a flag on the record, then arrive at the page again with nothing touched. */
+    actions.toggleMark(id);
+    await actions.commitPage();
+    state.marks.clear();
+    state.touched.clear();
+    state.outcomes.clear();
+    state.pageMembers.clear();
+    state.committedPages.clear();
+    await actions.refresh();
+
+    ok(state.marks.has(id), 'the page arrives with the record exception marked');
+    const versions = new Map(state.rows.map((r) => [r.observation_id, r.version]));
+
+    await actions.commitMarked();
+
+    const moved = state.rows.filter((r) => r.version !== versions.get(r.observation_id));
+    eq(moved.length, 0, 'nothing was written, because nothing was decided in this sitting');
+  });
+
+test('Two kinds of mark',
+  'the page sweep is unchanged: it accepts everything that is not an exception', async () => {
+    await reset();
+    const ready = state.rows.filter((r) => r.thumbnail_status === 'ready');
+    ok(ready.length > 2, 'need a few tiles with imagery');
+    const flagged = ready[0].observation_id;
+    const accepted = ready[1].observation_id;
+
+    actions.toggleMark(flagged);
+    actions.acceptMark(accepted);
+    await actions.commitPage();
+
+    eq(state.rows.find((r) => r.observation_id === flagged).review_decision, 'flagged');
+    eq(state.rows.find((r) => r.observation_id === accepted).review_decision, 'reviewed');
+    /* And the untouched ones were accepted too, which is the behaviour R4 preserves. */
+    const untouched = ready.slice(2).map((r) => r.observation_id);
+    ok(untouched.length, 'need an untouched tile with imagery');
+    for (const id of untouched) {
+      eq(state.rows.find((r) => r.observation_id === id).review_decision, 'reviewed',
+        `the sweep still accepts ${id}`);
+    }
+  });
+
+test('Two kinds of mark',
+  'a selective commit does not pin the page, so untouched tiles stay in the work', async () => {
+    /**
+     * `page.pinnedIds` becomes the query's `exclude` set. Pinning here would take every
+     * untouched tile on the page out of the reviewer's remaining work without saying so,
+     * which is exactly the "without it affecting anything else" this feature exists to
+     * give them.
+     */
+    await reset();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+    actions.toggleMark(target.observation_id);
+    await actions.commitMarked();
+
+    eq(state.committedPages.size, 0, 'the page is not finished, so it is not marked done');
+    eq(state.pageMembers.size, 0, 'and nothing is pinned out of later pages');
+  });
+
+test('Two kinds of mark',
+  'a tile marked one way then the other ends with the later mark', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+
+    actions.toggleMark(id);
+    eq(state.marks.get(id).kind, 'except');
+    actions.acceptMark(id);
+    eq(state.marks.get(id).kind, 'accept', 'the right click replaces rather than stacking');
+    actions.toggleMark(id);
+    eq(state.marks.get(id).kind, 'except', 'and the left click replaces it back');
+    actions.toggleMark(id);
+    ok(!state.marks.has(id), 'the same gesture twice takes it off');
+  });
+
+test('Two kinds of mark',
+  'an accept mark is refused on a tile with no picture, and the tile says why', async () => {
+    await reset();
+    /* Constructed rather than hunted for: page 1 may hold no broken thumbnail, and a
+       check that returns early when it cannot find one looks green while proving nothing. */
+    const victim = state.rows[0].observation_id;
+    eq(MarpData.breakThumbnails([victim]), 1, 'the tile was really broken');
+    await actions.refresh();
+    const blind = state.rows.find((r) => r.observation_id === victim);
+    eq(blind.thumbnail_status, 'failed', 'and the page can see that it is');
+
+    actions.acceptMark(blind.observation_id);
+
+    ok(!state.marks.has(blind.observation_id), 'the mark is refused rather than taken');
+    ok(state.refused && state.refused.id === blind.observation_id,
+      'and the tile is told to say why');
+    /* Flagging the same tile is still allowed: a picture that never arrived is itself
+       worth flagging, and that rule is older than this one. */
+    actions.toggleMark(blind.observation_id);
+    eq(state.marks.get(blind.observation_id).kind, 'except');
+  });
+
+test('Two kinds of mark',
+  'a right click is inert in Delete Mode, where there is nothing to accept', async () => {
+    await reset('delete');
+    const id = state.rows[0].observation_id;
+    const before = state.marks.size;
+
+    actions.acceptMark(id);
+
+    eq(state.marks.size, before, 'nothing marked');
+    ok(!state.refused, 'and nothing refused either: there was nothing wrong with the gesture');
+    /* And the main button is not the one Delete uses. */
+    await actions.commitMarked();
+    eq(state.outcomes.size, 0, 'the main button does nothing in Delete');
+  });
+
+test('Two kinds of mark',
+  'training promotes only what was marked accepted', async () => {
+    await reset('training');
+    const ready = state.rows.filter((r) => r.thumbnail_status === 'ready');
+    ok(ready.length > 1, 'need two tiles with imagery');
+    const promoted = ready[0].observation_id;
+    const before = new Map(state.rows.map((r) => [r.observation_id, r.training_decision]));
+
+    actions.acceptMark(promoted);
+    await actions.commitMarked();
+
+    eq(state.rows.find((r) => r.observation_id === promoted).training_decision, 'promoted');
+    const moved = state.rows
+      .filter((r) => r.training_decision !== before.get(r.observation_id))
+      .map((r) => r.observation_id);
+    eq(moved, [promoted], 'and nothing else was promoted');
+  });
+
+test('Two kinds of mark',
+  'a failed selective commit applies nothing and leaves the marks alone', async () => {
+    await reset();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+    actions.acceptMark(id);
+    MarpData.failNextCommit();
+
+    await actions.commitMarked();
+
+    eq(state.commit.status, 'failed', 'the button says so');
+    eq(state.marks.get(id).kind, 'accept', 'and the page never has to be redone');
+  });
 
 export async function run(mount) {
   await MarpData.load();

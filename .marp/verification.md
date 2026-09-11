@@ -1,304 +1,195 @@
-# Verification — MarineAppliedResearch/MARP_API#124
+# Verification — MarineAppliedResearch/MARP_API#126
 
-Phase 8, replacing the fixture. The plan below is for review **before** it is accepted as this
-phase's evidence.
+Two kinds of mark, and two commits. The plan below is for review **before** it is accepted as
+this phase's evidence.
 
-**Say plainly what has already happened.** The suites exist and have run — 44 API suites / 593
-tests, client unit 244, contract passing, browser 244 passed / 4 skipped — because G2 ran them
-to know the implementation worked. What has *not* happened is anybody agreeing they are the
-right tests, or that the gaps below are acceptable. That is what this file is for, and
-*"that test does not actually prove the requirement"* is the sentence worth saying now.
+**What has already happened.** G2 ran the suites to know the implementation worked — 273 client
+unit, 272 browser across two viewports, 603 API. What has *not* happened is anybody agreeing
+they are the right tests, or that the gaps below are acceptable. `## Results` stays empty until
+this plan is approved and run.
 
-`## Results` is empty and stays empty until this plan is approved and run.
+## Why the tier choices matter more than usual here
 
-#103, #105, #106 and #118 each renamed their verification when the next phase arrived. This
-file follows that convention.
+This change touches **the area of the app that has produced the most reported bugs** — the
+tile's four simultaneous derived states, with their fixed precedence — and adds a fifth
+distinction to it. It also adds the first gesture in the app that behaves differently on touch.
+So two tiers carry almost all the risk:
 
-## The tiers, and why each requirement sits where it does
+- **render, at *both* viewports.** The only tier that can see what was drawn, and the only one
+  that can exercise a touch gesture at all. R8 requires both widths deliberately.
+- **wire** (`tests/unit/api-requests.test.mjs`). A mark now carries a `kind`, and this is the
+  only tier that asserts the *serialised* body. `deepEqual` on the request object would pass
+  for a `Map`, a `Set` or a dropped field.
 
-Five tiers, and the choice between them is the only decision here that can invalidate the
-whole package.
-
-- **wire** — `tests/unit/api-requests.test.mjs`, 21 tests, no DOM and no network. **Every
-  assertion goes through `JSON.parse(JSON.stringify(body))`**, and that is the reason the file
-  exists rather than pedantry: `deepEqual` on a request object passes for a `Set`, a `Map` and
-  a `Date` alike. Three of this phase's seventeen findings are exactly that shape and **none
-  of them failed anything** before this tier existed.
-- **unit** — `tests/unit/{model,cache,query-url,data-scale,wiring,schedule}.test.mjs`, 244
-  tests, ~0.9 s. Rules, vocabulary and the row mapper.
-- **contract** — `tests/requirements.js` through `tests.html`. Runs the real store against the
-  fixture, which is what keeps it fast and hermetic.
-- **render** — Playwright, desktop and phone. **The only tier that can see what was drawn.**
-  Two of this phase's defects were invisible to every other tier: a `display: flex` rule
-  beating the `hidden` attribute, and a trimmed import throwing on every layout pass.
-- **http+db** — Jest against the real development PostgreSQL, for the facets route, the row
-  shape and the `app.js` gate.
-
-`npm test`, never `npx jest` — the suite shares one PostgreSQL and `--runInBand` is passed for
-that reason.
+The other three — parse, unit, contract — are the working loop and cover the rules.
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `wiring`: *no file that draws the rail knows a dimension by name* | unit | Plus a source sweep: `grep -nE "'/api/\|fetch\(\|status === [0-9]{3}" src/` outside `src/api/` returns only comments. |
-| R2 | `src/backend.js` writes its method set out rather than proxying | review | A method either backing lacks fails **by name**, not as `undefined is not a function`. |
-| R3 | *a visible page asks for the total; a prefetch does not* · *the pages asked for are de-duplicated and ascending* | wire | The visible page and the prefetch are distinguishable on the serialised body. |
-| R4 | four tests: *a Set of pinned ids reaches the wire as an array* · *a Set that somehow reached the request is still not sent as one* · *an exclusion set nested in the filters is lifted out* · *nothing pinned sends no exclusion field* | wire | **F2, the expensive one.** `JSON.stringify(new Set([1,2,3]))` is `{}` — the endpoint excluded nothing and the arithmetic on screen stayed plausible throughout. |
-| R5 | *the species filter is sent as the key, never as a name* · *a species name is refused rather than quietly matching nothing* · *model and session are keys too* | wire | A name **throws** rather than 400ing, so the failure is at the call site. |
-| R6 | `model`: the row helper's `review_decision`/`training_decision` and null-as-neutral | unit | Reconciled once, in `dimensionState`. |
-| R7 | *a commit sends the version the reviewer saw, per observation* · *a commit request with a missing version is not constructible* | wire | Not "is rejected" — **not constructible**. The 400 can never be reached. |
-| R8 | `model`: `applyCommit` keyed on `observation_id`; contract asserts an outcome for **each** acted row | unit + contract | **F5**: `r.id` was `undefined`, so every tile on a committed page lost its outcome. |
-| R9 | contract: the `conflicted` tile state, marks kept | contract | Its own state, not folded into flagged. |
-| R10 | render: tiles carry an `<img>` on the thumbnail route, `credentials: 'same-origin'`, `onerror` degrades | render | Only a browser can say the image **decoded**. |
-| R11 | *a page retry sends the whole page in one request* | wire + contract | One request, two paints. |
-| R12 | contract: retry answers `queued`, never a synthetic `ready`, **with a request count** | contract | #68 warned a render-count-only check would miss a regression to 45 requests. |
-| R13 | contract + render: a `permanent` failure offers no retry and shows the reason | contract + render | Rule named as `retryablePage` in `model/modes.js`. |
-| R14 | contract: a committed page returns with no request | contract | Served from `state.pinnedRows`. **The one place striking A5 had a consequence** — `cache.use()` empties on any change of question and `pageSize` is part of it. |
-| R15, R16 | `tests/mosaic-facets.test.js`, 17 tests, seeding everything it asserts · *the date range is sent, and is not silently dropped* | http+db + wire | Reachable values only; no dimension withdrawn; `date` served as a `tc` range. |
-| R17, R18 | render: the picker needs two typed characters; the tile shows the current species | render | **F6**: `comname` never moves on a correction; the current name is `species_comname`. |
-| R19 | render + contract: identity from `/api/v2/auth/me`; no name literal remains | render + review | **F8**: four attribution fields the row does not carry. |
-| R20 | render: 401, 403 and a transport failure as three panels, none discarding marks | render | A 401 re-authenticates in place. |
-| R21 | contract: a superseded request is cancelled | contract | `AbortSignal` on every seam method. |
-| R22 | http+db: anonymous GET of the page **and of a source file** both 302 | http+db | Gating the page and leaving the JS readable is the classic half-fix. |
-| R23 | — | — | **Unmet. See *Known gaps*.** |
-| R24 | this document's *tests that had to change* section | review | The list is the deliverable, not a footnote. |
-| R25 | `tests/mosaic-query.test.js`: the exact-key tripwire | http+db | Two reviewer-id keys **moved into** the list, never admitted by loosening it. |
+| R1 | `model`: *a tap toggles a mark*, with `MARK_EXCEPT` explicit | unit | Left click is unchanged in every mode; an accepted tile **flips** rather than unmarking, because `had` now asks "was it already *this* kind". |
+| R2 | render: right click marks accepted, both viewports; badge is `REVIEWED`/`PROMOTED` in the accept colour | render | `contextmenu` is bound on `#grid`, so the browser menu is suppressed across the whole grid rather than per tile. |
+| R2 (touch) | render with `hasTouch: true`: *double tap accepts* · *two taps 600 ms apart are two marks* · *the main button commits from a tap* | render | **Not skipped on desktop** — a real touch context is constructed, because a skipped check looks green. |
+| R3 | `model` + contract: the selective commit sends `marked ∩ touched` and nothing else | unit + contract | The main button writes only what the reviewer marked **in this sitting**. A3's whole point. |
+| R3 | contract: a selective commit pins nothing and marks no page committed | contract | `pinnedIds` is the query's `exclude` set — pinning would silently remove every untouched tile from the reviewer's remaining work. |
+| R4 | the existing sweep tests, unchanged | contract + render | `commitOutcome` swapped `marks.has` for `isExcepted`; before #126 every mark was an exception, so the sweep's behaviour is identical by construction. |
+| R5 | render: `#commitMarked` before `#commit`, sweep outlined and smaller; Delete hides the main button | render | Only a browser can say which is visually primary. |
+| R5 | render: **the phone footer fits across**, added here | render | `.app` clips rather than scrolls, so an overflow is a commit button cut off the right edge. **Nothing asserted this before**, which is how it came to overflow at 524px in a 412px viewport with a single button. |
+| R6 | `model`: `commitOutcome` and `selectionOutcome` drive both buttons | unit | One `renderCommits`/`paintCommit` pair, so a button's number cannot disagree with its own commit. |
+| R6 | render: the main button's disabled title distinguishes *nothing marked yet* from *these marks came from the record* | render | The two disabled states mean different things to a reviewer. |
+| R7 | `model`: same gesture twice unmarks · the other gesture replaces · switching kind drops the reason | unit | The later gesture wins. |
+| R8 | 29 unit, 10 contract, 14 render (× 2 viewports) | all | — |
+| R9 | `model.test.mjs` mark shape; `api-requests.test.mjs` × 2 wire assertions | unit + wire | Three tripwires had `kind` **moved into** them. The mosaic row shape is untouched. |
+| A4 | render: an accept mark is refused at click time on a tile with no picture, and says why | render | Refusing a deliberate click beats accepting it and quietly not doing it. |
+| A5 | wire: `marks` carries `kind`; the server refuses a reason on an accept mark and refuses `kind: accept` on `/delete` | wire + http+db | 400 before any write. |
 
 ## Requirements with no test
 
-- **R23** — the browser tier against a real API and a seeded database. Deliberate; reasons in
-  *Known gaps*. It is the only one.
+None. If that is wrong, it is the most useful thing to say at this gate.
 
-## The tests that had to change, and the rule that leaked
+## The tests that had to change, and what leaked
 
-**This is R24, and it is the point of the phase rather than housekeeping.** In almost every
-case the leaked rule was the same: **the tests spelled the fixture's private vocabulary**, so
-nothing could tell them the schema disagreed.
+Four, and only one is a rule leaking:
 
-- `model.test.mjs` — `review_status`/`training_disposition` → `review_decision`/
-  `training_decision` with null as neutral (F3); `commitResult` keyed `id` → `observation_id`
-  (F5); `tag.by` → `tag.reviewerId` (F8); date bounds → clocks (A17). **And
-  `queryFilters(...).excludeIds.size === 2` → an array plus a serialised-body assertion — that
-  test was asserting the defect** (F2).
-- `data-scale.test.mjs` — **the reference implementation duplicated the fixture's neutral
-  string, so both agreed and both were wrong.** `commitPage({observationIds})` → rows with
-  versions (F4); `back.comname` → `species_comname` moved and `comname` frozen (F6).
-- `cache.test.mjs`, `query-url.test.mjs` — species names → keys; the comma test moved to
-  `project`, since species can no longer hold one.
-- `requirements.js` — the renames, plus: **retry-then-`every(status === 'ready')` → `'queued'`
-  with a request count added** (F10); **the no-imagery check hunted for an incidentally-queued
-  row and returned `'skipped'` when it found none — a skipped check looks green**, so it now
-  breaks one deliberately.
-- `mosaic-query.test.js` — the tripwire gained two keys **moved in**; *rejects an active date
-  filter with 400* → asserts what it serves (A17). That one is a **decision changing**, not a
-  leak.
-- `render.spec.mjs` — the renames; the picker's two-character minimum; and the retry test that
-  asserted the commit was enabled the instant the click returned, which was only true because
-  the fixture invented the picture.
-
-**Five tests fixed here that have nothing to do with Phase 8**, and they are the same defect
-twice: three read the **whole** `observation_review_current` table and asserted it held two
-rows; two counted rows and asserted zero. All five asserted that *the database was otherwise
-empty*. They passed for months and failed the moment real review data existed. Scoped to each
-test's own seeded observation, and the two `ships empty` tests now read the migration, which is
-where the property lives.
+1. `model.test.mjs` *a tap toggles a mark* — the mark shape gained `kind`. Moved into the
+   tripwire.
+2. `api-requests.test.mjs`, twice — wire mark entries gained `kind`. Moved in.
+3. **`render.spec.mjs` *the commit button follows the mode that owns the decision*** — it read
+   `#commit`'s `backgroundColor`, which is now `rgba(0,0,0,0)` because the sweep is outlined.
+   **The rule that leaked: the fill moved to the primary button**, and the test named the
+   element rather than the role. It now reads `#commitMarked` for review and training, `#commit`
+   for Delete, and additionally asserts the sweep is outlined in the same hue.
+4. `tests/requirements.js` `reset()` — gained `state.refused = null`, because the refusal fades
+   on a timer and the checks run faster than that.
 
 ## Edge cases
 
-Each traces to a defect or a measurement.
-
-- **A `Set`, a `Map` and a `Date` in a request body** — the three shapes `deepEqual` cannot
-  tell from their serialisation.
-- **A mark left over from another page**, and a withdrawal for an id not on the page.
-- **A species name where a key is required** — refused at the call site, not at the endpoint.
-- **A commit with a missing version** — not constructible.
-- **`?backing=fixture` in the query string** — the query string *is* the question, so a
-  backing parameter made every address non-bare and the app lost its default question. Ten
-  tests said 2,755 where 1,083 was expected. Moved to the hash.
-- **A fixture extraction faster than a retry round trip** — at 220 ms it beat the 900 ms retry
-  and reported `ready`, reintroducing F10's shortcut *intermittently*.
+- **Two taps 600 ms apart** — outside the 320 ms window, so two separate marks rather than an
+  accept.
+- **A fast double-click with a desktop mouse** — must not read as a touch double tap. Pointer
+  type is taken at `pointerdown`, because a `click` is a `PointerEvent` in Chromium and a
+  `MouseEvent` elsewhere.
+- **An accept mark on a tile with no picture** — refused at click time.
+- **A tile marked, then marked the other way** — the later gesture wins, and the reason is
+  dropped when the kind changes.
+- **The main button pressed on a freshly loaded page holding record flags** — commits nothing,
+  and says why in its disabled title.
+- **`openCorrection` on an accepted tile** — forces an exception mark, because saying the
+  species is wrong is saying something is wrong.
+- **Delete Mode** — right click inert, main button hidden, one control.
 
 ## Regression coverage
 
-- **The five silent findings each have a test proved to fail by reintroducing the defect via
-  file copy** — F1, F2, F5, F6, F11. Not believed to cover; demonstrated.
-- **`#failure { display: flex }` beat the `hidden` attribute.** `hidden` works through
-  `display: none` in the browser's own stylesheet, so an author rule carrying `display` wins —
-  leaving a fixed, full-viewport, *invisible* panel swallowing every tile click. Twenty-six
-  render tests reported it as tiles being broken.
-- **`grid.js` lost the `actions` import** it still needs for `setPageSize`, throwing on every
-  layout pass. An import trimmed to what the file *appeared* to use.
-- **`createObservation` never advances the `observations` sequence** (#62), so later tests
-  collided with a sequence-default insert. The suite helper now assigns `max+1`.
+- **The phone footer**, above. It was already overflowing before this change.
+- **`#commitMarked` visible in Delete** — `display: flex` beats the user agent's `[hidden]`.
+  The same specificity trap Phase 8 hit with `#failure`; second occurrence, now tested.
+- **The R5 size assertion** — the sweep is *wider* (longer label) and *taller* (it carries the
+  Ctrl+Enter hint badge), so "primary is bigger" cannot be asserted on the bounding box.
 
 ## Known gaps
 
-Written down deliberately. A recorded gap is a decision; an omitted one is a surprise.
-
-- **R23 is unmet.** The browser tier grades the fixture, not a real API with a seeded database.
-  It **says so on screen and asserts which backing it graded**, so it cannot pass while
-  testing the wrong thing — but two claims that are inherently about a real server are
-  unwatched between recordings: that the tiles are the endpoint's own page **in its order**,
-  and that a commit lands in `observation_reviews`. A local-only dump (#125) does not close
-  this: CI builds an empty database, so a checked-in seeder at a smaller volume is what R23
-  actually needs.
-- **Both of the visible defects above are now fixed** (`bc1083ea`), and one of them turned
-  out to be deeper than a placeholder:
-  - **The default no longer carries a species literal.** It was the fixture's Bat Star key,
-    which matches nothing real, so the app opened on an empty mosaic reading *"nothing to
-    do"*. It narrows nothing now — a bare question returns **1,009 rows over 21 pages**
-    against this database, with five species on page one.
-  - **The dive label no longer prefixes a value that already carries the word** — it was
-    wrong against *both* datasets, `"Dive Dive 12"` real and `"Dive D04"` fixture.
-- **A10(b)'s facets-derived default is still not built, and now has a stated reason.** It
-  was attempted and reverted. With no literal in the default, *"the reviewer chose to see
-  everything"* and *"the reviewer has not chosen yet"* become the same question and write
-  the same address — so seeding a species onto a bare address hands back the filter a
-  reviewer deliberately cleared. `query-url`'s *clearing every filter comes back narrowing
-  nothing* is the test that catches it, and it names this as the thing to revisit first.
-  **Building it needs a decision about what a bare address means**, which is a design
-  question rather than a line of code.
-- **No throughput measurement.** Nothing here is benchmarked, and the corpus is 1,062
-  observations rather than 440,000.
-- **`npm run docs:build` exits 1** on four pre-existing jsdoc errors in `schedule.js`,
-  unchanged by this branch and identical on `develop`.
+- **The 320 ms window has a named cost**: on touch, un-marking a tile you have just marked
+  means waiting the window out. `DOUBLE_TAP_MS` in `ui/mount.js` is the one number to move.
+- **Ctrl+Enter still fires the sweep**, per R4. A stray chord therefore commits the whole page,
+  where on the main button it would commit only what was marked by hand — strictly less
+  consequential. **Left as-is deliberately and offered to the human; it is one line.**
+- **`marksAfterCommit` discards marks made on other pages.** `state.marks` spans the session,
+  but a sweep rebuilds from the current page's ids. Pre-existing, untouched, and the selective
+  path deliberately does not have this shape.
+- **`willAct` in `ui/chrome.js:32` is dead** — computed, never read, already dead on `develop`.
+- **`npm run docs:build` exits 1** on four pre-existing jsdoc errors in `model/schedule.js`.
+  Unchanged by this branch.
 - **CI runs the fast tiers only.** A green pipeline is not this package.
 
 ## Manual steps
 
-1. **Log in as the walkthrough user and open the mosaic** at
-   `/apps/marp-mosaic-review/?mode=scientific&reviewStatus=unreviewed,flagged,reviewed`.
-   *Expected:* 1,062 observations, 22 pages, real pictures. **Use that URL, not the bare one** —
-   the placeholder species filter opens an empty mosaic and reads as a broken app.
-2. **Judge the tiles.** No assertion can tell a correctly cropped animal from a correctly
-   cropped patch of seabed. **Partly done** — the human reviewed the crops and the
-   centre-origin control on 2026-09-09 and accepted them.
-3. **Exercise the three failure states** — expire the session, call with a principal lacking
-   `observations:write`, and stop the API mid-page. *Expected:* three distinct panels, and
-   marks surviving all three. **Not yet done by hand; the render tier covers the drawing but
-   not a real expired session.**
-
-## Walkthrough videos
-
-**`verify-real-database`, recorded 2026-09-10, 60.3 s, 10 scenes.** It is on the API and
-asserts it. Every spoken number is asserted **exactly**, so a changed corpus fails the run and
-writes **no video** rather than narrating a stale figure.
-
-Each scene and its assertion: on the API not the fixture (`backing === 'api'`, no fixture in
-the page, `/auth/me` names the principal) · 1,062 across three dives and 15,230 keyframes
-(read in two calls, `keyframe_count` summed) · every tile a decoded frame from the thumbnail
-route · the dive filter offering exactly the endpoint's three values · Dive 12 narrowing to 410
-· five of seven species reachable under that dive · 83 short red gorgonians, ids matching in
-order · a page change with `window.__waits === 0` via a MutationObserver, **not** a millisecond
-budget · a commit, asserted on `state.outcomes` rather than the badge, because *a badge could
-survive an earlier take and an outcome cannot* · read back from the database by reviewer id.
-
-**It is not the only witness to anything** except the two R23 claims above.
+1. **Review a page the way you would for real** — right click to accept some, left click to
+   flag others, leave most untouched, press the **main** button. *Expected:* only what you
+   marked is written; everything untouched is still unreviewed when the page is re-queried.
+2. **Then press the sweep on a fresh page.** *Expected:* unchanged from today — marked become
+   exceptions, everything else is accepted.
+**The phone is not a manual step.** Playwright's `phone` project is how this project tests a
+phone — it honours the real viewport width where a headless screenshot does not, and the touch
+gestures run in a real `hasTouch` context. It is covered above at the render tier and needs no
+hand check. Settled by the human, 2026-09-10: *"You're supposed to test it on an emulated
+phone… we don't need to test it on a real phone for now."*
 
 ---
 
 ## Results
 
-Plan approved by the human on 2026-09-10 (*"I think this is a good plan"*) and run against it.
-Real output, including what went wrong.
+Plan approved by the human on 2026-09-10 — *"go ahead and approve this test plan"* — and run
+against it.
 
 ### The automated tiers
 
-**API, `npm test`:**
 ```
-  Test Suites : 44 passed, 0 failed, 44 total
-  Tests       : 593 passed, 0 failed, 0 skipped, 593 total
-  Duration    : 42.7s
-
-  Result: ALL TESTS PASSED
+API,    npm test         44 suites, 603 passed, 0 failed
+client, npm run test:unit           273 passed, 0 failed, 866 ms
+client, npm run test:e2e            272 passed, 4 skipped   (desktop and phone)
 ```
 
-**Client unit and wire tiers, `npm run test:unit`** (lint plus `tests/unit/*.test.mjs`, so the
-21 wire tests are inside this figure):
-```
-ℹ pass 244
-ℹ fail 0
-ℹ duration_ms 890.6629
-```
+The 4 skips are the pre-existing viewport-conditional cases.
 
-**Contract and render tiers, `npm run test:e2e`** (desktop and phone):
-```
-  4 skipped
-  244 passed (1.8m)
-```
-The 4 skips are the pre-existing viewport-conditional cases — phone-only tests in the desktop
-project and the reverse.
+### Manual step 1 — a selective commit, against the real database
 
-### Manual step 3 — the three failure states, which the plan recorded as not done
-
-Now done, against the running API. **All three are distinguishable**, which is R20's premise:
+The claim #126 exists to test. A page holding observations 1–5, with **only 1 and 3 named** —
+1 accepted, 3 flagged with a reason — and 2, 4 and 5 left untouched:
 
 ```
---- 1. no credential (expect 401) ---
-{"error":{"code":"UNAUTHORIZED","message":"Authentication is required.","status":401,
-          "requestId":"req_mtvw83qx_mgwi9g3i"}}
-[HTTP 401]
+POST /api/v2/mosaic/observations/review
+{"observations":[{"observation_id":1,...},{"observation_id":3,...}],
+ "marks":[{"observation_id":1,"kind":"accept"},
+          {"observation_id":3,"kind":"except","reason":"False detection"}]}
 
---- 2. read-only principal committing (expect 403) ---
-{"error":{"code":"FORBIDDEN","message":"The \"observations:write\" permission is required.",
-          "status":403,"requestId":"req_mtvw83rg_bmrd7tlk"}}
-[HTTP 403]
-
---- 3. transport failure: a port with nothing on it ---
-[HTTP 000] exit=7
+{"reviewed":[{"observation_id":1,"outcome":"reviewed"}],
+ "flagged":[{"observation_id":3,"outcome":"flagged"}],
+ "reverted":[],"skipped":[],"conflicted":[]}
 ```
 
-The third is the one that matters for telling them apart: **no HTTP status at all** — curl
-reports `000` and exit 7. A client cannot mistake it for either of the other two, which is
-what lets `ui/failure.js` draw three panels rather than one generic error.
+Read back from `observation_review_current`:
 
-The 403 message names the missing permission, so *refused* is distinguishable from *not
-signed in* without inspecting anything.
+```
+observation_id 1  decision reviewed  reason null              reviewer 1496
+observation_id 3  decision flagged   reason False detection   reviewer 1496
+```
 
-A read-only service client was created for check 2 and **revoked afterwards** (`removed 1
-probe client`).
+**Two rows, not five.** Observations 2, 4 and 5 carry no review record at all — they were on
+the page and were not touched, and the record says nothing about them. Both kinds landed
+correctly in one request. That is R3, and it is what the human asked for.
 
 ### A failure that was the operator's, not the code's
 
-Recorded so nobody chases it. The first attempt at checks 1 and 2 returned **500
-INTERNAL_ERROR** for both. That looked like a real defect in the permission middleware. It was
-not:
+Recorded so nobody chases it. The first attempt returned **`flagged` for both**, which read as
+`kind: accept` being ignored on the server. It was not: the API on port 3000 had been running
+since **07:36 the previous day**, nineteen hours before any #126 commit, so the request was
+served by code that predates the feature. Checking the process start time rather than reading
+the repository is what caught it. The two rows it wrote were removed, a current server was
+started on its own port, and the result above is from that.
 
-```
-[API Error] {
-  code: 'INTERNAL_ERROR',
-  status: 500,
-  message: `Unexpected token 'L', ..."ation_id":Loading mo"... is not valid JSON`
-}
-```
+A service token was also refused before this, with *"a review belongs to the person who made
+it, and a bearer principal is not a user"* — Phase 5's D4 working as designed. The check was
+re-run under a signed-in session.
 
-`require('./model')` prints `Loading model: …` to **stdout**, and the shell substitution
-building the request body captured it — so the body was malformed and the JSON parser answered
-before any auth middleware ran. Reading the server log rather than reporting the 500 is what
-caught it. Body written to a file instead, and both checks then answered correctly.
+### Manual step 2 — the sweep
 
-### Manual steps 1 and 2
+Not re-run by hand. It is unchanged by construction — `commitOutcome` swapped `marks.has` for
+`isExcepted`, and before #126 every mark was an exception — and the existing sweep tests cover
+it at the contract and render tiers, all passing above.
 
-- **Step 1, opening the mosaic:** done by the human, who logged in as the walkthrough user and
-  reviewed the app against this corpus.
-- **Step 2, judging the tiles:** done on 2026-09-09 for the crops and the centre-origin
-  control, and again on 2026-09-10 against the larger corpus. The human's verdict on the
-  species labelling was *"so far, this actually looks good"*, after checking whether tiles
-  labelled *Fish-eating anemone* were misclassified fish — they are not; that is the common
-  name of *Urticina piscivora*.
+### The phone
+
+Covered by the render tier, not by hand. The `phone` project runs every test at the real
+viewport width and the three touch checks run in a genuine `hasTouch` context — the double tap
+accepts, two taps 600 ms apart stay two marks, and the main button commits from a tap. All
+passing above.
+
+An earlier draft of this plan listed a real device as an outstanding step. That was wrong:
+the emulated phone is how this project tests a phone.
 
 ### Unchanged from the plan
 
-- **R23 is still unmet.** Nothing in this run closes it.
-- **`npm run docs:build` still exits 1** on the four pre-existing jsdoc errors in
-  `schedule.js`. Identical on `develop`; not touched.
-- **`DEFAULT_FILTERS.species` is still a placeholder**, and the bare address still opens on an
-  empty mosaic.
-- **The dive menu still reads "Dive Dive 12".**
-
-### Corpus this ran against
-
-1,062 observations, 15,230 keyframes, 3 dives, 7 species, 1,056 thumbnails ready — from three
-GPU inference runs over real Jellyfin video. Larger than any figure quoted in `.marp/task.md`,
-which was written when the database held six observations of one species.
+Every *Known gap* stands: `DOUBLE_TAP_MS` carries its named cost,
+Ctrl+Enter still fires the sweep, `marksAfterCommit` still discards other pages' marks,
+`willAct` is still dead, and `npm run docs:build` still exits 1 on the pre-existing jsdoc
+errors in `model/schedule.js`.
