@@ -8450,6 +8450,54 @@
         }
       }
     },
+    "/v2/species/search": {
+      "get": {
+        "summary": "Search every annotation list at once",
+        "description": "The scoped search above without the list predicate, for a client that has to offer an off-list choice deliberately -- the mosaic's correction picker, whose \"search all lists\" action is the only way to correct an observation whose session type names no list. `is_active` still applies, because widening a search does not make a retired entry offerable, and entries on no list stay out for the same reason GET /api/species/lists omits them. **Results span lists and each carries its `species_list`, which a client showing them must draw**: a common name is not unique across the seven -- 'Red sea urchin' is one entry on Inverts and a different organism on GULF_Inverts -- and a correction is written to the record. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Substring to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching entries returned successfully, grouped by list then in display order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesWithPictures"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/species/list/{list}/taxserial/{taxserial}": {
       "get": {
         "summary": "Fetch one entry by list and taxserial",
