@@ -23,7 +23,11 @@ import { test, expect } from '@playwright/test';
  * runtime flag was that it is "how a render test comes to grade a fixture and report it
  * as the API"; a flag the page announces and the tier asserts cannot do that silently.
  *
- * Both come out when the seeded database lands and this tier is repointed.
+ * **Neither comes out, and this line used to promise both would** (#132). The real server is
+ * now tested against — `tests/api/`, `--project=api` — but as a tier *beside* this one and
+ * not a replacement: this is the fast loop, at two viewports, and it can break a commit on
+ * purpose, which no real server will do. It stays on the fixture and stays fast; what moved
+ * is that the fixture is no longer the only thing a browser test can see.
  */
 const FIXTURE = 'backing=fixture';
 
