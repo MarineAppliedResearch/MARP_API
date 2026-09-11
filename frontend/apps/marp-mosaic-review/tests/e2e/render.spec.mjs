@@ -1759,6 +1759,82 @@ test.describe('the commit button reports on itself', () => {
   });
 });
 
+test.describe('each commit button reports only on itself', () => {
+  /* #131. `state.commit` was one `{ busy, status }` serving two controls, so committing
+     only the marked tiles also turned the page sweep green with a tick -- the one
+     interaction #126 exists to keep apart, saying the whole page had been accepted. The
+     store was correct throughout, which is why no store-level check could see this. */
+  const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.marked)').first();
+
+  test('committing the marked tiles leaves the sweep untouched', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await freshTile(page).getAttribute('data-id');
+    const sweep = page.locator('#commit');
+    const main = page.locator('#commitMarked');
+    const sweepLabel = (await sweep.innerText()).split('·')[0].trim();
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await main.click();
+
+    /* While it saves, the idle button keeps its own default -- not spun, not blanked,
+       not disabled (A4). "Saving..." on a button that is saving nothing is the same lie
+       as "Saved", one step earlier. */
+    await expect(main).toContainText('Saving');
+    await expect(sweep.locator('.spin')).toHaveCount(0);
+    await expect(sweep).toContainText(sweepLabel);
+    await expect(sweep).toBeEnabled();
+
+    await expect(main).toContainText('Saved');
+    await expect(main).toHaveClass(/ok/);
+    /* The fill is what made this read as "the whole page was accepted": `.commit.sweep.ok`
+       turns the outlined secondary button solid green, indistinguishable from the primary.
+       Classes alone would pass if the fill came back through another selector. */
+    await expect(sweep).not.toHaveClass(/ok/);
+    await expect(sweep).not.toContainText('Saved');
+    await expect(sweep).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  });
+
+  test('sweeping the page leaves the marked button untouched', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const sweep = page.locator('#commit');
+    const main = page.locator('#commitMarked');
+    const mainLabel = (await main.innerText()).split('·')[0].trim();
+
+    await sweep.click();
+
+    await expect(sweep).toContainText('Saving');
+    await expect(main.locator('.spin')).toHaveCount(0);
+    await expect(main).toContainText(mainLabel);
+
+    await expect(sweep).toContainText('Saved');
+    await expect(sweep).toHaveClass(/ok/);
+    await expect(main).not.toHaveClass(/ok/);
+    await expect(main).not.toContainText('Saved');
+  });
+
+  test('a committed accept mark stops claiming it is uncommitted', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await freshTile(page).getAttribute('data-id');
+    const badge = page.locator(`.tile[data-id="${id}"] .badge`);
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await expect(badge).toHaveAttribute('title', /Not committed yet/);
+
+    await page.locator('#commitMarked').click();
+    await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+    /* The mark survives its own commit by design (#126) and a mark outranks an outcome --
+       both load-bearing, neither changed here. So the tile keeps the mark badge, and the
+       badge has to stop saying something that is no longer true. */
+    await expect(badge).toHaveAttribute('title', /^Recorded as reviewed/);
+    await expect(badge).toHaveAttribute('title', /click to flag it instead/);
+    await expect(badge).toHaveText(/REVIEWED/);
+  });
+});
+
 test.describe('how many pages are done', () => {
   test('the count rises with each committed page, beside the swatch', async ({ page }) => {
     await page.goto('./');
