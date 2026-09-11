@@ -1221,6 +1221,14 @@ textarea.inp { resize: vertical; font-family: inherit; line-height: 1.4; }
 .acts2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
          margin-top: 14px; }
 .acts2 .btn { justify-content: flex-start; }
+/* Getting the bytes is a different kind of action from running or preferring,
+   so it takes the row under them rather than a corner of the grid. */
+.acts2 .btn.wide2 { grid-column: 1 / -1; }
+.acts2 .btn.wide2 .faint { margin-left: 4px; }
+
+/* A download beside a version in the history. */
+.hrow .hdl { display: flex; justify-content: flex-end; }
+.hlist .hrow { grid-template-columns: 84px 52px minmax(0, 1fr) minmax(0, 1.3fr) 30px; }
 
 /* The training history: date, version, dataset, what changed. A grid rather
    than a table because this sits inside a registry row's <td>, and a nested
@@ -1393,7 +1401,7 @@ td.whb.quiet { color: var(--amber-300); }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .acts2 { grid-template-columns: minmax(0, 1fr); }
   /* Four columns of history do not fit; the note takes its own line. */
-  .hrow { grid-template-columns: auto auto minmax(0, 1fr); }
+  .hrow, .hlist .hrow { grid-template-columns: auto auto minmax(0, 1fr) 30px; }
   .hrow.hhead { display: none; }
   .hrow > .tr:last-child { grid-column: 1 / -1; white-space: normal; }
 

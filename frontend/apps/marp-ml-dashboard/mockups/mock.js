@@ -805,6 +805,8 @@ const TIPS = {
   'Register model': 'Add a model trained outside MARP',
   'Use for inference': 'Start an inference job with this version',
   'Train from this': 'Fine-tune a new version from this one',
+  'Download weights': 'Download the weights file for this version',
+  'Download': 'Download the images and labels as a YOLO archive',
   'Assign to workers': 'Cache it on chosen workers and prefer them for matching jobs',
   'Change preference': 'Choose the task it is preferred for, and say why',
   'Lineage': 'Every version this one descends from, oldest first',

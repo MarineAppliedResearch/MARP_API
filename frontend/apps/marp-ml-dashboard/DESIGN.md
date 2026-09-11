@@ -266,7 +266,12 @@ are #104's measurement comment and its two decision comments.
     as a disabled sub-tab (assumption A4 in `.marp/task.md`).
 14. **Annotated video generation and detection crops** — output options in the Inference
     mockup with no pipeline behind them.
-15. **Three of the fixture's shapes are not the shapes of the tables they will come from**,
+15. **A dataset export** — the images and labels of a saved dataset, as an archive. Drawn
+    on the saved-dataset rows and beside *Create dataset*; nothing produces one.
+16. **Model weights** — `model.url` is whatever the submitter typed and nothing serves the
+    bytes, so *Download weights* has nowhere to fetch from. Drawn on the model's actions
+    and per version in its training history.
+17. **Three of the shapes used here are not the shapes of the tables they will come from**,
     so wiring them is a mapping and not a rename. `runs[].epochs` here is
     `{epoch, train_loss, val_loss, map50, seconds}`; the real `epochs` table carries
     `box_loss`, `cls_loss`, `dfl_loss`, `precision`, `recall`, `map50`, `map5095`.
@@ -276,7 +281,7 @@ are #104's measurement comment and its two decision comments.
     `storage_path` and `status`, and **has no versions array at all** — a version chain is
     a self-join. These shapes were chosen for what the screens need; the mapping is the
     implementation phase's work.
-16. **How many machines worked on a finished job** is not recorded anywhere, so
+18. **How many machines worked on a finished job** is not recorded anywhere, so
     `workers.using` is 0 on every terminal row and a History column cannot show it.
     "Using" is present tense.
 
