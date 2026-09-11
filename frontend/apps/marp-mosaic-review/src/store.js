@@ -175,7 +175,11 @@ export const state = {
   /* What the commit button is doing. A page commit is the one action here that can
      take real time and can fail, and it is also the irreversible one, so it says so
      rather than leaving the reviewer wondering whether the click registered. */
-  commit: { busy: false, status: null },  // status: null | 'ok' | 'failed'
+  /* Which button ran, so the acknowledgement lands on that one alone (#131). The
+     status was one field serving two controls, so committing only the marked tiles
+     also turned the page sweep green -- the page looked accepted when it was not. */
+  commit: { busy: false, status: null, which: null },  // status: null | 'ok' | 'failed'
+                                                      // which:  null | 'sweep' | 'marked'
   /* What a destructive commit is waiting to be told to do: null, or the impact the
      reviewer is being asked to accept. Held in the store rather than the dialog so the
      rule about what is destroyed and the thing that destroys it cannot drift apart. */
@@ -219,7 +223,7 @@ let commitStatusTimer = null;
 function clearCommitStatus(after = 2400) {
   clearTimeout(commitStatusTimer);
   commitStatusTimer = setTimeout(() => {
-    state.commit = { ...state.commit, status: null };
+    state.commit = { ...state.commit, status: null, which: null };
     notify();
   }, after);
 }
@@ -610,7 +614,7 @@ async function runCommit({ selective }) {
       : commitCount({ mode: startedIn, rows: state.rows, marks })
   });
 
-  state.commit = { busy: true, status: null };
+  state.commit = { busy: true, status: null, which: selective ? 'marked' : 'sweep' };
   notify();
 
   let res;
@@ -620,7 +624,7 @@ async function runCommit({ selective }) {
     /* Nothing is applied. The marks are untouched, so the reviewer can try again
        without redoing the page -- and that holds for all three of A4's failures, which
        is R20: none of them may silently discard the reviewer's work. */
-    state.commit = { busy: false, status: 'failed' };
+    state.commit = { busy: false, status: 'failed', which: selective ? 'marked' : 'sweep' };
     recordFailure(err, request);
     clearCommitStatus();
     notify();
@@ -628,7 +632,7 @@ async function runCommit({ selective }) {
   }
   clearFailure();
 
-  state.commit = { busy: false, status: 'ok' };
+  state.commit = { busy: false, status: 'ok', which: selective ? 'marked' : 'sweep' };
   clearCommitStatus();
 
   /**
