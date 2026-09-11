@@ -99,6 +99,10 @@ const SUBSYSTEMS = {
             'schema',
             'readonly-endpoints',
             'data-integrity',
+            // The corpus guard (#142). Here because it is data integrity by
+            // another route: it watches what a suite leaves behind rather than
+            // what a migration does.
+            'corpus-guard',
         ],
     },
     media: {

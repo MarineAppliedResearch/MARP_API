@@ -198,6 +198,42 @@ class SummaryReporter {
     }
 
     /**
+     * Record a failure that belongs to the file rather than to any one test.
+     *
+     * `onTestCaseResult` above cannot see these: a suite that fails to load, or
+     * a `beforeAll` that throws, or the corpus guard reporting that the file
+     * left the database different (#142) — none of them have an owning test
+     * case, so without this the run would say one suite failed and never say
+     * why.
+     *
+     * @param {Object} test - The test file this result belongs to.
+     * @param {Object} testResult - Jest's per-file result.
+     * @returns {void}
+     */
+    onTestResult(test, testResult) {
+        if (!testResult.testExecError && !testResult.failureMessage) {
+            return;
+        }
+
+        // A file whose individual tests failed has already been reported in
+        // full; only the file-level message would be new here.
+        if (!testResult.testExecError) {
+            return;
+        }
+
+        const relativeFile = path.relative(process.cwd(), test.path);
+
+        if (!this.failuresByFile.has(relativeFile)) {
+            this.failuresByFile.set(relativeFile, []);
+        }
+
+        this.failuresByFile.get(relativeFile).push({
+            fullName: '(the test file itself, not one of its tests)',
+            messages: [stripAnsi(testResult.failureMessage || testResult.testExecError.message)],
+        });
+    }
+
+    /**
      * Print the summary stats block, the full failure-traceability
      * section (if any), and write the accumulated report to a timestamped
      * file under tests/logs/.

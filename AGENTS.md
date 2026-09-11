@@ -428,6 +428,26 @@ rows the development server happens to hold, seed them in the suite; see
 `tests/species-lists.test.js`, where a block used to fail in one place and pass vacuously
 in three.
 
+## A test may create rows and must remove them
+
+It may never modify or delete a row it did not create. After a test file runs, the database
+holds exactly what it held before — whatever it is pointed at.
+
+This is enforced rather than requested. `tests/setup/corpus-guard.js` takes a count and a
+digest of every table before a file's tests and again after everything in it has finished,
+and **fails that file**, naming the table and whether rows were deleted, modified, or added
+and left behind. `tests/setup/local-database-guard.js` refuses to run the suite at all
+against a database that is not local, because the development database carries the same name
+as production and only the host tells them apart.
+
+Exemptions are a written list with a reason each, at the top of `corpus-guard.js`. Add to it
+only for something that moves because a test authenticated, or the equivalent; a table nobody
+watches is where the next loss happens. `tests/corpus-guard.test.js` proves the guard catches
+all three failures, against a scratch database it builds and drops.
+
+It exists because a run that reported every suite and every test green destroyed a real
+observation and left hundreds of review rows behind in the corpus. See #142.
+
 **There is a fast tier and a slow tier. Use the fast one between changes.**
 `npm test` is the whole suite -- minutes, not seconds -- and it is for the end of a change
 set, not the working loop. The suites are grouped into subsystems, and running the one you
