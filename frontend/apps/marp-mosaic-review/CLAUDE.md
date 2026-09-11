@@ -703,6 +703,30 @@ entirely unless something names it — a bare `playwright test` used to pull it 
 turned a ninety-second loop into four and a half minutes and recorded videos nobody had
 asked for.
 
+**A walkthrough is for the human to watch. It is not automated testing, and it must never
+be counted as coverage.** Settled again on 2026-09-11: *"walkthrough tests are for me to
+review, those aren't for automated testing."*
+
+So a walkthrough is never the evidence that something works, never cited in place of a
+test, and never added to make a tier look complete. If a behaviour needs proving, it needs
+a test at a tier that can observe it; the walkthrough is what the user watches afterwards
+to decide whether he likes it. The assertions inside a scenario exist for one narrow
+reason — so a broken app fails instead of producing a convincing film of something that
+does not work — and that is quality control on the film, not coverage of the feature.
+
+Two consequences that are easy to get wrong:
+
+- **A walkthrough writes real data.** It signs in as a real reviewer and commits real
+  decisions: 60 review rows landed in the development corpus during one recording on
+  2026-09-11, and they are still there. That is not a defect — a person watching a review
+  tool needs the review to happen — but it means a recording is a *write to the record*,
+  not a dry run.
+- **#142's corpus guard cannot see any of it.** That guard runs inside Jest, and a
+  walkthrough is Playwright. **Do not "fix" that by pulling walkthroughs into the guarded
+  path or into `npm test`** — they are not tests, and putting them there would both slow
+  the loop and start recording videos nobody asked for, which is exactly what
+  `playwright.config.mjs` excludes the project to prevent.
+
 **And a walkthrough never belongs in a verification plan.** It is not a verification step,
 it does not appear in `.marp/verification.md`, and no plan proposes one — *"a walkthrough
 video is just supposed to be something I specifically ask for"* (2026-09-10). The user asks
