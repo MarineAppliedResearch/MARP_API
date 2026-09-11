@@ -40,16 +40,58 @@ import { test, expect } from '@playwright/test';
  * explanation rather than committing a page it did not expect. Any single-observation
  * species would do; `mosaic/observations/facets` reports the counts.
  */
-const LONE_SPECIES = 622;
+/**
+ * **Nothing here pins a fact about the data.**
+ *
+ * This was `const LONE_SPECIES = 622` -- the one species with a single observation when
+ * this file was written. Seven CAMPA2026 dives landed the same night and it had seven, so
+ * the guard below fired and the test refused to run. It was right to refuse; it was wrong
+ * to have hard-coded the thing that changed.
+ *
+ * The isolating filter is discovered from the facets instead, every run. `species` alone no
+ * longer isolates anything, so it is paired with `line` -- **not `dive`**, because a dive
+ * name repeats across projects (`Dive 12` is in CAMPA2024 and CAMPA2026, and the facet
+ * count is their sum) while a line belongs to one session.
+ */
+async function facetsFor(request, filters) {
+  const res = await request.post('/api/v2/mosaic/observations/facets', { data: { filters } });
+  expect(res.ok(), `the facets query was refused: ${res.status()} ${await res.text()}`)
+    .toBeTruthy();
+  return (await res.json()).facets;
+}
+
+/**
+ * A `{ species, line }` pair holding exactly one observation, or a failure saying so.
+ *
+ * One request per line, and the species counts inside that line come back with it -- so
+ * this is a handful of requests rather than a sweep of every combination.
+ */
+async function discoverLoneRow(request) {
+  const { line } = await facetsFor(request, {});
+
+  for (const candidate of line) {
+    const inLine = await facetsFor(request, { line: [candidate.value] });
+    const only = (inLine.species || []).find((sp) => sp.count === 1);
+    if (only) return { species: only.value, line: candidate.value, label: only.label };
+  }
+
+  /* Fail rather than skip. A skipped test looks green, and this is the only tier that can
+     see the defect at all -- so its absence has to be loud. */
+  throw new Error(
+    'No species has exactly one observation within a single line, so there is no page this '
+    + 'test can sweep without writing rows it never inspected. Add an observation, or narrow '
+    + 'the page another way.'
+  );
+}
 
 /** The reason the setup flag carries. One of Scientific's own, so the record says why. */
 const SETUP_REASON = 'Other / unsure';
 
 /** Ask the mosaic for the page this test acts on. */
-async function lonePage(request) {
+async function lonePage(request, lone) {
   const res = await request.post('/api/v2/mosaic/observations/pages', {
     data: {
-      filters: { species: [LONE_SPECIES] },
+      filters: { species: [lone.species], line: [lone.line] },
       sort: [{ field: 'confidence', dir: 'asc' }],
       pageSize: 45,
       pages: [1],
@@ -78,14 +120,17 @@ async function commitOne(request, row, { marked = false, withdraw = false, reaso
 }
 
 test('R8: a recorded take-back stops saying TAKING BACK', async ({ page, request }) => {
-  const before = await lonePage(request);
+  const lone = await discoverLoneRow(request);
+  const before = await lonePage(request, lone);
 
-  /* Refuse rather than widen. If this species has gained observations the page is no longer
-     one row, and the sweep below would commit decisions this test never looked at. */
+  /* Still refuse rather than widen. The facets and the page are two queries, and the corpus
+     can grow between them -- a GPU run was writing to it while this file was being written.
+     So the page is checked, not assumed, and the sweep below never commits a row this test
+     did not look at. */
   expect(before.total,
-    `species ${LONE_SPECIES} no longer has exactly one observation, so a page sweep here `
-    + 'would write rows this test did not inspect. Pick another single-observation species '
-    + 'from mosaic/observations/facets.').toBe(1);
+    `species ${lone.species} on line ${lone.line} (${lone.label}) is no longer one `
+    + 'observation, so a page sweep here would write rows this test did not inspect.')
+    .toBe(1);
 
   const row = before.rows[0];
   /* An accepted tile needs a picture — "reviewed" means somebody looked at it — so a row
@@ -109,12 +154,12 @@ test('R8: a recorded take-back stops saying TAKING BACK', async ({ page, request
      * flag is written through the API first, and the page is then loaded fresh.
      */
     await commitOne(request, row, { marked: true });
-    const flagged = await lonePage(request);
+    const flagged = await lonePage(request, lone);
     expect(flagged.rows[0].review_decision).toBe('flagged');
 
-    /* The species filter is the whole question, so the page holds this row alone. Scientific
-       opens on `['unreviewed', 'flagged']`, so a flagged row is in view. */
-    await page.goto(`./?species=${LONE_SPECIES}`);
+    /* Species and line together are the whole question, so the page holds this row alone.
+       Scientific opens on `['unreviewed', 'flagged']`, so a flagged row is in view. */
+    await page.goto(`./?species=${lone.species}&line=${lone.line}`);
 
     /* This tier grades the API, and says so. If the fixture flag ever leaks in here, or the
        page stops announcing which backing it is on, this fails rather than a real-database
@@ -152,7 +197,7 @@ test('R8: a recorded take-back stops saying TAKING BACK', async ({ page, request
     await expect(tile).not.toHaveClass(/out-reverted/);
 
     /* And the record agrees, read back from the endpoint rather than off the screen. */
-    const after = await lonePage(request);
+    const after = await lonePage(request, lone);
     expect(after.rows[0].review_decision).toBe('reviewed');
   } finally {
     /**
@@ -163,7 +208,7 @@ test('R8: a recorded take-back stops saying TAKING BACK', async ({ page, request
      * decision log keeps its entries by design; that is the endpoint's contract, not this
      * test leaving something behind.
      */
-    const current = (await lonePage(request)).rows[0];
+    const current = (await lonePage(request, lone)).rows[0];
 
     if (original.decision == null) {
       await commitOne(request, current, { withdraw: true });
@@ -174,7 +219,7 @@ test('R8: a recorded take-back stops saying TAKING BACK', async ({ page, request
       await commitOne(request, current);
     }
 
-    const restored = (await lonePage(request)).rows[0];
+    const restored = (await lonePage(request, lone)).rows[0];
     expect(restored.review_decision,
       `observation ${current.observation_id} was left as ${restored.review_decision} `
       + `instead of ${original.decision}`).toBe(original.decision);
