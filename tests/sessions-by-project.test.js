@@ -168,7 +168,18 @@ describe('Sessions by project', () => {
       await global.api.delete(`/api/v2/project/${projectId}`);
     }
     if (userId) {
-      await global.api.delete(`/api/v2/processors/by-name/${userId}`);
+      // `/processors/:id`, not `/processors/by-name/:id`. There is no delete
+      // route under `by-name` at all, so this cleanup had been 404ing silently
+      // since it was written and the processor stayed -- one of the users the
+      // corpus guard found sitting in the development database (#142). The
+      // delete route swallows database failures to `{}`, so assert the row is
+      // actually gone rather than trusting a 200.
+      await global.api.delete(`/api/v2/processors/${userId}`);
+
+      const remaining = await global.api.get(
+        `/api/v2/processors/by-name/${processorName}`
+      );
+      expect(remaining.body).toEqual([]);
     }
   });
 
