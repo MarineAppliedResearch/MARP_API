@@ -5,145 +5,141 @@ status: design
 needs: []
 ---
 
-# The suite cannot quietly destroy the corpus
+# A test never touches data it did not create
 
 Design specification for **MARP_API#142**.
 
 **G1 only. Nothing is implemented while a `blocking` assumption below is open.**
 
-## What happened
+## The requirement, in the human's words
 
-`npm test` was run against the development corpus on 2026-09-11 to verify #130 and #131.
-**It passed — 44 suites, 612 tests, 0 failed — and it deleted a real observation.**
+> *"We need to make sure that none of our tests ever destructively hurt the data if I ever
+> accidentally run the test on the production server. I wanna make sure that none of the
+> data currently in the production server actually gets changed or mutated in any way…
+> that means if the suite adds rows and needs to remove them afterwards, like, come on.
+> Think."*
+
+**This is a stronger and simpler rule than the one I first wrote**, and it replaces it. The
+first draft asked whether to watch a net row count and whether leftover rows should merely
+be *reported*. Both were wrong. The rule is:
+
+> **A test may create rows and must remove them. It may never modify or delete a row it did
+> not create.** After a suite runs, the database holds exactly what it held before.
+
+That is the whole specification. It holds whatever the suite is pointed at — a scratch
+database, the development corpus, or, by accident, production.
+
+## What happened, which is only the symptom
+
+`npm test` against the development corpus on 2026-09-11 passed — 44 suites, 612 tests, 0
+failed — and left the database different:
 
 ```
-before   2094 observations
-after    2093 observations
-missing  observation 1233 · CAMPA2026 · Dive 28 · line 2003
+observations               2094  ->  2093     one destroyed: 1233, CAMPA2026, Dive 28
+observation_reviews         219  ->   427     208 left behind
+observation_review_current  209  ->   359     150 left behind
 ```
 
-Found by counting rows before and after and looking for a gap in the id range, not by
-anything the suite reported. A second, non-destructive symptom of the same shape: the same
-run took `observation_reviews` from 219 rows to 427 and `observation_review_current` from
-209 to 359. Review decisions the suite made are now sitting in the corpus, and the mosaic
-draws them as real.
+The deletion is the alarming half. The 358 rows left behind are the same fault: a suite
+that does not put the database back.
 
 ## What is already true, checked rather than assumed
 
-- **A delete leaves no trace, deliberately.** `repository/mosaic-commit.repository.js`:
-  *"no provenance row, nothing recording who or when"*, cascading to `keyframes`,
-  `dataset_observations`, `observation_reviews` and `observation_review_current`. So there
-  is no audit trail to identify the caller, and this is correct behaviour for the feature.
-- **Reading the tests does not find it.** Every `DELETE FROM observations` in `tests/` is
-  keyed on ids the suite created — `tests/mosaic-commit.test.js` uses `addObservations(2)`
-  and deletes by explicit id; `tests/gpu-observation-ingest.test.js:375` deletes by
-  `gpu_job_id`, but only for jobs it tracked in `createdJobIds`. **The culprit is not
-  obvious by inspection**, which is the strongest argument for a guard that names the suite
-  rather than only the run.
+- **A delete leaves no trace, deliberately.** `repository/mosaic-commit.repository.js`: *"no
+  provenance row, nothing recording who or when"*. So there is no audit trail naming the
+  caller, and that is correct for the feature.
+- **Reading the tests does not find the culprit.** Every `DELETE FROM observations` in
+  `tests/` is keyed on ids the suite created — `mosaic-commit` seeds with
+  `addObservations(2)`; `gpu-observation-ingest:375` deletes by `gpu_job_id` but only for
+  jobs it tracked. **The guard has to name the suite**, because inspection did not.
 - **`setupFilesAfterEnv` runs once per test file** (`jest.config.js:75`), already carrying
-  `console-error-passthrough.js` and `authenticated-agent.js`. That is the hook a per-suite
-  check fits into with no new machinery.
-- **The suite runs `--runInBand`** against whatever `DB_*` points at. That is both how it is
-  meant to work and why this is possible.
-- **CI cannot see any of this.** CI builds an empty database from the baseline and the
-  migrations, so there is nothing to borrow and nothing to lose. A guard added here is
-  **inert in CI and meaningful only on a machine holding real data** — which is unusual
-  enough to say out loud.
-- **The rule this breaks is already written down.** `CLAUDE.md`: *"A test must seed what it
-  asserts."* Five tests were fixed for *reading* borrowed rows. This is one *writing* to a
-  borrowed row, destructively.
-- **There is a dump from 08:20 that day** recording 2,094 observations, so observation 1233
-  and its keyframes exist in a file. It exists by luck of timing: #125 landed hours earlier.
+  two setup files. That is where a per-suite check belongs, with no new machinery.
+- **CI cannot see any of this.** CI builds an empty database, so there is nothing to borrow
+  and nothing to lose. The guard is **inert in CI and meaningful only against real data**.
+- **The development database is also called `mare_v1`**, the same name as production. The
+  only thing distinguishing them is the host, which makes a misdirected `.env` genuinely
+  dangerous rather than theoretically so.
+- **The rule is already written down and was not enforced.** `CLAUDE.md`: *"A test must seed
+  what it asserts."* Five tests were fixed for *reading* borrowed rows; this is one
+  *writing* to them.
 
 ## Open assumptions
 
-- [ ] **A1 · behavioural · blocking** — **What does the guard watch, and what counts as a
-  loss?**
-  Candidates: **(a)** `observations` alone — the thing that was lost, one number, nearly
-  free; **(b)** a named set of *corpus tables* — `observations`, `keyframes`,
-  `observation_thumbnails`, `sessions`, `projects`, `ml_models` — where a **net decrease**
-  in any of them fails; **(c)** every table in the schema.
-  **Recommendation: (b).** (a) would have caught this one and misses a suite that deletes
-  keyframes, a session or the model — all of which are equally unrepeatable. (c) is noise:
-  plenty of tables legitimately shrink when a suite cleans up after itself, and a guard
-  that cries wolf gets disabled.
-  **Note what (b) deliberately does not cover:** a test that deletes a real row *and* seeds
-  one of its own leaves the count level. This is a net check, not an identity check. A6
-  covers whether that matters.
+- [ ] **A1 · architectural · blocking** — **How is "unchanged" detected?**
+  A row count catches a deletion and a leftover insert. It does **not** catch a mutation —
+  a test that flips `review_decision` on a real observation leaves every count identical.
+  The requirement is that nothing is *changed*, so counting is not enough.
+  Candidates: **(a)** per table, `count(*)` plus a digest over the rows —
+  `md5(string_agg(...))` of each row's key columns, ordered — compared before and after;
+  **(b)** counts plus `max(updated_at)`, cheaper and blind to a delete-and-reinsert;
+  **(c)** counts only, accepting that mutations go unseen.
+  **Recommendation: (a).** One digest per table catches all three failures at once — a
+  deletion, a mutation, and a row added and not removed — because any of them changes the
+  digest. It is one query per table and it makes the check exact rather than approximate.
 
-- [ ] **A2 · architectural · blocking** — **Per suite, or per run?**
-  Per run is one count before and one after — cheapest, and tells you the suite destroyed
-  something without saying which file. Per suite uses `setupFilesAfterEnv` and **names the
-  file**, at the cost of a `count(*)` per table per test file (44 files).
-  **Recommendation: per suite.** The whole reason this issue is hard is that reading the
-  tests did not identify the culprit. A guard that reproduces that ambiguity is worth much
-  less. The cost is a handful of counting queries against indexed tables, in a suite that
-  already takes 82 seconds.
+- [ ] **A2 · behavioural · blocking** — **Which tables, and what is legitimately exempt?**
+  A blanket "nothing changes anywhere" will trip on bookkeeping that is not a defect:
+  `service_tokens.last_used_at` and `service_clients.last_used_at` move merely because a
+  test authenticated, and sequences advance whenever anything is inserted, by design.
+  Candidates: **(a)** every table, with a named exemption list and a comment per entry;
+  **(b)** only the tables holding survey data — observations, keyframes, thumbnails,
+  sessions, projects, models, species, datasets and the review tables; **(c)** only what
+  was lost this time.
+  **Recommendation: (a).** An exemption you had to write down is a decision; a table you
+  never watched is a blind spot, and the next loss will be in one of those. Sequences are
+  not rows and are out of scope either way.
 
-- [ ] **A3 · behavioural · blocking** — **Does the guard fail the run, or report?**
-  Failing turns a silent loss into a red suite. It also means the *first* discovery of a
-  destructive test is a failing build on the machine that just lost data — the guard
-  detects, it cannot undo.
-  Candidates: fail the suite that lost rows; fail the whole run at the end; print loudly and
-  exit 0.
-  **Recommendation: fail the suite that lost rows**, and print what was lost and from which
-  table. A test that destroys unrepeatable data is a failing test even when its assertions
-  passed, and exiting 0 on a known loss is how this went unnoticed for a whole run.
+- [ ] **A3 · security/permissions · blocking** — **Should the suite refuse to run against
+  production outright?**
+  The guard above detects after the fact. On production, after the fact is too late — the
+  rows are already gone and there is no dump.
+  Candidates: **(a)** detection only; **(b)** refuse when the target is not local —
+  anything but `127.0.0.1`/`localhost` — unless an explicit variable overrides;
+  **(c)** refuse unless the database carries a marker row saying it is disposable.
+  **Recommendation: (b), together with A1.** It is a few lines in the Jest global setup, it
+  costs nothing on every machine that already runs the suite locally, and it turns *"if I
+  ever accidentally point it at production"* from a catastrophe into an error message. (c)
+  is stronger but every existing database would need marking, including this one.
+  **Detection and refusal answer different halves and this phase should do both.**
 
-- [ ] **A4 · architectural · blocking** — **Should the suite refuse to run against a
-  database holding a corpus at all?**
-  This is the only option that *prevents* rather than *detects*. It is also the most
-  disruptive: running `npm test` against the development database is how everything in this
-  project has been verified, including tonight's phase, and the corpus is what makes that
-  verification meaningful.
-  Candidates: **(a)** never refuse, only detect; **(b)** refuse unless an environment
-  variable says the operator accepts it; **(c)** refuse always, and require the suite to be
-  pointed at a database built for it — which #125's `marp db load` now makes possible.
-  **Recommendation: (a) for this phase**, with (c) recorded as where this should end up
-  once #132 has the browser tier on a loaded database too. Detection is a day's confidence;
-  a separate test database is the real answer, and it should not be bolted on inside a
-  bug-fix phase.
+- [ ] **A4 · behavioural · non-blocking** — **What happens to a suite that fails the check?**
+  Recommendation: the suite fails, naming the table, what changed, and the file — a test
+  that leaves the database different is a failing test even when its assertions passed.
+  Exiting 0 on a known change is exactly how 358 rows and one deletion went unnoticed for a
+  whole run.
 
-- [ ] **A5 · behavioural · blocking** — **What about rows the suite *adds* to the corpus?**
-  The same run added 208 review rows and 150 projection rows that are still there. Nothing
-  was lost, but the corpus's review counts are now partly synthetic, and the mosaic shows
-  them as decisions somebody made.
-  Candidates: fail on additions too; report additions without failing; ignore them.
-  **Recommendation: report without failing.** Additions are recoverable and a test that
-  writes a review is doing its job; a guard that fails on them would fail on almost every
-  suite. But an unreported residue is how 208 rows accumulated without anybody noticing,
-  so it should be visible at the end of a run.
+## Decisions
 
-- [ ] **A6 · destructive · blocking** — **Do we restore observation 1233?**
-  It is in the 08:20 dump with its keyframes. Restoring one row out of a `pg_dump` means
-  loading the dump into a second database and copying the row and its children across —
-  perhaps twenty minutes, and it touches the corpus.
-  Candidates: restore it; leave it and record that it was lost; leave it and write the
-  restore path down for when it matters more.
-  **Recommendation: leave it, and say so in the log.** One observation out of 2,093, whose
-  absence changes no conclusion, against a careful write to the one database with no
-  backup. **This is the human's call and it is not mine to make** — it is his scientific
-  record, and "it is only one row" is exactly the reasoning that loses records.
+Settled by the human, 2026-09-11, and recorded here because they replaced questions I
+should not have asked:
+
+- **Rows the suite adds are removed by the suite.** Not reported, not tolerated. *"If the
+  suite adds rows [it] needs to remove them afterwards."*
+- **Observation 1233 is not restored.** *"Right now that's just in the testing data."* It is
+  recorded as lost and the phase moves on.
+- **The rule is about mutation, not only destruction.** Nothing already in the database
+  changes in any way.
 
 ## Requirements
 
-- **R1** — A test suite that reduces the row count of a watched table fails, naming the
-  table, the number lost, and the suite.
-- **R2** — The watched set is named in one place, with a comment saying why each table is
-  in it.
-- **R3** — The guard costs no meaningful time: it is counting queries, and the suite's
-  runtime is not materially changed.
-- **R4** — The guard is inert against an empty database, so CI is unaffected and stays
-  green for the right reason rather than by accident.
-- **R5** — Rows *added* to the review tables are reported at the end of a run, per A5.
-- **R6** — The guard itself has a test: a deliberately destructive fixture suite is caught.
-  A guard nobody has watched fail is not a guard.
-- **R7** — Nothing in this phase deletes, alters or restores corpus data, except whatever
-  A6 settles.
+- **R1** — After any test file runs, every watched table holds exactly the rows it held
+  before: none deleted, none modified, none added and left behind.
+- **R2** — A suite that breaks R1 **fails**, naming the file, the table, and what changed.
+- **R3** — The watched set is every table, minus a written exemption list with a reason per
+  entry. Per A2.
+- **R4** — The suite refuses to run against a database that is not local, unless explicitly
+  overridden. Per A3.
+- **R5** — The guard is inert against an empty database, so CI stays green for the right
+  reason.
+- **R6** — The guard has its own test: a deliberately destructive fixture suite is caught,
+  and a deliberately mutating one is caught. A guard nobody has watched fail is not a guard.
+- **R7** — The guard costs no meaningful time against the suite's current 82 seconds.
+- **R8** — Nothing in this phase deletes, alters or restores corpus data.
 
 ## Out of scope
 
-- Finding and fixing the specific destructive test. **The guard is what makes that findable**
-  — the next full run will name it. Fixing it is the follow-up, and it may be one line.
-- Pointing the suite at a database built from a dump (#132, #125).
-- The review residue already in the corpus. Reporting it is R5; cleaning it is not this.
+- **Finding and fixing the specific destructive test.** The guard makes it findable — the
+  next full run names it. That is the follow-up, and it may be one line.
+- Pointing the suite at a database built from a dump (#125, #132).
+- The 358 review rows already left in the corpus. R1 stops the next ones; cleaning these is
+  separate.
