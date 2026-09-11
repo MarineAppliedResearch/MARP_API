@@ -135,6 +135,10 @@ producing defects until something compares the two shapes:
   key set in `tests/mosaic-query.test.js:1078` is *moved into*, never widened.
 - **R13** — No schema change, therefore no migration. Nothing in this phase alters a table,
   a column or existing data.
+- **R14** — **The browser tier can run against the real API**, not only the fixture, and
+  the take-back fix (R8) has a test there that fails without it. No fixture affordance
+  simulates the endpoint. A test that writes a review decision restores what it changed and
+  names the rows it touched. Per the revised A8.
 
 ## Open assumptions
 
@@ -313,7 +317,27 @@ Answered by the human on 2026-09-10 unless noted.
   `flagged`, and the `||` resurrects the state for the rest of the sitting. It must prefer
   the outcome when there is one and fall back to the record only when there is not.
 
-- **A8 — the fixture/endpoint check lands here; the browser tier moves later, tracked.**
+- **A8 — REVISED by the human, 2026-09-11: the browser tier gets repointed at the real
+  API in this phase.** *"Why are we doing tests on the fixture instead of the actual
+  system? If the fixture doesn't trigger the error and the actual system does, that doesn't
+  make any sense… it means our database needs the proper data in it for testing, which we
+  already have."*
+  Correct, and it overrides the deferral below. It also kills the thing I had started
+  building — a fixture affordance that *simulates* the endpoint not writing a row back.
+  **A fake that models the real system is what produced #130 in the first place**; adding a
+  better fake to test the damage done by a fake is the wrong direction.
+  What made the deferral look reasonable was wrong on the facts. The wiring already
+  exists: `MARP_API_BASE` repoints the tier, `tools/api-session.mjs` is a `globalSetup`
+  that signs in and writes a real Playwright session, and the fixture flag is injected in
+  exactly one place. It is gated to the walkthrough project by
+  `ON_API = Boolean(API_BASE) && WALKTHROUGH` and nothing else. The comment on the flag
+  already says *"both come out when the seeded database lands and this tier is repointed"*
+  — the database landed and nobody repointed it.
+  **R14 covers it.** The one thing that needs care is that this tier **writes review
+  decisions**, and the only real database available is the corpus, which is evidence with
+  no backup until #125. So a test that writes restores what it changed and names the rows.
+
+- **A8 (superseded) — the fixture/endpoint check lands here; the browser tier moves later, tracked.**
   *"That fails when the fixture and the endpoint disagree about a field the client reads,
   although I'm not against pointing browser tests at the real database… our overall MARP
   umbrella makes running a new database just a few commands, so it might be smart to run
