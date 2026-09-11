@@ -81,6 +81,39 @@ async function markMany(page, n, gap = 280) {
   return ids;
 }
 
+/**
+ * Accept the first `n` undecided tiles with a right click, one after another (#126).
+ *
+ * The same id-pinning `markMany` needs and for the same reason: `freshTile` stops matching
+ * the instant a tile is marked, whichever kind of mark it is.
+ */
+async function acceptMany(page, n, gap = 320) {
+  const ids = [];
+  for (let i = 0; i < n; i++) {
+    const next = freshTile(page).first();
+    if (!(await next.count())) break;
+    const id = await next.getAttribute('data-id');
+    ids.push(Number(id));
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await page.waitForTimeout(gap);
+  }
+  return ids;
+}
+
+/**
+ * Take the measurement strip back off the frame.
+ *
+ * `meter` paints across the top and nothing ever removes it, so a number that was true in
+ * one scene sits over the header for the rest of the film. Here the strip says what the
+ * *first* page's commit wrote, and the second half is a different page.
+ */
+const clearMeter = (page) => page.evaluate(
+  () => document.getElementById('demoMeter')?.remove());
+
+/** What the last commit answered for each of these ids, straight off the store. */
+const outcomesFor = (page, ids) => page.evaluate(
+  (want) => want.map((id) => window.MARP.state.outcomes.get(id) ?? null), ids);
+
 async function markFirstFresh(page) {
   const id = await freshTile(page).first().getAttribute('data-id');
   const tile = page.locator(`.tile[data-id="${id}"]`);
@@ -2121,6 +2154,237 @@ export const scenarios = {
            + "the pictures are all there.",
         async act({ page, expect }) {
           await lookedAt(page, expect, 'the last look');
+        }
+      }
+    ]
+  },
+
+  /* --------------------------------------------- two commits: the two ways to commit */
+  /* Asked for on 2026-09-10, after #126 went in: *"showing how we can use both the left
+     click and the right click with the first button, or we can just do it the old way with
+     the normal left click and the second button."* So it is two halves on two pages, and
+     the point of the first half is the thing that is *not* on screen -- the forty-five
+     tiles nobody touched, still carrying nothing after the main button has been pressed.
+
+     Recorded against the real API and real data, like `look` and `verify-real-database`.
+     The assertions are deliberately light but real: the badges are the right kind on the
+     right tiles, the store's outcomes name only the marked, and the record is read back
+     from outside the application. #126's own proof is the unit, contract and render
+     tiers -- this is for watching. */
+  'two-commits': {
+    title: 'Two ways to commit a page',
+    scenes: [
+      {
+        caption: 'Two ways to commit',
+        say: "Fifty observations, two ways to commit them. Here is the new one.",
+        /* No action at all. This is the claim, and the wall is what the viewer looks at. */
+        async act({ page, expect, store }) {
+          store.origin = new URL(page.url()).origin;
+          const me = await page.request.get(`${store.origin}/api/v2/auth/me`);
+          expect(me.status()).toBe(200);
+          store.me = (await me.json()).user;
+
+          store.pageOne = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(store.pageOne.length, 'fifty on the page, which is what the line says')
+            .toBe(50);
+          /* Nothing arrives marked here: this page holds no flag the record already
+             carried, so every badge that appears from now on was put there on camera. */
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+
+          /* R5, and it is the half of #126 a still frame can show: the main button is the
+             bigger one, and the sweep sits to its right.
+             **Height, not width.** The two are within half a pixel of each other across,
+             because the sweep's wording happens to be the longer one -- what makes the
+             main button primary is that it is taller and filled while the sweep is a
+             smaller outline, which is `.commit.sweep` in the stylesheet. */
+          const main = await page.locator('#commitMarked').boundingBox();
+          const sweep = await page.locator('#commit').boundingBox();
+          expect(main.height, 'the main button is the bigger one')
+            .toBeGreaterThan(sweep.height);
+          await expect(page.locator('#commit'), 'and the sweep is the secondary one')
+            .toHaveClass(/sweep/);
+          expect(sweep.x, 'sitting to its right').toBeGreaterThan(main.x);
+        }
+      },
+      {
+        caption: 'Right click accepts',
+        say: "Right clicking these three … each one goes green. Reviewed.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "right clicking these three"
+          store.accepted = await acceptMany(page, 3);
+          expect(store.accepted.length).toBe(3);
+          for (const id of store.accepted) {
+            const tile = page.locator(`.tile[data-id="${id}"]`);
+            await expect(tile, `${id} carries an accept mark`).toHaveClass(/accept/);
+            await expect(tile.locator('.badge')).toHaveText(/REVIEWED/);
+          }
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Left click flags',
+        say: "Left clicking two more … amber. Flagged, as before.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "left clicking two more"
+          store.flagged = (await markMany(page, 2)).map(Number);
+          expect(store.flagged.length).toBe(2);
+          for (const id of store.flagged) {
+            const tile = page.locator(`.tile[data-id="${id}"]`);
+            await expect(tile, `${id} is marked`).toHaveClass(/marked/);
+            await expect(tile, `${id} is not an acceptance`).not.toHaveClass(/accept/);
+            await expect(tile.locator('.badge')).toHaveText(/FLAGGED/);
+          }
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Forty-five untouched',
+        say: "Nobody touched the other forty-five. The main button says nothing "
+           + "about them.",
+        /* No action: this is the explanation, and the app moves nowhere while it is given. */
+        async act({ page, expect, store }) {
+          const marked = new Set([...store.accepted, ...store.flagged]);
+          store.untouched = store.pageOne.filter((id) => !marked.has(id));
+          expect(store.untouched.length, 'forty-five of them').toBe(45);
+
+          /* Five badges on a wall of fifty tiles, and the button offering to act on
+             exactly those five. */
+          await expect(page.locator('.tile.marked')).toHaveCount(5);
+          await expect(page.locator('.tile .badge')).toHaveCount(5);
+          await expect(page.locator('#commitMarked')).toContainText('5 tiles');
+        }
+      },
+      {
+        caption: 'Commit Marked',
+        say: "Pressing Commit Marked … saved. Five written, the rest left alone.",
+        async act({ page, expect, store }) {
+          await beat(page, 1000);                 // "pressing Commit Marked"
+          await page.locator('#commitMarked').click();
+          await expect(page.locator('#commitMarked')).toHaveClass(/ok/);
+
+          /* What this commit answered, per observation. A badge could be left over from a
+             mark; an **outcome** is what the commit itself said, and the forty-five have
+             no entry at all -- which is the whole of #126. */
+          expect(await outcomesFor(page, store.accepted), 'the three it accepted')
+            .toEqual(['reviewed', 'reviewed', 'reviewed']);
+          expect(await outcomesFor(page, store.flagged), 'the two it flagged')
+            .toEqual(['flagged', 'flagged']);
+          expect(new Set(await outcomesFor(page, store.untouched)),
+            'and it answered nothing for every tile nobody touched').toEqual(new Set([null]));
+
+          /* Still five badges on the page: the commit painted nothing onto the rest. */
+          await expect(page.locator('.tile .badge')).toHaveCount(5);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Read back from the record',
+        say: "Read back from the database. Three reviewed, two flagged, and forty-five "
+           + "untouched.",
+        /* No action. A fresh read of the record, from outside the application, after the
+           write -- the app cannot be the only witness to what it wrote. */
+        async act({ page, expect, store }) {
+          const q = await question(page);
+          const still = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+          const byId = new Map(still.pages[0].rows.map((r) => [r.observation_id, r]));
+
+          for (const id of store.untouched) {
+            const row = byId.get(id);
+            expect(row, `${id} is still in the reviewer queue`).toBeTruthy();
+            expect(row.review_decision, `${id} carries no decision`).toBe(null);
+          }
+          for (const id of store.flagged) {
+            expect(byId.get(id).review_decision, `${id} is flagged on the record`)
+              .toBe('flagged');
+            expect(byId.get(id).review_reviewer_id, 'and flagged by me')
+              .toBe(store.me.user_id);
+          }
+          for (const id of store.accepted) {
+            expect(byId.has(id), `${id} has left the unreviewed queue`).toBe(false);
+          }
+
+          /* And the three really are recorded as reviewed, rather than merely gone. Two
+             pages, because the record holds more reviewed rows than fit in one. */
+          const done = await askApi(page, store.origin, '/mosaic/observations/pages', {
+            ...q, filters: { ...q.filters, reviewStatus: ['reviewed'] }, pages: [1, 2]
+          });
+          const reviewed = new Map(done.pages.flatMap((p) => p.rows)
+            .map((r) => [r.observation_id, r]));
+          for (const id of store.accepted) {
+            expect(reviewed.get(id), `${id} is on the record as reviewed`).toBeTruthy();
+            expect(reviewed.get(id).review_reviewer_id, 'and reviewed by me')
+              .toBe(store.me.user_id);
+          }
+
+          await meter(page, `${store.accepted.length} reviewed · ${store.flagged.length} `
+            + `flagged · ${store.untouched.length} rows untouched · reviewer `
+            + `${store.me.user_id}`);
+        }
+      },
+      {
+        caption: 'A fresh page',
+        say: "On to a fresh page … fifty more, and now the old way.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                  // "on to a fresh page"
+          await clearMeter(page);                 // its numbers were about page one
+          await turnPage(page, expect, settled, 2);
+
+          store.pageTwo = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(store.pageTwo.length).toBe(50);
+          const seen = new Set(store.pageOne);
+          expect(store.pageTwo.filter((id) => seen.has(id)),
+            'none of these were on the page just committed').toEqual([]);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Left click flags',
+        say: "Left clicking two here … and those are the only marks on the page.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "left clicking two here"
+          store.flagged2 = (await markMany(page, 2)).map(Number);
+          expect(store.flagged2.length).toBe(2);
+          for (const id of store.flagged2) {
+            await expect(page.locator(`.tile[data-id="${id}"] .badge`)).toHaveText(/FLAGGED/);
+          }
+          store.swept = store.pageTwo.filter((id) => !store.flagged2.includes(id));
+          /* Nothing else is marked, so the sweep's accepted set really is everything else
+             -- which is the claim the next line makes. */
+          await expect(page.locator('.tile.marked')).toHaveCount(2);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Review page',
+        say: "Pressing the smaller button … and every other tile is accepted, in one go.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "pressing the smaller button"
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+
+          expect(await outcomesFor(page, store.flagged2), 'the two stay flagged')
+            .toEqual(['flagged', 'flagged']);
+          expect(new Set(await outcomesFor(page, store.swept)),
+            'and every other tile on the page was accepted').toEqual(new Set(['reviewed']));
+          await expect(page.locator('.tile .badge')).toHaveCount(50);
+        }
+      },
+      {
+        caption: 'Two choices, not a sequence',
+        /**
+         * The last line, and it holds the wall by itself.
+         *
+         * `tools/walkthrough/narrate.mjs` mixes with ffmpeg's `-shortest`, so the film is
+         * cut where the last audio clip ends and a closing `beat` is invisible however
+         * long it is. The dwell goes in the words instead, exactly as `look` does.
+         */
+        say: "Two choices, not a sequence — the same page could have gone either way.",
+        async act({ page, expect, store }) {
+          await expect(page.locator('.tile .badge')).toHaveCount(store.pageTwo.length);
         }
       }
     ]
