@@ -3,19 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "MARP Machine Learning Dashboard — interactive mockup. Owns its own test suite so it can be extracted from MARP_API without untangling anything.",
+  "description": "MARP Machine Learning Dashboard \u2014 the design mockups. Static screens, no data layer yet; see DESIGN.md.",
   "scripts": {
     "serve": "node tools/serve.mjs",
-    "test": "npm run lint && npm run test:unit && npm run test:e2e",
-    "test:unit": "node --test \"tests/unit/*.test.mjs\"",
-    "test:e2e": "playwright test --project=desktop --project=phone",
-    "test:e2e:headed": "playwright test --headed",
     "lint": "node tools/syntax-check.mjs && node tools/style-check.mjs",
-    "fixture": "node tools/make-fixture.mjs",
-    "shots": "node tools/shots.mjs",
-    "demo": "node tools/record-demo.mjs",
-    "demo:narrated": "node tools/record-demo.mjs --narrate",
-    "demo:all": "node tools/record-demo.mjs all --narrate"
+    "shots": "node tools/mock-shots.mjs",
+    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/mock-shots.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"

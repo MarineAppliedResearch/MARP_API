@@ -785,6 +785,18 @@ const TIPS = {
   'Retire': 'Take this machine out of the pool',
   'Activity': 'What the pool has been doing',
   'Job queue': 'Work waiting for a free slot',
+  /* history */
+  'Jobs in this window': 'Jobs that finished inside the chosen window',
+  'Completed with issues': 'Finished, but some videos or ranges failed',
+  'Failed or cancelled': 'Stopped without finishing, or cancelled by a person',
+  'Input': 'The videos or dataset it read',
+  'Took': 'Wall-clock time from start to finish',
+  'By': 'Who submitted it. A service token records nobody',
+  'Export': 'Download this window as CSV',
+  'Run again': 'Start a new job with this configuration',
+  'Review in Mosaic': 'Open these observations in the Picture Mosaic Reviewer',
+  'Timeline': 'What happened to this job, and when',
+  'Result': 'What the job produced',
   'Task': 'What the model does',
   'Base': 'What this version was fine-tuned from',
   'Training dataset': 'The saved dataset this version trained on',
@@ -939,6 +951,20 @@ function wireLineage() {
   });
 }
 
+/**
+ * A table whose selected row is described by a panel below it. One row at a
+ * time, and clicking a row action is not clicking the row.
+ */
+function wireRowSelect() {
+  $$('table.selectable tbody tr').forEach((tr) => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('button, input, a, select')) return;
+      $$('table.selectable tbody tr.sel').forEach((o) => o.classList.remove('sel'));
+      tr.classList.add('sel');
+    });
+  });
+}
+
 /* ==================================================================== boot */
 
 document.body.dataset.rail = 'closed';
@@ -956,4 +982,5 @@ wireSorting();
 wireAccordions();
 wireSplit();
 wireLineage();
+wireRowSelect();
 applyTips();

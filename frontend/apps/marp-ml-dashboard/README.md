@@ -1,18 +1,19 @@
 # MARP Machine Learning Dashboard
 
-The operator surface for MARP's distributed GPU/ML system: running inference and training
-jobs, managing saved training datasets and registered models, and understanding the worker
-pool that executes the work.
+The operator surface for MARP's distributed GPU/ML system: running inference and
+training on the worker pool, building saved training datasets, managing
+registered models, and understanding the machines that do the work.
 
-**This is a mockup with real operation.** Fixture data, real filtering, real navigation,
-real form behaviour — and no connection to the API. It exists to settle the design before
-an implementation phase wires it up. Designed in
-[`MARP_API#104`](https://github.com/MarineAppliedResearch/MARP_API/issues/104).
+**This is the design, not the application.** Eight hand-written screens with no
+data layer — every value on them is written into the HTML. Designed in
+[`MARP_API#104`](https://github.com/MarineAppliedResearch/MARP_API/issues/104),
+one screen at a time, each reviewed against the reference mockups on that issue
+before the next was started.
 
-**Read [DESIGN.md](DESIGN.md) before changing anything here.** It is the contract: the
-layout, the breakpoints, the component vocabulary, the state list, the module contract,
-the fixture shape, and — numbered, so a screen can point at one — every surface the
-mockups draw that no API can answer yet.
+**Read [DESIGN.md](DESIGN.md) before changing anything here.** It is the
+contract: the layout, the breakpoints, the component vocabulary, the state list,
+how a screen is put together, and — numbered, so a screen can point at one —
+every surface that no API can answer yet.
 
 ## Running it
 
@@ -21,83 +22,50 @@ npm install
 npm run serve        # then open the address it prints
 ```
 
-The API serves it in place too: `app.js` serves any folder under `frontend/apps/` by name,
-so adding this app was a folder and not a route.
+Served in place by the API as well: `app.js` serves any folder under
+`frontend/apps/` by name, so `/apps/marp-ml-dashboard/` opens the Dashboard, and
+the Machine Learning Dashboard card on the MARP landing page links to it.
 
 ## The loop
 
 ```bash
-npm run lint         # parses every file, and enforces two DESIGN.md rules. About a second.
-npm run test:unit    # anything with logic in it
-npm run shots        # screenshots every tab at both viewports into shots/
-npm test             # lint, unit, then Playwright at both viewports
+npm run lint         # parse, colours, state vocabulary. About a second
+npm run shots        # every screen at four widths, into shots/
+npm test             # both
 ```
 
-`npm run lint` is the working loop. It runs two checks:
-
-- **`tools/syntax-check.mjs`** — will every file parse? There is no build step here, which
-  is a feature, but it means nothing reads the source before a browser does.
-- **`tools/style-check.mjs`** — no raw hex colour in a stylesheet, and no `data-state`
-  outside the vocabulary. Both are DESIGN.md rules, and a rule that is only written down
-  is a rule that drifts. A declaration that genuinely needs a literal carries
-  `token-exempt` and a reason.
-
-`npm run shots` is how whoever is drawing a screen looks at what they drew. It starts its
-own server on its own port, writes `shots/<tab>-<desktop|phone>.png`, and **fails on two
-things a screenshot will not tell you**: a console error, and a page that scrolls
-sideways.
+`npm run shots` is how the design is reviewed: it writes
+`shots/mock-<screen>-<width>.png` at 1672&times;941, 1000px, the full phone
+column and the phone fold, plus the account menu and any drawer or expanded row.
+It **fails** on a console error, on anything clipped at the right edge, on any
+element wider than its container, on two controls in a row that are not on the
+same line, and on a tab icon that does not resolve. Every one of those checks
+exists because that fault shipped at least once and was found by measuring
+rather than by looking.
 
 ```bash
-npm run shots            # every tab, both viewports
-node tools/shots.mjs jobs desktop
+node tools/mock-shots.mjs jobs            # one screen
+node tools/mock-shots.mjs jobs desktop    # one screen, one width
 ```
 
-## The fixture
+## The screens
 
-```bash
-npm run fixture          # regenerate fixtures/ml-dashboard.json
-```
+| | |
+| --- | --- |
+| `dashboard` | What the pool is running, queued, and struggling with |
+| `jobs` | One queue for training and inference, with the job drawer |
+| `inference` | Running a model over MARP data |
+| `training` | Fine-tuning from a registered model over one saved dataset |
+| `datasets` | Building a training set, and the train/validation/test split |
+| `models` | The registry, its versions, lineage and preferences |
+| `workers` | The GPU pool, built for 143 machines rather than four |
+| `history` | Finished work, in a bounded window |
 
-Deterministic, from a fixed seed, so regenerating produces the same bytes. It is a
-**generated file**: if two branches both touch it, the resolution is to run the generator
-again, not to hand-resolve the diff. `tests/unit/fixture.test.mjs` asserts the invariants
-that would otherwise rot silently — that the stat-card rollups equal a recount of the
-rows, that every dataset's split sums to its membership, and that a busy worker's job
-actually exists.
+## What is next
 
-## Narrated walkthroughs
+A data layer shaped like the real `/api/v2/gpu/…` responses, so these screens
+read from something with the same shape the API has — and so wiring them up
+later is a change of source rather than a change of vocabulary. That needs the
+API surface settled first, which is its own piece of work.
 
-```bash
-npm run demo             # the default scenario, silent
-npm run demo:narrated -- jobs
-npm run demo:all
-```
-
-Playwright drives a scenario, records video, and a spoken narration is mixed over it.
-These are a **review surface** — a person watches one to confirm behaviour — but they
-assert as they go, so a broken application fails and writes no video rather than producing
-a convincing film of something that does not work. The recorder is shared; see
-`MARP_API/tools/walkthrough/` and ADR-0007. This app contributes two files:
-`tests/walkthrough/scenarios.mjs` and `tools/record-demo.mjs`.
-
-Recorded on request, never in the loop. A narrated run takes minutes.
-
-## Layout of the source
-
-```
-index.html                  the document. Links the shared tokens, never restates them.
-DESIGN.md                   the contract. Binding.
-src/app.js                  the shell and the router. Owns the rail and the top bar.
-src/data.js                 the seam. Today one fixture; later, the /api/v2/gpu routes.
-src/lib/dom.js              h / frag / fill. No HTML-string parsing, deliberately.
-src/lib/parts.js            the shared components, as builders
-src/lib/fmt.js              the shared formatters
-src/lib/icons.js            the icon set. No emoji anywhere in this app.
-src/tabs/*.js               one module per tab: meta, render(ctx), mount(el, ctx)
-styles/app.css              the shell and the component vocabulary
-styles/tabs-*.css           what one group of tabs needs and nobody else does
-```
-
-The rule that makes it hold together: **a tab renders into the content slot and never
-reaches out of it.** That is what let eight tabs be drawn by different people and still be
-one application.
+Until then, nothing here should be read as a decision about how data arrives.

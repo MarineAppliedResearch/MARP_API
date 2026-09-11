@@ -1324,6 +1324,33 @@ td.whb.quiet { color: var(--amber-300); }
 .lgrow .lm { color: var(--muted); overflow: hidden; text-overflow: ellipsis;
              white-space: nowrap; }
 
+/* ============================================================== history */
+
+#history .hjob    { width: 20%; }
+#history .htype   { width: 8%; }
+#history .hstatus { width: 12%; }
+#history .hscope  { width: 9%; }
+#history .hmodel  { width: 14%; }
+#history .hdata   { width: 12%; }
+#history .hstart  { width: 8%; }
+#history .hend    { width: 8%; }
+#history .hdur    { width: 6%; }
+#history .hwho    { width: 7%; }
+#history .hacts   { width: 6%; }
+#history td.hscope, #history td.hmodel, #history td.hdata {
+  overflow: hidden; text-overflow: ellipsis; color: var(--muted);
+}
+#history td.hwho { color: var(--muted); }
+
+/* A row that has been picked out, with its detail in the panel below. */
+.tbl.selectable tbody tr { cursor: pointer; }
+.tbl.selectable tbody tr.sel { background: rgba(20, 126, 232, 0.12); }
+.tbl.selectable tbody tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--blue-400); }
+
+/* The panel heading carries the selected job's name, so it reads as one object
+   with the row above it. */
+.panel-hd h2 .name .t { font-size: 14.5px; color: var(--white); }
+
 /* ============================================================== responsive */
 
 @media (max-width: 1420px) {
@@ -1356,6 +1383,12 @@ td.whb.quiet { color: var(--amber-300); }
   /* Eleven columns of worker will not fit; role and uptime are the
      least urgent of them. */
   #workers .wver, #workers td.wver { display: none; }
+  /* Twelve columns of history will not fit; the input and the end time are
+     the least urgent, and both are in the detail below. */
+  #history .hdata, #history td.hdata { display: none; }
+  #history .hend, #history td.hend { display: none; }
+  #history .hjob { width: 24%; }
+  #history .hmodel { width: 18%; }
   #workers .wup, #workers td.wup { display: none; }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .acts2 { grid-template-columns: minmax(0, 1fr); }
@@ -1545,6 +1578,21 @@ td.whb.quiet { color: var(--amber-300); }
   .tbl.stack#workers td.jstatus { grid-area: 1 / 3 / 1 / -1; text-align: right; align-self: center; }
   .tbl.stack#workers td.wgpu    { grid-area: 2 / 2 / 2 / -1; }
   .tbl.stack#workers td.wmodel  { grid-area: 3 / 2 / 3 / -1; }
+  /* The history card: what it was, how it ended, and when. */
+  .tbl.stack#history tbody tr { grid-template-columns: minmax(0, 1fr) auto; }
+  .tbl.stack#history td.chk, .tbl.stack#history th.chk,
+  .tbl.stack#history td.htype { display: none; }
+  .tbl.stack#history td.jname   { grid-area: 1 / 1; }
+  .tbl.stack#history td.jstatus { grid-area: 1 / 2; text-align: right; align-self: center; }
+  .tbl.stack#history td.hscope  { grid-area: 2 / 1 / 2 / -1; }
+  .tbl.stack#history td.hmodel  { grid-area: 3 / 1 / 3 / -1; }
+  .tbl.stack#history td.hstart  { grid-area: 4 / 1; }
+  .tbl.stack#history td.hdur    { grid-area: 4 / 2; text-align: right; }
+  .tbl.stack#history td.hwho    { grid-area: 5 / 1; }
+  .tbl.stack#history td.jacts   { grid-area: 5 / 2; text-align: right; }
+  .tbl.stack#history td.hdur::before { content: "Took "; color: var(--faint);
+    font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; }
+
   .tbl.stack#workers td.wcpu    { grid-area: 4 / 1 / 4 / 3; }
   .tbl.stack#workers td.wmem    { grid-area: 4 / 3 / 4 / -1; }
   .tbl.stack#workers td.wjobs   { grid-area: 5 / 1 / 5 / 3; }
