@@ -1,201 +1,233 @@
 ---
-task: MarineAppliedResearch/MARP_API#126
+task: MarineAppliedResearch/MARP_API#130
 repos: [marp-api]
 status: design
 needs: []
 ---
 
-# Two kinds of mark, and two commits
+# The picker finds species, and a commit says which commit ran
 
-Design specification for MARP_API#126.
+Design specification for **MARP_API#130** and **MARP_API#131**, together.
 
 **G1 only. Nothing is implemented while a `blocking` assumption below is open.**
 
-## Where this came from
+## Why these two are one phase
 
-The human reviewed real observations in the mosaic for the first time on 2026-09-10, against
-1,062 rows from three dives, and the commit gesture did not hold up:
+Both were reported on 2026-09-10 from the same sitting — the first time the mosaic was
+driven against 1,062 real observations rather than the fixture. Neither blocks the other,
+both are small, and both are the same kind of defect: **something on screen that is not
+true.** The picker says *"Nothing matches"* when it never asked, and a commit says *"Saved"*
+on a button that did not run.
 
-> *"The mosaic reviewer's idea of flagging certain things and then hitting a button and having
-> everything else accepted isn't really working when trying it out for real. There are times
-> when you just want to exclude things, or just approve certain items, without it affecting
-> anything else."*
-
-**This is the only feedback in the project that came from using the tool rather than from
-reading the code**, which is why it outranks Phase 9.
-
-## What the reviewer gets
-
-Settled by the human, 2026-09-10.
-
-- **Left click marks a tile as the exception**, exactly as it does now — `flagged` in
-  Scientific, `excluded` in Training, `deleted` in Delete.
-- **Right click marks a tile as accepted** — `reviewed` in Scientific, `promoted` in Training.
-  This is new: **a mark now carries a kind.**
-- **The main commit button is new, and is the bigger one.** It commits **only what has been
-  marked**, each tile according to its own mark, and says nothing at all about a tile nobody
-  touched.
-- **The existing sweep survives as a smaller, secondary button to its right**, doing exactly
-  what it does today.
-
-His words: *"the new button will be the main button, the bigger button… that will only accept
-the ones that you've already marked, and the current button will be kind of a smaller button
-on the right hand side that will do what it currently does."*
+They are also both invisible to the test suite for the same structural reason, which is the
+part of this phase worth more than either fix. See *The fixture and the endpoint disagree*.
 
 ## What is already true, checked rather than assumed
 
-- **A mark has no kind today.** `state.marks` is a set of `observation_id`, and
-  `commitOutcome` reads it with a bare `marks.has(r.observation_id)`
-  (`src/model/modes.js:220`). Every kind-aware rule below is new behaviour, not a rename.
-- **Each mode already declares both halves of the vocabulary.** `MODES[mode].marks` is what a
-  marked tile becomes, `MODES[mode].accepts` is what an unmarked one becomes
-  (`modes.js:18-60`). So "accept this one specifically" has a value to write in every mode
-  that has one — and **`delete` has `accepts: null`**, which is the exception.
-- **Delete already commits only what is marked.** `commitActsOnMarked(mode)` branches
-  `commitOutcome` for exactly that (`modes.js:222-227`). **The new main button is that
-  behaviour generalised**, so its shape is proven rather than invented.
-- **Accepting needs imagery; flagging does not.** An unmarked tile without a ready thumbnail
-  counts as `skips`, never `accepts` (`modes.js:230-231`).
-- **A page arrives with its existing exceptions already marked** (`page.seedMarks`), because
-  committing a page holding untouched flags used to clear them silently.
-- **`state.touched` records what the reviewer decided by hand**, so a take-back is not
-  re-seeded.
-- **The commit button already reports on itself** — it shows the count, disables when a commit
-  would do nothing, and says how many will be skipped.
-- **There is one commit button** (`index.html:94`) and **no `contextmenu` handler** anywhere
-  in `src/ui/`.
-- **The render tier runs every test at desktop *and* phone width, deliberately.**
+Established by research on 2026-09-10 against the live corpus and the real database. Every
+claim below is from a file and line, not from reading the issue.
 
-## Open assumptions
+### #130 — the picker
 
-- [x] **A1 · product/UI · blocking** — **What is the accept gesture on a touch screen?**
-  Right click does not exist on a phone, and the render tier runs the whole suite at phone
-  width on purpose. This is the gesture the human expects to use *most*, so it cannot be
-  desktop-only.
-  Candidates: **long press**, the conventional touch analogue, but slow for a gesture repeated
-  hundreds of times a page; a **second tap zone** on the tile, fast but it shrinks the target;
-  a **mode toggle** making left click mean accept until switched back, fastest for a run of
-  accepts and worst for a mixed page; or **no touch equivalent**, accepting that phone review
-  uses the two buttons only.
-  **Recommendation: long press, with the phone cost said out loud rather than hidden.** The
-  human's call — he is the one who will do it thousands of times.
+- **The endpoint does not send `species_id`.** `ROW_COLUMNS` in
+  `repository/mosaic.repository.js:185` selects `o.comname` and `sp.comname AS
+  species_comname` and no id. The list is written out deliberately so nothing joins the
+  payload by accident, and `tests/mosaic-query.test.js:1078` pins the exact key set.
+- **So the client can never work out the list.** `speciesListFor(row)`
+  (`src/store.js:282`) opens `if (!row || row.species_id == null) return null`. It is
+  always null for a row that came from the API.
+- **And the search then returns nothing without asking.** `src/api/index.js:180` is
+  `if (!q || !list) return [];` — **no `fetch` is sent.** `src/ui/picker.js:164` draws
+  *"Nothing matches. Try 'Search all lists'."*
+- **"Search all lists" is dead for a second, independent reason.** `widen` sets
+  `list = null` by design (`src/store.js:1656`), and the same line at `api/index.js:180`
+  refuses a null list. The escape hatch could never have returned anything.
+- **There is no cross-list species search route.** `routes/species.routes.js` has
+  `/api/species/list/:list/search` (scoped) and `/api/species` (every row, no search, no
+  `is_active` filter). Nothing else.
+- **The server half is healthy.** `speciesRepository.searchSpeciesInList('Inverts', 'se')`
+  returns 42 rows against the live database; `ur` gives 28, `an` gives 98.
+- **The data is not implicated.** All 1,062 observations are `species_list = 'Inverts'`,
+  seven distinct species, all `is_active`. The catalogue holds 201 active `Inverts` rows.
+- **Permissions are not implicated.** The reviewer the corpus was reviewed by holds
+  `species:read`.
+- **`MIN_SEARCH = 2` is not the cause.** The `< 2` branch draws *"Type 2 letters to
+  search."* and never runs the search at all.
+- **The facets already carry the list.** `mosaicRepository.facets({})` returns species
+  entries shaped `{"value":775,"label":"California sea cucumber","list":"Inverts",...}`,
+  which is exactly what `speciesListFor` looks up.
+- **Deriving the list from `session_type` is already decided against.** The comment at
+  `src/store.js:268-277` rejects a second copy of `db/species-lists.js` in the client.
 
-- [x] **A2 · product/UI · blocking** — **What does right click mean in Delete Mode?**
-  `MODES.delete.accepts` is `null`: the opposite of deleting is leaving a row alone, which
-  needs no record, so an accept mark has nothing to mean there.
-  Candidates: **inert**; **clears a mark**, which is useful and consistent; or Delete is
-  **excluded** from the feature and keeps its single button.
-  **Recommendation: inert, and the two buttons collapse to one in Delete** — the new main
-  button and today's Delete button would do the identical thing, so showing both would be two
-  controls with one meaning.
+### #131 — the commit report
 
-- [x] **A3 · behavioural · blocking** — **Does a page still arrive with its existing exceptions
-  marked, now that a mark has a kind?**
-  `seedMarks` exists because committing a page holding untouched flags silently cleared them —
-  **under the sweep.** The new main button cannot clear what it was never told about, so that
-  reason does not apply to it.
-  The risk runs the other way: if arriving flags are seeded and the reviewer presses the *main*
-  button, they re-commit decisions they never made — harmless to the record but dishonest about
-  who decided what, and `observation_reviews` carries a reviewer per row.
-  Candidates: seed as now and let the main button re-write them; seed nothing and let the
-  sweep's old trap return; or **seed as now, and have the main button ignore seeded marks the
-  reviewer has not touched** — `state.touched` already tells them apart.
-  **Recommendation: the third.** The only one that keeps both buttons honest, and the data to
-  do it already exists.
+- **One field serves two controls.** `state.commit` is `{ busy, status }`
+  (`src/store.js:178`). `renderCommits` destructures it once (`src/ui/chrome.js:101`) and
+  hands the same pair to both `paintCommit` calls (lines 118 and 136).
+- **It fires in both directions, and `busy` has the same fault.** Pressing the sweep lights
+  up Commit Marked too, and while either commit runs *both* buttons spin and say
+  `Saving…`.
+- **The fill is what makes it read as "the whole page was accepted."**
+  `.commit.sweep.ok` (`styles/app.css:517`) turns the outlined sweep solid green.
+- **The store already knows which button ran.** All five writes happen inside
+  `runCommit({ selective })` (`src/store.js:609, 619, 627, 222`), and `selective` is
+  already used to pick the log name at line 598. It simply is not recorded.
+- **One commit at a time is genuine.** The `state.commit.busy` guards at
+  `src/store.js:1469` and `1501` are real; `busy` being shared is correct.
+- **Delete needs no special handling.** `renderCommits` sets `main.hidden = oneButton` and
+  returns at `src/ui/chrome.js:134` before the second `paintCommit`.
+- **The tile already knows whether its mark has been committed.** `state.outcomes`
+  distinguishes them, and that is not incidental — `survives()` (`src/model/page.js:212`)
+  is the rule that lets an accept mark outlive a commit, and it is *"the record now agrees
+  with the mark"*.
+- **The precedence is untouched by either fix.** The `.badge` chain
+  (`src/ui/tile.js:235-255`) orders: takingBack, accept mark, exception mark, conflicted,
+  outcome, existing, changed. **Mark outranks outcome outranks record.** Both fixes change
+  a string inside an existing branch; neither adds a state or reorders the chain.
+- **`existingState` is the wrong source and would be a trap.** Under the fixture
+  `src/data.js` mutates the row's status column in place; under the API nothing does, and a
+  commit deliberately invalidates no cache. It is stale for the rest of the sitting.
 
-- [x] **A4 · product/UI · blocking** — **What does an accept mark on a tile with no picture
-  do?** Accepting needs imagery and flagging does not; that rule is settled and on the record.
-  An explicit accept mark is the reviewer saying *"I have judged this one"*, which they cannot
-  have done without seeing it.
-  Candidates: **refuse the mark** at click time, with the tile saying why; **allow it and skip
-  at commit**, reported in the skip count as today; or allow it outright and let *"No imagery"*
-  become a legitimate acceptance.
-  **Recommendation: refuse at click time.** The skip count explains a *sweep*, where the
-  reviewer never singled the tile out; refusing a deliberate click is clearer than accepting it
-  and quietly not doing it.
+### The fixture and the endpoint disagree
 
-- [x] **A5 · API contract · blocking** — **Does the commit request change shape?**
-  The endpoint takes `observations: [{ observation_id, version }]` plus `marks`. The main
-  button must send only the marked, each with its kind — which the existing request can express
-  if `marks` carries the kind and cannot if it does not.
-  **Recommendation: extend `marks` with the kind rather than adding a second list**, because
-  one list keyed by `observation_id` is what `applyCommit` already folds by, and two lists
-  reintroduce the question of what an id appearing in both means.
-  **This is a change to a published contract with a snapshot tripwire over it**, so whatever is
-  chosen is *moved into* that list, never admitted by loosening it.
+This is the root enabler behind #130 and behind #124's F6 and F8, and it will keep
+producing defects until something compares the two shapes:
 
-- [x] **A6 · product/UI · non-blocking** — **What does a tile look like for each kind?**
-  The tile already derives four things at once — marked, existing, outcome, borrowed — with a
-  fixed precedence, and it is the area of the app that has produced the most reported bugs. A
-  fifth distinction has to fit that table rather than sit beside it.
-  Recommendation: today's mark styling for an exception mark and the mode's accept colour for
-  an accept mark, with no new slot — `.badge` stays exactly one element per tile.
-
-## Decisions
-
-Answered by the human on 2026-09-10 unless noted.
-
-- **A1 — the accept gesture on touch is a double tap, with a long press as the fallback.**
-  *"I'm thinking A1 might be a double tap, and if it can't be a double tap, then a long tap
-  will be okay for now."* Double tap is the faster gesture and this is the one repeated
-  hundreds of times a page, so it is worth attempting first. **If double tap cannot be made
-  reliable** — it competes with the browser's own double-tap-to-zoom on a phone, and
-  distinguishing it from two separate marks needs a timing window that will feel wrong if it
-  is tuned badly — **fall back to long press and say so in the report rather than shipping a
-  flaky gesture.**
-
-- **A3 — the page still arrives looking pre-marked, and the main button ignores what the
-  reviewer did not touch.** *"I want it to look pre-marked before you touch anything. You can
-  change it if you want it."*
-  So `seedMarks` is unchanged: flags already on the record are drawn as marks the moment the
-  page loads, which is what the reviewer asked to see.
-  The second half is settled here rather than by him, as offered: **the main button acts only
-  on marks the reviewer made in this sitting.** `state.touched` already holds exactly that set.
-  Without it, pressing the main button on a freshly loaded page would re-commit flags nobody
-  touched, under this reviewer's name and today's date — and `observation_reviews` records a
-  reviewer per row, so that is the record asserting a decision that was never made. The sweep
-  is unaffected and keeps working as it does today.
-
-- **A2 — right click is inert in Delete Mode, and Delete keeps one button.** Taken as
-  recommended. `MODES.delete.accepts` is `null` because the opposite of deleting is leaving a
-  row alone, which needs no record — so an accept mark has nothing to mean. And the new main
-  button would do exactly what today's Delete button does, so showing both would be two
-  controls with one meaning.
-
-- **A4 — an accept mark is refused at click time on a tile with no picture**, with the tile
-  saying why. Taken as recommended. Accepting needs imagery and flagging does not; the skip
-  count exists to explain a *sweep*, where the reviewer never singled the tile out. Refusing a
-  deliberate click is clearer than accepting it and quietly not doing it.
-
-- **A5 — `marks` carries the kind; no second list.** Taken as recommended. One list keyed by
-  `observation_id` is what `applyCommit` already folds by, and two lists reintroduce the
-  question of what an id appearing in both means. **This changes a published contract with a
-  snapshot tripwire over it, so the key is moved into that list and the test is never
-  loosened.**
-
-- **A6 — non-blocking, taken as recommended.** Today's mark styling for an exception mark, the
-  mode's accept colour for an accept mark, no new slot, and `.badge` stays exactly one element
-  per tile.
+- Fixture rows carry **41 keys** — including `species_id`, `taxserial`,
+  `scientific_name`, `processor_name`, `lineId`, `ml_model_id`.
+- The endpoint sends **20**.
+- `tests/requirements.js:607` reads `state.rows[0].species_id`, **a field only the fixture
+  has**, and passes.
+- `tests/e2e/render.spec.mjs` navigates with `?backing=fixture` every time (line 28,
+  asserted at line 60), and the fixture's `searchSpecies` (`src/data.js:875`) **ignores its
+  `list` argument entirely**.
+- `backend.js`'s parity check compares the *method set*, not the signatures, so the
+  divergence is invisible to it.
 
 ## Requirements
 
-- **R1** — Left click marks the exception, unchanged in every mode.
-- **R2** — Right click marks accepted, in every mode that has an accepted value.
-- **R3** — The main commit button writes **only** marked tiles, each according to its kind,
-  and writes nothing for a tile that was not marked.
-- **R4** — The secondary button keeps today's behaviour exactly.
-- **R5** — The main button is visually primary; the secondary is smaller and to its right.
-- **R6** — Both buttons report what they will do before doing it, and both disable when they
-  would do nothing.
-- **R7** — A tile marked one way then the other ends with the later mark. Clicking a mark off
-  leaves the tile untouched by either button.
-- **R8** — Every new behaviour has a test at a tier that can observe it: the rules in
-  `model/`, the gestures and both buttons in the render tier at **both** viewports.
-- **R9** — Nothing is admitted to the mosaic row or the commit contract by loosening a
-  tripwire.
+- **R1** — Typing two or more characters in the correction picker returns candidates from
+  the observation's own species list, against the real API.
+- **R2** — The client learns an observation's species list from the row itself, by whatever
+  A1 settles, and no longer depends on a field the endpoint does not send.
+- **R3** — Whatever A2 settles about widening, **the panel never offers an action that
+  cannot work.** If "Search all lists" stays, it searches; if it goes, it is not drawn.
+- **R4** — The empty state distinguishes *the catalogue has no match* from *no search was
+  possible*. Per A5.
+- **R5** — Pressing either commit button reports `Saving…` and `Saved` on **that button
+  only**. The other shows neither, in either direction, including its fill.
+- **R6** — A mark whose commit has been recorded does not claim it is uncommitted.
+- **R7** — The four derived tile states keep their present precedence, and `.badge` stays
+  exactly one element per tile.
+- **R8** — A fast-tier check fails when the fixture and the endpoint disagree about a row
+  field the client reads.
+- **R9** — Every fix has a test at a tier that can observe it. #131's two defects are
+  render-tier: the store is *correct* in both cases, so there is nothing store-level to
+  see. #130's row-shape fix is red at the API tier before it is green.
+- **R10** — Nothing is admitted to a published contract by loosening a tripwire. The exact
+  key set in `tests/mosaic-query.test.js:1078` is *moved into*, never widened.
+
+## Open assumptions
+
+- [ ] **A1 · API contract · blocking** — **How should the client learn an observation's
+  species list?**
+  (a) Add `o.species_id` to `ROW_COLUMNS` and to the tripwire. `speciesListFor` then works
+  exactly as written, and the row finally agrees with the correction response, which
+  already returns `species_id` (`repository/mosaic-correction.repository.js:258`).
+  (b) Add `sp.species_list` to the row instead — one string, and it removes the facets
+  dependency entirely.
+  (c) Both.
+  **The residual risk in (a), which is why this is being asked rather than decided:**
+  `speciesListFor` resolves the list by looking the species up in `state.facets.species`,
+  and facets are fetched **per question**. A pinned or cached page whose rows are no longer
+  in the current facet answer returns null again — the same bug, intermittently.
+  **Recommendation: (c).** `species_id` because the client is written for it and the
+  correction path already speaks it; `species_list` because it makes the list a property of
+  the row rather than a lookup that can miss. Two more columns on a row that already
+  carries twenty.
+
+- [ ] **A2 · API contract · blocking** — **What should "Search all lists" call?**
+  There is no cross-list search route today.
+  (a) A new `GET /api/v2/species/search?q=`, mirroring `searchSpeciesInList` without the
+  list predicate and keeping `is_active = true`.
+  (b) An optional `list` parameter on a new unscoped path.
+  (c) No new route: fetch all 854 species once and filter in the browser — but that
+  bypasses `is_active` and re-implements the match.
+  (d) Drop the widen action for now and ship the scoped search alone.
+  **Recommendation: (a).** It is the same query minus one predicate, it keeps `is_active`
+  where it belongs, and the panel already has the button. **This adds a route to a
+  published surface, which the harness lists under *ask first*** — so it is yours whichever
+  way it goes. (d) is a legitimate answer if you would rather not grow the API surface in a
+  bug-fix phase; R3 is satisfied either way.
+
+- [ ] **A3 · scientific / data-meaning · blocking** — **Should a widened result say which
+  list each candidate is on?**
+  `ui/picker.js:21` draws common name and scientific name, and no list. **A common name is
+  not unique across lists** — `Red sea urchin` is id 769 on `Inverts` and id 544 on
+  `GULF_Inverts`, and the scoped route exists for exactly that reason. Widening without a
+  list label lets a reviewer silently correct an `Inverts` observation to a `GULF_Inverts`
+  row, and the correction is written to the record.
+  **Recommendation: show the list on widened results only**, so the scoped case stays as
+  uncluttered as it is today. Material because two reasonable answers change what gets
+  recorded. Moot if A2 is answered (d).
+
+- [ ] **A4 · product/UI · blocking** — **What does the button that did not run show while
+  the other is saving?**
+  Today both spin and say `Saving…`, from the same shared field.
+  (a) Disabled, keeping its normal wording — `Review page · 50 tiles`, greyed.
+  (b) Keep spinning as now; only one commit may run anyway.
+  (c) Disabled and blanked.
+  **Recommendation: (a).** Disabling is honest, because the guard is real. But `Saving…` on
+  a button that is saving nothing is the same lie as `Saved`, one step earlier, and #131
+  only names the `Saved` half.
+
+- [ ] **A5 · product/UI · blocking** — **What does a committed accept mark's tooltip say,
+  and what does "committed" mean?**
+  Two readings, and they differ after a reload:
+  **(i) this sitting**, from `state.outcomes`. After a reload there is no accept mark at
+  all — marks are not persisted and `seedMarks` seeds only exceptions
+  (`src/model/page.js:169-172`) — so the tile falls to `existingBadge`, which carries no
+  `title`. Nothing false is left behind.
+  **(ii) the record says so**, from `existingState`. Wrong twice: stale under the API, and
+  it would read "committed" on a tile the reviewer has just right-clicked whose record was
+  already `reviewed` from last week — which is not what the mark is about.
+  **Recommendation: (i).** The *wording* is the part not to pick unilaterally; a starting
+  suggestion is `Recorded as reviewed — click to take it back`, mode-substituted as the
+  current string already is.
+
+- [ ] **A6 · product/UI · non-blocking** — **Does `TAKING BACK` get the same correction?**
+  `src/ui/tile.js:236` reads `Not committed yet — the next commit accepts it` and has the
+  identical fault. #131 names only the accept badge.
+  **Recommendation: fix both** — one more string in the same ternary. See A7, which is why
+  this one is worse than it looks.
+
+- [ ] **A7 · behavioural · blocking** — **Does the take-back defect join this phase?**
+  Found during research, not in either issue. `takingBack` (`src/ui/tile.js:202`) reads the
+  row's own status column. Under the **fixture** `src/data.js` writes that column in place,
+  so after a commit the tile correctly shows `REVIEWED`. **Under the API nothing writes
+  it**, so `takingBack` stays true and the tile goes on showing `TAKING BACK — Not
+  committed yet` for a take-back that has already been recorded.
+  **The render tier structurally cannot see this**, because it runs on the fixture — the
+  same masking that hid #130. It is the same root cause as #131's tooltip and the same
+  three lines of `tile.js`.
+  (a) Fold it into this phase. (b) Track it separately.
+  **Recommendation: (a).** Fixing the tooltip while leaving the badge beside it lying is
+  half a fix, and it is the same edit.
+
+- [ ] **A8 · environment · non-blocking** — **Does the render tier stop running on the
+  fixture?**
+  The app's `CLAUDE.md` says `?backing=fixture` exists because the render tier *"has no
+  seeded database to run against yet"* and that *"both come out when that database
+  lands"*. **It has landed.** While the tier stays on the fixture, no browser test can
+  witness #130, A7, or the next defect of this family.
+  **Recommendation: not in this phase.** R8's key-superset check is the cheap 80% and
+  belongs here; moving the render tier onto a seeded database is its own piece of work with
+  its own failure modes, and this phase is two bug fixes. Worth an issue rather than a
+  silent decision — yours to say.
 
 ## Out of scope
 
 - Phase 9 (scale) and Phase 10 (the video drill-down).
 - The reason vocabulary.
-- Thumbnails, the sweeper (#121), the file server (#120).
+- The thumbnail sweeper (#121) and the file server (#120).
+- Moving the render tier onto a seeded database, unless A8 says otherwise.
