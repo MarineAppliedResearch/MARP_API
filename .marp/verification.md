@@ -88,8 +88,6 @@ Four, and only one is a rule leaking:
 
 ## Known gaps
 
-- **Touch is emulated, not real.** Chromium's `hasTouch` context is not a phone. The 320 ms
-  window, and whether a double tap feels right on glass, are unverified on a device.
 - **The 320 ms window has a named cost**: on touch, un-marking a tile you have just marked
   means waiting the window out. `DOUBLE_TAP_MS` in `ui/mount.js` is the one number to move.
 - **Ctrl+Enter still fires the sweep**, per R4. A stray chord therefore commits the whole page,
@@ -110,8 +108,11 @@ Four, and only one is a rule leaking:
    marked is written; everything untouched is still unreviewed when the page is re-queried.
 2. **Then press the sweep on a fresh page.** *Expected:* unchanged from today — marked become
    exceptions, everything else is accepted.
-3. **On a phone or a narrow window**, confirm both buttons are reachable and the double tap
-   accepts. This is the step the automated tier can only approximate.
+**The phone is not a manual step.** Playwright's `phone` project is how this project tests a
+phone — it honours the real viewport width where a headless screenshot does not, and the touch
+gestures run in a real `hasTouch` context. It is covered above at the render tier and needs no
+hand check. Settled by the human, 2026-09-10: *"You're supposed to test it on an emulated
+phone… we don't need to test it on a real phone for now."*
 
 ---
 
@@ -176,16 +177,19 @@ Not re-run by hand. It is unchanged by construction — `commitOutcome` swapped 
 `isExcepted`, and before #126 every mark was an exception — and the existing sweep tests cover
 it at the contract and render tiers, all passing above.
 
-### Manual step 3 — a phone
+### The phone
 
-**Not done, and it is the one gap that matters.** The render tier exercises the double tap in
-an emulated touch context at phone width and it passes, but that is Chromium with `hasTouch`,
-not glass. Whether 320 ms is the right window, and whether the gesture feels right in the hand,
-is unverified and only the human can answer it.
+Covered by the render tier, not by hand. The `phone` project runs every test at the real
+viewport width and the three touch checks run in a genuine `hasTouch` context — the double tap
+accepts, two taps 600 ms apart stay two marks, and the main button commits from a tap. All
+passing above.
+
+An earlier draft of this plan listed a real device as an outstanding step. That was wrong:
+the emulated phone is how this project tests a phone.
 
 ### Unchanged from the plan
 
-Every *Known gap* stands: touch is emulated, `DOUBLE_TAP_MS` carries its named cost,
+Every *Known gap* stands: `DOUBLE_TAP_MS` carries its named cost,
 Ctrl+Enter still fires the sweep, `marksAfterCommit` still discards other pages' marks,
 `willAct` is still dead, and `npm run docs:build` still exits 1 on the pre-existing jsdoc
 errors in `model/schedule.js`.
