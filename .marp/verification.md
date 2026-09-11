@@ -110,4 +110,108 @@ the human's thumbnail extractor in a state he did not choose, and nothing report
 
 ## Results
 
-*Empty until the plan above is approved.*
+Plan approved by the human on 2026-09-11 — *"okay, well, let's continue"* — and run against
+it. **Every run below used `mare_guard_test`, the restored copy. `mare_v1` was never the
+target of a test.**
+
+### The full suite, and the claim it demonstrates
+
+```
+Test Suites : 45 passed, 0 failed, 45 total
+Tests       : 623 passed, 0 failed, 0 skipped, 623 total
+Duration    : 55.7s
+Result: ALL TESTS PASSED
+```
+
+The database, before and after that run:
+
+```
+                 before   after
+observations       2094    2094
+keyframes         29693   29693
+users                34      34
+observation_reviews 219     219
+```
+
+Identical. That is R1 demonstrated rather than asserted — a whole suite run that leaves the
+database exactly as it found it.
+
+### R4 — the refusal, verbatim
+
+```
+Error: Jest: Got error running globalSetup - tests/setup/local-database-guard.js, reason:
+Refusing to run the test suite against a database that is not local.
+  DB_HOST is 10.0.0.5; the suite only runs against 127.0.0.1 or localhost.
+  The tests write to whatever DB_* points at, and the development database
+  carries the same name as production, so only the host tells them apart.
+  If this really is a disposable database, set MARP_TEST_ALLOW_REMOTE_DB=1.
+```
+
+It fires in `globalSetup`, before any test file is loaded. This is the only preventive half
+of the phase: everything else detects after the fact.
+
+### R1, R2, R6 — the guard's own tests
+
+The four fixtures all behave as the plan required — the three violations fail and name the
+file, the tidy suite passes. Verbatim in the child run:
+
+```
+- guard_rows: 1 row(s) deleted that the suite did not create (4 -> 3)
+- guard_rows: row(s) modified, count unchanged at 3
+- guard_rows: 1 row(s) added and left behind (3 -> 4)
+Test Suites: 3 failed, 1 passed, 4 total
+Tests:       4 passed, 4 total
+```
+
+**Four tests pass and three suites fail.** That is the point of the phase in one block.
+
+### The three violations it found, and what they actually were
+
+None was a tidy-up. The guard found three defects:
+
+- **`tests/thumbnails.test.js` was un-pausing the extractor.** Its `afterAll` "restored" the
+  run state by calling `writeRunState('running', null, null)` — forcing a value rather than
+  putting back what was there. A test run would silently resume a thumbnail extractor the
+  human had deliberately paused.
+- **`tests/readonly-endpoints.test.js` restored through the API**, which stamps a fresh
+  `updatedAt`. It was trying to put the row back and structurally could not. It now restores
+  with `UPDATE`, bypassing the route.
+- **`tests/sessions-by-project.test.js` cleaned up through a route that does not exist.** It
+  called `DELETE /api/v2/processors/by-name/${userId}`; there is no delete under `by-name`,
+  and it passed an id into a name path. The request 404'd silently and **leaked a user every
+  run**. It now uses the real route and asserts the row is gone, because that endpoint
+  swallows database failures and answers 200 regardless.
+
+A trap worth recording: **`timestamptz` holds microseconds and a JS `Date` holds
+milliseconds**, so reading a timestamp and writing it back truncates it by a fraction of a
+millisecond — enough for the digest to catch. Both restores round-trip timestamps as text.
+
+### R5 — inert against an empty database
+
+25 tests pass against an empty CI-shaped database with the guard active and silent.
+
+### R7 — the cost
+
+250 ms per test file against the full corpus, about 11 s across 44 files. The full run came
+in at 55.7 s, against 81.8 s for the same suite earlier the same day without the guard — so
+the overhead is inside the noise of what else the machine is doing.
+
+### R8 — the corpus is untouched
+
+`mare_v1`, read-only, at the end of the phase:
+
+```
+observations 2093 · keyframes 29682 · observation_reviews 487 · users 35
+```
+
+Unchanged by this phase. The counts differ from the dump because of things that happened
+*before* it: one observation and its 11 keyframes lost to the still-unidentified suite, 268
+review rows from test runs and a walkthrough recording, and two users — the `isaac` account
+created on request, and **one leaked by `sessions-by-project.test.js`**, which is the defect
+fixed above, visible in the data.
+
+### Unchanged from the plan
+
+Every *What this does not prove* stands. In particular **the suite that deleted observation
+1233 was not identified** — it did not reproduce against the same data, and the guard is
+what will name it next time rather than a row count discovered hours later.
