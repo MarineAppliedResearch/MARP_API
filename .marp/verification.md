@@ -1,195 +1,194 @@
-# Verification — MarineAppliedResearch/MARP_API#126
-
-Two kinds of mark, and two commits. The plan below is for review **before** it is accepted as
-this phase's evidence.
-
-**What has already happened.** G2 ran the suites to know the implementation worked — 273 client
-unit, 272 browser across two viewports, 603 API. What has *not* happened is anybody agreeing
-they are the right tests, or that the gaps below are acceptable. `## Results` stays empty until
-this plan is approved and run.
-
-## Why the tier choices matter more than usual here
-
-This change touches **the area of the app that has produced the most reported bugs** — the
-tile's four simultaneous derived states, with their fixed precedence — and adds a fifth
-distinction to it. It also adds the first gesture in the app that behaves differently on touch.
-So two tiers carry almost all the risk:
-
-- **render, at *both* viewports.** The only tier that can see what was drawn, and the only one
-  that can exercise a touch gesture at all. R8 requires both widths deliberately.
-- **wire** (`tests/unit/api-requests.test.mjs`). A mark now carries a `kind`, and this is the
-  only tier that asserts the *serialised* body. `deepEqual` on the request object would pass
-  for a `Map`, a `Set` or a dropped field.
-
-The other three — parse, unit, contract — are the working loop and cover the rules.
+# Verification — MARP_API#125, dump and load the development corpus
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `model`: *a tap toggles a mark*, with `MARK_EXCEPT` explicit | unit | Left click is unchanged in every mode; an accepted tile **flips** rather than unmarking, because `had` now asks "was it already *this* kind". |
-| R2 | render: right click marks accepted, both viewports; badge is `REVIEWED`/`PROMOTED` in the accept colour | render | `contextmenu` is bound on `#grid`, so the browser menu is suppressed across the whole grid rather than per tile. |
-| R2 (touch) | render with `hasTouch: true`: *double tap accepts* · *two taps 600 ms apart are two marks* · *the main button commits from a tap* | render | **Not skipped on desktop** — a real touch context is constructed, because a skipped check looks green. |
-| R3 | `model` + contract: the selective commit sends `marked ∩ touched` and nothing else | unit + contract | The main button writes only what the reviewer marked **in this sitting**. A3's whole point. |
-| R3 | contract: a selective commit pins nothing and marks no page committed | contract | `pinnedIds` is the query's `exclude` set — pinning would silently remove every untouched tile from the reviewer's remaining work. |
-| R4 | the existing sweep tests, unchanged | contract + render | `commitOutcome` swapped `marks.has` for `isExcepted`; before #126 every mark was an exception, so the sweep's behaviour is identical by construction. |
-| R5 | render: `#commitMarked` before `#commit`, sweep outlined and smaller; Delete hides the main button | render | Only a browser can say which is visually primary. |
-| R5 | render: **the phone footer fits across**, added here | render | `.app` clips rather than scrolls, so an overflow is a commit button cut off the right edge. **Nothing asserted this before**, which is how it came to overflow at 524px in a 412px viewport with a single button. |
-| R6 | `model`: `commitOutcome` and `selectionOutcome` drive both buttons | unit | One `renderCommits`/`paintCommit` pair, so a button's number cannot disagree with its own commit. |
-| R6 | render: the main button's disabled title distinguishes *nothing marked yet* from *these marks came from the record* | render | The two disabled states mean different things to a reviewer. |
-| R7 | `model`: same gesture twice unmarks · the other gesture replaces · switching kind drops the reason | unit | The later gesture wins. |
-| R8 | 29 unit, 10 contract, 14 render (× 2 viewports) | all | — |
-| R9 | `model.test.mjs` mark shape; `api-requests.test.mjs` × 2 wire assertions | unit + wire | Three tripwires had `kind` **moved into** them. The mosaic row shape is untouched. |
-| A4 | render: an accept mark is refused at click time on a tile with no picture, and says why | render | Refusing a deliberate click beats accepting it and quietly not doing it. |
-| A5 | wire: `marks` carries `kind`; the server refuses a reason on an accept mark and refuses `kind: accept` on `/delete` | wire + http+db | 400 before any write. |
+| R1 | `marp db dump` against the development database | database | a dump file is written, and `pg_restore -l` lists a `TABLE DATA` entry for every table in the schema — not a subset |
+| R2 | the same run, with thumbnails on disk | database + filesystem | the file half is carried: the dump directory holds the same number of JPEGs as `storage/observation-thumbnails` |
+| R3 | `marp db load` into a second database on its own port | database | it loads into a running server rather than standing one up, and the target is chosen by `DB_*` alone |
+| R4 | `marp db load` at the corpus, no flags; then again with `-Apply` and no `-Force` | database | both refuse, exit 1, and the counts afterwards are unchanged |
+| R4 | `tests/corpus.test.js` → `holdsCorpus` | unit | the refusal fires on one row in any corpus table and on a thumbnail file with no row, and does **not** fire on a database `marp db up` has just built |
+| R5 | `marp db load` with no flags into an empty second database | database | it reports what it would do and writes nothing; a second read shows the database still empty |
+| R6 | `marp db load` with a **deliberately doctored** manifest | database | the mismatch is named per table and the exit code is 1 — the check has teeth rather than narrating |
+| R6 | `tests/corpus.test.js` → `compareCounts` | unit | a missing table is a difference, and a table the manifest never knew is not |
+| R7 | `psql` count of `users`, `auth_identities`, `service_tokens`, `permissions`, `user_permissions` in the loaded database | database | the credential rows arrived, so *load and go* holds |
+| R8 | `marp harness check` | contract | no tracked file names a host, a port or a password; the manifest is checked by reading it |
+| R9 | `.marp/local/corpus-dump.md` after a dump | filesystem | the pointer exists, is git-ignored, and carries the load command |
+
+**Why the database tier for most of it.** A dump that cannot be loaded is the defect this
+work exists to prevent, and no unit test can observe it: it lives in `pg_dump`'s output
+format, in `pg_restore --clean` against a database that already has a schema, and in
+whether the counts come back. Only a real second database can see any of that. The two
+decisions that *are* observable without one — the refusal and the count comparison — were
+deliberately put in `db/corpus.js` so they could be tested there.
 
 ## Requirements with no test
 
-None. If that is wrong, it is the most useful thing to say at this gate.
-
-## The tests that had to change, and what leaked
-
-Four, and only one is a rule leaking:
-
-1. `model.test.mjs` *a tap toggles a mark* — the mark shape gained `kind`. Moved into the
-   tripwire.
-2. `api-requests.test.mjs`, twice — wire mark entries gained `kind`. Moved in.
-3. **`render.spec.mjs` *the commit button follows the mode that owns the decision*** — it read
-   `#commit`'s `backgroundColor`, which is now `rgba(0,0,0,0)` because the sweep is outlined.
-   **The rule that leaked: the fill moved to the primary button**, and the test named the
-   element rather than the role. It now reads `#commitMarked` for review and training, `#commit`
-   for Delete, and additionally asserts the sweep is outlined in the same hue.
-4. `tests/requirements.js` `reset()` — gained `state.refused = null`, because the refusal fades
-   on a timer and the checks run faster than that.
+None. R1–R9 each have a row above.
 
 ## Edge cases
 
-- **Two taps 600 ms apart** — outside the 320 ms window, so two separate marks rather than an
-  accept.
-- **A fast double-click with a desktop mouse** — must not read as a touch double tap. Pointer
-  type is taken at `pointerdown`, because a `click` is a `PointerEvent` in Chromium and a
-  `MouseEvent` elsewhere.
-- **An accept mark on a tile with no picture** — refused at click time.
-- **A tile marked, then marked the other way** — the later gesture wins, and the reason is
-  dropped when the kind changes.
-- **The main button pressed on a freshly loaded page holding record flags** — commits nothing,
-  and says why in its disabled title.
-- **`openCorrection` on an accepted tile** — forces an exception mark, because saying the
-  species is wrong is saying something is wrong.
-- **Delete Mode** — right click inert, main button hidden, one control.
+- **A load into a database that `marp db up` has just built.** The case that would have
+  broken silently: a fresh database is not an empty one — the baseline seeds `species` and
+  `permissions`, and the bootstrap migration puts an administrator in `users`. A refusal
+  keyed on "any row anywhere" would fire on every fresh database and teach people to pass
+  `-Force` by reflex.
+- **A load over a populated database, with `-Force`.** `pg_restore --clean --if-exists`
+  has to drop 40 tables and 4 views in dependency order and put them back. Run, and the
+  counts matched.
+- **A dump whose manifest disagrees with what loaded.** Forced by hand, because it cannot
+  be produced on purpose any other way.
+- **A dump taken while an inference run is writing.** Observed rather than contrived: the
+  counts rose between two dumps taken minutes apart. A snapshot of a moving target loads
+  consistently — `pg_dump` is transactional — but it is a snapshot, and that is recorded in
+  the manifest's `taken` timestamp.
+- **A thumbnails directory with nothing in it.** The dump creates the directory anyway, so
+  `load` always has something to be pointed at and a corpus with no tiles yet is not a
+  special case.
 
 ## Regression coverage
 
-- **The phone footer**, above. It was already overflowing before this change.
-- **`#commitMarked` visible in Delete** — `display: flex` beats the user agent's `[hidden]`.
-  The same specificity trap Phase 8 hit with `#failure`; second occurrence, now tested.
-- **The R5 size assertion** — the sweep is *wider* (longer label) and *taller* (it carries the
-  Ctrl+Enter hint badge), so "primary is bigger" cannot be asserted on the bounding box.
+- `tests/corpus.test.js` → *says no to a database marp db up has just built*. Nothing had
+  broken yet; this is the refusal's own failure mode, written down before it could.
+- `CORPUS_TABLES against the schema`. A table name misspelled in that list is invisible to
+  every pure test in the file — `countCorpus` reports it absent and `holdsCorpus` reads
+  absent as empty, so the refusal would quietly stop protecting that table. Only the schema
+  can see it, which is why one test in this file talks to a database.
 
 ## Known gaps
 
-- **The 320 ms window has a named cost**: on touch, un-marking a tile you have just marked
-  means waiting the window out. `DOUBLE_TAP_MS` in `ui/mount.js` is the one number to move.
-- **Ctrl+Enter still fires the sweep**, per R4. A stray chord therefore commits the whole page,
-  where on the main button it would commit only what was marked by hand — strictly less
-  consequential. **Left as-is deliberately and offered to the human; it is one line.**
-- **`marksAfterCommit` discards marks made on other pages.** `state.marks` spans the session,
-  but a sweep rebuilds from the current page's ids. Pre-existing, untouched, and the selective
-  path deliberately does not have this shape.
-- **`willAct` in `ui/chrome.js:32` is dead** — computed, never read, already dead on `develop`.
-- **`npm run docs:build` exits 1** on four pre-existing jsdoc errors in `model/schedule.js`.
-  Unchanged by this branch.
-- **CI runs the fast tiers only.** A green pipeline is not this package.
+- **`species_pictures`, `artifacts` and `gpu_artifacts_staging` point at files under
+  `storage/` too, and those files are not carried.** The interface settled in #125 is two
+  inputs — a dump and a thumbnails directory — so that is what was built. `species_pictures`
+  is a pre-existing gap rather than one this introduces: `marp db up` already restores those
+  rows on a fresh database without the images. Recorded as A6 in `.marp/task.md`.
+- **CI gets nothing from this**, deliberately and as #125 says. A dump on one machine is
+  invisible to a runner, and the rule that a test seeds what it asserts does not relax.
+- **No test covers a dump between two different PostgreSQL major versions.** Both sides of
+  every run here were the same server.
+- **The POSIX path was exercised on Git Bash on Windows, not on Linux or macOS.** Argument
+  parsing, the refusal and the flag wording were all confirmed there; `locate_postgres` on
+  a Linux machine takes a different branch and was not run.
+- **`marp db dump` was not run on a machine without `pg_dump`.** The message for that case
+  is written but untested.
 
 ## Manual steps
 
-1. **Review a page the way you would for real** — right click to accept some, left click to
-   flag others, leave most untouched, press the **main** button. *Expected:* only what you
-   marked is written; everything untouched is still unreviewed when the page is re-queried.
-2. **Then press the sweep on a fresh page.** *Expected:* unchanged from today — marked become
-   exceptions, everything else is accepted.
-**The phone is not a manual step.** Playwright's `phone` project is how this project tests a
-phone — it honours the real viewport width where a headless screenshot does not, and the touch
-gestures run in a real `hasTouch` context. It is covered above at the render tier and needs no
-hand check. Settled by the human, 2026-09-10: *"You're supposed to test it on an emulated
-phone… we don't need to test it on a real phone for now."*
+The round trip cannot be automated in this repository's suite: it needs a second
+PostgreSQL, and the suite must never be pointed at the one holding the corpus.
+
+1. `marp db dump` — note the directory it reports.
+2. `marp db up -Port <n> -DataDirName <name>` — a second database, its own port and its own
+   data directory.
+3. `marp db load <dump> <thumbnails-dir> -Port <n> -DataDirName <name>` — expect a dry-run
+   report and nothing written.
+4. The same with `-Apply` — expect *Round trip verified: every count matches the manifest*.
+5. `marp db load` at the first database with `-Apply` and no `-Force` — expect a refusal,
+   exit 1, and the counts unchanged.
+6. `marp db down -Port <n> -DataDirName <name>` when finished. **Stop what you start.**
 
 ---
 
 ## Results
 
-Plan approved by the human on 2026-09-10 — *"go ahead and approve this test plan"* — and run
-against it.
-
-### The automated tiers
-
-```
-API,    npm test         44 suites, 603 passed, 0 failed
-client, npm run test:unit           273 passed, 0 failed, 866 ms
-client, npm run test:e2e            272 passed, 4 skipped   (desktop and phone)
-```
-
-The 4 skips are the pre-existing viewport-conditional cases.
-
-### Manual step 1 — a selective commit, against the real database
-
-The claim #126 exists to test. A page holding observations 1–5, with **only 1 and 3 named** —
-1 accepted, 3 flagged with a reason — and 2, 4 and 5 left untouched:
+Run 2026-09-11, against the development corpus for the read side and a second database on
+its own port for every write. **Nothing was ever loaded into the corpus.** A GPU inference
+run was writing throughout, which is why the counts differ between the first two entries.
 
 ```
-POST /api/v2/mosaic/observations/review
-{"observations":[{"observation_id":1,...},{"observation_id":3,...}],
- "marks":[{"observation_id":1,"kind":"accept"},
-          {"observation_id":3,"kind":"except","reason":"False detection"}]}
-
-{"reviewed":[{"observation_id":1,"outcome":"reviewed"}],
- "flagged":[{"observation_id":3,"outcome":"flagged"}],
- "reverted":[],"skipped":[],"conflicted":[]}
+marp db dump                                        EXIT=0   0.56 s
+  2 projects, 10 sessions, 1 ml_models, 1322 observations, 17846 keyframes,
+  1322 observation_thumbnails, 219 observation_reviews, 61 gpu_jobs, 0 thumbnail files
+  corpus.dump 1.3 MB
+  pg_restore -l: 40 TABLE DATA entries, i.e. every table in the schema, users and
+  service_tokens among them
 ```
 
-Read back from `observation_review_current`:
+The first run reported 0 thumbnail files, correctly: it ran in a worktree whose
+git-ignored `storage/` was empty. The tool copies from the checkout it runs in, which is
+the right behaviour and was the wrong rig. Thumbnails were placed in that checkout's
+`storage/` and the dump retaken.
 
 ```
-observation_id 1  decision reviewed  reason null              reviewer 1496
-observation_id 3  decision flagged   reason False detection   reviewer 1496
+marp db dump                                        EXIT=0   0.89 s
+  2 projects, 10 sessions, 1 ml_models, 1346 observations, 17998 keyframes,
+  1346 observation_thumbnails, 219 observation_reviews, 61 gpu_jobs, 1339 thumbnail files
+  corpus.dump 1.4 MB, manifest.json written, .marp/local/corpus-dump.md written
+
+marp db load <dump> <thumbs>                        EXIT=1   (R4 — at the corpus)
+  Refused: this database already holds a corpus, and a load replaces it.
+  Nothing has been changed.
+
+marp db up -Port <n> -DataDirName <name>            EXIT=0   12.4 s
+  baseline 23 tables / 4 views, then every migration; no corpus in it
+
+marp db load <dump> <thumbs> -Port <n> ...          EXIT=0   (R5 — dry run)
+  In it now: 0 for all eight corpus tables, 0 thumbnail files
+  Dry run -- nothing written.
+
+marp db load <dump> <thumbs> -Port <n> ... -Apply   EXIT=0   1.34 s
+  Loaded: 2 projects, 10 sessions, 1 ml_models, 1346 observations, 17998 keyframes,
+  1346 observation_thumbnails, 219 observation_reviews, 61 gpu_jobs, 1339 thumbnail files
+  Round trip verified: every count matches the manifest.
 ```
 
-**Two rows, not five.** Observations 2, 4 and 5 carry no review record at all — they were on
-the page and were not touched, and the record says nothing about them. Both kinds landed
-correctly in one request. That is R3, and it is what the human asked for.
+Read back independently, with `psql` against the loaded database rather than through the
+tool that wrote it — 40 tables, 4 views, 32 migrations recorded, `users` 33,
+`auth_identities` 1, `service_tokens` 12, `permissions` 27, `user_permissions` 4, `species`
+854, `observation_review_current` 209. Every one of those matches the corpus. R7 holds:
+the loaded database can be logged into and its tokens authenticate.
 
-### A failure that was the operator's, not the code's
+```
+marp db load ... -Apply           (no -Force, target now holds a corpus)   EXIT=1   (R4)
+  Refused: this database already holds a corpus, and a load replaces it.
 
-Recorded so nobody chases it. The first attempt returned **`flagged` for both**, which read as
-`kind: accept` being ignored on the server. It was not: the API on port 3000 had been running
-since **07:36 the previous day**, nineteen hours before any #126 commit, so the request was
-served by code that predates the feature. Checking the process start time rather than reading
-the repository is what caught it. The two rows it wrote were removed, a current server was
-started on its own port, and the result above is from that.
+marp db load ... -Apply -Force    (over that populated database)           EXIT=0
+  Round trip verified: every count matches the manifest.
 
-A service token was also refused before this, with *"a review belongs to the person who made
-it, and a bearer principal is not a user"* — Phase 5's D4 working as designed. The check was
-re-run under a signed-in session.
+marp db load <doctored manifest> ... -Apply -Force                         EXIT=1   (R6)
+  The load does not match the dump:
+    keyframes: expected 18003, got 17998
+    thumbnail files: expected 1337, got 1339
+  Do not treat this dump as a backup until that is understood.
+```
 
-### Manual step 2 — the sweep
+The manifest was edited by hand for that last run — keyframes up five, thumbnail files
+down two — because a check that only ever sees matching counts has never been shown to be
+able to fail.
 
-Not re-run by hand. It is unchanged by construction — `commitOutcome` swapped `marks.has` for
-`isExcepted`, and before #126 every mark was an exception — and the existing sweep tests cover
-it at the contract and render tiers, all passing above.
+The POSIX wrapper was run too, on Git Bash: `sh scripts/marp.sh db load <dump> <thumbs>
+--port <n> --data-dir <name>` produced the identical refusal, exit 1, with the flags spelled
+`--force` and `--port` rather than `-Force` and `-Port`.
 
-### The phone
+```
+npm run test:subsystems                             0.4 s   ok, every suite in one group
+npx jest tests/corpus.test.js                       2.2 s   14 passed, 1 suite passed
+npm run test:core                                   8.0 s   8 suites passed, 53 passed
+marp harness check                                  ok      shared blocks in sync;
+                                                            no stale environment facts,
+                                                            no credentials
+node scripts/harness/spec-check.mjs                 ok      clear to implement
+```
 
-Covered by the render tier, not by hand. The `phone` project runs every test at the real
-viewport width and the three touch checks run in a genuine `hasTouch` context — the double tap
-accepts, two taps 600 ms apart stay two marks, and the main button commits from a tap. All
-passing above.
+`test:core` ran against the *loaded* second database rather than the corpus, which is worth
+saying twice: it is also incidental evidence for R7, since those suites authenticate and
+write through the API against a database that came entirely out of a dump.
 
-An earlier draft of this plan listed a real device as an outstanding step. That was wrong:
-the emulated phone is how this project tests a phone.
+One failure, found and fixed, recorded because it is the kind that reads as something
+else: `tests/corpus.test.js` first reported **`Test Suites: 1 failed`, with all 14 tests
+passing.** An `afterAll` closing the Sequelize connection ran before
+`tests/setup/authenticated-agent.js`'s own `afterAll`, which then failed deleting its
+fixture user — `ConnectionManager.getConnection was called after the connection manager was
+closed!`, thirty lines into a file this change does not touch. The `afterAll` was removed;
+`--forceExit` is what `npm test` passes for exactly this.
 
-### Unchanged from the plan
+### Not done
 
-Every *Known gap* stands: `DOUBLE_TAP_MS` carries its named cost,
-Ctrl+Enter still fires the sweep, `marksAfterCommit` still discards other pages' marks,
-`willAct` is still dead, and `npm run docs:build` still exits 1 on the pre-existing jsdoc
-errors in `model/schedule.js`.
+The umbrella's `CLAUDE.md` warning that #125 asks to edit down — *"do not run `marp db
+destroy` … there is no backup"* — **was not edited.** It is not on `origin/develop`, which
+this branch is based on: it lives on an unpushed local commit on the umbrella's `develop`.
+Editing it from here would mean writing the section from scratch onto a base that does not
+have it, and conflicting with that commit. It is also the human's call, because the dump
+taken here proves the tooling and is **not the real dump** — the corpus was being written to
+throughout.

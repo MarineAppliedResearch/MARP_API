@@ -378,6 +378,60 @@ supported as it ever was; `db up` is one way to satisfy them and need never be r
 The development VM that used to serve this role is being retired. Anything that still
 describes it is history, not instructions.
 
+## The corpus, and how to copy it
+
+The development database is not disposable. It holds observations and keyframes from GPU
+inference runs over real Jellyfin video, the thumbnails extracted from that video, and real
+review decisions that are the evidence behind recorded walkthroughs. That is GPU time plus
+the Jellyfin extraction plus the reviewing, and it exists on one computer.
+
+So there are two commands, and they are two halves of one thing:
+
+```bash
+marp db dump                                        # this machine's corpus, out
+marp db load <dump> <thumbnails-dir> -Apply         # and back in
+```
+
+`scripts/dump-corpus.js` and `scripts/load-corpus.js` do the work; `marp db dump` and
+`marp db load` are the umbrella's wrappers, and they exist to supply the two things this
+repository deliberately does not know -- where PostgreSQL's own tools are, and which
+database is running. Same boundary `marp db up` keeps by calling `scripts/init-database.js`
+rather than holding a second copy of the schema. `db/corpus.js` is what the two scripts
+share: the table list, the manifest shape, and the decision a refusal turns on.
+
+**Four things about them that are not obvious, and each is deliberate:**
+
+- **A dump is two things.** `observation_thumbnails` records a filename and the JPEG lives
+  under `storage/`, which is git-ignored. A dump of the rows alone restores a corpus whose
+  every tile is a broken pointer -- it looks restored and is not. So `load` takes two
+  inputs and refuses with one.
+- **A load is a dry run until `-Apply`,** and a load into a database that already holds a
+  corpus is refused even with `-Apply` until `-Force`. The two flags answer different
+  questions: `-Apply` is *write at all*, `-Force` is *yes, destroy what is in there*. From
+  `marp.sh` they are `--apply` and `--force`.
+- **The dump carries credential material** -- users, `auth_identities` and `service_tokens`
+  -- because without them a loaded database cannot be logged into and *load and go* becomes
+  *load and then redo the setup*. Settled in #125. It follows that a dump is a credential
+  file: it stays on the machine that made it, and is never committed or attached to an
+  issue. `marp db dump` defaults it into `.marp/local/`, which is git-ignored, and records
+  where it put it in `.marp/local/corpus-dump.md` -- which is how an agent told "load the
+  corpus" finds it.
+- **The load checks its own work.** It compares the counts it produced against the manifest
+  written when the dump was taken and fails on a mismatch, because a dump that cannot be
+  loaded is not a backup.
+
+**A dump older than the schema is loaded and then migrated.** It carries `SequelizeMeta`,
+so `npx sequelize-cli db:migrate` afterwards applies only what has landed since; the load
+says so when the dump is behind. That is the supported path -- a year-old dump is
+known-stale and usable rather than a surprise.
+
+**Stop the API before loading.** The restore drops every table, and an open connection
+holding a lock on one of them is what turns a load into a hang.
+
+**None of this reaches CI**, and it must not start to. CI builds an empty database and a
+dump on one person's machine is invisible to it, so the rule that a test seeds what it
+asserts does not relax because a dump exists.
+
 ## The migrations cannot build a database
 
 `observations`, `projects`, `sessions` and `metaInfos` have no `createTable`

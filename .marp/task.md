@@ -1,201 +1,135 @@
 ---
-task: MarineAppliedResearch/MARP_API#126
-repos: [marp-api]
-status: design
+task: MarineAppliedResearch/MARP_API#125
+repos: [marp-api, marp]
+status: implementing
 needs: []
 ---
 
-# Two kinds of mark, and two commits
+# Dump and load the development corpus
 
-Design specification for MARP_API#126.
+Design specification for MARP_API#125. Cross-repository: the verbs are wired in the
+umbrella (`MarineAppliedResearch/MARP`), the work is in this repository.
 
-**G1 only. Nothing is implemented while a `blocking` assumption below is open.**
+## Goal
 
-## Where this came from
-
-The human reviewed real observations in the mosaic for the first time on 2026-09-10, against
-1,062 rows from three dives, and the commit gesture did not hold up:
-
-> *"The mosaic reviewer's idea of flagging certain things and then hitting a button and having
-> everything else accepted isn't really working when trying it out for real. There are times
-> when you just want to exclude things, or just approve certain items, without it affecting
-> anything else."*
-
-**This is the only feedback in the project that came from using the tool rather than from
-reading the code**, which is why it outranks Phase 9.
-
-## What the reviewer gets
-
-Settled by the human, 2026-09-10.
-
-- **Left click marks a tile as the exception**, exactly as it does now — `flagged` in
-  Scientific, `excluded` in Training, `deleted` in Delete.
-- **Right click marks a tile as accepted** — `reviewed` in Scientific, `promoted` in Training.
-  This is new: **a mark now carries a kind.**
-- **The main commit button is new, and is the bigger one.** It commits **only what has been
-  marked**, each tile according to its own mark, and says nothing at all about a tile nobody
-  touched.
-- **The existing sweep survives as a smaller, secondary button to its right**, doing exactly
-  what it does today.
-
-His words: *"the new button will be the main button, the bigger button… that will only accept
-the ones that you've already marked, and the current button will be kind of a smaller button
-on the right hand side that will do what it currently does."*
-
-## What is already true, checked rather than assumed
-
-- **A mark has no kind today.** `state.marks` is a set of `observation_id`, and
-  `commitOutcome` reads it with a bare `marks.has(r.observation_id)`
-  (`src/model/modes.js:220`). Every kind-aware rule below is new behaviour, not a rename.
-- **Each mode already declares both halves of the vocabulary.** `MODES[mode].marks` is what a
-  marked tile becomes, `MODES[mode].accepts` is what an unmarked one becomes
-  (`modes.js:18-60`). So "accept this one specifically" has a value to write in every mode
-  that has one — and **`delete` has `accepts: null`**, which is the exception.
-- **Delete already commits only what is marked.** `commitActsOnMarked(mode)` branches
-  `commitOutcome` for exactly that (`modes.js:222-227`). **The new main button is that
-  behaviour generalised**, so its shape is proven rather than invented.
-- **Accepting needs imagery; flagging does not.** An unmarked tile without a ready thumbnail
-  counts as `skips`, never `accepts` (`modes.js:230-231`).
-- **A page arrives with its existing exceptions already marked** (`page.seedMarks`), because
-  committing a page holding untouched flags used to clear them silently.
-- **`state.touched` records what the reviewer decided by hand**, so a take-back is not
-  re-seeded.
-- **The commit button already reports on itself** — it shows the count, disables when a commit
-  would do nothing, and says how many will be skipped.
-- **There is one commit button** (`index.html:94`) and **no `contextmenu` handler** anywhere
-  in `src/ui/`.
-- **The render tier runs every test at desktop *and* phone width, deliberately.**
-
-## Open assumptions
-
-- [x] **A1 · product/UI · blocking** — **What is the accept gesture on a touch screen?**
-  Right click does not exist on a phone, and the render tier runs the whole suite at phone
-  width on purpose. This is the gesture the human expects to use *most*, so it cannot be
-  desktop-only.
-  Candidates: **long press**, the conventional touch analogue, but slow for a gesture repeated
-  hundreds of times a page; a **second tap zone** on the tile, fast but it shrinks the target;
-  a **mode toggle** making left click mean accept until switched back, fastest for a run of
-  accepts and worst for a mixed page; or **no touch equivalent**, accepting that phone review
-  uses the two buttons only.
-  **Recommendation: long press, with the phone cost said out loud rather than hidden.** The
-  human's call — he is the one who will do it thousands of times.
-
-- [x] **A2 · product/UI · blocking** — **What does right click mean in Delete Mode?**
-  `MODES.delete.accepts` is `null`: the opposite of deleting is leaving a row alone, which
-  needs no record, so an accept mark has nothing to mean there.
-  Candidates: **inert**; **clears a mark**, which is useful and consistent; or Delete is
-  **excluded** from the feature and keeps its single button.
-  **Recommendation: inert, and the two buttons collapse to one in Delete** — the new main
-  button and today's Delete button would do the identical thing, so showing both would be two
-  controls with one meaning.
-
-- [x] **A3 · behavioural · blocking** — **Does a page still arrive with its existing exceptions
-  marked, now that a mark has a kind?**
-  `seedMarks` exists because committing a page holding untouched flags silently cleared them —
-  **under the sweep.** The new main button cannot clear what it was never told about, so that
-  reason does not apply to it.
-  The risk runs the other way: if arriving flags are seeded and the reviewer presses the *main*
-  button, they re-commit decisions they never made — harmless to the record but dishonest about
-  who decided what, and `observation_reviews` carries a reviewer per row.
-  Candidates: seed as now and let the main button re-write them; seed nothing and let the
-  sweep's old trap return; or **seed as now, and have the main button ignore seeded marks the
-  reviewer has not touched** — `state.touched` already tells them apart.
-  **Recommendation: the third.** The only one that keeps both buttons honest, and the data to
-  do it already exists.
-
-- [x] **A4 · product/UI · blocking** — **What does an accept mark on a tile with no picture
-  do?** Accepting needs imagery and flagging does not; that rule is settled and on the record.
-  An explicit accept mark is the reviewer saying *"I have judged this one"*, which they cannot
-  have done without seeing it.
-  Candidates: **refuse the mark** at click time, with the tile saying why; **allow it and skip
-  at commit**, reported in the skip count as today; or allow it outright and let *"No imagery"*
-  become a legitimate acceptance.
-  **Recommendation: refuse at click time.** The skip count explains a *sweep*, where the
-  reviewer never singled the tile out; refusing a deliberate click is clearer than accepting it
-  and quietly not doing it.
-
-- [x] **A5 · API contract · blocking** — **Does the commit request change shape?**
-  The endpoint takes `observations: [{ observation_id, version }]` plus `marks`. The main
-  button must send only the marked, each with its kind — which the existing request can express
-  if `marks` carries the kind and cannot if it does not.
-  **Recommendation: extend `marks` with the kind rather than adding a second list**, because
-  one list keyed by `observation_id` is what `applyCommit` already folds by, and two lists
-  reintroduce the question of what an id appearing in both means.
-  **This is a change to a published contract with a snapshot tripwire over it**, so whatever is
-  chosen is *moved into* that list, never admitted by loosening it.
-
-- [x] **A6 · product/UI · non-blocking** — **What does a tile look like for each kind?**
-  The tile already derives four things at once — marked, existing, outcome, borrowed — with a
-  fixed precedence, and it is the area of the app that has produced the most reported bugs. A
-  fifth distinction has to fit that table rather than sit beside it.
-  Recommendation: today's mark styling for an exception mark and the mode's accept colour for
-  an accept mark, with no new slot — `.badge` stays exactly one element per tile.
-
-## Decisions
-
-Answered by the human on 2026-09-10 unless noted.
-
-- **A1 — the accept gesture on touch is a double tap, with a long press as the fallback.**
-  *"I'm thinking A1 might be a double tap, and if it can't be a double tap, then a long tap
-  will be okay for now."* Double tap is the faster gesture and this is the one repeated
-  hundreds of times a page, so it is worth attempting first. **If double tap cannot be made
-  reliable** — it competes with the browser's own double-tap-to-zoom on a phone, and
-  distinguishing it from two separate marks needs a timing window that will feel wrong if it
-  is tuned badly — **fall back to long press and say so in the report rather than shipping a
-  flaky gesture.**
-
-- **A3 — the page still arrives looking pre-marked, and the main button ignores what the
-  reviewer did not touch.** *"I want it to look pre-marked before you touch anything. You can
-  change it if you want it."*
-  So `seedMarks` is unchanged: flags already on the record are drawn as marks the moment the
-  page loads, which is what the reviewer asked to see.
-  The second half is settled here rather than by him, as offered: **the main button acts only
-  on marks the reviewer made in this sitting.** `state.touched` already holds exactly that set.
-  Without it, pressing the main button on a freshly loaded page would re-commit flags nobody
-  touched, under this reviewer's name and today's date — and `observation_reviews` records a
-  reviewer per row, so that is the record asserting a decision that was never made. The sweep
-  is unaffected and keeps working as it does today.
-
-- **A2 — right click is inert in Delete Mode, and Delete keeps one button.** Taken as
-  recommended. `MODES.delete.accepts` is `null` because the opposite of deleting is leaving a
-  row alone, which needs no record — so an accept mark has nothing to mean. And the new main
-  button would do exactly what today's Delete button does, so showing both would be two
-  controls with one meaning.
-
-- **A4 — an accept mark is refused at click time on a tile with no picture**, with the tile
-  saying why. Taken as recommended. Accepting needs imagery and flagging does not; the skip
-  count exists to explain a *sweep*, where the reviewer never singled the tile out. Refusing a
-  deliberate click is clearer than accepting it and quietly not doing it.
-
-- **A5 — `marks` carries the kind; no second list.** Taken as recommended. One list keyed by
-  `observation_id` is what `applyCommit` already folds by, and two lists reintroduce the
-  question of what an id appearing in both means. **This changes a published contract with a
-  snapshot tripwire over it, so the key is moved into that list and the test is never
-  loosened.**
-
-- **A6 — non-blocking, taken as recommended.** Today's mark styling for an exception mark, the
-  mode's accept colour for an accept mark, no new slot, and `.badge` stays exactly one element
-  per tile.
+A person with a development database holding real work can take a copy of it and put that
+copy back, or into a second database, and get a system that can be logged into and reviewed
+in without any further setup. Today they cannot: the corpus exists on exactly one computer,
+there is no backup, and the umbrella's `CLAUDE.md` therefore forbids `marp db destroy`
+outright.
 
 ## Requirements
 
-- **R1** — Left click marks the exception, unchanged in every mode.
-- **R2** — Right click marks accepted, in every mode that has an accepted value.
-- **R3** — The main commit button writes **only** marked tiles, each according to its kind,
-  and writes nothing for a tile that was not marked.
-- **R4** — The secondary button keeps today's behaviour exactly.
-- **R5** — The main button is visually primary; the secondary is smaller and to its right.
-- **R6** — Both buttons report what they will do before doing it, and both disable when they
-  would do nothing.
-- **R7** — A tile marked one way then the other ends with the later mark. Clicking a mark off
-  leaves the tile untouched by either button.
-- **R8** — Every new behaviour has a test at a tier that can observe it: the rules in
-  `model/`, the gestures and both buttons in the render tier at **both** viewports.
-- **R9** — Nothing is admitted to the mosaic row or the commit contract by loosening a
-  tripwire.
+- **R1** — `marp db dump` writes a loadable copy of the whole database, every table, to a
+  destination on this machine.
+- **R2** — The dump also carries the extracted thumbnail files, because a dump of the rows
+  alone restores a corpus whose every tile is a broken pointer — which looks restored and
+  is not.
+- **R3** — `marp db load <dump> <thumbnails-dir>` puts both halves into the database that is
+  already running. It does not stand up a second cluster and does not touch `.postgres/`.
+- **R4** — A load into a database that already holds a corpus **refuses**, and the refusal is
+  the default. Nothing is destroyed to find out.
+- **R5** — A load is a dry run unless `--apply` is passed, and prints what it would destroy
+  before it is asked to destroy it.
+- **R6** — After a load, the tool itself compares the row counts it produced against the
+  counts recorded when the dump was taken, and fails on a mismatch. A dump that cannot be
+  loaded is not a backup, so the round trip is checked by the tool rather than by hand.
+- **R7** — The dump carries users, `auth_identities`, permissions and `service_tokens`, so a
+  loaded database can be logged into and the worker and operator tokens authenticate.
+  Settled by the human: *"I want a database that I could just load and start testing on right
+  away without doing any setup on."*
+- **R8** — No host, port or password is written into any tracked file, or into the dump's own
+  manifest. The connection comes from the `DB_*` environment the rest of this repository
+  reads, and documentation points at `marp db status` rather than restating a value.
+- **R9** — Where a dump is on a given machine is recorded in `.marp/local/`, which is
+  git-ignored, so an agent told "load the corpus" can find it without being handed the path.
 
-## Out of scope
+## Open assumptions
 
-- Phase 9 (scale) and Phase 10 (the video drill-down).
-- The reason vocabulary.
-- Thumbnails, the sweeper (#121), the file server (#120).
+- [x] **A1 · security/permissions · blocking** — answered in #125 by the human: the dump
+  carries credential material (users, `auth_identities`, `service_tokens`) because removing
+  it turns *load and go* back into *load and then redo the setup*. Handling note, not a
+  requirement: the file stays on the machine that made it and is never committed, attached to
+  an issue, or passed around.
+- [x] **A2 · destructive · blocking** — answered here: a load refuses rather than replaces.
+  #125 says only *"loading replaces whatever is there, so it should say so plainly before it
+  does it"*; that is not enough for a corpus with no backup, so this specification is
+  stricter than the issue. Two guards, guarding different things: `--apply` means *write at
+  all*, `--force` means *yes, destroy the corpus that is in there*. A bare
+  `marp db load <dump> <dir>` changes nothing, ever.
+- [x] **A3 · architectural** — answered here: `pg_dump -Fc` custom format, restored with
+  `pg_restore`. One file, compressed, and `pg_restore -l` can list it without loading it.
+  Plain SQL was the alternative and was rejected: a data dump is `COPY ... FROM stdin`, which
+  the `pg` driver cannot execute, so it would need `psql` anyway and would be 19 MB
+  uncompressed.
+- [x] **A4 · environment** — answered here: this repository is not told where `.postgres/` is.
+  It finds `pg_dump`/`pg_restore` through `PG_BIN` (or `PG_DUMP`/`PG_RESTORE`), defaulting to
+  `PATH` — the same shape as `FFMPEG_PATH` in `config/thumbnails.js`. The umbrella sets
+  `PG_BIN` when it calls in, exactly as it already sets `DB_*`.
+- [x] **A5 · behavioural** — answered here, and #125 asked for it to be stated:
+  **restore-then-migrate** is the supported path for a dump older than the schema. A full
+  dump carries `SequelizeMeta`, so `npx sequelize-cli db:migrate` after a load applies only
+  what has landed since. A dump is therefore known-stale-but-usable rather than a surprise.
+- [ ] **A6 · data-meaning · non-blocking** — `observation_thumbnails` is not the only table
+  whose rows point at files under `storage/`. `species_pictures` (646 rows, 49 MB) and
+  `artifacts` / `gpu_artifacts_staging` (25 rows each, 3.6 MB) have the same shape, and a
+  load restores those rows without their files. The settled interface in #125 is two inputs —
+  a dump and a thumbnails directory — so that is what is built, and this is named rather than
+  guessed at. `species_pictures` is a pre-existing gap: the baseline already restores those
+  rows on any fresh `marp db up` without the images.
+
+## Decisions
+
+- **2026-09-11** — The umbrella wires the verb; this repository does the work. Same boundary
+  `marp db up` already keeps by calling `scripts/init-database.js` rather than holding a
+  second copy of the schema. `db.ps1` and `db.sh` gain `dump` and `load`; the dumping and
+  loading live in `scripts/dump-corpus.js` and `scripts/load-corpus.js` here.
+- **2026-09-11** — The emptiness test looks at the tables a corpus is made of, not at the
+  whole database. `species` (854) and `permissions` (27) come from the baseline and `users`
+  gains the bootstrap administrator, so "any row anywhere" would refuse every fresh
+  `marp db up` and teach people to pass `--force` by reflex.
+- **2026-09-11** — Restore is `--clean --if-exists --no-owner --no-privileges`. `--clean`
+  because the usual target is a database `marp db up` has already given a schema to, where a
+  plain restore fails on every `CREATE TABLE`; `--no-owner --no-privileges` because the role
+  name on the machine doing the loading is not the dump's business.
+
+## Plan
+
+1. `scripts/dump-corpus.js` — count, `pg_dump -Fc`, copy the thumbnails, write a manifest,
+   record the path in `.marp/local/`.
+2. `scripts/load-corpus.js` — inspect, refuse, dry run, restore, copy thumbnails back, then
+   re-count and compare against the manifest.
+3. Umbrella: `dump` and `load` in `scripts/db.ps1` and `scripts/db.sh`, passing `DB_*` and
+   `PG_BIN` in exactly as `up` already passes `DB_*`.
+4. Round trip proven into a **second** database on its own port. Never into the corpus.
+
+## Acceptance criteria
+
+- `marp db dump` produces a directory holding a dump file, the thumbnails, and a manifest.
+- `marp db load` into that second database reproduces the counts the manifest recorded.
+- `marp db load` into a database that holds a corpus refuses, and has changed nothing.
+- No tracked file names a host, a port or a password.
+
+## Test plan
+
+Unit tier for the parts that can be seen without a database — the corpus-table list, the
+manifest round trip, the refusal decision. The refusal and the count comparison are the two
+things that matter and both are observable there.
+
+The round trip itself is the database tier and is run by hand into a second database
+(`marp db up --port` with its own `-DataDirName`), because it is the only tier that can see
+whether a dump is loadable at all.
+
+## Status
+
+- **Gate:** verifying. `.marp/verification.md` carries the plan and the real results.
+- **Notes:** A GPU inference run was writing to the corpus while this was built, so the
+  dump taken to prove the tooling is a snapshot of a moving target. That is fine for testing
+  the tool and is **not the real dump** — the real one is the human's to take when the run
+  finishes.
+
+  Two things left for the human rather than decided here. The umbrella's `CLAUDE.md`
+  warning that #125 asks to edit down is **not on `origin/develop`** — it sits on an
+  unpushed local commit on the umbrella's `develop`, so this branch cannot see it and
+  editing it from here would conflict. And A6 above names three other tables whose rows
+  point at files under `storage/` that a load does not carry.
