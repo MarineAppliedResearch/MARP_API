@@ -65,7 +65,7 @@ that does not put the database back.
 
 ## Open assumptions
 
-- [ ] **A1 · architectural · blocking** — **How is "unchanged" detected?**
+- [x] **A1 · architectural · blocking** — **How is "unchanged" detected?**
   A row count catches a deletion and a leftover insert. It does **not** catch a mutation —
   a test that flips `review_decision` on a real observation leaves every count identical.
   The requirement is that nothing is *changed*, so counting is not enough.
@@ -77,7 +77,7 @@ that does not put the database back.
   deletion, a mutation, and a row added and not removed — because any of them changes the
   digest. It is one query per table and it makes the check exact rather than approximate.
 
-- [ ] **A2 · behavioural · blocking** — **Which tables, and what is legitimately exempt?**
+- [x] **A2 · behavioural · blocking** — **Which tables, and what is legitimately exempt?**
   A blanket "nothing changes anywhere" will trip on bookkeeping that is not a defect:
   `service_tokens.last_used_at` and `service_clients.last_used_at` move merely because a
   test authenticated, and sequences advance whenever anything is inserted, by design.
@@ -89,7 +89,7 @@ that does not put the database back.
   never watched is a blind spot, and the next loss will be in one of those. Sequences are
   not rows and are out of scope either way.
 
-- [ ] **A3 · security/permissions · blocking** — **Should the suite refuse to run against
+- [x] **A3 · security/permissions · blocking** — **Should the suite refuse to run against
   production outright?**
   The guard above detects after the fact. On production, after the fact is too late — the
   rows are already gone and there is no dump.
@@ -102,13 +102,38 @@ that does not put the database back.
   is stronger but every existing database would need marking, including this one.
   **Detection and refusal answer different halves and this phase should do both.**
 
-- [ ] **A4 · behavioural · non-blocking** — **What happens to a suite that fails the check?**
+- [x] **A4 · behavioural · non-blocking** — **What happens to a suite that fails the check?**
   Recommendation: the suite fails, naming the table, what changed, and the file — a test
   that leaves the database different is a failing test even when its assertions passed.
   Exiting 0 on a known change is exactly how 358 rows and one deletion went unnoticed for a
   whole run.
 
 ## Decisions
+
+**A1-A4 settled by me on 2026-09-11, at the human's direction** — *"you wrote this issue and
+I don't even know what you are talking about with these blockers, so decide and do it."*
+That is a fair correction: these were questions about an implementation I had specified from
+evidence I gathered myself, not questions about MARP. They are recorded so the reasoning
+survives, not to claim anybody approved them.
+
+- **A1 — a digest per table.** `count(*)` plus `md5(string_agg(...))` over each row's
+  columns, ordered, captured before and compared after. Counting alone cannot see a
+  mutation: a test that flips `review_decision` on a real observation leaves every count
+  identical. One query per table catches a deletion, a mutation and a leftover insert with
+  the same check, because any of them moves the digest.
+- **A2 — every table, minus a written exemption list with a reason per entry.** An exemption
+  somebody had to write down is a decision; a table nobody watched is a blind spot, and the
+  next loss will be in one of those. Known exemptions to start from:
+  `service_tokens.last_used_at`, `service_clients.last_used_at` and `users.last_used_at`
+  move because a test authenticated, which is bookkeeping rather than a defect. Sequences
+  are not rows and are out of scope.
+- **A3 — refuse a database that is not local, and detect regardless.** The suite refuses
+  when the host is anything but `127.0.0.1` or `localhost`, unless an explicit variable
+  overrides it. Detection is too late on production — the rows are already gone and there is
+  no dump. This matters more here than it would elsewhere: **the development database is
+  also called `mare_v1`**, the same name as production, so only the host tells them apart
+  and a misdirected `.env` is genuinely dangerous.
+- **A4 — the suite that broke it fails**, naming the file, the table and what changed.
 
 Settled by the human, 2026-09-11, and recorded here because they replaced questions I
 should not have asked:
