@@ -1680,6 +1680,24 @@ test.describe('how many pages are done', () => {
     /* The footer must still not wrap, which is what hid the legend in the first place. */
     const bar = await page.locator('.foot').boundingBox();
     expect(bar.height).toBeLessThan(80);
+
+    /* And it must fit across, which nothing asserted until #126.
+       `.app` clips rather than scrolls, so a footer wider than the viewport is not a
+       scrollbar -- it is a control silently cut off the right-hand edge, and the commit
+       button is the rightmost thing there. It was **already overflowing before #126**, at
+       524px of content in a 412px viewport with only one button; two buttons made it
+       obvious rather than causing it. Measured on the row that holds them, because `.foot`
+       itself is the clipping box and cannot report its own overflow. */
+    const fits = await page.evaluate(() => {
+      const foot = document.querySelector('.foot');
+      const kids = [...foot.children];
+      const right = Math.max(...kids.map((k) => k.getBoundingClientRect().right));
+      const left = Math.min(...kids.map((k) => k.getBoundingClientRect().left));
+      return { content: Math.ceil(right - left), available: foot.clientWidth };
+    });
+    expect(fits.content,
+      `the footer needs ${fits.content}px in ${fits.available}px; the commit button is what gets cut`)
+      .toBeLessThanOrEqual(fits.available);
   });
 });
 
