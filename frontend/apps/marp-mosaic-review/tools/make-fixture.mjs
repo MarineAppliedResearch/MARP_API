@@ -10,6 +10,16 @@
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+/* The session-type to species-list map, from the API rather than copied.
+   `species_list` on a row is whatever the endpoint would have resolved, and the endpoint
+   resolves it from this file (#130 A1) -- so a second copy here would make the fixture and
+   the endpoint disagree the first time a session type is added, which is the exact family
+   of defect #130 was. This is the one thing the generator reaches out of the app for; when
+   the app is extracted it will fail loudly here, which is the right way for it to fail. */
+const { speciesListForSessionType } =
+  createRequire(import.meta.url)('../../../../db/species-lists.js');
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, '..', 'fixtures', 'observations.json');
@@ -226,6 +236,14 @@ for (let i = 0; i < TOTAL; i++) {
        observation made "the type narrows which sessions are available" untrue, and the
        rail says it narrows them. */
     session_type: SESSION_TYPES[(i % 12) % SESSION_TYPES.length],
+    /* Which annotation list a correction may be offered from, resolved from the session
+       type exactly as the endpoint resolves it (#130 A1). **Null for `Fish_GULF` and
+       `INVERTS_GULF`**, which the map does not name -- that is not tidied here for the
+       same reason #81 D1 kept the inconsistent casing, and it earns its keep: a row whose
+       list is null is the case the picker's "search all lists" action exists for, and
+       without one in the fixture no browser test can reach it. */
+    species_list: speciesListForSessionType(
+      SESSION_TYPES[(i % 12) % SESSION_TYPES.length]),
     user_id: user.user_id,
     processor_name: user.name,
 
@@ -299,8 +317,14 @@ for (let i = 0; i < TOTAL; i++) {
        `training_approved_by`, holding names, and the endpoint's row carries neither: an
        id is what lets a client say "by you" without the row exposing anybody. */
     review_reviewer_id: null,
+    /* Present and null, not absent. The endpoint always sends both reason keys and the
+       tile reads both; the fixture used to create them only when a commit wrote one, so
+       the two row shapes differed by two keys nobody noticed -- the same family of
+       divergence #130 came out of, and a unit check now fails on it. */
+    flag_reason: null,
     training_decision: rand() < 0.06 ? 'promoted' : rand() < 0.09 ? 'excluded' : null,
     training_reviewer_id: null,
+    exclusion_reason: null,
 
     thumbnail_status,
     /* The picture is what is really there, which is not always what the label says. Fifty

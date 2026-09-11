@@ -871,15 +871,26 @@ export const MarpData = {
     return out;
   },
 
-  /** Free-text search over the taxonomy, as the species chooser needs. */
-  async searchSpecies(term, { signal } = {}) {
+  /**
+   * Free-text search over the taxonomy, as the species chooser needs.
+   *
+   * **`list` is honoured, and an empty term returns nothing.** Neither used to be true:
+   * the argument was ignored outright and an empty term answered with six arbitrary
+   * organisms. That is how #130 stayed invisible to every browser test — the render tier
+   * runs on this fixture, so the scoped search it exercised was not the scoped search the
+   * application makes, and the fixture answered where the API refused without asking.
+   * The two backings have to agree on *behaviour*, not only on method names.
+   *
+   * A null `list` is a search over every list, exactly as `api/index.js` sends one.
+   */
+  async searchSpecies(term, { list, signal } = {}) {
     await latency(60);
     throwIfAborted(signal);
     const t = (term || '').trim().toLowerCase();
-    if (!t) return db.species.slice(0, 6);
-    return db.species.filter(
-      (s) => s.comname.toLowerCase().includes(t) || s.species.toLowerCase().includes(t)
-    );
+    if (!t) return [];
+    return db.species.filter((s) =>
+      (!list || s.species_list === list)
+      && (s.comname.toLowerCase().includes(t) || s.species.toLowerCase().includes(t)));
   },
 
   /**
