@@ -43,6 +43,21 @@ Never commit directly to `master` or `develop`.
 - **Ask about meaning rather than inferring it from the data.** How a field is meant to
   work, what an empty value means, whether two similar rows are one thing or two — these
   are answerable by the person who recorded them and not reliably by inspection.
+- **"Seed it" means write a seeder, not type SQL.** Anything another machine or another
+  person will need again goes in the repository as a migration or a checked-in script that
+  can be run twice. Rows typed into a local database by hand exist on exactly one computer,
+  are invisible to everybody else, and are gone the next time that database is rebuilt.
+
+  This is written out because of what it cost. A model, a project, a session and seven
+  species-mapping rows were inserted by hand here to get the first real inference job
+  running. Nothing was committed. The row ids from that database — a model id, a session id
+  — then went into instructions for a second machine, where they meant nothing, and an agent
+  on that machine had to work out the seeding from scratch before it could run anything at
+  all. The work was fine; it was unrepeatable, which made it worthless to anyone else.
+
+  The same rule governs what you then write down: **never quote an id out of a hand-made
+  local database as though it were a fact about MARP.** Name the seeder and say to use the
+  ids it reports.
 
 ## Keep commit messages short
 
@@ -501,6 +516,38 @@ The production database is a scientific record; the umbrella `CLAUDE.md` says wh
 that means. Every data migration wraps its work in `db/data-integrity.js`, which
 counts rows and foreign-key references before and after and refuses to commit if
 anything was lost, and carries a `down` that restores what it changed.
+
+## Running the inference pipeline needs context the baseline does not carry
+
+The baseline builds the schema and the species catalogue. It does **not** build a
+project, a session, or a registered model — those are survey data, and a `marp db destroy`
+takes them. A GPU job spec names a session and an `ml_models` row *by id*, so a rebuilt
+database rejects the same job spec that worked yesterday, and the error arrives from the
+ingest rather than from the thing that is actually missing.
+
+**Run `node scripts/seed-inference-context.js` after any rebuild.** Dry run by default;
+`--apply` writes. It is idempotent, it pins the ids the job specs use, and it advances the
+sequences past them. Do not seed these rows by hand — that is how they were lost.
+
+Two things it encodes that are not obvious from the schema:
+
+- **`species` identifies a species; `model_species` only records what a model was trained
+  with.** The join table is not a lookup and not a class-index table — it has no class
+  column, and the class names come from the model's own `mixed-classnames.yaml`. It matters
+  to a run for a narrower reason: the ingest is handed a class *name* rather than a key, and
+  `service/observation-ingest.service.js` resolves that name against `species.comname`
+  requiring exactly one match. Common names are not unique across the catalogue —
+  `Red sea urchin` is on both `Inverts` (769) and `GULF_Inverts` (544) — so the lookup
+  narrows to the model's trained species before falling back to the whole catalogue, and an
+  unseeded model leaves it with two matches and no grounds to choose. Seed the rows and the
+  run proceeds; the disambiguation is the code's lookup order, not a property of the table.
+- **The session's `type` chooses the species list.** `db/species-lists.js` maps `Invert` to
+  `Inverts`. An inverts model writing into a `Fish` session is refused by
+  `checkSessionTypeAgainstModel`, which is the check working.
+
+The worker's side of this — which interpreter, which weights, which Jellyfin — is
+machine-specific and lives in `.marp/local/`, not here. **The worker is given no Jellyfin
+credentials**; the coordinator resolves the video and the job spec carries a playable URL.
 
 ## Primary keys are assigned inconsistently
 
