@@ -3948,6 +3948,12 @@
             "nullable": true,
             "example": "Fish"
           },
+          "species_list": {
+            "type": "string",
+            "nullable": true,
+            "example": "Inverts",
+            "description": "Which annotation list this observation may be corrected against, resolved on the server from the owning session type. **The session's list, not the current species' list**: scoping a correction picker by whatever the observation is classified as now means an observation corrected onto the wrong list only ever offers candidates from that wrong list, and the mistake can never be corrected back. Null where the session type names no list -- `Other` genuinely does not say which was in use -- and for those a client has to search every list instead."
+          },
           "project_name": {
             "type": "string",
             "nullable": true,

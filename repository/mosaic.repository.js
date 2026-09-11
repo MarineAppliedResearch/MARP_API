@@ -41,6 +41,7 @@
  */
 
 const db = require('../model');
+const { SESSION_TYPE_TO_SPECIES_LIST } = require('../db/species-lists');
 const thumbnailRepository = require('./observation-thumbnail.repository');
 
 /**
@@ -121,6 +122,29 @@ const SORT_FIELDS = {
 const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
 
 /**
+ * Which annotation list this observation's session was recorded against, as SQL.
+ *
+ * **Generated from `db/species-lists.js` rather than written out**, so the mapping
+ * that governs scientific meaning stays in one place. A second copy here would drift
+ * the first time a session type is added, and nothing would say so.
+ *
+ * `btrim` because `speciesListForSessionType` trims before it looks up, and a type
+ * that differs only by whitespace is the same type. A type the map does not name --
+ * `Other`, which genuinely does not say which list was in use -- yields null rather
+ * than a default, because a default would attribute an observation to a list nobody
+ * chose.
+ *
+ * @constant
+ * @type {string}
+ */
+const SPECIES_LIST_CASE = [
+    'CASE btrim(s.type)',
+    ...Object.entries(SESSION_TYPE_TO_SPECIES_LIST)
+        .map(([type, list]) => `            WHEN '${type}' THEN '${list}'`),
+    '        END',
+].join('\n');
+
+/**
  * The row the tile renders, and nothing more (R13, A6).
  *
  * `processor_name` and `lineId` are deliberately absent: nothing draws either, and
@@ -176,6 +200,17 @@ const DEFAULT_SORT = [{ field: 'confidence', dir: 'asc' }];
  * `tests/mosaic-query.test.js`'s exact-key list rather than the list being
  * loosened -- naming the exact keys is the tripwire.
  *
+ * `species_list` is #130's A1, and it is the **session's** list rather than the
+ * current species'. The correction picker has to be scoped to a list, because a
+ * common name identifies a species only within one; scoping it by the species the
+ * observation is classified as *now* would mean an observation corrected onto the
+ * wrong list only ever offers candidates from that wrong list, and the mistake
+ * becomes unfixable through the tool. The session type is the invariant, the server
+ * already owns the map (`db/species-lists.js`), and sending the resolved list keeps
+ * a second copy of that map out of the browser. Like the fields above it, the key
+ * was **moved into** `tests/mosaic-query.test.js`'s exact-key list rather than the
+ * list being loosened.
+ *
  * The column list is written out rather than `o.*` so that a column added to
  * `observations` does not silently join the payload.
  *
@@ -193,6 +228,7 @@ const ROW_COLUMNS = `
         s.dive,
         s.line,
         s.type AS session_type,
+        ${SPECIES_LIST_CASE} AS species_list,
         p.name AS project_name,
         rc.decision AS review_decision,
         rc.reason   AS flag_reason,
