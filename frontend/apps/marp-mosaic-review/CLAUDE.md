@@ -716,11 +716,18 @@ does not work — and that is quality control on the film, not coverage of the f
 
 Two consequences that are easy to get wrong:
 
-- **A walkthrough writes real data.** It signs in as a real reviewer and commits real
-  decisions: 60 review rows landed in the development corpus during one recording on
-  2026-09-11, and they are still there. That is not a defect — a person watching a review
-  tool needs the review to happen — but it means a recording is a *write to the record*,
-  not a dry run.
+- **A walkthrough runs on test data. Never the corpus.** Settled 2026-09-11: *"the narrated
+  walkthrough should only happen on test data — we're not doing actual data work during
+  these times, it's so I can review development work."*
+  A recording signs in as a real reviewer and commits real decisions, so pointed at the
+  corpus it **writes to the scientific record while demonstrating a feature**. That is a
+  defect, not a side effect: 60 review rows landed in the development corpus during one
+  recording on 2026-09-11 and are still there, indistinguishable from decisions a person
+  made on purpose.
+  The recording still has to *do* the review — a film of a review tool that reviews nothing
+  is worthless — so the fix is the database it does it to, not the doing. Point it at a
+  disposable copy: `marp db up --port` plus `marp db load` (#125) makes one in a couple of
+  commands, and #132 wants the same thing for the browser tier.
 - **#142's corpus guard cannot see any of it.** That guard runs inside Jest, and a
   walkthrough is Playwright. **Do not "fix" that by pulling walkthroughs into the guarded
   path or into `npm test`** — they are not tests, and putting them there would both slow
