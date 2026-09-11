@@ -245,14 +245,23 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
          * @param {Object} transaction - Transaction to read within.
          * @returns {Promise<{projection: Array<Object>, derivation: Array<Object>}>} Both sides.
          */
-        async function bothSides(transaction) {
+        async function bothSides(transaction, observationId) {
             const columns = `review_id, observation_id, purpose, decision, reason,
                              reviewer_id, decided_at, observation_version`;
 
+            // Scoped to the observation this test seeded. Both sides were once
+            // read whole, which made `toHaveLength(2)` an assertion about the
+            // *table* -- true only on a database with nothing else in it. It
+            // passed for months and then failed the moment real review data
+            // existed: the borrowed-row defect in reverse. The comparison it
+            // makes is still the real one, and is no weaker for being scoped --
+            // for this observation, the projection equals what the committed
+            // migration's derivation produces.
             const projection = await db.sequelize.query(
                 `SELECT ${columns} FROM observation_review_current
+                  WHERE observation_id = :observationId
                   ORDER BY observation_id, purpose`,
-                { type: QueryTypes.SELECT, transaction }
+                { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
             );
 
             // The derivation is read out of the committed migration file, so
@@ -260,8 +269,10 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
             // after the block matters: its last line is a SQL comment, and
             // without one the closing paren is commented out.
             const derivation = await db.sequelize.query(
-                `SELECT * FROM (${currentDerivationBlock}\n) derived ORDER BY observation_id, purpose`,
-                { type: QueryTypes.SELECT, transaction }
+                `SELECT * FROM (${currentDerivationBlock}\n) derived
+                  WHERE observation_id = :observationId
+                  ORDER BY observation_id, purpose`,
+                { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
             );
 
             return {
@@ -364,7 +375,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                 expect(reviewerB).toBeDefined();
 
                 // Nothing decided: no row, which is what "unreviewed" is.
-                let sides = await bothSides(transaction);
+                let sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual([]);
                 expect(sides.derivation).toEqual([]);
 
@@ -377,7 +388,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 10:00:00+00',
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toHaveLength(1);
                 expect(sides.projection[0].reviewer_id).toBe(reviewerA);
@@ -395,7 +406,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 11:00:00+00',
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection[0].reviewer_id).toBe(reviewerB);
                 expect(sides.projection[0].decision).toBe('flagged');
@@ -410,7 +421,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 11:05:00+00',
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toHaveLength(2);
 
@@ -424,7 +435,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 12:00:00+00',
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 const scientific = sides.projection.find((r) => r.purpose === 'scientific');
                 expect(scientific.decision).toBe('flagged');
@@ -443,7 +454,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 13:00:00+00',
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toHaveLength(1);
                 expect(sides.projection[0].purpose).toBe('training');
@@ -491,7 +502,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 10:01:00+00',
                 }, transaction);
 
-                let sides = await bothSides(transaction);
+                let sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toHaveLength(2);
 
@@ -504,7 +515,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     correctedSpeciesId: speciesTwo,
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toEqual([]);
 
@@ -534,7 +545,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 12:00:00+00',
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toHaveLength(1);
                 expect(sides.projection[0].reviewer_id).toBe(reviewerB);
@@ -556,7 +567,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     correctedSpeciesId: speciesOne,
                 }, transaction);
 
-                sides = await bothSides(transaction);
+                sides = await bothSides(transaction, observationId);
                 expect(sides.projection).toEqual(sides.derivation);
                 expect(sides.projection).toEqual([]);
 
@@ -618,7 +629,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     decidedAt: '2026-09-09 11:30:00+00',
                 }, transaction);
 
-                const before = (await bothSides(transaction)).projection;
+                const before = (await bothSides(transaction, observationId)).projection;
 
                 // The recovery path. Throwing the projection away and rebuilding
                 // it from the log must land on exactly the same rows -- that is
@@ -629,7 +640,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                 // quietly.
                 await db.sequelize.query(currentMigration.REBUILD_CURRENT_SQL, { transaction });
 
-                const after = (await bothSides(transaction)).projection;
+                const after = (await bothSides(transaction, observationId)).projection;
                 expect(after).toEqual(before);
                 expect(after).toHaveLength(2);
             } finally {

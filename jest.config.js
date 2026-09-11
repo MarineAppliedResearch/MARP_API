@@ -25,10 +25,12 @@ module.exports = {
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/walkthrough/'],
 
   /**
-   * Run tests in a plain Node environment (no DOM/browser globals), since
-   * the suite only exercises the Express app and its HTTP layer.
+   * A plain Node environment (no DOM/browser globals), since the suite only
+   * exercises the Express app and its HTTP layer — plus the corpus guard's
+   * closing comparison, which has to run after every `afterAll` in the file
+   * and so cannot be a hook. See tests/setup/corpus-guard-environment.js.
    */
-  testEnvironment: 'node',
+  testEnvironment: '<rootDir>/tests/setup/corpus-guard-environment.js',
 
   /**
    * Per-test timeout in milliseconds. Raised from Jest's 5000ms default
@@ -73,10 +75,23 @@ module.exports = {
    * gets logged.
    */
   setupFilesAfterEnv: [
+    // First, deliberately. Jest runs beforeAll hooks in declaration order, and
+    // the corpus guard's snapshot has to be taken before authenticated-agent.js
+    // creates its fixture user -- before any row the run is allowed to create.
+    '<rootDir>/tests/setup/corpus-guard-setup.js',
+
     '<rootDir>/tests/setup/console-error-passthrough.js',
 
     // Gives every suite an authenticated agent as global.api. Every route
     // requires a permission now, so an anonymous call only ever gets 401.
     '<rootDir>/tests/setup/authenticated-agent.js',
   ],
+
+  /**
+   * Runs once per run, before any suite opens a connection. Refuses a database
+   * that is not local: the tests write to whatever DB_* points at, and the
+   * development database carries the same name as production, so only the host
+   * tells them apart (#142).
+   */
+  globalSetup: '<rootDir>/tests/setup/local-database-guard.js',
 };

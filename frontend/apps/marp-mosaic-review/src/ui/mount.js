@@ -12,9 +12,10 @@ import { renderConfirm, wireConfirm } from './confirm.js';
 import { renderRail, wireRail } from './rail.js';
 import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
+import { renderFailure, wireFailure } from './failure.js';
 import {
   closeMenus, isMenuOpenFor,
-  modelMenu, sortMenu, userMenu
+  sortMenu, userMenu
 } from './menus.js';
 
 export { computeLayout };
@@ -29,10 +30,58 @@ function wirePageStates() {
     if (!act) return;
     if (act.dataset.act === 'clear-filters') { e.stopPropagation(); actions.clearFilters(); }
     if (act.dataset.act === 'retry-thumbnails') { e.stopPropagation(); actions.retryFailedThumbnails(); }
+    /* Offered after a version conflict: the annotation moved underneath the page and
+       nothing was written, so re-reading is the way forward (R9). */
+    if (act.dataset.act === 'reread') { e.stopPropagation(); actions.rereadAfterConflict(); }
   });
 }
 
+/**
+ * How long after a tap a second one is still the same gesture (#126 A1).
+ *
+ * The human's call was *"A1 might be a double tap, and if it can't be a double tap, then a
+ * long tap will be okay for now"*, so double tap is what this is. Three hundred and twenty
+ * milliseconds is the usual double-click threshold and it is the number to move if the
+ * gesture feels wrong: shorter and a deliberate double tap misses, longer and two separate
+ * marks on the same tile start merging into one.
+ */
+const DOUBLE_TAP_MS = 320;
+
+/** The last tap, so the next one can tell whether it is the second half of a double. */
+let lastTap = { id: null, at: 0 };
+
+/**
+ * What kind of pointer is driving, read at `pointerdown`.
+ *
+ * **Not from the click event.** A `click` is a `PointerEvent` in Chromium and a plain
+ * `MouseEvent` elsewhere, so `e.pointerType` on a click is present in one browser and
+ * undefined in another -- and an undefined there would make every fast double click on a
+ * desktop mouse read as a touch double tap, which would take the right-click gesture's job
+ * away from it. `pointerdown` carries it everywhere.
+ */
+let lastPointerType = 'mouse';
+
 function wireGrid() {
+  $('#grid').addEventListener('pointerdown', (e) => {
+    lastPointerType = e.pointerType || 'mouse';
+  });
+
+  /**
+   * The accept gesture on a pointer: **right click** (#126 R2).
+   *
+   * `preventDefault` so the browser's own menu does not come up over the mosaic, and it is
+   * called for any click inside the grid rather than only on a tile -- a context menu
+   * appearing on the gap between tiles while the gesture means something else on the tiles
+   * themselves is worse than not having one at all.
+   */
+  $('#grid').addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const tileEl = e.target.closest('.tile');
+    if (!tileEl) return;
+    if (state.picker) { actions.closePicker(); return; }
+    actions.acceptMark(Number(tileEl.dataset.id));
+  });
+
   $('#grid').addEventListener('click', (e) => {
     /* The badge opens the panel; the tile itself marks. Marking must stay a single
        uninterrupted gesture, so opening the panel is a separate target. */
@@ -51,8 +100,36 @@ function wireGrid() {
        nothing was excluded by the time the page was committed. */
     if (state.picker) { actions.closePicker(); return; }
 
+    const id = Number(tileEl.dataset.id);
+
+    /**
+     * The accept gesture on a touch screen: **double tap** (#126 A1).
+     *
+     * The first tap is **not** deferred, and that is the whole design. Waiting out the
+     * window before acting would put a third of a second between every mark and the tile
+     * changing, on the gesture a reviewer repeats hundreds of times a page -- which is the
+     * badly tuned timing window A1 warned about. So the first tap marks the exception at
+     * once and a second tap inside the window turns it into an acceptance.
+     *
+     * The cost is named rather than hidden: on touch, un-marking a tile you have just
+     * marked means waiting out the window first. Marking and immediately un-marking the
+     * same tile is rare; accepting is the gesture the human said they would use most.
+     *
+     * Touch only. A desktop has right click, and a fast double click there must keep
+     * meaning two clicks.
+     */
+    if (lastPointerType === 'touch') {
+      const now = Date.now();
+      if (lastTap.id === id && now - lastTap.at < DOUBLE_TAP_MS) {
+        lastTap = { id: null, at: 0 };
+        actions.acceptMark(id);
+        return;
+      }
+      lastTap = { id, at: now };
+    }
+
     /* No stopPropagation: the document handler still needs to close open menus. */
-    actions.toggleMark(Number(tileEl.dataset.id));
+    actions.toggleMark(id);
   });
 }
 
@@ -165,6 +242,8 @@ export function mount() {
   $('#railbtn').addEventListener('click', () => actions.toggleRail());
   $('#markAll').addEventListener('click', () => actions.markAllOnPage());
   $('#clearMarks').addEventListener('click', () => actions.clearMarks());
+  /* The main button (#126 R3, R5): only what was marked, each tile by its own kind. */
+  $('#commitMarked').addEventListener('click', () => actions.commitMarked());
   $('#commit').addEventListener('click', () => actions.commitPage());
 
   $('#logbtn').addEventListener('click', (e) => {
@@ -175,6 +254,7 @@ export function mount() {
   });
 
   wireGrid();
+  wireFailure();
   wirePageStates();
   wirePager();
   wireMenus();
@@ -188,6 +268,7 @@ export function mount() {
      converges in one extra pass rather than looping. */
   subscribe(() => {
     renderChrome();
+    renderFailure();
     renderGrid();
     renderPicker();
     renderConfirm();

@@ -390,6 +390,51 @@ function registerSpeciesRoutes(app) {
         }),
     });
 
+    // Registered before `/api/species/:id`, which would otherwise match `search`
+    // and try to read it as an id.
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'species:read',
+        path: '/api/species/search',
+        summary: 'Search every annotation list at once',
+        description:
+            "The scoped search above without the list predicate, for a client that has to offer an off-list choice deliberately -- the mosaic's correction picker, whose \"search all lists\" action is the only way to correct an observation whose session type names no list. `is_active` still applies, because widening a search does not make a retired entry offerable, and entries on no list stay out for the same reason GET /api/species/lists omits them. **Results span lists and each carries its `species_list`, which a client showing them must draw**: a common name is not unique across the seven -- 'Red sea urchin' is one entry on Inverts and a different organism on GULF_Inverts -- and a correction is written to the record.",
+        tags: ['V1 · Species'],
+        parameters: [
+            {
+                in: 'query',
+                name: 'q',
+                required: true,
+                schema: { type: 'string', minLength: 1 },
+                description: 'Substring to match.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'Matching entries returned successfully, grouped by list then in display order.',
+                content: {
+                    'application/json': {
+                        schema: { type: 'array', items: { $ref: '#/components/schemas/SpeciesWithPictures' } },
+                    },
+                },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const query = (req.query.q || '').trim();
+
+            // The same refusal as the scoped search, and it matters more here:
+            // an empty q would return the whole catalogue.
+            if (query === '') {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'A non-empty q query parameter is required.');
+            }
+
+            const data = await speciesController.searchSpecies(query);
+            res.json(data);
+        }),
+    });
+
     registerVersionedRoute(app, {
         method: 'get',
         permission: 'species:read',

@@ -8,6 +8,65 @@
  */
 import { test, expect } from '@playwright/test';
 
+/**
+ * Every navigation in this file asks for the **fixture** backing, and says so.
+ *
+ * The application itself runs against the API (A2): `src/backend.js` defaults to
+ * `src/api/` and `index.html` never points it anywhere else. This tier cannot yet —
+ * A15 settled that the seeded database a browser tier needs is **not built in this
+ * phase**, and the six real observations of one species in one dive cannot exercise
+ * paging, filtering or a second species.
+ *
+ * So the parameter is passed here, in **one place**, and the page makes the choice
+ * unmissable: it paints a permanent `FIXTURE — not the API` banner and stamps
+ * `documentElement.dataset.backing`, which the check below asserts. A2's objection to a
+ * runtime flag was that it is "how a render test comes to grade a fixture and report it
+ * as the API"; a flag the page announces and the tier asserts cannot do that silently.
+ *
+ * **Neither comes out, and this line used to promise both would** (#132). The real server is
+ * now tested against — `tests/api/`, `--project=api` — but as a tier *beside* this one and
+ * not a replacement: this is the fast loop, at two viewports, and it can break a commit on
+ * purpose, which no real server will do. It stays on the fixture and stays fast; what moved
+ * is that the fixture is no longer the only thing a browser test can see.
+ */
+const FIXTURE = 'backing=fixture';
+
+/**
+ * **In the hash, never the query string.**
+ *
+ * The query string *is* the question: `model/query-url.js` reads an address literally, and
+ * a **bare** one means the default question — that is what makes a deliberately cleared
+ * species filter survive a reload instead of being handed back. So `?backing=fixture`
+ * made every address non-bare, the app opened on nothing-narrowing rather than on its
+ * default question, and ten tests here reported a total of 2,755 where 1,083 was expected.
+ *
+ * The hash is not part of the question, and `rememberQuery()` preserves it across the
+ * `replaceState` the app does on every refresh — so it survives paging and filtering.
+ */
+const withFixture = (url) => {
+  const text = String(url);
+  const [before, hash = ''] = text.split('#');
+  const merged = hash ? `${hash}&${FIXTURE}` : FIXTURE;
+  return `${before}#${merged}`;
+};
+
+test.beforeEach(async ({ page }) => {
+  const go = page.goto.bind(page);
+  page.goto = (url, options) => go(withFixture(url), options);
+});
+
+test('this tier grades the fixture, and the page says so', async ({ page }) => {
+  /* The assertion that makes the arrangement above safe: if the parameter is ever
+     dropped, or the page stops honouring it, this fails rather than a hundred tests
+     quietly grading something else. */
+  await page.goto('./');
+  await expect(page.locator('#backingFlag')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-backing', 'fixture');
+  /* And it is not in the question. A backing in the query string would make every
+     address non-bare, which silently costs the app its default question. */
+  expect(new URL(page.url()).search).toBe('');
+});
+
 /** Wait for the first page of tiles, and for the grid to stop changing size. */
 async function ready(page) {
   await expect(page.locator('.tile').first()).toBeVisible();
@@ -345,7 +404,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     await page.goto('./');
     await ready(page);
 
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
     const tag = tile.locator('.rtag');
     await expect(tag).toBeVisible();
     await expect(tag).toContainText('EXCLUDED');
@@ -358,7 +417,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
   test('R1: a training promotion is drawn while reviewing science', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const tile = await tileCarrying(page, 'training_disposition', 'promoted');
+    const tile = await tileCarrying(page, 'training_decision', 'promoted');
     await expect(tile.locator('.rtag')).toContainText('PROMOTED');
     await expect(tile).not.toHaveClass(/has-promoted/);
   });
@@ -369,7 +428,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
     await ready(page);
 
-    const tile = await tileCarrying(page, 'review_status', 'reviewed');
+    const tile = await tileCarrying(page, 'review_decision', 'reviewed');
     const tag = tile.locator('.rtag');
     await expect(tag).toBeVisible();
     await expect(tag).toContainText('REVIEWED');
@@ -387,7 +446,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     /* Delete always read the scientific dimension — the training one is what was missing,
        and it is the sharpest case in #85: an observation already excluded from training
        looked untouched at the moment somebody was deciding whether to destroy it. */
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
     await expect(tile.locator('.rtag')).toContainText('EXCLUDED');
     expect(errors).toEqual([]);
   });
@@ -400,7 +459,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
       /* An undecided row, so training's own default filter still shows it afterwards. */
       const id = await page.evaluate(() => {
         const row = window.MARP.state.rows.find((r) => r.thumbnail_status === 'ready'
-          && r.training_disposition === 'undecided');
+          && r.training_decision == null);
         return row ? row.observation_id : null;
       });
       expect(id, 'the first page must hold a ready, undecided row').not.toBeNull();
@@ -432,7 +491,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     async ({ page }) => {
       await page.goto('./');
       await ready(page);
-      const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+      const tile = await tileCarrying(page, 'training_decision', 'excluded');
 
       /* Clicking the tag itself, which is the click most likely to be swallowed. */
       await tile.locator('.rtag').click();
@@ -447,7 +506,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
   test('R7: the tag stays inside the tile and clear of the caption', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const tile = await tileCarrying(page, 'training_disposition', 'excluded');
+    const tile = await tileCarrying(page, 'training_decision', 'excluded');
 
     const tileBox = await tile.boundingBox();
     const tagBox = await tile.locator('.rtag').boundingBox();
@@ -504,14 +563,44 @@ test.describe('a committed page is still editable', () => {
 });
 
 test.describe('the correction panel', () => {
+
+  /**
+   * One session type, so the list the search is scoped to is determinate.
+   *
+   * **This address is #130 showing up in a test that used to pass without it.** The
+   * scoped search is real now: it asks the observation's own annotation list, where the
+   * fixture used to ignore the `list` argument outright and match the whole taxonomy.
+   * A term therefore has to be on the list the page's sessions read against, and on an
+   * unfiltered page that is whichever session the first tile happens to belong to.
+   *
+   * `Inverts` sessions read against the `Inverts` list, and `urch` is Red Urchin, which
+   * is on `Inverts` and on nothing else in the fixture's catalogue.
+   */
+  const INVERTS = './?sessionType=Inverts';
+
   test('choosing a species closes it, and it does not flash back', async ({ page }) => {
-    await page.goto('./');
+    await page.goto(INVERTS);
     await ready(page);
     const tile = page.locator('.tile:not(.failed):not(.queued)').first();
     await tile.click();
     await tile.locator('[data-badge]').click();
     await page.locator('.pick [data-act="correct"]').click();
     await expect(page.locator('.pick #spSearch')).toBeVisible();
+    /**
+     * **Two characters before anything is offered** (F14, A11).
+     *
+     * The panel used to fill itself with six entries on open, from
+     * `searchSpecies('')` — and `GET /api/v2/species/list/:list/search` **rejects an
+     * empty `q` with a 400**, deliberately, because "an empty search returning all 224
+     * entries reads as a working search". So there is nothing to click until something is
+     * typed, and this used to click `.srow` straight away.
+     */
+    await expect(page.locator('.pick #spList')).toContainText('Type 2 letters');
+    /* Something the tile is **not** already. The default page is Bat Stars, and "Bat Star"
+       itself contains "st" -- so a two-letter search matched the species the observation
+       already carries, the correction came back `unchanged`, and nothing was written. That
+       is correct behaviour and a useless test. */
+    await page.locator('.pick #spSearch').fill('urch');
     await page.locator('.pick .srow').first().click();
 
     await expect(page.locator('.pick')).toHaveCount(0);
@@ -541,6 +630,113 @@ test.describe('the correction panel', () => {
       await page.waitForTimeout(40);
     }
     await expect(page.locator('.pick #spSearch')).toBeVisible();
+  });
+
+  /** Flag the first usable tile and open its species chooser. */
+  async function openChooser(page, address) {
+    await page.goto(address);
+    await ready(page);
+    const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await page.locator('.pick [data-act="correct"]').click();
+    await expect(page.locator('.pick #spSearch')).toBeVisible();
+    return tile;
+  }
+
+  /**
+   * #130 R1. The defect as reported: *"trying to change a species, nothing comes up in
+   * the list as you type."*
+   *
+   * **The render tier is the only one that can see it as the reviewer met it** — a panel
+   * drawing an empty state. The store was correct throughout; it asked the seam, the seam
+   * returned an empty array without sending a request, and every layer behaved properly
+   * on the way to showing something untrue.
+   */
+  test('#130 R1: two characters offer candidates from the observation own list', async ({ page }) => {
+    await openChooser(page, INVERTS);
+
+    await expect(page.locator('.pick #spScope')).toContainText('Inverts');
+    await page.locator('.pick #spSearch').fill('ur');
+
+    await expect(page.locator('.pick .srow').first()).toBeVisible();
+    await expect(page.locator('.pick #spList')).not.toContainText('Nothing');
+    /* Scoped, so no list tag: the whole answer is one list and labelling every row with
+       it would be noise (A3). */
+    await expect(page.locator('.pick .srow .slist')).toHaveCount(0);
+
+    /**
+     * And it really is scoped.
+     *
+     * Without this the check passes while the scope is not applied at all — which *is*
+     * #130. Reintroducing the defect proved exactly that: with `speciesListFor` returning
+     * null again the search widened instead of being refused, candidates still appeared,
+     * and everything above held. `Rockfish` is on `Fish` and on no `Inverts` entry, so a
+     * genuinely scoped search has to find nothing.
+     */
+    await page.locator('.pick #spSearch').fill('rockfish');
+    await expect(page.locator('.pick #spList')).toContainText('Nothing on Inverts matches');
+    await expect(page.locator('.pick .srow')).toHaveCount(0);
+  });
+
+  /**
+   * #130 R3 and R4. "Search all lists" had no route behind it and could never have
+   * returned anything; and a widened answer has to say which list each candidate is on,
+   * because a common name is not unique across lists and a correction is written to the
+   * record.
+   */
+  test('#130 R3/R4: widening returns candidates, each showing its list', async ({ page }) => {
+    await openChooser(page, INVERTS);
+
+    await page.locator('.pick [data-act="widen"]').click();
+    await expect(page.locator('.pick #spScope')).toContainText('whole MARP taxonomy');
+    /* `st` is on three of the fixture's lists -- the sea stars on Inverts, Sebastes on
+       Fish, Macrocystis on Habitat -- so this can tell a label apart from a constant. */
+    await page.locator('.pick #spSearch').fill('st');
+
+    await expect(page.locator('.pick .srow').first()).toBeVisible();
+    const tags = page.locator('.pick .srow .slist');
+    await expect(tags.first()).toBeVisible();
+    /* Every candidate carries one, and between them they name more than one list. */
+    expect(await tags.count()).toBe(await page.locator('.pick .srow').count());
+    const named = new Set(await tags.allInnerTexts());
+    expect(named.size).toBeGreaterThan(1);
+  });
+
+  /**
+   * #130 R5. The panel must never offer an action that cannot work, and must not report
+   * the catalogue empty when it never asked.
+   *
+   * `INVERTS_GULF` is one of the five session types the fixture holds (#81 D1) and the
+   * species-list map does not name it, so these rows carry no list — the same position a
+   * real `Other` session is in. The old panel said *"Nothing matches. Try Search all
+   * lists"* here, which was two untruths: nothing had been searched, and the widen action
+   * it recommended was itself dead.
+   */
+  test('#130 R5: no list for the session type is said, not drawn as no match', async ({ page }) => {
+    await openChooser(page, './?sessionType=INVERTS_GULF');
+
+    await expect(page.locator('.pick #spScope')).toContainText('no list for this session type');
+    await expect(page.locator('.pick #spList')).toContainText('names no species list');
+    await expect(page.locator('.pick #spList')).not.toContainText('Nothing');
+
+    /* And widening is a real way out of it, rather than advice that does nothing. */
+    await page.locator('.pick [data-act="widen"]').click();
+    await page.locator('.pick #spSearch').fill('ur');
+    await expect(page.locator('.pick .srow').first()).toBeVisible();
+  });
+
+  /**
+   * The other half of R5: a search that really was made and really found nothing says so,
+   * and says which list it looked on.
+   */
+  test('#130 R5: a genuine miss names the list it searched', async ({ page }) => {
+    await openChooser(page, INVERTS);
+
+    await page.locator('.pick #spSearch').fill('zzq');
+
+    await expect(page.locator('.pick #spList')).toContainText('Nothing on Inverts matches');
+    await expect(page.locator('.pick .srow')).toHaveCount(0);
   });
 });
 
@@ -684,25 +880,43 @@ test.describe('the two workflows do not wear the same colour', () => {
   test('the commit button follows the mode that owns the decision', async ({ page }) => {
     await page.goto('./');
     await ready(page);
-    const read = () => page.locator('#commit')
+    /**
+     * **The filled button, which since #126 is the main one.**
+     *
+     * This read `#commit`, and that button is now the *secondary* of a pair: it wears the
+     * same mode hue as an outline rather than a fill, so its background is transparent and
+     * reading it returned `rgba(0,0,0,0)` in every mode. The rule being asserted has not
+     * changed -- what a commit does is coloured by the mode that owns the decision -- so
+     * the assertion follows the button that carries the fill rather than being loosened to
+     * accept a transparent one. Delete has one button and it is `#commit`.
+     */
+    const read = (id) => page.locator(id)
       .evaluate((el) => getComputedStyle(el).backgroundColor);
 
-    const sci = (await read()).match(/\d+/g).map(Number);
+    const sci = (await read('#commitMarked')).match(/\d+/g).map(Number);
     await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
     await ready(page);
-    const tra = (await read()).match(/\d+/g).map(Number);
+    const tra = (await read('#commitMarked')).match(/\d+/g).map(Number);
 
-    expect(sci[1], 'Mark Page Reviewed is green').toBeGreaterThan(sci[2]);
-    expect(tra[2], 'Promote Page is violet').toBeGreaterThan(tra[1]);
+    expect(sci[1], 'the scientific commit is green').toBeGreaterThan(sci[2]);
+    expect(tra[2], 'the training commit is violet').toBeGreaterThan(tra[1]);
 
     /* #93: Delete Marked is red. It always was — `body[data-mode="delete"] .commit`
        outranked the accept family — but nothing asserted it, so the family could be
        renamed out from under it without a test noticing. */
     await page.locator('.seg button', { hasText: 'Delete' }).click();
     await ready(page);
-    const del = (await read()).match(/\d+/g).map(Number);
+    const del = (await read('#commit')).match(/\d+/g).map(Number);
     expect(del[0], `Delete Marked is red, got rgb(${del.join(',')})`).toBeGreaterThan(del[1] + 40);
     expect(del[0], 'and not violet').toBeGreaterThan(del[2]);
+
+    /* And the secondary wears the same hue as an outline, so the pair reads as one
+       mode's commit rather than as two unrelated controls. */
+    await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
+    await ready(page);
+    const edge = (await page.locator('#commit')
+      .evaluate((el) => getComputedStyle(el).borderTopColor)).match(/\d+/g).map(Number);
+    expect(edge[1], 'the sweep is outlined in the same green').toBeGreaterThan(edge[2]);
   });
 });
 
@@ -1057,17 +1271,29 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
       const note = page.locator('[data-note="date"]');
       await expect(note).toBeHidden();          // nothing to say until a date is asked for
 
-      /* No observation in the fixture carries a date on its `tc`, which is the production
-         case this exists for: the clock was never synced. The filter therefore excludes
-         everything, and the ONLY thing standing between the reviewer and an empty mosaic
-         they cannot explain is this line. It was drawn by the rail and counted by the data
-         layer, and nothing carried the number between them, so it never appeared. */
-      await setSpan(page, 'date', 'from', '2019-01-01');
+      /**
+       * **A17 changed what this filter compares, and so what it can fail to answer.**
+       *
+       * It used to compare the *date component* of `tc`, which no observation carries — so
+       * the filter excluded everything and the note reported the whole result. That is why
+       * the endpoint refused it outright. Answered differently by the human: the range
+       * compares `tc` as a **point in time**, so a row answers whenever its `tc` carries a
+       * readable clock.
+       *
+       * Which leaves the note with something narrower and truer to say: the rows whose
+       * `tc` says nothing at all. The fixture carries two, deliberately, because a rule
+       * with nothing to report is a rule nothing watches — and this line is still the ONLY
+       * thing standing between the reviewer and a result they cannot explain.
+       *
+       * The ends are times now, not dates. That is the control keeping its shape while
+       * what it can discriminate grows, which is what A14 meant.
+       */
+      await setSpan(page, 'date', 'from', '00:00');
 
       await expect(note).toBeVisible();
       const said = await note.innerText();
       expect(said).toMatch(/\d+/);
-      expect(Number(said.replace(/\D/g, ''))).toBeGreaterThan(0);
+      expect(Number(said.replace(/\D/g, ''))).toBe(2);
       expect(said.toLowerCase()).toContain('no recorded date');
     });
 });
@@ -1537,6 +1763,82 @@ test.describe('the commit button reports on itself', () => {
   });
 });
 
+test.describe('each commit button reports only on itself', () => {
+  /* #131. `state.commit` was one `{ busy, status }` serving two controls, so committing
+     only the marked tiles also turned the page sweep green with a tick -- the one
+     interaction #126 exists to keep apart, saying the whole page had been accepted. The
+     store was correct throughout, which is why no store-level check could see this. */
+  const freshTile = (page) => page.locator('.tile:not(.failed):not(.queued):not(.marked)').first();
+
+  test('committing the marked tiles leaves the sweep untouched', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await freshTile(page).getAttribute('data-id');
+    const sweep = page.locator('#commit');
+    const main = page.locator('#commitMarked');
+    const sweepLabel = (await sweep.innerText()).split('·')[0].trim();
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await main.click();
+
+    /* While it saves, the idle button keeps its own default -- not spun, not blanked,
+       not disabled (A4). "Saving..." on a button that is saving nothing is the same lie
+       as "Saved", one step earlier. */
+    await expect(main).toContainText('Saving');
+    await expect(sweep.locator('.spin')).toHaveCount(0);
+    await expect(sweep).toContainText(sweepLabel);
+    await expect(sweep).toBeEnabled();
+
+    await expect(main).toContainText('Saved');
+    await expect(main).toHaveClass(/ok/);
+    /* The fill is what made this read as "the whole page was accepted": `.commit.sweep.ok`
+       turns the outlined secondary button solid green, indistinguishable from the primary.
+       Classes alone would pass if the fill came back through another selector. */
+    await expect(sweep).not.toHaveClass(/ok/);
+    await expect(sweep).not.toContainText('Saved');
+    await expect(sweep).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  });
+
+  test('sweeping the page leaves the marked button untouched', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const sweep = page.locator('#commit');
+    const main = page.locator('#commitMarked');
+    const mainLabel = (await main.innerText()).split('·')[0].trim();
+
+    await sweep.click();
+
+    await expect(sweep).toContainText('Saving');
+    await expect(main.locator('.spin')).toHaveCount(0);
+    await expect(main).toContainText(mainLabel);
+
+    await expect(sweep).toContainText('Saved');
+    await expect(sweep).toHaveClass(/ok/);
+    await expect(main).not.toHaveClass(/ok/);
+    await expect(main).not.toContainText('Saved');
+  });
+
+  test('a committed accept mark stops claiming it is uncommitted', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const id = await freshTile(page).getAttribute('data-id');
+    const badge = page.locator(`.tile[data-id="${id}"] .badge`);
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await expect(badge).toHaveAttribute('title', /Not committed yet/);
+
+    await page.locator('#commitMarked').click();
+    await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+    /* The mark survives its own commit by design (#126) and a mark outranks an outcome --
+       both load-bearing, neither changed here. So the tile keeps the mark badge, and the
+       badge has to stop saying something that is no longer true. */
+    await expect(badge).toHaveAttribute('title', /^Recorded as reviewed/);
+    await expect(badge).toHaveAttribute('title', /click to flag it instead/);
+    await expect(badge).toHaveText(/REVIEWED/);
+  });
+});
+
 test.describe('how many pages are done', () => {
   test('the count rises with each committed page, beside the swatch', async ({ page }) => {
     await page.goto('./');
@@ -1580,6 +1882,24 @@ test.describe('how many pages are done', () => {
     /* The footer must still not wrap, which is what hid the legend in the first place. */
     const bar = await page.locator('.foot').boundingBox();
     expect(bar.height).toBeLessThan(80);
+
+    /* And it must fit across, which nothing asserted until #126.
+       `.app` clips rather than scrolls, so a footer wider than the viewport is not a
+       scrollbar -- it is a control silently cut off the right-hand edge, and the commit
+       button is the rightmost thing there. It was **already overflowing before #126**, at
+       524px of content in a 412px viewport with only one button; two buttons made it
+       obvious rather than causing it. Measured on the row that holds them, because `.foot`
+       itself is the clipping box and cannot report its own overflow. */
+    const fits = await page.evaluate(() => {
+      const foot = document.querySelector('.foot');
+      const kids = [...foot.children];
+      const right = Math.max(...kids.map((k) => k.getBoundingClientRect().right));
+      const left = Math.min(...kids.map((k) => k.getBoundingClientRect().left));
+      return { content: Math.ceil(right - left), available: foot.clientWidth };
+    });
+    expect(fits.content,
+      `the footer needs ${fits.content}px in ${fits.available}px; the commit button is what gets cut`)
+      .toBeLessThanOrEqual(fits.available);
   });
 });
 
@@ -1809,9 +2129,25 @@ test.describe('the states never rendered', () => {
       await actions.refresh();
     });
     await page.locator('[data-act="retry-thumbnails"]').click();
-    /* The tiles come back, so the banner has nothing left to say. */
-    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 20000 });
-    await expect(page.locator('#commit')).toBeEnabled();
+
+    /**
+     * **The retry asks; it does not deliver** (F10, R12, A9).
+     *
+     * The endpoint answers `queued` and never a synchronous `ready` — an accepted retry
+     * has not happened yet, and extraction runs at three concurrent Jellyfin streams. So
+     * the first thing the reviewer sees is a page of PREPARING tiles, and the commit stays
+     * disabled because accepting a tile means somebody looked at it.
+     *
+     * This asserted `#commit` was enabled the moment the click returned, which was only
+     * ever true because the fixture invented the picture on the spot.
+     */
+    await expect(page.locator('.tile.queued').first()).toBeVisible();
+    await expect(page.locator('#commit')).toBeDisabled();
+
+    /* And then the poll turns them into pictures: one request and one repaint per round,
+       on a backoff, stopping when nothing is queued. That is what clears the banner. */
+    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 30000 });
+    await expect(page.locator('#commit')).toBeEnabled({ timeout: 30000 });
   });
 
   test('R5: the button says how many will be skipped', async ({ page }) => {
@@ -2404,15 +2740,21 @@ const question = (page) => page.evaluate(() => ({
  * training disposition — and reports the promoted and excluded share, which is exactly
  * what a careless `defaultStatusFor` would silently remove.
  */
+/* Derived from the fixture file, never from the app -- a check that asks the application
+   what it expects cannot see the count move, which is the whole point of this one.
+   `comname === 'Bat Star'` was here because the default question opened on that species.
+   A10(b) removed that literal, so the default narrows by status alone and this must too;
+   leaving the species in would compare the app against a question it no longer asks.
+   Independently counted in the fixture: 3,000 observations, 2,755 with a null
+   `review_decision` and 245 reviewed, so the default view is the 2,755. */
 const expectedDefault = (page) => page.evaluate(async () => {
   const res = await fetch('./fixtures/observations.json');
   const db = await res.json();
   const rows = db.observations.filter((r) => !r.deleted
-    && r.comname === 'Bat Star'
-    && ['unreviewed', 'flagged'].includes(r.review_status));
+    && ['flagged', null].includes(r.review_decision));
   return {
     total: rows.length,
-    decided: rows.filter((r) => r.training_disposition !== 'undecided').length
+    decided: rows.filter((r) => r.training_decision != null).length
   };
 });
 
@@ -2512,7 +2854,7 @@ test.describe('every mode filters on both workflow statuses', () => {
       await expect(page.locator('.tile .rtag', { hasText: 'EXCLUDED' })).toHaveCount(tiles);
 
       const only = await page.evaluate(() =>
-        window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+        window.MARP.state.rows.every((r) => r.training_decision === 'excluded'));
       expect(only, 'the borrowed filter must actually narrow the query').toBe(true);
 
       /* Still Scientific: what a tap records is the mode's own, not the borrowed one. */
@@ -2527,7 +2869,7 @@ test.describe('every mode filters on both workflow statuses', () => {
     const got = await question(page);
     expect(got.trainingDisposition).toEqual(['excluded']);
     const only = await page.evaluate(() =>
-      window.MARP.state.rows.every((r) => r.training_disposition === 'excluded'));
+      window.MARP.state.rows.every((r) => r.training_decision === 'excluded'));
     expect(only).toBe(true);
 
     /* The app must not rewrite the address it was given into something else. */
@@ -3163,4 +3505,345 @@ test.describe('the summary says where you are', () => {
     expect(Number(at.shown)).toBe(at.tiles);
     expect(errors).toEqual([]);
   });
+});
+
+
+/* ================================================= #126: two kinds of mark, two buttons
+ *
+ * R8 asks for the gestures and both buttons at **both** viewports, and this file is run at
+ * both -- the accept gesture is the one the human said they will use most, and there is no
+ * right click on a phone.
+ */
+test.describe('two kinds of mark, and two commit buttons', () => {
+
+  /** The first tile with a picture, pinned by id so a state change cannot slide it. */
+  async function firstReady(page) {
+    const id = await page.locator('.tile:not(.failed):not(.queued)').first()
+      .getAttribute('data-id');
+    return { id, tile: page.locator(`.tile[data-id="${id}"]`) };
+  }
+
+  test('R2: a right click marks the tile accepted, and says so', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click({ button: 'right' });
+
+    await expect(tile).toHaveClass(/marked/);
+    await expect(tile).toHaveClass(/accept/);
+    await expect(tile.locator('.badge')).toContainText('REVIEWED');
+    /* Still exactly one badge per tile (A6). A second element able to reach that slot is
+       how a click on a committed tile comes to look like it did nothing. */
+    await expect(tile.locator('.badge')).toHaveCount(1);
+    /* And it is not the panel's target: an acceptance has nothing in the reason
+       vocabulary to say. */
+    await expect(tile.locator('[data-badge]')).toHaveCount(0);
+  });
+
+  test('R2: in training the accept mark is PROMOTED, in training’s own colour',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+      await ready(page);
+      const { tile } = await firstReady(page);
+
+      await tile.click({ button: 'right' });
+
+      await expect(tile.locator('.badge')).toContainText('PROMOTED');
+      await expect(tile.locator('.badge')).toHaveClass(/b-pro/);
+      await expect(tile.locator('.badge')).toHaveCount(1);
+    });
+
+  test('R7: the later mark wins, whichever way round', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click();
+    await expect(tile.locator('.badge')).toContainText('FLAGGED');
+
+    await tile.click({ button: 'right' });
+    await expect(tile.locator('.badge')).toContainText('REVIEWED');
+    await expect(tile).toHaveClass(/accept/);
+
+    await tile.click();
+    await expect(tile.locator('.badge')).toContainText('FLAGGED');
+    await expect(tile).not.toHaveClass(/accept/);
+
+    /* The same gesture twice takes the mark off. */
+    await tile.click();
+    await expect(tile).not.toHaveClass(/marked/);
+  });
+
+  test('R7: a second right click takes the acceptance off', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click({ button: 'right' });
+    await expect(tile).toHaveClass(/accept/);
+    await tile.click({ button: 'right' });
+    await expect(tile).not.toHaveClass(/marked/);
+  });
+
+  test('A4: an accept mark on a tile with no picture is refused, and the tile says why',
+    async ({ page }) => {
+      /* Broken deliberately rather than hoped for: a check that returns early when it
+         cannot find a broken tile reports green while proving nothing. */
+      const id = await page.goto('./').then(() => ready(page)).then(() => page.evaluate(async () => {
+        const { state, actions } = await import('./src/store.js');
+        const { MarpData } = await import('./src/data.js');
+        const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+        MarpData.breakThumbnails([target.observation_id]);
+        await actions.refresh();
+        return target.observation_id;
+      }));
+      await ready(page);
+
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+      await expect(tile).toHaveClass(/failed/);
+
+      await tile.click({ button: 'right' });
+
+      await expect(tile.locator('.refusal')).toBeVisible();
+      await expect(tile.locator('.refusal')).toContainText('No picture');
+      await expect(tile).not.toHaveClass(/marked/);
+      /* Never the badge slot, which stays one element and belongs to the mark. */
+      await expect(tile.locator('.badge')).toHaveCount(0);
+
+      /* Flagging the same tile is still allowed: a picture that never arrived is itself
+         worth flagging, and that rule is older than this one. */
+      await tile.click();
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+    });
+
+  test('A2: a right click does nothing in Delete Mode, which keeps one button',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+      await page.locator('.seg button', { hasText: 'Delete' }).click();
+      await ready(page);
+      const { tile } = await firstReady(page);
+
+      await tile.click({ button: 'right' });
+
+      await expect(tile).not.toHaveClass(/marked/);
+      await expect(tile.locator('.refusal')).toHaveCount(0);
+      /* One control, because the main button and today's Delete button would do the
+         identical thing and two controls with one meaning is worse than one. */
+      await expect(page.locator('#commitMarked')).toBeHidden();
+      await expect(page.locator('#commit')).toBeVisible();
+      await expect(page.locator('#commit')).not.toHaveClass(/sweep/);
+    });
+
+  test('R5: the main button is primary and the sweep is smaller, to its right',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const main = page.locator('#commitMarked');
+      const sweep = page.locator('#commit');
+      await expect(main).toBeVisible();
+      await expect(sweep).toBeVisible();
+      await expect(sweep).toHaveClass(/sweep/);
+
+      const a = await main.boundingBox();
+      const b = await sweep.boundingBox();
+      expect(b.x, 'the sweep sits to the right of the main button').toBeGreaterThan(a.x);
+
+      /* Type size and fill rather than height. Height is not the measure here: the sweep
+         carries the Ctrl+Enter hint badge, which makes it the taller of the two while
+         being plainly the lesser one. What makes the main button primary is that it is
+         filled and set larger, and that is what this measures. */
+      const size = (el) => el.evaluate((n) => parseFloat(getComputedStyle(n).fontSize));
+      expect(await size(main), 'the main button is set larger')
+        .toBeGreaterThan(await size(sweep));
+      const fill = await sweep.evaluate((n) => getComputedStyle(n).backgroundColor);
+      expect(fill, 'and the sweep is outlined rather than filled')
+        .toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
+
+      /* And the pair fits: `.app` clips rather than scrolls, so a footer wider than the
+         viewport does not scroll to reveal the button, it cuts it off. */
+      const foot = await page.locator('.foot').boundingBox();
+      expect(b.x + b.width, 'both buttons are inside the footer')
+        .toBeLessThanOrEqual(foot.x + foot.width + 1);
+    });
+
+  test('R6: both buttons say what they will do, and disable when they would do nothing',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const main = page.locator('#commitMarked');
+      /* Nothing marked by hand yet, whatever the record put on screen (A3). */
+      await expect(main).toBeDisabled();
+      await expect(main).toContainText('nothing to do');
+      /* The sweep has a whole page to act on, so it is live. */
+      await expect(page.locator('#commit')).toBeEnabled();
+
+      const { tile } = await firstReady(page);
+      await tile.click({ button: 'right' });
+      await expect(main).toBeEnabled();
+      await expect(main).toContainText('1 tiles');
+    });
+
+  test('R3: the main button writes only what was marked', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('./');
+    await ready(page);
+
+    const { id, tile } = await firstReady(page);
+    const before = await page.locator('.tile .badge').count();
+
+    await tile.click({ button: 'right' });
+    await page.locator('#commitMarked').click();
+
+    /* The committed tile carries its outcome... */
+    await expect(page.locator(`.tile[data-id="${id}"] .badge`)).toContainText('REVIEWED');
+    /* ...and nothing else on the page gained one. A sweep would have painted the lot. */
+    await expect(page.locator('.tile .badge')).toHaveCount(before + 1);
+    /* The page is not finished, so the pager does not claim it is. */
+    await expect(page.locator('#pagesDone')).toContainText('0');
+    expect(errors).toEqual([]);
+  });
+
+  test('R4: the sweep still paints the whole page', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+    const { tile } = await firstReady(page);
+
+    await tile.click();
+    await page.locator('#commit').click();
+
+    await expect(page.locator('.tile .badge', { hasText: 'FLAGGED' }).first()).toBeVisible();
+    const reviewed = page.locator('.tile .badge', { hasText: 'REVIEWED' });
+    await expect(reviewed.first()).toBeVisible();
+    expect(await reviewed.count(), 'the sweep accepts everything unflagged')
+      .toBeGreaterThan(1);
+  });
+
+  test('A1: a double tap on a touch screen marks the tile accepted', async ({ browser, page }) => {
+    /**
+     * A real touchscreen, in **both** projects.
+     *
+     * The desktop project has no touch, so the obvious shape of this test is a skip there
+     * -- and a skipped check looks green. A context of its own with `hasTouch` on gives
+     * the same gesture at both viewports instead, which is what R8 asks for.
+     *
+     * Low-level `touchscreen.tap` rather than two `locator.tap()` calls: a locator re-runs
+     * its actionability checks each time, and the two taps have to land inside the
+     * gesture's window to be one double tap.
+     */
+    await page.goto('./');
+    await ready(page);
+    const url = page.url();
+
+    const context = await browser.newContext({ viewport: page.viewportSize(), hasTouch: true });
+    try {
+      const touch = await context.newPage();
+      await touch.goto(url);
+      await ready(touch);
+
+      const id = await touch.locator('.tile:not(.failed):not(.queued)').first()
+        .getAttribute('data-id');
+      const tile = touch.locator(`.tile[data-id="${id}"]`);
+      const box = await tile.boundingBox();
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+
+      /* One tap marks the exception at once -- the first tap is deliberately not
+         deferred, because a third of a second of lag on the most repeated gesture in the
+         tool is the badly tuned window A1 warned about. */
+      await touch.touchscreen.tap(x, y);
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+
+      /* A second tap inside the window turns it into an acceptance. */
+      await touch.touchscreen.tap(x, y);
+      await expect(tile.locator('.badge')).toContainText('REVIEWED');
+      await expect(tile).toHaveClass(/accept/);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('A1: two taps far enough apart are two separate marks, not a double tap',
+    async ({ browser, page }) => {
+      await page.goto('./');
+      await ready(page);
+      const url = page.url();
+
+      const context = await browser.newContext({ viewport: page.viewportSize(), hasTouch: true });
+      try {
+        const touch = await context.newPage();
+        await touch.goto(url);
+        await ready(touch);
+
+        const id = await touch.locator('.tile:not(.failed):not(.queued)').first()
+          .getAttribute('data-id');
+        const tile = touch.locator(`.tile[data-id="${id}"]`);
+        const box = await tile.boundingBox();
+        const x = box.x + box.width / 2;
+        const y = box.y + box.height / 2;
+
+        await touch.touchscreen.tap(x, y);
+        await expect(tile).toHaveClass(/marked/);
+        await touch.waitForTimeout(600);           // past the window
+        await touch.touchscreen.tap(x, y);
+        await expect(tile).not.toHaveClass(/marked/);
+      } finally {
+        await context.close();
+      }
+    });
+
+  test('A1: the main button works from a touch screen too', async ({ browser, page }) => {
+    /* There is no right click on a phone, so this is the path the human will actually
+       use: double tap to accept, then the main button. */
+    await page.goto('./');
+    await ready(page);
+    const url = page.url();
+
+    const context = await browser.newContext({ viewport: page.viewportSize(), hasTouch: true });
+    try {
+      const touch = await context.newPage();
+      await touch.goto(url);
+      await ready(touch);
+
+      const id = await touch.locator('.tile:not(.failed):not(.queued)').first()
+        .getAttribute('data-id');
+      const tile = touch.locator(`.tile[data-id="${id}"]`);
+      const box = await tile.boundingBox();
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+
+      await touch.touchscreen.tap(x, y);
+      await touch.touchscreen.tap(x, y);
+      await expect(tile).toHaveClass(/accept/);
+
+      await touch.locator('#commitMarked').tap();
+      await expect(touch.locator(`.tile[data-id="${id}"] .badge`)).toContainText('REVIEWED');
+      await expect(touch.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(1);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('A6: an accept mark does not dim the picture the way an exception does',
+    async ({ page }) => {
+      /* Colour is not carrying the distinction on its own: a judgement against a tile
+         makes it step back, and an acceptance is the opposite of that. */
+      await page.goto('./');
+      await ready(page);
+      const { id, tile } = await firstReady(page);
+      const img = page.locator(`.tile[data-id="${id}"] img`);
+
+      await tile.click();
+      const dimmed = await img.evaluate((el) => getComputedStyle(el).filter);
+      expect(dimmed).not.toBe('none');
+
+      await tile.click({ button: 'right' });
+      const bright = await img.evaluate((el) => getComputedStyle(el).filter);
+      expect(bright).toBe('none');
+    });
 });

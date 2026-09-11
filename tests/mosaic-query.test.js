@@ -54,6 +54,9 @@ const seeded = {
     sessions: {},
     observations: {},
     userIds: [],
+    // A catalogue entry on a list the `Invert` session does not read against.
+    // Looked up rather than hard-coded: its id is a fact about one database.
+    offListSpeciesId: null,
 };
 
 /**
@@ -237,6 +240,41 @@ describe('the mosaic query (#105)', () => {
 
             seeded.sessions[key] = session.session_id;
         }
+
+        // Two sessions whose `type` the species-list map has an opinion about, so
+        // `species_list` can be asserted as a value rather than only as a key: one
+        // that names a list and one that deliberately names none.
+        for (const [key, type] of [['invertList', 'Invert'], ['otherList', 'Other']]) {
+            const [session] = await q(
+                `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+                 VALUES (:projectId, 1, :dive, 'L1', 'LID1', :type, NOW(), NOW())
+                 RETURNING session_id`,
+                { projectId: seeded.projectId, dive: `JEST-${key}-${runId}`, type }
+            );
+
+            seeded.sessions[key] = session.session_id;
+        }
+
+        // Seeded, not borrowed: the assertion is that the list follows the session
+        // rather than the species, and it means nothing without a species that is
+        // on some other list.
+        const [offList] = await q(
+            "SELECT id FROM species WHERE species_list = 'Fish' AND is_active = true ORDER BY id LIMIT 1"
+        );
+
+        seeded.offListSpeciesId = offList ? offList.id : null;
+
+        // One row per typed session. The `Invert` one is classified as a *Fish*
+        // species on purpose -- #130's A1 is that the picker's list comes from the
+        // session, not from whatever the observation happens to be classified as
+        // now, and this is the row that can tell the two apart.
+        await addObservations([
+            {
+                group: 'typed', sessionKey: 'invertList', obsID: 950000,
+                speciesId: seeded.offListSpeciesId,
+            },
+            { group: 'typed', sessionKey: 'otherList', obsID: 950001 },
+        ]);
 
         // Six rows, every `confidence` and every `updatedAt` identical, so the only
         // thing that can order them is the appended tie-break.
@@ -669,8 +707,15 @@ describe('the mosaic query (#105)', () => {
 
             expect(matchedCte(whole.sql)).not.toContain('EXISTS');
 
+            // Asked of the `matched` CTE, which is where the status predicate
+            // lives, rather than of the whole statement. The outer projection
+            // grew a legitimate `coalesce` in #118 -- `thumbnail_status` reports
+            // `failed` for an observation with no thumbnail record -- and that is
+            // a different thing from a status filter degrading into one. Scoped
+            // rather than deleted: this assertion is about the filter, and it is
+            // exactly as strong about the filter as it was.
             for (const built of [anti, semi, whole]) {
-                expect(built.sql.toLowerCase()).not.toContain('coalesce');
+                expect(matchedCte(built.sql).toLowerCase()).not.toContain('coalesce');
             }
         });
 
@@ -906,13 +951,83 @@ describe('the mosaic query (#105)', () => {
 
     describe('the date and time-of-day dimensions (A3)', () => {
 
-        it('rejects an active date filter with 400', async () => {
-            const res = await global.api.post(PAGES).send({
-                ...tiedQuestion(), pages: [1], filters: { date: { from: '2026-08-01', to: null } },
+        /**
+         * **This asserted the opposite until #124's A17, and the reversal is the point.**
+         *
+         * Phase 4 read `date` as unanswerable -- nothing holds the date an observation was
+         * made -- and refusing was more honest than a control that excluded everything.
+         * A17 was answered differently by the human: *"if there is no date, it'll just
+         * default to the time. And if there is a date, then the date will also work."* The
+         * reviewer is asking about a **moment**, `tc` is the moment MARP records, and
+         * answering with what `tc` can discriminate beats refusing.
+         *
+         * So the range is served, over the same clock expression `timeOfDay` uses, and it
+         * **does not wrap** -- which is now the whole difference between the two controls.
+         */
+        it('serves an active date filter as a range over tc (A17)', async () => {
+            // **Scoped, and `...tiedQuestion()` cannot do it**: a spread whose `filters`
+            // is overwritten loses the session scope, and the question then matches every
+            // row in a shared database. The first draft of this check did exactly that and
+            // asserted 6 against 14.
+            const scoped = (date) => ({
+                filters: { session: [seeded.sessions.tied], date }, pageSize: 45, pages: [1],
             });
 
-            expect(res.status).toBe(400);
-            expect(res.body.error.message).toContain('#76');
+            const res = await global.api.post(PAGES).send(scoped({ from: '00:00', to: '23:59' }));
+
+            expect(res.status).toBe(200);
+            // Every seeded row in this group carries tc 10:00:00.
+            expect(res.body.pages[0].rowCount).toBe(6);
+
+            const outside = await global.api.post(PAGES).send(scoped({ from: '11:00', to: '12:00' }));
+
+            expect(outside.status).toBe(200);
+            expect(outside.body.pages[0].rowCount).toBe(0);
+        });
+
+        it('does not wrap a date range, where a time window does (A17)', async () => {
+            // 22:00 to 02:00 is one night as a *window* and an empty question as a
+            // *range*. Writing the range with the wrapping rule would silently turn the
+            // second into the first.
+            const asRange = await global.api.post(PAGES).send({
+                filters: {
+                    session: [seeded.sessions.tied], date: { from: '22:00', to: '02:00' },
+                },
+                pageSize: 45, pages: [1],
+            });
+
+            expect(asRange.status).toBe(200);
+            expect(asRange.body.pages[0].rowCount).toBe(0);
+        });
+
+        it('reports the rows a date filter could not answer for (#76)', async () => {
+            // What #76 built the reporting for, and it had nothing to report while the
+            // filter was refused. A row whose `tc` carries no readable clock cannot answer,
+            // so it is excluded *and counted* -- a number the reviewer can see is the
+            // difference between a filter and a lie.
+            const [nulls] = await q(
+                `SELECT count(*)::int AS n FROM observations o
+                  WHERE o.ml_model_id = :modelId
+                    AND substring(o.tc from '^-?(?:[0-9]+\.)?([0-9]{1,2}:[0-9]{2}:[0-9]{2})') IS NULL`,
+                { modelId: seeded.modelId }
+            );
+
+            const res = await global.api.post(PAGES).send({
+                filters: { model: [seeded.modelId], date: { from: '00:00', to: '23:59' } },
+                pageSize: 45, pages: [1],
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.body.excludedForNoDate).toBe(nulls.n);
+            expect(nulls.n).toBeGreaterThan(0);
+        });
+
+        it('reports zero when the date dimension is not filtering, and costs nothing', async () => {
+            const res = await global.api.post(PAGES).send({
+                ...tiedQuestion(), pages: [1],
+            });
+
+            expect(res.body.excludedForNoDate).toBe(0);
         });
 
         it('does not reject a date dimension that is not filtering', async () => {
@@ -1016,6 +1131,16 @@ describe('the mosaic query (#105)', () => {
                 'observation_id',
                 'project_name',
                 'review_decision',
+                // Owed to #124's A13, and F8 is the defect it closes: the client draws
+                // "REVIEWED by you", the borrowed tag's attribution and `byMe` from
+                // `reviewed_by` / `flagged_by` / `training_approved_by` / `excluded_by`,
+                // and this row has never carried any of the four -- so all three silently
+                // became nothing. **Ids and not names**, which keeps #118's A10 reasoning
+                // intact: the catalog separates `reports:read` because it exposes who did
+                // how much work, and an id the caller can only compare with its own
+                // principal exposes nobody. **Moved into this list rather than the list
+                // being loosened** -- naming the exact keys is the tripwire.
+                'review_reviewer_id',
                 'session_type',
                 // Owed to #111, not wanted by the tile either: `comname` above
                 // is the annotator's frozen label and a species correction never
@@ -1025,13 +1150,59 @@ describe('the mosaic query (#105)', () => {
                 // exact keys is the tripwire, and relaxing it would disable the
                 // tripwire permanently to admit one field.
                 'species_comname',
+                // Owed to #130's A1: which annotation list the correction picker may
+                // offer from. **A property of the owning session's type, resolved by
+                // the server** -- deriving it from the observation's current species
+                // scopes the picker by whatever the species happens to be now, so an
+                // observation corrected onto the wrong list could never be corrected
+                // back. **Moved into this list rather than the list being loosened** --
+                // naming the exact keys is the tripwire.
+                'species_list',
                 'tc',
+                // Owed to #118 R11, and the last field Phase 6 adds to this row:
+                // whether the tile has a picture yet. **Moved into this list
+                // rather than the list being loosened** -- naming the exact keys
+                // is the tripwire, and relaxing it would disable the tripwire
+                // permanently to admit one field. The picture's address is
+                // derivable from observation_id, so no `thumb` joins it.
+                'thumbnail_status',
                 'training_decision',
+                // The training half of A13's pair. Same reasoning, same list, same rule
+                // about being moved in rather than admitted by loosening.
+                'training_reviewer_id',
                 // Owed to #106's D1, not wanted by the tile: the commit routes
                 // require the version the reviewer saw, and this row is the only
                 // channel that can carry it.
                 'version',
             ]);
+        });
+
+        it('resolves species_list from the session type, not from the species (#130 R2)', async () => {
+            const res = await global.api.post(PAGES).send({
+                filters: { session: [seeded.sessions.invertList] }, pageSize: 1, pages: [1],
+            });
+
+            const row = res.body.pages[0].rows[0];
+
+            expect(seeded.offListSpeciesId).not.toBeNull();
+            expect(row.session_type).toBe('Invert');
+            // Classified as a Fish-list species, and the list is still the
+            // session's. Scoping by the current species instead would leave an
+            // observation corrected onto the wrong list unable to be corrected back.
+            expect(row.species_list).toBe('Inverts');
+        });
+
+        it('sends a null species_list where the session type names none', async () => {
+            const res = await global.api.post(PAGES).send({
+                filters: { session: [seeded.sessions.otherList] }, pageSize: 1, pages: [1],
+            });
+
+            const row = res.body.pages[0].rows[0];
+
+            // `Other` genuinely does not say which list was in use, and a default
+            // would attribute the observation to a list nobody chose.
+            expect(row.session_type).toBe('Other');
+            expect(row.species_list).toBeNull();
         });
 
         it('carries no processor_name, lineId or scientific_name', async () => {

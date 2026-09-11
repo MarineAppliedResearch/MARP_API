@@ -262,9 +262,12 @@ body.rail-collapsed .fcount { display: grid; }
 .grid { display: grid; gap: 2px;
         grid-template-columns: repeat(auto-fill, minmax(var(--min-tile, 132px), 1fr)); }
 
+/* `touch-action: manipulation` turns off the browser's own double-tap-to-zoom, which is
+   what a double tap on a tile would otherwise do -- and #126 gives that gesture a job. It
+   also removes the legacy 300 ms wait before a tap becomes a click. */
 .tile { position: relative; aspect-ratio: 1; border-radius: 2px; overflow: hidden;
         background: #101215; outline: 1px solid var(--tile-bd); outline-offset: -1px;
-        padding: 0; border: 0; display: block; }
+        padding: 0; border: 0; display: block; touch-action: manipulation; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 5px 3.5px;
        background: rgba(232, 240, 248, .10);
@@ -291,6 +294,35 @@ body.rail-collapsed .fcount { display: grid; }
 .b-exc  { background: var(--grey-400);  color: #15181d; }
 .b-pro  { background: var(--violet-400); color: #150c2b; }
 .tile.marked  { outline: 2px solid var(--amber-300); }
+/**
+ * An accept mark (#126 A6).
+ *
+ * The mode's commit hue, because that is exactly what the next commit will record for it,
+ * and **no dimming** -- the tile stepping back is what a judgement against it looks like,
+ * and an acceptance is the opposite. Colour is not carrying this on its own: an exception
+ * is a dimmed tile with an amber or grey outline, an acceptance is a bright one.
+ */
+.tile.marked.accept { outline: 2px solid var(--commit); }
+/* Each mode dims its own marked tiles, so each has to be told not to dim this one. */
+.tile.marked.accept img,
+body[data-mode="scientific"] .tile.marked.accept img,
+body[data-mode="training"] .tile.marked.accept img { filter: none; }
+body[data-mode="training"] .tile.marked.accept { outline: 2px solid var(--commit); }
+
+/**
+ * A refused accept mark, in its own slot (#126 A4).
+ *
+ * Never `.badge`, which stays exactly one element per tile -- a second element able to
+ * reach that slot is how a click on a committed tile comes to look like it did nothing.
+ * It fades on its own; the store clears it.
+ */
+.refusal { position: absolute; left: 4px; right: 4px; bottom: 24px; z-index: 3;
+           display: flex; align-items: center; justify-content: center; gap: 4px;
+           background: rgba(8, 9, 11, .92); border: 1px solid var(--red-400);
+           color: var(--red-400); font-size: 8.5px; font-weight: 700;
+           padding: 3px 4px; border-radius: 3px; text-align: center; line-height: 1.15; }
+.refusal svg { width: 9px; height: 9px; flex: none; }
+.tile.refused { outline: 2px solid var(--red-400); }
 .tile.changed { outline: 2px solid var(--cyan-300); }
 .tile.done    { outline: 2px solid #596270; }
 .tile.done img { filter: grayscale(.6) brightness(.7); }
@@ -386,8 +418,11 @@ input.pg { width: 38px; padding: 0; background: var(--navy-1000); border: 1px so
 .markall { display: flex; gap: 5px; margin-left: 16px; padding-left: 16px;
            border-left: 1px solid var(--line); }
 .count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--amber-300); }
+/* The pair sits together and the gap that used to be on the button is now on the pair,
+   so the two of them read as one control with a main half and a lesser half (#126 R5). */
+.commits { display: flex; align-items: center; gap: 8px; margin-left: 26px; }
 .commit { background: var(--commit); color: var(--commit-ink); border: 0; border-radius: 5px;
-          padding: 7px 18px; font-size: 12px; font-weight: 700; margin-left: 26px;
+          padding: 7px 18px; font-size: 12px; font-weight: 700;
           display: flex; align-items: center; gap: 7px; }
 /* The red now comes from `--commit` like every other mode's hue; the outline is the one
    thing this rule still contributes, lifting a dark red button off the dark red chrome. */
@@ -468,6 +503,21 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
    spinning while it works, then a tick or a cross that fades. The width is held
    steady so the footer does not jump as the label changes. */
 .commit { min-width: 172px; justify-content: center; }
+/* The page sweep, once the main button took the primary slot (#126 R5). The same hue --
+   it is the same mode's commit and `--commit` is what that means -- but outlined rather
+   than filled, and smaller, so which one is the main button is legible before either
+   label has been read. Its success state fills in, because a tick has to be seen. */
+/* `display: flex` on `.commit` beats the user agent's `[hidden] { display: none }`, so
+   Delete's hidden main button was still on screen. Delete keeps one button (A2). */
+.commit[hidden] { display: none; }
+.commit.sweep { background: transparent; color: var(--commit-pale);
+                border: 1px solid var(--commit-line);
+                padding: 3px 10px; font-size: 11px; line-height: 1.35;
+                min-width: 0; font-weight: 600; }
+.commit.sweep.ok  { background: var(--commit); color: var(--commit-ink); }
+.commit.sweep.bad { background: var(--red-500); color: #fff; }
+/* The long wording by default; the phone query below swaps them. Both carry the count. */
+.commit .sw { display: none; }
 .commit svg { width: 13px; height: 13px; display: block; flex: none; }
 .commit[disabled] { cursor: progress; opacity: .92; }
 .commit.ok  { background: var(--commit); color: var(--commit-ink); }
@@ -558,7 +608,20 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   .markall { display: none; }
   .legend { margin-left: 8px; }
   .legend .lw { display: none; }
-  .commit { margin-left: auto; padding: 6px 10px; font-size: 11px; }
+  /* The second commit button needs the room, and `.count` is what a phone can spare
+     (#126 R5): it repeats what both buttons now say, since each carries its own count.
+     **The legend stays**, because #91 put the pages-committed tally there deliberately and
+     called it worth the room on a phone -- so the width comes out of the buttons instead,
+     which is what the short wording above is for. */
+  .foot .count { display: none; }
+  /* Two buttons do not fit this footer at full length, and `.app` clips rather than
+     scrolls -- so the long wording did not become scrollable, it went off the end and took
+     the main button with it. The short wording keeps both on screen, with their counts. */
+  .commits { margin-left: auto; gap: 4px; min-width: 0; }
+  .commit { padding: 6px 8px; font-size: 11px; min-width: 0; }
+  .commit.sweep { padding: 3px 5px; font-size: 10px; }
+  .commit .lw { display: none; }
+  .commit .sw { display: inline; }
   .count { font-size: 10.5px; margin-left: 4px; }
   /* keep only prev / current / next — numbered pages do not fit */
   .pager .pg:not(.nav):not(input) { display: none; }
@@ -678,4 +741,105 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 .commit.nudge { animation: marp-nudge .28s ease-in-out 2 }
 @media (prefers-reduced-motion: reduce) {
   .commit.nudge { animation: none; outline: 2px solid var(--red-400, #e2707a) }
+}
+
+/* --- The failure panel (#124, A4/R20) -------------------------------------
+   Expired, refused and failed are three states and they read differently. The
+   colour carries the difference the copy states: amber for a session that
+   lapsed and can be fixed, red for a refusal that cannot, and the ordinary
+   error red for a transport failure. Tokens only -- no hex here; see the app's
+   CLAUDE.md.
+
+   It interrupts, because a reviewer who does not notice a 401 goes on marking
+   a page that cannot be committed. It never covers the whole viewport: the
+   marks are still on screen behind it, and seeing them is the reassurance the
+   copy is making. */
+/**
+ * `display: none` first, and **that ordering is the whole of a defect worth recording.**
+ *
+ * `renderFailure` sets `host.hidden = true`, and the `hidden` attribute works by applying
+ * `display: none` from the browser's own stylesheet -- which any author rule carrying
+ * `display` beats. So `#failure { display: flex }` on its own left a **fixed,
+ * full-viewport, invisible** panel over the mosaic, and every click on a tile was
+ * swallowed by it: Playwright reported `<div hidden id="failure"> intercepts pointer
+ * events` on twenty-six tests at once, which reads as the tiles being broken rather than
+ * as one CSS rule.
+ *
+ * Anything positioned over the interface has to be hidden by the same property it is
+ * shown with. `#confirm` gets away without this because it has no `display` of its own.
+ */
+#failure { display: none }
+#failure:not([hidden]) {
+  /* Fixed rather than absolute: the rail's row is a flex container with no positioning of
+     its own, so an absolute panel would anchor to whatever ancestor happened to be
+     positioned. */
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--navy-1000) 72%, transparent);
+  backdrop-filter: blur(1.5px);
+}
+.fail {
+  max-width: 46ch; padding: 18px 20px; border-radius: 10px;
+  background: var(--navy-900); border: 1px solid var(--border);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
+}
+.fail h3 {
+  margin: 0 0 8px; font-size: 14.5px; color: var(--white); font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.fail h3 svg { width: 15px; height: 15px; flex: none }
+.fail p { margin: 0 0 9px; font-size: 12.5px; line-height: 1.55; color: var(--text) }
+.fail code {
+  font: 500 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--cyan-300);
+}
+/* The one sentence every panel carries, because it is the one thing a reviewer
+   actually wants to know. Distinct from the body copy so it is read. */
+.fail .keep { color: var(--mint-300); font-weight: 500 }
+.fail .failmsg {
+  font: 400 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--muted); background: var(--navy-950);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px;
+  max-height: 8em; overflow: auto; word-break: break-word;
+}
+.fail .failfoot { display: flex; gap: 8px; margin-top: 13px; align-items: center }
+.fail .failfoot .btn { text-decoration: none }
+.fail--expired { border-color: rgba(246, 196, 83, .5) }
+.fail--expired h3 { color: var(--amber-300) }
+.fail--refused { border-color: rgba(224, 97, 107, .55) }
+.fail--refused h3 { color: var(--red-400) }
+.fail--failed h3 { color: var(--red-400) }
+
+/* A commit the server refused because the rows moved (R9). Amber rather than
+   red: nothing was written and nothing is lost, so it is a "look again"
+   rather than a failure. */
+.pagestate--conflict {
+  background: rgba(246, 196, 83, .10); border-color: rgba(246, 196, 83, .38);
+}
+.pagestate--conflict b { color: var(--amber-300) }
+
+/* A thumbnail no retry can produce (F11, R13). Dimmer than an ordinary
+   failure, because the tile is not waiting for anything. */
+.tile.permanent .fallback .na-t { color: var(--faint) }
+.tile.permanent { opacity: .82 }
+
+/* The picker's widen action (A11). A quiet control: going off the
+   observation's own species list is a decision, not the normal path. */
+.sugghead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px }
+.widen {
+  border: 1px solid var(--line); background: none; color: var(--muted);
+  border-radius: 5px; padding: 1px 6px; font-size: 10.5px; cursor: pointer;
+}
+.widen:hover { color: var(--cyan-300); border-color: var(--border) }
+.widen.on { color: var(--cyan-300); border-color: var(--border-strong) }
+
+/* Which list a widened candidate is on (#130 A3). Pushed to the far end and drawn as a
+   tag rather than as more name: a common name is not unique across the seven lists, so
+   this is the only thing distinguishing two rows that otherwise read identically, and it
+   has to survive a glance. Absent on a scoped search, which is all one list already. */
+.srow .slist {
+  margin-left: auto; flex: none; font-size: 9.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
 }

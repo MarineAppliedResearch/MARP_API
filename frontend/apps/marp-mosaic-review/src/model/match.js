@@ -98,13 +98,26 @@ export function matchesDimension(dimension, value, row) {
     return withinWindow(timeOfDayMs(raw), clockMs(value.from), clockMs(value.to));
   }
 
-  /* RANGE. The date dimension ranges over a date rather than a number, and a row whose
-     `tc` carries no date cannot answer -- it is excluded, and counted, never guessed at. */
-  if (dimension.key === 'date') {
-    const d = dateOf(raw);
-    if (d == null) return false;
-    if (value.from && d < value.from) return false;
-    if (value.to && d > value.to) return false;
+  /**
+   * RANGE. A `clock` range compares the row's `tc` as a **point in time** (A17), and a row
+   * whose `tc` carries no readable clock cannot answer -- it is excluded, and counted,
+   * never guessed at.
+   *
+   * Inclusive at both ends and it **does not wrap**: `withinWindow` above is the wrapping
+   * one, and using it here would silently turn a from-later-than-to range, which is empty,
+   * into a night. That distinction is the only thing separating this dimension from
+   * `timeOfDay` today.
+   *
+   * This compared `dateOf(raw)` against `YYYY-MM-DD` bounds, which is the reading the
+   * human ruled out: no `tc` carries a date, so it answered zero rows.
+   */
+  if (dimension.clock) {
+    const ms = timeOfDayMs(raw);
+    if (ms == null) return false;
+    const from = clockMs(value.from);
+    const to = clockMs(value.to);
+    if (from != null && ms < from) return false;
+    if (to != null && ms > to) return false;
     return true;
   }
 
@@ -131,7 +144,11 @@ export function matchesFilters(filters, row) {
 export function unanswerable(filters, rows) {
   const d = DIMENSION.date;
   if (!isActive(d, filters.date)) return 0;
-  return rows.filter((r) => dateOf(r[d.field]) == null).length;
+  /* A row that cannot answer is one whose `tc` carries no readable clock (A17). It was
+     one whose `tc` carried no *date*, which was every row -- so the count was the whole
+     result and the note said so, which is why the filter had to be refused rather than
+     served. */
+  return rows.filter((r) => timeOfDayMs(r[d.field]) == null).length;
 }
 
 /**

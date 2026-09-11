@@ -131,6 +131,17 @@ const MODES = {
     },
 };
 
+/**
+ * The two kinds a mark can carry (#126 A5).
+ *
+ * `except` is what a mark has always meant -- flag it, exclude it, destroy it.
+ * `accept` is the new one, and it is what makes "approve just these, and say
+ * nothing about the rest of the page" expressible: the client sends only the
+ * marked observations as the page, and each mark says what it becomes.
+ */
+const MARK_EXCEPT = 'except';
+const MARK_ACCEPT = 'accept';
+
 /** What the response says about itself (R6). A value, not a boolean, so a later
  * change is expressible without a rename. */
 const ATOMICITY = 'per-observation';
@@ -141,13 +152,29 @@ const ATOMICITY = 'per-observation';
 const CONFLICT_VERSION = 'version';
 
 /**
- * The only reason this phase emits `skipped` (R5).
+ * The observation is gone: it was deleted between the page being fetched and the
+ * commit arriving (R5).
  *
- * **Never for imagery.** The server makes no imagery judgement until Phase 6 --
- * there are no thumbnails and nothing on `observations` records a status -- so a
- * test asserting an imagery skip could not fail, and none is written.
+ * **This was the only `skipped` reason until Phase 6.** The line that used to
+ * stand here said *"never for imagery -- the server makes no imagery judgement
+ * until Phase 6"*, and #118 is that phase.
  */
 const SKIP_NOT_FOUND = 'not-found';
+
+/**
+ * The second reason, added by Phase 6 (#118 R12).
+ *
+ * Phase 6 gives the server a thumbnail state, so an imagery judgement is now one
+ * it can make -- and a test asserting this skip can now fail, which is what makes
+ * it worth writing.
+ *
+ * **An unmarked row whose thumbnail is not `ready` is skipped rather than
+ * accepted**, because accepting it is a reviewer saying *"this is right"* about a
+ * picture they were never shown. A **marked** row is committed whether or not it
+ * has a picture: flagging a tile does not need imagery and never did, and Delete
+ * is unaffected because it never touches an unmarked row.
+ */
+const SKIP_NO_IMAGERY = 'no-imagery';
 
 /**
  * An integer, or a refusal saying which field was wrong.
@@ -212,17 +239,28 @@ function readPage(observations) {
 }
 
 /**
- * The exception set: what the reviewer flagged, excluded or marked for deletion.
+ * What the reviewer marked, and which of the two things each mark means.
  *
  * A mark must name an observation on the page, because the page is what the
  * commit is about and a mark outside it is a client bug rather than a request to
  * reach further.
  *
+ * **A mark carries a kind** (#126 A5). It used to be the exception set and
+ * nothing else: marked meant flag it, exclude it or destroy it, and unmarked
+ * meant accept it. The reviewer needs to be able to accept one tile without that
+ * saying anything about the rest of the page, so `accept` joins `except` -- **in
+ * this list, keyed by `observation_id`, rather than as a second list**, because
+ * one list is what the client's own `applyCommit` folds by and two reintroduce
+ * the question of what an id appearing in both means.
+ *
+ * An absent kind is `except`, which is what every mark meant before the field
+ * existed, so an older client is read exactly as it always was.
+ *
  * @param {*} marks - The request's `marks`.
  * @param {Map<number, number>} page - The page, from {@link readPage}.
  * @param {Object} mode - The entry from {@link MODES}.
- * @returns {Map<number, string|null>} observation_id to its reason, or null.
- * @throws {MosaicRequestError} If a mark is malformed, off the page, repeated, or carries an unknown reason.
+ * @returns {Map<number, {kind: string, reason: string|null}>} observation_id to its mark.
+ * @throws {MosaicRequestError} If a mark is malformed, off the page, repeated, or carries an unknown kind or reason.
  */
 function readMarks(marks, page, mode) {
     if (marks == null) {
@@ -251,6 +289,34 @@ function readMarks(marks, page, mode) {
         }
 
         const reason = entry.reason == null || entry.reason === '' ? null : entry.reason;
+        const kind = entry.kind == null ? MARK_EXCEPT : entry.kind;
+
+        if (kind !== MARK_EXCEPT && kind !== MARK_ACCEPT) {
+            throw new MosaicRequestError(
+                `${JSON.stringify(kind)} is not a kind of mark. Expected ${MARK_EXCEPT} or ${MARK_ACCEPT}.`
+            );
+        }
+
+        // Delete has no accepted state: the opposite of destroying an
+        // observation is leaving it alone, which needs no record (#126 A2). So
+        // an accept mark here has nothing to mean, and a request carrying one
+        // has misunderstood the route rather than asked for something subtle.
+        if (kind === MARK_ACCEPT && !mode.accepts) {
+            throw new MosaicRequestError(
+                `observation ${id} is marked ${MARK_ACCEPT}, and this route records no acceptance.`
+            );
+        }
+
+        // The reason vocabularies are the flag and exclusion lists: they say
+        // what is wrong with an observation. An acceptance has nothing to
+        // explain, and storing one against `reviewed` would put "Wrong species"
+        // on a record that says the species was right.
+        if (kind === MARK_ACCEPT && reason !== null) {
+            throw new MosaicRequestError(
+                `observation ${id} is marked ${MARK_ACCEPT} and carries a reason. `
+                + 'A reason says what is wrong with an observation, so only an exception takes one.'
+            );
+        }
 
         if (reason !== null && !mode.reasons.includes(reason)) {
             throw new MosaicRequestError(
@@ -261,10 +327,26 @@ function readMarks(marks, page, mode) {
             );
         }
 
-        out.set(id, reason);
+        out.set(id, { kind, reason });
     }
 
     return out;
+}
+
+/**
+ * Is this observation marked as the **exception**?
+ *
+ * The question every rule below used to ask as a bare `marks.has(id)`, and the
+ * one line where #126 changes what a commit does: an accept mark is not an
+ * exception, so it is accepted exactly as an unmarked row is. That is what keeps
+ * the page sweep doing precisely what it did before any of this existed.
+ *
+ * @param {Map<number, Object>} marks - From {@link readMarks}.
+ * @param {number} id - The observation.
+ * @returns {boolean} True only for an exception mark.
+ */
+function excepted(marks, id) {
+    return marks.has(id) && marks.get(id).kind === MARK_EXCEPT;
 }
 
 /**
@@ -408,6 +490,38 @@ async function currentDecisions(observationIds, purpose, transaction) {
     );
 
     return new Map(rows.map((row) => [row.observation_id, row]));
+}
+
+/**
+ * Which of these observations have a picture a reviewer could have looked at
+ * (#118 R12).
+ *
+ * `ready` and nothing else. `queued` means the picture has not arrived,
+ * `failed` means it never will, and an observation with no row at all has never
+ * had one asked for -- and none of the three is a tile somebody can accept on
+ * sight.
+ *
+ * The file is deliberately **not** checked here. The thumbnail row is what the
+ * mosaic query reads, per-tile `existsSync` inside a commit would be one stat
+ * per row on a page of 600, and if storage ever moves behind a network it stops
+ * being cheap at all. A row that says `ready` whose file has gone is a
+ * recoverable state the serving route reports, not a reason to refuse a review.
+ *
+ * @async
+ * @param {Array<number>} observationIds - The page's ids.
+ * @param {Object} transaction - The commit's transaction.
+ * @returns {Promise<Set<number>>} The ids holding a ready thumbnail.
+ */
+async function readyThumbnails(observationIds, transaction) {
+    const rows = await db.sequelize.query(
+        `SELECT observation_id
+           FROM observation_thumbnails
+          WHERE status = 'ready'
+            AND observation_id = ANY($1::int[])`,
+        { bind: [observationIds], type: QueryTypes.SELECT, transaction }
+    );
+
+    return new Set(rows.map((row) => row.observation_id));
 }
 
 /**
@@ -648,6 +762,7 @@ async function commitReview(mode, request, principal, reviewerId) {
     return db.sequelize.transaction(async (transaction) => {
         const live = await lockObservations(ids, transaction);
         const current = await currentDecisions(ids, mode.purpose, transaction);
+        const withImagery = await readyThumbnails(ids, transaction);
         const out = outcomes();
 
         // What will be attempted, and what is refused before any write. A
@@ -677,11 +792,26 @@ async function commitReview(mode, request, principal, reviewerId) {
                 continue;
             }
 
+            // R12. A row that is not the exception is an acceptance, and
+            // accepting a tile with no picture is a reviewer saying "this is
+            // right" about something they were never shown. An excepted row goes
+            // through: flagging needs no imagery.
+            //
+            // #126 widens this by one word rather than changing it. An *accept*
+            // mark is an acceptance too, so it is skipped here for the same
+            // reason an untouched tile is. The client refuses that mark at click
+            // time (A4); this is the same rule at the end that has to hold.
+            if (!excepted(marks, id) && !withImagery.has(id)) {
+                out.skip(id, SKIP_NO_IMAGERY);
+
+                continue;
+            }
+
             attempt.push({
                 observation_id: id,
                 version,
-                decision: marks.has(id) ? mode.marks : mode.accepts,
-                reason: marks.has(id) ? marks.get(id) : null,
+                decision: excepted(marks, id) ? mode.marks : mode.accepts,
+                reason: excepted(marks, id) ? marks.get(id).reason : null,
             });
         }
 
@@ -872,6 +1002,7 @@ module.exports = {
     MosaicCommitDeniedError,
     MosaicRequestError,
     SKIP_NOT_FOUND,
+    SKIP_NO_IMAGERY,
     commitPage,
     deniedObservationIds,
 };

@@ -44,8 +44,16 @@ test('R9: the same question is the same key, whichever object it arrives in', ()
   /* Property order must not matter: a key built by stringifying the filters object would
      pass every other test here and fail this one, and the failure would look like the
      cache being useless rather than like a broken key. */
-  const forwards = { mode: 'scientific', filters: { ...DEFAULT_FILTERS, species: ['Bat Star'] }, sort: { field: 'confidence', dir: 'asc' }, pageSize: 45 };
-  const backwards = { pageSize: 45, sort: { dir: 'asc', field: 'confidence' }, filters: { species: ['Bat Star'], ...DEFAULT_FILTERS }, mode: 'scientific' };
+  /* Species is a **key** now, not a name (F1): the endpoint filters on
+     `observations.species_id` and refuses a name outright.
+     The two objects must be the *same question* written with their keys in a different
+     order -- outer keys reversed, and the sort's own two reversed. `backwards` used to
+     spread `DEFAULT_FILTERS` *after* `species`, so the default's value won and the two
+     agreed only while that default happened to be `[41]`. That made this test pass for a
+     reason it was not testing, and it broke the moment the default stopped naming a
+     species. Both now set species explicitly, after the spread. */
+  const forwards = { mode: 'scientific', filters: { ...DEFAULT_FILTERS, species: [41] }, sort: { field: 'confidence', dir: 'asc' }, pageSize: 45 };
+  const backwards = { pageSize: 45, sort: { dir: 'asc', field: 'confidence' }, filters: { ...DEFAULT_FILTERS, species: [41] }, mode: 'scientific' };
   assert.equal(keyFor(forwards), keyFor(backwards));
 });
 
@@ -56,9 +64,13 @@ test('R9: the key is a non-empty string, even for the default question', () => {
 });
 
 test('R9: a different filter is a different question', () => {
-  const base = keyFor(question());
+  /* The baseline narrows by species deliberately. `question()` alone is the *default*
+     question, which since A10(b) narrows nothing -- so "species: []" would be the same
+     question as the baseline rather than a different one, and this test would be asserting
+     that a question differs from itself. */
+  const base = keyFor(question({ filters: { ...DEFAULT_FILTERS, species: [41] } }));
 
-  assert.notEqual(base, keyFor(question({ filters: { ...DEFAULT_FILTERS, species: ['Sunflower Star'] } })));
+  assert.notEqual(base, keyFor(question({ filters: { ...DEFAULT_FILTERS, species: [45] } })));
   assert.notEqual(base, keyFor(question({ filters: { ...DEFAULT_FILTERS, species: [] } })));
   assert.notEqual(base, keyFor(question({ filters: { ...DEFAULT_FILTERS, project: ['Deep Reef Survey 2025'] } })));
   assert.notEqual(base, keyFor(question({ filters: { ...DEFAULT_FILTERS, confidence: { from: 0, to: 0.8 } } })));
@@ -122,8 +134,11 @@ test('R9: a run of different questions gives a run of different keys', () => {
     question({ pageSize: 50 }),
     question({ sort: { field: 'obsID', dir: 'desc' } }),
     question({ sort: { field: 'keyframe_count', dir: 'asc' } }),
-    question({ filters: { ...DEFAULT_FILTERS, species: [] } }),
-    question({ filters: { ...DEFAULT_FILTERS, species: ['Sunflower Star'] } }),
+    /* `species: []` is no longer distinct from `question()` -- the default narrows nothing
+       since A10(b) -- so listing both would collide here and read as a broken key. Two
+       genuinely different species selections instead. */
+    question({ filters: { ...DEFAULT_FILTERS, species: [41] } }),
+    question({ filters: { ...DEFAULT_FILTERS, species: [45] } }),
     question({ filters: { ...DEFAULT_FILTERS, dive: ['D04'] } }),
     question({ filters: { ...DEFAULT_FILTERS, date: { from: '2026-08-01', to: null } } }),
     question({ filters: { ...DEFAULT_FILTERS, timeOfDay: { from: '22:00', to: '02:00' } } })
@@ -154,7 +169,7 @@ test('R10: a commit does not invalidate the cache', () => {
 
 test('R10: a filter, the sort, the mode or the page size empties it', () => {
   for (const over of [
-    { filters: { ...DEFAULT_FILTERS, species: ['Sunflower Star'] } },
+    { filters: { ...DEFAULT_FILTERS, species: [45] } },
     { sort: { field: 'updatedAt', dir: 'desc' } },
     { mode: 'training' },
     { pageSize: 50 }
@@ -263,9 +278,9 @@ test('serving hands back the cached row itself, so a commit is visible through t
      would show the answer from before the commit. */
   const cache = loaded([7]);
   const before = cache.serve(7)[0];
-  before.review_status = 'reviewed';
+  before.review_decision = 'reviewed';
 
-  assert.equal(cache.serve(7)[0].review_status, 'reviewed');
+  assert.equal(cache.serve(7)[0].review_decision, 'reviewed');
 });
 
 /* ------------------------------------------------------- R11: serving a pinned page */

@@ -44,6 +44,15 @@
   <div id="mount"></div>
 
 <script type="module">
+  /* The contract tier runs against the **fixture**, and installs it explicitly (A2).
+     Those 58 checks are about the rules, and they drive `failNextCommit`,
+     `slowNextCommit`, `breakThumbnails` and `reload` -- none of which is expressible
+     against a real server (F17). Installing it here rather than letting a flag decide is
+     what keeps the application's own page unable to run on a fixture. */
+  import { useBackend } from './src/backend.js';
+  import { MarpData } from './src/data.js';
+  useBackend(MarpData);
+
   import { run } from './tests/requirements.js';
   const res = await run(document.getElementById('mount'));
   document.title = `${res.fail ? '✗' : '✓'} ${res.pass}/${res.pass + res.fail + res.skip} — Mosaic Review checks`;

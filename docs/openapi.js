@@ -2861,13 +2861,75 @@ const buildOpenApiSpec = () => {
                             dive: { type: 'string', nullable: true, example: 'D04' },
                             line: { type: 'string', nullable: true, example: '1' },
                             session_type: { type: 'string', nullable: true, example: 'Fish' },
+                            species_list: { type: 'string', nullable: true, example: 'Inverts', description: 'Which annotation list this observation may be corrected against, resolved on the server from the owning session type. **The session\'s list, not the current species\' list**: scoping a correction picker by whatever the observation is classified as now means an observation corrected onto the wrong list only ever offers candidates from that wrong list, and the mistake can never be corrected back. Null where the session type names no list -- `Other` genuinely does not say which was in use -- and for those a client has to search every list instead.' },
                             project_name: { type: 'string', nullable: true, example: 'Deep Reef Survey 2025', description: 'Null where the observation records no project. Both joins are outer, so a row is never silently dropped for want of one.' },
                             review_decision: { type: 'string', nullable: true, enum: ['reviewed', 'flagged', null], example: null, description: 'Current scientific decision, or null for unreviewed -- which is the absence of a record.' },
                             flag_reason: { type: 'string', nullable: true, example: null },
+                            review_reviewer_id: { type: 'integer', nullable: true, example: 42, description: 'users.user_id of whoever made the current scientific decision, or null where there is none. **An id and not a name**, deliberately: the permission catalog separates reports:read from observations:read because it exposes who did how much work, and this row carries no processor_name for the same reason. A client compares it with its own authenticated principal to draw "by you", which needs no name at all. Without it the client\'s "REVIEWED by you" badge, the borrowed tag\'s attribution and its byMe derivation all silently became nothing, because it was reading four columns this row has never carried.' },
                             training_decision: { type: 'string', nullable: true, enum: ['promoted', 'excluded', null], example: null, description: 'Current training decision, or null for undecided.' },
                             exclusion_reason: { type: 'string', nullable: true, example: null },
+                            training_reviewer_id: { type: 'integer', nullable: true, example: 42, description: 'users.user_id of whoever made the current training decision, or null where there is none. An id and not a name, for the same reason as review_reviewer_id.' },
                             keyframe_count: { type: 'integer', example: 8, description: 'How many keyframes the observation carries. Computed per returned row, not over the matching set, unless the sort names it.' },
                             first_framenum: { type: 'integer', nullable: true, example: 3457 },
+                            thumbnail_status: { type: 'string', enum: ['queued', 'ready', 'failed'], example: 'ready', description: 'Whether the tile has a picture. **Never null**: an observation with no record at all reports `queued` rather than an absence the client has no rendering for. Two things make that honest rather than a promise nobody keeps -- a thumbnail is enqueued when its keyframes are written, and serving this page enqueues anything on it that still has no record. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page.' },
+                        },
+                    },
+                    ThumbnailExtractorStatus: {
+                        type: 'object',
+                        description:
+                            'What the thumbnail extractor is doing. The **persisted** run state and the **live** loop state are separate questions and both are answered: whether somebody has paused extraction, and whether it is actually turning on this host.',
+                        properties: {
+                            action: { type: 'string', enum: ['pause', 'resume', 'stop'], example: 'pause', description: 'Present only on a control response: the action just applied.' },
+                            discarded: { type: 'integer', example: 0, description: 'Present only on a control response: how many queued rows `stop` discarded. Those observations become simply absent again, and the next page view re-enqueues them.' },
+                            runState: { type: 'string', enum: ['running', 'paused'], example: 'running', description: 'Persisted, so a pause survives an API restart. There is no `stopped`: stop is pause plus discarding the queue.' },
+                            runStateChangedAt: { type: 'string', format: 'date-time', nullable: true },
+                            runStateChangedBy: { type: 'integer', nullable: true, description: 'users.user_id of whoever last changed it.' },
+                            runStateNote: { type: 'string', nullable: true, example: 'Jellyfin under load', description: 'The only place the reason for a pause is recorded.' },
+                            loopStarted: { type: 'boolean', example: true, description: 'Whether the drain loop is turning in this process. False in a process that imported the app without starting the server, which is how the test suite runs.' },
+                            draining: { type: 'boolean', example: false },
+                            inFlight: { type: 'integer', example: 1, description: 'Jellyfin streams open for extraction right now.' },
+                            concurrencyLimit: { type: 'integer', example: 3, description: 'The configured bound. Deliberately below the media server ceiling, which is shared with people watching video.' },
+                            extractorAvailable: { type: 'boolean', example: true, description: 'Whether ffmpeg and ffprobe answered. False means this API host has no decoder: extraction cannot run, and everything else still serves.' },
+                            extractorUnavailableReason: { type: 'string', nullable: true },
+                            counts: {
+                                type: 'object',
+                                properties: {
+                                    queued: { type: 'integer', example: 45 },
+                                    ready: { type: 'integer', example: 1203 },
+                                    failed: { type: 'integer', example: 7 },
+                                    permanent: { type: 'integer', example: 5, description: 'Failures retrying cannot help. Counted separately rather than as a fourth state.' },
+                                    claimed: { type: 'integer', example: 3, description: 'Queued rows an extraction currently holds. A claim lapses after a timeout, so a process that died does not strand its tiles.' },
+                                },
+                            },
+                            lastError: { type: 'string', nullable: true },
+                            lastFailure: {
+                                type: 'object',
+                                nullable: true,
+                                properties: {
+                                    observation_id: { type: 'integer', example: 100123 },
+                                    last_error: { type: 'string', example: 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.' },
+                                    at: { type: 'string', format: 'date-time', nullable: true },
+                                },
+                            },
+                        },
+                    },
+                    ThumbnailRetryResult: {
+                        type: 'object',
+                        description:
+                            'One entry per requested observation, found by `observation_id` and never by position.',
+                        properties: {
+                            thumbnails: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        observation_id: { type: 'integer', example: 100123 },
+                                        status: { type: 'string', enum: ['queued', 'ready', 'failed'], example: 'queued', description: '`queued` for work accepted. Never a terminal `ready` invented synchronously -- an accepted retry has not happened yet.' },
+                                        permanent: { type: 'boolean', example: false, description: 'True where retrying cannot help, which is why the request was refused rather than queued.' },
+                                        reason: { type: 'string', nullable: true, example: 'The observation has no keyframes, so it has no bounding box and can never have a cropped picture.' },
+                                    },
+                                },
+                            },
                         },
                     },
                     MosaicPageSet: {
@@ -2898,11 +2960,11 @@ const buildOpenApiSpec = () => {
                         type: 'object',
                         required: ['observations'],
                         description:
-                            'One shape for all three commit routes: the page as the reviewer saw it, and the marks. **`marks` is the exception set, not a selection** -- `review` flags them, `training` excludes them, and `delete` destroys them and touches nothing else. A row absent from the marks is accepted by review and training and **untouched** by delete.',
+                            'One shape for all three commit routes: the observations the commit is about, as the reviewer saw them, and the marks. **A mark carries a `kind`**: `except` flags, excludes or destroys it, and `accept` records the mode\'s accepted value for that one observation. An observation absent from `marks` is accepted by review and training and **untouched** by delete. `observations` is the set the commit is about, so a client committing only what the reviewer marked sends only those -- nothing outside the list is read, accepted or changed.',
                         properties: {
                             observations: {
                                 type: 'array',
-                                description: 'The whole page, each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.',
+                                description: 'The observations this commit is about -- the page the reviewer saw, or the subset of it they marked -- each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.',
                                 items: {
                                     type: 'object',
                                     required: ['observation_id', 'version'],
@@ -2914,13 +2976,20 @@ const buildOpenApiSpec = () => {
                             },
                             marks: {
                                 type: 'array',
-                                description: 'The exception set. Every id must be on the page. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. The delete route records no reason and refuses any.',
+                                description: 'What the reviewer marked, and what each mark means. Every id must be in `observations`. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. Only an exception takes a reason: a reason says what is wrong with an observation, so a reason on an `accept` mark is a 400. The delete route records no reason and refuses any, and refuses an `accept` mark outright because it has no accepted state.',
                                 items: {
                                     type: 'object',
                                     required: ['observation_id'],
                                     properties: {
                                         observation_id: { type: 'integer', example: 100124 },
                                         reason: { type: 'string', nullable: true, example: 'Wrong species' },
+                                        kind: {
+                                            type: 'string',
+                                            enum: ['except', 'accept'],
+                                            default: 'except',
+                                            example: 'except',
+                                            description: '`except` is the exception -- flagged, excluded or deleted. `accept` records the accepted value (`reviewed` or `promoted`) for that one observation, which is how a reviewer approves specific items without that implying anything about the rest of the page. Absent means `except`, which is what every mark meant before the field existed.',
+                                        },
                                     },
                                 },
                             },
@@ -2978,12 +3047,12 @@ const buildOpenApiSpec = () => {
                             },
                             skipped: {
                                 type: 'array',
-                                description: 'Left unwritten. **`not-found` is the only reason this API emits today** -- an id that is no longer an observations row. Imagery is not judged by the server until server-generated thumbnails exist, so no skip is ever reported for it.',
+                                description: 'Left unwritten, for one of two reasons. **`not-found`**: an id that is no longer an observations row. **`no-imagery`**: an **unmarked** row whose thumbnail is not `ready`, because accepting it would be a reviewer saying "this is right" about a picture they were never shown. A **marked** row is committed whether or not it has a picture -- flagging needs no imagery -- and the delete route is unaffected because it never touches an unmarked row.',
                                 items: {
                                     type: 'object',
                                     properties: {
                                         observation_id: { type: 'integer', example: 100126 },
-                                        reason: { type: 'string', enum: ['not-found'], example: 'not-found' },
+                                        reason: { type: 'string', enum: ['not-found', 'no-imagery'], example: 'not-found' },
                                     },
                                 },
                             },
@@ -3047,6 +3116,29 @@ const buildOpenApiSpec = () => {
                             },
                             review_id: { type: 'integer', example: 9912, description: 'The observation_reviews row this correction appended. It carries purpose "scientific", decision "corrected", and both species ids.' },
                             correctedAt: { type: 'string', format: 'date-time', example: '2026-09-09T12:00:00.000Z' },
+                        },
+                    },
+                    MosaicFacets: {
+                        type: 'object',
+                        description:
+                            'Which values each set dimension can still offer for one question. **The dimension being enumerated is excluded from its own predicate** -- a dive list narrowed by the dives already selected would only ever offer what is already selected -- while every other filter applies, the two status dimensions included, so the rail never offers a combination that returns nothing. Only dimensions that were asked for are present.',
+                        properties: {
+                            facets: {
+                                type: 'object',
+                                description: 'Keyed by dimension name: project, dive, line, sessionType, session, species, model.',
+                                additionalProperties: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            value: { description: 'What the filter takes. An integer for species, model and session; a string for the rest.', oneOf: [{ type: 'integer' }, { type: 'string' }], example: 41 },
+                                            label: { type: 'string', example: 'Bat Star', description: 'What a reviewer reads. A different column from value for species (species.comname), model (ml_models.name) and session (its own id, because a session has no name).' },
+                                            list: { type: 'string', nullable: true, example: 'Inverts', description: 'Populated for species only: which annotation list the entry belongs to. A common name identifies a species only within its list -- values below 10000 are local codes invented per list and reused -- so a question spanning two lists can offer two organisms under one label, and the client qualifies the label only when that is actually the case.' },
+                                            count: { type: 'integer', example: 812, description: 'Matching observations under the rest of the question. Free from the aggregate that groups the values, and it is what lets a client open on the most numerous species rather than on a name written into its source.' },
+                                        },
+                                    },
+                                },
+                            },
                         },
                     },
                     MosaicStatusCounts: {

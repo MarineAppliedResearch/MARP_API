@@ -67,15 +67,45 @@ function emptyState() {
  * because nobody could see the picture is a real review decision and reaches the database
  * like any other.
  */
-function noImageryBanner(count) {
+function noImageryBanner(count, retryable) {
+  /* **No button where retrying cannot help** (R13, F11). A permanent failure is refused
+     by the endpoint rather than re-queued -- an observation with no keyframes has no
+     bounding box and can never have a cropped picture -- and offering the button anyway
+     would be a way to hammer a shared media server for something that cannot exist. */
   return `
     <div class="pagestate pagestate--banner">
       <div>
         <b>None of these ${count} thumbnails arrived.</b>
-        <span>The server refetches missing imagery on its own; you can also ask again now.
-              Flagging one records that it could not be seen.</span>
+        <span>${retryable
+          ? `The server refetches missing imagery on its own; you can also ask again now.
+             Flagging one records that it could not be seen.`
+          : `None of them can be extracted &mdash; these observations have nothing to crop a
+             picture from. Flagging one records that it could not be seen.`}</span>
       </div>
-      <button type="button" class="btn" data-act="retry-thumbnails">Ask again</button>
+      ${retryable
+        ? '<button type="button" class="btn" data-act="retry-thumbnails">Ask again</button>'
+        : ''}
+    </div>`;
+}
+
+/**
+ * A commit the server refused because the rows had moved (R9).
+ *
+ * Drawn over the tiles rather than instead of them: nothing was written, the marks are
+ * still there, and the way forward is to re-read and commit again. This is **not** a
+ * refusal for being second — the last commit wins, and nothing is ever turned away for
+ * arriving after somebody else. It fires only where the annotation moved underneath the
+ * page the reviewer was looking at.
+ */
+function conflictBanner(count) {
+  return `
+    <div class="pagestate pagestate--banner pagestate--conflict">
+      <div>
+        <b>${count} observation${count === 1 ? '' : 's'} changed while you were looking.</b>
+        <span>Nothing was written for ${count === 1 ? 'it' : 'them'} and your marks are still
+              here. Re-read the page to see what changed, then commit again.</span>
+      </div>
+      <button type="button" class="btn" data-act="reread">Re-read the page</button>
     </div>`;
 }
 
@@ -98,8 +128,10 @@ export function renderGrid() {
     return;
   }
 
-  const failed = state.rows.filter((r) => r.thumbnail_status === 'failed').length;
+  const broken = state.rows.filter((r) => r.thumbnail_status === 'failed');
+  const retryable = broken.some((r) => !r.thumbnail_permanent);
   grid.innerHTML =
-    (view === 'no-imagery' ? noImageryBanner(failed) : '')
+    (state.conflicted.length ? conflictBanner(state.conflicted.length) : '')
+    + (view === 'no-imagery' ? noImageryBanner(broken.length, retryable) : '')
     + state.rows.map(tile).join('');
 }

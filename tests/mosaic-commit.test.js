@@ -104,6 +104,18 @@ const { currentDerivationBlock: derivationBlock } = require('./setup/current-der
  * declares the key without `autoIncrement` and Sequelize sends an explicit null
  * (#62).
  *
+ * **Each one is given a `ready` thumbnail** (#118 R12). Phase 6 made the server
+ * able to judge imagery: an *unmarked* row whose thumbnail is not ready is now
+ * `skipped` with reason `no-imagery` rather than accepted, because accepting it
+ * would be a reviewer saying "this is right" about a picture they were never
+ * shown. Every test in this suite is about commit semantics rather than about
+ * imagery, so its fixtures are tiles a reviewer could actually have looked at.
+ * The tests that are about the skip use {@link removeImagery} to take it away.
+ *
+ * The row says `ready` and no file is written, deliberately: the commit path
+ * reads the row and never stats the file, and asserting that is part of what
+ * keeps a page of 600 from becoming 600 filesystem calls.
+ *
  * @param {number} count - How many.
  * @returns {Promise<Array<number>>} The new ids, ascending.
  */
@@ -126,7 +138,39 @@ async function addObservations(count) {
 
     seeded.observationIds.push(...ids);
 
+    await q(
+        // `IN (:ids)` rather than `= ANY(:ids)`: a named replacement holding an
+        // array expands to `(1,2,3)`, which makes ANY a syntax error.
+        `INSERT INTO observation_thumbnails
+             (observation_id, status, permanent, filename, content_type, generation,
+              attempts, requested_at, completed_at, created_at, updated_at)
+         SELECT o.observation_id, 'ready', false,
+                o.observation_id || '-jest-commit.jpg', 'image/jpeg', 1,
+                1, NOW(), NOW(), NOW(), NOW()
+           FROM observations o
+          WHERE o.observation_id IN (:ids)`,
+        { ids }
+    );
+
     return ids;
+}
+
+/**
+ * Takes the picture away from an observation, so it has none at all (#118 R12).
+ *
+ * Deleting the row rather than failing it, because *no record* is the state a
+ * legacy observation nobody has asked about is really in -- and the commit route
+ * must treat "never asked for" and "asked for and not arrived" the same way. A
+ * separate test covers the `queued` case.
+ *
+ * @param {number} observationId - Which observation.
+ * @returns {Promise<void>}
+ */
+async function removeImagery(observationId) {
+    await q(
+        'DELETE FROM observation_thumbnails WHERE observation_id = :observationId',
+        { observationId }
+    );
 }
 
 /**
@@ -469,6 +513,157 @@ describe('the mosaic page commit (#106)', () => {
         });
     });
 
+    describe('imagery, and what may be accepted blind (#118 R12)', () => {
+
+        // Phase 6 gave the server a thumbnail state, so it can now make an
+        // imagery judgement -- and these tests can now fail, which is why the
+        // predecessor comment on SKIP_NOT_FOUND said none was written.
+
+        it('skips an unmarked row with no thumbnail record at all, with reason no-imagery', async () => {
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({ observations: [await at(a)] });
+
+            expect(res.status).toBe(200);
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+            expect(res.body.reviewed).toEqual([]);
+
+            // Nothing was written: a skip is not a quiet acceptance.
+            expect(await logFor(a)).toEqual([]);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('skips an unmarked row whose thumbnail is still queued', async () => {
+            const [a] = await addObservations(1);
+
+            await q(
+                `UPDATE observation_thumbnails
+                    SET status = 'queued', filename = NULL
+                  WHERE observation_id = :a`,
+                { a }
+            );
+
+            const res = await alice.post(REVIEW).send({ observations: [await at(a)] });
+
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+            expect(await logFor(a)).toEqual([]);
+        });
+
+        it('skips an unmarked row whose thumbnail failed permanently', async () => {
+            const [a] = await addObservations(1);
+
+            await q(
+                `UPDATE observation_thumbnails
+                    SET status = 'failed', permanent = true, filename = NULL,
+                        last_error = 'The observation has no keyframes.'
+                  WHERE observation_id = :a`,
+                { a }
+            );
+
+            const res = await alice.post(REVIEW).send({ observations: [await at(a)] });
+
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+        });
+
+        it('commits a MARKED row with no picture, because flagging needs no imagery', async () => {
+            // F15: accepting needs imagery, flagging does not. A reviewer must be
+            // able to flag a tile precisely *because* it has no picture.
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, reason: 'No imagery' }],
+            });
+
+            expect(res.body.flagged).toEqual([{ observation_id: a, outcome: 'flagged' }]);
+            expect(res.body.skipped).toEqual([]);
+
+            const current = await currentFor(a);
+
+            expect(current).toHaveLength(1);
+            expect(current[0].decision).toBe('flagged');
+        });
+
+        it('withdraws a decision from a row with no picture', async () => {
+            // A withdrawal is a take-back rather than an acceptance, so imagery
+            // has nothing to say about it. Without this the reviewer could flag a
+            // pictureless tile and then never undo it.
+            const [a] = await addObservations(1);
+
+            await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, reason: 'No imagery' }],
+            });
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                withdraw: [a],
+            });
+
+            expect(res.body.reverted).toEqual([{ observation_id: a, outcome: 'withdrawn' }]);
+            expect(res.body.skipped).toEqual([]);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('applies the same rule on the training route', async () => {
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(TRAINING).send({ observations: [await at(a)] });
+
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+            expect(res.body.reviewed).toEqual([]);
+        });
+
+        it('leaves the delete route alone, because it never touches an unmarked row', async () => {
+            const [doomed, spared] = await addObservations(2);
+
+            await removeImagery(doomed);
+            await removeImagery(spared);
+
+            const res = await alice.post(DELETE).send({
+                observations: [await at(doomed), await at(spared)],
+                marks: [{ observation_id: doomed }],
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.body.reviewed).toEqual([{ observation_id: doomed, outcome: 'deleted' }]);
+            expect(res.body.skipped).toEqual([]);
+
+            const [gone] = await q(
+                'SELECT count(*)::int AS n FROM observations WHERE observation_id = :doomed',
+                { doomed }
+            );
+
+            expect(gone.n).toBe(0);
+        });
+
+        it('divides one page between accepted, flagged and skipped', async () => {
+            // The realistic shape: a page where some tiles have pictures and some
+            // do not, committed in one request. Per-observation atomicity means
+            // the ones with pictures still land.
+            const [withPicture, marked, without] = await addObservations(3);
+
+            await removeImagery(without);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(withPicture), await at(marked), await at(without)],
+                marks: [{ observation_id: marked, reason: 'Wrong species' }],
+            });
+
+            expect(res.body.reviewed).toEqual([{ observation_id: withPicture, outcome: 'reviewed' }]);
+            expect(res.body.flagged).toEqual([{ observation_id: marked, outcome: 'flagged' }]);
+            expect(res.body.skipped).toEqual([{ observation_id: without, reason: 'no-imagery' }]);
+        });
+    });
+
     describe('the page commit (R2, R3, R5, R6)', () => {
 
         it('accepts what is unmarked and flags what is marked', async () => {
@@ -556,6 +751,178 @@ describe('the mosaic page commit (#106)', () => {
             expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'not-found' }]);
             expect(res.body.reviewed).toEqual([]);
             expect(res.body.conflicted).toEqual([]);
+        });
+    });
+
+    describe('a mark carries a kind, and accept is the new one (#126 A5)', () => {
+
+        it('accepts only the marked when every observation in the request is marked', async () => {
+            // How the client's main button commits a selection without a new field:
+            // `observations` is the set the commit is about, so naming only the marked
+            // rows means nothing else is read, accepted or changed. The other two
+            // observations here are the page the reviewer was looking at and did not
+            // touch, and the point is that this request cannot reach them.
+            const [a, b, c] = await addObservations(3);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(b)],
+                marks: [{ observation_id: b, kind: 'accept' }],
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.body.reviewed).toEqual([{ observation_id: b, outcome: 'reviewed' }]);
+            expect(res.body.flagged).toEqual([]);
+
+            expect(await currentFor(a)).toEqual([]);
+            expect(await currentFor(c)).toEqual([]);
+            expect((await currentFor(b))[0].decision).toBe('reviewed');
+        });
+
+        it('records an accept mark as reviewed and an except mark as flagged, in one request', async () => {
+            const [a, b] = await addObservations(2);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a), await at(b)],
+                marks: [
+                    { observation_id: a, kind: 'accept' },
+                    { observation_id: b, kind: 'except', reason: 'Duplicate' },
+                ],
+            });
+
+            expect(res.status).toBe(200);
+            expect(res.body.reviewed).toEqual([{ observation_id: a, outcome: 'reviewed' }]);
+            expect(res.body.flagged).toEqual([{ observation_id: b, outcome: 'flagged' }]);
+            expect((await currentFor(b))[0].reason).toBe('Duplicate');
+            expect((await currentFor(a))[0].reason).toBeNull();
+        });
+
+        it('promotes an accept mark on the training route', async () => {
+            const [a, b] = await addObservations(2);
+
+            const res = await alice.post(TRAINING).send({
+                observations: [await at(a), await at(b)],
+                marks: [
+                    { observation_id: a, kind: 'accept' },
+                    { observation_id: b, kind: 'except', reason: 'Occluded' },
+                ],
+            });
+
+            expect(res.body.reviewed).toEqual([{ observation_id: a, outcome: 'promoted' }]);
+            expect(res.body.flagged).toEqual([{ observation_id: b, outcome: 'excluded' }]);
+        });
+
+        it('reads a mark with no kind as the exception, which is what every mark meant before', async () => {
+            // The compatibility this rests on. A client that has not been told about
+            // kinds sends `{observation_id, reason}` and must still flag.
+            const [a, b] = await addObservations(2);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a), await at(b)],
+                marks: [{ observation_id: b, reason: 'Duplicate' }],
+            });
+
+            expect(res.body.flagged).toEqual([{ observation_id: b, outcome: 'flagged' }]);
+            expect(idsIn(res.body.reviewed)).toEqual([a]);
+        });
+
+        it('skips an accept mark on a row with no imagery, rather than accepting it blind', async () => {
+            // The client refuses this mark at click time (#126 A4). This is the same
+            // rule at the end that has to hold: accepting is a reviewer saying "this is
+            // right" about a picture they were never shown, and a mark cannot make that
+            // true. Flagging the same row still works, which is the older rule.
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, kind: 'accept' }],
+            });
+
+            expect(res.body.skipped).toEqual([{ observation_id: a, reason: 'no-imagery' }]);
+            expect(res.body.reviewed).toEqual([]);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('still flags a row with no imagery when the mark is the exception', async () => {
+            const [a] = await addObservations(1);
+
+            await removeImagery(a);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, kind: 'except', reason: 'No imagery' }],
+            });
+
+            expect(res.body.flagged).toEqual([{ observation_id: a, outcome: 'flagged' }]);
+            expect((await currentFor(a))[0].decision).toBe('flagged');
+        });
+
+        it('refuses an accept mark on the delete route, which has no accepted state', async () => {
+            const [a] = await addObservations(1);
+
+            const res = await alice.post(DELETE).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, kind: 'accept' }],
+            });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error.message).toMatch(/records no acceptance/);
+            // Refused before any write, so the observation is still there.
+            const rows = await q(
+                'SELECT observation_id FROM observations WHERE observation_id = :a', { a }
+            );
+
+            expect(rows).toHaveLength(1);
+        });
+
+        it('refuses a reason on an accept mark, because a reason says what is wrong', async () => {
+            const [a] = await addObservations(1);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, kind: 'accept', reason: 'Wrong species' }],
+            });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error.message).toMatch(/only an exception takes one/);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('refuses a kind it does not recognise rather than guessing at it', async () => {
+            const [a] = await addObservations(1);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, kind: 'maybe' }],
+            });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error.message).toMatch(/is not a kind of mark/);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('lets an accept mark take back a flag, and reports nothing as reverted', async () => {
+            // `reverted` means an *acceptance* was taken back. The other direction is an
+            // ordinary acceptance replacing a flag, under last-write-wins.
+            const [a] = await addObservations(1);
+
+            await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, reason: 'Duplicate' }],
+            });
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, kind: 'accept' }],
+            });
+
+            expect(res.body.reviewed).toEqual([{ observation_id: a, outcome: 'reviewed' }]);
+            expect(res.body.reverted).toEqual([]);
+            const current = (await currentFor(a))[0];
+
+            expect(current.decision).toBe('reviewed');
+            expect(current.reason).toBeNull();
         });
     });
 

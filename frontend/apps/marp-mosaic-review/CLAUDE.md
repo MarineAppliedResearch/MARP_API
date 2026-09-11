@@ -39,8 +39,9 @@ lets a reviewer return to a page and see, and undo, what they submitted. The
 query-derived decision is about *reload* — on a fresh load the filters apply normally and
 finished work is expected to have left the view. Do not remove the pin.
 
-Nothing in this app talks to MARP_API yet, and no review or training column exists in
-the database. `src/data.js` is the seam where that arrives, in phase 8.
+**The app talks to MARP_API.** `src/api/` is the seam; `src/data.js` survives as a
+**test** fixture and nothing else. Which backing is in force is `src/backend.js`, and the
+application never points it at the fixture — see *The two backings* below.
 
 ### How this app is worked on
 
@@ -67,9 +68,10 @@ more effective at finding defects than the suite, so:
 ## The layers, and which way they point
 
 ```
-ui/  ──calls──▶  store.js  ──asks──▶  model/     (pure rules)
+ui/  ──calls──▶  store.js  ──asks──▶  model/       (pure rules)
                     │
-                    └────asks──▶  data.js        (the only backend knowledge)
+                    └────asks──▶  backend.js  ──▶  api/     (the real thing)
+                                       └────────▶  data.js  (the fixture, tests only)
 ```
 
 Dependencies point one way only. Nothing lower ever imports something higher.
@@ -77,8 +79,9 @@ Dependencies point one way only. Nothing lower ever imports something higher.
 | Layer | May touch | Must never touch |
 | --- | --- | --- |
 | `model/` | its own arguments | the DOM, the network, `state` |
-| `data.js` | the fixture, later `fetch` | the DOM, `state`, `model/` |
-| `store.js` | `model/`, `data.js`, `state` | the DOM |
+| `api/` | `fetch`, a URL, a header, a status | the DOM, `state` |
+| `data.js` | the fixture | the DOM, `state` |
+| `store.js` | `model/`, `backend.js`, `state` | the DOM, a URL, a status |
 | `ui/` | `state`, `actions`, the DOM | `state` **as a writable thing** |
 
 **`model/` touches neither the DOM nor the network.** That is what makes the rules
@@ -91,12 +94,64 @@ and its test belongs in `tests/unit/`.
 `state.anything` has broken the one rule that keeps rendering predictable. Call an
 action instead.
 
-**`data.js` is the only file that knows where observations come from.** Everything else
-goes through `MarpData.query()`, `commitPage()`, `setSpecies()` and friends, which
-already return the shapes the API is expected to return — including the per-observation
-`reviewed` / `flagged` / `skipped` / `reverted` results that bulk operations require.
-Phase 8 of #68 replaces this file with `src/api/` and claims that nothing above it
-changes. Every rule that leaks upward out of this file makes that claim less true.
+**`src/api/` is the only place that knows a URL, a header, an HTTP status or a JSON body
+shape.** `grep -nE "/api/|fetch\(" src/` outside `src/api/` finds nothing, and that is a
+requirement rather than tidiness — it is what let the fixture be swapped for the endpoint
+without rewriting the interface.
+
+### The two backings
+
+`src/backend.js` holds one of them, and the **selection is per entry point, never a
+runtime flag the application can be subject to**:
+
+- **`index.html` imports the store and nothing else**, so the app is on `src/api/` however
+  it is launched. It has no reference to the fixture to reach for.
+- **`tests.html`** — the contract tier — installs the fixture explicitly. Those checks are
+  about the *rules* and they drive `failNextCommit`, `slowNextCommit`, `breakThumbnails`,
+  `bumpVersion` and `reload`; none of that is expressible against a real server.
+- **the unit tier** imports `src/data.js` directly, as it always has.
+
+There is **one exception and it is deliberately loud**: `?backing=fixture` puts the app on
+the fixture, paints a permanent `FIXTURE — not the API` banner, and stamps
+`documentElement.dataset.backing`. The render tier passes it and asserts the banner, so a
+run cannot grade the fixture while claiming to be the API.
+
+**Neither the flag nor the fixture is coming out**, and this paragraph used to say they
+would "when the seeded database lands". The database landed and the conclusion was wrong
+(#132): the fixture tier is the *fast loop* — it runs every test at two viewports in under a
+minute, and it can break a commit on purpose, which no real server will do for you. What
+changed is that it is no longer the **only** browser tier. The `api` project runs against a
+real server, and it exists for the defects the fixture masks by construction — see *The API
+tier* below.
+
+The cost of two backings is that they can drift, and the answer is that **they present the
+same method set**: `backend.js` writes the list out rather than proxying, so a method one
+of them lacks fails by name.
+
+### Two names for a species, and they are not interchangeable
+
+`model/row.js` is the whole rule and it is worth reading before touching a caption:
+
+- **`comname`** is the label the species list entry carried **when the annotator chose
+  it**. A correction never rewrites it. Keeping it frozen is what makes the drift from
+  `species_id` auditable rather than silently tidied away.
+- **`species_comname`** is the **current** catalogue name of whatever `species_id` now
+  points at.
+
+So drawing `comname` shows the old animal for ever on any corrected observation, while the
+species *filter* — which is `species_id` — matches the new one. The tile draws
+`currentSpeciesName(row)`. The "was X" chip draws `state.changed`, and **only a correction
+made in this session**: making legacy drift visible is a behaviour change rather than a
+port, and that was decided against.
+
+### The row's neutral state is null
+
+`review_decision` and `training_decision` carry `null` for "nobody has decided" — the
+absence of a projection row. The **filter** vocabulary still spells that `'unreviewed'` and
+`'undecided'`, because that is what the endpoint's filters take and what the rail's counts
+are keyed by. `STATUS_DIMENSIONS` declares both and `dimensionState` is the one place they
+are reconciled. Comparing a filter value against a row column directly is the mistake, and
+it passed for months because the fixture invented a string for the neutral state.
 
 ## How a gesture becomes a render
 
@@ -127,7 +182,7 @@ bugs. `ui/tile.js` derives all four; none of them is stored on the row.
 
 | | What it is | Lives in |
 | --- | --- | --- |
-| **marked** | what this reviewer has marked but not committed | `state.marks`, transient |
+| **marked** | what this reviewer has marked but not committed, and **which of the two things they marked** | `state.marks`, transient |
 | **existing** | what the record already carried before this reviewer arrived | the row's own status columns |
 | **outcome** | what the last commit just did | `state.outcomes`, per commit, per mode |
 | **borrowed** | what another workflow's dimension says about the same observation | the row's other status column, drawn as `.rtag` |
@@ -139,9 +194,35 @@ otherwise the click appears to do nothing. A fourth derived state, *taking back*
 the gap: the record still carries the exception, the reviewer has removed the mark, and
 nothing is written until the next commit.
 
-**The marks are the page's exception set — not a scratchpad.** At commit, whatever is
-marked becomes the exception and whatever is not becomes accepted. Three rules follow,
-and all three were bugs before they were rules:
+**A mark carries a kind, and there are two of them** (#126). `except` is what a mark has
+always meant — flagged, excluded, deleted — and it is what a left click records and what
+`seedMarks` seeds. `accept` is the other one: a right click on a pointer, a **double tap**
+on a touch screen, recording the mode's accepted value for that one tile and saying nothing
+about any other. `markKind()` defaults an absent kind to `except`, so every rule written
+before this went on meaning what it meant.
+
+The kind fits **inside** the tile's precedence rather than beside it: a mark still outranks
+an outcome, which still outranks the record, and the kind only decides what the mark itself
+draws. `.badge` stays exactly one element per tile, and an accept badge carries no
+`data-badge` — the panel chooses a flag or exclusion reason and an acceptance has nothing in
+that vocabulary to say. An accept mark is **refused at click time on a tile with no
+picture**, in its own `.refusal` slot that can never reach the badge: accepting is the
+reviewer saying "I looked at this", which they cannot have done without seeing it.
+
+**There are two commit buttons, and they act on different things** (#126). The main one
+commits **only what the reviewer marked by hand in this sitting**, each tile by its own
+kind — `state.touched` is the "by hand" half and it is not a nicety, because the page still
+arrives with the record's flags already marked and `observation_reviews` records a reviewer
+per row. It sends only the marked rows as `observations`, which is how "commit just these"
+is expressible in the existing contract with no new field. **It pins nothing and marks no
+page committed**: `page.pinnedIds` becomes the query's `exclude` set, so pinning there would
+take every untouched tile on the page out of the reviewer's remaining work without saying
+so. The smaller button to its right is the page sweep, unchanged.
+
+**The sweep still treats the marks as the page's exception set — not a scratchpad.** At a
+sweep commit, whatever is marked as the *exception* becomes the exception and everything
+else becomes accepted, an accept mark included. Three rules follow, and all three were bugs
+before they were rules:
 
 - A page arrives with its existing exceptions **already marked** (`page.seedMarks`).
   Without that, committing a page holding flags that nobody touched silently cleared
@@ -292,10 +373,25 @@ mode's display of it, and the next query reads the record back.
 Overlapping queries land out of order otherwise, and the screen shows an older result
 than the one that was asked for last.
 
-**A committed page keeps its membership.** `state.pinnedIds` holds the exact ids that
-were on screen, and `refresh()` fetches those by id rather than re-running the filter.
-Returning to a page must show what was submitted, not whatever the filter now matches.
-This is why `data.js` has `byIds()` at all.
+**A committed page keeps its membership, and it costs no request.** `state.pageMembers`
+holds the exact ids that were on screen and `refresh()` serves them from the cache —
+`cache.rowsFor(ids)`, and `evict` never gives up a row a pinned page needs. Returning to a
+page must show what was submitted, not whatever the filter now matches.
+
+There is **no by-ids endpoint and there does not need to be**: the design asked for one and
+the capability already existed. If the cache ever cannot serve a pinned page the pin is
+dropped, a named action fires, and the ordinary query runs — better than an empty grid, and
+visible rather than silent.
+
+**A retry cannot conjure a picture.** The retry endpoint answers `queued` and never a
+synchronous `ready`; what turns a queued tile into a picture is the poll, which re-reads
+the visible page on a backoff and notifies **once per round**. A permanent failure is
+refused rather than re-queued, and the client learns `permanent` from the retry *answer* —
+never from a row, which has never carried it.
+
+**A conflict is not a refusal for being second.** The last commit wins, always. `conflicted`
+fires only where a row moved *underneath the page the reviewer was looking at*; nothing was
+written, the marks are kept, and the page offers to re-read.
 
 **A committed page is not finished.** The reviewer can take a flag back and commit
 again. Anything that treats a commit as terminal — clearing marks, locking tiles,
@@ -337,6 +433,14 @@ of the scientific reasons so the record says why.
 a page into what will be accepted, flagged and skipped; the button shows that number, is
 disabled when a commit would do nothing, and says how many will be skipped when they
 differ. `commitCount` alone was enough only while every row was assumed to have imagery.
+Since #126 there are two buttons and `selectionOutcome` is the main one's half of that,
+answering in the same shape so `renderCommits` draws both through one path.
+
+**Two buttons do not fit a phone footer at full length, and `.app` clips rather than
+scrolls.** So each button carries two wordings — `.lw` and `.sw`, long and short — and the
+media query picks one; both carry the count, because that is what "the button says what it
+will do" means. Reading the viewport in JavaScript instead would make the label depend on
+when a render happened to run.
 
 **A page has a state, and `pageState` names it.** Empty, filtered-out, no-imagery,
 partial-imagery, ready. Named in `model/` rather than inferred where it is drawn, so the
@@ -366,6 +470,7 @@ irreversible action that is not otherwise gated.
 | a mode | `model/modes.js` (rules), `styles/app.css` (`body[data-mode]` hue), `index.html` (the selector) |
 | a filter | one entry in `model/dimensions.js`. Nothing else — the rail, the query, the counts, the collapsed-rail badge and the address all read the declaration. If it ever needs a second place, the refactor has regressed |
 | a gesture | `ui/mount.js` listener → new action in `store.js` → rule in `model/` |
+| a kind of mark | `MARK_*` in `model/modes.js`, then the badge branch in `ui/tile.js` and the button's rule beside `selectionOutcome` |
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
 | a keyboard shortcut | one entry in `SHORTCUTS` in `model/keys.js`, then a case in `runShortcut` in `ui/mount.js`. The hint draws itself on any control the id matches |
 | a page state | `pageState` in `model/modes.js`, then `ui/grid.js` |
@@ -414,15 +519,24 @@ redone. `MarpData.failNextCommit()` exists only so that path can be tested.
 
 ## The test tiers, and which one catches what
 
-Four tiers plus the walkthrough videos. They fail in genuinely different ways, and
+Five tiers plus the walkthrough videos. They fail in genuinely different ways, and
 choosing the wrong one is how bugs ship.
 
 | Tier | Command | Catches | Cannot catch |
 | --- | --- | --- | --- |
 | Parse | `npm run lint` | a file that will not parse | anything else |
-| Unit | `npm run test:unit` | the rules in `model/` — per mode, per commit | anything rendered |
+| Unit | `npm run test:unit` | the rules in `model/`, and **what reaches the wire** | anything rendered |
 | Contract | part of `test:e2e` | store behaviour against the requirements in #68, by name | whether it was drawn |
 | Render | `npm run test:e2e` | badges actually drawn, panels on-screen, colours, no console errors | meaning |
+| API | `--project=api`, see below | what a **real server** does and the fixture does not | anything needing a broken backing |
+
+**`tests/unit/api-requests.test.mjs` is the tier that can see a serialisation defect**, and
+every assertion in it goes through `JSON.parse(JSON.stringify(body))`. That is not
+pedantry: `JSON.stringify(new Set([1,2,3]))` is `{}` and `JSON.stringify(new Map(...))` is
+`{}` too, so `deepEqual` on the request *object* passes while the wire carries nothing.
+An exclusion set left this client as an empty object for months — the endpoint excluded
+nothing, every committed page came back among the pages still to do, and the arithmetic on
+screen stayed plausible throughout. **Assert the serialised body, never the argument.**
 
 `npm test` runs all of them. `npm run test:unit` runs the parse check first.
 
@@ -463,6 +577,58 @@ size — the store was correct every time. **If a fix is about what appears, the
 belongs in Playwright.** Reporting a fix verified at a tier that structurally cannot
 observe it is how several defects got reported twice.
 
+### The API tier
+
+`--project=api` runs `tests/api/` in a real browser against a **real MARP API**, with a real
+session, and no fixture anywhere in it. It is opt-in on `MARP_API_BASE`, and asking for the
+project without it is a loud refusal rather than *Project "api" not found*.
+
+```bash
+npm start                                   # from the repository root, on a port of your own
+set -a; . .marp/local/<your>.env; set +a    # the reviewer login, git-ignored
+MARP_API_BASE=http://localhost:<port> npx playwright test --project=api
+```
+
+`tools/api-session.mjs` is a `globalSetup` that signs in and writes a Playwright storage
+state, because `/apps/marp-mosaic-review` is session-gated in `app.js` and the app is not
+even served without one. The login is created by `scripts/create-review-user.js` and needs
+`observations:read`, `observations:write` and `species:read`; `MARP_REVIEW_USERNAME` and
+`MARP_REVIEW_PASSWORD` are how it is passed, and it is a credential, so it lives in
+`.marp/local/` and never in a tracked file.
+
+**Why a fifth tier rather than more render tests.** `src/data.js` is not a small API, it is a
+*different* one — it writes the row's own status column in place when a page is committed,
+and the endpoint never does that: a decision is a projection row, the row is served from a
+cache, and a commit deliberately invalidates nothing. So anything living in the gap between
+what a commit recorded and what the row still says is invisible on the fixture at every tier.
+#130, #124's F6 and #124's F8 were all that shape, and so is the take-back defect this tier
+was built for. The first answer to it was a fixture affordance that *simulated* the endpoint
+not writing back, and that was rejected on 2026-09-11: *"if the fixture doesn't trigger the
+error and the actual system does, that doesn't make any sense."* A better fake is not the fix
+for damage done by a fake.
+
+**Three rules, and they are not negotiable, because this tier writes to a real database.**
+The only one available is the development corpus — three GPU inference runs over real dives,
+real thumbnails, and real review decisions that are the evidence behind recorded
+walkthroughs, with nothing to restore from until MARP_API#125:
+
+- **Touch as few rows as the assertion needs, and know which.** `tests/api/take-back.spec.mjs`
+  filters to a species with exactly one observation, so the page it sweeps holds one row
+  rather than fifty — and it *checks* that, failing with an explanation rather than
+  committing rows it never inspected.
+- **Restore what you changed, in a `finally`, through the API.** A failed assertion must
+  still put the record back. `withdraw` on the commit route deletes the projection row, and
+  the absence of a row is what `undecided` means, so an observation nobody had decided about
+  goes back to exactly that.
+- **Every test asserts `data-backing`.** No `?backing=fixture` is injected here — that is a
+  `beforeEach` in `tests/e2e/render.spec.mjs`, and this project's `testDir` does not include
+  it — but asserting the backing is what makes a run unable to grade a fixture and report it
+  as the API.
+
+It is **not** part of the loop and not in `npm test`: it needs a server, a database and a
+login, and a missing one of those must fail rather than skip. Desktop viewport only — what it
+proves is about what gets written and read back, not about layout.
+
 ### Where a new test goes
 
 - A rule — what a mark means, what a commit does, how filters nest → `tests/unit/`,
@@ -472,6 +638,8 @@ observe it is how several defects got reported twice.
   check calls `reset()` first, which reloads the fixture so checks cannot contaminate
   one another.
 - Anything visible → `tests/e2e/render.spec.mjs`.
+- Anything the **fixture cannot be wrong about the way the endpoint is** → `tests/api/`, and
+  read *The API tier* above first: it writes to the corpus, so it restores what it touches.
 
 **The locator trap.** A Playwright locator is re-resolved on every use, so a selector
 that describes a *state* stops matching the moment the state changes:
@@ -534,6 +702,51 @@ in `npm test`. `playwright.config.mjs` leaves the `walkthrough` project out of t
 entirely unless something names it — a bare `playwright test` used to pull it in, which
 turned a ninety-second loop into four and a half minutes and recorded videos nobody had
 asked for.
+
+**A walkthrough is for the human to watch. It is not automated testing, and it must never
+be counted as coverage.** Settled again on 2026-09-11: *"walkthrough tests are for me to
+review, those aren't for automated testing."*
+
+So a walkthrough is never the evidence that something works, never cited in place of a
+test, and never added to make a tier look complete. If a behaviour needs proving, it needs
+a test at a tier that can observe it; the walkthrough is what the user watches afterwards
+to decide whether he likes it. The assertions inside a scenario exist for one narrow
+reason — so a broken app fails instead of producing a convincing film of something that
+does not work — and that is quality control on the film, not coverage of the feature.
+
+Two consequences that are easy to get wrong:
+
+- **A walkthrough runs on test data. Never the corpus.** Settled 2026-09-11: *"the narrated
+  walkthrough should only happen on test data — we're not doing actual data work during
+  these times, it's so I can review development work."*
+  A recording signs in as a real reviewer and commits real decisions, so pointed at the
+  corpus it **writes to the scientific record while demonstrating a feature**. That is a
+  defect, not a side effect: 60 review rows landed in the development corpus during one
+  recording on 2026-09-11 and are still there, indistinguishable from decisions a person
+  made on purpose.
+  The recording still has to *do* the review — a film of a review tool that reviews nothing
+  is worthless — so the fix is the database it does it to, not the doing. Point it at a
+  disposable copy: `marp db up --port` plus `marp db load` (#125) makes one in a couple of
+  commands, and #132 wants the same thing for the browser tier.
+- **#142's corpus guard cannot see any of it.** That guard runs inside Jest, and a
+  walkthrough is Playwright. **Do not "fix" that by pulling walkthroughs into the guarded
+  path or into `npm test`** — they are not tests, and putting them there would both slow
+  the loop and start recording videos nobody asked for, which is exactly what
+  `playwright.config.mjs` excludes the project to prevent.
+
+**And a walkthrough never belongs in a verification plan.** It is not a verification step,
+it does not appear in `.marp/verification.md`, and no plan proposes one — *"a walkthrough
+video is just supposed to be something I specifically ask for"* (2026-09-10). The user asks
+for one when he wants to watch something; that is the whole of when they happen.
+
+The confusion had a cause worth naming, because a sentence alone would not have fixed it:
+`.marp/verification.template.md` carried a `## Walkthrough videos` heading, so every plan
+written from the template was invited to promise a video nobody had requested. **The heading
+is gone from the template**, in this repository and in the umbrella, and a comment in its
+place says not to add it back. That is the check; this paragraph is the reason.
+
+None of that weakens the rule below — a scene still has to assert what it narrates. That is
+about not filming a broken app, not about a video being evidence that a phase is done.
 
 **A walkthrough must never be the only thing asserting a behaviour.** Its job is to show
 the user that a new feature works; every claim a scene makes has to already be proved by

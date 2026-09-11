@@ -13,6 +13,18 @@ walkthrough({
   test,
   expect,
   scenarios,
+  /**
+   * The address the run opens on. `./` is the bare address and therefore the default
+   * question, which is what every existing scenario wants.
+   *
+   * It is overridable because the default question is not answerable everywhere:
+   * `DEFAULT_FILTERS.species` is a documented placeholder holding the *fixture's* Bat Star
+   * key until A10(b) lands, so against any other database the bare address opens on an
+   * empty mosaic — and the runner settles the page before the first scene, so no scene is
+   * early enough to fix it. A scenario recorded against the API names its own opening
+   * question instead.
+   */
+  url: process.env.MARP_WALKTHROUGH_URL || './',
   async settled({ page }) {
     await expect(page.locator('.tile').first()).toBeVisible();
     await expect(page.locator('.tile.skeleton')).toHaveCount(0);

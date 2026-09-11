@@ -3948,6 +3948,12 @@
             "nullable": true,
             "example": "Fish"
           },
+          "species_list": {
+            "type": "string",
+            "nullable": true,
+            "example": "Inverts",
+            "description": "Which annotation list this observation may be corrected against, resolved on the server from the owning session type. **The session's list, not the current species' list**: scoping a correction picker by whatever the observation is classified as now means an observation corrected onto the wrong list only ever offers candidates from that wrong list, and the mistake can never be corrected back. Null where the session type names no list -- `Other` genuinely does not say which was in use -- and for those a client has to search every list instead."
+          },
           "project_name": {
             "type": "string",
             "nullable": true,
@@ -3970,6 +3976,12 @@
             "nullable": true,
             "example": null
           },
+          "review_reviewer_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 42,
+            "description": "users.user_id of whoever made the current scientific decision, or null where there is none. **An id and not a name**, deliberately: the permission catalog separates reports:read from observations:read because it exposes who did how much work, and this row carries no processor_name for the same reason. A client compares it with its own authenticated principal to draw \"by you\", which needs no name at all. Without it the client's \"REVIEWED by you\" badge, the borrowed tag's attribution and its byMe derivation all silently became nothing, because it was reading four columns this row has never carried."
+          },
           "training_decision": {
             "type": "string",
             "nullable": true,
@@ -3986,6 +3998,12 @@
             "nullable": true,
             "example": null
           },
+          "training_reviewer_id": {
+            "type": "integer",
+            "nullable": true,
+            "example": 42,
+            "description": "users.user_id of whoever made the current training decision, or null where there is none. An id and not a name, for the same reason as review_reviewer_id."
+          },
           "keyframe_count": {
             "type": "integer",
             "example": 8,
@@ -3995,6 +4013,178 @@
             "type": "integer",
             "nullable": true,
             "example": 3457
+          },
+          "thumbnail_status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "ready",
+              "failed"
+            ],
+            "example": "ready",
+            "description": "Whether the tile has a picture. **Never null**: an observation with no record at all reports `queued` rather than an absence the client has no rendering for. Two things make that honest rather than a promise nobody keeps -- a thumbnail is enqueued when its keyframes are written, and serving this page enqueues anything on it that still has no record. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page."
+          }
+        }
+      },
+      "ThumbnailExtractorStatus": {
+        "type": "object",
+        "description": "What the thumbnail extractor is doing. The **persisted** run state and the **live** loop state are separate questions and both are answered: whether somebody has paused extraction, and whether it is actually turning on this host.",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "pause",
+              "resume",
+              "stop"
+            ],
+            "example": "pause",
+            "description": "Present only on a control response: the action just applied."
+          },
+          "discarded": {
+            "type": "integer",
+            "example": 0,
+            "description": "Present only on a control response: how many queued rows `stop` discarded. Those observations become simply absent again, and the next page view re-enqueues them."
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "paused"
+            ],
+            "example": "running",
+            "description": "Persisted, so a pause survives an API restart. There is no `stopped`: stop is pause plus discarding the queue."
+          },
+          "runStateChangedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "runStateChangedBy": {
+            "type": "integer",
+            "nullable": true,
+            "description": "users.user_id of whoever last changed it."
+          },
+          "runStateNote": {
+            "type": "string",
+            "nullable": true,
+            "example": "Jellyfin under load",
+            "description": "The only place the reason for a pause is recorded."
+          },
+          "loopStarted": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether the drain loop is turning in this process. False in a process that imported the app without starting the server, which is how the test suite runs."
+          },
+          "draining": {
+            "type": "boolean",
+            "example": false
+          },
+          "inFlight": {
+            "type": "integer",
+            "example": 1,
+            "description": "Jellyfin streams open for extraction right now."
+          },
+          "concurrencyLimit": {
+            "type": "integer",
+            "example": 3,
+            "description": "The configured bound. Deliberately below the media server ceiling, which is shared with people watching video."
+          },
+          "extractorAvailable": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether ffmpeg and ffprobe answered. False means this API host has no decoder: extraction cannot run, and everything else still serves."
+          },
+          "extractorUnavailableReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "queued": {
+                "type": "integer",
+                "example": 45
+              },
+              "ready": {
+                "type": "integer",
+                "example": 1203
+              },
+              "failed": {
+                "type": "integer",
+                "example": 7
+              },
+              "permanent": {
+                "type": "integer",
+                "example": 5,
+                "description": "Failures retrying cannot help. Counted separately rather than as a fourth state."
+              },
+              "claimed": {
+                "type": "integer",
+                "example": 3,
+                "description": "Queued rows an extraction currently holds. A claim lapses after a timeout, so a process that died does not strand its tiles."
+              }
+            }
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastFailure": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "observation_id": {
+                "type": "integer",
+                "example": 100123
+              },
+              "last_error": {
+                "type": "string",
+                "example": "The observation has no keyframes, so it has no bounding box and can never have a cropped picture."
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
+          }
+        }
+      },
+      "ThumbnailRetryResult": {
+        "type": "object",
+        "description": "One entry per requested observation, found by `observation_id` and never by position.",
+        "properties": {
+          "thumbnails": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "observation_id": {
+                  "type": "integer",
+                  "example": 100123
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "ready",
+                    "failed"
+                  ],
+                  "example": "queued",
+                  "description": "`queued` for work accepted. Never a terminal `ready` invented synchronously -- an accepted retry has not happened yet."
+                },
+                "permanent": {
+                  "type": "boolean",
+                  "example": false,
+                  "description": "True where retrying cannot help, which is why the request was refused rather than queued."
+                },
+                "reason": {
+                  "type": "string",
+                  "nullable": true,
+                  "example": "The observation has no keyframes, so it has no bounding box and can never have a cropped picture."
+                }
+              }
+            }
           }
         }
       },
@@ -4057,11 +4247,11 @@
         "required": [
           "observations"
         ],
-        "description": "One shape for all three commit routes: the page as the reviewer saw it, and the marks. **`marks` is the exception set, not a selection** -- `review` flags them, `training` excludes them, and `delete` destroys them and touches nothing else. A row absent from the marks is accepted by review and training and **untouched** by delete.",
+        "description": "One shape for all three commit routes: the observations the commit is about, as the reviewer saw them, and the marks. **A mark carries a `kind`**: `except` flags, excludes or destroys it, and `accept` records the mode's accepted value for that one observation. An observation absent from `marks` is accepted by review and training and **untouched** by delete. `observations` is the set the commit is about, so a client committing only what the reviewer marked sends only those -- nothing outside the list is read, accepted or changed.",
         "properties": {
           "observations": {
             "type": "array",
-            "description": "The whole page, each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.",
+            "description": "The observations this commit is about -- the page the reviewer saw, or the subset of it they marked -- each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.",
             "items": {
               "type": "object",
               "required": [
@@ -4083,7 +4273,7 @@
           },
           "marks": {
             "type": "array",
-            "description": "The exception set. Every id must be on the page. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. The delete route records no reason and refuses any.",
+            "description": "What the reviewer marked, and what each mark means. Every id must be in `observations`. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. Only an exception takes a reason: a reason says what is wrong with an observation, so a reason on an `accept` mark is a 400. The delete route records no reason and refuses any, and refuses an `accept` mark outright because it has no accepted state.",
             "items": {
               "type": "object",
               "required": [
@@ -4098,6 +4288,16 @@
                   "type": "string",
                   "nullable": true,
                   "example": "Wrong species"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "except",
+                    "accept"
+                  ],
+                  "default": "except",
+                  "example": "except",
+                  "description": "`except` is the exception -- flagged, excluded or deleted. `accept` records the accepted value (`reviewed` or `promoted`) for that one observation, which is how a reviewer approves specific items without that implying anything about the rest of the page. Absent means `except`, which is what every mark meant before the field existed."
                 }
               }
             }
@@ -4193,7 +4393,7 @@
           },
           "skipped": {
             "type": "array",
-            "description": "Left unwritten. **`not-found` is the only reason this API emits today** -- an id that is no longer an observations row. Imagery is not judged by the server until server-generated thumbnails exist, so no skip is ever reported for it.",
+            "description": "Left unwritten, for one of two reasons. **`not-found`**: an id that is no longer an observations row. **`no-imagery`**: an **unmarked** row whose thumbnail is not `ready`, because accepting it would be a reviewer saying \"this is right\" about a picture they were never shown. A **marked** row is committed whether or not it has a picture -- flagging needs no imagery -- and the delete route is unaffected because it never touches an unmarked row.",
             "items": {
               "type": "object",
               "properties": {
@@ -4204,7 +4404,8 @@
                 "reason": {
                   "type": "string",
                   "enum": [
-                    "not-found"
+                    "not-found",
+                    "no-imagery"
                   ],
                   "example": "not-found"
                 }
@@ -4349,6 +4550,52 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-09-09T12:00:00.000Z"
+          }
+        }
+      },
+      "MosaicFacets": {
+        "type": "object",
+        "description": "Which values each set dimension can still offer for one question. **The dimension being enumerated is excluded from its own predicate** -- a dive list narrowed by the dives already selected would only ever offer what is already selected -- while every other filter applies, the two status dimensions included, so the rail never offers a combination that returns nothing. Only dimensions that were asked for are present.",
+        "properties": {
+          "facets": {
+            "type": "object",
+            "description": "Keyed by dimension name: project, dive, line, sessionType, session, species, model.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "description": "What the filter takes. An integer for species, model and session; a string for the rest.",
+                    "oneOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "example": 41
+                  },
+                  "label": {
+                    "type": "string",
+                    "example": "Bat Star",
+                    "description": "What a reviewer reads. A different column from value for species (species.comname), model (ml_models.name) and session (its own id, because a session has no name)."
+                  },
+                  "list": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Inverts",
+                    "description": "Populated for species only: which annotation list the entry belongs to. A common name identifies a species only within its list -- values below 10000 are local codes invented per list and reused -- so a question spanning two lists can offer two organisms under one label, and the client qualifies the label only when that is actually the case."
+                  },
+                  "count": {
+                    "type": "integer",
+                    "example": 812,
+                    "description": "Matching observations under the rest of the question. Free from the aggregate that groups the values, and it is what lets a client open on the most numerous species rather than on a name written into its source."
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -8177,6 +8424,54 @@
         "responses": {
           "200": {
             "description": "Matching entries returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SpeciesWithPictures"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/species/search": {
+      "get": {
+        "summary": "Search every annotation list at once",
+        "description": "The scoped search above without the list predicate, for a client that has to offer an off-list choice deliberately -- the mosaic's correction picker, whose \"search all lists\" action is the only way to correct an observation whose session type names no list. `is_active` still applies, because widening a search does not make a retired entry offerable, and entries on no list stay out for the same reason GET /api/species/lists omits them. **Results span lists and each carries its `species_list`, which a client showing them must draw**: a common name is not unique across the seven -- 'Red sea urchin' is one entry on Inverts and a different organism on GULF_Inverts -- and a correction is written to the record. Requires the `species:read` permission.",
+        "tags": [
+          "V2 · Species"
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Substring to match."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching entries returned successfully, grouped by list then in display order.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13669,10 +13964,79 @@
         }
       }
     },
+    "/v2/mosaic/observations/facets": {
+      "post": {
+        "summary": "Which values each rail dimension can still offer for one question",
+        "description": "Answers, per set dimension, the values that are **still reachable under the filters already chosen** -- because offering a dive that returns nothing is worse than not offering it. **The dimension being enumerated is excluded from its own predicate**: a dive list narrowed by the dives already selected would only ever offer what is already selected. Every other filter applies, the two status dimensions included, so the rail never offers a combination that returns nothing. `value` is what the filter takes and `label` is what a reviewer reads, and for species, model and session those are different columns -- a species name lives on `species`, a model name on `ml_models`, and a session has no name, so its id is the honest label. `count` rides along free from the aggregate that groups the values, and the client needs it to pick a default species. `list` is populated for species only: a common name identifies a species only within its list, so a question spanning two lists can offer two organisms under one label and the client has to be able to say which. **A route of its own rather than a flag on the page response** -- that response carries an exact-key tripwire over its row shape, and one contract answering two shapes is what disables a tripwire; and the page-set request is issued up to three times per navigation by the prefetcher, where this is asked once per question, exactly as the counts route beside it is. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Mosaic"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "filters": {
+                    "$ref": "#/components/schemas/MosaicQueryFilters"
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "project",
+                        "dive",
+                        "line",
+                        "sessionType",
+                        "session",
+                        "species",
+                        "model"
+                      ]
+                    },
+                    "example": [
+                      "dive",
+                      "line",
+                      "species"
+                    ],
+                    "description": "Which dimensions to answer for. Absent means all of them. A name outside the list is a 400 rather than a silently missing key, because a client that mistypes one would otherwise render an empty control and read it as \"nothing is reachable\"."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One entry per requested dimension.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MosaicFacets"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/mosaic/observations/review": {
       "post": {
         "summary": "Commit a page of scientific review decisions",
-        "description": "Accepts every observation on the page that is not marked, and records every marked one as **flagged** with its reason -- the marks are the page's exception set, not a selection. **This is not one transaction**: outcomes are per observation, so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. **The last commit wins**: a second reviewer is not refused, their decision replaces the first as the current one, and the first decision stays in the log. Nobody is locked out of an observation by whoever got there first. An observation whose `version` has moved since the page was fetched comes back `conflicted` with reason `version` and **its decision is not recorded at all**. An unexpected failure rolls the whole request back, so a failed commit applied nothing. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "description": "Accepts every observation in the request that is not marked as an exception, and records every exception as **flagged** with its reason. A mark carries a `kind`: `except` flags it, `accept` records it as reviewed on its own. A client reviewing a whole page sends the page; a client committing only what the reviewer marked sends only those observations, and nothing outside the request is read or changed either way. **This is not one transaction**: outcomes are per observation, so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. **The last commit wins**: a second reviewer is not refused, their decision replaces the first as the current one, and the first decision stays in the log. Nobody is locked out of an observation by whoever got there first. An observation whose `version` has moved since the page was fetched comes back `conflicted` with reason `version` and **its decision is not recorded at all**. An unexpected failure rolls the whole request back, so a failed commit applied nothing. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
         "tags": [
           "V2 · Mosaic"
         ],
@@ -13715,7 +14079,7 @@
     "/v2/mosaic/observations/training": {
       "post": {
         "summary": "Commit a page of training dispositions",
-        "description": "Promotes every observation on the page that is not marked, and records every marked one as **excluded** with its reason. The scientific and training decisions are independent: this changes nothing about scientific review status. Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "description": "Promotes every observation in the request that is not marked as an exception, and records every exception as **excluded** with its reason. A mark carries a `kind`, exactly as on the review route: `except` excludes it, `accept` promotes it on its own. The scientific and training decisions are independent: this changes nothing about scientific review status. Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
         "tags": [
           "V2 · Mosaic"
         ],
@@ -13758,7 +14122,7 @@
     "/v2/mosaic/observations/delete": {
       "post": {
         "summary": "Permanently delete the marked observations",
-        "description": "**Irreversible, and it leaves no trace.** Destroys only the observations named in `marks` -- unmarked ids on the page are untouched and appear in no outcome array -- conditional on the `version` each was fetched with, so a row that moved comes back `conflicted` rather than being destroyed. There is no deletion provenance record: nothing stores that an observation existed, who removed it, or when. The delete cascades to `keyframes`, `dataset_observations`, `observation_reviews` and `observation_review_current`, **removing a training-set membership row and never its dataset**; it never removes a session, a project or a source video. `withdraw` is not accepted here. The confirmation dialog is the client's and no confirm token is required. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "description": "**Irreversible, and it leaves no trace.** Destroys only the observations named in `marks` -- unmarked ids in the request are untouched and appear in no outcome array -- conditional on the `version` each was fetched with, so a row that moved comes back `conflicted` rather than being destroyed. A mark of kind `accept` is a 400 here: deleting has no accepted state, because the opposite of destroying an observation is leaving it alone, which needs no record. There is no deletion provenance record: nothing stores that an observation existed, who removed it, or when. The delete cascades to `keyframes`, `dataset_observations`, `observation_reviews` and `observation_review_current`, **removing a training-set membership row and never its dataset**; it never removes a session, a project or a source video. `withdraw` is not accepted here. The confirmation dialog is the client's and no confirm token is required. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
         "tags": [
           "V2 · Mosaic"
         ],
@@ -13834,6 +14198,207 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/thumbnails/status": {
+      "get": {
+        "summary": "What the thumbnail extractor is doing",
+        "description": "Reports the persisted run state, the live loop state, how many streams are open against the configured limit, the queued/ready/failed/permanent counts and the last error. **The run state and the loop state are different questions** and both are answered: whether somebody has paused extraction, and whether it is actually turning. A service reported as running with `extractorAvailable: false` is an API host with no ffmpeg, which is the condition this endpoint exists to make visible rather than leave as a surprise on the first thumbnail. Reading this is `observations:read`: a reviewer legitimately wants to know whether their pictures are coming. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "responses": {
+          "200": {
+            "description": "The extractor status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailExtractorStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/thumbnails/control": {
+      "post": {
+        "summary": "Pause, resume or stop thumbnail extraction",
+        "description": "Three distinct actions, and each says what happens to work already running. **`pause`** stops *starting* new extractions and lets in-flight ones finish, because killing an ffmpeg mid-decode wastes the Jellyfin stream it already paid for. **`resume`** starts taking work again. **`stop`** is pause plus discarding the queue: the queued rows return to being simply absent, and since serving a mosaic page enqueues what it is missing, the next page view re-enqueues them -- so nothing is lost and no fourth state is needed. Rows that are already `ready` or `failed` are outcomes rather than queue and are untouched. The run state is **persisted**: a service paused because the media server was struggling must still be paused after an API restart, or the pause silently expires at the worst moment. **`admin` rather than `observations:read`**: pausing extraction affects everyone using the mosaic and throttles a media server shared with people watching video, which is not a reviewer's decision. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "pause",
+                      "resume",
+                      "stop"
+                    ],
+                    "example": "pause"
+                  },
+                  "note": {
+                    "type": "string",
+                    "nullable": true,
+                    "example": "Jellyfin under load during the afternoon dive review",
+                    "description": "Why, in the operator's words. The only place the reason for a pause is recorded."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The action taken, how many queued rows it discarded, and the resulting status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailExtractorStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/thumbnails/retry": {
+      "post": {
+        "summary": "Ask again for a page of thumbnails",
+        "description": "Takes **a page of observation ids in one request** and answers per observation, so a page-level retry is one round trip and two paints rather than one request per tile. Every entry is found by `observation_id`, never by position. It answers `queued` for work it accepted and **the status the observation now holds** for anything it refused -- never a terminal `ready` invented synchronously, which is only the fixture's shortcut. **A permanent failure is refused rather than re-queued**: an observation with no keyframes, or whose video does not resolve, can never have a picture, and without that refusal this button becomes a way to hammer a shared media server. A row that is already `ready` is left alone, because a retry is a request for a picture and one exists. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "observationIds"
+                ],
+                "properties": {
+                  "observationIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "maxItems": 600,
+                    "example": [
+                      100123,
+                      100456
+                    ],
+                    "description": "The observations to ask again for. De-duplicated server-side."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One entry per requested observation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailRetryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/{observationId}/thumbnail": {
+      "get": {
+        "summary": "Fetch an observation thumbnail",
+        "description": "Serves the cropped picture for one observation: the frame at the moment the observation was recorded, cropped to the box the detector or the annotator drew, padded, squared and resized. The ETag carries a generation that every re-extraction bumps, and `Cache-Control` **revalidates rather than being `immutable`**: the species picture routes may be immutable because a stored picture never changes and a replacement is a new record, but a thumbnail lives at a stable per-observation URL, so `immutable` would pin a stale picture in every reviewer's browser for a year. A recorded thumbnail whose file is missing answers **404 with an explanation** rather than a stack trace: `storage/` is restored separately from the database, and a thumbnail is re-derivable from the row, so this is a recoverable state rather than a lost one. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "observationId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the observation."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnail.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; the client's cached copy is current."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

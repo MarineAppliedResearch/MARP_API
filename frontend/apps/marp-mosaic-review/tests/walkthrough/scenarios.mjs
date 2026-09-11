@@ -81,6 +81,39 @@ async function markMany(page, n, gap = 280) {
   return ids;
 }
 
+/**
+ * Accept the first `n` undecided tiles with a right click, one after another (#126).
+ *
+ * The same id-pinning `markMany` needs and for the same reason: `freshTile` stops matching
+ * the instant a tile is marked, whichever kind of mark it is.
+ */
+async function acceptMany(page, n, gap = 320) {
+  const ids = [];
+  for (let i = 0; i < n; i++) {
+    const next = freshTile(page).first();
+    if (!(await next.count())) break;
+    const id = await next.getAttribute('data-id');
+    ids.push(Number(id));
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await page.waitForTimeout(gap);
+  }
+  return ids;
+}
+
+/**
+ * Take the measurement strip back off the frame.
+ *
+ * `meter` paints across the top and nothing ever removes it, so a number that was true in
+ * one scene sits over the header for the rest of the film. Here the strip says what the
+ * *first* page's commit wrote, and the second half is a different page.
+ */
+const clearMeter = (page) => page.evaluate(
+  () => document.getElementById('demoMeter')?.remove());
+
+/** What the last commit answered for each of these ids, straight off the store. */
+const outcomesFor = (page, ids) => page.evaluate(
+  (want) => want.map((id) => window.MARP.state.outcomes.get(id) ?? null), ids);
+
 async function markFirstFresh(page) {
   const id = await freshTile(page).first().getAttribute('data-id');
   const tile = page.locator(`.tile[data-id="${id}"]`);
@@ -227,6 +260,84 @@ function deepen(page, scale = 147) {
 const beat = (page, ms) => page.waitForTimeout(ms);
 const CUE = 1300;       // "right — paging forward now", spoken
 const DWELL = 2000;     // long enough to see that it landed
+
+const LOOK = 3400;      // long enough to actually study a wall of tiles, not glimpse it
+
+/**
+ * Turn one page with the pager the reviewer uses, and check it really turned.
+ *
+ * Clicked rather than driven through `actions.goToPage`: this is a walkthrough of the
+ * application, so the thing on screen has to be the control somebody would press.
+ */
+async function turnPage(page, expect, settled, to) {
+  await page.locator('[data-page="next"]').click();
+  await settled();
+  await expect(page.locator('#pageNow'), `now on page ${to}`).toHaveText(String(to));
+}
+
+/**
+ * The light check behind every "look at this" line: there are tiles, and the pictures
+ * that loaded really decoded.
+ *
+ * Deliberately *not* "every tile has a decoded picture". Thumbnails are `loading="lazy"`,
+ * so a tile below the fold legitimately has not fetched yet and would read as a defect;
+ * and a thumbnail whose file is missing removes its own `<img>` in `onerror`, so a broken
+ * picture is a tile with no image rather than an image with no size. What is asserted is
+ * that the page drew something, that something in it decoded, and that nothing which did
+ * load came out at zero by zero.
+ *
+ * The counts are logged rather than painted on screen — the reviewer is looking at the
+ * tiles, and a measurement strip across the top is exactly the clutter this scenario is
+ * meant not to have.
+ */
+async function lookedAt(page, expect, where) {
+  const tiles = await page.locator('.tile').count();
+  const imgs = await page.locator('.tile img').evaluateAll((els) => els.map((i) => ({
+    src: i.getAttribute('src'), done: i.complete, w: i.naturalWidth, h: i.naturalHeight
+  })));
+  const noimage = await page.locator('.tile[data-noimage], .tile.queued, .tile.failed').count();
+
+  expect(tiles, `${where} drew tiles`).toBeGreaterThan(0);
+  const decoded = imgs.filter((i) => i.w > 0 && i.h > 0).length;
+  expect(decoded, `${where} drew pictures`).toBeGreaterThan(0);
+  for (const img of imgs.filter((i) => i.done)) {
+    expect(img.w, `${where}: ${img.src} loaded but decoded to nothing`).toBeGreaterThan(0);
+    expect(img.h).toBeGreaterThan(0);
+  }
+
+  console.log(`  ${where}: ${tiles} tiles, ${decoded} pictures decoded, ${noimage} without one`);
+  return { tiles, decoded, noimage };
+}
+
+/**
+ * The question the store is currently asking, in the shape the endpoint takes.
+ *
+ * Everything that is not narrowing is dropped, so what goes over the wire is only what the
+ * rail actually has selected — the same thing the client sends.
+ */
+const question = (page) => page.evaluate(() => {
+  const { state } = window.MARP;
+  return {
+    filters: Object.fromEntries(Object.entries(state.filters)
+      .filter(([, v]) => v != null && (!Array.isArray(v) || v.length))),
+    sort: [{ field: state.sort.field, dir: state.sort.dir }],
+    pageSize: state.pageSize
+  };
+});
+
+/**
+ * Ask the endpoint directly, from the test rather than through the application.
+ *
+ * `page.request` carries the browser context's session cookie, so this is the reviewer's
+ * own credentials — but it is **not** the code path that drew the screen, and that is the
+ * whole point. A scene claiming the tiles came out of the database has to compare them
+ * against something that did not draw them; comparing the app to itself proves nothing.
+ */
+async function askApi(page, origin, path, data) {
+  const res = await page.request.post(`${origin}/api/v2${path}`, { data });
+  if (!res.ok()) throw new Error(`${path} answered ${res.status()}: ${await res.text()}`);
+  return res.json();
+}
 
 export const scenarios = {
 
@@ -1535,6 +1646,745 @@ export const scenarios = {
            + "will use are already built and tested behind this.",
         async act({ page, expect }) {
           await expect(page.locator('.tile').first()).toBeVisible();
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------ verifying: it is the real database */
+  /* A minute, ten scenes, one claim: this is MARP's own database and not the
+     fixture. So every scene compares the screen against a read the application did not
+     make — `askApi` goes straight to the endpoint from the test — because a scene that
+     narrates a number the app also computed has proved nothing about where it came from.
+     The spoken numbers are asserted exactly rather than loosely, so a changed corpus fails
+     the run and writes no video instead of narrating a figure that is no longer true.
+
+     Which is not hypothetical: this was recorded once against 340 observations of one
+     species, and re-recorded when the corpus reached 1,062 across three dives. Every
+     figure in it moved, and every one of them is a literal in an assertion here — so
+     the next time the corpus grows, the run fails loudly and these lines get rewritten
+     rather than going quietly stale. The species chosen is the short red gorgonian
+     because nearly all of them are on one dive, which is what makes the dive filter
+     worth showing, and because all 83 have a thumbnail ready.
+
+     It needs a running API and a signed-in session; see `tools/api-session.mjs` and
+     `MARP_API_BASE` in `playwright.config.mjs`. */
+  'verify-real-database': {
+    title: 'Verifying: the reviewer is on the real database',
+    scenes: [
+      {
+        caption: 'The real database, not the fixture',
+        say: "The Marp mosaic reviewer, on the real database — not the fixture.",
+        /* No action at all: this is the claim being made, and the app moves nowhere. */
+        async act({ page, expect, store }) {
+          store.origin = new URL(page.url()).origin;
+
+          /* `src/backend.js` stamps which backing is installed for exactly this question,
+             and `?backing=fixture` would paint a permanent banner. There is none, and the
+             fixture is not in the page at all. */
+          expect(await page.evaluate(() => document.documentElement.dataset.backing),
+            'the installed backing').toBe('api');
+          expect(await page.evaluate(() => window.MARP.backing)).toBe('api');
+          await expect(page.locator('#backingFlag')).toHaveCount(0);
+          expect(await page.evaluate(() => Boolean(window.MARP.data)),
+            'the fixture is not loaded').toBe(false);
+
+          /* And the reviewer is a principal the server named. `src/data.js` used to hold
+             the literal 'I. Travers', which was true for one person on one machine. */
+          const me = await page.request.get(`${store.origin}/api/v2/auth/me`);
+          expect(me.status()).toBe(200);
+          store.me = (await me.json()).user;
+          expect(store.me.user_id).toBeGreaterThan(0);
+
+          await meter(page, `backing: api  ·  served by the API at ${store.origin}`
+            + `  ·  signed in as ${store.me.username}`);
+        }
+      },
+      {
+        caption: 'A thousand observations, three dives',
+        say: "One thousand and sixty-two observations across three dives, and fifteen thousand keyframes.",
+        /* No action: the corpus is the subject, so nothing moves while it is described. */
+        async act({ page, expect, store }) {
+          const q = await question(page);
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+
+          /* The spoken numbers, asserted. A looser check would let the line go on saying
+             a thousand and sixty-two after the corpus had moved again. */
+          expect(body.total, 'the corpus this line names').toBe(1062);
+          expect(q.pageSize, 'fifty to a page, at this viewport').toBe(50);
+          expect(body.pageCount).toBe(22);
+
+          expect(await totalShown(page), 'the screen shows the endpoint\'s own total')
+            .toBe(body.total);
+          expect(Number(await page.locator('#pageTotal').innerText())).toBe(body.pageCount);
+
+          /* Three dives, from the facets route rather than off the page: page one holds
+             rows from all three, so a list read off the tiles would look the same. */
+          const facets = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: q.filters });
+          store.dives = facets.facets.dive.map((f) => f.value);
+          expect(store.dives.length, 'three dives, which is what the line says').toBe(3);
+          expect(facets.facets.dive.reduce((a, f) => a + f.count, 0),
+            'and between them they hold the whole corpus').toBe(body.total);
+
+          /* "Fifteen thousand keyframes" is the one number here that only the rows carry,
+             so every row is read back. Two calls, because the pages route caps a request
+             at twelve pages and twenty-two do not fit in one. */
+          const half = (from, to) => askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: Array.from({ length: to - from + 1 }, (_, i) => from + i) });
+          const all = [await half(1, 11), await half(12, 22)]
+            .flatMap((b) => b.pages).flatMap((p) => p.rows);
+          expect(all.length, 'every row of the corpus, read back').toBe(body.total);
+          const keyframes = all.reduce((a, r) => a + r.keyframe_count, 0);
+          expect(keyframes, 'the keyframes this line names').toBe(15230);
+          expect(keyframes, 'and that is over fifteen thousand of them')
+            .toBeGreaterThan(15000);
+
+          /* The strongest form of it: the tiles are the endpoint's page one, in the order
+             the endpoint put them in. */
+          const tiles = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(tiles, 'the tiles are the endpoint\'s page one, in its order')
+            .toEqual(body.pages[0].rows.map((r) => r.observation_id));
+
+          store.total = body.total;
+          store.firstPage = tiles;
+          await meter(page, `${body.total} observations · ${keyframes} keyframes · `
+            + `${body.pageCount} pages of ${q.pageSize} · dives: ${store.dives.join(', ')}`);
+        }
+      },
+      {
+        caption: 'Real frames, cut from the video',
+        say: "Every tile is a real frame, cut out of the survey video.",
+        /* No action: the pictures are already on screen, and this is what they are. */
+        async act({ page, expect, store }) {
+          const tiles = await page.locator('.tile').count();
+          const imgs = await page.locator('.tile img').evaluateAll((els) => els.map((i) => ({
+            src: i.getAttribute('src'), w: i.naturalWidth, h: i.naturalHeight
+          })));
+
+          expect(imgs.length, 'every tile on the page has a picture').toBe(tiles);
+          for (const img of imgs) {
+            expect(img.src).toMatch(/^\/api\/v2\/observations\/\d+\/thumbnail$/);
+            /* Decoded, not merely requested: a broken image is an `<img>` too. */
+            expect(img.w, `${img.src} decoded`).toBeGreaterThan(0);
+            expect(img.h).toBeGreaterThan(0);
+          }
+
+          /* And the bytes are really there, asked for outside the page. */
+          const one = await page.request.get(store.origin + imgs[0].src);
+          expect(one.status()).toBe(200);
+          expect(one.headers()['content-type']).toMatch(/^image\//);
+          expect((await one.body()).length).toBeGreaterThan(1000);
+
+          await meter(page, `${imgs.length} of ${tiles} tiles decoded · `
+            + `${imgs[0].w}×${imgs[0].h} · ${one.headers()['content-type']} from `
+            + `${imgs[0].src}`);
+        }
+      },
+      {
+        caption: 'Three dives to choose from',
+        say: "Opening the dive filter … three dives, each a different transect line.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "opening the dive filter"
+          await page.locator('[data-dim="dive"]').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toBeVisible();
+
+          const offered = await menu.locator('[data-v]').evaluateAll((els) => els
+            .filter((e) => e.dataset.v)
+            .map((e) => e.dataset.v));
+          expect(offered.slice().sort(), 'the rail offers exactly the three dives')
+            .toEqual(store.dives.slice().sort());
+
+          /* "A different line of the survey" is a claim about the data, so it is asked of
+             the endpoint rather than left to the viewer: three dives, three lines. */
+          const facets = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: (await question(page)).filters });
+          expect(facets.facets.line.length, 'one transect line per dive').toBe(3);
+
+          store.dive = 'Dive 12';
+          expect(store.dives, 'the dive this walkthrough goes on to use')
+            .toContain(store.dive);
+
+          await meter(page, `dives offered: ${offered.join('  ·  ')}  ·  `
+            + `lines: ${facets.facets.line.map((f) => f.value).join(', ')}`);
+          /* Held open. It is the only chance the viewer gets to read it, and it stays
+             open across the cut into the next scene, which is where one is chosen. */
+          await beat(page, 1600);
+        }
+      },
+      {
+        caption: 'Dive twelve — four hundred and ten',
+        say: "Choosing dive twelve … four hundred and ten observations on that one transect.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                        // "choosing dive twelve"
+          await page.locator(`.menu [data-v="${store.dive}"]`).click();
+          await page.waitForTimeout(250);
+          await page.keyboard.press('Escape');
+          await settled();
+
+          const shown = await totalShown(page);
+          expect(shown, 'four hundred and ten, which is what the line says').toBe(410);
+
+          const q = await question(page);
+          expect(q.filters.dive, 'the filter goes over the wire as the dive')
+            .toEqual([store.dive]);
+
+          const ids = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+          expect(body.total).toBe(shown);
+          expect(body.pages[0].rows.map((r) => r.observation_id),
+            'the endpoint returns this dive\'s page one, in its order').toEqual(ids);
+          /* Every row of it really is that dive — and it is a different page from the one
+             before, which is what "it narrows" actually means. */
+          expect([...new Set(body.pages[0].rows.map((r) => r.dive))]).toEqual([store.dive]);
+          expect(ids, 'a different page from the unfiltered one')
+            .not.toEqual(store.firstPage);
+
+          await meter(page, `${shown} of ${store.total} · ${store.dive}, line `
+            + `${body.pages[0].rows[0].line} · ${body.pageCount} pages · `
+            + `the endpoint returns the same ${ids.length} ids`);
+        }
+      },
+      {
+        caption: 'Five of the seven species',
+        say: "Now the species … five of the seven species are on this dive.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                        // "now the species filter"
+          await page.locator('[data-dim="species"]').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toBeVisible();
+
+          const offered = await menu.locator('[data-v]').evaluateAll((els) => els
+            .filter((e) => e.dataset.v)
+            .map((e) => ({ key: Number(e.dataset.v), label: e.textContent.trim() })));
+
+          /* Not "the species on this page": the facets route answers what is still
+             reachable under the rest of the question, which is the whole point of the
+             number — five under this dive, out of seven in the corpus. */
+          const q = await question(page);
+          const here = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: q.filters });
+          const everywhere = await askApi(page, store.origin, '/mosaic/observations/facets',
+            { filters: { ...q.filters, dive: [] } });
+          expect(here.facets.species.length, 'five on this dive').toBe(5);
+          expect(everywhere.facets.species.length, 'seven in the corpus').toBe(7);
+          expect(offered.map((o) => o.key).sort((a, b) => a - b),
+            'the rail offers exactly what the endpoint says is reachable')
+            .toEqual(here.facets.species.map((f) => Number(f.value)).sort((a, b) => a - b));
+
+          store.pick = offered.find((o) => /Short red gorgonian/i.test(o.label));
+          expect(store.pick, 'the survey found a short red gorgonian').toBeTruthy();
+          store.everywhere = everywhere.facets.species
+            .find((f) => Number(f.value) === store.pick.key).count;
+
+          await meter(page, `species on ${store.dive}: `
+            + `${here.facets.species.map((f) => `${f.label} ${f.count}`).join('  ·  ')}`);
+          await beat(page, 1600);
+        }
+      },
+      {
+        caption: 'Eighty-three gorgonians',
+        say: "Choosing the short red gorgonian … eighty-three, nearly all of them here.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                        // "choosing the short red gorgonian"
+          await page.locator(`.menu [data-v="${store.pick.key}"]`).click();
+          await page.waitForTimeout(250);
+          await page.keyboard.press('Escape');
+          await settled();
+
+          const shown = await totalShown(page);
+          expect(shown, 'eighty-three, which is what the line says').toBe(83);
+          /* "Nearly every one": eighty-three of the eighty-five in the whole corpus. */
+          expect(store.everywhere, 'the corpus holds eighty-five of them').toBe(85);
+          expect(shown / store.everywhere, 'nearly all of them on this one dive')
+            .toBeGreaterThan(0.95);
+
+          const ids = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(await page.locator('.tile .cap')
+            .evaluateAll((els) => [...new Set(els.map((e) => e.textContent.trim()))]),
+            'every tile is the species that was chosen').toEqual([store.pick.label]);
+
+          const q = await question(page);
+          expect(q.filters.species, 'the filter goes over the wire as the species key')
+            .toEqual([store.pick.key]);
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+          expect(body.total).toBe(shown);
+          expect(body.pages[0].rows.map((r) => r.observation_id)).toEqual(ids);
+          expect(body.pageCount, 'two pages of them').toBe(2);
+
+          store.q = q;
+          await meter(page, `${shown} of ${store.everywhere} in the corpus · `
+            + `species ${store.pick.key}, ${store.pick.label} · ${body.pageCount} pages · `
+            + `the endpoint returns the same ${ids.length} ids`);
+        }
+      },
+      {
+        caption: 'Page two, with no wait',
+        say: "Paging forward now … there. The last thirty-three, and nothing waited.",
+        async act({ page, expect, store }) {
+          /* A MutationObserver, because rendering here is a full re-render: a skeleton grid
+             is replaced within one notify, so anything looking afterwards cannot see it. */
+          await watchWaits(page);
+          await fromHere(page);
+
+          await beat(page, CUE);                        // "paging forward now"
+          const ms = await timedPage(page, 'next');
+
+          const ids = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(ids.length, 'the last thirty-three of the eighty-three').toBe(33);
+
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...store.q, pages: [2] });
+          expect(body.pages[0].rows.map((r) => r.observation_id),
+            'the endpoint\'s page two, in its order').toEqual(ids);
+
+          /* "Nothing waited" asserted rather than narrated, and not as a millisecond
+             budget: the loading state was never on screen at all. */
+          expect(await page.evaluate(() => window.__waits),
+            'no loading state was ever drawn').toBe(0);
+
+          store.page = ids;
+          await meter(page, `page 2 · ${ids.length} tiles in ${ms.toFixed(0)} ms · `
+            + 'no loading state drawn · the endpoint returns the same ids');
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Committing the page',
+        say: "Committing now … there. Every tile reviewed.",
+        async act({ page, expect, store }) {
+          await beat(page, 1000);                       // "committing now" — three words
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+
+          /* A record badge could be left over from an earlier recording. An **outcome**
+             cannot: `state.outcomes` is what *this* commit answered, per observation, and
+             it is keyed by `observation_id` rather than by position. */
+          const outcomes = await page.evaluate(
+            (ids) => ids.map((id) => window.MARP.state.outcomes.get(id)), store.page);
+          expect(outcomes, 'this commit answered for every tile on the page')
+            .toEqual(store.page.map(() => 'reviewed'));
+
+          await meter(page, `committed ${store.page.length} observations · `
+            + `this commit answered "reviewed" for every one of them`);
+          await beat(page, 1300);
+        }
+      },
+      {
+        caption: 'Read back out of the database',
+        say: "Read back from the database. Thirty-three rows, reviewed, by me.",
+        /* No action. The assertion is the scene: a fresh read of the record, from outside
+           the application, after the write. */
+        async act({ page, expect, store }) {
+          const body = await askApi(page, store.origin, '/mosaic/observations/pages', {
+            filters: {
+              dive: [store.dive], species: [store.pick.key], reviewStatus: ['reviewed']
+            },
+            sort: [{ field: 'confidence', dir: 'asc' }],
+            pageSize: store.page.length, pages: [1], includeTotal: true
+          });
+
+          const asc = (a, b) => a - b;
+          expect(store.page.length, 'thirty-three, which is what the line says').toBe(33);
+          expect(body.total, 'the record now holds every one of them').toBe(store.page.length);
+          expect(body.pages[0].rows.map((r) => r.observation_id).sort(asc))
+            .toEqual([...store.page].sort(asc));
+          for (const row of body.pages[0].rows) {
+            expect(row.review_decision).toBe('reviewed');
+            /* "By me" asserted rather than narrated: the reviewer id on the record is the
+               principal the server named in the first scene. */
+            expect(row.review_reviewer_id, 'reviewed by this reviewer')
+              .toBe(store.me.user_id);
+          }
+
+          await meter(page, `read back from the record: ${body.total} rows, `
+            + `review_decision "reviewed", reviewer ${store.me.user_id} — ${store.me.username}`);
+        }
+      }
+    ]
+  },
+
+  /* ------------------------------------------------------- look: just looking */
+  /* Somebody opening the reviewer cold and turning the pages, which is the whole of it.
+     It is a walkthrough — the narration says what to watch before it moves — but a small
+     one: open on the bare address, look, page forward four times, narrow to one dive,
+     look again. Nothing here proves anything about the corpus; `verify-real-database`
+     owns that and does it properly.
+
+     **It opens on the bare address deliberately.** `DEFAULT_FILTERS` used to carry the
+     fixture's species key, so a real database met an empty mosaic reading "nothing to
+     do" — the thing that looked broken to somebody who had just signed in. Opening cold
+     is now the point of the recording, so this scenario must never set
+     `MARP_WALKTHROUGH_URL`: if the bare address comes up empty again, the runner's own
+     `settled` fails before scene one and no video is written, which is correct.
+
+     The assertions are deliberately light — tiles present, the page really changed, the
+     pictures really decoded — enough that a broken app fails instead of being filmed,
+     and no corpus literals, which is what keeps this one from going stale the way the
+     verification piece has to. */
+  look: {
+    title: 'A look at the mosaic reviewer',
+    scenes: [
+      {
+        caption: 'Opened cold — no filters',
+        say: "This is the Marp mosaic reviewer, opened cold on the bare address — "
+           + "no filters, nothing chosen. Have a proper look at the wall; "
+           + "every tile is one observation.",
+        /* No movement at all. The runner has already settled the grid, so the reviewer's
+           first sight of the app is what is on screen for the whole of this line. */
+        async act({ page, expect, store }) {
+          /* The bare address narrows nothing — which is the fix this recording exists to
+             show, asserted rather than left to the eye. `reviewStatus` is excepted and is
+             not an exception to the claim: it is the *mode's* own opening status, chosen
+             by whichever workflow is selected, and it is there against the fixture too.
+             The species key that made this open empty was a dimension, and there are
+             none of those. */
+          const q = await question(page);
+          expect(Object.keys(q.filters).filter((k) => k !== 'reviewStatus'),
+            'the bare address chooses no dimension').toEqual([]);
+          expect(await totalShown(page), 'and it finds something').toBeGreaterThan(0);
+
+          store.pages = [await lookedAt(page, expect, 'page 1')];
+          store.all = await totalShown(page);
+          await beat(page, LOOK + 1200);
+        }
+      },
+      {
+        caption: 'Page two',
+        say: "Paging forward now — keep an eye on the pictures.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "paging forward now"
+          await turnPage(page, expect, settled, 2);
+          store.pages.push(await lookedAt(page, expect, 'page 2'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Page three',
+        say: "On to page three. Same again, and the tiles are there.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "on to page three"
+          await turnPage(page, expect, settled, 3);
+          store.pages.push(await lookedAt(page, expect, 'page 3'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Page four',
+        say: "Page four now. Worth a proper look — these are all different animals.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "page four now"
+          await turnPage(page, expect, settled, 4);
+          store.pages.push(await lookedAt(page, expect, 'page 4'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Page five',
+        say: "And page five. Five pages in, and it is still keeping up.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "and page five"
+          await turnPage(page, expect, settled, 5);
+          store.pages.push(await lookedAt(page, expect, 'page 5'));
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'The dives',
+        say: "Opening the dive filter — this is what the survey has to choose from.",
+        /* Opened here and chosen from in the next scene. A menu that opens and closes
+           inside one line is gone before the viewer has read it. */
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                    // "opening the dive filter"
+          await page.locator('[data-dim="dive"]').click();
+          const menu = page.locator('.menu');
+          await expect(menu).toBeVisible();
+
+          store.dives = await menu.locator('button[data-v]:not([data-v=""])')
+            .evaluateAll((els) => els.map((e) => e.dataset.v));
+          expect(store.dives.length, 'the rail offers at least one dive')
+            .toBeGreaterThan(0);
+          console.log(`  dives offered: ${store.dives.join(', ')}`);
+          /* Held open, and it stays open across the cut into the next scene. */
+          await beat(page, 2200);
+        }
+      },
+      {
+        caption: 'One dive',
+        say: "Picking the first dive — now the wall is only that transect.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                    // "picking the first dive"
+          await page.locator(`.menu button[data-v="${store.dives[0]}"]`).click();
+          await page.waitForTimeout(250);
+          await page.keyboard.press('Escape');
+          await settled();
+
+          const shown = await totalShown(page);
+          expect(shown, 'the dive really narrows it').toBeLessThan(store.all);
+          expect(shown, 'and it still finds something').toBeGreaterThan(0);
+          expect((await question(page)).filters.dive, 'the dive goes over the wire')
+            .toEqual([store.dives[0]]);
+
+          await lookedAt(page, expect, `${store.dives[0]}, page 1`);
+          console.log(`  ${store.dives[0]}: ${shown} of ${store.all}`);
+          await beat(page, LOOK);
+        }
+      },
+      {
+        caption: 'Just looking',
+        /**
+         * The last look, and it is held by the *line* rather than by a beat.
+         *
+         * `tools/walkthrough/narrate.mjs` mixes the speech over the video with ffmpeg's
+         * `-shortest`, so the film is cut where the last audio clip ends and every frame
+         * after it is thrown away — the silent cut of the first take was 55.5 seconds and
+         * the narrated one 50.7. A closing `beat` is therefore invisible, however long it
+         * is. A closing *sentence* is not, so the dwell goes in the words.
+         */
+        say: "And that is the whole of it. Nothing to do but look — "
+           + "the pictures are all there.",
+        async act({ page, expect }) {
+          await lookedAt(page, expect, 'the last look');
+        }
+      }
+    ]
+  },
+
+  /* --------------------------------------------- two commits: the two ways to commit */
+  /* Asked for on 2026-09-10, after #126 went in: *"showing how we can use both the left
+     click and the right click with the first button, or we can just do it the old way with
+     the normal left click and the second button."* So it is two halves on two pages, and
+     the point of the first half is the thing that is *not* on screen -- the forty-five
+     tiles nobody touched, still carrying nothing after the main button has been pressed.
+
+     Recorded against the real API and real data, like `look` and `verify-real-database`.
+     The assertions are deliberately light but real: the badges are the right kind on the
+     right tiles, the store's outcomes name only the marked, and the record is read back
+     from outside the application. #126's own proof is the unit, contract and render
+     tiers -- this is for watching. */
+  'two-commits': {
+    title: 'Two ways to commit a page',
+    scenes: [
+      {
+        caption: 'Two ways to commit',
+        say: "Fifty observations, two ways to commit them. Here is the new one.",
+        /* No action at all. This is the claim, and the wall is what the viewer looks at. */
+        async act({ page, expect, store }) {
+          store.origin = new URL(page.url()).origin;
+          const me = await page.request.get(`${store.origin}/api/v2/auth/me`);
+          expect(me.status()).toBe(200);
+          store.me = (await me.json()).user;
+
+          store.pageOne = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(store.pageOne.length, 'fifty on the page, which is what the line says')
+            .toBe(50);
+          /* Nothing arrives marked here: this page holds no flag the record already
+             carried, so every badge that appears from now on was put there on camera. */
+          await expect(page.locator('.tile.marked')).toHaveCount(0);
+
+          /* R5, and it is the half of #126 a still frame can show: the main button is the
+             bigger one, and the sweep sits to its right.
+             **Height, not width.** The two are within half a pixel of each other across,
+             because the sweep's wording happens to be the longer one -- what makes the
+             main button primary is that it is taller and filled while the sweep is a
+             smaller outline, which is `.commit.sweep` in the stylesheet. */
+          const main = await page.locator('#commitMarked').boundingBox();
+          const sweep = await page.locator('#commit').boundingBox();
+          expect(main.height, 'the main button is the bigger one')
+            .toBeGreaterThan(sweep.height);
+          await expect(page.locator('#commit'), 'and the sweep is the secondary one')
+            .toHaveClass(/sweep/);
+          expect(sweep.x, 'sitting to its right').toBeGreaterThan(main.x);
+        }
+      },
+      {
+        caption: 'Right click accepts',
+        say: "Right clicking these three … each one goes green. Reviewed.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "right clicking these three"
+          store.accepted = await acceptMany(page, 3);
+          expect(store.accepted.length).toBe(3);
+          for (const id of store.accepted) {
+            const tile = page.locator(`.tile[data-id="${id}"]`);
+            await expect(tile, `${id} carries an accept mark`).toHaveClass(/accept/);
+            await expect(tile.locator('.badge')).toHaveText(/REVIEWED/);
+          }
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Left click flags',
+        say: "Left clicking two more … amber. Flagged, as before.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "left clicking two more"
+          store.flagged = (await markMany(page, 2)).map(Number);
+          expect(store.flagged.length).toBe(2);
+          for (const id of store.flagged) {
+            const tile = page.locator(`.tile[data-id="${id}"]`);
+            await expect(tile, `${id} is marked`).toHaveClass(/marked/);
+            await expect(tile, `${id} is not an acceptance`).not.toHaveClass(/accept/);
+            await expect(tile.locator('.badge')).toHaveText(/FLAGGED/);
+          }
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Forty-five untouched',
+        say: "Nobody touched the other forty-five. The main button says nothing "
+           + "about them.",
+        /* No action: this is the explanation, and the app moves nowhere while it is given. */
+        async act({ page, expect, store }) {
+          const marked = new Set([...store.accepted, ...store.flagged]);
+          store.untouched = store.pageOne.filter((id) => !marked.has(id));
+          expect(store.untouched.length, 'forty-five of them').toBe(45);
+
+          /* Five badges on a wall of fifty tiles, and the button offering to act on
+             exactly those five. */
+          await expect(page.locator('.tile.marked')).toHaveCount(5);
+          await expect(page.locator('.tile .badge')).toHaveCount(5);
+          await expect(page.locator('#commitMarked')).toContainText('5 tiles');
+        }
+      },
+      {
+        caption: 'Commit Marked',
+        say: "Pressing Commit Marked … saved. Five written, the rest left alone.",
+        async act({ page, expect, store }) {
+          await beat(page, 1000);                 // "pressing Commit Marked"
+          await page.locator('#commitMarked').click();
+          await expect(page.locator('#commitMarked')).toHaveClass(/ok/);
+
+          /* What this commit answered, per observation. A badge could be left over from a
+             mark; an **outcome** is what the commit itself said, and the forty-five have
+             no entry at all -- which is the whole of #126. */
+          expect(await outcomesFor(page, store.accepted), 'the three it accepted')
+            .toEqual(['reviewed', 'reviewed', 'reviewed']);
+          expect(await outcomesFor(page, store.flagged), 'the two it flagged')
+            .toEqual(['flagged', 'flagged']);
+          expect(new Set(await outcomesFor(page, store.untouched)),
+            'and it answered nothing for every tile nobody touched').toEqual(new Set([null]));
+
+          /* Still five badges on the page: the commit painted nothing onto the rest. */
+          await expect(page.locator('.tile .badge')).toHaveCount(5);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Read back from the record',
+        say: "Read back from the database. Three reviewed, two flagged, and forty-five "
+           + "untouched.",
+        /* No action. A fresh read of the record, from outside the application, after the
+           write -- the app cannot be the only witness to what it wrote. */
+        async act({ page, expect, store }) {
+          const q = await question(page);
+          const still = await askApi(page, store.origin, '/mosaic/observations/pages',
+            { ...q, pages: [1], includeTotal: true });
+          const byId = new Map(still.pages[0].rows.map((r) => [r.observation_id, r]));
+
+          for (const id of store.untouched) {
+            const row = byId.get(id);
+            expect(row, `${id} is still in the reviewer queue`).toBeTruthy();
+            expect(row.review_decision, `${id} carries no decision`).toBe(null);
+          }
+          for (const id of store.flagged) {
+            expect(byId.get(id).review_decision, `${id} is flagged on the record`)
+              .toBe('flagged');
+            expect(byId.get(id).review_reviewer_id, 'and flagged by me')
+              .toBe(store.me.user_id);
+          }
+          for (const id of store.accepted) {
+            expect(byId.has(id), `${id} has left the unreviewed queue`).toBe(false);
+          }
+
+          /* And the three really are recorded as reviewed, rather than merely gone. Two
+             pages, because the record holds more reviewed rows than fit in one. */
+          const done = await askApi(page, store.origin, '/mosaic/observations/pages', {
+            ...q, filters: { ...q.filters, reviewStatus: ['reviewed'] }, pages: [1, 2]
+          });
+          const reviewed = new Map(done.pages.flatMap((p) => p.rows)
+            .map((r) => [r.observation_id, r]));
+          for (const id of store.accepted) {
+            expect(reviewed.get(id), `${id} is on the record as reviewed`).toBeTruthy();
+            expect(reviewed.get(id).review_reviewer_id, 'and reviewed by me')
+              .toBe(store.me.user_id);
+          }
+
+          await meter(page, `${store.accepted.length} reviewed · ${store.flagged.length} `
+            + `flagged · ${store.untouched.length} rows untouched · reviewer `
+            + `${store.me.user_id}`);
+        }
+      },
+      {
+        caption: 'A fresh page',
+        say: "On to a fresh page … fifty more, and now the old way.",
+        async act({ page, expect, settled, store }) {
+          await beat(page, CUE);                  // "on to a fresh page"
+          await clearMeter(page);                 // its numbers were about page one
+          await turnPage(page, expect, settled, 2);
+
+          store.pageTwo = await page.locator('.tile')
+            .evaluateAll((els) => els.map((e) => Number(e.dataset.id)));
+          expect(store.pageTwo.length).toBe(50);
+          const seen = new Set(store.pageOne);
+          expect(store.pageTwo.filter((id) => seen.has(id)),
+            'none of these were on the page just committed').toEqual([]);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Left click flags',
+        say: "Left clicking two here … and those are the only marks on the page.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "left clicking two here"
+          store.flagged2 = (await markMany(page, 2)).map(Number);
+          expect(store.flagged2.length).toBe(2);
+          for (const id of store.flagged2) {
+            await expect(page.locator(`.tile[data-id="${id}"] .badge`)).toHaveText(/FLAGGED/);
+          }
+          store.swept = store.pageTwo.filter((id) => !store.flagged2.includes(id));
+          /* Nothing else is marked, so the sweep's accepted set really is everything else
+             -- which is the claim the next line makes. */
+          await expect(page.locator('.tile.marked')).toHaveCount(2);
+          await beat(page, DWELL);
+        }
+      },
+      {
+        caption: 'Review page',
+        say: "Pressing the smaller button … and every other tile is accepted, in one go.",
+        async act({ page, expect, store }) {
+          await beat(page, CUE);                  // "pressing the smaller button"
+          await page.locator('#commit').click();
+          await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' }).first())
+            .toBeVisible();
+
+          expect(await outcomesFor(page, store.flagged2), 'the two stay flagged')
+            .toEqual(['flagged', 'flagged']);
+          expect(new Set(await outcomesFor(page, store.swept)),
+            'and every other tile on the page was accepted').toEqual(new Set(['reviewed']));
+          await expect(page.locator('.tile .badge')).toHaveCount(50);
+        }
+      },
+      {
+        caption: 'Two choices, not a sequence',
+        /**
+         * The last line, and it holds the wall by itself.
+         *
+         * `tools/walkthrough/narrate.mjs` mixes with ffmpeg's `-shortest`, so the film is
+         * cut where the last audio clip ends and a closing `beat` is invisible however
+         * long it is. The dwell goes in the words instead, exactly as `look` does.
+         */
+        say: "Two choices, not a sequence — the same page could have gone either way.",
+        async act({ page, expect, store }) {
+          await expect(page.locator('.tile .badge')).toHaveCount(store.pageTwo.length);
         }
       }
     ]

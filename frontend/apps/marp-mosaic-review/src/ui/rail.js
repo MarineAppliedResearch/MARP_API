@@ -9,7 +9,7 @@
  * draws whatever is there.
  */
 
-import { DIMENSIONS, DIMENSION, KIND, isActive } from '../model/dimensions.js';
+import { DIMENSIONS, DIMENSION, KIND, isActive, optionLabel } from '../model/dimensions.js';
 import { normaliseClock } from '../model/match.js';
 import { state, actions } from '../store.js';
 import { $, el } from './dom.js';
@@ -21,8 +21,11 @@ function summarise(dimension, value) {
 
   if (dimension.kind === KIND.SET) {
     /* Two names fit; more would truncate into meaninglessness, and the count is the
-       useful thing at that point. */
-    if (value.length <= 2) return value.map(dimension.one).join(', ');
+       useful thing at that point. Through `optionLabel`, because a key-valued dimension
+       would otherwise summarise itself as "775" (A10a). */
+    if (value.length <= 2) {
+      return value.map((v) => optionLabel(dimension, v, state.facets)).join(', ');
+    }
     return `${value.length} ${dimension.label}s`;
   }
 
@@ -92,7 +95,12 @@ function spanPanel(dimension) {
   const from = (value && value.from) || '';
   const to = (value && value.to) || '';
 
-  if (dimension.kind === KIND.WINDOW) {
+  /* Text rather than `<input type="time">`: a native time input renders from the browser
+     locale and no attribute overrides it -- `lang="en-GB"` still draws `01:30 PM` in
+     Chromium, and MARP writes 24-hour everywhere (#81 B3). Both the window and the clock
+     range use it, and they differ only in what the note says. */
+  if (dimension.kind === KIND.WINDOW || dimension.clock) {
+    const wraps = dimension.kind === KIND.WINDOW;
     return `
       <div class="mhead">${dimension.label}</div>
       <div class="span" data-span="${dimension.key}">
@@ -102,7 +110,10 @@ function spanPanel(dimension) {
         <input type="text" class="clock" data-end="to" value="${to}" placeholder="HH:MM"
                inputmode="numeric" maxlength="5" aria-label="${dimension.label} to">
       </div>
-      <div class="mnote">24-hour. A start later than the end is a window across midnight.</div>`;
+      <div class="mnote">${wraps
+        ? '24-hour. A start later than the end is a window across midnight.'
+        : `24-hour. <b>${dimension.label}</b> reads the recorded time; it will read dates too
+           once observations carry one.`}</div>`;
   }
 
   return `
@@ -168,7 +179,7 @@ function applySpan(span) {
   const read = (end) => {
     const box = span.querySelector(`[data-end="${end}"]`);
     if (!box) return null;
-    if (dimension.kind === KIND.WINDOW) {
+    if (dimension.kind === KIND.WINDOW || dimension.clock) {
       /* Written back, so the field shows what was understood rather than what was typed:
          `930` becomes `09:30`, and something that is not a time at all clears. */
       const clock = normaliseClock(box.value);
@@ -184,7 +195,9 @@ function applySpan(span) {
 
   /* Two handles on one track can be dragged past each other. Swapping is kinder than
      refusing: the reviewer meant the range between them either way. A time window is
-     the exception -- there, from later than to is a wrap past midnight and is meant. */
+     the exception -- there, from later than to is a wrap past midnight and is meant.
+     A `clock` range is swapped like any other range: it does not wrap, so an
+     out-of-order pair is a mistake rather than a night. */
   if (dimension.kind === KIND.RANGE && from != null && to != null && from > to) {
     [from, to] = [to, from];
   }
