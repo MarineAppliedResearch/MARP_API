@@ -10,6 +10,7 @@
  */
 
 import { excludeIdList } from '../model/filters.js';
+import { markKind } from '../model/modes.js';
 
 /**
  * A list of integer ids, from whatever the caller is holding, or a refusal.
@@ -154,17 +155,24 @@ export function commitBody({ rows = [], marks = new Map(), withdraw = [] } = {})
 
   const onPage = new Set(observations.map((o) => o.observation_id));
 
-  /* An array of `{ observation_id, reason }`, never the store's Map -- the same
+  /* An array of `{ observation_id, reason, kind }`, never the store's Map -- the same
      serialisation trap as F2, one field over. Every id must be on the page, which the
      endpoint enforces with a 400; filtering here means a mark left over from another page
-     cannot turn a commit into a failure. */
+     cannot turn a commit into a failure.
+
+     **`kind` was moved into this list rather than a second list being added** (#126 A5).
+     One list keyed by `observation_id` is what `applyCommit` already folds by, and two
+     lists reintroduce the question of what an id appearing in both means. It is always
+     sent, including for the exception that was the only kind before -- an absent field
+     that means "the old thing" is how a contract stops saying what it means. */
   const body = {
     observations,
     marks: [...marks.entries()]
       .filter(([id]) => onPage.has(id))
       .map(([observation_id, mark]) => ({
         observation_id,
-        reason: (mark && mark.reason) || null
+        reason: (mark && mark.reason) || null,
+        kind: markKind(mark)
       }))
   };
 

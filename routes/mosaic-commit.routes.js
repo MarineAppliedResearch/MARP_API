@@ -153,8 +153,10 @@ function registerMosaicCommitRoutes(app) {
         path: '/api/mosaic/observations/review',
         summary: 'Commit a page of scientific review decisions',
         description:
-            'Accepts every observation on the page that is not marked, and records every marked one as **flagged** with its reason -- '
-            + 'the marks are the page\'s exception set, not a selection. **This is not one transaction**: outcomes are per observation, '
+            'Accepts every observation in the request that is not marked as an exception, and records every exception as **flagged** '
+            + 'with its reason. A mark carries a `kind`: `except` flags it, `accept` records it as reviewed on its own. '
+            + 'A client reviewing a whole page sends the page; a client committing only what the reviewer marked sends only those '
+            + 'observations, and nothing outside the request is read or changed either way. **This is not one transaction**: outcomes are per observation, '
             + 'so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. '
             + '**The last commit wins**: a second reviewer is not refused, their decision replaces the first as the current one, and '
             + 'the first decision stays in the log. Nobody is locked out of an observation by whoever got there first. An observation whose '
@@ -187,7 +189,8 @@ function registerMosaicCommitRoutes(app) {
         path: '/api/mosaic/observations/training',
         summary: 'Commit a page of training dispositions',
         description:
-            'Promotes every observation on the page that is not marked, and records every marked one as **excluded** with its reason. '
+            'Promotes every observation in the request that is not marked as an exception, and records every exception as **excluded** with its reason. '
+            + 'A mark carries a `kind`, exactly as on the review route: `except` excludes it, `accept` promotes it on its own. '
             + 'The scientific and training decisions are independent: this changes nothing about scientific review status. '
             + 'Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here.'
             + USER_ONLY_NOTE,
@@ -217,9 +220,10 @@ function registerMosaicCommitRoutes(app) {
         path: '/api/mosaic/observations/delete',
         summary: 'Permanently delete the marked observations',
         description:
-            '**Irreversible, and it leaves no trace.** Destroys only the observations named in `marks` -- unmarked ids on the page are '
+            '**Irreversible, and it leaves no trace.** Destroys only the observations named in `marks` -- unmarked ids in the request are '
             + 'untouched and appear in no outcome array -- conditional on the `version` each was fetched with, so a row that moved comes '
-            + 'back `conflicted` rather than being destroyed. There is no deletion provenance record: nothing stores that an observation '
+            + 'back `conflicted` rather than being destroyed. A mark of kind `accept` is a 400 here: deleting has no accepted state, because '
+            + 'the opposite of destroying an observation is leaving it alone, which needs no record. There is no deletion provenance record: nothing stores that an observation '
             + 'existed, who removed it, or when. The delete cascades to `keyframes`, `dataset_observations`, `observation_reviews` and '
             + '`observation_review_current`, **removing a training-set membership row and never its dataset**; it never removes a session, '
             + 'a project or a source video. `withdraw` is not accepted here. The confirmation dialog is the client\'s and no confirm token '

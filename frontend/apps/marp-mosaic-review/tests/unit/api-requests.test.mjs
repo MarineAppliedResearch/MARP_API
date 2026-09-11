@@ -186,10 +186,13 @@ test('the marks reach the wire as an array of objects, never as a Map', () => {
   /* The same serialisation trap as F2, one field over: `JSON.stringify(new Map(...))` is
      `{}`, so a commit would have sent no exception set and accepted the whole page. */
   const rows = [{ observation_id: 10, version: 1 }, { observation_id: 11, version: 1 }];
-  const marks = new Map([[11, { reason: 'Wrong species' }]]);
+  const marks = new Map([[11, { kind: 'except', reason: 'Wrong species' }]]);
 
   const wire = onWire(commitBody({ rows, marks }));
-  assert.deepEqual(wire.marks, [{ observation_id: 11, reason: 'Wrong species' }]);
+  /* **`kind` moved into this assertion rather than the assertion being loosened** (#126
+     R9, A5). A mark now says which of the two things it is, in the one list keyed by
+     `observation_id` that `applyCommit` already folds by. */
+  assert.deepEqual(wire.marks, [{ observation_id: 11, reason: 'Wrong species', kind: 'except' }]);
 
   assert.deepEqual(onWire({ marks }).marks, {},
     'this is what sending the Map itself would have looked like');
@@ -197,10 +200,55 @@ test('the marks reach the wire as an array of objects, never as a Map', () => {
 
 test('a mark left over from another page is not sent, because every id must be on the page', () => {
   const rows = [{ observation_id: 10, version: 1 }];
-  const marks = new Map([[10, { reason: null }], [999, { reason: 'Duplicate' }]]);
+  const marks = new Map([[10, { kind: 'except', reason: null }], [999, { kind: 'except', reason: 'Duplicate' }]]);
 
   const wire = onWire(commitBody({ rows, marks }));
-  assert.deepEqual(wire.marks, [{ observation_id: 10, reason: null }]);
+  assert.deepEqual(wire.marks, [{ observation_id: 10, reason: null, kind: 'except' }]);
+});
+
+/* ------------------------------------------------------------------ #126 A5, R9 */
+
+test('R9: an accept mark reaches the wire as a kind, in the one marks list', () => {
+  /**
+   * **A5, and the reason there is no second list.** One list keyed by `observation_id` is
+   * what `applyCommit` already folds by; two lists reintroduce the question of what an id
+   * appearing in both means. So the kind is moved *into* this list, and this assertion
+   * names it rather than being loosened to let it through.
+   */
+  const rows = [{ observation_id: 10, version: 1 }, { observation_id: 11, version: 2 }];
+  const marks = new Map([
+    [10, { kind: 'accept', reason: null }],
+    [11, { kind: 'except', reason: 'Duplicate' }]
+  ]);
+
+  const wire = onWire(commitBody({ rows, marks }));
+  assert.deepEqual(wire.marks, [
+    { observation_id: 10, reason: null, kind: 'accept' },
+    { observation_id: 11, reason: 'Duplicate', kind: 'except' }
+  ]);
+});
+
+test('R9: a mark with no kind is sent as the exception, which is what it always meant', () => {
+  const rows = [{ observation_id: 10, version: 1 }];
+  const wire = onWire(commitBody({ rows, marks: new Map([[10, { reason: null }]]) }));
+  assert.equal(wire.marks[0].kind, 'except');
+});
+
+test('R3: committing only the marked is the same request over a shorter observations list', () => {
+  /**
+   * The whole of how the main button fits the existing contract. `observations` is the set
+   * the commit is about, so naming only the marked rows means nothing else is read,
+   * accepted or changed -- and `marks` carrying the kind says what each of them becomes.
+   * No new field, and no second endpoint.
+   */
+  const marked = [{ observation_id: 11, version: 2 }];
+  const marks = new Map([[11, { kind: 'accept', reason: null }]]);
+
+  const wire = onWire(commitBody({ rows: marked, marks }));
+  assert.deepEqual(wire.observations, [{ observation_id: 11, version: 2 }]);
+  assert.deepEqual(wire.marks, [{ observation_id: 11, reason: null, kind: 'accept' }]);
+  /* Every observation in the request is marked, so the sweep has nothing to sweep. */
+  assert.equal(wire.observations.length, wire.marks.length);
 });
 
 test('a withdrawal is sent only for ids on the page', () => {

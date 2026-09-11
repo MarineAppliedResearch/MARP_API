@@ -9,7 +9,7 @@
    it, and the application never points that at the fixture -- A2. */
 import { MarpBackend } from './backend.js';
 import { isAbort, failureKind } from './api/errors.js';
-import { MODES, isMode, commitCount, pendingException, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage } from './model/modes.js';
+import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, acceptedValue, acceptRefusal, selectedRows, selectionOutcome, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage, MARK_EXCEPT, MARK_ACCEPT } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
@@ -128,7 +128,7 @@ export const state = {
   sort: { ...filters.DEFAULT_SORT },
   counts: { unreviewed: 0, reviewed: 0, flagged: 0, undecided: 0, promoted: 0, excluded: 0, total: 0 },
 
-  marks: new Map(),        // the page's exception set: id -> { reason }
+  marks: new Map(),        // what the reviewer marked: id -> { kind, reason }
   touched: new Set(),      // what the reviewer decided by hand; never re-seeded
   changed: new Map(),      // id -> { from, to } for this session
   outcomes: new Map(),     // id -> what the last commit did
@@ -179,7 +179,19 @@ export const state = {
   /* What a destructive commit is waiting to be told to do: null, or the impact the
      reviewer is being asked to accept. Held in the store rather than the dialog so the
      rule about what is destroyed and the thing that destroys it cannot drift apart. */
-  confirm: null            // null | { count, reviewed, promoted }
+  confirm: null,           // null | { count, reviewed, promoted }
+  /**
+   * The accept mark that was just refused, and why (#126 A4).
+   *
+   * Accepting needs imagery and flagging does not, so an accept mark on a tile with no
+   * picture is turned away **at click time with the tile saying why**, rather than taken
+   * and quietly dropped at commit. The skip count explains a sweep, where the reviewer
+   * never singled the tile out; it does not explain a deliberate click.
+   *
+   * It is an acknowledgement rather than a state, so it fades the way the commit tick
+   * does. One at a time: a second refusal replaces the first.
+   */
+  refused: null            // null | { id, reason }
 };
 
 /* ---------------------------------------------------------------- plumbing */
@@ -208,6 +220,17 @@ function clearCommitStatus(after = 2400) {
   clearTimeout(commitStatusTimer);
   commitStatusTimer = setTimeout(() => {
     state.commit = { ...state.commit, status: null };
+    notify();
+  }, after);
+}
+
+/* A refusal fades the same way, and for the same reason: it acknowledges a gesture that
+   did not take, rather than describing a state the tile is now in. */
+let refusalTimer = null;
+function clearRefusal(after = 2600) {
+  clearTimeout(refusalTimer);
+  refusalTimer = setTimeout(() => {
+    state.refused = null;
     notify();
   }, after);
 }
@@ -509,6 +532,189 @@ function resume(mode) {
   state.committedPages = held ? held.committedPages : new Set();
   state.outcomes = held ? held.outcomes : new Map();
   state.pinnedRows = held ? held.pinnedRows : new Map();
+}
+
+/**
+ * Send a commit and fold the answer back in. Shared by both buttons (#126).
+ *
+ * One function rather than two, because everything that made `commitPage` correct is
+ * subtle and was learned the hard way -- the mode and page read once before the `await`,
+ * the discard when the mode moved on, the version bump that stops the next commit seeing
+ * phantom conflicts, the marks left alone on failure. A second copy would drift away from
+ * all of it, one fix at a time.
+ *
+ * Two things differ, and they are the feature:
+ *
+ * - **what is sent.** The sweep sends the page; the main button sends only the rows the
+ *   reviewer marked **by hand in this sitting** (`selectedRows`). The commit contract needs
+ *   no new field for that: `observations` is the set the commit is about, so a request
+ *   naming only the marked rows accepts nothing it was not told about, and `marks` carrying
+ *   the kind says what each of them becomes (A5).
+ * - **what it claims afterwards.** A sweep finishes a page, so the page is pinned and
+ *   marked committed -- which also excludes its ids from later queries. A selective commit
+ *   finishes nothing: pinning there would quietly remove every untouched observation on the
+ *   page from the reviewer's remaining work, which is exactly the "without it affecting
+ *   anything else" this feature exists to give them.
+ *
+ * @param {Object} options
+ * @param {boolean} options.selective - True for the main button, false for the sweep.
+ * @returns {Promise<void>}
+ */
+async function runCommit({ selective }) {
+  const pageRows = selective
+    ? selectedRows({ rows: state.rows, marks: state.marks, touched: state.touched })
+    : state.rows;
+
+  /* Nothing to send is not a commit. Both buttons are disabled in this state, so reaching
+     here is the keyboard or the console rather than a click. */
+  if (!pageRows.length) return;
+
+  const ids = pageRows.map((r) => r.observation_id);
+  /**
+   * The **rows**, not the ids (A7, R7, F4).
+   *
+   * The commit routes require `observations: [{ observation_id, version }]` and refuse a
+   * request that omits a version -- "a missing version is a 400, never an implicit
+   * overwrite" -- and this passed neither. Sending the rows is what makes the version
+   * travel with *the thing the reviewer looked at*.
+   *
+   * An `api/`-side cache of "the version I last served for each id" was the alternative
+   * and it is rejected on reasoning rather than taste: a prefetch or a poll would
+   * refresh that map to a version the reviewer never saw, so a stale decision would be
+   * applied silently -- which is the exact failure the mandatory version prevents.
+   *
+   * A copy, because everything after the `await` is checked against what was sent rather
+   * than against whatever `state.rows` has become by then.
+   */
+  const sent = pageRows.map((r) => ({ observation_id: r.observation_id, version: r.version }));
+  /* Only the marks this request is about. `commitBody` drops one off the page anyway, but
+     dropping it here too means the count the log reports is the count that was sent, which
+     is what somebody reading the log is checking. */
+  const onPage = new Set(ids);
+  const marks = new Map([...state.marks].filter(([id]) => onPage.has(id)));
+  /* Which mode and page this commit belongs to, read once. Everything after the await
+     is checked against these rather than against whatever `state` says by then. */
+  const startedIn = state.mode;
+  const startedPage = state.page;
+  const request = selective ? 'commitMarked' : 'commitPage';
+  fire(request + ':request', {
+    mode: startedIn, page: startedPage,
+    willAct: selective
+      ? selectionOutcome({
+        mode: startedIn, rows: state.rows, marks: state.marks, touched: state.touched
+      }).acts
+      : commitCount({ mode: startedIn, rows: state.rows, marks })
+  });
+
+  state.commit = { busy: true, status: null };
+  notify();
+
+  let res;
+  try {
+    res = await MarpBackend.commitPage({ mode: startedIn, rows: sent, marks });
+  } catch (err) {
+    /* Nothing is applied. The marks are untouched, so the reviewer can try again
+       without redoing the page -- and that holds for all three of A4's failures, which
+       is R20: none of them may silently discard the reviewer's work. */
+    state.commit = { busy: false, status: 'failed' };
+    recordFailure(err, request);
+    clearCommitStatus();
+    notify();
+    return;
+  }
+  clearFailure();
+
+  state.commit = { busy: false, status: 'ok' };
+  clearCommitStatus();
+
+  /**
+   * The mode may have moved on while this was in flight.
+   *
+   * Outcomes, committed pages and pins all belong to the mode that committed, and
+   * `setMode` clears them for exactly that reason. Writing them here unconditionally
+   * meant a commit landing after a mode switch put them straight back -- a whole page of
+   * scientific FLAGGED and REVIEWED badges displayed in Training Data Review, which is
+   * the defect `setMode` exists to prevent, coming back through a door the fix did not
+   * cover.
+   *
+   * The commit itself already happened and the record is written; what is dropped here is
+   * only this mode's *display* of it, and the next query reads the record back.
+   */
+  if (state.mode !== startedIn) {
+    fire(request + ':discarded', { startedIn, now: state.mode, page: startedPage });
+    notify();
+    return;
+  }
+
+  /**
+   * A page counts as *committed* only when the whole page was committed.
+   *
+   * The pin is not decoration: `page.pinnedIds` becomes the query's `exclude` set, so
+   * pinning here would take every untouched tile on the page out of the reviewer's
+   * remaining work without saying so. A selective commit deliberately claims nothing about
+   * the tiles it did not name, so it pins nothing and the pager still shows the page as
+   * outstanding -- because it is.
+   */
+  if (!selective) {
+    state.committedPages.add(state.page);
+    state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
+    /* And the rows themselves, so returning to this page needs nothing from the cache and
+       nothing from the network. These are the objects the reviewer was looking at. */
+    state.pinnedRows = page.pinRows(state.pinnedRows, state.rows);
+  }
+  /* Keyed by `observation_id`. This read `r.id`, which no entry of the result has ever
+     carried, so one entry landed under `undefined` and **every tile on a committed page
+     showed no outcome at all** (F5, R8). */
+  state.outcomes = page.applyCommit(state.outcomes, res);
+  state.lastCommit = res;
+
+  /**
+   * What the commit refused for a moved version (R9).
+   *
+   * Not a refusal for being second -- **the last commit wins**, and nothing here is ever
+   * turned away for arriving after somebody else. `conflicted` fires only where the row
+   * moved *underneath the page the reviewer was looking at*, which is the one case where
+   * "last write wins" would mean silently discarding a correction the reviewer never
+   * saw. Nothing was written for those ids, so their marks are kept and the page can be
+   * re-read and committed again.
+   */
+  state.conflicted = page.conflictedIds(res);
+  if (state.conflicted.length) {
+    fire(request + ':conflicted', { ids: state.conflicted });
+  }
+
+  /* The versions the commit moved. Without this the next commit on the same page would
+     send the versions from before it and every row would come back conflicted -- which
+     reads exactly like somebody else editing under you, and is not. */
+  for (const row of pageRows) {
+    if (state.outcomes.get(row.observation_id) === 'conflicted') continue;
+    if (state.outcomes.has(row.observation_id)) row.version += 1;
+  }
+  /* The marks stay wherever the record now agrees with them. A committed page is still
+     editable -- clicking a flag takes it back -- and a mark has to keep meaning the same
+     thing before and after a commit, or the same gesture reverses its meaning underneath
+     the reviewer. The selective form rebuilds only what it sent, because everything else
+     on the page is untouched and its marks are still pending. */
+  const exception = pendingException(state.mode);
+  const accepted = acceptedValue(state.mode);
+  state.marks = selective
+    ? page.marksAfterSelection(state.marks, state.outcomes, ids, exception, accepted)
+    : page.marksAfterCommit(marks, state.outcomes, ids, exception, accepted);
+  state.picker = null;
+
+  fire(request + ':result', {
+    reviewed: res.reviewed.length, flagged: (res.flagged || []).length,
+    reverted: (res.reverted || []).length, skipped: res.skipped.length,
+    conflicted: (res.conflicted || []).length
+  });
+  try {
+    state.counts = await MarpBackend.counts({ filters: countFilters() });
+  } catch (err) {
+    /* The commit landed; only the counts beside it did not. Saying the commit failed
+       here would be a lie about the record, and the next query corrects the numbers. */
+    if (!isAbort(err)) fire('counts:failed', { message: String((err && err.message) || err) });
+  }
+  notify();                                   // the page stays loaded; no auto-advance
 }
 
 export const actions = {
@@ -896,6 +1102,7 @@ export const actions = {
        one workflow, and the reviewer walked away from it. */
     state.marks.clear();
     state.picker = null;
+    state.refused = null;
     state.page = 1;
     state.touched = new Set();
     state.lastCommit = null;
@@ -904,13 +1111,60 @@ export const actions = {
     actions.refresh();
   },
 
+  /**
+   * The exception gesture: left click, and what a tap has always done.
+   *
+   * `had` is now "was it already **this** mark", not "was it marked at all" -- a tile the
+   * reviewer accepted becomes the exception rather than becoming unmarked, because the
+   * later mark wins (#126 R7) and neither gesture should need the other undone first.
+   */
   toggleMark(id) {
     if (!state.rows.some((r) => r.observation_id === id)) return;
-    const had = state.marks.has(id);
-    state.marks = page.toggleMark(state.marks, id);
+    const had = state.marks.has(id) && (state.marks.get(id).kind || MARK_EXCEPT) === MARK_EXCEPT;
+    state.marks = page.toggleMark(state.marks, id, MARK_EXCEPT);
     state.touched.add(id);
     if (had) state.picker = null;
-    fire(had ? 'unmark' : 'mark', { id, mode: state.mode, mark: MODES[state.mode].mark });
+    fire(had ? 'unmark' : 'mark',
+      { id, mode: state.mode, kind: MARK_EXCEPT, mark: MODES[state.mode].mark });
+    notify();
+  },
+
+  /**
+   * The accept gesture: right click on a pointer, double tap on a touch screen (#126 R2).
+   *
+   * Three refusals before anything happens, and each is a decision on the record:
+   *
+   * - **Delete Mode is inert** (A2). `MODES.delete.accepts` is null because the opposite
+   *   of deleting is leaving a row alone, which needs no record — so an accept mark has
+   *   nothing to mean there. Nothing is fired, because nothing happened.
+   * - **A tile with no picture is refused, with the tile saying why** (A4). Accepting is
+   *   the reviewer saying "I have judged this one", which they cannot have done without
+   *   seeing it.
+   * - A tile that is not on this page is not this page's business, as for `toggleMark`.
+   */
+  acceptMark(id) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row) return;
+    if (!acceptedValue(state.mode)) return;        // Delete: inert, and silently so
+
+    const { ok, reason } = acceptRefusal(state.mode, row);
+    if (!ok) {
+      state.refused = { id, reason };
+      clearRefusal();
+      fire('acceptMark:refused', { id, reason });
+      notify();
+      return;
+    }
+
+    const had = state.marks.get(id) && state.marks.get(id).kind === MARK_ACCEPT;
+    state.marks = page.toggleMark(state.marks, id, MARK_ACCEPT);
+    state.touched.add(id);
+    /* The panel belongs to an exception and its reason vocabulary, so it closes rather
+       than sitting open over a mark it can no longer describe. */
+    state.picker = null;
+    state.refused = null;
+    fire(had ? 'unmark' : 'mark',
+      { id, mode: state.mode, kind: MARK_ACCEPT, mark: acceptedValue(state.mode) });
     notify();
   },
 
@@ -921,7 +1175,9 @@ export const actions = {
   },
 
   openPicker(id) {
-    if (!state.marks.has(id)) return;
+    /* An **exception** only. The panel chooses a flag or exclusion reason, and an accept
+       mark has nothing in that vocabulary to say (#126) -- so its badge is not a target. */
+    if (!state.marks.has(id) || (state.marks.get(id).kind || MARK_EXCEPT) !== MARK_EXCEPT) return;
     state.picker = { id, correcting: false };
     fire('openPicker', { id });
     notify();
@@ -937,7 +1193,13 @@ export const actions = {
 
   /** Straight back into the chooser from a tile that was already changed. */
   openCorrection(id) {
-    if (!state.marks.has(id)) state.marks = page.toggleMark(state.marks, id);
+    /* An **exception** mark, because that is what the panel describes and because saying
+       the species is wrong is saying something is wrong. This already created one on an
+       unmarked tile; #126 only makes it say which kind. */
+    const cur = state.marks.get(id);
+    if (!cur || (cur.kind || MARK_EXCEPT) !== MARK_EXCEPT) {
+      state.marks = page.toggleMark(state.marks, id, MARK_EXCEPT);
+    }
     state.picker = { id, correcting: true };
     fire('openCorrection', { id });
     notify();
@@ -1219,129 +1481,26 @@ export const actions = {
     }
     state.confirm = null;
 
-    const ids = state.rows.map((r) => r.observation_id);
-    /**
-     * The **rows**, not the ids (A7, R7, F4).
-     *
-     * The commit routes require `observations: [{ observation_id, version }]` and refuse a
-     * request that omits a version — "a missing version is a 400, never an implicit
-     * overwrite" — and this passed neither. Sending the rows is what makes the version
-     * travel with *the thing the reviewer looked at*.
-     *
-     * An `api/`-side cache of "the version I last served for each id" was the alternative
-     * and it is rejected on reasoning rather than taste: a prefetch or a poll would
-     * refresh that map to a version the reviewer never saw, so a stale decision would be
-     * applied silently — which is the exact failure the mandatory version prevents.
-     *
-     * A copy, because everything after the `await` is checked against what was sent rather
-     * than against whatever `state.rows` has become by then.
-     */
-    const sent = state.rows.map((r) => ({ observation_id: r.observation_id, version: r.version }));
-    const marks = new Map(state.marks);
-    /* Which mode and page this commit belongs to, read once. Everything after the await
-       is checked against these rather than against whatever `state` says by then. */
-    const startedIn = state.mode;
-    const startedPage = state.page;
-    fire('commitPage:request', {
-      mode: startedIn, page: startedPage,
-      willAct: commitCount({ mode: startedIn, rows: state.rows, marks })
-    });
+    return runCommit({ selective: false });
+  },
 
-    state.commit = { busy: true, status: null };
-    notify();
-
-    let res;
-    try {
-      res = await MarpBackend.commitPage({ mode: startedIn, rows: sent, marks });
-    } catch (err) {
-      /* Nothing is applied. The marks are untouched, so the reviewer can try again
-         without redoing the page — and that holds for all three of A4's failures, which
-         is R20: none of them may silently discard the reviewer's work. */
-      state.commit = { busy: false, status: 'failed' };
-      recordFailure(err, 'commitPage');
-      clearCommitStatus();
-      notify();
-      return;
-    }
-    clearFailure();
-
-    state.commit = { busy: false, status: 'ok' };
-    clearCommitStatus();
-
-    /**
-     * The mode may have moved on while this was in flight.
-     *
-     * Outcomes, committed pages and pins all belong to the mode that committed, and
-     * `setMode` clears them for exactly that reason. Writing them here unconditionally
-     * meant a commit landing after a mode switch put them straight back — a whole page of
-     * scientific FLAGGED and REVIEWED badges displayed in Training Data Review, which is
-     * the defect `setMode` exists to prevent, coming back through a door the fix did not
-     * cover.
-     *
-     * The commit itself already happened and the record is written; what is dropped here is
-     * only this mode's *display* of it, and the next query reads the record back. Every
-     * query in this file is guarded the same way, with a token; the commit path never was.
-     */
-    if (state.mode !== startedIn) {
-      fire('commitPage:discarded', { startedIn, now: state.mode, page: startedPage });
-      notify();
-      return;
-    }
-
-    state.committedPages.add(state.page);
-    state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
-    /* And the rows themselves, so returning to this page needs nothing from the cache and
-       nothing from the network. These are the objects the reviewer was looking at. */
-    state.pinnedRows = page.pinRows(state.pinnedRows, state.rows);
-    /* Keyed by `observation_id`. This read `r.id`, which no entry of the result has ever
-       carried, so one entry landed under `undefined` and **every tile on a committed page
-       showed no outcome at all** (F5, R8). */
-    state.outcomes = page.applyCommit(state.outcomes, res);
-    state.lastCommit = res;
-
-    /**
-     * What the commit refused for a moved version (R9).
-     *
-     * Not a refusal for being second — **the last commit wins**, and nothing here is ever
-     * turned away for arriving after somebody else. `conflicted` fires only where the row
-     * moved *underneath the page the reviewer was looking at*, which is the one case where
-     * "last write wins" would mean silently discarding a correction the reviewer never
-     * saw. Nothing was written for those ids, so their marks are kept by
-     * `marksAfterCommit` and the page can be re-read and committed again.
-     */
-    state.conflicted = page.conflictedIds(res);
-    if (state.conflicted.length) {
-      fire('commitPage:conflicted', { ids: state.conflicted });
-    }
-
-    /* The versions the commit moved. Without this the next commit on the same page would
-       send the versions from before it and every row would come back conflicted -- which
-       reads exactly like somebody else editing under you, and is not. */
-    for (const row of state.rows) {
-      if (state.outcomes.get(row.observation_id) === 'conflicted') continue;
-      if (state.outcomes.has(row.observation_id)) row.version += 1;
-    }
-    /* The exceptions stay marked. A committed page is still editable — clicking a
-       flag takes it back — and a mark has to keep meaning the same thing before
-       and after a commit, or the same gesture reverses its meaning underneath the
-       reviewer. */
-    state.marks = page.marksAfterCommit(
-      marks, state.outcomes, ids, pendingException(state.mode));
-    state.picker = null;
-
-    fire('commitPage:result', {
-      reviewed: res.reviewed.length, flagged: (res.flagged || []).length,
-      reverted: (res.reverted || []).length, skipped: res.skipped.length,
-      conflicted: (res.conflicted || []).length
-    });
-    try {
-      state.counts = await MarpBackend.counts({ filters: countFilters() });
-    } catch (err) {
-      /* The commit landed; only the counts beside it did not. Saying the commit failed
-         here would be a lie about the record, and the next query corrects the numbers. */
-      if (!isAbort(err)) fire('counts:failed', { message: String((err && err.message) || err) });
-    }
-    notify();                                   // the page stays loaded; no auto-advance
+  /**
+   * Commit **only what the reviewer marked**, each tile by its own kind (#126 R3).
+   *
+   * The new main button, and the one the human asked for after reviewing 1,062 real
+   * observations: *"There are times when you just want to exclude things, or just approve
+   * certain items, without it affecting anything else."* So it says nothing at all about a
+   * tile nobody touched, which is the whole of the feature and most of what makes it
+   * different from the sweep beside it.
+   *
+   * **Delete has one button, not two** (A2). Its existing button already commits only what
+   * is marked, so a second control doing the identical thing would be two controls with
+   * one meaning.
+   */
+  async commitMarked() {
+    if (state.commit.busy) return;
+    if (commitActsOnMarked(state.mode)) return;    // Delete: one button, and it is the other one
+    return runCommit({ selective: true });
   },
 
   goToPage(n) {

@@ -175,7 +175,7 @@ bugs. `ui/tile.js` derives all four; none of them is stored on the row.
 
 | | What it is | Lives in |
 | --- | --- | --- |
-| **marked** | what this reviewer has marked but not committed | `state.marks`, transient |
+| **marked** | what this reviewer has marked but not committed, and **which of the two things they marked** | `state.marks`, transient |
 | **existing** | what the record already carried before this reviewer arrived | the row's own status columns |
 | **outcome** | what the last commit just did | `state.outcomes`, per commit, per mode |
 | **borrowed** | what another workflow's dimension says about the same observation | the row's other status column, drawn as `.rtag` |
@@ -187,9 +187,35 @@ otherwise the click appears to do nothing. A fourth derived state, *taking back*
 the gap: the record still carries the exception, the reviewer has removed the mark, and
 nothing is written until the next commit.
 
-**The marks are the page's exception set — not a scratchpad.** At commit, whatever is
-marked becomes the exception and whatever is not becomes accepted. Three rules follow,
-and all three were bugs before they were rules:
+**A mark carries a kind, and there are two of them** (#126). `except` is what a mark has
+always meant — flagged, excluded, deleted — and it is what a left click records and what
+`seedMarks` seeds. `accept` is the other one: a right click on a pointer, a **double tap**
+on a touch screen, recording the mode's accepted value for that one tile and saying nothing
+about any other. `markKind()` defaults an absent kind to `except`, so every rule written
+before this went on meaning what it meant.
+
+The kind fits **inside** the tile's precedence rather than beside it: a mark still outranks
+an outcome, which still outranks the record, and the kind only decides what the mark itself
+draws. `.badge` stays exactly one element per tile, and an accept badge carries no
+`data-badge` — the panel chooses a flag or exclusion reason and an acceptance has nothing in
+that vocabulary to say. An accept mark is **refused at click time on a tile with no
+picture**, in its own `.refusal` slot that can never reach the badge: accepting is the
+reviewer saying "I looked at this", which they cannot have done without seeing it.
+
+**There are two commit buttons, and they act on different things** (#126). The main one
+commits **only what the reviewer marked by hand in this sitting**, each tile by its own
+kind — `state.touched` is the "by hand" half and it is not a nicety, because the page still
+arrives with the record's flags already marked and `observation_reviews` records a reviewer
+per row. It sends only the marked rows as `observations`, which is how "commit just these"
+is expressible in the existing contract with no new field. **It pins nothing and marks no
+page committed**: `page.pinnedIds` becomes the query's `exclude` set, so pinning there would
+take every untouched tile on the page out of the reviewer's remaining work without saying
+so. The smaller button to its right is the page sweep, unchanged.
+
+**The sweep still treats the marks as the page's exception set — not a scratchpad.** At a
+sweep commit, whatever is marked as the *exception* becomes the exception and everything
+else becomes accepted, an accept mark included. Three rules follow, and all three were bugs
+before they were rules:
 
 - A page arrives with its existing exceptions **already marked** (`page.seedMarks`).
   Without that, committing a page holding flags that nobody touched silently cleared
@@ -400,6 +426,14 @@ of the scientific reasons so the record says why.
 a page into what will be accepted, flagged and skipped; the button shows that number, is
 disabled when a commit would do nothing, and says how many will be skipped when they
 differ. `commitCount` alone was enough only while every row was assumed to have imagery.
+Since #126 there are two buttons and `selectionOutcome` is the main one's half of that,
+answering in the same shape so `renderCommits` draws both through one path.
+
+**Two buttons do not fit a phone footer at full length, and `.app` clips rather than
+scrolls.** So each button carries two wordings — `.lw` and `.sw`, long and short — and the
+media query picks one; both carry the count, because that is what "the button says what it
+will do" means. Reading the viewport in JavaScript instead would make the label depend on
+when a render happened to run.
 
 **A page has a state, and `pageState` names it.** Empty, filtered-out, no-imagery,
 partial-imagery, ready. Named in `model/` rather than inferred where it is drawn, so the
@@ -429,6 +463,7 @@ irreversible action that is not otherwise gated.
 | a mode | `model/modes.js` (rules), `styles/app.css` (`body[data-mode]` hue), `index.html` (the selector) |
 | a filter | one entry in `model/dimensions.js`. Nothing else — the rail, the query, the counts, the collapsed-rail badge and the address all read the declaration. If it ever needs a second place, the refactor has regressed |
 | a gesture | `ui/mount.js` listener → new action in `store.js` → rule in `model/` |
+| a kind of mark | `MARK_*` in `model/modes.js`, then the badge branch in `ui/tile.js` and the button's rule beside `selectionOutcome` |
 | a walkthrough | one entry in `tests/walkthrough/scenarios.mjs`; the runner and recorder need no changes |
 | a keyboard shortcut | one entry in `SHORTCUTS` in `model/keys.js`, then a case in `runShortcut` in `ui/mount.js`. The hint draws itself on any control the id matches |
 | a page state | `pageState` in `model/modes.js`, then `ui/grid.js` |

@@ -2959,11 +2959,11 @@ const buildOpenApiSpec = () => {
                         type: 'object',
                         required: ['observations'],
                         description:
-                            'One shape for all three commit routes: the page as the reviewer saw it, and the marks. **`marks` is the exception set, not a selection** -- `review` flags them, `training` excludes them, and `delete` destroys them and touches nothing else. A row absent from the marks is accepted by review and training and **untouched** by delete.',
+                            'One shape for all three commit routes: the observations the commit is about, as the reviewer saw them, and the marks. **A mark carries a `kind`**: `except` flags, excludes or destroys it, and `accept` records the mode\'s accepted value for that one observation. An observation absent from `marks` is accepted by review and training and **untouched** by delete. `observations` is the set the commit is about, so a client committing only what the reviewer marked sends only those -- nothing outside the list is read, accepted or changed.',
                         properties: {
                             observations: {
                                 type: 'array',
-                                description: 'The whole page, each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.',
+                                description: 'The observations this commit is about -- the page the reviewer saw, or the subset of it they marked -- each with the `version` it was fetched with. **A missing version is a 400, never an implicit overwrite**: an optional version hides the failure mode where a client forgets one and gets silent last-write-wins on the annotation. Capped at 600, the same cap the page query takes.',
                                 items: {
                                     type: 'object',
                                     required: ['observation_id', 'version'],
@@ -2975,13 +2975,20 @@ const buildOpenApiSpec = () => {
                             },
                             marks: {
                                 type: 'array',
-                                description: 'The exception set. Every id must be on the page. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. The delete route records no reason and refuses any.',
+                                description: 'What the reviewer marked, and what each mark means. Every id must be in `observations`. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. Only an exception takes a reason: a reason says what is wrong with an observation, so a reason on an `accept` mark is a 400. The delete route records no reason and refuses any, and refuses an `accept` mark outright because it has no accepted state.',
                                 items: {
                                     type: 'object',
                                     required: ['observation_id'],
                                     properties: {
                                         observation_id: { type: 'integer', example: 100124 },
                                         reason: { type: 'string', nullable: true, example: 'Wrong species' },
+                                        kind: {
+                                            type: 'string',
+                                            enum: ['except', 'accept'],
+                                            default: 'except',
+                                            example: 'except',
+                                            description: '`except` is the exception -- flagged, excluded or deleted. `accept` records the accepted value (`reviewed` or `promoted`) for that one observation, which is how a reviewer approves specific items without that implying anything about the rest of the page. Absent means `except`, which is what every mark meant before the field existed.',
+                                        },
                                     },
                                 },
                             },
