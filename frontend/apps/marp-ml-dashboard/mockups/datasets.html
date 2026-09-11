@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Datasets</title>
+<link rel="icon" href="../../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./mock.css">
+</head>
+<body data-screen="datasets">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Build and save training sets from promoted observations">Datasets</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <nav class="tabstrip" data-switch="ds" aria-label="Datasets section">
+        <button class="on" data-view="build"><svg class="ico"><use href="#i-split"/></svg>Dataset builder</button>
+        <button data-view="saved"><svg class="ico"><use href="#i-datasets"/></svg>Saved datasets</button>
+      </nav>
+
+      <div data-viewof="ds" data-view="build" class="grid">
+
+        <div class="grid" data-cols="3">
+
+          <!-- 1 --------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>1.</b>Query promoted observations</span>
+                <span class="sub">Filters that find observations to add</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <p class="locked-note" title="Training promotion is what makes an observation eligible. Nothing else can enter a dataset.">
+                <svg class="ico sm"><use href="#i-check"/></svg>
+                <span>Promoted observations only <span class="ro-tag">always</span></span></p>
+
+              <div class="field">
+                <label for="dsproj">Project</label>
+                <select class="sel wide" id="dsproj">
+                  <option>CAMPA 2024</option><option>GULF 2025</option>
+                  <option>PACIFIC 2023</option><option>All projects</option>
+                </select>
+              </div>
+              <div class="fieldrow">
+                <div class="field">
+                  <label for="dsdive">Dive</label>
+                  <select class="sel wide" id="dsdive">
+                    <option>All dives</option><option>0123</option><option>0140</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="dsline">Line</label>
+                  <select class="sel wide" id="dsline">
+                    <option>All lines</option><option>L30</option><option>L28</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="dsspecies">Species</label>
+                <button class="sel wide picker" id="dsspecies" type="button"
+                        title="Choose which species to include">All species
+                  <svg class="ico sm"><use href="#i-right"/></svg></button>
+              </div>
+              <div class="field">
+                <label for="dsmodel">Generating model</label>
+                <select class="sel wide" id="dsmodel">
+                  <option>Any model</option><option>Human annotation only</option>
+                  <option>MARP-Det-v3 2.0.0</option><option>MARP-Multiclass-Det-XL 1.0.2</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="dsconf">Confidence range</label>
+                <div class="pairrow">
+                  <input class="inp" type="number" id="dsconf" value="0.50" step="0.05"
+                         min="0" max="1" aria-label="Minimum confidence">
+                  <span class="to">to</span>
+                  <input class="inp" type="number" value="1.00" step="0.05" min="0" max="1"
+                         aria-label="Maximum confidence">
+                </div>
+              </div>
+              <div class="field">
+                <label for="dsfrom">Date range</label>
+                <div class="pairrow">
+                  <input class="inp" type="date" id="dsfrom" aria-label="Start date">
+                  <span class="to">to</span>
+                  <input class="inp" type="date" aria-label="End date">
+                </div>
+              </div>
+              <div class="field">
+                <label for="dsreview">Review status</label>
+                <select class="sel wide" id="dsreview">
+                  <option>Promoted (approved)</option>
+                </select>
+              </div>
+
+              <details class="fold">
+                <summary>Advanced filters<span class="now">none set</span></summary>
+                <div class="fbody">
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="dsann">Annotator</label>
+                      <select class="sel wide" id="dsann"><option>Anyone</option><option>itravers</option></select>
+                    </div>
+                    <div class="field">
+                      <label for="dsminarea">Minimum box area</label>
+                      <input class="inp wide" type="number" id="dsminarea" value="0">
+                    </div>
+                  </div>
+                  <div class="checks">
+                    <label class="check"><input type="checkbox">
+                      <span>Exclude observations already in a saved dataset</span></label>
+                    <label class="check"><input type="checkbox" checked>
+                      <span>Exclude observations with a corrected species</span></label>
+                  </div>
+                </div>
+              </details>
+
+              <div class="btnrow">
+                <button class="btn" title="Reuse a saved set of filters">
+                  <svg class="ico"><use href="#i-copy"/></svg>Load query</button>
+                <button class="btn" title="Keep these filters for next time">
+                  <svg class="ico"><use href="#i-datasets"/></svg>Save query</button>
+                <button class="btn primary" title="Count what these filters match">
+                  <svg class="ico"><use href="#i-search"/></svg>Run query</button>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- 2 --------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>2.</b>Query results</span>
+                <span class="sub">What these filters match</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="quad">
+                <span title="Observations these filters match"><b>12,486</b>observations</span>
+                <span title="Key frames plus the interpolated frames between them, which are trained on as well"><b>24,892</b>frames</span>
+                <span title="Videos and dives they come from"><b>67</b>videos</span>
+                <span title="Distinct species present"><b>12</b>species</span>
+              </div>
+
+              <div class="field" style="margin-top:15px">
+                <label>Class breakdown <span class="faint">(top 5)</span>
+                  <button class="more" title="Every class in the result">All classes
+                    <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
+                <div class="dist pct">
+<span class="k">Rockfish</span><span class="b"><i style="width:100%"></i></span><span class="v">3,248</span><span class="p">26%</span><span class="k">Lingcod</span><span class="b"><i style="width:87%"></i></span><span class="v">2,814</span><span class="p">23%</span><span class="k">Canary rockfish</span><span class="b"><i style="width:61%"></i></span><span class="v">1,986</span><span class="p">16%</span><span class="k">Kelp greenling</span><span class="b"><i style="width:46%"></i></span><span class="v">1,492</span><span class="p">12%</span><span class="k">Invertebrate</span><span class="b"><i style="width:37%"></i></span><span class="v">1,210</span><span class="p">10%</span><span class="k">Other (7 classes)</span><span class="b"><i style="width:53%"></i></span><span class="v">1,736</span><span class="p">14%</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label>Sample images
+                  <button class="more" title="More samples from this result">More samples
+                    <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
+                <div class="thumbs">
+<figure title="Rockfish - conf 0.94"><img src="../../marp-mosaic-review/fixtures/thumbs/marp-rockfish-02.jpg" alt="Rockfish" loading="lazy"><figcaption>Rockfish &middot; conf 0.94</figcaption></figure><figure title="California sea cucumber - conf 0.88"><img src="../../marp-mosaic-review/fixtures/thumbs/marp-sea-cucumber-01.jpg" alt="California sea cucumber" loading="lazy"><figcaption>California sea cucumber &middot; conf 0.88</figcaption></figure><figure title="Red urchin - conf 0.91"><img src="../../marp-mosaic-review/fixtures/thumbs/marp-red-urchin-03.jpg" alt="Red urchin" loading="lazy"><figcaption>Red urchin &middot; conf 0.91</figcaption></figure><figure title="Bat star - conf 0.79"><img src="../../marp-mosaic-review/fixtures/thumbs/marp-bat-star-02.jpg" alt="Bat star" loading="lazy"><figcaption>Bat star &middot; conf 0.79</figcaption></figure><figure title="Rock crab - conf 0.86"><img src="../../marp-mosaic-review/fixtures/thumbs/marp-rock-crab-05.jpg" alt="Rock crab" loading="lazy"><figcaption>Rock crab &middot; conf 0.86</figcaption></figure><figure title="Canary rockfish - conf 0.83"><img src="../../marp-mosaic-review/fixtures/thumbs/rockfish-04.jpg" alt="Canary rockfish" loading="lazy"><figcaption>Canary rockfish &middot; conf 0.83</figcaption></figure>
+                </div>
+                <span class="hint">Six of 12,486 matches. Duplicates are ignored when adding.</span>
+              </div>
+
+              <button class="btn primary big block" id="addQuery"
+                      title="Add every matching observation to the dataset; duplicates are ignored">
+                <svg class="ico"><use href="#i-plus"/></svg>Add all matching to dataset</button>
+
+            </div>
+          </section>
+
+          <!-- 3 --------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>3.</b>Current dataset</span>
+                <span class="sub">Name, composition and what went in</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field req">
+                <label for="dsname">Dataset name</label>
+                <input class="inp wide" type="text" id="dsname" value="CAMPA 2024 Rockfish Training v1">
+              </div>
+              <div class="field">
+                <label for="dsdesc">Description</label>
+                <textarea class="inp wide" id="dsdesc" rows="2">Rockfish and associated species from CAMPA 2024 (promoted observations, high confidence)</textarea>
+              </div>
+              <div class="field">
+                <label>Added subsets <span class="faint">(3)</span>
+                  <button class="more" title="Add the current query result">Add from query
+                    <svg class="ico sm"><use href="#i-arrow"/></svg></button></label>
+                <ul class="subsets">
+<li class="g1"><span class="s1">1. CAMPA 2024 &middot; Rockfish (high conf)</span><span class="s2">Dive 0123&ndash;0140 &nbsp;|&nbsp; Confidence &ge; 0.70</span><span class="s3">5,842<em>observations</em></span><button class="btn sm icon" aria-label="Remove this query" title="Take this query out of the dataset"><svg class="ico sm"><use href="#i-x"/></svg></button></li><li class="g2"><span class="s1">2. Lingcod &amp; Greenling</span><span class="s2">All dives &nbsp;|&nbsp; 2026-06-01 &ndash; 2026-07-15</span><span class="s3">4,128<em>observations</em></span><button class="btn sm icon" aria-label="Remove this query" title="Take this query out of the dataset"><svg class="ico sm"><use href="#i-x"/></svg></button></li><li class="g3"><span class="s1">3. Invertebrates (MARP-Det-v3 2.0.0)</span><span class="s2">All dives &nbsp;|&nbsp; Confidence &ge; 0.60</span><span class="s3">2,516<em>observations</em></span><button class="btn sm icon" aria-label="Remove this query" title="Take this query out of the dataset"><svg class="ico sm"><use href="#i-x"/></svg></button></li>
+                </ul>
+              </div>
+
+              <div class="totalrow" title="The union of the subsets above, each observation counted once">
+                <span class="k">Total (deduplicated)</span>
+                <span class="v">11,982</span>
+                <span class="n">observations</span>
+              </div>
+              <p class="okline"><svg class="ico sm"><use href="#i-check"/></svg>
+                Duplicates are ignored when adding from several queries</p>
+
+              <div class="field" style="margin-top:14px">
+                <label>Dataset composition
+                  <span class="faint">&middot; 12 classes &middot; imbalance 4.2 : 1</span></label>
+                <div class="dist pct">
+<span class="k">Rockfish</span><span class="b"><i style="width:100%"></i></span><span class="v">5,102</span><span class="p">26%</span><span class="k">Lingcod</span><span class="b"><i style="width:48%"></i></span><span class="v">2,468</span><span class="p">21%</span><span class="k">Canary rockfish</span><span class="b"><i style="width:36%"></i></span><span class="v">1,842</span><span class="p">15%</span><span class="k">Kelp greenling</span><span class="b"><i style="width:26%"></i></span><span class="v">1,336</span><span class="p">11%</span><span class="k">Invertebrate</span><span class="b"><i style="width:22%"></i></span><span class="v">1,124</span><span class="p">9%</span><span class="k">Other (7 classes)</span><span class="b"><i style="width:41%"></i></span><span class="v">2,110</span><span class="p">18%</span>
+                </div>
+              </div>
+
+              <div class="btnrow" style="margin-top:14px">
+                <button class="btn" title="Keep the filters and membership without freezing a split">
+                  <svg class="ico"><use href="#i-copy"/></svg>Save draft</button>
+                <button class="btn accent" title="Freeze this membership and split as a saved dataset">
+                  <svg class="ico"><use href="#i-datasets"/></svg>Create dataset</button>
+                <button class="btn" title="Download the images and labels for this membership, as a YOLO archive">
+                  <svg class="ico"><use href="#i-download"/></svg>Download
+                  <span class="later">Later</span></button>
+              </div>
+              <span class="hint">Mockup &mdash; saves nothing.</span>
+
+            </div>
+          </section>
+
+        </div>
+
+        <!-- 4 ----------------------------------------------------------- -->
+        <section class="panel">
+          <header class="panel-hd">
+            <h2><span class="stepnum"><b>4.</b>Train / validation / test</span>
+              <span class="sub">Every dataset holds all three, fixed on save</span></h2>
+            <div class="panel-tools">
+              <span class="pill" data-state="idle"
+                    title="Observations whose key frames share screen time are assigned together, so no frame appears in two partitions">1,204 overlap groups</span>
+              <button class="btn sm" id="reshuffle" title="Assign the groups again from a new seed">
+                <svg class="ico sm"><use href="#i-refresh"/></svg>Reassign</button>
+            </div>
+          </header>
+          <div class="panel-bd">
+            <div class="splitgrid">
+              <div class="field">
+                <label for="pTrain">Train</label>
+                <div class="pctrow">
+                  <input class="inp" type="number" id="pTrain" value="70" min="0" max="100"
+                         aria-label="Train, per cent"><span class="pcs">%</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="pVal">Validation</label>
+                <div class="pctrow">
+                  <input class="inp" type="number" id="pVal" value="20" min="0" max="100"
+                         aria-label="Validation, per cent"><span class="pcs">%</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="pTest">Test</label>
+                <div class="pctrow">
+                  <input class="inp" type="number" id="pTest" value="10" min="0" max="100"
+                         aria-label="Test, per cent"><span class="pcs">%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="splitbar" role="img" aria-label="The three partitions, by size">
+              <i class="tr" id="barTr" style="width:70%"><span id="pcTr">70%</span></i>
+              <i class="va" id="barVa" style="width:20%"><span id="pcVa">20%</span></i>
+              <i class="te" id="barTe" style="width:10%"><span id="pcTe">10%</span></i>
+            </div>
+            <div class="splitkey">
+              <span class="tr"><b id="trN">8,387</b> train</span>
+              <span class="va"><b id="vaN">2,396</b> validation</span>
+              <span class="te"><b id="teN">1,199</b> test</span>
+              <span class="faint" id="splitNote">Whole groups only, so the shares land near the request</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- saved, in brief ---------------------------------------------- -->
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>Saved datasets <span class="count">(14)</span></h2>
+            <button class="more" title="Every saved dataset">All datasets
+              <svg class="ico sm"><use href="#i-arrow"/></svg></button>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable">Name</th>
+                    <th class="hscope sortable">Description</th>
+                    <th class="htype sortable num">Observations</th>
+                    <th class="htype sortable num">Frames</th>
+                    <th class="htype sortable num">Classes</th>
+                    <th class="hupd sortable" aria-sort="descending">Created</th>
+                    <th class="hupd sortable">Updated</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">CAMPA_2024_Rockfish_v3</span></span></td>
+                    <td class="jscope">Rockfish training set, high confidence</td>
+                    <td class="num" data-sort="11982">11,982</td>
+                    <td class="num" data-sort="24103">24,103</td>
+                    <td class="num" data-sort="12">12</td>
+                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
+                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">GULF_Invertebrates_v2</span></span></td>
+                    <td class="jscope">Invertebrate validation set</td>
+                    <td class="num" data-sort="5672">5,672</td>
+                    <td class="num" data-sort="11340">11,340</td>
+                    <td class="num" data-sort="8">8</td>
+                    <td class="jtime" data-sort="2026-09-08 16:12"><span class="two"><span class="a">16:12</span><span class="b">2026-09-08</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09 09:41"><span class="two"><span class="a">09:41</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">Baja_Seamount_Test</span></span></td>
+                    <td class="jscope">Model test set from the Gulf survey</td>
+                    <td class="num" data-sort="4218">4,218</td>
+                    <td class="num" data-sort="8436">8,436</td>
+                    <td class="num" data-sort="7">7</td>
+                    <td class="jtime" data-sort="2026-08-25 16:03"><span class="two"><span class="a">16:03</span><span class="b">2026-08-25</span></span></td>
+                    <td class="jtime" data-sort="2026-08-28 11:17"><span class="two"><span class="a">11:17</span><span class="b">2026-08-28</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">ALL_Projects_Inverts_v5</span></span></td>
+                    <td class="jscope">Multi-species training dataset</td>
+                    <td class="num" data-sort="15734">15,734</td>
+                    <td class="num" data-sort="31892">31,892</td>
+                    <td class="num" data-sort="24">24</td>
+                    <td class="jtime" data-sort="2026-08-20 09:12"><span class="two"><span class="a">09:12</span><span class="b">2026-08-20</span></span></td>
+                    <td class="jtime" data-sort="2026-08-21 14:55"><span class="two"><span class="a">14:55</span><span class="b">2026-08-21</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">SALT_2024_Habitat_v2</span></span></td>
+                    <td class="jscope">Substrate and habitat classes</td>
+                    <td class="num" data-sort="6204">6,204</td>
+                    <td class="num" data-sort="12880">12,880</td>
+                    <td class="num" data-sort="7">7</td>
+                    <td class="jtime" data-sort="2026-06-28 08:40"><span class="two"><span class="a">08:40</span><span class="b">2026-06-28</span></span></td>
+                    <td class="jtime" data-sort="2026-07-02 15:09"><span class="two"><span class="a">15:09</span><span class="b">2026-07-02</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <div data-viewof="ds" data-view="saved" class="grid" hidden>
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>Saved datasets <span class="count">(14)</span></h2>
+            <div class="panel-tools">
+              <span class="search">
+                <svg class="ico sm"><use href="#i-search"/></svg>
+                <input class="inp" type="search" placeholder="Search datasets&hellip;"
+                       aria-label="Search datasets" title="Filter by name or description">
+              </span>
+              <select class="sel" aria-label="Type" title="Show only one type">
+                <option>All types</option><option>Training</option>
+                <option>Validation</option><option>Test</option>
+              </select>
+            </div>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable">Name</th>
+                    <th class="hscope sortable">Description</th>
+                    <th class="htype sortable num">Observations</th>
+                    <th class="htype sortable num">Frames</th>
+                    <th class="htype sortable num">Classes</th>
+                    <th class="hupd sortable" aria-sort="descending">Created</th>
+                    <th class="hupd sortable">Updated</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">CAMPA_2024_Rockfish_v3</span></span></td>
+                    <td class="jscope">Rockfish training set, high confidence</td>
+                    <td class="num" data-sort="11982">11,982</td>
+                    <td class="num" data-sort="24103">24,103</td>
+                    <td class="num" data-sort="12">12</td>
+                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
+                    <td class="jtime" data-sort="2026-09-10 10:24"><span class="two"><span class="a">10:24</span><span class="b">2026-09-10</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">GULF_Invertebrates_v2</span></span></td>
+                    <td class="jscope">Invertebrate validation set</td>
+                    <td class="num" data-sort="5672">5,672</td>
+                    <td class="num" data-sort="11340">11,340</td>
+                    <td class="num" data-sort="8">8</td>
+                    <td class="jtime" data-sort="2026-09-08 16:12"><span class="two"><span class="a">16:12</span><span class="b">2026-09-08</span></span></td>
+                    <td class="jtime" data-sort="2026-09-09 09:41"><span class="two"><span class="a">09:41</span><span class="b">2026-09-09</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">Baja_Seamount_Test</span></span></td>
+                    <td class="jscope">Model test set from the Gulf survey</td>
+                    <td class="num" data-sort="4218">4,218</td>
+                    <td class="num" data-sort="8436">8,436</td>
+                    <td class="num" data-sort="7">7</td>
+                    <td class="jtime" data-sort="2026-08-25 16:03"><span class="two"><span class="a">16:03</span><span class="b">2026-08-25</span></span></td>
+                    <td class="jtime" data-sort="2026-08-28 11:17"><span class="two"><span class="a">11:17</span><span class="b">2026-08-28</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">ALL_Projects_Inverts_v5</span></span></td>
+                    <td class="jscope">Multi-species training dataset</td>
+                    <td class="num" data-sort="15734">15,734</td>
+                    <td class="num" data-sort="31892">31,892</td>
+                    <td class="num" data-sort="24">24</td>
+                    <td class="jtime" data-sort="2026-08-20 09:12"><span class="two"><span class="a">09:12</span><span class="b">2026-08-20</span></span></td>
+                    <td class="jtime" data-sort="2026-08-21 14:55"><span class="two"><span class="a">14:55</span><span class="b">2026-08-21</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico"><use href="#i-datasets"/></svg><span class="t">SALT_2024_Habitat_v2</span></span></td>
+                    <td class="jscope">Substrate and habitat classes</td>
+                    <td class="num" data-sort="6204">6,204</td>
+                    <td class="num" data-sort="12880">12,880</td>
+                    <td class="num" data-sort="7">7</td>
+                    <td class="jtime" data-sort="2026-06-28 08:40"><span class="two"><span class="a">08:40</span><span class="b">2026-06-28</span></span></td>
+                    <td class="jtime" data-sort="2026-07-02 15:09"><span class="two"><span class="a">15:09</span><span class="b">2026-07-02</span></span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this dataset"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Duplicate" title="Copy it as a starting point"><svg class="ico sm"><use href="#i-copy"/></svg></button><button class="btn sm icon" aria-label="Rename" title="Rename it"><svg class="ico sm"><use href="#i-pencil"/></svg></button><button class="btn sm icon" aria-label="Download" title="Download the images and labels as a YOLO archive"><svg class="ico sm"><use href="#i-download"/></svg></button></span></td>
+                  </tr>
+
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <footer class="panel-ft">
+            <span>Showing <b class="strong">1&ndash;5</b> of 14 datasets</span>
+            <div class="pager">
+              <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
+              <button aria-current="page">1</button><button>2</button><button>3</button>
+              <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+            </div>
+          </footer>
+        </section>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./mock.js"></script>
+</body>
+</html>

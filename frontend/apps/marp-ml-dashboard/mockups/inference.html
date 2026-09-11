@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; Inference</title>
+<link rel="icon" href="../../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./mock.css">
+</head>
+<body data-screen="inference">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Run a registered model over MARP data">Inference</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <nav class="tabstrip" data-switch="inf" aria-label="Inference section">
+        <button class="on" data-view="run"><svg class="ico"><use href="#i-play"/></svg>Run inference job</button>
+        <button data-view="batch"><svg class="ico"><use href="#i-queue"/></svg>Batch inference</button>
+        <button data-view="sched" disabled data-later="later"><svg class="ico"><use href="#i-calendar"/></svg>Scheduled inference</button>
+        <button data-view="results"><svg class="ico"><use href="#i-chart"/></svg>Results</button>
+      </nav>
+
+      <!-- ============================================ run one inference job -->
+      <div data-viewof="inf" data-view="run" class="grid">
+
+        <div class="grid" data-cols="3">
+
+          <!-- 1 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>1.</b>Model &amp; settings</span>
+                <span class="sub">Task, model and version</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label for="preset">Task preset</label>
+                <select class="sel wide" id="preset">
+                  <option>Detect &amp; track</option>
+                  <option>Detect only</option>
+                  <option>Detect, track &amp; classify</option>
+                </select>
+                <span class="hint">Fills the settings below; all stay editable.</span>
+              </div>
+
+              <div class="field req">
+                <label for="model">Model</label>
+                <select class="sel wide" id="model">
+                  <option>MARP-Det-v3</option>
+                  <option>MARP-Multiclass-Det-XL</option>
+                  <option>MARP-Crab-Det</option>
+                  <option>MARP-Fish-Det</option>
+                  <option>MARP-Sponge-Det</option>
+                  <option>MARP-Rockfish-Cls</option>
+                </select>
+              </div>
+
+              <div class="fieldrow">
+                <div class="field">
+                  <label for="version">Version</label>
+                  <select class="sel wide" id="version">
+                    <option>2.0.0</option><option>1.1.4</option><option>1.0.4</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="engine">Engine</label>
+                  <select class="sel wide" id="engine">
+                    <option>Ultralytics (YOLO)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <label>What will actually run</label>
+                <div class="ro">
+                  <span class="a">MARP-Det-v3 &nbsp;2.0.0 &nbsp;<span class="mono">9f2c41ab</span></span>
+                  <span class="b">Object detection &middot; trained 2025-12-02 &middot; 24 classes</span>
+                  <span class="b">Preferred for general benthic detection &mdash; the workhorse for
+                    CAMPA and PACIFIC transect video</span>
+                </div>
+                <span class="hint">Locked at submit.</span>
+              </div>
+
+              <details class="fold">
+                <summary>Advanced settings
+                  <span class="now">conf 0.25 &middot; IoU 0.45 &middot; ByteTrack &middot; 900f ranges</span>
+                </summary>
+                <div class="fbody">
+                  <div class="field">
+                    <label for="conf">Confidence threshold</label>
+                    <div class="slider">
+                      <input type="range" id="conf" min="0" max="1" step="0.01" value="0.25"
+                             aria-label="Confidence threshold">
+                      <input class="inp slider-out" type="number" min="0" max="1" step="0.01"
+                             value="0.25" aria-label="Confidence threshold, as a number">
+                    </div>
+                    <div class="slider-ends"><span>0.00</span><span>1.00</span></div>
+                  </div>
+                  <div class="field">
+                    <label for="iou">IoU threshold (NMS)</label>
+                    <div class="slider">
+                      <input type="range" id="iou" min="0" max="1" step="0.01" value="0.45"
+                             aria-label="IoU threshold">
+                      <input class="inp slider-out" type="number" min="0" max="1" step="0.01"
+                             value="0.45" aria-label="IoU threshold, as a number">
+                    </div>
+                    <div class="slider-ends"><span>0.00</span><span>1.00</span></div>
+                  </div>
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="maxdet">Max detections per frame</label>
+                      <input class="inp wide" type="number" id="maxdet" value="300">
+                    </div>
+                    <div class="field">
+                      <label for="imgsz">Image size</label>
+                      <select class="sel wide" id="imgsz">
+                        <option>640</option><option>960</option><option>1280</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="fieldrow">
+                    <div class="field">
+                      <label for="tracker">Tracker</label>
+                      <select class="sel wide" id="tracker">
+                        <option>ByteTrack</option><option>BoT-SORT</option><option>None</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="reduce">Reduction</label>
+                      <select class="sel wide" id="reduce">
+                        <option>Best frame of each track</option>
+                        <option>Every detection</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="chunk">Frame range size</label>
+                    <input class="inp wide" type="number" id="chunk" value="900" step="100">
+                    <span class="hint">Hard boundaries &mdash; the tracker resets at each one.</span>
+                  </div>
+                </div>
+              </details>
+
+            </div>
+          </section>
+
+          <!-- 2 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>2.</b>Input data</span>
+                <span class="sub">Which MARP data</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label>Scope <span class="later">One video for now</span></label>
+                <nav class="seg wide" data-switch="scope" aria-label="Inference scope">
+                  <button class="on" data-view="project">Project</button>
+                  <button data-view="dive">Dive</button>
+                  <button data-view="line">Line</button>
+                  <button data-view="custom">Custom</button>
+                </nav>
+              </div>
+
+              <div data-viewof="scope" data-view="project">
+                <div class="field">
+                  <label for="proj">Project</label>
+                  <select class="sel wide" id="proj">
+                    <option>CAMPA 2024</option><option>GULF 2025</option>
+                    <option>PACIFIC 2023</option><option>VENTS 2025</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>What that contains</label>
+                  <div class="facts2">
+                    <span class="k">Dives</span><span class="v">48</span>
+                    <span class="k">Lines</span><span class="v">312</span>
+                    <span class="k">Videos</span><span class="v">1,842</span>
+                    <span class="k">Frames</span><span class="v">~43M</span>
+                  </div>
+                </div>
+              </div>
+
+              <div data-viewof="scope" data-view="dive" hidden>
+                <div class="fieldrow">
+                  <div class="field">
+                    <label for="proj2">Project</label>
+                    <select class="sel wide" id="proj2"><option>CAMPA 2024</option></select>
+                  </div>
+                  <div class="field">
+                    <label for="dive">Dive</label>
+                    <select class="sel wide" id="dive">
+                      <option>0103</option><option>0125</option><option>0305</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>What that contains</label>
+                  <div class="facts2">
+                    <span class="k">Lines</span><span class="v">7</span>
+                    <span class="k">Videos</span><span class="v">31</span>
+                    <span class="k">Frames</span><span class="v">~742k</span>
+                  </div>
+                </div>
+              </div>
+
+              <div data-viewof="scope" data-view="line" hidden>
+                <div class="fieldrow">
+                  <div class="field">
+                    <label for="proj3">Project</label>
+                    <select class="sel wide" id="proj3"><option>CAMPA 2024</option></select>
+                  </div>
+                  <div class="field">
+                    <label for="dive3">Dive</label>
+                    <select class="sel wide" id="dive3"><option>0103</option></select>
+                  </div>
+                  <div class="field">
+                    <label for="line">Line</label>
+                    <select class="sel wide" id="line">
+                      <option>L30</option><option>L28</option><option>L15</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>What that contains</label>
+                  <div class="facts2">
+                    <span class="k">Videos</span><span class="v">1</span>
+                    <span class="k">Frames</span><span class="v">18,300</span>
+                  </div>
+                </div>
+              </div>
+
+              <div data-viewof="scope" data-view="custom" hidden>
+                <div class="field">
+                  <label>Chosen videos <span class="faint">(3)</span></label>
+                  <div class="checks">
+                    <label class="check"><input type="checkbox" class="chkbox" checked>
+                      <span class="mono">CAMPA_2024_D0103_L30_CAM1.mp4</span></label>
+                    <label class="check"><input type="checkbox" class="chkbox" checked>
+                      <span class="mono">CAMPA_2024_D0125_L30_CAM1.mp4</span></label>
+                    <label class="check"><input type="checkbox" class="chkbox" checked>
+                      <span class="mono">ARCTIC_2024_D0449_L08_CAM1.mp4</span></label>
+                  </div>
+                </div>
+                <button class="btn"><svg class="ico"><use href="#i-plus"/></svg>Add videos</button>
+              </div>
+
+              <div class="field" style="margin-top:15px">
+                <label>What this will do</label>
+                <div class="sum" id="scopeSum">
+                  <svg class="ico"><use href="#i-info"/></svg>
+                  <span>
+                    <span class="a">Run inference on every dive and line in CAMPA 2024</span>
+                    <span class="b">1,842 videos &middot; ~43M frames &middot; 47,976 ranges of 900 frames</span>
+                  </span>
+                </div>
+              </div>
+
+
+            </div>
+          </section>
+
+          <!-- 3 ------------------------------------------------------------- -->
+          <section class="panel">
+            <header class="panel-hd">
+              <h2><span class="stepnum"><b>3.</b>Output &amp; options</span>
+                <span class="sub">Where the results go</span></h2>
+            </header>
+            <div class="panel-bd">
+
+              <div class="field">
+                <label>Output mode</label>
+                <nav class="seg wide" data-switch="out" aria-label="Output mode">
+                  <button class="on" data-view="obs"><svg class="ico sm"><use href="#i-datasets"/></svg>Write observations</button>
+                  <button data-view="csv"><svg class="ico sm"><use href="#i-download"/></svg>CSV test &amp; export<span class="later">Later</span></button>
+                </nav>
+              </div>
+
+              <div data-viewof="out" data-view="obs">
+                <div class="field">
+                  <label for="dest">Save results to</label>
+                  <select class="sel wide" id="dest">
+                    <option>Project detections &mdash; CAMPA 2024</option>
+                  </select>
+                  <span class="hint">Written as unreviewed observations.</span>
+                </div>
+                <div class="field">
+                  <label>Output options</label>
+                  <div class="checks">
+                    <label class="check"><input type="checkbox" checked disabled>
+                      <span>Save detections to the database<span class="lock">always</span></span></label>
+                    <label class="check"><input type="checkbox" checked>
+                      <span>Include confidence scores</span></label>
+                    <label class="check"><input type="checkbox">
+                      <span>Generate annotated video <span class="later">Later</span></span></label>
+                    <label class="check"><input type="checkbox">
+                      <span>Save detection crops <span class="later">Later</span></span></label>
+                  </div>
+                </div>
+              </div>
+
+              <div data-viewof="out" data-view="csv" hidden>
+                <div class="field">
+                  <label>What this mode does</label>
+                  <div class="ro">
+                    <span class="a">A downloadable CSV</span>
+                    <span class="b">The observation database is not touched.</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="cols">Columns</label>
+                  <select class="sel wide" id="cols">
+                    <option>Frame, class, confidence, box</option>
+                    <option>Frame, class, confidence, box, track id</option>
+                  </select>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+        </div>
+
+
+        <section class="panel" id="runbar">
+          <header class="panel-hd">
+            <h2><span class="stepnum"><b>4.</b>Run</span>
+              <span class="sub">Worker and name</span></h2>
+          </header>
+          <div class="panel-bd">
+            <div class="runrow">
+              <div class="field">
+                <label for="workers">Worker selection</label>
+                <select class="sel wide" id="workers">
+                  <option>Auto &mdash; best available GPU</option>
+                  <option>Only workers with this model cached</option>
+                  <option>Choose workers&hellip;</option>
+                </select>
+                <span class="hint">A preference, not an assignment.</span>
+              </div>
+              <div class="field">
+                <label for="cap">Worker limit <span class="later">Later</span></label>
+                <label class="check"><input type="checkbox" id="capOn">
+                  <span>Cap how many this job may use</span></label>
+                <input class="inp wide" type="number" id="cap" value="8" disabled
+                       aria-label="Worker cap">
+              </div>
+              <div class="field">
+                <label for="jobname">Job name <span class="faint">(optional)</span></label>
+                <input class="inp wide" type="text" id="jobname"
+                       value="CAMPA_2024_MARP_Det_v3_Inverts">
+                <span class="hint">Letters, numbers, hyphen, underscore.</span>
+              </div>
+              <div class="field">
+                <label>&nbsp;</label>
+                <button class="btn primary big block" id="runBtn">
+                  <svg class="ico"><use href="#i-play"/></svg>Run inference</button>
+                <span class="hint">Mockup &mdash; shows the request, sends nothing.</span>
+              </div>
+            </div>
+            <div class="spec" id="specOut" hidden>
+              <h4>The request this would send</h4>
+              <pre id="specText"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>Recent inference jobs <span class="count">(6)</span></h2>
+            <button class="more">All jobs <svg class="ico sm"><use href="#i-arrow"/></svg></button>
+          </header>
+          <div class="panel-bd flush">
+            <div class="tblwrap">
+              <table class="tbl fixed stack">
+                <thead>
+                  <tr>
+                    <th class="hjob sortable">Job</th>
+                    <th class="hscope sortable">Scope</th>
+                    <th class="hmodel sortable">Model</th>
+                    <th class="hstatus sortable">Status</th>
+                    <th class="hprog sortable">Detections <span class="later">Later</span></th>
+                    <th class="hupd sortable" aria-sort="descending">Started</th>
+                    <th class="htype sortable">Took</th>
+                    <th class="hacts"><span class="vh">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">ARCTIC_2024_Dive_0449_Inverts</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0449 &middot; Line 08</span><span class="b">ARCTIC 2024</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v2.0.0</span></span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="running"><span class="dot"></span>Running</span></td>
+                    <td class="jprog" data-sort="-1"><span class="dash">&mdash;</span></td>
+                    <td class="jtime" data-sort="2026-09-09T12:28"><span class="two"><span class="a">12:28</span><span class="b">2026-09-09</span></span></td>
+                    <td data-sort="-1"><span class="dash">&mdash;</span></td>
+                    <td class="jacts"><span>
+                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
+                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
+                    </span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0305_L15_Invertebrate_Detect</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0305 &middot; Line 15</span><span class="b">CAMPA 2024</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v1.0.4</span></span></td>
+                    <td class="jstatus" data-sort="4"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
+                    <td class="jprog" data-sort="8856">8,856</td>
+                    <td class="jtime" data-sort="2026-09-09T11:04"><span class="two"><span class="a">11:04</span><span class="b">2026-09-09</span></span></td>
+                    <td data-sort="4680">1h 18m</td>
+                    <td class="jacts"><span>
+                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
+                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
+                    </span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">VENTS_2025_Line_32_Benthic_All</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">Line 32 &middot; 24 videos</span><span class="b">VENTS 2025</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span><span class="b">v1.0.2</span></span></td>
+                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="jprog" data-sort="125432">125,432</td>
+                    <td class="jtime" data-sort="2026-09-09T08:12"><span class="two"><span class="a">08:12</span><span class="b">2026-09-09</span></span></td>
+                    <td data-sort="22440">6h 14m</td>
+                    <td class="jacts"><span>
+                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
+                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
+                    </span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">GULF_2025_D0212_L04_Fish_Count</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">Dive 0212 &middot; Line 04</span><span class="b">GULF 2025</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Fish-Det</span><span class="b">v1.1.1</span></span></td>
+                    <td class="jstatus" data-sort="5"><span class="st" data-state="failed"><span class="dot"></span>Failed</span></td>
+                    <td class="jprog" data-sort="-1"><span class="dash">&mdash;</span></td>
+                    <td class="jtime" data-sort="2026-09-09T08:41"><span class="two"><span class="a">08:41</span><span class="b">2026-09-09</span></span></td>
+                    <td data-sort="132">2m 12s</td>
+                    <td class="jacts"><span>
+                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
+                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
+                    </span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">DeepSea_Test_Set_conf_sweep</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">Custom &middot; 100 videos</span><span class="b">CSV test &amp; export</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Det-v3</span><span class="b">v2.0.0</span></span></td>
+                    <td class="jstatus" data-sort="7"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="jprog" data-sort="3942">3,942</td>
+                    <td class="jtime" data-sort="2026-09-08T16:45"><span class="two"><span class="a">16:45</span><span class="b">2026-09-08</span></span></td>
+                    <td data-sort="1080">18m</td>
+                    <td class="jacts"><span>
+                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
+                      <button class="btn sm icon" disabled aria-label="Download the CSV"><svg class="ico sm"><use href="#i-download"/></svg></button>
+                    </span></td>
+                  </tr>
+                  <tr>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">PACIFIC_2023_Line_11_Benthic_All</span></span></td>
+                    <td class="jscope"><span class="two"><span class="a">Line 11 &middot; 19 videos</span><span class="b">PACIFIC 2023</span></span></td>
+                    <td class="jmodel"><span class="two"><span class="a">MARP-Multiclass-Det-XL</span><span class="b">v1.0.2</span></span></td>
+                    <td class="jstatus" data-sort="4"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
+                    <td class="jprog" data-sort="61208">61,208</td>
+                    <td class="jtime" data-sort="2026-09-08T11:22"><span class="two"><span class="a">11:22</span><span class="b">2026-09-08</span></span></td>
+                    <td data-sort="12660">3h 31m</td>
+                    <td class="jacts"><span>
+                      <button class="btn sm icon" aria-label="Open"><svg class="ico sm"><use href="#i-eye"/></svg></button>
+                      <button class="btn sm icon" disabled aria-label="Download"><svg class="ico sm"><use href="#i-download"/></svg></button>
+                    </span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- ============================================================ batch -->
+      <div data-viewof="inf" data-view="batch" class="grid" hidden>
+        <section class="panel">
+          <header class="panel-hd"><h2>Batch inference</h2><span class="later">Later</span></header>
+          <div class="panel-bd">
+            <div class="blank">
+              <b>One model over many scopes</b>
+              <span>Submitted once per line or dive, grouped as one job.</span>
+              <span class="later">Later</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ======================================================== scheduled -->
+      <div data-viewof="inf" data-view="sched" class="grid" hidden>
+        <section class="panel">
+          <header class="panel-hd"><h2>Scheduled inference</h2></header>
+          <div class="panel-bd">
+            <div class="blank">
+              <b>Nothing scheduled</b>
+              <span>Runs on a repeating schedule, unattended.</span>
+              <span class="later">Not planned</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ========================================================== results -->
+      <div data-viewof="inf" data-view="results" class="grid" hidden>
+        <section class="panel">
+          <header class="panel-hd">
+            <h2>Results</h2>
+            <div class="panel-tools">
+              <select class="sel" aria-label="Job"><option>ARCTIC_2024_Dive_0449_Inverts</option></select>
+            </div>
+          </header>
+          <div class="panel-bd">
+            <div class="grid" data-cols="2">
+              <div class="field">
+                <label>What this job produced</label>
+                <div class="facts2">
+                  <span class="k">Observations written</span><span class="v">8,604</span>
+                  <span class="k">Tracks reduced</span><span class="v">2,918</span>
+                  <span class="k">Classes seen</span><span class="v">11 of 24</span>
+                  <span class="k">Mean confidence</span><span class="v">0.71</span>
+                  <span class="k">Ranges complete</span><span class="v">9 of 21</span>
+                </div>
+              </div>
+              <div class="field">
+                <label>Most detected</label>
+                <div class="facts2">
+                  <span class="k">California sea cucumber</span><span class="v">2,104</span>
+                  <span class="k">Sunflower star</span><span class="v">1,688</span>
+                  <span class="k">Red urchin</span><span class="v">1,241</span>
+                  <span class="k">Basket star</span><span class="v">903</span>
+                  <span class="k">Orange sea pen</span><span class="v">744</span>
+                </div>
+              </div>
+            </div>
+            <p class="warn" style="margin-top:14px"><svg class="ico sm"><use href="#i-info"/></svg>
+              Detections drawn on the frame needs the video player <span class="later">Later</span></p>
+          </div>
+        </section>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="./mock.js"></script>
+</body>
+</html>
