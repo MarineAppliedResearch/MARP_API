@@ -833,3 +833,13 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 }
 .widen:hover { color: var(--cyan-300); border-color: var(--border) }
 .widen.on { color: var(--cyan-300); border-color: var(--border-strong) }
+
+/* Which list a widened candidate is on (#130 A3). Pushed to the far end and drawn as a
+   tag rather than as more name: a common name is not unique across the seven lists, so
+   this is the only thing distinguishing two rows that otherwise read identically, and it
+   has to survive a glance. Absent on a scoped search, which is all one list already. */
+.srow .slist {
+  margin-left: auto; flex: none; font-size: 9.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--faint);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+}

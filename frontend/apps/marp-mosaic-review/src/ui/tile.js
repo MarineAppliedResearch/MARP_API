@@ -199,8 +199,14 @@ export function tile(row) {
      mark off and not committed yet. Showing FLAGGED there would deny the click ever
      happened; showing nothing would hide a flag that is still on the record. */
   const exception = pendingException(state.mode);
+  /* This sitting's outcome wins over the row's own column (#131). The `||` used to let
+     the record resurrect the state: `existing` is read off the row, the fixture mutates
+     that column in place and the API never does -- nothing writes it back and a commit
+     invalidates no cache -- so once the unflag was committed the outcome said accepted
+     while the stale row still said flagged, and the tile went on offering to take back
+     something already recorded. Mark over outcome over record, all the way down. */
   const takingBack = !marked && exception && state.touched.has(id)
-    && (outcome === exception || existing === exception);
+    && (outcome ? outcome === exception : existing === exception);
   /* An id against the authenticated principal's id (A13). `decidedBy(row) === ME` was a
      name against a literal, and both halves were wrong: the row carries no name, and the
      literal was one developer's. */
@@ -211,6 +217,11 @@ export function tile(row) {
      precedence rather than beside it: a mark still outranks an outcome, which still
      outranks the record, and the kind only decides what the mark itself looks like. */
   const accepted = Boolean(marked) && markKind(marked) === MARK_ACCEPT;
+  /* An accept mark survives its own commit by design (#126), so the tile keeps the mark
+     badge -- and its tooltip went on saying "Not committed yet" after the commit had
+     recorded it. "Committed" means *this sitting*: after a reload there is no accept mark
+     at all, so the tile falls to a badge with no tooltip and nothing false survives. */
+  const acceptRecorded = accepted && outcome === acceptedValue(state.mode);
   /* The one accept mark the reviewer just tried to make and could not (A4). */
   const refused = state.refused && state.refused.id === id ? state.refused : null;
 
@@ -239,7 +250,9 @@ export function tile(row) {
        vocabulary to say, so its badge is not a target rather than opening a panel that
        cannot describe it. */
     : accepted ? `<span class="badge ${acceptClass()}"
-        title="Not committed yet — the next commit records this one as ${acceptedValue(state.mode)}">${acceptIcon()}${String(acceptedValue(state.mode)).toUpperCase()}</span>`
+        title="${acceptRecorded
+          ? `Recorded as ${acceptedValue(state.mode)} — click to ${MODES[state.mode].verb.toLowerCase()} it instead`
+          : `Not committed yet — the next commit records this one as ${acceptedValue(state.mode)}`}">${acceptIcon()}${String(acceptedValue(state.mode)).toUpperCase()}</span>`
     : marked ? `<span class="badge ${markClass()}" data-badge="${id}"
         title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`
     /* A refused commit is its own state: the annotation moved underneath the page and

@@ -2861,6 +2861,7 @@ const buildOpenApiSpec = () => {
                             dive: { type: 'string', nullable: true, example: 'D04' },
                             line: { type: 'string', nullable: true, example: '1' },
                             session_type: { type: 'string', nullable: true, example: 'Fish' },
+                            species_list: { type: 'string', nullable: true, example: 'Inverts', description: 'Which annotation list this observation may be corrected against, resolved on the server from the owning session type. **The session\'s list, not the current species\' list**: scoping a correction picker by whatever the observation is classified as now means an observation corrected onto the wrong list only ever offers candidates from that wrong list, and the mistake can never be corrected back. Null where the session type names no list -- `Other` genuinely does not say which was in use -- and for those a client has to search every list instead.' },
                             project_name: { type: 'string', nullable: true, example: 'Deep Reef Survey 2025', description: 'Null where the observation records no project. Both joins are outer, so a row is never silently dropped for want of one.' },
                             review_decision: { type: 'string', nullable: true, enum: ['reviewed', 'flagged', null], example: null, description: 'Current scientific decision, or null for unreviewed -- which is the absence of a record.' },
                             flag_reason: { type: 'string', nullable: true, example: null },

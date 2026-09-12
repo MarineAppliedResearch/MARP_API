@@ -104,6 +104,10 @@ const SUBSYSTEMS = {
             // group of its own -- it is about the schema and about not losing
             // rows, which is what this group already owns.
             'corpus',
+            // The corpus guard (#142). Here because it is data integrity by
+            // another route: it watches what a suite leaves behind rather than
+            // what a migration does.
+            'corpus-guard',
         ],
     },
     media: {

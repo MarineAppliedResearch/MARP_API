@@ -1776,3 +1776,34 @@ h3 {
     transform: none;
   }
 }
+
+/* Two of the five applications on this page are built and running; the rest are
+   still concepts. A live card carries a door, and says so. */
+.application-card--live {
+  border-color: rgba(42, 214, 220, 0.34);
+}
+.application-card__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+  color: var(--cyan-300);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+}
+.application-card__open svg {
+  width: 1em;
+  height: 1em;
+  transition: transform 0.15s ease-out;
+}
+.application-card__open:hover {
+  color: var(--white);
+}
+.application-card__open:hover svg {
+  transform: translateX(3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .application-card__open svg { transition: none; }
+}

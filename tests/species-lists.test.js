@@ -149,6 +149,103 @@ describe('Annotation species list search', () => {
   });
 });
 
+/**
+ * The cross-list search, added for MARP_API#130 R3.
+ *
+ * The mosaic's correction picker has always offered "search all lists" and there
+ * was no route behind it -- the button could not have returned anything. It is the
+ * only path to a picker at all for an observation whose session type names no
+ * list, and the deliberate way to make an off-list correction.
+ *
+ * Everything it asserts is seeded here rather than borrowed from the catalogue.
+ * The point of the route is that one common name can mean two organisms, and a
+ * check that waits for the real catalogue to happen to contain such a pair passes
+ * vacuously wherever it does not.
+ */
+describe('Cross-list species search', () => {
+
+  /** Distinguishes these fixtures from anything else in the catalogue. */
+  const TAG = `Jest Widen ${Date.now()}`;
+
+  /** @type {Array<number>} ids to remove afterwards. */
+  const created = [];
+
+  beforeAll(async () => {
+    const rows = await db.species.bulkCreate([
+      // The pair the route exists for: one name, two lists, two organisms.
+      { taxserial: 990001, species_list: 'Fish', comname: TAG, species: 'Testus fishus', gui_display_name: TAG, is_active: true },
+      { taxserial: 990002, species_list: 'GULF_Fish', comname: TAG, species: 'Testus gulfus', gui_display_name: TAG, is_active: true },
+      // Retired: widening a search does not make it offerable again.
+      { taxserial: 990003, species_list: 'Inverts', comname: `${TAG} retired`, species: 'Testus retiredus', gui_display_name: `${TAG} retired`, is_active: false },
+      // On no list: kept because ML metrics reference such rows, never offered.
+      { taxserial: 990004, species_list: null, comname: `${TAG} listless`, species: 'Testus listlessus', gui_display_name: `${TAG} listless`, is_active: true },
+    ], { returning: true });
+
+    created.push(...rows.map((row) => row.id));
+  });
+
+  afterAll(async () => {
+    if (created.length) {
+      await db.species.destroy({ where: { id: created } });
+    }
+  });
+
+  it('returns matches from more than one list, each saying which', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+
+    const pair = res.body.filter((entry) => entry.comname === TAG);
+
+    expect(pair.map((entry) => entry.species_list).sort()).toEqual(['Fish', 'GULF_Fish']);
+    // Two ids, because they are two organisms. A client that drew the name
+    // without the list would offer these as one choice.
+    expect(new Set(pair.map((entry) => entry.id)).size).toBe(2);
+  });
+
+  it('keeps the is_active filter the scoped search applies', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.every((entry) => entry.is_active)).toBe(true);
+    expect(res.body.some((entry) => entry.comname === `${TAG} retired`)).toBe(false);
+  });
+
+  it('leaves out entries that belong to no list', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.every((entry) => entry.species_list !== null)).toBe(true);
+    expect(res.body.some((entry) => entry.comname === `${TAG} listless`)).toBe(false);
+  });
+
+  it('matches scientific name as well as common name', async () => {
+    const res = await global.api.get('/api/v2/species/search?q=Testus%20gulfus');
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((entry) => entry.species)).toContain('Testus gulfus');
+  });
+
+  it('rejects an empty search term rather than returning the catalogue', async () => {
+    const res = await global.api.get('/api/v2/species/search?q=');
+
+    expect(res.status).toBe(400);
+  });
+
+  /**
+   * `/api/v2/species/:id` sits on the same prefix, so an ordering mistake would
+   * make this route try to read `search` as an id -- which returns 404 or 500
+   * rather than an answer, and only under the real router.
+   */
+  it('is not shadowed by the by-id route', async () => {
+    const res = await global.api.get(`/api/v2/species/search?q=${encodeURIComponent(TAG)}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
 describe('Species identity is list plus taxserial', () => {
 
   /**

@@ -35,21 +35,39 @@ const WALKTHROUGH = process.env.MARP_WALKTHROUGH === '1'
 if (WALKTHROUGH) process.env.MARP_WALKTHROUGH = '1';
 
 /**
- * Run the walkthrough against a real MARP API instead of the static file server.
+ * Run against a real MARP API instead of the static file server.
  *
  * `tools/serve.mjs` serves files and nothing else — it does not proxy `/api` — so a run
  * against it can only ever exercise the fixture. The API, on the other hand, already serves
  * this app at `/apps/marp-mosaic-review/`, so pointing `baseURL` at the API needs no proxy
  * at all: set `MARP_API_BASE` to wherever it is listening.
  *
- * **Opt-in, and only for the walkthrough.** Every other tier depends on the static server
- * and on a fixture it can break on purpose, so the default is untouched. In particular
- * `reuseExistingServer: false` below stays exactly as it is — that flag exists because the
- * tests once graded a different checkout without saying so. This does not weaken it; it
- * declines to start a server at all, and says which API it is talking to instead.
+ * **Opt-in, and `MARP_API_BASE` is the whole of the opt-in.** This used to be
+ * `&& WALKTHROUGH`, so the only thing that could ever talk to a real server was a recording
+ * — and #132 is what that cost: the take-back defect is invisible to the fixture by
+ * construction, because `src/data.js` writes the row's status column in place and the
+ * endpoint never does. So the `api` project below joins the walkthrough on this flag.
+ *
+ * **Setting it is a statement about the whole invocation**, because `webServer` is not a
+ * per-project setting: with it set, no static server is started, so name `--project=api` or
+ * `--project=walkthrough`. `desktop` and `phone` are untouched and unaffected — they are the
+ * fast loop, they stay on the fixture, and nothing about them changes while this is unset,
+ * which is every ordinary run. In particular `reuseExistingServer: false` below stays
+ * exactly as it is — that flag exists because the tests once graded a different checkout
+ * without saying so. This does not weaken it; it declines to start a server at all, and says
+ * which API it is talking to instead.
  */
 const API_BASE = String(process.env.MARP_API_BASE || '').replace(/\/+$/, '');
-const ON_API = Boolean(API_BASE) && WALKTHROUGH;
+const ON_API = Boolean(API_BASE);
+
+/* Asking for the API tier without saying where the API is should say so, rather than
+   arriving as *Project "api" not found*. Parent-process argv only, which is all that is
+   needed: a worker inherits `MARP_API_BASE`, so if the parent got past this the project
+   exists in the worker too. */
+if (!ON_API && process.argv.some((a) => a === 'api' || a.endsWith('=api'))) {
+  throw new Error('The `api` project needs MARP_API_BASE, plus MARP_REVIEW_USERNAME and '
+    + 'MARP_REVIEW_PASSWORD. It runs against a real server; there is no fixture in it.');
+}
 
 export default defineConfig({
   testDir: './tests',
@@ -106,6 +124,28 @@ export default defineConfig({
           baseURL: `${API_BASE}/apps/marp-mosaic-review/`,
           storageState: SESSION_FILE
         })
+      }
+    }]),
+    /**
+     * The one tier that talks to a real API, and the only one that can see a defect the
+     * fixture masks (#132, R14).
+     *
+     * No `?backing=fixture` is injected here — that is done in a `beforeEach` in
+     * `tests/e2e/render.spec.mjs`, which this project's `testDir` does not include — and
+     * every test in it asserts `data-backing` so a run cannot grade the fixture while
+     * claiming to be the API. Desktop viewport only: what it proves is about what gets
+     * written and read back, not about layout, and it writes to a real database.
+     */
+    ...(!ON_API ? [] : [{
+      name: 'api',
+      testDir: './tests/api',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1600, height: 900 },
+        baseURL: `${API_BASE}/apps/marp-mosaic-review/`,
+        /* The app is session-gated in `app.js`, so the context arrives already signed in.
+           `globalSetup` below is what puts that file there. */
+        storageState: SESSION_FILE
       }
     }]),
     { name: 'desktop', testDir: './tests/e2e', use: { ...devices['Desktop Chrome'], viewport: { width: 1600, height: 900 } } },

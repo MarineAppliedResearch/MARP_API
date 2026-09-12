@@ -15,6 +15,9 @@
 
 const request = require('supertest');
 const app = require('../app');
+const db = require('../model');
+
+const { QueryTypes } = db.Sequelize;
 
 /**
  * GET /api/tasks should list every task record.
@@ -203,8 +206,18 @@ describe('GET /api/metaInfo/dbName', () => {
  */
 describe('PUT /api/metaInfo/dbName', () => {
   it('updates the database name and restores the original value afterward', async () => {
-    const before = await global.api.get('/api/v2/metaInfo/dbName');
-    const originalName = before.body[0].name;
+    // The whole row, read directly, not just the name the GET exposes. The
+    // model carries Sequelize's timestamps, so the PUT moves `updatedAt` as
+    // well -- and putting only the name back left the row modified, which is
+    // exactly what a test may not do to a row it did not create (#142).
+    // The timestamps are read as text: PostgreSQL keeps microseconds and a JS
+    // Date only milliseconds, so a Date round-trip would write back a value a
+    // fraction of a millisecond off the one that was there.
+    const [original] = await db.sequelize.query(
+      'SELECT id, name, "createdAt"::text AS "createdAt", "updatedAt"::text AS "updatedAt"'
+      + ' FROM "metaInfos" ORDER BY id LIMIT 1',
+      { type: QueryTypes.SELECT }
+    );
 
     try {
       const putRes = await global.api
@@ -217,9 +230,24 @@ describe('PUT /api/metaInfo/dbName', () => {
       const after = await global.api.get('/api/v2/metaInfo/dbName');
       expect(after.body[0].name).toBe('Test DB Name');
     } finally {
-      await global.api
-        .put('/api/v2/metaInfo/dbName')
-        .send({ name: originalName });
+      // Restored by UPDATE rather than by the PUT: the route would stamp a
+      // fresh `updatedAt` and leave the row different however right the name is.
+      if (original) {
+        await db.sequelize.query(
+          'UPDATE "metaInfos" SET name = :name,'
+          + ' "createdAt" = CAST(:createdAt AS timestamptz),'
+          + ' "updatedAt" = CAST(:updatedAt AS timestamptz) WHERE id = :id',
+          { replacements: original }
+        );
+      } else {
+        // There was no row at all, which is the state a freshly built database
+        // is in -- the baseline seeds no `metaInfos`, so this is what CI runs
+        // against. The PUT creates one, so putting the table back means
+        // removing it: restoring "what was there" is zero rows, not a row with
+        // the old name. Caught by the guard in CI after it passed locally,
+        // where the development database happened to have a row already (#142).
+        await db.sequelize.query('DELETE FROM "metaInfos"');
+      }
     }
   });
 

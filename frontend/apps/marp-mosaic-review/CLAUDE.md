@@ -113,9 +113,16 @@ runtime flag the application can be subject to**:
 
 There is **one exception and it is deliberately loud**: `?backing=fixture` puts the app on
 the fixture, paints a permanent `FIXTURE — not the API` banner, and stamps
-`documentElement.dataset.backing`. The render tier passes it — it has no seeded database to
-run against yet — and asserts the banner, so a run cannot grade the fixture while claiming
-to be the API. Both come out when that database lands.
+`documentElement.dataset.backing`. The render tier passes it and asserts the banner, so a
+run cannot grade the fixture while claiming to be the API.
+
+**Neither the flag nor the fixture is coming out**, and this paragraph used to say they
+would "when the seeded database lands". The database landed and the conclusion was wrong
+(#132): the fixture tier is the *fast loop* — it runs every test at two viewports in under a
+minute, and it can break a commit on purpose, which no real server will do for you. What
+changed is that it is no longer the **only** browser tier. The `api` project runs against a
+real server, and it exists for the defects the fixture masks by construction — see *The API
+tier* below.
 
 The cost of two backings is that they can drift, and the answer is that **they present the
 same method set**: `backend.js` writes the list out rather than proxying, so a method one
@@ -512,7 +519,7 @@ redone. `MarpData.failNextCommit()` exists only so that path can be tested.
 
 ## The test tiers, and which one catches what
 
-Four tiers plus the walkthrough videos. They fail in genuinely different ways, and
+Five tiers plus the walkthrough videos. They fail in genuinely different ways, and
 choosing the wrong one is how bugs ship.
 
 | Tier | Command | Catches | Cannot catch |
@@ -521,6 +528,7 @@ choosing the wrong one is how bugs ship.
 | Unit | `npm run test:unit` | the rules in `model/`, and **what reaches the wire** | anything rendered |
 | Contract | part of `test:e2e` | store behaviour against the requirements in #68, by name | whether it was drawn |
 | Render | `npm run test:e2e` | badges actually drawn, panels on-screen, colours, no console errors | meaning |
+| API | `--project=api`, see below | what a **real server** does and the fixture does not | anything needing a broken backing |
 
 **`tests/unit/api-requests.test.mjs` is the tier that can see a serialisation defect**, and
 every assertion in it goes through `JSON.parse(JSON.stringify(body))`. That is not
@@ -569,6 +577,58 @@ size — the store was correct every time. **If a fix is about what appears, the
 belongs in Playwright.** Reporting a fix verified at a tier that structurally cannot
 observe it is how several defects got reported twice.
 
+### The API tier
+
+`--project=api` runs `tests/api/` in a real browser against a **real MARP API**, with a real
+session, and no fixture anywhere in it. It is opt-in on `MARP_API_BASE`, and asking for the
+project without it is a loud refusal rather than *Project "api" not found*.
+
+```bash
+npm start                                   # from the repository root, on a port of your own
+set -a; . .marp/local/<your>.env; set +a    # the reviewer login, git-ignored
+MARP_API_BASE=http://localhost:<port> npx playwright test --project=api
+```
+
+`tools/api-session.mjs` is a `globalSetup` that signs in and writes a Playwright storage
+state, because `/apps/marp-mosaic-review` is session-gated in `app.js` and the app is not
+even served without one. The login is created by `scripts/create-review-user.js` and needs
+`observations:read`, `observations:write` and `species:read`; `MARP_REVIEW_USERNAME` and
+`MARP_REVIEW_PASSWORD` are how it is passed, and it is a credential, so it lives in
+`.marp/local/` and never in a tracked file.
+
+**Why a fifth tier rather than more render tests.** `src/data.js` is not a small API, it is a
+*different* one — it writes the row's own status column in place when a page is committed,
+and the endpoint never does that: a decision is a projection row, the row is served from a
+cache, and a commit deliberately invalidates nothing. So anything living in the gap between
+what a commit recorded and what the row still says is invisible on the fixture at every tier.
+#130, #124's F6 and #124's F8 were all that shape, and so is the take-back defect this tier
+was built for. The first answer to it was a fixture affordance that *simulated* the endpoint
+not writing back, and that was rejected on 2026-09-11: *"if the fixture doesn't trigger the
+error and the actual system does, that doesn't make any sense."* A better fake is not the fix
+for damage done by a fake.
+
+**Three rules, and they are not negotiable, because this tier writes to a real database.**
+The only one available is the development corpus — three GPU inference runs over real dives,
+real thumbnails, and real review decisions that are the evidence behind recorded
+walkthroughs, with nothing to restore from until MARP_API#125:
+
+- **Touch as few rows as the assertion needs, and know which.** `tests/api/take-back.spec.mjs`
+  filters to a species with exactly one observation, so the page it sweeps holds one row
+  rather than fifty — and it *checks* that, failing with an explanation rather than
+  committing rows it never inspected.
+- **Restore what you changed, in a `finally`, through the API.** A failed assertion must
+  still put the record back. `withdraw` on the commit route deletes the projection row, and
+  the absence of a row is what `undecided` means, so an observation nobody had decided about
+  goes back to exactly that.
+- **Every test asserts `data-backing`.** No `?backing=fixture` is injected here — that is a
+  `beforeEach` in `tests/e2e/render.spec.mjs`, and this project's `testDir` does not include
+  it — but asserting the backing is what makes a run unable to grade a fixture and report it
+  as the API.
+
+It is **not** part of the loop and not in `npm test`: it needs a server, a database and a
+login, and a missing one of those must fail rather than skip. Desktop viewport only — what it
+proves is about what gets written and read back, not about layout.
+
 ### Where a new test goes
 
 - A rule — what a mark means, what a commit does, how filters nest → `tests/unit/`,
@@ -578,6 +638,8 @@ observe it is how several defects got reported twice.
   check calls `reset()` first, which reloads the fixture so checks cannot contaminate
   one another.
 - Anything visible → `tests/e2e/render.spec.mjs`.
+- Anything the **fixture cannot be wrong about the way the endpoint is** → `tests/api/`, and
+  read *The API tier* above first: it writes to the corpus, so it restores what it touches.
 
 **The locator trap.** A Playwright locator is re-resolved on every use, so a selector
 that describes a *state* stops matching the moment the state changes:
@@ -640,6 +702,37 @@ in `npm test`. `playwright.config.mjs` leaves the `walkthrough` project out of t
 entirely unless something names it — a bare `playwright test` used to pull it in, which
 turned a ninety-second loop into four and a half minutes and recorded videos nobody had
 asked for.
+
+**A walkthrough is for the human to watch. It is not automated testing, and it must never
+be counted as coverage.** Settled again on 2026-09-11: *"walkthrough tests are for me to
+review, those aren't for automated testing."*
+
+So a walkthrough is never the evidence that something works, never cited in place of a
+test, and never added to make a tier look complete. If a behaviour needs proving, it needs
+a test at a tier that can observe it; the walkthrough is what the user watches afterwards
+to decide whether he likes it. The assertions inside a scenario exist for one narrow
+reason — so a broken app fails instead of producing a convincing film of something that
+does not work — and that is quality control on the film, not coverage of the feature.
+
+Two consequences that are easy to get wrong:
+
+- **A walkthrough runs on test data. Never the corpus.** Settled 2026-09-11: *"the narrated
+  walkthrough should only happen on test data — we're not doing actual data work during
+  these times, it's so I can review development work."*
+  A recording signs in as a real reviewer and commits real decisions, so pointed at the
+  corpus it **writes to the scientific record while demonstrating a feature**. That is a
+  defect, not a side effect: 60 review rows landed in the development corpus during one
+  recording on 2026-09-11 and are still there, indistinguishable from decisions a person
+  made on purpose.
+  The recording still has to *do* the review — a film of a review tool that reviews nothing
+  is worthless — so the fix is the database it does it to, not the doing. Point it at a
+  disposable copy: `marp db up --port` plus `marp db load` (#125) makes one in a couple of
+  commands, and #132 wants the same thing for the browser tier.
+- **#142's corpus guard cannot see any of it.** That guard runs inside Jest, and a
+  walkthrough is Playwright. **Do not "fix" that by pulling walkthroughs into the guarded
+  path or into `npm test`** — they are not tests, and putting them there would both slow
+  the loop and start recording videos nobody asked for, which is exactly what
+  `playwright.config.mjs` excludes the project to prevent.
 
 **And a walkthrough never belongs in a verification plan.** It is not a verification step,
 it does not appear in `.marp/verification.md`, and no plan proposes one — *"a walkthrough

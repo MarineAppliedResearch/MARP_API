@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARP ML &mdash; History</title>
+<link rel="icon" href="../../../shared/assets/images/marp-mark.png">
+<link rel="stylesheet" href="../../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="./mock.css">
+</head>
+<body data-screen="history">
+
+<div class="app">
+  <aside class="rail"></aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="heading">
+        <h1 title="Finished work, searchable within a bounded window">History</h1>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <div class="stats">
+        <div class="stat" data-state="idle" title="Jobs that finished inside the chosen window">
+          <span class="stat-ico"><svg class="ico"><use href="#i-history"/></svg></span>
+          <span class="stat-lab">Jobs in this window</span>
+          <b class="stat-num">247</b>
+          <span class="stat-sub"><span><b>12%</b> more than the 30 before</span></span>
+        </div>
+        <div class="stat" data-state="done" title="Finished with every piece succeeding">
+          <span class="stat-ico"><svg class="ico"><use href="#i-tick"/></svg></span>
+          <span class="stat-lab">Completed</span>
+          <b class="stat-num">198</b>
+          <span class="stat-sub"><span><b>80%</b> of the window</span></span>
+        </div>
+        <div class="stat" data-state="issues" title="Finished, but some videos or ranges failed">
+          <span class="stat-ico"><svg class="ico"><use href="#i-alert"/></svg></span>
+          <span class="stat-lab">Completed with issues</span>
+          <b class="stat-num">28</b>
+          <span class="stat-sub"><span><b>11%</b> of the window</span></span>
+        </div>
+        <div class="stat" data-state="failed" title="Stopped without finishing, or cancelled by a person">
+          <span class="stat-ico"><svg class="ico"><use href="#i-x"/></svg></span>
+          <span class="stat-lab">Failed or cancelled</span>
+          <b class="stat-num">21</b>
+          <span class="stat-sub"><span><b>9%</b> of the window</span></span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <header class="panel-hd">
+          <h2>Job history <span class="count">(247)</span></h2>
+          <div class="panel-tools" id="filters">
+            <span class="search">
+              <svg class="ico sm"><use href="#i-search"/></svg>
+              <input class="inp" type="search" placeholder="Search jobs, models, datasets&hellip;"
+                     aria-label="Search history" title="Filter by job, model or dataset name">
+            </span>
+            <select class="sel" aria-label="Job type" title="Show one kind only">
+              <option>All types</option><option>Inference</option><option>Training</option>
+            </select>
+            <select class="sel" aria-label="Status" title="Show one outcome only">
+              <option>All statuses</option><option>Completed</option>
+              <option>Completed with issues</option><option>Failed</option><option>Cancelled</option>
+            </select>
+            <select class="sel" id="window" aria-label="Window"
+                    title="History is never fetched whole; everything on this screen is within this window">
+              <option>Last 30 days</option><option>Last 7 days</option>
+              <option>Last 90 days</option><option>This year</option>
+            </select>
+            <select class="sel" aria-label="Model" title="Show jobs that used one model">
+              <option>All models</option><option>MARP-Multiclass-Det-XL</option>
+              <option>MARP-Det-v3</option>
+            </select>
+            <button class="btn" title="Filter by worker, submitter or dataset">
+              <svg class="ico"><use href="#i-filter"/></svg>More filters</button>
+            <button class="btn" title="Download this window as CSV">
+              <svg class="ico"><use href="#i-download"/></svg>Export
+              <span class="later">Later</span></button>
+          </div>
+          <div class="bulk" id="bulk" hidden>
+            <span><span class="n" id="bulkN">0</span> selected</span>
+            <button class="btn sm" title="Start new jobs with the same configuration">Run again</button>
+            <button class="btn sm" title="Download the selected rows as CSV">Export
+              <span class="later">Later</span></button>
+            <button class="btn sm ghost sp" id="bulkClear">Clear selection</button>
+          </div>
+        </header>
+        <div class="panel-bd flush">
+          <div class="tblwrap">
+            <table class="tbl fixed stack selectable" id="history">
+              <thead>
+                <tr>
+                  <th class="chk"><input class="chkbox" type="checkbox" id="all"
+                      aria-label="Select every job on this page"></th>
+                  <th class="hjob sortable" title="Sort by name">Job</th>
+                  <th class="htype sortable" title="Inference or training">Type</th>
+                  <th class="hstatus sortable" title="How it ended">Status</th>
+                  <th class="hscope sortable" title="Which MARP data it covered">Scope</th>
+                  <th class="hmodel sortable" title="The model and version it ran">Model</th>
+                  <th class="hdata sortable" title="The videos or dataset it read">Input</th>
+                  <th class="hstart sortable" aria-sort="descending" title="When work began">Started</th>
+                  <th class="hend sortable" title="When it ended">Completed</th>
+                  <th class="hdur sortable num" title="Wall-clock time">Took</th>
+                  <th class="hwho sortable" title="Who submitted it. A service token records nobody">By</th>
+                  <th class="hacts"><span class="vh">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                  <tr data-row="0">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select CAMPA_2024_D0103_L30_Crab_Count"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0103_L30_Crab_Count</span></span></td>
+                    <td class="htype"><span class="tag inference">Inference</span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="hscope">CAMPA 2024</td>
+                    <td class="hmodel">MARP-Crab-Det 1.1.4</td>
+                    <td class="hdata">Dive 0103 · Line 30</td>
+                    <td class="hstart" data-sort="2026-09-09 16:20"><span class="two"><span class="a">16:20</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hend" data-sort="2026-09-09 17:02"><span class="two"><span class="a">17:02</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hdur num">42m</td>
+                    <td class="hwho">itravers</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr class="sel" data-row="1">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select Train_MARP_Multiclass_Det_XL_v5"></td>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Train_MARP_Multiclass_Det_XL_v5</span></span></td>
+                    <td class="htype"><span class="tag training">Training</span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="hscope">All projects</td>
+                    <td class="hmodel">MARP-Multiclass-Det-XL 1.2.1</td>
+                    <td class="hdata">ALL_Projects_Inverts_v5</td>
+                    <td class="hstart" data-sort="2026-09-09 14:36"><span class="two"><span class="a">14:36</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hend" data-sort="2026-09-09 16:48"><span class="two"><span class="a">16:48</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hdur num">2h 12m</td>
+                    <td class="hwho">itravers</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="2">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select CAMPA_2024_D0305_L15_Invertebrate_Detect"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">CAMPA_2024_D0305_L15_Invertebrate_Detect</span></span></td>
+                    <td class="htype"><span class="tag inference">Inference</span></td>
+                    <td class="jstatus" data-sort="1"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
+                    <td class="hscope">CAMPA 2024</td>
+                    <td class="hmodel">MARP-Det-v3 1.0.4</td>
+                    <td class="hdata">Dive 0305 · Line 15</td>
+                    <td class="hstart" data-sort="2026-09-09 11:04"><span class="two"><span class="a">11:04</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hend" data-sort="2026-09-09 12:22"><span class="two"><span class="a">12:22</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hdur num">1h 18m</td>
+                    <td class="hwho">itravers</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="3">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select VENTS_2025_Line_32_Benthic_All"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">VENTS_2025_Line_32_Benthic_All</span></span></td>
+                    <td class="htype"><span class="tag inference">Inference</span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="hscope">VENTS 2025</td>
+                    <td class="hmodel">MARP-Multiclass-Det-XL 1.0.2</td>
+                    <td class="hdata">Line 32 · 24 videos</td>
+                    <td class="hstart" data-sort="2026-09-09 08:12"><span class="two"><span class="a">08:12</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hend" data-sort="2026-09-09 14:26"><span class="two"><span class="a">14:26</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hdur num">6h 14m</td>
+                    <td class="hwho"><span class="dash" title="Submitted with a service token, which records no person">&mdash;</span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="4">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select Train_MARP_SeaStar_Det_SALT_v2"></td>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Train_MARP_SeaStar_Det_SALT_v2</span></span></td>
+                    <td class="htype"><span class="tag training">Training</span></td>
+                    <td class="jstatus" data-sort="2"><span class="st" data-state="failed"><span class="dot"></span>Failed</span></td>
+                    <td class="hscope">SALT 2024</td>
+                    <td class="hmodel">MARP-SeaStar-Det 1.0.1</td>
+                    <td class="hdata">SALT_2024_SeaStar_v2</td>
+                    <td class="hstart" data-sort="2026-09-09 09:18"><span class="two"><span class="a">09:18</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hend" data-sort="2026-09-09 11:06"><span class="two"><span class="a">11:06</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hdur num">1h 48m</td>
+                    <td class="hwho">itravers</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="5">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select GULF_2025_D0212_L04_Fish_Count"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">GULF_2025_D0212_L04_Fish_Count</span></span></td>
+                    <td class="htype"><span class="tag inference">Inference</span></td>
+                    <td class="jstatus" data-sort="3"><span class="st" data-state="cancelled"><span class="dot"></span>Cancelled</span></td>
+                    <td class="hscope">GULF 2025</td>
+                    <td class="hmodel">MARP-Fish-Det 1.1.1</td>
+                    <td class="hdata">Dive 0212 · Line 04</td>
+                    <td class="hstart" data-sort="2026-09-09 08:41"><span class="two"><span class="a">08:41</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hend" data-sort="2026-09-09 08:43"><span class="two"><span class="a">08:43</span><span class="b">2026-09-09</span></span></td>
+                    <td class="hdur num">2m 12s</td>
+                    <td class="hwho">itravers</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="6">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select PACIFIC_2023_Line_11_Benthic_All"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">PACIFIC_2023_Line_11_Benthic_All</span></span></td>
+                    <td class="htype"><span class="tag inference">Inference</span></td>
+                    <td class="jstatus" data-sort="1"><span class="st" data-state="issues"><span class="dot"></span>Issues</span></td>
+                    <td class="hscope">PACIFIC 2023</td>
+                    <td class="hmodel">MARP-Multiclass-Det-XL 1.0.2</td>
+                    <td class="hdata">Line 11 · 19 videos</td>
+                    <td class="hstart" data-sort="2026-09-08 11:22"><span class="two"><span class="a">11:22</span><span class="b">2026-09-08</span></span></td>
+                    <td class="hend" data-sort="2026-09-08 14:53"><span class="two"><span class="a">14:53</span><span class="b">2026-09-08</span></span></td>
+                    <td class="hdur num">3h 31m</td>
+                    <td class="hwho"><span class="dash" title="Submitted with a service token, which records no person">&mdash;</span></td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="7">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select Train_MARP_Habitat_Cls_v2"></td>
+                    <td class="jname"><span class="name"><svg class="ico training"><use href="#i-training"/></svg><span class="t">Train_MARP_Habitat_Cls_v2</span></span></td>
+                    <td class="htype"><span class="tag training">Training</span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="hscope">SALT 2024</td>
+                    <td class="hmodel">MARP-Habitat-Cls 1.2.0</td>
+                    <td class="hdata">SALT_2024_Habitat_v2</td>
+                    <td class="hstart" data-sort="2026-09-08 10:15"><span class="two"><span class="a">10:15</span><span class="b">2026-09-08</span></span></td>
+                    <td class="hend" data-sort="2026-09-08 14:36"><span class="two"><span class="a">14:36</span><span class="b">2026-09-08</span></span></td>
+                    <td class="hdur num">4h 21m</td>
+                    <td class="hwho">itravers</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="8">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select DeepSea_Test_Set_conf_sweep"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">DeepSea_Test_Set_conf_sweep</span></span></td>
+                    <td class="htype"><span class="tag inference">Inference</span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="hscope">Custom</td>
+                    <td class="hmodel">MARP-Det-v3 2.0.0</td>
+                    <td class="hdata">100 videos · CSV export</td>
+                    <td class="hstart" data-sort="2026-09-08 16:45"><span class="two"><span class="a">16:45</span><span class="b">2026-09-08</span></span></td>
+                    <td class="hend" data-sort="2026-09-08 17:03"><span class="two"><span class="a">17:03</span><span class="b">2026-09-08</span></span></td>
+                    <td class="hdur num">18m</td>
+                    <td class="hwho">mchen</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+                  <tr data-row="9">
+                    <td class="chk"><input class="chkbox" type="checkbox" aria-label="Select ARCTIC_2024_Dive_0398_Inverts"></td>
+                    <td class="jname"><span class="name"><svg class="ico inference"><use href="#i-inference"/></svg><span class="t">ARCTIC_2024_Dive_0398_Inverts</span></span></td>
+                    <td class="htype"><span class="tag inference">Inference</span></td>
+                    <td class="jstatus" data-sort="0"><span class="st" data-state="done"><span class="dot"></span>Completed</span></td>
+                    <td class="hscope">ARCTIC 2024</td>
+                    <td class="hmodel">MARP-Det-v3 2.0.0</td>
+                    <td class="hdata">Dive 0398 · Line 04</td>
+                    <td class="hstart" data-sort="2026-09-07 13:55"><span class="two"><span class="a">13:55</span><span class="b">2026-09-07</span></span></td>
+                    <td class="hend" data-sort="2026-09-07 14:11"><span class="two"><span class="a">14:11</span><span class="b">2026-09-07</span></span></td>
+                    <td class="hdur num">16m</td>
+                    <td class="hwho">itravers</td>
+                    <td class="jacts"><span><button class="btn sm icon" aria-label="Open" title="Open this job"><svg class="ico sm"><use href="#i-eye"/></svg></button><button class="btn sm icon" aria-label="Run again" title="Start a new job with this configuration"><svg class="ico sm"><use href="#i-retry"/></svg></button></span></td>
+                  </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <footer class="panel-ft">
+          <span>Showing <b class="strong">1&ndash;10</b> of 247 jobs in the last 30 days</span>
+          <div class="pager">
+            <button aria-label="Previous page" disabled><svg class="ico sm"><use href="#i-left"/></svg></button>
+            <button aria-current="page">1</button><button>2</button><button>3</button>
+            <button>4</button><button>&hellip;</button><button>25</button>
+            <button aria-label="Next page"><svg class="ico sm"><use href="#i-right"/></svg></button>
+          </div>
+          <span class="rpp">Rows
+            <select class="sel" aria-label="Rows per page"><option>10</option><option>25</option><option>50</option></select>
+          </span>
+        </footer>
+      </section>
+
+      <section class="panel">
+        <header class="panel-hd">
+          <h2><span class="name"><svg class="ico training"><use href="#i-training"/></svg>
+            <span class="t">Train_MARP_Multiclass_Det_XL_v5</span></span></h2>
+          <span class="pill" data-state="done"><span class="dot"></span>Completed</span>
+          <div class="panel-tools">
+            <button class="btn" title="Start a new run with this configuration">
+              <svg class="ico"><use href="#i-retry"/></svg>Run again</button>
+            <button class="btn" title="Open the dataset it trained on">
+              <svg class="ico"><use href="#i-datasets"/></svg>Dataset</button>
+            <button class="btn" title="Open the version it registered">
+              <svg class="ico"><use href="#i-models"/></svg>Model</button>
+            <button class="btn" title="Review the observations in the Picture Mosaic Reviewer">
+              <svg class="ico"><use href="#i-eye"/></svg>Review in Mosaic</button>
+            <button class="btn" title="Download the run's output">
+              <svg class="ico"><use href="#i-download"/></svg>Output
+              <span class="later">Later</span></button>
+          </div>
+        </header>
+        <div class="panel-bd">
+          <div class="grid" data-cols="3">
+
+            <div class="sect">
+              <h3>Job</h3>
+              <dl class="kv">
+                <dt>Job id</dt><dd class="mono">1742</dd>
+                <dt>Kind</dt><dd>Training</dd>
+                <dt>Scope</dt><dd>All projects</dd>
+                <dt>Dataset</dt><dd>ALL_Projects_Inverts_v5</dd>
+                <dt>Base model</dt><dd>MARP-Multiclass-Det-XL 1.2.0</dd>
+                <dt>Submitted by</dt><dd>itravers</dd>
+                <dt>Started</dt><dd>2026-09-09 14:36:31</dd>
+                <dt>Completed</dt><dd>2026-09-09 16:48:17</dd>
+                <dt>Took</dt><dd>2h 11m 46s</dd>
+                <dt>Worker</dt><dd>bergstrom-4090 <span class="faint">RTX 4090</span></dd>
+                <dt>Attempts</dt><dd>1 of 3</dd>
+              </dl>
+            </div>
+
+            <div class="sect">
+              <h3>Timeline</h3>
+              <ol class="lin">
+                              <li class="lstep"><span class="lv">14:36:31</span><span class="lw">Queued</span><span class="ld">Submitted by itravers, priority 5</span></li>
+                              <li class="lstep"><span class="lv">14:37:05</span><span class="lw">Leased</span><span class="ld">bergstrom-4090 took the work, attempt 1 of 3</span></li>
+                              <li class="lstep"><span class="lv">14:39:12</span><span class="lw">Preparing</span><span class="ld">Base model cached, dataset materialized</span></li>
+                              <li class="lstep"><span class="lv">14:41:03</span><span class="lw">Training</span><span class="ld">100 epochs over 12,846 observations</span></li>
+                              <li class="lstep"><span class="lv">16:44:18</span><span class="lw">Validating</span><span class="ld">Scored against the held-out test split</span></li>
+                              <li class="lstep is-current"><span class="lv">16:48:17</span><span class="lw">Completed</span><span class="ld">Registered MARP-Multiclass-Det-XL 1.2.1</span></li>
+              </ol>
+            </div>
+
+            <div class="sect">
+              <h3>Result</h3>
+              <dl class="kv">
+                <dt>Registered</dt><dd>MARP-Multiclass-Det-XL 1.2.1</dd>
+                <dt>Preferred</dt><dd>No <span class="faint">&mdash; a human decision</span></dd>
+                <dt>mAP@0.5</dt><dd>0.892</dd>
+                <dt>mAP@0.5:0.95</dt><dd>0.641</dd>
+                <dt>Precision</dt><dd>0.904</dd>
+                <dt>Recall</dt><dd>0.876</dd>
+                <dt>Final train loss</dt><dd>0.0892</dd>
+                <dt>Final val loss</dt><dd>0.1043</dd>
+                <dt>Epochs</dt><dd>100 of 100</dd>
+                <dt>Observations</dt><dd>12,846 <span class="faint">in 1,204 groups</span></dd>
+                <dt>Artifact</dt><dd>138 MB <span class="later">No download route</span></dd>
+              </dl>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script src="./mock.js"></script>
+</body>
+</html>
