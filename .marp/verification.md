@@ -59,17 +59,17 @@ re-read. `jest.resetModules()` is the fix and the reason is written into the hel
 
 ### The provisioner — R3 to R7, R9
 
-First run, on an empty `mare_test`:
+First run, on an empty `marp_test`:
 
 ```
-==> creating mare_test
+==> creating marp_test
 ==> loading ..\..\MARP\MARP_API\.marp\local\corpus\20260912-085415
 ...
 Round trip verified: every count matches the manifest.
 ==> migrations
 ==> reviewer login mosaic-testing
 
-Testing database: PROVISIONED  (mare_test built from a dump)
+Testing database: PROVISIONED  (marp_test built from a dump)
   observations     2092
   reviews          495
   thumbnail files  2079
@@ -80,7 +80,7 @@ real    0m2.634s
 Second run, unchanged inputs:
 
 ```
-Testing database: REUSED  (mare_test was already there)
+Testing database: REUSED  (marp_test was already there)
   observations     2092
   reviews          495
   thumbnail files  2079
@@ -95,7 +95,7 @@ thumbnail files beside it:
 
 ```
 Note: no rows here, but 2079 thumbnail files are on disk.
-They are orphans -- nothing in mare_test names them -- and a load
+They are orphans -- nothing in marp_test names them -- and a load
 replaces them. Their directory is C:\...\storage\testing\observation-thumbnails
 (THUMBNAIL_STORAGE_DIR, or its default). If that is not the directory you
 meant, stop now: the rows that name these files are in another database.
@@ -122,7 +122,7 @@ would have been taken. It never showed up because every previous target was a da
 ### The launcher and the API tier — R8 to R11
 
 ```
-Testing database: REUSED  (mare_test was already there)
+Testing database: REUSED  (marp_test was already there)
 ==> API on http://127.0.0.1:59852   (this run's own, stopped when it finishes)
 signed in to http://127.0.0.1:59852 as mosaic-testing (user 2842)
 
@@ -184,14 +184,14 @@ Error: observation 582 was corrected to species 775 and cannot be found there to
 ### The launcher, cold and warm
 
 ```
-##### COLD #####     (mare_test dropped, storage/testing deleted, stamp removed)
-Testing database: PROVISIONED  (mare_test built from a dump)
+##### COLD #####     (marp_test dropped, storage/testing deleted, stamp removed)
+Testing database: PROVISIONED  (marp_test built from a dump)
   10 passed (15.2s)
 The API tier passed, against a real server on the testing database.
 real    0m19.723s
 
 ##### WARM #####     (nothing else changed)
-Testing database: REUSED  (mare_test was already there)
+Testing database: REUSED  (marp_test was already there)
   10 passed (14.5s)
 The API tier passed, against a real server on the testing database.
 real    0m16.167s

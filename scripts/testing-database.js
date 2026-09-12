@@ -71,8 +71,15 @@ const EXIT_REFUSED = 1;
 /** The repository root. Everything relative resolves against this, never the cwd. */
 const ROOT = path.join(__dirname, '..');
 
-/** The testing database's name when nothing says otherwise. */
-const DEFAULT_DATABASE = 'mare_test';
+/**
+ * The testing database's name when nothing says otherwise.
+ *
+ * `marp_`, not `mare_`. The development database is `mare_v1` and the production one
+ * shares that name, which is why neither can be renamed casually -- but this database is
+ * created here, is disposable, and had no reason to inherit a brand that was retired
+ * before it existed. There is no MARE in MARP.
+ */
+const DEFAULT_DATABASE = 'marp_test';
 
 /**
  * Where the testing database's thumbnails go by default.
