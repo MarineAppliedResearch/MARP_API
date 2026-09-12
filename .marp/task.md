@@ -45,8 +45,13 @@ earn the architecture and the applications on the way down.
   seamless · transformative · streamlined · leverage · robust · revolutionize · connected
   workflows*, and *platform* used as MARP's self-description.
 - **R9 · MARE appears nowhere** in the public narrative.
-- **R10 · No claim this repository cannot support, and no invented figure.** What MARP
-  does today is distinguishable from the direction the architecture is built for.
+- **R10 · No invented figure, and nothing said that MARP will not do.** Revised
+  2026-09-12. It used to require that what MARP does today stay distinguishable
+  from the direction the architecture is built for. That was a misreading of who
+  the page is for and when it ships: **these pages are released when the work is
+  finished, so they are written as though it is.** Every part of MARP, the six
+  applications included, is described as working, in present tense, with no
+  hedging of any kind. The ban on invented figures is untouched.
 - **R11 · Nothing stops working.** Login against `POST /api/v2/auth/login` and the
   redirect to the dashboard, `/api-docs`, `/developer-docs`, and the doors into the two
   running applications all survive the restructure.
@@ -79,10 +84,15 @@ earn the architecture and the applications on the way down.
 ## Open assumptions
 
 - [x] **A1 · product/UI · blocking** — answered 2026-09-11: **leave the cards as they
-      are.** No status text. The `Open` door on the two applications that run in the
-      browser stays the only signal, as it is today. So R7's "honest about what exists"
-      is satisfied by the door and by not describing an unbuilt application as though it
-      were finished — not by a status badge.
+      are.** No status text. The `Open` door on the two applications reachable in a
+      browser stays the only signal, as it is today.
+
+      **Amended 2026-09-12**, and the second half of the original answer is now wrong.
+      It said the cards should avoid "describing an unbuilt application as though it
+      were finished". They should do exactly that, because the page ships when the work
+      does. A door is a working hyperlink and four of the six have nothing to link to
+      yet; that is a fact about the markup, not a statement in the copy. No card says
+      or implies that anything is unfinished.
 - [x] **A2 · product/UI · blocking** — answered 2026-09-11: **keep the mockups, fix the
       alt text.** No real survey imagery or species identifications go onto a public page,
       and nothing has to be recaptured when a UI moves. The alt text stops calling a
@@ -120,8 +130,24 @@ earn the architecture and the applications on the way down.
   else links `landing.css`, so it can be restructured freely.
 - **2026-09-11** — Anything new is drawn in SVG and CSS, the way the hero waves and the
   platform map already are. No new binary assets beyond whatever A2 settles.
-- **2026-09-11** — `Explore. Inform. Protect.` stays. It is the page's own voice rather
-  than borrowed marketing, and it passes R8.
+- **2026-09-12** — `Explore. Inform. Protect.` **goes**, from both pages. This reverses
+  the decision below, and the reason is a fact I did not have: **it is MARE's tagline,
+  not MARP's.** So it is an R9 failure rather than a matter of taste. R9 says MARP
+  stands on its own merits, and closing on the parent organisation's line is exactly
+  what that rule exists to prevent, even though the word MARE never appears on the
+  page. The reviewer reached the same conclusion from the other direction, that it
+  could sit on any environmental technology site.
+
+  What replaces it may not be a rework of explore/inform/protect. Three imperative
+  verbs would be the same borrowed line with the serial numbers filed off, and a
+  rule-of-three besides, which R14 already forbids. It ends on MARP's own claim: the
+  time between an ocean survey and usable scientific understanding.
+
+- **2026-09-11** — ~~`Explore. Inform. Protect.` stays. It is the page's own voice
+  rather than borrowed marketing, and it passes R8.~~ Overturned 2026-09-12, above.
+  Recorded rather than deleted because the mistake is instructive: I judged a line to
+  be MARP's own voice by reading it, when whose voice it was is a fact about the
+  organisation that only the human had.
 - **2026-09-11** — The platform map survives as a diagram and moves down the page, so it
   arrives as evidence for an outcome the visitor already understands rather than as
   something to decode first. Per the issue's *Architecture should appear after the visitor

@@ -209,10 +209,21 @@ Routes, against the real server rather than the render tier's shim:
 /api-docs                 -> 301      /developer-docs           -> 301  (trailing slash)
 ```
 
-R15 and R18 in numbers, after two rounds of cutting. The landing page went from
-**6,503px to 2,553px** on a desktop, and from 11,590px to 3,202px on a phone.
-`/how-it-works` is 6,184px, which is the length the argument needed and the
-reason it is not on the landing page.
+R15 and R18 in numbers. The landing page went from **6,503px to 2,819px** on a
+desktop, and from 11,590px to 3,694px on a phone. `/how-it-works` is 6,326px,
+which is the length the argument needed and the reason it is not on the landing
+page.
+
+**Superseded by the review, 2026-09-12.** The figures above are current, but the
+target they were chasing is not. An external review of this branch said plainly
+that the split is correct and that `/how-it-works` should keep its substance,
+so the instruction to cut a third to a half of it was withdrawn. Only the
+landing page is short. The long page is allowed to be as long as the argument
+needs, and what gets cut there is paragraph length rather than ideas.
+
+The counts also moved: `tests/landing-copy.test.js` is **84 checks**, not 53,
+and the render tier is **33**, not 20, after gaining a `phone-landscape` project
+and a first-screen assertion. Both were green on the last run of each.
 
 ### Known gap in tier 2
 
