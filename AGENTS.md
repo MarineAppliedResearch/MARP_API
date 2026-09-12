@@ -539,6 +539,28 @@ directly lets workers race each other over one database and produces a wave of
 failures that look like real breakage — most of the suite failing on a green codebase, in
 one case.
 
+**Check when a running server started before you trust what it told you.** A
+`node server.js` left from an earlier session serves the code it was started with,
+not the code on your branch — so a feature you just wrote appears not to work, and
+the evidence looks like a defect in your own change. It cost a wrong conclusion
+twice on 2026-09-10; the second time the process was nineteen hours old. On Windows,
+`Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess` shows
+`StartTime`. **Start your own on a port nobody else is using, and stop it when you
+are done** — and never adopt one you did not start.
+
+**A test may not assume the database is otherwise empty — in either direction.**
+The familiar half is that CI builds an empty database, so a test that borrows an
+existing row passes here and fails there. The half that is newer, and cost an
+afternoon on 2026-09-10, is the mirror image: **a test that counts rows across a
+whole table, or asserts a table "ships empty", passes only while nothing real is
+in it.** Five did. They were green for months and broke the day the first real
+review decisions were written — which looked like a regression and was not.
+
+The rule that comes out of it: **scope an assertion to the rows the test seeded**,
+and where a property is really about a migration rather than about the data, assert
+it against the migration file. `tests/observation-review-schema.js` and
+`tests/observation-review-current.test.js` are both worked examples now.
+
 Every route requires a permission (see below), so an anonymous request gets 401 and
 nothing else. `tests/setup/authenticated-agent.js` builds a per-file fixture user
 holding every permission and leaves it on `global.api`; use that rather than
