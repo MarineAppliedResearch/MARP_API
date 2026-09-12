@@ -358,95 +358,20 @@ h3 {
   gap: 30px;
 }
 
-/* ------------------------------------------------------------------ account menu
-   The signed-in half of the header. The avatar is the Mosaic Reviewer's control at the
-   same size and with the same shape, so a person moving between the applications meets
-   one product rather than three. Colours are tokens; this file states no hex of its own
-   here. */
-/* `hidden` has to actually hide, and twice here it did not.
-
-   The attribute is only the user agent's `display: none`, so any rule that sets `display`
-   outranks it: `.primary-nav .button` left the invitation to sign in on screen beside the
-   avatar that had just replaced it, and `.account__menu`'s own `display: grid` left the
-   dropdown open before anybody had clicked it. Both are stated here at a specificity that
-   wins, rather than by reaching for `!important`. */
-.site-header [data-signed-out-only][hidden],
-.account__menu[hidden] {
+/* `hidden` has to actually hide. The attribute is only the user agent's `display: none`,
+   so any rule that sets `display` outranks it: `.primary-nav .button` left the invitation
+   to sign in on screen beside the avatar that had just replaced it. Stated at a
+   specificity that wins, rather than by reaching for `!important`. The account menu's own
+   half of this now lives in account-menu.css, with the rest of that component. */
+.site-header [data-signed-out-only][hidden] {
   display: none;
 }
 
-.account {
-  position: relative;
-  flex: 0 0 auto;
+/* The avatar is smaller than the landing page's buttons but larger than an operator
+   console's. The component takes one knob for exactly this. */
+.site-header .account {
+  --account-size: 34px;
 }
-
-.account__button {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--cyan-300);
-  background: var(--navy-800);
-  border: 1px solid var(--cyan-500);
-  cursor: pointer;
-}
-
-.account__button:hover {
-  border-color: var(--cyan-300);
-}
-
-.account__menu {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  min-width: 232px;
-  padding: 6px;
-  display: grid;
-  gap: 1px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--navy-1000);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
-  z-index: 120;
-}
-
-.account__who {
-  margin: 0;
-  padding: 7px 10px 8px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.account__item {
-  display: block;
-  width: 100%;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 5px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.account__item:hover {
-  background: var(--navy-850);
-  color: var(--white);
-}
-
-.account__rule {
-  margin: 4px 6px;
-  border: 0;
-  border-top: 1px solid var(--border);
-}
-
 .site-brand {
   flex: 0 0 auto;
 }

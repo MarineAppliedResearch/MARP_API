@@ -223,16 +223,26 @@ function mountTopbar() {
       ? '<button class="btn icon" aria-label="More" title="Export, columns and settings">'
         + ico('dots') + '</button>'
       : '')
-    + '<div class="menuwrap">'
-    + '<button class="who" id="userBtn" title="Account and preferences"'
-    + ' aria-haspopup="true" aria-expanded="false">IT</button>'
-    + '<div class="menu" id="userMenu" role="menu" hidden>'
-    + '<div class="mhead">Signed in as Isaac Travers</div>'
-    + '<button role="menuitem">Preferences</button>'
-    + '<button role="menuitem">Keyboard shortcuts</button>'
-    + '<button role="menuitem">Worker service tokens</button>'
-    + '<hr>'
-    + '<button role="menuitem">Sign out</button>'
+    /* The account menu, shared with the Picture Mosaic Reviewer and the public landing
+       page (#151). It used to be written here, with `IT` and `Isaac Travers` as literals --
+       which is the bug the Mosaic Reviewer's notes record as having shipped once, telling
+       everybody they were one developer. Nobody's name is typed into this application now.
+
+       **This app asks for itself.** It is not session-gated, unlike the other two, so it
+       genuinely does not know: signed in it shows you, and signed out it says so rather
+       than drawing a plausible stranger. `DESIGN.md` calls this a mockup with real
+       operation, and this is the real half. */
+    + '<div class="account" data-account data-account-signed-out="show">'
+    + '<button class="account__button" type="button" data-account-button'
+    + ' data-account-nobody="yes" aria-haspopup="true" aria-expanded="false"'
+    + ' aria-label="Not signed in">\u00b7</button>'
+    + '<div class="account__menu" role="menu" data-account-menu hidden>'
+    + '<p class="account__who" data-account-who>Not signed in</p>'
+    + '<a class="account__item" role="menuitem" href="/apps/dashboard/index.html">Open the dashboard</a>'
+    + '<a class="account__item" role="menuitem" href="/apps/marp-mosaic-review/">Picture Mosaic Reviewer</a>'
+    + '<a class="account__item" role="menuitem" href="/apps/marp-ml-dashboard/">Machine Learning Dashboard</a>'
+    + '<hr class="account__rule">'
+    + '<button class="account__item" type="button" role="menuitem" data-account-signout>Sign out</button>'
     + '</div></div>';
   bar.appendChild(tools);
 }
@@ -247,18 +257,9 @@ function wireRailSheet() {
   });
 }
 
-function wireMenu() {
-  const btn = $('#userBtn');
-  const menu = $('#userMenu');
-  if (!btn || !menu) return;
-  const show = (on) => {
-    menu.hidden = !on;
-    btn.setAttribute('aria-expanded', String(on));
-  };
-  btn.addEventListener('click', (e) => { e.stopPropagation(); show(menu.hidden); });
-  document.addEventListener('click', () => show(false));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') show(false); });
-}
+/* The account menu wires itself: it is the shared component, and its opening, its
+   dismissal and who it draws all live in `assets/js/account-menu.js` (#151). A second
+   implementation here is exactly what that change removed. */
 
 function wireDrawer() {
   const drawer = $('#drawer');
@@ -1065,7 +1066,6 @@ mountRail();
 mountTopbar();
 wireTopbarAutohide();
 wireRailSheet();
-wireMenu();
 wireDrawer();
 wireSelection();
 wireSwitchers();

@@ -297,14 +297,7 @@ export const sortMenu = (anchor) => {
   menu(anchor, build(), { align: 'right', rebuild: build });
 };
 
-/* The signed-in reviewer's name, from the server (R19). It was the literal
-   `'I. Travers'` imported from `ui/dom.js`, so this menu told everybody they were one
-   developer. `state.me` is null until `/api/v2/auth/me` has answered. */
-export const userMenu = (anchor) => menu(anchor, [
-  { head: state.me ? `Signed in as ${state.me.name}` : 'Signing in\u2026' },
-  { value: 'prefs', label: 'Preferences', onPick: () => {} },
-  { value: 'keys', label: 'Keyboard shortcuts', onPick: () => {} },
-  { value: 'density', label: 'Tile density', onPick: () => {} },
-  { hr: true },
-  { value: 'out', label: 'Sign out', onPick: () => {} }
-], { align: 'right' });
+/* The account menu is not here any more. It is one component in
+   `frontend/shared/assets/js/account-menu.js`, drawn the same way in this app, the ML
+   Dashboard and the public landing page (#151) -- which is what stopped it being three
+   implementations, one of which had somebody's name typed into it. */

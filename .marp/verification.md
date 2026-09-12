@@ -310,3 +310,81 @@ Test: landing page copy > loads the shared account menu on both pages ....... PA
   Test Suites : 1 passed, 0 failed, 1 total
   Result: ALL TESTS PASSED
 ```
+
+---
+
+# Part 4 - one account menu, drawn by one component
+
+## What each test proves
+
+| Requirement | Test | Tier | Proves |
+| --- | --- | --- | --- |
+| R23 | `#151 the account menu` R23 x3, mosaic `tests/e2e/render.spec.mjs` | render | The header draws one control, on the component's own hooks, and it opens and shuts |
+| R23 | mosaic `R23: it draws whoever the backing says is signed in, not a literal` | render | The initials are **derived from `window.MARP.state.me`**, so a hard-coded avatar fails even when the letters would have matched |
+| R24 | mosaic `R24: it survives a re-render` | render | After marking a tile - a full chrome redraw - the control is still there, still says the same thing, and still opens |
+| R23 | ML `tools/account-check.mjs` | browser | All 8 screens draw exactly one shared control; signed in it shows that session's initials |
+| R25 | ML `account-check`: no person named in the top bar | browser | Asserted against the **rendered** top bar, so a literal anywhere in the shell fails |
+| R26 | ML `account-check`: signed out | browser | Nobody, `Not signed in`, and Sign out not offered - against a real 404 from the probe |
+| R25 | landing `R19` (part 3) | render | Unchanged and still green after the component moved |
+
+## A bug this work introduced, and the check that caught it the first time it ran
+
+`mount()` already had a local `show(open)` for opening the dropdown. The new
+`show(root, user)` that paints the identity is declared at module level, so **inside
+`mount` the local one shadowed it** - and the paint call was toggling the menu with a DOM
+node for its argument. Every application drew nobody, for ever, and the landing page's
+signed-in path would have gone with it.
+
+`tools/account-check.mjs` failed on it the first time it was run. The local is now
+`setOpen`, and the comment says why.
+
+## Two harness changes, both narrow, both stated
+
+- **`tests/landing-copy.test.js` now reads the stylesheets a page links** instead of only
+  `landing.css`. The component's rules moved to `account-menu.css`, which all three apps
+  link, and the alternatives were duplicating those rules - the drift this conversion
+  exists to end - or letting the classes through unstyled. **Changed, not weakened, and
+  demonstrated:** an unstyled class added to `index.html` still fails the check, on that
+  page only.
+- **The ML Dashboard's harnesses answer the session probe as nobody** (a 200 carrying no
+  user). That tier serves files and has no API, so the probe 404s, and a failed request
+  is a console error - which those checks fail on, for reasons that have nothing to do
+  with this. The 404 path is not skipped: `account-check.mjs` lets it happen and asserts
+  the signed-out state.
+
+## Known gaps
+
+- **The mosaic's render tier runs on the fixture**, whose `me` is `I. Travers` - so what
+  is proved there is that the avatar follows the backing's identity, not that a real
+  session reaches it. The API tier and the real server cover the endpoint.
+- **The fixture still names a real person** (`src/data.js`, `tools/make-fixture.mjs`).
+  That is test data rather than application chrome, and it is deliberately a person so
+  `decidedByMe` can be exercised. Named for a decision rather than changed here.
+- **The signed-in state of the ML Dashboard is tested through an intercepted route.**
+  It is not gated, so a real session there is a person signing in elsewhere first.
+
+## Results, as run
+
+Red first for the mosaic's four, against the pre-conversion files restored from a copy:
+
+```
+  4 failed
+    R23: the header draws one shared account control, and it is the shared one
+    R23: it draws whoever the backing says is signed in, not a literal
+    R23: it opens, and it shuts
+    R24: it survives a re-render
+```
+
+Then green, everywhere:
+
+```
+mosaic     303 unit pass, 0 fail
+mosaic     14 skipped, 316 passed (2.1m)          render, phone and desktop
+ML         ok  7 files parse
+ML         ok  no raw colours, no states outside the vocabulary
+ML         ok  the top bar hides on the way down, comes back on the way up
+ML         ok  the account menu is the shared one, and it names nobody it has not been told about
+ML         ok  32 shots, nothing clipped, no console errors
+entry      1 skipped, 59 passed (26.9s)           three viewports
+API        Test Suites : 1 passed, 0 failed       tests/landing-copy.test.js
+```

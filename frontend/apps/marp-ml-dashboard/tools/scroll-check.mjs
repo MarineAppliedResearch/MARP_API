@@ -62,11 +62,32 @@ const scrollTo = async (page, y) => {
 };
 const settle = (page) => page.waitForTimeout(260);      // longer than the 180ms window
 
+/**
+ * Answer the account menu's session question, as nobody.
+ *
+ * This tier serves files and has no API, so the shared account component's probe of
+ * `/api/v2/auth/me` 404s -- and a failed request is a console error, which these checks
+ * fail on for good reasons that have nothing to do with this. Answering it with the
+ * endpoint's own shape and no user gives exactly the state a signed-out visitor gets,
+ * without loosening the rule that a console error is a failure.
+ *
+ * The 404 path itself is not skipped: `tools/account-check.mjs` lets it happen and asserts
+ * the control says `Not signed in` rather than drawing somebody.
+ *
+ * @param {import('@playwright/test').Page} page the page to answer for.
+ * @returns {Promise<void>}
+ */
+const answerAsNobody = (page) => page.route('**/api/v2/auth/me', (route) => route.fulfill({
+  status: 200,
+  contentType: 'application/json',
+  body: JSON.stringify({ user: null })
+}));
 async function open(name, options = {}) {
   const page = await browser.newPage({ viewport: DESKTOP, ...options });
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e.message)));
+  await answerAsNobody(page);
   await page.goto(`${BASE}${name}.html`, { waitUntil: 'networkidle' });
   return { page, errors };
 }

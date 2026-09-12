@@ -47,7 +47,35 @@ const stripped = Object.fromEntries(
     Object.entries(raw).map(([name, html]) => [name, html.replace(/<!--[\s\S]*?-->/g, '')])
 );
 
-const css = fs.readFileSync(path.join(ROOT, 'frontend', 'shared', 'assets', 'css', 'landing.css'), 'utf8');
+/**
+ * Every stylesheet a page actually links, read off that page.
+ *
+ * It used to be `landing.css` and only `landing.css`, which was true while there was one.
+ * The account menu is now a component three applications share, so its rules sit in
+ * `account-menu.css` and these pages link both -- and hard-coding the list here would have
+ * meant either duplicating those rules into `landing.css` or weakening the check to let
+ * the new classes through unstyled. Reading the `<link>` tags is neither: a class still
+ * has to be styled by something, and a page that links a third sheet is covered by this
+ * the day it does, while a page that links a sheet that does not exist fails loudly.
+ *
+ * @param {string} html the page text.
+ * @returns {string} every linked stylesheet's contents, concatenated.
+ */
+function stylesheetsFor(html) {
+    const hrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)]
+        .map((match) => match[1]);
+
+    expect(hrefs.length).toBeGreaterThan(0);
+
+    return hrefs
+        .map((href) => {
+            /* Both pages reach the shared assets, one relatively and one from the root. */
+            const tail = href.replace(/^\/?assets\//, '');
+            return path.join(ROOT, 'frontend', 'shared', 'assets', tail);
+        })
+        .map((file) => fs.readFileSync(file, 'utf8'))
+        .join('\n');
+}
 const landingJs = fs.readFileSync(path.join(ROOT, 'frontend', 'shared', 'assets', 'js', 'landing.js'), 'utf8');
 const accountJs = fs.readFileSync(
     path.join(ROOT, 'frontend', 'shared', 'assets', 'js', 'account-menu.js'), 'utf8');
@@ -111,9 +139,10 @@ function classesUsed(html) {
  * a class with a longer sibling would otherwise always look covered.
  *
  * @param {string} className the class token.
- * @returns {boolean} true when `landing.css` selects it somewhere.
+ * @param {string} css the stylesheets the page links, concatenated.
+ * @returns {boolean} true when one of the page's stylesheets selects it somewhere.
  */
-function styled(className) {
+function styled(className, css) {
     const escaped = className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     return new RegExp(`\\.${escaped}(?![\\w-])`).test(css);
@@ -344,8 +373,9 @@ describe('landing page copy', () => {
          * class. Nothing renders differently until somebody notices the block is
          * unstyled, which on a page this long can take a while.
          */
-        it('uses no class landing.css has no rule for', () => {
-            const orphans = [...classesUsed(raw[page])].filter((name) => !styled(name));
+        it('uses no class its stylesheets have no rule for', () => {
+            const css = stylesheetsFor(raw[page]);
+            const orphans = [...classesUsed(raw[page])].filter((name) => !styled(name, css));
 
             expect(orphans).toEqual([]);
         });

@@ -110,8 +110,10 @@ body[data-mode="delete"]   .seg button.on { color: #fff; }
 .mode-note { margin-left: 11px; font-size: 10.5px; font-weight: 500; color: var(--muted); }
 body[data-mode="delete"] .mode-note { color: var(--red-400); font-weight: 600; }
 .hdr .right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.who { width: 23px; height: 23px; border-radius: 50%; background: var(--navy-800);
-       border: 1px solid var(--mode-line); display: grid; place-items: center; font-size: 10px; }
+/* The avatar is the shared component's now (#151); all this app states is how big it is
+   here, because an operator console at 11px base wants a smaller one than a landing page.
+   The rules live in ../../shared/assets/css/account-menu.css. */
+.hdr .account { --account-size: 23px; }
 
 /* ---------------------------------------------------------------- sub bar */
 .sub { display: flex; align-items: center; gap: 16px; padding: 0 12px;
@@ -502,7 +504,7 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 /* A panel of controls rather than a list of choices: the two ends of a time or date
    window. Padded a little more, because inputs sitting flush to a border read as cramped. */
 .menu--panel { padding: 8px 10px 10px; }
-.sel, .sortbox, .who { cursor: pointer; }
+.sel, .sortbox { cursor: pointer; }
 .sel:hover, .sortbox:hover { border-color: var(--border-strong); }
 
 /* a distinct action inside the picker, separate from the reason chips */

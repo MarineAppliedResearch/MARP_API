@@ -15,7 +15,7 @@ import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
 import {
   closeMenus, isMenuOpenFor,
-  sortMenu, userMenu
+  sortMenu
 } from './menus.js';
 
 export { computeLayout };
@@ -162,7 +162,8 @@ function wireMenus() {
   /* The dimension buttons are drawn by ui/rail.js and wired there, because they do not
      exist until it has run. Only the fixed controls are anchored here. */
   anchor('#sortBtn', sortMenu);
-  anchor('#userBtn', userMenu);
+  /* `#userBtn` is the shared account component's now, and it wires its own opening and
+     dismissal. Anchoring a second handler here would have opened two menus at once. */
 }
 
 function wireDismissal() {

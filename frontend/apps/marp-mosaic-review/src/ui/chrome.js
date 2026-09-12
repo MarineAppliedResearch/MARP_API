@@ -30,6 +30,12 @@ export function renderChrome() {
     chromeBtn.title = `${verb} the header and the bar under it`;
   }
 
+  /* Who the account menu is drawing, said from here because this runs on every state
+     change and the identity arrives partway through one. The component is told rather than
+     asking for itself: the store already read `/api/v2/auth/me` at start-up, and one answer
+     needs one request. Idempotent, so a re-render costs nothing. */
+  window.MarpAccountMenu?.show($('#userBtn')?.closest('[data-account]'), state.me);
+
   const m = MODES[state.mode];
   $('#modeNote').textContent = m.note;
   document.querySelectorAll('.seg button').forEach((b) =>

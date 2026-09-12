@@ -76,6 +76,23 @@ the project at once.
   *not signed in* rather than as an error on the page.
 - **R22** -- `prefers-reduced-motion: reduce` gets the behaviour with no animation.
 
+### Part 4 -- one menu, drawn by one component
+
+The human, 2026-09-12: *"We need to go ahead and convert the Mosaic reviewer and machine
+learning dashboard menu to the shared one. So it's always the same menu."*
+
+- **R23** -- All three applications draw the account menu from
+  `frontend/shared/assets/js/account-menu.js` and its stylesheet. One component, one
+  place to change it, and each app states only how big the avatar is.
+- **R24** -- It survives a re-render. The Mosaic Reviewer redraws its chrome from state
+  on every notify, so a control that mounted itself once has to still be there, and still
+  work, after the next thing a reviewer does.
+- **R25** -- **No human identity is a literal in any of the three applications.** Where
+  something renders before a session has answered, or where nobody is signed in, it
+  renders as nobody -- never as a name, and never as somebody's initials.
+- **R26** -- The ML Dashboard is not session-gated, so signed out is a state it really
+  has. It says so plainly rather than drawing a plausible stranger.
+
 ## Open assumptions
 
 - [x] **A1 | product/UI | non-blocking** -- answered 2026-09-12: **the footer stays as it
@@ -155,6 +172,22 @@ scope.** So it is named here and not built.
 - **2026-09-12** -- The avatar menu will be in three applications, so it is written once,
   in `frontend/shared/`. Whether the two apps that already have their own adopt it is the
   human's call and is not done silently.
+- **2026-09-12** -- The menu is **the same four rows in all three applications**: who is
+  signed in, the three doors into MARP, and Sign out. The Mosaic Reviewer's old menu
+  offered *Preferences*, *Keyboard shortcuts* and *Tile density*, and the ML Dashboard's
+  offered *Worker service tokens*; every one of them did nothing at all. "Always the same
+  menu" is not served by keeping per-app dead stubs, and a real item can now be added in
+  one place. The cost is that each app lists itself, which is one wasted row and the
+  price of the menu being identical everywhere.
+- **2026-09-12** -- The Mosaic Reviewer is told who is signed in rather than asking:
+  `data-account-probe="no"`, and `ui/chrome.js` passes `state.me` on each render pass.
+  Its store already reads `/api/v2/auth/me` at start-up for `decidedByMe`, and one answer
+  should cost one request. The ML Dashboard and the landing page ask for themselves,
+  because neither has already asked.
+- **2026-09-12** -- The Mosaic Reviewer still hides the account control at phone width,
+  as it did before this conversion -- `.hdr .right` is hidden below 760px because the
+  width belongs to the mosaic. The conversion does not revisit a decision part 1 kept and
+  the human approved; the render tier asserts it rather than skipping past it.
 - **2026-09-12** -- Part 3 uses **the ML Dashboard's gesture, not the mosaic's button**.
   The landing page is a scrolling document, so the gesture is already in the reader's
   hand and a chrome control on a page somebody is reading for the first time is a control

@@ -4243,3 +4243,108 @@ test.describe('#151 the top chrome', () => {
       await expect(page.locator('.hdr')).toBeVisible();
     });
 });
+
+/**
+ * The account menu, which is one shared component now (#151).
+ *
+ * This app used to draw its own, and the ML Dashboard drew a third with a person's name
+ * typed into it. They are one control in `frontend/shared/assets/js/account-menu.js`, and
+ * the rule that matters is that **no application here hard-codes a person**: this app's own
+ * notes record the literal `'I. Travers'` shipping once and telling everybody they were one
+ * developer.
+ *
+ * The render tier and no other: whether the header draws the control, what it says, and
+ * whether it survives a re-render are all facts about the document.
+ */
+test.describe('#151 the account menu', () => {
+  /** What the control says, and who the application thinks is signed in. */
+  const readAccount = (page) => page.evaluate(() => {
+    const root = document.querySelector('[data-account]');
+    const button = root && root.querySelector('[data-account-button]');
+    return {
+      controls: document.querySelectorAll('[data-account]').length,
+      initials: button ? button.textContent.trim() : null,
+      nobody: button ? button.hasAttribute('data-account-nobody') : null,
+      who: root ? root.querySelector('[data-account-who]').textContent.trim() : null,
+      menuOpen: root ? !root.querySelector('[data-account-menu]').hidden : null,
+      /* The identity the store holds, so a test can tell "drawn from state" from
+         "drawn from a literal that happens to match". */
+      me: window.MARP && window.MARP.state.me
+    };
+  });
+
+  test('R23: the header draws one shared account control, and it is the shared one',
+    async ({ page }, info) => {
+      await page.goto('./');
+      await ready(page);
+
+      const seen = await readAccount(page);
+      expect(seen.controls, 'exactly one, drawn by the shared component').toBe(1);
+      await expect(page.locator('[data-account-menu]')).toBeHidden();
+
+      /* **On a phone this app puts the account menu away on purpose**, and has since
+         before this component existed: `.hdr .right` is hidden below 760px because the
+         width belongs to the mosaic. Converting to the shared control does not change that
+         decision, so the phone asserts it rather than skipping past it. */
+      if (info.project.name === 'phone') {
+        await expect(page.locator('[data-account-button]')).toBeHidden();
+        return;
+      }
+      await expect(page.locator('[data-account-button]')).toBeVisible();
+    });
+
+  test('R23: it draws whoever the backing says is signed in, not a literal',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const seen = await readAccount(page);
+      expect(seen.me, 'the store knows who is signed in').toBeTruthy();
+
+      /* Derived from the identity the application holds, rather than compared against a
+         string written here -- a hard-coded avatar would pass any assertion that named the
+         same two letters, which is exactly how the old bug survived. */
+      const parts = String(seen.me.name).split(/[\s.]+/).filter(Boolean);
+      const expected = (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+
+      expect(seen.initials).toBe(expected);
+      expect(seen.nobody, 'somebody is signed in, so it is not drawn as nobody').toBe(false);
+      expect(seen.who).toBe(`Signed in as ${seen.me.name}`);
+    });
+
+  test('R23: it opens, and it shuts', async ({ page }, info) => {
+    test.skip(info.project.name === 'phone', 'this app puts the control away on a phone');
+    await page.goto('./');
+    await ready(page);
+
+    await page.locator('[data-account-button]').click();
+    await expect(page.locator('[data-account-menu]')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-account-menu]')).toBeHidden();
+  });
+
+  test('R24: it survives a re-render', async ({ page }, info) => {
+    await page.goto('./');
+    await ready(page);
+    const before = await readAccount(page);
+
+    /* This app redraws its chrome from state on every notify, so a component that mounted
+       itself once could be wiped by the next thing that happened. Marking a tile is the
+       most ordinary thing a reviewer does and it notifies. */
+    const id = await page.locator('.tile:not(.failed):not(.queued)').first()
+      .getAttribute('data-id');
+    await page.locator(`.tile[data-id="${id}"]`).click();
+    await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/marked/);
+
+    const after = await readAccount(page);
+    expect(after.controls).toBe(1);
+    expect(after.initials).toBe(before.initials);
+    expect(after.who).toBe(before.who);
+
+    /* And it still works afterwards, which "still painted" does not prove. Desktop only,
+       because the control is deliberately not on screen at phone width here. */
+    if (info.project.name === 'phone') return;
+    await page.locator('[data-account-button]').click();
+    await expect(page.locator('[data-account-menu]')).toBeVisible();
+  });
+});

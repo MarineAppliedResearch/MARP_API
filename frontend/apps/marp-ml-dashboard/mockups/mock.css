@@ -489,36 +489,12 @@ body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px))
 
 /* ============================================================== the menu */
 
-/* Same object as the Picture Mosaic Reviewer's account menu -- .menuwrap, .who,
-   .menu -- so the two applications are one product rather than two that look
-   alike. Sized up a little, because this top bar is taller than that header. */
-.menuwrap { position: relative; }
-.who {
-  width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(9, 30, 51, 0.9); border: 1px solid var(--hairline-2);
-  color: var(--text); font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em;
-  display: grid; place-items: center; cursor: pointer;
-}
-.who:hover { border-color: var(--border-strong); color: var(--white); }
-.who[aria-expanded="true"] { border-color: var(--cyan-400); color: var(--white); }
-.menu {
-  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
-  min-width: 214px; padding: 5px;
-  background: var(--navy-950);
-  border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 18px 44px rgba(1, 5, 13, 0.72);
-}
-.menu button {
-  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
-  background: none; border: 0; border-radius: 5px; padding: 8px 10px;
-  font-size: 12.5px; font-weight: 600; color: var(--text);
-}
-.menu button:hover { background: rgba(13, 42, 70, 0.9); color: var(--white); }
-.menu hr { border: 0; border-top: 1px solid var(--hairline); margin: 4px 2px; }
-.menu .mhead {
-  font-size: 9px; letter-spacing: 0.11em; text-transform: uppercase;
-  color: var(--faint); padding: 6px 10px 4px;
-}
+/* The account menu is one shared component now, not a copy that looks like one:
+   `frontend/shared/assets/css/account-menu.css` holds its rules and this app links it the
+   way the Mosaic Reviewer and the landing page do (#151). What is left here is how big it
+   is, because this top bar is taller than that header and the component takes one knob for
+   exactly that. */
+.topbar .account { --account-size: 30px; }
 
 /* Jobs: the extra columns this screen has that the dashboard's table does not. */
 .tbl.fixed .htype   { width: 8%; }
@@ -1431,7 +1407,7 @@ td.whb.quiet { color: var(--amber-300); }
   .topbar .tools { width: 100%; margin-left: 0; }
   .topbar .search { flex: 1; min-width: 0; }
   .topbar .search .inp { width: 100%; }
-  .topbar .menuwrap { margin-left: auto; }
+  .topbar .account { margin-left: auto; }
 
   /* Scope goes. Dive and line are secondary to the model and the progress at
      this width, and they are on the job's own page. The rest take the space. */
