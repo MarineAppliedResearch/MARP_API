@@ -89,6 +89,17 @@ rather than a cursor placing points.
 - **`.hero h1 span` runs white to green across 72% to 92% of its own width**, so
   a short span puts the colour break in the middle of a word. Give it a whole
   line.
+- **`.platform-hub` is used in two different grids now**, the capability diagram
+  on the long page and the lanes on the landing page, so any rule about its
+  placement has to be scoped to `.platform-map`. An unscoped
+  `.platform-hub { grid-area: hub }` inside a media query reached the lanes copy
+  as well, and because `.lanes` has no area called `hub` the browser invented
+  tracks for it and crushed both lanes to 43px. It looked like a broken layout
+  and was a leaked selector.
+- **The hub label sits inside the circle at `bottom: 13%`**, so a second line
+  grows upward into the mark. The map's hub is wide enough for
+  `One API. One data model.`; the smaller one in the lanes is not, which is why
+  it says `One record.` and is pinned `nowrap`.
 - **The orbit rings on the capability diagram are spinning squares.** They are
   square elements rounded to circles, so a rotation grows their layout box by up
   to root two. At phone width that pushed the whole page sideways, which is why

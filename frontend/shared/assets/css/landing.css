@@ -801,6 +801,13 @@ h3 {
   width: clamp(190px, 17vw, 270px);
 }
 
+/* The label sits inside the circle at bottom 13%, so a second line grows up
+   into the mark. The map's hub is wide enough for its longer label; this one
+   is not, and must never wrap. */
+.lanes .platform-hub > span {
+  white-space: nowrap;
+}
+
 .lane {
   min-width: 0;
   padding: 26px clamp(18px, 2.4vw, 32px) 22px;
@@ -1592,7 +1599,7 @@ h3 {
     align-items: start;
   }
 
-  .platform-hub {
+  .platform-map .platform-hub {
     grid-area: hub;
     margin-bottom: 26px;
   }
@@ -1627,6 +1634,21 @@ h3 {
 
   .site-footer__inner p:first-of-type {
     display: none;
+  }
+}
+
+/* Three columns with the hub between them leaves each lane about 205px at
+   700px wide, which is fourteen pixels per twelfth of the track. The shape is
+   the point of the diagram, so it stacks well before the other breakpoints. */
+@media (max-width: 900px) {
+  .lanes {
+    overflow: hidden;
+    grid-template-columns: 1fr;
+  }
+
+  .lanes .platform-hub {
+    width: min(200px, 58vw);
+    margin-inline: auto;
   }
 }
 
@@ -1709,26 +1731,13 @@ h3 {
       "right";
   }
 
-  .platform-hub {
+  .platform-map .platform-hub {
     width: min(270px, 76vw);
   }
 
   .capability-card {
     min-height: 118px;
     padding: 18px;
-  }
-
-  /* Stacked rather than side by side, but on the same twelve columns, so
-     the two shapes are still being compared against each other. The clip is
-     for the orbit rings: see the note on .platform-map below. */
-  .lanes {
-    overflow: hidden;
-    grid-template-columns: 1fr;
-  }
-
-  .lanes .platform-hub {
-    width: min(200px, 58vw);
-    margin-inline: auto;
   }
 
   .feature-grid,
