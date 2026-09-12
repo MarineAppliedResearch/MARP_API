@@ -1,47 +1,89 @@
-# MARP Public Landing Page Prototype
+# MARP public landing page
 
-This package is a standalone, static prototype for the public MARP landing page.
-It is intentionally independent from the existing MARP frontend so its visual
-language and responsive behavior can be reviewed before repository integration.
+The public face of MARP. Two documents, one stylesheet, one script.
 
-## Files
+| File | Served at | Job |
+| --- | --- | --- |
+| `index.html` | `/` | Short. States the problem, shows one diagram, opens the applications, hands off. |
+| `how-it-works.html` | `/how-it-works` | Long. The whole argument, for somebody who wants it. |
 
-```text
-marp-landing/
-├── index.html
-├── assets/
-│   ├── css/landing.css
-│   ├── js/landing.js
-│   └── images/
-└── README.md
-```
+Both routes are registered in `app.js`; the shared assets come from
+`frontend/shared/assets/` and are reached as `/assets/...`.
 
-## Local preview
+Run the API and open the site root. There is no separate build, no bundler and
+no static-server step: these are plain documents that the API serves.
 
-From the `marp-landing` directory:
+## Why there are two pages
 
-```bash
-python -m http.server 8080
-```
+The landing page used to carry the whole story and ran to about six and a half
+thousand pixels. Nobody reads that far down a landing page, so the argument was
+cut at the point where it stops being a pitch and starts being an explanation.
+The band at the bottom of `index.html` is the seam. Anything that belongs to the
+explanation goes on `how-it-works.html`, which is allowed to be as long as it
+needs to be.
 
-Then open:
+## What governs the writing
 
-```text
-http://localhost:8080
-```
+Settled in #152, and it is the part most likely to be undone by accident.
 
-## Prototype behavior
+- **The problem comes before the mechanism.** The first screenful is about the
+  gap between how fast a survey collects data and how long the science takes.
+  The architecture diagram and the application cards are evidence, and they sit
+  below it.
+- **The transplant test.** If a sentence could be moved to Salesforce, Palantir,
+  Raytheon or an AI startup's site with only the product name changed, it is
+  rewritten. `tests/landing-copy.test.js` holds the word list that came out of
+  that, and it runs in CI.
+- **No em dashes, no rule-of-three lists, and no "it is not this, it is that."**
+  Those are the patterns that make a page read as machine-written.
+- **No invented figures.** The page is qualitative on purpose. A survey takes a
+  day and the science can take months are the human's own words; nothing else is
+  quantified, and nothing should be added without a number somebody can stand
+  behind.
+- **No claim the repository cannot support**, and what MARP does today stays
+  distinguishable from the direction it is built for.
+- **MARE appears nowhere.** MARP stands on its own.
 
-- Navigation links scroll to landing-page sections.
-- Login controls open an accessible login dialog.
-- The login form validates input but does not send credentials.
-- API and developer documentation buttons use the intended production routes:
-  `/api-docs` and `/developer-docs`.
-- Layouts are provided for desktop, tablet, and mobile widths.
+## Machine learning is not the headline
 
-## Architecture notes
+MARP is not interesting because it contains models. It is interesting because of
+what happens to the time between collecting data and understanding it. ML belongs
+inside the review story, where a detection is a proposal and a biologist decides.
+`Biologists lead. MARP amplifies.` stays.
 
-- HTML contains semantic content and a reusable inline SVG icon sprite.
-- CSS is organized by component and owns all responsive behavior.
-- JavaScript is limited to navigation, dialog, reveal, and header interactions.
-- Large visual assets are normal image files; no Base64 images are embedded.
+## The application cards
+
+Five cards. Two of the applications run in the browser here and carry an `Open`
+door; the rest are concepts and do not. That door is the only status marker on
+the card, deliberately (#152, A1). The card images are mockups and stay mockups:
+a screenshot of the Picture Mosaic Reviewer would put real survey imagery and
+real species identifications on a public page (#152, A2). The alt text says
+`Concept interface` only for the three that are concepts.
+
+## Traps
+
+- **The reveal animations are IntersectionObserver-driven.** Everything marked
+  `data-reveal` starts at `opacity: 0` and is revealed when it scrolls into view.
+  Anything that captures or tests the page has to scroll slowly enough for the
+  observer to deliver, or it photographs a blank document. About 300px per 140ms
+  works; faster does not.
+- **Each page carries its own icon sprite**, holding only the symbols it draws.
+  Adding a `<use>` to one page without adding its `<symbol>` renders nothing at
+  all, silently. `tests/landing-copy.test.js` checks both directions.
+- **`.hero h1 span` runs white to green across 72% to 92% of its own width**, so
+  a short span puts the colour break in the middle of a word. Give it a whole
+  line.
+- **`app.js` is server-side**, so a running server does not pick up a new route
+  until it is restarted. `express.static` re-reads these HTML files per request,
+  which makes the asymmetry easy to misread as a broken route.
+
+## Login
+
+The dialog posts to `POST /api/v2/auth/login` with `credentials: same-origin`
+and, on success, redirects to `/apps/dashboard/index.html`. The error path reads
+the standard `{ error: { message } }` envelope, so a wrong password, an unknown
+username and a rate-limited attempt all surface the server's own wording. See
+`frontend/shared/assets/js/landing.js`.
+
+`old_index.html` is the page this replaced. It is kept for reference and is not
+served.

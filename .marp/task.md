@@ -56,37 +56,48 @@ earn the architecture and the applications on the way down.
   focus states and the `prefers-reduced-motion` blocks are preserved.
 - **R13 · It holds at phone, tablet and desktop widths**, on the breakpoints
   `landing.css` already defines.
+- **R14 · House writing style.** No em dashes anywhere on either page, comments
+  included. No rule-of-three lists, and no "it is not X, it is Y" construction.
+  These are the patterns that make a page read as machine-written, and they were
+  all over the first draft.
+- **R15 · The landing page is short.** It carries the hero, one diagram, the
+  application cards and a handoff, and nothing else. The first draft ran to
+  6,503px on a desktop. The long-form argument lives on a second page, which is
+  allowed to be as long as it needs.
+- **R16 · The video player gets a section on the long-form page.** Frame-accurate
+  review forwards and backwards, and why a browser cannot do it on its own. The
+  claims come from `marp-video-player`'s own README, not from invention.
 
 ## Open assumptions
 
-- [ ] **A1 · product/UI · blocking** — What is true about each of the five applications,
-      and should the page say so on the card? Today all five look alike except that two
-      carry an `Open` door. As far as this repository can tell there are three different
-      states, not two: **Picture Mosaic Reviewer** and **Machine Learning Dashboard** run
-      in the browser here; the **Video Annotation Tool** is `VIDEO_PROCESSING_GUI`, a real
-      Windows desktop client in daily use but not reachable from a browser; **Data
-      Processing Workspace** and **Automated Report Generation** do not exist yet. R7 and
-      R10 both turn on this. Is that description right, and do you want each card to state
-      its status plainly?
-- [ ] **A2 · product/UI · blocking** — The five card images are mockups, and their alt
-      text calls them *"Concept interface"* — including for the two applications that are
-      now real. I can capture real screenshots of the Mosaic Reviewer and the ML Dashboard
-      from the running server. **But a screenshot of the Mosaic Reviewer shows real survey
-      imagery and real species identifications on a public page**, which is your call and
-      not mine. Real screenshots, or keep the mockups and fix the alt text?
-- [ ] **A3 · scientific · non-blocking** — May the page state any quantity at all? The
+- [x] **A1 · product/UI · blocking** — answered 2026-09-11: **leave the cards as they
+      are.** No status text. The `Open` door on the two applications that run in the
+      browser stays the only signal, as it is today. So R7's "honest about what exists"
+      is satisfied by the door and by not describing an unbuilt application as though it
+      were finished — not by a status badge.
+- [x] **A2 · product/UI · blocking** — answered 2026-09-11: **keep the mockups, fix the
+      alt text.** No real survey imagery or species identifications go onto a public page,
+      and nothing has to be recaptured when a UI moves. The alt text stops calling a
+      running application a concept.
+- [x] **A3 · scientific · non-blocking** — taken on the stated default 2026-09-11: the
+      page stays qualitative, no figure is invented.
+      Original question: — May the page state any quantity at all? The
       story rests on *a survey happens in a day, the science can take months*, which is
       your sentence from the issue. If there is a figure MARP can stand behind — hours of
       video per survey day, a typical turnaround today — it would give the opening
       something concrete. **Default if you say nothing: the page stays qualitative.** I
       will not invent a number.
-- [ ] **A4 · product/UI · non-blocking** — The capability strip near the bottom — *Secure
+- [x] **A4 · product/UI · non-blocking** — taken on the stated default 2026-09-11: the
+      strip goes, its one true idea folds into the architecture section.
+      Original question: — The capability strip near the bottom — *Secure
       API · Connected Data · Scalable Compute · Reusable Services* — fails R8 harder than
       anything else on the page; all four could be lifted onto a defence contractor's site
       unchanged. **Default: delete the strip and fold its one true idea** — everything
       works from one API and one data model — **into the architecture section.** Say if
       you want it kept.
-- [ ] **A5 · architectural · non-blocking** — The entry app has no tests at any tier; it
+- [x] **A5 · architectural · non-blocking** — taken on the stated default 2026-09-11:
+      both checks get written.
+      Original question: — The entry app has no tests at any tier; it
       is the only app here that does not. **Default: add two small ones** — a render check
       (Playwright, desktop and phone: the page serves, every nav anchor resolves to a real
       section, no asset 404s, the login dialog opens and closes) and a fast text check
@@ -107,26 +118,51 @@ earn the architecture and the applications on the way down.
   arrives as evidence for an outcome the visitor already understands rather than as
   something to decode first. Per the issue's *Architecture should appear after the visitor
   understands why it matters*.
+- **2026-09-11** — Settled mid-implementation, by the human, after seeing the
+  first draft rendered:
+  - **The transplant test has a second half.** *"If it sounds like it could have
+    come from Salesforce, Palantir, Raytheon, or some random AI startup, delete
+    it and try again."* Added to #152 as a comment, and now R8.
+  - **Avoid the AI writing patterns**, specifically em dashes, rules of three,
+    and "it is not this, it is that". Now R14. The whole first draft was
+    rewritten for it.
+  - **The page is too long for a landing page.** Split, with a learn-more band
+    handing off to a second page. Now R15, and `/how-it-works` in `app.js`.
+  - **The video player belongs in the long-form page.** Now R16.
+- **2026-09-11** — Each page carries its own icon sprite, holding only the
+  symbols it draws. The alternative was one shared sprite through
+  `partials.js`, which fetches and assigns `innerHTML`: a `<use>` resolved
+  before that lands renders nothing, silently. Five symbols that only the
+  deleted workflow and capability strip used are gone.
 
 ## Plan
 
-Section order, which is the part worth reacting to at this gate:
+Two pages now, not one (R15).
 
-1. **Hero** — the gap, as a statement rather than a product description. Keeps the diver
-   photograph, the logo and the wave graphic.
-2. **The bottleneck** — why a day of collection becomes months of work. Named and
-   concrete: the handoffs, the re-preparation, the waiting.
-3. **The change** — the handoff chain set against stages that advance together. This is
-   the visual that replaces the five numbered boxes (R2, R3).
-4. **Why a narrow workflow is an advantage** — R4, written as an explanation.
-5. **How that is possible** — the existing capability diagram, re-captioned as evidence.
-6. **Biologists lead** — R5 and R6 together, ML placed inside the workflow.
-7. **Applications** — R7, with whatever A1 settles.
-8. **Close** — `Explore. Inform. Protect.`, login, API docs, developer docs.
+**`/` — `frontend/apps/entry/index.html`**
 
-Then: rewrite `landing.css`'s section 6 (Workflow) and 9 (capability strip) for the new
-blocks, leaving sections 1–5 and 7–14 structurally alone; update the README; add whatever
-A5 settles.
+1. **Hero** — the gap, stated. Keeps the diver photograph, the logo and the wave.
+2. **What MARP changes** — two lanes of the same five stages, queued against
+   overlapping. The one diagram this page gets (R2, R3).
+3. **Applications** — the five cards, unchanged in shape (A1, A2).
+4. **Keep reading** — the handoff band.
+5. **Close** — `Explore. Inform. Protect.`, login, API docs, developer docs.
+
+**`/how-it-works` — `frontend/apps/entry/how-it-works.html`**
+
+1. **Compact header**, not a second hero.
+2. **Where the months go** — the three friction cards.
+3. **A system that can do anything has to be told everything** — R4.
+4. **Underneath** — the capability diagram as evidence, plus the single-record
+   paragraph (R1, and A4's folded-in idea).
+5. **Going back one frame** — the video player (R16).
+6. **Biologists lead. MARP amplifies.** — R5 and R6.
+7. **Close** — back to the applications, login, developer docs.
+
+Then: `landing.css` loses section 6 (the five numbered boxes) and section 9 (the
+capability strip), and gains the lanes, the explainer, the pull quote, the
+compact page header and the handoff band. The README is rewritten. A5's two
+checks are added.
 
 ## Acceptance criteria
 
@@ -146,8 +182,8 @@ Filled at G3, after the gate.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** A1 and A2 are blocking and both come from the same underlying question — what
-  is honestly true about the five applications, and how much of the real system is shown
-  on a public page. A3, A4 and A5 have stated defaults and will not hold implementation
-  up.
+- **Gate:** implementing
+- **Notes:** All five assumptions settled 2026-09-11. A1 and A2 both came back
+  conservative — the application cards keep the shape they have, and no real survey
+  imagery goes on a public page. That leaves the rewrite where the issue wanted it: a
+  story, hierarchy and copy problem rather than a redesign.
