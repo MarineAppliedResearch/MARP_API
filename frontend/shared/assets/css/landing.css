@@ -293,6 +293,13 @@ h3 {
   font-weight: bold;
 }
 
+/* A summary is allowed to be several short paragraphs rather than one block.
+   Two or three sentences then a break reads; a wall does not, and the walls
+   were what made the long page feel like an essay about MARP. */
+.section-heading__summary + .section-heading__summary {
+  margin-top: 13px;
+}
+
 /* Reveal classes are progressive enhancement. Content remains visible when JS
    is unavailable or the user prefers reduced motion. */
 .reveal {
@@ -573,6 +580,50 @@ h3 {
   animation-delay: 1.1s;
 }
 
+/* A compact header for the long-form page, standing in for a second hero.
+   Somebody arriving there wants the argument, not another screen of art. */
+.page-hero {
+  position: relative;
+  padding: calc(var(--header-height) + 72px) 0 44px;
+  border-bottom: 1px solid rgba(42, 214, 220, 0.12);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(15, 121, 170, 0.22), transparent 30rem),
+    linear-gradient(180deg, var(--navy-900), rgba(1, 8, 17, 0));
+}
+
+.page-hero__back {
+  display: inline-block;
+  margin-bottom: 16px;
+  color: var(--cyan-400);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.page-hero__back::before {
+  content: "\2190  ";
+}
+
+.page-hero__back:hover {
+  color: var(--green-400);
+}
+
+.page-hero h1 {
+  margin: 0 0 16px;
+  max-width: 18ch;
+  font-size: clamp(2.1rem, 5vw, 3.3rem);
+  line-height: 1.06;
+}
+
+.page-hero p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: clamp(1rem, 1.5vw, 1.12rem);
+  line-height: 1.7;
+}
+
 /* --------------------------------------------------------------------------
    5. Platform map
    -------------------------------------------------------------------------- */
@@ -726,88 +777,210 @@ h3 {
 }
 
 /* --------------------------------------------------------------------------
-   6. Workflow
+   6. Lanes: the same stages queued, then overlapping
    -------------------------------------------------------------------------- */
+
+/* Kept for the section that now uses it -- the who-decides block. The five
+   numbered workflow boxes this file used to style are gone; see #152. */
 .workflow-section {
   background:
     radial-gradient(circle at 50% 40%, rgba(9, 76, 108, 0.16), transparent 33rem),
     linear-gradient(180deg, rgba(1, 8, 17, 0), rgba(3, 16, 29, 0.76), rgba(1, 8, 17, 0));
 }
 
-.workflow {
+.lanes-section {
+  background:
+    radial-gradient(circle at 50% 30%, rgba(9, 76, 108, 0.18), transparent 34rem),
+    linear-gradient(180deg, rgba(1, 8, 17, 0), rgba(3, 16, 29, 0.76), rgba(1, 8, 17, 0));
+}
+
+/* Queued lane, the record, the MARP lane. The middle column is sized by the
+   hub rather than sharing the split, so neither lane is squeezed by it. */
+/* Stretch rather than centre, because only one lane carries a note now and
+   centring would offset its five rows against the other lane's by half that
+   note. Reading one stage across both lanes is the entire diagram, so the two
+   panels are the same height and their tracks line up row for row. The hub
+   between them sets its own align-self. */
+.lanes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: clamp(18px, 2.2vw, 34px);
+}
+
+.lanes .platform-hub {
+  align-self: center;
+  width: clamp(190px, 17vw, 270px);
+}
+
+/* The label sits inside the circle at bottom 13%, so a second line grows up
+   into the mark. The map's hub is wide enough for its longer label; this one
+   is not, and must never wrap. */
+.lanes .platform-hub > span {
+  white-space: nowrap;
+}
+
+.lane {
+  min-width: 0;
+  padding: 26px clamp(18px, 2.4vw, 32px) 22px;
+  border: 1px solid rgba(42, 214, 220, 0.12);
+  border-radius: var(--radius-md);
+  background: linear-gradient(140deg, rgba(7, 30, 47, 0.5), rgba(3, 17, 30, 0.72));
+}
+
+/* The MARP lane is the one the reader is meant to end up looking at, so it
+   is the only one that gets colour, weight and a shadow. */
+.lane--marp {
+  border-color: var(--border);
+  background: linear-gradient(140deg, rgba(7, 40, 58, 0.82), rgba(3, 20, 34, 0.9));
+  box-shadow: var(--shadow-md);
+}
+
+.lane__label {
+  margin-bottom: 22px;
+  font-size: 1.16rem;
+  color: var(--muted);
+}
+
+.lane--marp .lane__label {
+  color: var(--white);
+}
+
+.lane__track {
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   list-style: none;
-}
-
-.workflow__step {
-  position: relative;
-  min-width: 0;
-  padding-inline: clamp(10px, 1.6vw, 26px);
-  text-align: center;
-}
-
-.workflow__step:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 71px;
-  right: -10%;
-  width: 20%;
-  height: 2px;
-  background: linear-gradient(90deg, var(--cyan-500), var(--blue-400));
-  box-shadow: 0 0 10px rgba(34, 215, 220, 0.45);
-}
-
-.workflow__step:not(:last-child)::before {
-  content: "";
-  position: absolute;
-  top: 65px;
-  right: -10%;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-  border-left: 9px solid var(--blue-400);
-  transform: translateX(1px);
-}
-
-.workflow__number {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--green-400);
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.workflow__icon {
-  width: 106px;
-  aspect-ratio: 1;
-  margin: 0 auto 20px;
   display: grid;
-  place-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  color: var(--cyan-400);
-  background: radial-gradient(circle, rgba(9, 53, 75, 0.68), rgba(3, 17, 30, 0.96));
-  box-shadow: inset 0 0 28px rgba(34, 215, 220, 0.07);
+  gap: 15px;
 }
 
-.workflow__icon .line-icon {
-  width: 48px;
-  height: 48px;
+/* Name above, rod below. The name always gets the full width of the track,
+   so a long stage name can never overflow its own two-twelfths of it --
+   which is what a label placed inside the bar would do on a phone. */
+.lane__stage {
+  display: grid;
+  gap: 5px;
 }
 
-.workflow__copy h3 {
-  margin-bottom: 6px;
-  font-size: 1.5rem;
+.lane__name {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  color: var(--faint);
 }
 
-.workflow__copy p {
-  margin-bottom: 0;
+.lane--marp .lane__name {
+  color: var(--text);
+}
+
+/* There is no per-stage badge here, and there must not be one. A draft tagged
+   two stages `Automated`, which turned the diagram into a picture of machines
+   taking work off biologists. The page is about expert time landing on the
+   judgement rather than about what a machine took, and a badge saying otherwise
+   fails the transplant test on its own. The start columns carry everything the
+   lanes need to say. */
+.lane__rod {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(42, 214, 220, 0.07);
+}
+
+/* --from, --span and --at are set per stage in the markup: they are the
+   diagram, and nothing in the copy repeats what they draw. The queued lane lays
+   its five stages end to end across the track; the MARP lane starts them
+   earlier, runs them shorter and overlaps them, and both finish on a check.
+   Collect is the one stage drawn identically in both, because a dive takes as
+   long as a dive and MARP does not touch that. Keep --from plus --span at or
+   below 25, or a bar runs past the last column into implicit tracks and comes
+   out short. */
+.lane__rod i {
+  grid-column: var(--from) / span var(--span);
+  border-radius: 999px;
+  background: var(--faint);
+}
+
+.lane--marp .lane__rod i {
+  background: linear-gradient(90deg, var(--green-400), var(--cyan-400));
+  box-shadow: 0 0 14px rgba(34, 215, 220, 0.35);
+}
+
+/* Sits in the column the last bar ends on, so it reads as that lane finishing
+   rather than as a separate stage. Taller than the 10px rod on purpose: it has
+   to be findable at a glance, and nothing here clips it. */
+.lane__done {
+  grid-column: var(--at) / span 3;
+  grid-row: 1;
+  align-self: center;
+  justify-self: start;
+  width: 15px;
+  height: 15px;
+  margin-left: 5px;
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lane--marp .lane__done {
+  stroke: var(--green-400);
+  filter: drop-shadow(0 0 7px rgba(167, 236, 53, 0.5));
+}
+
+.lane__note {
+  margin: 20px 0 0;
+  font-size: 0.92rem;
   color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.55;
+}
+
+.lane--marp .lane__note {
+  color: var(--cyan-300);
+}
+
+/* The section's conclusion, so it outranks the lane notes rather than sitting
+   under the diagram as a footnote. It replaced a caveat that used to apologise
+   for the diagram from the same position. */
+.lanes__payoff {
+  margin: 40px auto 0;
+  max-width: 56ch;
+  text-align: center;
+  color: var(--white);
+  font-size: clamp(1.06rem, 1.5vw, 1.3rem);
   font-weight: bold;
+  line-height: 1.58;
+}
+
+.pull-quote {
+  margin: 54px auto 0;
+  max-width: 64ch;
+  padding-left: clamp(18px, 2.4vw, 30px);
+  border-left: 2px solid var(--border-strong);
+}
+
+.pull-quote p {
+  margin: 0;
+  font-size: clamp(1.04rem, 1.4vw, 1.2rem);
+  line-height: 1.72;
+  color: var(--text);
+}
+
+/* Three paragraphs of argument, in two columns so they do not read as a wall. */
+.explainer {
+  margin-top: 6px;
+  columns: 2;
+  column-gap: clamp(26px, 3.4vw, 54px);
+}
+
+.explainer p {
+  margin: 0 0 1.05em;
+  break-inside: avoid;
+  font-size: 1.02rem;
+  line-height: 1.72;
+}
+
+.explainer p:last-child {
+  margin-bottom: 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -892,7 +1065,7 @@ h3 {
 
 .application-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -927,7 +1100,8 @@ h3 {
   background: linear-gradient(180deg, transparent 55%, rgba(2, 10, 20, 0.42));
 }
 
-.application-card__media img {
+.application-card__media img,
+.application-card__media .card-mock {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -935,7 +1109,63 @@ h3 {
   transition: transform 340ms ease;
 }
 
-.application-card:hover .application-card__media img {
+/* One card has no photographed mockup, so its concept interface is drawn in
+   the markup. These rules are the drawing, kept out of the HTML. */
+.card-mock {
+  display: block;
+}
+
+.card-mock__pane rect {
+  stroke: rgba(42, 214, 220, 0.22);
+  stroke-width: 1;
+}
+
+.card-mock__tag {
+  fill: var(--faint);
+  font-family: var(--body-font);
+  font-size: 6px;
+  letter-spacing: 0.14em;
+}
+
+.card-mock__fish {
+  fill: #04202e;
+  stroke: rgba(100, 246, 242, 0.55);
+  stroke-width: 1;
+}
+
+/* The picked points, and the match between the two views. The horizontal
+   offset between the panes is the disparity a length comes out of, so the
+   match lines are deliberately not parallel to each other. */
+.card-mock__pick {
+  stroke: var(--green-400);
+  stroke-width: 1.3;
+  fill: none;
+}
+
+.card-mock__match {
+  stroke: var(--cyan-400);
+  stroke-width: 0.8;
+  stroke-dasharray: 3 3;
+  fill: none;
+  opacity: 0.75;
+}
+
+.card-mock__label {
+  fill: var(--faint);
+  font-family: var(--body-font);
+  font-size: 6px;
+  letter-spacing: 0.14em;
+}
+
+.card-mock__value {
+  fill: var(--green-300);
+  font-family: var(--body-font);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.application-card:hover .application-card__media img,
+.application-card:hover .application-card__media .card-mock {
   transform: scale(1.035);
 }
 
@@ -968,59 +1198,6 @@ h3 {
   font-size: 1rem;
   font-weight: bold;
   line-height: 1.55;
-}
-
-/* --------------------------------------------------------------------------
-   9. Platform capability strip
-   -------------------------------------------------------------------------- */
-.capability-strip {
-  padding: 28px 0 82px;
-  background: var(--navy-950);
-}
-
-.capability-strip__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: linear-gradient(140deg, rgba(7, 34, 52, 0.86), rgba(3, 17, 30, 0.92));
-  box-shadow: var(--shadow-md);
-}
-
-.capability-strip article {
-  min-height: 150px;
-  padding: 26px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 17px;
-}
-
-.capability-strip article:not(:last-child) {
-  border-right: 1px solid rgba(37, 215, 220, 0.14);
-}
-
-.capability-strip .line-icon {
-  width: 45px;
-  height: 45px;
-  color: var(--green-400);
-}
-
-.capability-strip article:nth-child(even) .line-icon {
-  color: var(--cyan-400);
-}
-
-.capability-strip h3 {
-  margin-bottom: 5px;
-  font-size: 1.18rem;
-}
-
-.capability-strip p {
-  margin-bottom: 0;
-  color: var(--muted);
-  font-size: 1rem;
-  font-weight: bold;
-  line-height: 1.45;
 }
 
 /* --------------------------------------------------------------------------
@@ -1081,6 +1258,15 @@ h3 {
   margin: 0 auto;
   color: var(--muted);
   font-weight: bold;
+}
+
+/* The page opened on the problem; this is the one line that answers it, so
+   it outranks the sign-in line sitting under it. */
+.final-cta p.final-cta__outcome {
+  margin-bottom: 18px;
+  color: var(--text);
+  font-size: clamp(1.05rem, 1.5vw, 1.24rem);
+  line-height: 1.62;
 }
 
 .final-cta__actions {
@@ -1393,18 +1579,6 @@ h3 {
   .platform-map__connectors {
     opacity: 0.58;
   }
-
-  .capability-strip__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .capability-strip article:nth-child(2) {
-    border-right: 0;
-  }
-
-  .capability-strip article:nth-child(-n+2) {
-    border-bottom: 1px solid rgba(37, 215, 220, 0.14);
-  }
 }
 
 @media (max-width: 980px) {
@@ -1477,7 +1651,7 @@ h3 {
     align-items: start;
   }
 
-  .platform-hub {
+  .platform-map .platform-hub {
     grid-area: hub;
     margin-bottom: 26px;
   }
@@ -1494,18 +1668,8 @@ h3 {
     display: none;
   }
 
-  .workflow {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 44px 16px;
-  }
-
-  .workflow__step:not(:last-child)::before,
-  .workflow__step:not(:last-child)::after {
-    display: none;
-  }
-
-  .workflow__step:nth-child(4) {
-    grid-column: 1 / 2;
+  .explainer {
+    columns: 1;
   }
 
   .application-grid {
@@ -1522,6 +1686,22 @@ h3 {
 
   .site-footer__inner p:first-of-type {
     display: none;
+  }
+}
+
+/* Three columns with the hub between them leaves each lane about 205px at
+   700px wide, which is about nine pixels per twenty-fourth of the track. The
+   shape is the point of the diagram, so it stacks well before the other
+   breakpoints. */
+@media (max-width: 900px) {
+  .lanes {
+    overflow: hidden;
+    grid-template-columns: 1fr;
+  }
+
+  .lanes .platform-hub {
+    width: min(200px, 58vw);
+    margin-inline: auto;
   }
 }
 
@@ -1590,7 +1770,13 @@ h3 {
     margin-left: 0;
   }
 
+  /* The orbit rings are square elements rounded to circles, and they spin, so
+     their layout box grows by up to root two as they turn. At 270px that is a
+     394px box in a 390px viewport, which scrolls the whole page sideways. The
+     connectors are hidden at this width anyway, and what gets clipped is the
+     transparent corner of a rotating square rather than anything drawn. */
   .platform-map {
+    overflow: hidden;
     grid-template-columns: 1fr;
     grid-template-areas:
       "hub"
@@ -1598,7 +1784,7 @@ h3 {
       "right";
   }
 
-  .platform-hub {
+  .platform-map .platform-hub {
     width: min(270px, 76vw);
   }
 
@@ -1607,58 +1793,8 @@ h3 {
     padding: 18px;
   }
 
-  .workflow {
-    position: relative;
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .workflow::before {
-    content: "";
-    position: absolute;
-    top: 48px;
-    bottom: 48px;
-    left: 47px;
-    width: 1px;
-    background: linear-gradient(var(--green-400), var(--cyan-400), var(--blue-400));
-    opacity: 0.55;
-  }
-
-  .workflow__step,
-  .workflow__step:nth-child(4) {
-    grid-column: auto;
-    min-height: 128px;
-    padding: 0 0 28px;
-    display: grid;
-    grid-template-columns: 96px 1fr;
-    grid-template-rows: auto 1fr;
-    gap: 0 18px;
-    text-align: left;
-  }
-
-  .workflow__number {
-    grid-column: 1;
-    grid-row: 1;
-    margin: 0 0 5px;
-    text-align: center;
-  }
-
-  .workflow__icon {
-    grid-column: 1;
-    grid-row: 2;
-    width: 78px;
-    margin: 0 auto;
-  }
-
-  .workflow__copy {
-    grid-column: 2;
-    grid-row: 1 / 3;
-    align-self: center;
-  }
-
   .feature-grid,
-  .application-grid,
-  .capability-strip__grid {
+  .application-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1668,16 +1804,6 @@ h3 {
 
   .application-card__body {
     min-height: auto;
-  }
-
-  .capability-strip article,
-  .capability-strip article:nth-child(2) {
-    border-right: 0;
-    border-bottom: 1px solid rgba(37, 215, 220, 0.14);
-  }
-
-  .capability-strip article:last-child {
-    border-bottom: 0;
   }
 
   .final-cta__actions {
@@ -1752,6 +1878,73 @@ h3 {
   .capability-card .line-icon {
     width: 39px;
     height: 39px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   13b. Short viewports
+   --------------------------------------------------------------------------
+   These are keyed on height, not width, because the thing that breaks is the
+   hero being taller than the screen. A phone held sideways is about 340px
+   tall and the 760px floor put every word of the hero below the fold. */
+
+@media (max-height: 700px) {
+  .hero {
+    min-height: 100svh;
+    padding: calc(var(--header-height) + 20px) 0 32px;
+  }
+
+  .hero__logo {
+    width: clamp(200px, 24vw, 300px);
+    margin-bottom: 12px;
+  }
+
+  .hero h1 {
+    margin-bottom: 16px;
+    font-size: clamp(2rem, 5.2vw, 3.2rem);
+  }
+
+  .hero__copy > p {
+    font-size: 0.98rem;
+    line-height: 1.5;
+  }
+
+  /* A 320px-wide phone wraps both the paragraph and the buttons far enough to
+     push the call to action off a 568px screen by about 25px. */
+  .hero__actions .button {
+    min-height: 46px;
+  }
+}
+
+/* Landscape on a phone. The header already carries the logo, and the scroll
+   cue is competing for the few pixels the copy needs. */
+@media (max-height: 480px) {
+  .hero {
+    padding: calc(var(--header-height) + 12px) 0 20px;
+  }
+
+  .hero__logo,
+  .hero__scroll-cue {
+    display: none;
+  }
+
+  .hero h1 {
+    margin-bottom: 10px;
+    font-size: clamp(1.6rem, 4.4vw, 2.4rem);
+  }
+
+  .hero__copy > p {
+    margin-bottom: 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .hero__actions {
+    margin-top: 16px;
+  }
+
+  .hero__actions .button {
+    min-height: 44px;
   }
 }
 

@@ -1,0 +1,16 @@
+{
+  "name": "marp-entry",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The public MARP landing page and its long-form companion. Owns its render tier, the way marp-mosaic-review owns its own.",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "test": "npm run test:e2e",
+    "test:e2e": "playwright test --project=desktop --project=phone --project=phone-landscape",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}

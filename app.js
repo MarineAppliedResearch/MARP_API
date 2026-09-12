@@ -541,6 +541,22 @@ app.get('/', (req, res) => {
 });
 
 /**
+ * Serve the long-form companion to the landing page.
+ *
+ * The landing page stays short and hands the reader here rather than growing
+ * the scroll; this is where the workflow argument, the architecture and the
+ * review model are explained in full. Both pages live in the entry app and
+ * share its stylesheet and script.
+ *
+ * @name GET /how-it-works
+ * @function
+ * @returns {void}
+ */
+app.get('/how-it-works', (req, res) => {
+    res.sendFile(path.join(frontendAppsDirectory, 'entry', 'how-it-works.html'));
+});
+
+/**
  * Serve the index.html of any frontend app folder by name.
  *
  * Allows new frontend apps to be added under frontend/apps/<appName>/

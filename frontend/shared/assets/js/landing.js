@@ -201,7 +201,7 @@ function initializeLoginDialog() {
         }
 
         if (statusMessage) {
-          statusMessage.textContent = "Signed in — redirecting…";
+          statusMessage.textContent = "Signed in. Redirecting…";
         }
 
         window.location.href = "/apps/dashboard/index.html";
