@@ -84,9 +84,22 @@ export default defineConfig({
    * before it was made the default. **If a test ever starts failing only under
    * parallelism, it is sharing something it should not** — find what, rather than turning
    * this back off.
+   *
+   * **The API tier is that case, and it is found rather than suspected.** The reasoning
+   * above holds because the fixture lives in the browser, so every test gets its own
+   * copy. There is exactly one testing database, and every test in the `api` project
+   * writes to it — so two tests that each isolate "the species with exactly one
+   * observation" isolate the *same* observation. That is not hypothetical: the first
+   * time that project held more than one test, a commit was aborted, the row was
+   * re-read to prove nothing had been written, and the row was gone — another worker
+   * had corrected it onto a different species a moment earlier (#157).
+   *
+   * `workers` is not a per-project setting and does not need to be. `MARP_API_BASE` is
+   * already a statement about the whole invocation — no static server is started, and
+   * only `api` or `walkthrough` can be named — so a run is the API tier or it is not.
    */
-  fullyParallel: true,
-  workers: 6,
+  fullyParallel: !ON_API,
+  workers: ON_API ? 1 : 6,
   retries: 0,
   timeout: 30_000,
   expect: { timeout: 7_000 },

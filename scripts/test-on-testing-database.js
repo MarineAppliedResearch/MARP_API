@@ -40,6 +40,7 @@
 
 require('dotenv').config();
 
+const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const http = require('http');
@@ -58,6 +59,26 @@ const APP_DIR = path.join(ROOT, 'frontend', 'apps', 'marp-mosaic-review');
 
 /** How long to wait for the API to answer before giving up, in milliseconds. */
 const STARTUP_TIMEOUT_MS = 60000;
+
+/**
+ * Where the API's own output goes while this runs.
+ *
+ * Not the terminal, and that is not tidiness. Sequelize logs every statement to
+ * `console.log` in development and there is no switch for it, so a run that
+ * inherits the server's stdout buries "1 passed" under a few hundred lines of
+ * SQL -- including the mosaic query, which is ninety lines on its own. The log is
+ * kept rather than discarded, and its tail is printed whenever something fails,
+ * which is the only time anybody wants it.
+ *
+ * `.marp/local/` is git-ignored, and the log quotes rows from the corpus.
+ *
+ * @constant
+ * @type {string}
+ */
+const API_LOG = path.join(__dirname, '..', '.marp', 'local', 'testing-api.log');
+
+/** How much of that log is worth printing when something goes wrong. */
+const LOG_TAIL_LINES = 40;
 
 /**
  * Ask the operating system for a port nobody is using.
@@ -138,6 +159,28 @@ function run(command, args, options) {
 }
 
 /**
+ * Show the end of the API's own log.
+ *
+ * Called only on a failure. The whole point of writing it to a file is that
+ * nobody wants it otherwise, and the whole point of keeping it is that when a
+ * browser test fails against a real server, the server's side of it is usually
+ * where the answer is.
+ *
+ * @returns {void}
+ */
+function printLogTail() {
+    if (!fs.existsSync(API_LOG)) { return; }
+
+    const lines = fs.readFileSync(API_LOG, 'utf8').split(/\r?\n/).filter(Boolean);
+    if (lines.length === 0) { return; }
+
+    console.log('');
+    console.log(`--- the API's last ${Math.min(LOG_TAIL_LINES, lines.length)} lines `
+        + `(${path.relative(ROOT, API_LOG)}) ---`);
+    for (const line of lines.slice(-LOG_TAIL_LINES)) { console.log(line); }
+}
+
+/**
  * @async
  * @returns {Promise<void>} Resolves when the run is over; sets the exit code.
  */
@@ -160,8 +203,12 @@ async function main() {
     const port = await freePort();
     const base = `http://127.0.0.1:${port}`;
 
+    fs.mkdirSync(path.dirname(API_LOG), { recursive: true });
+    const logFile = fs.openSync(API_LOG, 'w');
+
     console.log('');
     console.log(`==> API on ${base}   (this run's own, stopped when it finishes)`);
+    console.log(`    its output: ${path.relative(ROOT, API_LOG)}`);
 
     const api = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
         cwd: ROOT,
@@ -175,7 +222,7 @@ async function main() {
             DB_NAME: stamp.database,
             THUMBNAIL_STORAGE_DIR: stamp.thumbnails,
         },
-        stdio: ['ignore', 'inherit', 'inherit'],
+        stdio: ['ignore', logFile, logFile],
     });
 
     let exited = false;
@@ -192,12 +239,14 @@ async function main() {
     try {
         await waitForApi(base, () => !exited);
 
-        const playwright = path.join(
-            APP_DIR, 'node_modules', '.bin',
-            process.platform === 'win32' ? 'playwright.cmd' : 'playwright'
-        );
+        // Playwright's own entry point under `node`, not the `.bin` shim. The shim
+        // is `playwright.cmd` on Windows, which needs `shell: true` to run at all
+        // -- and passing arguments through a shell is unescaped concatenation,
+        // which Node now warns about on every run. This is the same program with
+        // nothing between it and the arguments.
+        const playwright = path.join(APP_DIR, 'node_modules', '@playwright', 'test', 'cli.js');
 
-        code = await run(playwright, ['test', '--project=api', ...passthrough], {
+        code = await run(process.execPath, [playwright, 'test', '--project=api', ...passthrough], {
             cwd: APP_DIR,
             env: {
                 ...process.env,
@@ -210,22 +259,27 @@ async function main() {
                 // cannot silently reach the development database instead.
                 MARP_TESTING_DB_NAME: stamp.database,
             },
-            // .cmd on Windows is not an executable; it needs a shell to run at all.
-            shell: process.platform === 'win32',
         });
     } finally {
         stopApi();
     }
 
     console.log('');
-    console.log(code === 0
-        ? 'The API tier passed, against a real server on the testing database.'
-        : `The API tier failed (${code}). The database is still there; the next run reuses it.`);
+    if (code === 0) {
+        console.log('The API tier passed, against a real server on the testing database.');
+    } else {
+        console.log(`The API tier failed (${code}). The database is still there; the next run`);
+        console.log('reuses it, so a re-run starts in seconds.');
+        printLogTail();
+    }
 
     process.exitCode = code;
 }
 
 main().catch((error) => {
     console.error(`Could not run the API tier: ${error.message}`);
+    // The likeliest failure here is the server not starting, and its reason is in
+    // its own log rather than in this message.
+    printLogTail();
     process.exit(EXIT_REFUSED);
 });
