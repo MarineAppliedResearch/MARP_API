@@ -1,16 +1,32 @@
 # Marine Analysis and Reporting Platform
 
+<!-- marp:brand start -->
+<!-- Canonical source: MARP/README.md. Do not edit this block in a component repository;
+     edit it here and run `marp harness sync`. -->
+
 <p align="center">
-  <strong>MARP</strong> is a self-hosted platform for ecological data, expert interpretation, video workflows, machine-learning assistance, processing pipelines, and reporting.
+  <strong>MARP</strong> is the Marine Analysis and Reporting Platform. It carries an ocean
+  survey from the video a dive brings home through to the science: annotation, review,
+  machine-learning assistance, processing and reporting, on a platform an organisation
+  hosts for itself.
 </p>
 
 <p align="center">
-  <img alt="Project status" src="https://img.shields.io/badge/status-internal%20production%20%7C%20active%20development-0b7285">
+  <a href="https://github.com/MarineAppliedResearch/MARP">Umbrella</a> &middot;
+  <a href="https://github.com/MarineAppliedResearch/MARP_API">API</a> &middot;
+  <a href="https://github.com/MarineAppliedResearch/marp-video-player">Video player</a> &middot;
+  <a href="https://github.com/MarineAppliedResearch/marp-inference-worker">Inference worker</a> &middot;
+  <a href="https://github.com/MarineAppliedResearch/marp-jellyfin">Video server</a>
+</p>
+<!-- marp:brand end -->
+
+<p align="center">
+  <img alt="Project status" src="https://img.shields.io/badge/status-internal%20production%20%7C%20active%20development-05b9c8">
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-runtime-339933?logo=nodedotjs&logoColor=white">
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-database-4169E1?logo=postgresql&logoColor=white">
   <img alt="Express" src="https://img.shields.io/badge/Express-API-000000?logo=express&logoColor=white">
   <img alt="Sequelize" src="https://img.shields.io/badge/Sequelize-ORM-52B0E7?logo=sequelize&logoColor=white">
-  <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-a7e735">
+  <img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-a7ec35">
 </p>
 
 
