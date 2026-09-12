@@ -104,6 +104,11 @@ const SUBSYSTEMS = {
             // group of its own -- it is about the schema and about not losing
             // rows, which is what this group already owns.
             'corpus',
+            // #132: where a database's thumbnails live. Beside `corpus` because
+            // it is the other half of the same question -- the rows and the
+            // files are one corpus, and this is what stops two databases in one
+            // checkout sharing a directory and deleting each other's pictures.
+            'thumbnail-storage',
             // The corpus guard (#142). Here because it is data integrity by
             // another route: it watches what a suite leaves behind rather than
             // what a migration does.

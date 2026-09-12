@@ -474,6 +474,49 @@ holding a lock on one of them is what turns a load into a hang.
 dump on one person's machine is invisible to it, so the rule that a test seeds what it
 asserts does not relax because a dump exists.
 
+## The testing database, and why the thumbnails had to move first
+
+Browser tests write, so the tier that runs them needs a database that is **not** the
+development corpus. Standing one up is one command, and it only does the work once:
+
+```bash
+npm run test:app:mosaic-review:api     # provision if needed, serve, run, stop
+npm run testing-db status              # what is there, and which dump it came from
+npm run testing-db reset               # throw it away and load the dump again
+```
+
+The first run builds `mare_test` from the newest dump under `.marp/local/corpus/`, gives
+it a thumbnails directory of its own, migrates it up to this branch, and creates the
+reviewer login. Every run after that finds it and starts in seconds. **The output says
+which of the two happened** -- `PROVISIONED` or `REUSED` -- rather than leaving it to be
+inferred from how long it took. There is no curated test dataset and none is invented: the
+testing database is a copy of the development corpus, which is what `marp db dump` makes.
+
+**`THUMBNAIL_STORAGE_DIR` is what made this possible**, and it is the part worth
+remembering. `observation_thumbnails` records a filename and the JPEG lives on disk, so
+the rows and the files are one corpus. That directory used to be hardcoded relative to the
+checkout, which meant one checkout had exactly one of them and two databases were forced
+to share -- and a load replaces it wholesale, so filling a testing database deleted the
+development corpus's pictures. It is an environment variable now, beside the five `DB_*`
+ones and for the same reason: it is part of *which database this is*. Unset, it is what it
+always was, so nothing existing changes.
+
+Two consequences that look like bugs and are not:
+
+- **`holdsCorpus` no longer refuses on thumbnail files.** It asks the database, which is
+  what it was always trying to ask. The old short circuit was a guard standing in front of
+  the missing per-database storage; now that storage belongs to a database, files beside
+  an empty one are that database's orphans. The count is still in the load's report and
+  still compared against the manifest -- it stopped being a refusal, not evidence.
+- **`marp db load` does not know about this variable.** The umbrella sets `DB_*` as real
+  environment variables and not `THUMBNAIL_STORAGE_DIR`, so a load reached with `-Port`
+  writes into whichever directory `.env` names. Use `npm run testing-db` for a testing
+  database; `marp db load` is still right for the development one.
+
+**It is still not CI.** The API tier needs a server, a database and a login, and a missing
+one of those fails rather than skips -- so it runs here and nowhere else, exactly as the
+paragraph above says about dumps.
+
 ## The migrations cannot build a database
 
 `observations`, `projects`, `sessions` and `metaInfos` have no `createTable`

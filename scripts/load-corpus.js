@@ -234,11 +234,23 @@ async function main() {
     let migrationHead;
     try {
         before = await countCorpus(client);
+
+        // Two statements, and the guard cannot be folded into the second.
+        // `to_regclass` returns null for a missing table at *run* time, but the
+        // subquery beside it is resolved at *parse* time -- so a single CASE
+        // statement still fails with `relation "public.SequelizeMeta" does not
+        // exist`, whichever branch would have been taken. That never showed up
+        // while every target was a database `marp db up` had already given a
+        // schema to; a genuinely empty one, which is what a testing database
+        // starts as (#132), is the case that finds it.
+        migrationHead = null;
         const ledger = await client.query(
-            `select case when to_regclass('public."SequelizeMeta"') is null then null
-                         else (select max(name) from public."SequelizeMeta") end as head`
+            'select to_regclass(\'public."SequelizeMeta"\') is not null as present'
         );
-        migrationHead = ledger.rows[0].head;
+        if (ledger.rows[0].present) {
+            const head = await client.query('select max(name) as head from public."SequelizeMeta"');
+            migrationHead = head.rows[0].head;
+        }
     } finally {
         await client.end();
     }
@@ -266,7 +278,22 @@ async function main() {
         console.log(`No ${MANIFEST_FILENAME} beside the dump, so the round trip cannot be checked.`);
     }
 
-    const occupied = holdsCorpus(before, beforeFiles);
+    const occupied = holdsCorpus(before);
+
+    /* An empty database with files beside it. `holdsCorpus` used to refuse this and
+       no longer does (#132, R3) -- the directory belongs to a database now, so those
+       files are this database's orphans rather than possibly somebody else's corpus.
+       Permitted is not the same as unremarked: say the number out loud, because the
+       one reading it is the person best placed to know whether the empty database is
+       a surprise. */
+    if (!occupied && beforeFiles > 0) {
+        console.log('');
+        console.log(`Note: no rows here, but ${beforeFiles} thumbnail files are on disk.`);
+        console.log(`They are orphans -- nothing in ${config.database} names them -- and a load`);
+        console.log(`replaces them. Their directory is ${THUMBNAIL_STORAGE_DIR}`);
+        console.log('(THUMBNAIL_STORAGE_DIR, or its default). If that is not the directory you');
+        console.log('meant, stop now: the rows that name these files are in another database.');
+    }
 
     if (occupied && !force) {
         // console.log rather than console.error, deliberately. Node's stdout is
@@ -279,8 +306,9 @@ async function main() {
         console.log('');
         console.log('Nothing has been changed. If this is the corpus that has no backup, take');
         console.log('one first:  marp db dump');
-        console.log('If you meant a second database, bring one up on its own port and point');
-        console.log(`DB_PORT at it:  marp db up ${FLAG.port} <n> ${FLAG.dataDir} <name>`);
+        console.log('If you meant a second database, it needs a thumbnails directory of its');
+        console.log('own as well as a name of its own -- THUMBNAIL_STORAGE_DIR, or let');
+        console.log('`node scripts/testing-database.js` arrange both.');
         console.log(`If you really do mean to replace what is in there, say so: ${FLAG.force}`);
         process.exit(EXIT_REFUSED);
     }

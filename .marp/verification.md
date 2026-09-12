@@ -1,351 +1,303 @@
-# Verification — MARP_API#135, taking a promotion back
+# Verification — MARP_API#132 and #157
+
+Run 2026-09-12, in the agent workspace `MARP_API--157-retire-fixture`, against its own
+PostgreSQL and its own API port. The development corpus in the human's checkout was read
+(one dump, read-only) and never written to; its thumbnails were counted before and after
+and are unchanged.
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `render.spec.mjs` › taking a promotion back (#135) › *step 1: promoting and committing leaves the tile reading PROMOTED* | render | The badge the reviewer actually reads says PROMOTED, and neither TAKING BACK nor TAKEN BACK. This is the report itself, at the only tier that can see a badge. |
-| R1 | `requirements.js` › Training data review › *promoting one tile and committing it reads as promoted, not as a take-back* | contract | The store folds the commit to `promoted` and the accept mark survives it — the two facts that, when either fails, produce the reported badge. |
-| R2 | `model.test.mjs` › *#135 R2: taking back a promotion this sitting recorded is a take-back* (and the scientific and exception siblings) | unit | The rule names what is being taken back, for an acceptance in both modes and for an exception as before. |
-| R2 | `render.spec.mjs` › *step 2: clicking it again says the promotion is being taken back* | render | The badge appears, the tile carries `out-reverted`, and the tooltip names the promotion — so the click stops looking as though it did nothing. |
-| R3 | `model.test.mjs` › *#135 R3: the take-backs are their own list, and the marks are not in it* | unit | The two lists stay two lists, which is what keeps an id out of both `marks` and `withdraw` — the endpoint refuses a request carrying both. |
-| R3 | `model.test.mjs` › *#135 R3: clicking a mark off makes the main button withdraw it* | unit | A2's answer, and the reversal of #126's R7 in the one place that decides it. |
-| R3, R4 | `requirements.js` › Training data review › the same three-step check | contract | The withdrawal reaches the backing, the outcome becomes `withdrawn`, and the row carries no training decision afterwards. |
-| R4 | `model.test.mjs` › *#135 R4: applyCommit folds a withdrawal* and *…a revert that co-occurs with a flag* | unit | `reverted` is read, and reading it does not disturb the entry that co-occurs with `flagged`. |
-| R4 | `render.spec.mjs` › *step 3: committing the take-back clears the label and the decision* | render | No badge at all afterwards — which is what undecided looks like — plus the row's decision read back through the store. |
-| R5 | `model.test.mjs` › *#135 R5: the button counts a take-back* | unit | The count includes it, so the button is enabled; without this step 3 is unreachable by clicking. |
-| R5 | `render.spec.mjs` › step 2, the last two assertions | render | The button is enabled and its title says *takes back 1*. |
-| R6 | `data-scale.test.mjs` › *#135 R6: a commit does not move the version* | unit | Two commits of the same rows, and the second is not conflicted. **It commits twice because committing once cannot observe it.** |
-| R6 | `data-scale.test.mjs` › *#135 R6: a species correction still moves it* | unit | The distinction: a correction edits the observation, so its token does move. |
-| R6 | `requirements.js` › Training data review › *committing the same page twice is not a phantom conflict* | contract | The same defect through the real store, which is the half that was wrong. |
+| R1 | `tests/thumbnail-storage.test.js` · *is storage/observation-thumbnails when nothing is set* | unit | the default is today's path exactly, so every existing checkout, CI and production are unaffected |
+| R1 | `tests/thumbnail-storage.test.js` · *uses an absolute value exactly as given* | unit | an absolute setting is honoured, which is what the launcher passes |
+| R2 | `tests/thumbnail-storage.test.js` · *resolves a relative value against the repository root, not the cwd* | unit | a `cd` cannot repoint the extractor at an empty directory |
+| R1, R2 | `tests/thumbnail-storage.test.js` · *is what the dump and the load will use* | unit | `db/corpus.js` reads the value rather than holding a second copy of the path |
+| R3 | `tests/corpus.test.js` · *asks the database, and ignores anything it is handed about files* | unit | the short circuit is gone: an empty database is loadable, a database with one row is not |
+| R3 | `tests/corpus.test.js` · the three pre-existing `holdsCorpus` cases | unit | the refusal still fires on a corpus and still does not fire on a freshly built database |
+| R3, R4, R5 | `node scripts/testing-database.js reset`, real run | database | a load into an empty database with 2,079 files beside it proceeds without `--force`, announces the orphans by count and directory, and verifies the round trip against the manifest |
+| R6, R9 | `node scripts/testing-database.js up`, twice | database | first run `PROVISIONED`, second run `REUSED`, and the word is in the output |
+| R7 | `refuseIfUnsafe` in `scripts/testing-database.js` | reasoning only | **no test — see *Requirements with no test*** |
+| R8, R9 | `node scripts/test-on-testing-database.js`, real run | end to end | one command provisions or reuses, serves, signs in, runs the tier, and stops the server |
+| R10 | `tests/api/affordances.spec.mjs` · *an aborted commit says Failed, changes nothing, and keeps the mark* | API browser | `failNextCommit`, replaced by `page.route().abort()` — and the "nothing was written" half is asserted against the server, not the screen |
+| R10 | `tests/api/affordances.spec.mjs` · *a commit held open paints Saving, then lands* | API browser | `slowNextCommit`, replaced by a real response held 2.5 s then fulfilled |
+| R10 | `tests/api/affordances.spec.mjs` · *a species corrected underneath the page conflicts rather than overwriting* | API browser | `bumpVersion`, replaced by a real correction between the read and the commit; the conflict **banner** is asserted, not the store |
+| R10 | `tests/api/affordances.spec.mjs` · *an observation whose picture really failed still shows its species and stays markable* | API browser | `breakThumbnails`, replaced by data setup — the corpus carries fifteen genuinely failed thumbnails |
+| R11 | `tests/api/render-slice.spec.mjs`, five checks | API browser | the render tier runs against a real database: settling, the species name a row actually carries, marking, server-side pagination, and all three modes |
+| R12 | `npm run test:e2e` (desktop + phone) | fixture browser | the fixture-backed tier still passes; `?backing=fixture` and `src/data.js` are untouched |
 
-### The corrected rules, 2026-09-12 — and the tier they are proved at
+**Why the tier in each case.** R1–R3 are decisions in pure functions, so they are at the
+fast tier where they cost a second. R6–R9 are about idempotence against a real PostgreSQL,
+which no unit test can observe — "it did not rebuild the second time" is only true of a
+database that exists. R10 and R11 are about what a real server does and what the browser
+then draws, which is the whole reason the tier exists.
 
-| Requirement | Test | Tier | Proves |
-| --- | --- | --- | --- |
-| R7 | `take-back.spec.mjs` › *R7: the page sweep withdraws a take-back instead of deciding it again* | **api** | The issue's own sequence, in Training, against a real server: promote, *Commit Marked*, click again, then press the **sweep** — and the tile ends with no badge and `observation_review_current` holds no row. Red before the fix: badge `PROMOTED`, record `promoted`. |
-| R7 | `take-back.spec.mjs` › *R8: a recorded take-back stops saying TAKING BACK* | **api** | The same rule in Scientific, on a flag the record carried before the page was loaded. Its previous expectation — `REVIEWED` — was the superseded rule, and is the line that changed. |
-| R7 | `model.test.mjs` › *#135 R7: the sweep withdraws a take-back rather than deciding it again* | unit | The rule itself, plus the half that must **not** change: the same page with an empty `takenBack` still accepts the unmarked tile. |
-| R7 | `model.test.mjs` › *#135 R7: a take-back with no imagery is withdrawn rather than skipped* | unit | A withdrawal removes a decision instead of making one, so the imagery rule has nothing to say about it — matching the endpoint, whose `withdraw` branch runs before its imagery check. |
-| R7 | `requirements.js` › Review states › *a committed page stays editable: the exceptions are still marked* | contract | The same reversal through the real store. Its last assertion expected `reviewed` and now expects `null`. |
-| R7 | `render.spec.mjs` › a committed page is still editable › *the flag stays marked, a click takes it back, and committing withdraws it* | render | What is drawn after the second sweep: no badge, not marked. Its name and its last assertion both changed. |
-| R7a | `take-back.spec.mjs` › *R7a: a decision made in an earlier sitting can be taken back* | **api** | A promotion written through the API **before the page is loaded** can be taken back. **This was green before any change** — see below. |
-| R7b | the two API tests above, last assertion of each | **api** | Vanilla for the mode is the *absence* of a projection row, read back from the endpoint rather than off the screen. |
+## Real results, verbatim
 
-### R8 — a click on a committed decision, 2026-09-12
+### Fast tier — R1 to R3
 
-| Requirement | Test | Tier | Proves |
-| --- | --- | --- | --- |
-| R8 | `take-back.spec.mjs` › *#135 R8: in {scientific,training}, clicking a committed {accepted,exception} takes it back* | **api** | Four cases, table-driven. The two **accepted** cases were the defect and were red; the two **exception** cases already passed and are there so the half that worked stays covered. Each writes the decision through the API *before* the page is loaded, so it is the record talking and not the sitting. |
-| R8 | `take-back.spec.mjs` › *#135 R8: clicking again puts the decision back, and only a commit reaches the flag* | **api** | The toggle, end to end: `REVIEWED → TAKING BACK → REVIEWED`, then take back and commit to reach vanilla, then an ordinary click flags it and commits as `flagged`. This is A8's answer asserted rather than described. |
-| R8 | `model.test.mjs` › five `#135 R8` cases | unit | `clickTakesBack` itself: an acceptance is the rule, a mark outranks it, `null` and `withdrawn` are ordinary marks, the mode's exception is *not* this rule (its mark is seeded instead), and Delete never matches. |
-| R8 | `requirements.js` › *a committed decision can be taken back by marking it and committing again* and *…changed and resubmitted from the same page* | contract | Both walked `reviewed → flagged` in one click and one commit. They now walk the two-step route, which is the behaviour change stated as a sequence. |
-| R8 | `render.spec.mjs` › a committed page is still editable › *a mark outranks what the last commit did* | render | Its last assertion read `FLAGGED` one click after a commit — the defect exactly. It now asserts the take-back displaces `REVIEWED`, and, after the commit, that an ordinary mark displaces the withdrawal — so the property the test is named for is asserted twice rather than lost. |
+```
+npx jest tests/thumbnail-storage.test.js tests/corpus.test.js --runInBand --forceExit
 
-**The gesture was mis-framed in the first write-up and that is worth recording.** A6 was
-opened describing an accepted tile as needing two *right* clicks. The report is about the
-ordinary **left click**, and about the tile changing decision rather than being withdrawn —
-two different code paths. `actions.toggleMark` is the one that changed; `actions.acceptMark`
-is untouched.
+  Test Suites : 2 passed, 0 failed, 2 total
+  Tests       : 19 passed, 0 failed, 0 skipped, 19 total
+  Result: ALL TESTS PASSED
+```
 
-**The supervising diagnosis was wrong, and R7a is the proof.** It said `existingState`
-cannot see a decision from an earlier sitting because the API never writes the row's status
-column. `ROW_COLUMNS` in `repository/mosaic.repository.js` selects
-`rc.decision AS review_decision` and `rt.decision AS training_decision` out of
-`observation_review_current`, so it arrives on the row and the derivation finds it. What the
-endpoint does not do is write that column back **after a commit in this sitting**, which is
-#131 and is already handled by preferring `state.outcomes`. R7a is kept as a tripwire, not
-as a fix.
+**It failed first, and the failure is worth recording.** Every case reported the default
+path regardless of the environment variable:
 
-**Why the endpoint is not in this table.** Nothing on the server changed. The server half of
-step 1 landed with #126 and `tests/mosaic-commit.test.js` › *promotes an accept mark on the
-training route* already holds it; `withdraw` has been supported since #106 with no client
-sending it. So `npm run test:mosaic` proves nothing about this change and was not run.
+```
+  ✗ THUMBNAIL_STORAGE_DIR > uses an absolute value exactly as given
+      Expected: "C:\\...\\somewhere-else\\thumbs"
+      Received: "C:\\...\\MARP_API--157-retire-fixture\\storage\\observation-thumbnails"
+```
+
+The cause was in the test, not the change: Jest gives each test file its own module
+registry, and `delete require.cache[...]` does not touch it, so the module was never
+re-read. `jest.resetModules()` is the fix and the reason is written into the helper.
+
+### The provisioner — R3 to R7, R9
+
+First run, on an empty `mare_test`:
+
+```
+==> creating mare_test
+==> loading ..\..\MARP\MARP_API\.marp\local\corpus\20260912-085415
+...
+Round trip verified: every count matches the manifest.
+==> migrations
+==> reviewer login mosaic-testing
+
+Testing database: PROVISIONED  (mare_test built from a dump)
+  observations     2092
+  reviews          495
+  thumbnail files  2079
+
+real    0m2.634s
+```
+
+Second run, unchanged inputs:
+
+```
+Testing database: REUSED  (mare_test was already there)
+  observations     2092
+  reviews          495
+  thumbnail files  2079
+
+real    0m0.259s
+```
+
+**2.6 s to build, 0.26 s to reuse — a factor of ten, and the word says which.**
+
+`reset`, which is the case the old `holdsCorpus` refused — an empty database with 2,079
+thumbnail files beside it:
+
+```
+Note: no rows here, but 2079 thumbnail files are on disk.
+They are orphans -- nothing in mare_test names them -- and a load
+replaces them. Their directory is C:\...\storage\testing\observation-thumbnails
+(THUMBNAIL_STORAGE_DIR, or its default). If that is not the directory you
+meant, stop now: the rows that name these files are in another database.
+
+==> pg_restore <- ...\corpus.dump
+    restored
+==> thumbnails <- ...\observation-thumbnails
+    2079 files
+...
+Round trip verified: every count matches the manifest.
+```
+
+**It failed first, and that failure was a real defect in `scripts/load-corpus.js`:**
+
+```
+Load failed: relation "public.SequelizeMeta" does not exist
+```
+
+`to_regclass` returns null at run time for a missing table, but the subquery beside it in
+the same `CASE` is resolved at *parse* time — so the statement failed whichever branch
+would have been taken. It never showed up because every previous target was a database
+`marp db up` had already given a schema to. A genuinely empty one is what found it.
+
+### The launcher and the API tier — R8 to R11
+
+```
+Testing database: REUSED  (mare_test was already there)
+==> API on http://127.0.0.1:59852   (this run's own, stopped when it finishes)
+signed in to http://127.0.0.1:59852 as mosaic-testing (user 2842)
+
+Running 10 tests using 1 worker
+
+  ✓   1 affordances.spec.mjs › R10: an aborted commit says Failed, changes nothing, and keeps the mark (810ms)
+  ✓   2 affordances.spec.mjs › R10: a commit held open paints Saving, then lands (3.5s)
+  ✓   3 affordances.spec.mjs › R10: a species corrected underneath the page conflicts rather than overwriting (709ms)
+  ✓   4 affordances.spec.mjs › R10: an observation whose picture really failed still shows its species and stays markable (816ms)
+  ✓   5 render-slice.spec.mjs › R11: the mosaic renders and stays settled (739ms)
+  ✓   6 render-slice.spec.mjs › R11: a tile names the species the row actually carries (805ms)
+  ✓   7 render-slice.spec.mjs › R11: marking a tile draws it marked and the page count moves (765ms)
+  ✓   8 render-slice.spec.mjs › R11: the pager moves, and page two is not page one (1.2s)
+  ✓   9 render-slice.spec.mjs › R11: every mode renders against a real query (1.7s)
+  ✓  10 take-back.spec.mjs › R8: a recorded take-back stops saying TAKING BACK (456ms)
+
+  10 passed (12.1s)
+
+The API tier passed, against a real server on the testing database.
+```
+
+**Four failures on the way there, and every one of them was the tier doing its job** —
+each is something the fixture agrees with itself about:
+
+1. *`Cannot read properties of undefined (reading 'review_decision')`.* Two tests isolated
+   "the species with exactly one observation" and got the *same* observation, in parallel;
+   one corrected its species while the other was re-reading it. Fixed by running the `api`
+   project on one worker. **The fixture cannot have this defect** — it lives in the
+   browser, so every test has its own copy.
+2. *`locator('.tile[data-id="1978"]') — element(s) not found`.* The page number was swept
+   at `filters: {}`, but a bare address carries `reviewStatus: ['unreviewed', 'flagged']`,
+   so the browser was asking a different question. Fixed by merging over the app's own
+   `DEFAULT_FILTERS`.
+3. The same failure again, now because the sweep used page size 45 while the running app
+   had settled on 50 — *page size follows the viewport*. Fixed by asking the store.
+4. *`Received string: "tile out-reverted"`.* The first tile on the default page already
+   carried a decision, so clicking it is a take-back rather than a mark. Fixed by choosing
+   the row on what the endpoint says about it.
+
+**Then the whole thing was run cold** — testing database dropped, thumbnails deleted,
+stamp removed, launcher run as the only command — and **two more failures appeared that
+every warm run had hidden**, which is the point of running it cold:
+
+```
+Error: observation 582 was corrected to species 775 and cannot be found there to be put back.
+```
+
+5. **A corrected observation leaves the default question.** `reviewStatus` opens at
+   `['unreviewed', 'flagged']` and a correction records `corrected`, which is neither — so
+   the row the test had just moved dropped out of the page it would have used to put it
+   back. `whateverItsStatus()` clears both status dimensions for any lookup whose job is
+   restoration.
+6. **The same message again, for a different reason**: the restoration looked at page one
+   of the species it had moved the row to, and that species has more than a page of rows on
+   that line. `findRow()` sweeps instead. Both of these worked against a database that had
+   been written to before and failed against one built from a clean dump — a restoration
+   that works until the day it matters.
+
+### The launcher, cold and warm
+
+```
+##### COLD #####     (mare_test dropped, storage/testing deleted, stamp removed)
+Testing database: PROVISIONED  (mare_test built from a dump)
+  10 passed (15.2s)
+The API tier passed, against a real server on the testing database.
+real    0m19.723s
+
+##### WARM #####     (nothing else changed)
+Testing database: REUSED  (mare_test was already there)
+  10 passed (14.5s)
+The API tier passed, against a real server on the testing database.
+real    0m16.167s
+```
+
+The difference between the two runs is the provisioning, measured on its own above at
+**2.6 s against 0.26 s**; the rest is the ten browser tests, which run either way.
+
+### The fixture tier is untouched — R12
+
+```
+npm run test:e2e        # desktop + phone, MARP_API_BASE unset
+
+  1 failed
+    [phone] › tests\e2e\render.spec.mjs:2527:3 › the filter rail, cleaned up › L5: time and date take one rail row each
+  5 skipped
+  294 passed (2.1m)
+```
+
+That one failure re-run on its own:
+
+```
+npx playwright test --project=phone -g "L5: time and date take one rail row each"
+  ✓  1 [phone] › ... L5: time and date take one rail row each (1.0s)
+  1 passed (2.2s)
+```
+
+Flaky under parallel load at phone width, and **not caused by this change**: with
+`MARP_API_BASE` unset the config resolves to `fullyParallel: true, workers: 6`, which is
+exactly what it was, and nothing in `tests/e2e/`, `src/ui/` or the stylesheets was touched.
+
+### The rest of the repository
+
+```
+npm run test:mosaic
+  Test Suites : 6 passed, 0 failed, 6 total
+  Tests       : 233 passed, 0 failed, 0 skipped, 233 total
+
+npm run test:core
+  Test Suites : 11 passed, 1 failed, 12 total
+  Tests       : 199 passed, 2 failed, 0 skipped, 201 total
+  ✗ the fork stayed a diff > every unchanged file is byte-identical to docdash
+  ✗ the fork stayed a diff > the forked jsdoc.css is upstream truncated, not upstream edited
+```
+
+Both failures are in `tests/docs-branding.test.js`, which compares `docs/developer-theme/`
+against `node_modules/docdash`. Neither is in this branch's diff, so the failure cannot be
+this change's. Pre-existing in this workspace and reported, not fixed.
+
+### The development corpus is intact
+
+```
+storage/observation-thumbnails            (this workspace, development)  2079
+storage/testing/observation-thumbnails    (this workspace, testing)      2079
+MARP/MARP_API/storage/observation-thumbnails  (the human's checkout)     2079
+```
 
 ## Requirements with no test
 
-None. R1 to R6 each have at least one test above, and R1, R2, R4 and R5 have one at the
-rendering tier, because the defect was something drawn.
+- **R7** — the refusal when the testing database name equals the development one. The
+  guard is three comparisons in `refuseIfUnsafe` and the only way to exercise it for real
+  is to point a provisioning run at the development database, which is the one thing it
+  exists to prevent. It is reachable and worth a test; doing it properly means extracting
+  the decision into a pure function the way `holdsCorpus` already is, so that a unit test
+  can ask it without a database. **Named rather than quietly skipped.**
 
 ## Edge cases
 
-- **A withdrawal draws no badge**, rather than a badge saying "withdrawn". `outcomeBadge`
-  has no case for it, and the outcome still outranks the record — so a row the endpoint
-  served as `promoted` does not go back to reading PROMOTED for the rest of the sitting.
-- **A `conflicted` id keeps its take-back**, the way it keeps its mark: nothing was written
-  for it, so the intention is still pending.
-- **Delete Mode takes nothing back.** Both its exception and its accepted value are null, so
-  a `null === null` comparison must not make every touched tile there read as a take-back.
-  Asserted directly.
+- **A truly empty database has no `SequelizeMeta`.** Found by running one; see the load
+  failure above. Every previous target had a schema.
+- **A dump older than the branch.** The provisioner runs `db:migrate` after the restore,
+  which is a no-op today because the dump is level with `migrations/`. It will not always
+  be, and the failure it prevents arrives from deep inside a query during a browser test.
+- **A newer dump on disk than the one loaded.** Reported and not acted on (A5). Reloading
+  by surprise would throw away whatever a run had set up.
+- **An orphaned thumbnails directory.** Permitted since R3, and announced by count and by
+  directory, because the person reading is the one who knows whether an empty database is
+  a surprise.
+- **The login already exists.** `create-review-user.js` is idempotent, and the password is
+  carried forward from the stamp rather than regenerated, so a `reset` does not invalidate
+  a session state somebody is holding.
 
 ## Regression coverage
 
-- **`render.spec.mjs` › *a committed page is still editable* › the flag stays marked, a click
-  takes it back, and committing accepts it.** Not a new test — it is the existing one that
-  went red against the first implementation, and is why the take-back is recorded rather
-  than derived. Its unit-tier counterpart is *#135: taking a flag off a tile the sweep
-  accepted is not a take-back*.
-- **`model.test.mjs` › *#135 R3: clicking a mark off makes the main button withdraw it*** is
-  #126's R7 test rewritten to A2's answer rather than deleted, so the reversal is visible in
-  the history instead of the old rule quietly disappearing.
+- `tests/corpus.test.js` · *asks the database, and ignores anything it is handed about
+  files* — pins the reversal. It replaces a case asserting the opposite, and it passes a
+  file count anyway so that a re-introduced short circuit fails rather than being ignored.
+- `tests/thumbnail-storage.test.js` · *is storage/observation-thumbnails when nothing is
+  set* — the default moving is the failure that would take production's pictures out of
+  service while leaving every row in place.
+- `playwright.config.mjs` · one worker on the API — pins the collision described above.
 
 ## Known gaps
 
-- ~~**The API tier was not run.**~~ **Closed 2026-09-12.** It has been run, against a copy of
-  the corpus, and it is what caught R7 — three fixture-backed step tests were green while the
-  page sweep put a withdrawn promotion straight back. See *Results*. This gap was the whole
-  cost of the entry above it: the tier that could see the defect was the one nobody ran.
-- ~~**Nothing re-reads the page from the endpoint after a withdrawal.**~~ **Closed.** All
-  three API tests read the decision back through `/mosaic/observations/pages` rather than off
-  the screen, and assert it is null.
-- **A6 is open and is not built.** A tile whose *acceptance* is already on the record takes
-  two right-clicks to take back, because nothing seeds an accept mark — the first marks it
-  accepted, agreeing with the record, and only the second takes it back. A tile carrying an
-  *exception* is seeded and takes one click. The API tier asserts today's behaviour, with a
-  comment saying it is the test that changes if A6 is answered the other way.
-- **`observation_reviews` is not asserted.** R7b is about the projection row being absent,
-  and the log keeping its rows is the endpoint's contract, covered by
-  `tests/mosaic-commit.test.js`. Nothing added here reads the log.
-- **No walkthrough**, and none is proposed. One is recorded only when the human asks.
-
-## Manual steps
-
-None. Everything above runs headless.
-
----
-
-## Results
-
-Run on 2026-09-12, on branch `135-promote-commit-take-back-label`.
-
-### Unit — `npm run test:unit`, from the app directory
-
-```
-> node tools/syntax-check.mjs
-✓ 48 files parse
-…
-ℹ tests 296
-ℹ pass 296
-ℹ fail 0
-```
-
-### Each new test proved red first, against the old behaviour
-
-One file at a time, with the old behaviour put back by a file copy and restored from it —
-never `git checkout --`.
-
-`src/model/modes.js`, the rule narrowed back to the mode's exception and the button's
-take-back count forced to zero:
-
-```
-✖ #135 R3: clicking a mark off makes the main button withdraw it
-✖ #135 R2: taking back a promotion this sitting recorded is a take-back
-✖ #135 R2: it is the accepted value in scientific mode too, not only training
-✖ #135 R3: the take-backs are their own list, and the marks are not in it
-✖ #135 R5: the button counts a take-back, or it is disabled and unreachable
-ℹ tests 138  ℹ pass 133  ℹ fail 5
-```
-
-`src/model/page.js`, with the `reverted` fold removed:
-
-```
-✖ #135 R4: applyCommit folds a withdrawal, which appears in no other array
-ℹ tests 138  ℹ pass 137  ℹ fail 1
-```
-
-`src/data.js`, with the version bump put back:
-
-```
-✖ #135 R6: a commit does not move the version, because the endpoint's does not
-ℹ tests 29  ℹ pass 28  ℹ fail 1
-```
-
-### Browser — `npm run test:e2e` (contract and render, desktop and phone)
-
-The first run, against the **derived** take-back, is recorded here because it is the reason
-the implementation changed shape:
-
-```
-2 failed
-  [desktop] › render.spec.mjs:531 › a committed page is still editable › the flag stays marked, a click takes it back, and committing accepts it
-  [phone]   › render.spec.mjs:531 › a committed page is still editable › the flag stays marked, a click takes it back, and committing accepts it
-5 skipped
-299 passed (2.1m)
-```
-
-```
-Error: expect(locator).toContainText(expected) failed
-Expected substring: "REVIEWED"
-Received string:    "TAKING BACK"
-  - locator resolved to <span class="badge b-rev" title="Taking back reviewed — not committed yet…">
-```
-
-The second run, with `state.takenBack` recording the take-back instead:
-
-```
-  5 skipped
-  301 passed (2.1m)
-```
-
-```
-✓ [desktop] render.spec.mjs:1863 › taking a promotion back (#135) › step 1: promoting and committing leaves the tile reading PROMOTED (1.7s)
-✓ [desktop] render.spec.mjs:1877 › taking a promotion back (#135) › step 2: clicking it again says the promotion is being taken back (1.7s)
-✓ [desktop] render.spec.mjs:1896 › taking a promotion back (#135) › step 3: committing the take-back clears the label and the decision (2.2s)
-✓ [phone]   render.spec.mjs:1863 › taking a promotion back (#135) › step 1 … (2.0s)
-✓ [phone]   render.spec.mjs:1877 › taking a promotion back (#135) › step 2 … (2.1s)
-✓ [phone]   render.spec.mjs:1896 › taking a promotion back (#135) › step 3 … (2.4s)
-✓ [desktop] render.spec.mjs:531 › a committed page is still editable › the flag stays marked, a click takes it back, and committing accepts it (1.6s)
-✓ [phone]   render.spec.mjs:531 › a committed page is still editable › the flag stays marked … (1.9s)
-✓ [desktop] contract.spec.mjs:18 › the requirement checks in tests.html all pass (59.9s)
-✓ [phone]   contract.spec.mjs:18 › the requirement checks in tests.html all pass (59.1s)
-```
-
-The contract tier runs every check in `tests/requirements.js` inside `tests.html`, so the two
-added there — the three-step sequence and the phantom conflict — are inside those two lines.
-
-The 5 skipped are **viewport-conditional render tests**, each `test.skip`ped on the project
-it is not about — a phone-layout check on desktop, and `#138`'s page-level mark on the phone,
-where that control is hidden. None of them is mine and none is a prerequisite skipped away.
-The API tier is not in this run at all; see *Known gaps*.
-
-I asserted these were the API specs before checking, and they are not — corrected here rather
-than left standing, because a wrong sentence in the evidence is worse than no sentence.
-
-### API — `--project=api`, 2026-09-12, against a copy of the corpus
-
-*Known gaps* said this tier had not been run and that the work would not be finished until it
-had. It has been run now, and it is what found the defect. The arrangement, because it is the
-part worth repeating: `marp db dump` of the development database, `marp db up -Port 5442
--DataDirName agent135` beside it, `marp db load … --apply` into that second database, and the
-API served from it on a port of its own. **Nothing was written to the development database
-and no `--force` was used.**
-
-Red first, on the branch tip, before any source change:
-
-```
-✘ take-back.spec.mjs:57 › R8: a recorded take-back stops saying TAKING BACK (7.9s)
-  Error: expect(locator).toHaveCount(expected) failed
-  Locator:  locator('.tile[data-id="582"]').locator('.badge')
-  Expected: 0
-  Received: 1
-
-✘ take-back.spec.mjs:169 › R7: the page sweep withdraws a take-back instead of deciding it again (7.8s)
-  Error: expect(locator).toHaveCount(expected) failed
-  Locator:  locator('.tile[data-id="582"]').locator('.badge')
-  Expected: 0
-  Received: 1
-
-✓ take-back.spec.mjs:116 › R7a: a decision made in an earlier sitting can be taken back (561ms)
-```
-
-R7a passing there is the evidence that the supervising diagnosis was wrong, and it is
-recorded rather than quietly dropped.
-
-Green after:
-
-```
-✓ 1 [api] › take-back.spec.mjs:57  › R8: a recorded take-back stops saying TAKING BACK (566ms)
-✓ 2 [api] › take-back.spec.mjs:116 › R7a: a decision made in an earlier sitting can be taken back (394ms)
-✓ 3 [api] › take-back.spec.mjs:169 › R7: the page sweep withdraws a take-back instead of deciding it again (597ms)
-3 passed (2.0s)
-```
-
-### API — R8, red first then green, 2026-09-12
-
-Same arrangement as above: a copy of the corpus on its own database and port, the API served
-from it, nothing written to the development database. **Red against the branch tip before
-any source change**, each case run on its own so the serial describe could not hide one
-behind another:
-
-```
-✘ #135 R8: in scientific, clicking a committed accepted takes it back (7.8s)
-    Error: expect(locator).toContainText(expected) failed
-    Received string:    "FLAGGED"
-
-✘ #135 R8: in training, clicking a committed accepted takes it back (7.8s)
-    Error: expect(locator).toContainText(expected) failed
-    Received string:    "EXCLUDED"
-
-✓ #135 R8: in scientific, clicking a committed exception takes it back (522ms)
-✓ #135 R8: in training, clicking a committed exception takes it back (525ms)
-
-✘ #135 R8: clicking again puts the decision back, and only a commit reaches the flag (8.0s)
-    Error: expect(locator).toContainText(expected) failed
-    Received string:    "FLAGGED"
-```
-
-`FLAGGED` and `EXCLUDED` are the report in two words. The two exception cases passing in the
-same run is what says the defect was half the rule rather than all of it.
-
-Green after, the whole file:
-
-```
-✓ 1 R8: a recorded take-back stops saying TAKING BACK (547ms)
-✓ 2 #135 R8: in scientific, clicking a committed accepted takes it back (431ms)
-✓ 3 #135 R8: in scientific, clicking a committed exception takes it back (446ms)
-✓ 4 #135 R8: in training, clicking a committed accepted takes it back (423ms)
-✓ 5 #135 R8: in training, clicking a committed exception takes it back (429ms)
-✓ 6 #135 R8: clicking again puts the decision back, and only a commit reaches the flag (558ms)
-✓ 7 R7a: a decision made in an earlier sitting can be taken back (403ms)
-✓ 8 R7: the page sweep withdraws a take-back instead of deciding it again (478ms)
-8 passed (4.2s)
-```
-
-**The unit cases were proved red too**, by a file copy of `model/modes.js` with
-`clickTakesBack` returning false — the pre-R8 behaviour — never `git checkout --`:
-
-```
-✖ #135 R8: a click on a committed acceptance is about that acceptance (0.5564ms)
-✔ #135 R8: a mark is newer than the record, so the click is about the mark
-✔ #135 R8: with no decision on the record the click is an ordinary mark
-✔ #135 R8: the mode exception is not this rule, because the mark is seeded instead
-✔ #135 R8: nothing in Delete is ever about a decision this way
-```
-
-The four that stayed green are the guards — they assert what must *not* change, so a fix
-that over-reached would turn them red instead. `modes.js` was restored from the copy and the
-file is identical to the committed version apart from the intended addition.
-
-### Browser and unit after R8
-
-`npm run test:unit` — **303 passed, 0 failed**. `npm run test:e2e` — **301 passed, 5
-skipped**, and then **300 passed, 1 failed, 5 skipped** on the re-run after the `model/`
-refactor, the single failure being the same `L4: confidence is one track carrying two
-handles` phone flake recorded below. It passed alone both times and nothing in this change
-touches the rail.
-
-Three fixture-backed checks were red after R8 landed and all three were asserting the
-behaviour R8 reverses, so all three were corrected rather than deleted:
-
-```
-contract: a committed decision can be taken back by marking it and committing again
-          and the observation is now flagged instead expected "flagged", got null
-contract: a committed decision can be changed and resubmitted from the same page
-          resubmitting applies the change expected "flagged", got null
-render:   a committed page is still editable › a mark outranks what the last commit did
-          expected "FLAGGED", got "TAKING BACK"
-```
-
-`got null` and `got "TAKING BACK"` are the fix, seen from the old expectation.
-
-### Browser and unit, re-run after the correction
-
-`npm run test:unit` — **298 passed, 0 failed**, 0.9 s. `npm run test:e2e` — **301 passed, 5
-skipped**, 2.1 minutes, the same five viewport-conditional skips as before.
-
-The first e2e run after the change had three failures and all three are recorded here rather
-than only the tidy result:
-
-- `contract.spec.mjs` on both projects — `a committed page stays editable … expected
-  "reviewed", got null`. That is R7 landing, on a check asserting the rule R7 reverses. The
-  check was corrected.
-- `render.spec.mjs:2596 [phone] › L4: confidence is one track carrying two handles` —
-  `--from:0%;--to:100%` instead of `--from: 40%`. **Not mine**: nothing in this change
-  touches the rail or the confidence dimension. It passed alone and did not recur on the
-  re-run, so it is flaky under six parallel workers. Named here rather than fixed.
-
-### What was not run, and why
-
-`npm run test:mosaic` — nothing on the endpoint changed; the `withdraw` branch it relies on
-has been there since #106 and runs before the imagery check, which is what makes R7 a
-client-only fix. `npm test` — not run, and not a working loop. No walkthrough was recorded.
+- **231 browser checks have not moved.** Five have. `tests/e2e/render.spec.mjs` (148
+  declarations) and `tests/requirements.js` (80) still run on the fixture, and `src/data.js`
+  and `?backing=fixture` are deliberately still there (R12).
+- **The phone viewport is not in the API project**, by design — the tier is about what is
+  written and read back. Layout stays on the fixture tier for now.
+- **`marp db load` in the umbrella does not set `THUMBNAIL_STORAGE_DIR`**, so a load
+  reached with `-Port` writes into whichever directory `.env` names. The umbrella is a
+  different repository and was not changed.
+- **`tests/api/take-back.spec.mjs` queries with raw filters** rather than over the app's
+  defaults, so its page numbering agrees with the browser only by luck. It passes today.
+  Not changed — another agent is working in that file.
+- **The API tier is not in CI** and must not be: it needs a server, a database and a login.
+- **The testing database accumulates `observation_reviews` rows.** Restoring a decision
+  through the API appends to the log rather than erasing it, which is correct and means
+  the count grows a few rows per run. `testing-db reset` is the answer if it ever matters.

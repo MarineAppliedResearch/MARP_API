@@ -1,338 +1,167 @@
 ---
-task: MarineAppliedResearch/MARP_API#135
-repos: [MARP_API]
-status: design
+task: MarineAppliedResearch/MARP_API#132
+repos: [marp-api]
+status: verifying
 needs: []
 ---
 
-# Taking a promotion back, and committing the take-back
+<!--
+  Covers two issues, in order: #132 is the mechanism, #157 is the migration that
+  needs it. #157 is deliberately only started here -- see R10 and R11 -- because
+  proving the mechanism is worth more than moving 231 checks before it is proven.
+-->
 
 ## Goal
 
-In Training mode a reviewer right-clicks a tile to promote it and presses **Commit
-Marked**; the tile should read `PROMOTED`. Clicking it again should read as *taking the
-promotion back*, and committing that should record the withdrawal — leaving the tile with
-no training decision on screen and no projection row in the database. Today only the first
-of those three steps works, and it works only against a server new enough to understand
-what a right-click means.
-
-## What is actually broken, which is not what the issue guessed
-
-The issue proposed that the commit endpoint classifies a promotion as `reverted`. **It does
-not, on current `develop`.** Read in the code and confirmed by tests that already exist:
-
-- `repository/mosaic-commit.repository.js` — an `accept` mark is not `excepted()`, so it is
-  written as `mode.accepts` (`promoted`) and reported through `out.accept()` into
-  `reviewed` as `{observation_id, outcome: 'promoted'}`. `reverted` is only ever produced
-  by a withdrawal, or alongside `flagged` when an exception replaces an acceptance.
-- `tests/mosaic-commit.test.js`, *"promotes an accept mark on the training route"*, asserts
-  exactly that.
-
-**The badge the reviewer saw was `TAKING BACK`, the derived one — not `TAKEN BACK`.** The
-issue eliminated that branch on the grounds that an accept mark survives its own commit, so
-`!marked` cannot hold. That is true only when the commit comes back `promoted`. It comes
-back `excluded` from a server that predates #126 (`cf83352e`, 2026-09-10, the day before the
-report — and the issue itself records that *"the server-side JavaScript on that process was
-older"*), because such a server reads every mark as an exception. Then:
-
-`outcome = 'excluded'` → `survives()` in `model/page.js` drops the accept mark, because the
-outcome is not `acceptedValue('training')` → the tile is `!marked`, `touched`, and its
-outcome equals `pendingException('training')` → `takingBack` is true → **TAKING BACK**.
-
-So **step 1 is already fixed on `develop`** by the server half of #126, and what #135 leaves
-is a regression tripwire for it plus the two steps that were never built:
-
-- **Step 2 does nothing visible.** Right-clicking a committed promotion removes the accept
-  mark; `takingBack` only ever compares against the mode's *exception*, so it stays false
-  and the tile keeps drawing `PROMOTED` from its outcome. The click looks like it did
-  nothing, which is the one thing the app's own notes say must never happen to a committed
-  tile.
-- **Step 3 cannot be reached.** `selectedRows` requires a mark, so an unmarked take-back is
-  not in what **Commit Marked** sends, and the button is disabled. Nothing in the client has
-  ever sent `withdraw`, and `applyCommit` reads only `reviewed`, `flagged` and `conflicted`
-  — so even a withdrawal that was sent would leave the outcome saying `promoted`.
+Running the mosaic reviewer's browser tests against a real MARP API is one command, and
+the first time it runs it builds itself a testing database from a corpus dump and stops
+doing so afterwards. Today it is impossible: one checkout has exactly one thumbnails
+directory, hardcoded, so a development database and a testing database in the same
+checkout are forced to share it and loading either one deletes the other's pictures. Once
+storage is per-database, a second database is just a second database, and the browser tier
+can be moved onto it -- which is what #157 exists for, and why 231 checks currently grade a
+fixture that cannot be wrong the way the endpoint is.
 
 ## Requirements
 
-- **R1** — A promotion committed with **Commit Marked** leaves the tile reading `PROMOTED`.
-  Regression tripwire for step 1: a commit answering `reviewed: [{outcome: 'promoted'}]`
-  keeps the accept mark and draws the promoted badge; one answering `excluded` is what the
-  reviewer reported and must not be what a current client and current server produce.
-- **R2** — Un-marking a tile whose *acceptance* this sitting recorded, or whose acceptance
-  the record already carried, derives the take-back state, the same way un-marking an
-  exception already does. The tile says so rather than continuing to read `PROMOTED`.
-- **R3** — **Commit Marked** acts on those take-backs: they are sent as `withdraw`, so the
-  endpoint deletes the projection row in `observation_review_current` and logs a `withdrawn`
-  decision in `observation_reviews`, the log. The history is kept; the current decision is absent,
-  which is what *undecided* means.
-- **R4** — After that commit the take-back label is gone and the tile shows no training
-  decision, in the page and on a re-read from the endpoint.
-- **R5** — The button's count and disabled state include the take-backs it will commit, or
-  R3 is unreachable by clicking.
-- **R6** — A commit does not move `observations.version`, so the **second** commit of a tile
-  in one sitting is not refused as a conflict. The client added one itself, which was true
-  of `src/data.js` and false of the endpoint — a review commit writes `observation_reviews`
-  and `observation_review_current` and never `UPDATE`s `observations`, so the trigger that
-  maintains the token never fires. Found while tracing R3, which is a second commit, and
-  answered as its own defect (A3).
+### #132 -- the mechanism
 
-The three that follow are the human's correction of 2026-09-12, and they supersede A2's
-first answer rather than extending it.
+- **R1** -- The thumbnail storage directory is configurable, as an environment variable
+  beside the five `DB_*` ones, documented in `.env.example`. Unset, it is exactly what it
+  is today (`storage/observation-thumbnails`), so every existing checkout, CI and
+  production are unaffected.
+- **R2** -- A relative value is resolved against the repository root, not the working
+  directory. `dotenv` already resolves `.env` against the working directory and that has
+  cost time here; a storage path that moves with `cd` would be the same trap with the
+  corpus behind it.
+- **R3** -- `holdsCorpus` asks the database whether the database is occupied. Thumbnail
+  files no longer short-circuit it, so a provably empty second database is loadable
+  without `--force`.
+- **R4** -- The file count stays in the load's report and in the round-trip check against
+  the manifest. R3 removes it from the *refusal*, not from the evidence.
+- **R5** -- A load into an empty database that nevertheless has thumbnail files on disk
+  says so, naming the count it is about to replace. R3 makes that case proceed; it must
+  not make it silent.
+- **R6** -- One command provisions a testing database: it creates the database, restores a
+  corpus dump into it, puts that dump's thumbnails in the testing database's own storage
+  directory, and creates the reviewer login the browser tier signs in with. Idempotent --
+  run twice, the second run changes nothing.
+- **R7** -- That command refuses when the testing database name is the same as the
+  development one in `.env`. The whole point is that they are two databases; a
+  configuration that makes them one must fail rather than load a dump over the corpus.
+- **R8** -- One command runs the mosaic reviewer's API-tier browser tests: it provisions
+  per R6 if needed, starts an API against the testing database on a port nobody else
+  holds, runs the tests, and stops the server it started.
+- **R9** -- Its output says which of the two happened -- *provisioned* or *reused* --
+  without the reader having to infer it from how long it took.
 
-- **R7** — **Either commit button applies the take-back.** A tile the reviewer has taken
-  back is *withdrawn* by **Commit Marked** and by the page sweep alike. The sweep does not
-  re-apply the decision that was just taken back, and it does not accept the tile instead:
-  a take-back is an instruction, and the sweep's rule that *everything unmarked is
-  accepted* does not reach a tile the reviewer has explicitly withdrawn. This replaces the
-  branch's earlier rule that the two buttons meant different things by the same gesture,
-  and it replaces #126's R7 in the other direction as well.
-- **R7a** — The take-back covers **any decision already on the record**, whether this
-  sitting committed it or it arrived with the page from an earlier one. Measured rather
-  than assumed — see below; this holds on the branch already and R7a is its tripwire, at
-  the tier that can see it.
-- **R7b** — After that commit the tile is in the **vanilla state for its mode** —
-  unreviewed in Scientific, undecided in Training. Not accepted, not reviewed, not
-  promoted, no `TAKING BACK`, and no `observation_review_current` row on a re-read.
+### #157 -- the migration, started and proved
 
-- **R8** — **A click on a tile carrying a committed decision takes that decision back**,
-  whichever of the mode's two values it is. `REVIEWED` and `PROMOTED` behave exactly as
-  `FLAGGED` and `EXCLUDED` already do. It is a **toggle against the record, not a cycle**:
-  clicking again puts the decision back rather than advancing to the exception, and a click
-  means "flag this" only once the record carries no decision. So there is **no one-click
-  route from a committed acceptance to a flag** and that is intended — taking back is a
-  decision the reviewer commits, and only then can they flag. The gesture is the ordinary
-  **left click or tap**; the right click is unchanged. A6 and A8.
-
-## What the API tier actually showed
-
-Run against a **copy** of the development corpus — `marp db dump`, a second database on its
-own port, `marp db load` into it, and the API served from a throwaway worktree so the shared
-`storage/` was never touched. The supervisor's diagnosis going in was that `existingState`
-cannot see a decision made in an earlier sitting, because *"on the real API a review commit
-never writes that column"*. **That is wrong, and it is worth writing down so nobody fixes
-it twice.** `repository/mosaic.repository.js`'s `ROW_COLUMNS` selects
-`rc.decision AS review_decision` and `rt.decision AS training_decision` straight out of
-`observation_review_current`, so a decision from any earlier sitting arrives *on the row*.
-What the endpoint does not do is write that column back **after a commit in this sitting** —
-which is the #131 defect, and is already handled by preferring `state.outcomes`.
-
-Measured, in Training, on a page holding one observation:
-
-```
-already promoted, loaded fresh:   arrival  marked=false  badge=PROMOTED · you
-                                  r-click  marked=true   badge=PROMOTED
-                                  r-click  marked=false  badge=TAKING BACK      <- R7a holds
-
-promoted in this sitting:         promote           badge=PROMOTED
-                                  Commit Marked     badge=PROMOTED    record=promoted
-                                  r-click           badge=TAKING BACK
-                                  Commit Marked     badge=(none)      record=null   <- R7b holds
-                                  page sweep        badge=PROMOTED    record=promoted <- R7 broken
-```
-
-So **one of the three rules was actually broken**: the sweep put the promotion straight
-back. The other two already held on this branch.
-
-**One thing that is not settled, and is deliberately not being guessed** — see A6.
+- **R10** -- The four fixture affordances have real-server equivalents, and each is
+  demonstrated by at least one test in `tests/api/`:
+  `failNextCommit` and `slowNextCommit` become `page.route()` on the commit endpoint --
+  aborted, and fulfilled after a delay; `bumpVersion` becomes a real write to the testing
+  database between the read and the commit; `breakThumbnails` becomes data setup against
+  rows whose thumbnail genuinely failed.
+- **R11** -- A small representative slice of `tests/e2e/render.spec.mjs` runs in the API
+  project against the testing database and passes, proving the mechanism end to end for
+  the rest of the migration.
+- **R12** -- Nothing in this change deletes `src/data.js` or the `?backing=fixture` flag,
+  and the fixture-backed `desktop`/`phone` projects keep working exactly as they do now.
+  The remaining migration is described, not performed.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — answered 2026-09-12: **both modes**, and **widened
-  the same day**: it is not only an acceptance and not only a decision made in this
-  sitting. *"Taking back is not only flagged and committed just now, but if you loaded it
-  and it was already flagged, you should be able to do taking back on it as well."* So the
-  rule is **any decision already on the record**, whichever mode and whichever sitting put
-  it there — see **R7a** below, and *What the API tier actually showed* for what that
-  turned out to cost, which was less than expected. Taking back an
-  acceptance applies to Scientific as well as Training; a withdrawal in the scientific case
-  is the `reviewed` decision coming off the record. Original question: **Does this apply to
-  Scientific mode as well?** The
-  issue is written entirely about Training and promotion. The mechanism is symmetric — an
-  acceptance in Scientific is `reviewed` — and building it for one mode only is a rule with
-  an exception in it. Build it for both, or for Training alone as written?
+- [ ] **A1 · architectural · non-blocking** -- The testing database is a second **database** inside
+  whatever PostgreSQL `DB_*` already points at (default name `mare_test`), not a second
+  PostgreSQL cluster on its own port. #132's reopening comment says *"a second database on
+  its own port"*, and a port was the only isolation available while storage was shared.
+  With R1 done, a second name isolates just as completely, needs no second cluster, and
+  keeps standing clusters up in the umbrella where `marp db up` lives -- which this task
+  may not change. **A second cluster still works** and costs nothing to choose: point
+  `DB_PORT` at it and the same command runs. Not blocking: the design supports both, and
+  R7 is the guard that matters either way.
+- [ ] **A2 · security/permissions · non-blocking** -- The provisioning command creates a reviewer login in
+  the testing database and writes its generated password to `.marp/local/`, which is
+  git-ignored. Without that, "one command" is two: create a user, then run. Recommendation
+  as described; it honours `MARP_REVIEW_USERNAME`/`MARP_REVIEW_PASSWORD` when they are
+  already set. Not blocking.
+- [ ] **A3 · environment · non-blocking** -- The dump is found as the newest directory under this
+  checkout's git-ignored `.marp/local/corpus/`, overridable with `MARP_CORPUS_DUMP`, and
+  its absence is a loud failure naming `marp db dump` rather than an invented dataset.
+  There is no separate curated test corpus and none is being created. Not blocking.
+- [ ] **A4 · environment · non-blocking** -- The API the launcher starts binds an ephemeral free port
+  rather than a fixed one. Nothing outside needs to know the number -- the launcher hands
+  it to Playwright as `MARP_API_BASE` -- and a fixed port is how a browser run once graded
+  a different checkout for an hour. Not blocking.
+- [ ] **A5 · behavioural · non-blocking** -- When the dump on disk is newer than the one the testing
+  database was built from, the command **says so and reuses anyway**. Re-loading by
+  surprise would throw away whatever a test run had set up, and a stale corpus is a
+  judgement rather than an error. `--reset` reloads deliberately. Not blocking.
 
-- [x] **A2 · behavioural · blocking** — **corrected 2026-09-12, later the same day. The
-  answer below was framed badly and the correction reverses half of it.** What stands:
-  taking an exception back through **Commit Marked** withdraws it. What is wrong: the
-  sentence saying *"the page sweep is not the model here and is unchanged, so the two
-  buttons now mean different things by the same gesture"*. They do not. **Either commit
-  button applies the take-back** — the reviewer withdrew a decision and it is withdrawn by
-  whichever button they press. See **R7** below, which is the corrected rule, and the
-  measured evidence for why it matters is in *What the API tier actually showed*. The
-  superseded answer, kept so the history is visible: **withdraw it.** The reviewer
-  decided nothing about that observation and the record says so; it does not become an
-  accept. The page sweep is not the model here and is unchanged, so **the two buttons now
-  mean different things by the same gesture** — deliberately, and said out loud in the code
-  and in the report. This reverses #126's R7. Original question: **What should taking back
-  an *exception* through Commit Marked do?** Today nothing: an unmarked tile is not in the selection, so the main
-  button ignores it, while the page *sweep* records it as accepted (`reviewed`/`promoted`).
-  Once the main button carries take-backs, an un-marked flag has to mean something there.
-  Two coherent answers: (i) *withdraw* it, symmetric with R3 and consistent with "this
-  button decides only what I touched, and I have decided nothing about this one"; or (ii)
-  *accept* it, consistent with what the sweep does with the same gesture. They record
-  different things in the database, so this is not a detail. The sweep is unchanged either
-  way.
-
-- [x] **A3 · behavioural · blocking** — answered 2026-09-12: **fixed in this branch, the
-  small way.** The store stops bumping and `src/data.js` is aligned to what the endpoint
-  actually does. The commit response is **not** changed to carry the new version: that is a
-  published contract surface and it is not being changed here. It is a real defect rather
-  than setup, so it is **R6** below with its own test, and the test commits twice because
-  committing once cannot see it. Original finding: **The client bumps `row.version` after a
-  commit and the endpoint does not move it, so step 3's second commit comes back
-  `conflicted`.**
-  `store.js` does `row.version += 1` for every row a commit gave an outcome, which is
-  correct against `src/data.js` (the fixture bumps) and wrong against the API: a review
-  commit writes `observation_reviews` and `observation_review_current` and never `UPDATE`s
-  `observations`, and `observations.version` moves only on that trigger. So the second
-  commit of the same tile in one sitting sends a version one ahead of the live row and is
-  refused for a conflict that did not happen. **Step 3 is a second commit, so #135 cannot be
-  delivered without settling this.** The small fix is to stop the store bumping and align
-  `src/data.js` to the endpoint by not bumping either; the alternative is a contract change
-  making the commit response carry the new version, which is *ask first* under the
-  permissions. Which, and is it in this task or its own issue?
-
-- [x] **A4 · product/UI · non-blocking** — Assumed: the take-back of an acceptance draws the
-  **same `TAKING BACK` badge** the exception take-back draws, with the accepted value's
-  colour and icon rather than the exception's (violet tick for a promotion, not the amber
-  exclusion mark), since it is the promotion being withdrawn. Say if it wants different
-  wording — `WITHDRAWING` reads more precisely, at the cost of a second vocabulary for one
-  state.
-
-- [x] **A5 · behavioural · non-blocking** — Assumed: *"click it again"* in step 2 is the
-  **same gesture that promoted it** — a right-click (a double tap on touch), toggling the
-  accept mark off. A left-click is an exclusion mark, which is a new decision rather than a
-  take-back, and stays what it is.
-
-- [x] **A7 · behavioural · non-blocking** — **Delete Mode is out of scope**, said by the
-  human on 2026-09-12 and recorded rather than built for. A destroyed row has nothing to
-  take back, and #138 already made a committed delete refuse every gesture. It falls out of
-  the code rather than needing a special case: `acceptedValue('delete')` and
-  `pendingException('delete')` are both null, so `takesBack` answers false for either kind,
-  and `commitOutcome`'s Delete branch returns `withdraws: 0`. Nothing in Delete can enter
-  `state.takenBack`, and `src/api/index.js` drops a `withdraw` list on the delete route in
-  any case, because the endpoint refuses one.
-
-- [x] **A6 · product/UI · blocking** — **answered 2026-09-12, and it is the defect he was
-  reporting all along.** He tested this branch in both modes:
-
-  > *"I am in science mode... something that shows as reviewed and I click it, it just
-  > switches to flagged. Something that shows as reviewed and I click it, if it's already
-  > been committed and it shows as reviewed, I click it — it should go taking back."*
-  > *"Something already promoted in training mode, I click it and it just goes straight to
-  > excluded, and it should go to taking back. Now let's see if it was excluded and I click
-  > it — it does do taking back."*
-
-  **The rule is a toggle against the record.** While a committed decision is on the record
-  a click is about *that decision* and nothing else; a click means "flag this" only once
-  the record carries nothing. `REVIEWED` and `PROMOTED` behave exactly as `FLAGGED` and
-  `EXCLUDED` already do. See **R8**.
-
-  **It is the left click, not the right click** — this assumption was originally written up
-  as an accepted tile needing two *right* clicks, and that framing was wrong. The report is
-  about the ordinary click/tap and about the tile changing decision rather than being
-  withdrawn. The right-click gesture is unchanged.
-
-  He confirmed a decision made in the sitting and one loaded straight from the database
-  behave identically, which they do.
-
-- [x] **A8 · behavioural · blocking** — **superseded before it was built, 2026-09-12.** The
-  guess was that clicking a tile already reading `TAKING BACK` applies the mode's exception,
-  so `REVIEWED → click → TAKING BACK → click → FLAGGED`, on the reasoning that a take-back
-  swallowing the click for ever would leave no way to flag a reviewed tile. Overturned:
-
-  > *"No. No. No. If it's reviewed and you click and it goes to taking back, and then you
-  > click it again, it should go right to where it was already. It shouldn't go to flagged.
-  > If you reviewed, click and go to taking back, and then you hit commit, then it should
-  > clear. And if you hit it again, it should be flagged."*
-
-  So it is a **toggle, not a cycle**, and the way to a flag is through a commit:
-
-  ```
-  REVIEWED  --click-->  TAKING BACK  --click-->   REVIEWED     back where it was
-  REVIEWED  --click-->  TAKING BACK  --commit-->  (vanilla)    the decision is cleared
-  (vanilla) --click-->  FLAGGED                                now an ordinary mark
-  ```
-
-  Two consequences, written out so they are not undone by somebody being helpful:
-  **there is no one-click route from a committed acceptance to a flag, and that is
-  intended** — taking back is a decision the reviewer commits, and only then can they flag;
-  and **after the take-back commits the tile is in the vanilla state for its mode**, which
-  is R7b and is unchanged. Nothing was built to the superseded guess.
+No blocking assumption is open. Two are worth a sanity check rather than an answer, and
+they are A1 and A2.
 
 ## Decisions
 
-- **2026-09-12** — **The take-back is recorded, not derived**, and that is a change of shape
-  rather than of scope. Derived from marks, touches and outcomes it cannot be right: an
-  unmarked, touched tile carrying an acceptance is either a promotion whose accept mark has
-  just come off or a tile the sweep accepted after a flag came off, and those want opposite
-  answers. The first implementation derived it and turned an existing render check red — the
-  second sweep in *a committed page is still editable* left the tile reading TAKING BACK.
-  `state.takenBack` holds the ids; `takesBack()` decides what goes in, on the rule that the
-  **kind** removed must match the decision it would be undoing; a new mark or a commit takes
-  one out. That also settles the case the issue's sequence does not mention — flag, sweep,
-  unflag, sweep — in the direction the existing test already asserted, so it needed no new
-  product decision.
-- **2026-09-12** — A4 landed one word differently from how it was recorded, and this is the
-  judgement call. The take-back badge keeps the **mint** `b-rev` colour, which is what a
-  take-back already looks like here and what the tile's own dashed outline is, and takes the
-  **icon** of the decision being withdrawn. Drawing the badge violet — the PROMOTED colour —
-  would have put "this is promoted" in the one slot that is saying it is about to stop
-  being, inside a mint outline. The tooltip names the decision, so nothing is lost.
-- **2026-09-12** — The issue's diagnosis is not adopted. The endpoint does not classify a
-  promotion as `reverted`; the reported badge is the derived `TAKING BACK`, reachable only
-  through a pre-#126 server. Recorded here rather than acted on, so the fix is not aimed at
-  code that is already correct.
+- **2026-09-12** -- Thumbnail files stop making a database "occupied" for the purposes of
+  refusing a load. Taken from #132's reopening comment, which is the human's own
+  reading: *"holdsCorpus then asks the database whether the database is occupied, which is
+  what it was always trying to ask."* The guard was standing in front of the missing
+  per-database storage; R1 removes what it was guarding. The information does not go away
+  -- R4 keeps the count in the report and in the round-trip check, and R5 makes the newly
+  permitted case announce itself.
+- **2026-09-12** -- The launcher owns the API server's lifetime rather than Playwright's
+  `webServer`, because `webServer` is deliberately disabled whenever `MARP_API_BASE` is
+  set and that flag is what selects the API project at all.
+- **2026-09-12** -- #157 stops after R10 and R11. The remaining 231 checks are a
+  mechanical migration whose cost is knowable only once one slice has actually run, and
+  moving them before the mechanism is proved risks moving them twice.
 
 ## Plan
 
-Written against the answers above; the shape does not change, only which modes and which
-verb A1 and A2 settle.
-
-1. `model/modes.js` — a take-back derivation that knows both the mode's exception and its
-   accepted value, so `ui/tile.js` and the button's rule ask one question rather than two
-   that can disagree.
-2. `ui/tile.js` — draw it for an acceptance being withdrawn (A4).
-3. `model/modes.js` — `selectedRows` / `selectionOutcome` carry the take-backs, so the
-   button says what it will do and is enabled when it will do it (R5).
-4. `store.js` — send them as `withdraw`; `model/page.js` — fold `reverted` in `applyCommit`
-   so the outcome stops saying `promoted` after a withdrawal (R4).
-5. Whatever A3 settles about the version.
+1. `config/thumbnails.js`: `STORAGE_DIR` reads `THUMBNAIL_STORAGE_DIR`, resolved against
+   the repository root when relative. `.env.example` documents it beside `DB_*`. (R1, R2)
+2. `db/corpus.js`: `holdsCorpus` stops consulting the file count. `tests/corpus.test.js`
+   changes with it -- the test asserting the old short-circuit is the behaviour being
+   reversed, so it is rewritten rather than deleted. (R3)
+3. `scripts/load-corpus.js`: keep the count in both reports, and warn about orphaned files
+   in the newly permitted empty-database case. (R4, R5)
+4. `scripts/testing-database.js`: provision, status, reset. Idempotent, refuses R7.
+5. `scripts/test-on-testing-database.mjs`: the launcher. Provision if needed, start an API
+   on a free port, run the API project, stop the server. Root npm script. (R8, R9)
+6. `tests/api/`: one spec per affordance, against the testing database. (R10)
+7. A representative slice of the render tier, in the API project. (R11)
+8. Documentation: the repository's `AGENTS.md` under *The corpus, and how to copy it*, and
+   the app's `CLAUDE.md` under *The API tier*. Minimal edits -- another agent owns several
+   sections of that file right now.
 
 ## Acceptance criteria
 
-- Right-click, **Commit Marked** → `PROMOTED`, and the mark survives (R1).
-- Right-click again → the tile says the promotion is being taken back (R2).
-- **Commit Marked** → the label is gone, the tile shows no training decision, and a re-read
-  from the endpoint has no `observation_review_current` row for that observation and purpose
-  (R3, R4).
-- The button is enabled and its count includes the take-back (R5).
+- `THUMBNAIL_STORAGE_DIR` unset reproduces today's path exactly; set, the extractor, the
+  serving route, the dump and the load all use it.
+- A load into an empty second database succeeds with no `--force`, and the development
+  corpus's thumbnails are byte-identical afterwards.
+- The launcher's first run provisions and its second run reuses, says which, and the
+  second is seconds rather than minutes.
+- Every affordance in R10 has a passing test against a real server.
+- The fixture-backed `desktop` and `phone` projects still pass unchanged.
 
 ## Test plan
 
-Filled in at G3.
+Written in full at G3 in `.marp/verification.md`. Tiers: `tests/corpus.test.js` and a new
+`tests/thumbnail-storage.test.js` at the fast tier for R1-R3; `scripts/testing-database.js`
+exercised for real against this workspace's PostgreSQL for R6-R9, since idempotence is not
+observable without a database; `tests/api/` in a real browser for R10 and R11.
 
-The tiers this needs, named now because choosing wrong is how this gets reported twice:
-`tests/unit/` for the derivation and for what reaches the wire (`api-requests.test.mjs`
-asserts the *serialised* body, so a `withdraw` that never leaves the client is visible);
-`tests/e2e/render.spec.mjs` for the badges, because every rendering defect in this app has
-passed the store-level checks; `tests/api/` for R4's database half, because the fixture
-writes the row's status column in place and the endpoint does not — and that gap is the
-whole reason that tier exists. `npm run test:mosaic` if the endpoint needs anything, which
-on this reading it does not.
+## Not covered
 
-## Status
-
-- **Gate:** verifying — G2 implemented against the corrected spec, G4 tiers run including
-  the API tier, which had never been run for this issue and is what caught R7.
-- **Notes:** R1–R6 implemented earlier on this branch. R7, R7a, R7b and **R8** are the
-  human's corrections of 2026-09-12, in that order. **R8 is the defect he was reporting all
-  along** — a click on a committed acceptance flipped the record from reviewed straight to
-  flagged instead of taking it back — and `clickTakesBack` in `model/modes.js` is the whole
-  of it. A6 is answered and A8 is recorded as superseded before it was built. **One of the three rules was actually broken** — the page sweep
-  re-applied a decision the reviewer had taken back — and it is fixed in `store.js`,
-  `model/modes.js` and `ui/chrome.js`. Nothing on the endpoint changed: its `withdraw`
-  branch has run before the imagery check since #106, so the whole fix is client-side.
-  Three tests asserting the superseded rule were corrected rather than deleted — one unit,
-  one contract, one render — each with a comment saying what it used to say and why.
-  **A6 is open and deliberately unanswered**; nothing implements it either way.
+- The 231 checks in `tests/e2e/render.spec.mjs` and `tests/requirements.js` beyond the
+  slice in R11. Described, not migrated.
+- Deleting `src/data.js`, the `?backing=fixture` flag, and the unit tier's dependency on
+  the fixture.
+- `marp db load`'s umbrella wrapper. It sets `DB_*` as real environment variables and does
+  not set `THUMBNAIL_STORAGE_DIR`, so it reads the value from `MARP_API/.env` -- correct
+  for the development database and wrong for a testing one reached with `-Port`. Named in
+  the report; the umbrella is a different repository.
+- The server-side Jest suite. It runs against whatever `.env` says, as it always has.

@@ -27,6 +27,8 @@
     "test:apps": "npm run test:app:mosaic-review && npm run test:app:entry",
     "test:app:mosaic-review:unit": "npm --prefix frontend/apps/marp-mosaic-review run test:unit",
     "test:app:mosaic-review:e2e": "npm --prefix frontend/apps/marp-mosaic-review run test:e2e",
+    "test:app:mosaic-review:api": "node scripts/test-on-testing-database.js",
+    "testing-db": "node scripts/testing-database.js",
     "serve:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run serve",
     "demo:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review run demo:all",
     "demo": "node tools/record-demo.mjs",

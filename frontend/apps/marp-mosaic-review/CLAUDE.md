@@ -768,6 +768,46 @@ It is **not** part of the loop and not in `npm test`: it needs a server, a datab
 login, and a missing one of those must fail rather than skip. Desktop viewport only — what it
 proves is about what gets written and read back, not about layout.
 
+#### It runs on a testing database now, and that is one command
+
+The invocation above still works, and is what to use when you already have a server. The
+ordinary way in is from the repository root:
+
+```bash
+npm run test:app:mosaic-review:api            # provisions if needed, serves, runs, stops
+npm run test:app:mosaic-review:api -- -g take-back
+```
+
+It builds a second database from a corpus dump the first time and reuses it every time
+after, starts an API of its own on a port nothing else holds, and stops it. `MARP_API`'s
+own `AGENTS.md` has the details, under *The testing database*. **The three rules above do
+not relax** — this tier still writes, and what it writes to is still full of real review
+decisions, so touch as few rows as the assertion needs and restore them in a `finally`.
+What changed is that those decisions are no longer the only copy: `testing-db reset`
+rebuilds from the dump.
+
+**The four affordances are done (#157, R10).** `tests/api/affordances.spec.mjs` replaces
+`failNextCommit` and `slowNextCommit` with `page.route()` — an abort, and a real response
+held open — `bumpVersion` with a real species correction between the read and the commit,
+and `breakThumbnails` with rows whose picture genuinely failed, of which the corpus has
+fifteen. None of them needs a fake backing, and each runs the client's real path rather
+than a simulation of it. `tests/api/render-slice.spec.mjs` is five checks from the render
+tier, proving the mechanism end to end; the other 231 have not moved yet.
+
+Three things that will bite, all of them found by failing rather than by reading:
+
+- **The `api` project runs one worker.** There is one database and every test in the
+  project writes to it, so two tests that each isolate "the species with exactly one
+  observation" isolate the *same* observation — and one corrects its species out from
+  under the other. `playwright.config.mjs` keys `workers` off `MARP_API_BASE`.
+- **The page size follows the viewport**, so it is 50 here and not the 45 `store.js`
+  declares. A `?page=n` computed against 45 addresses a different set of rows, and the
+  tile is simply absent — which reads like the app failing to draw a row it was given.
+  `support.mjs`'s `pageSizeOf` asks the running store; do not assume a number.
+- **A bare address is not `filters: {}`.** `DEFAULT_FILTERS` carries Scientific's opening
+  status filter, so a query with no filters sees rows the mosaic never shows. `question()`
+  merges over the app's own defaults rather than restating them.
+
 ### Where a new test goes
 
 - A rule — what a mark means, what a commit does, how filters nest → `tests/unit/`,
