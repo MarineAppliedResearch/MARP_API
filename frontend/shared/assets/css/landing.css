@@ -293,6 +293,13 @@ h3 {
   font-weight: bold;
 }
 
+/* A summary is allowed to be several short paragraphs rather than one block.
+   Two or three sentences then a break reads; a wall does not, and the walls
+   were what made the long page feel like an essay about MARP. */
+.section-heading__summary + .section-heading__summary {
+  margin-top: 13px;
+}
+
 /* Reveal classes are progressive enhancement. Content remains visible when JS
    is unavailable or the user prefers reduced motion. */
 .reveal {
@@ -860,24 +867,34 @@ h3 {
   color: var(--text);
 }
 
+/* There is no per-stage badge here, and there must not be one. A draft tagged
+   two stages `Automated`, which turned the diagram into a picture of machines
+   taking work off biologists. The page is about expert time landing on the
+   judgement rather than about what a machine took, and a badge saying otherwise
+   fails the transplant test on its own. The start columns carry everything the
+   lanes need to say. */
 .lane__rod {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(16, 1fr);
   height: 10px;
   border-radius: 999px;
   background: rgba(42, 214, 220, 0.07);
 }
 
-/* --from and --span are set per stage in the markup: they are the diagram. */
+/* --from is set per stage in the markup and is the whole diagram: only where a
+   stage begins. Every bar spans the same six columns and fades out at the right
+   rather than stopping, because the page makes no claim about how long a stage
+   takes. Drawing real spans read as a timeline and needed a paragraph
+   underneath asking the visitor not to read it that way. Keep --from at 10 or
+   below so no bar runs past the sixteenth column into implicit tracks. */
 .lane__rod i {
-  grid-column: var(--from) / span var(--span);
-  border-radius: 999px;
-  background: var(--faint);
+  grid-column: var(--from) / span 6;
+  border-radius: 999px 0 0 999px;
+  background: linear-gradient(90deg, var(--faint) 45%, rgba(88, 113, 129, 0));
 }
 
 .lane--marp .lane__rod i {
-  background: linear-gradient(90deg, var(--green-400), var(--cyan-400));
-  box-shadow: 0 0 14px rgba(34, 215, 220, 0.35);
+  background: linear-gradient(90deg, var(--green-400), var(--cyan-400) 55%, rgba(34, 215, 220, 0));
 }
 
 .lane__note {
@@ -888,15 +905,6 @@ h3 {
 
 .lane--marp .lane__note {
   color: var(--cyan-300);
-}
-
-/* Stops the diagram being read as a timeline with a duration on it. */
-.lanes__caveat {
-  margin: 24px auto 0;
-  max-width: 54ch;
-  text-align: center;
-  font-size: 0.92rem;
-  color: var(--faint);
 }
 
 .pull-quote {
@@ -1638,8 +1646,9 @@ h3 {
 }
 
 /* Three columns with the hub between them leaves each lane about 205px at
-   700px wide, which is fourteen pixels per twelfth of the track. The shape is
-   the point of the diagram, so it stacks well before the other breakpoints. */
+   700px wide, which is thirteen pixels per sixteenth of the track. The shape
+   is the point of the diagram, so it stacks well before the other
+   breakpoints. */
 @media (max-width: 900px) {
   .lanes {
     overflow: hidden;

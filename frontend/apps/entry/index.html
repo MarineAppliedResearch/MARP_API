@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="A survey takes a day. Turning it into science can take months. MARP keeps collection, processing, expert review and reporting attached to one record, so each stage can start on what is ready.">
+  <meta name="description" content="A survey takes a day. Turning it into science can take months. MARP clears the repetitive work out of the way so that expert time lands on the judgement, and the turnaround from a dive to reviewed science is far shorter.">
   <meta name="theme-color" content="#020b18">
 
   <title>MARP: from survey to science, without the months in between</title>
@@ -121,9 +121,9 @@
           <h1 id="hero-title">A survey takes a day.<br><span>The science can take months.</span></h1>
 
           <p>
-            We are still working out what lives on the seafloor. We can look at
-            it faster than we can understand what we saw, and MARP is being built
-            to close that gap.
+            We are still working out what lives on the seafloor, and we can look
+            at it far faster than we can understand what we saw. MARP closes
+            that gap.
           </p>
 
           <div class="hero__actions">
@@ -140,22 +140,34 @@
     </section>
 
     <!--
-      The one idea this page exists to land. Two lanes of the same five stages:
-      laid end to end, then overlapping. Deliberately drawn as shapes with no
-      time axis. The claim is about when a stage can start, not how long a
-      project takes.
+      The one idea this page exists to land. The same five stages twice, and
+      the only thing the drawing says is where each one begins: every bar is
+      the same length and its right end fades out, so there is no duration on
+      the page to be misread. The earlier version put the stages on a twelfth
+      grid with real spans, which read as a timeline and needed a paragraph
+      underneath telling the visitor not to read it that way.
+
+      Both lanes begin the second stage at the same column, deliberately.
+      Nothing in MARP starts before the vehicle is back: the claim is that the
+      turnaround after a dive is short, never that the work happens while the
+      survey is still in the water. A cascade that crept under the Collect bar
+      said the second thing, so the MARP lane starts its cascade after it.
     -->
     <section class="page-section lanes-section" id="the-change" aria-labelledby="change-title">
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
           <p class="section-heading__eyebrow">What MARP changes</p>
-          <h2 id="change-title">The same stages, no longer standing in line.</h2>
+          <h2 id="change-title">A biologist's week goes on the science.</h2>
           <p class="section-heading__summary">
-            Most of the months go into the gaps between stages, where review
-            waits on processing and analysis waits on review. None of that work
-            disappears in MARP. Every stage stays attached to the same record,
-            so a stage can start on what is ready rather than waiting for the
-            one before it to finish everything.
+            Those months are real work. People watch the video, line it up with
+            the navigation, check what they found, and assemble the deliverable
+            at the end. Most of that never needed a biologist.
+          </p>
+          <p class="section-heading__summary">
+            MARP takes the mechanical passes off their desk and leaves them the
+            judgement, which is the part that needed them in the first place.
+            The job stays one a person can keep doing well for years, and the
+            survey turns into science sooner for the same reason.
           </p>
         </header>
 
@@ -163,74 +175,71 @@
           <section class="lane" aria-labelledby="lane-queued">
             <h3 class="lane__label" id="lane-queued">One stage at a time</h3>
             <ol class="lane__track">
-              <li class="lane__stage" style="--from:1; --span:2">
-                <span class="lane__name">Collect</span>
+              <li class="lane__stage" style="--from:1">
+                <span class="lane__name">Collect the video</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:3; --span:2">
-                <span class="lane__name">Ingest and align</span>
+              <li class="lane__stage" style="--from:3">
+                <span class="lane__name">Line it up with the navigation</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:5; --span:2">
-                <span class="lane__name">Detect</span>
+              <li class="lane__stage" style="--from:5">
+                <span class="lane__name">Find the candidates</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:7; --span:3">
+              <li class="lane__stage" style="--from:7">
                 <span class="lane__name">Expert review</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:10; --span:3">
+              <li class="lane__stage" style="--from:9">
                 <span class="lane__name">Analyse and report</span>
                 <span class="lane__rod"><i></i></span>
               </li>
             </ol>
-            <p class="lane__note">Each stage starts when the one before it ends.</p>
+            <p class="lane__note">Every stage waits for the whole of the one before it.</p>
           </section>
 
           <!--
             The same hub the capability diagram on /how-it-works is built
-            around. Here it sits between the two lanes because it is the reason
-            they differ, and it carries the claim the summary above makes.
+            around. It sits between the two lanes because it is the reason they
+            differ: a stage does not wait to rebuild what the last one knew.
+            Its label is pinned nowrap and the circle is small, so anything put
+            here has to be short.
           -->
-          <div class="platform-hub" aria-label="One record">
+          <div class="platform-hub" aria-label="The work stays connected">
             <div class="platform-hub__orbit platform-hub__orbit--outer"></div>
             <div class="platform-hub__orbit platform-hub__orbit--inner"></div>
             <img src="assets/images/marp-mark.png" alt="MARP">
-            <span>One record.</span>
+            <span>Stays connected.</span>
           </div>
 
           <section class="lane lane--marp" aria-labelledby="lane-marp">
-            <h3 class="lane__label" id="lane-marp">The same work, in MARP</h3>
+            <h3 class="lane__label" id="lane-marp">The same survey, in MARP</h3>
             <ol class="lane__track">
-              <li class="lane__stage" style="--from:1; --span:2">
-                <span class="lane__name">Collect</span>
+              <li class="lane__stage" style="--from:1">
+                <span class="lane__name">Collect the video</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:2; --span:2">
-                <span class="lane__name">Ingest and align</span>
+              <li class="lane__stage" style="--from:3">
+                <span class="lane__name">Line it up with the navigation</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:3; --span:2">
-                <span class="lane__name">Detect</span>
+              <li class="lane__stage" style="--from:4">
+                <span class="lane__name">Find the candidates</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:4; --span:3">
+              <li class="lane__stage" style="--from:5">
                 <span class="lane__name">Expert review</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:5; --span:3">
+              <li class="lane__stage" style="--from:6">
                 <span class="lane__name">Analyse and report</span>
                 <span class="lane__rod"><i></i></span>
               </li>
             </ol>
-            <p class="lane__note">Each stage starts on whatever is ready.</p>
+            <p class="lane__note">The repetitive stages stop eating the week. Everything else begins on what is ready.</p>
           </section>
         </div>
-
-        <p class="lanes__caveat reveal" data-reveal>
-          Read this as shape only, with no duration on it. A stage still takes
-          as long as it takes, and what moves is when it can begin.
-        </p>
       </div>
     </section>
 
@@ -256,15 +265,15 @@
 
       <div class="page-container final-cta__inner reveal" data-reveal>
         <img src="assets/images/marp-mark.png" alt="" aria-hidden="true">
-        <h2 id="cta-title"><span>Explore.</span> <strong>Inform.</strong> <em>Protect.</em></h2>
+        <h2 id="cta-title">A survey takes a day. <strong>The science can keep up.</strong></h2>
         <p class="final-cta__outcome">
-          More of what a survey collects can turn into science, sooner. That is
-          the whole of it.
+          Every survey that turns into understanding quickly is another piece of
+          the seafloor we actually know something about, and the people doing
+          that work get to spend their time finding it out.
         </p>
         <p>
-          The obvious objection is that nobody should trust a machine to
-          identify an animal. Neither do we, and the next page is what MARP
-          does about that.
+          Turning a day of survey into reviewed science that fast takes some
+          explaining. The next page is the explanation.
         </p>
         <div class="final-cta__actions">
           <a class="button button--primary" href="/how-it-works">How MARP works</a>
@@ -295,7 +304,7 @@
     <div class="login-dialog__layout">
       <aside class="login-dialog__visual" aria-hidden="true">
         <img src="assets/images/marp-mark.png" alt="">
-        <p>One record,<br>from the seafloor<br>to the report.</p>
+        <p>From the seafloor<br>to the report,<br>still connected.</p>
       </aside>
 
       <div class="login-dialog__content">
