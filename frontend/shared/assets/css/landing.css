@@ -875,26 +875,52 @@ h3 {
    lanes need to say. */
 .lane__rod {
   display: grid;
-  grid-template-columns: repeat(16, 1fr);
+  grid-template-columns: repeat(24, 1fr);
   height: 10px;
   border-radius: 999px;
   background: rgba(42, 214, 220, 0.07);
 }
 
-/* --from is set per stage in the markup and is the whole diagram: only where a
-   stage begins. Every bar spans the same six columns and fades out at the right
-   rather than stopping, because the page makes no claim about how long a stage
-   takes. Drawing real spans read as a timeline and needed a paragraph
-   underneath asking the visitor not to read it that way. Keep --from at 10 or
-   below so no bar runs past the sixteenth column into implicit tracks. */
+/* --from, --span and --at are set per stage in the markup: they are the
+   diagram, and nothing in the copy repeats what they draw. The queued lane lays
+   its five stages end to end across the track; the MARP lane starts them
+   earlier, runs them shorter and overlaps them, and both finish on a check.
+   Collect is the one stage drawn identically in both, because a dive takes as
+   long as a dive and MARP does not touch that. Keep --from plus --span at or
+   below 25, or a bar runs past the last column into implicit tracks and comes
+   out short. */
 .lane__rod i {
-  grid-column: var(--from) / span 6;
-  border-radius: 999px 0 0 999px;
-  background: linear-gradient(90deg, var(--faint) 45%, rgba(88, 113, 129, 0));
+  grid-column: var(--from) / span var(--span);
+  border-radius: 999px;
+  background: var(--faint);
 }
 
 .lane--marp .lane__rod i {
-  background: linear-gradient(90deg, var(--green-400), var(--cyan-400) 55%, rgba(34, 215, 220, 0));
+  background: linear-gradient(90deg, var(--green-400), var(--cyan-400));
+  box-shadow: 0 0 14px rgba(34, 215, 220, 0.35);
+}
+
+/* Sits in the column the last bar ends on, so it reads as that lane finishing
+   rather than as a separate stage. Taller than the 10px rod on purpose: it has
+   to be findable at a glance, and nothing here clips it. */
+.lane__done {
+  grid-column: var(--at) / span 3;
+  grid-row: 1;
+  align-self: center;
+  justify-self: start;
+  width: 15px;
+  height: 15px;
+  margin-left: 5px;
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lane--marp .lane__done {
+  stroke: var(--green-400);
+  filter: drop-shadow(0 0 7px rgba(167, 236, 53, 0.5));
 }
 
 .lane__note {
@@ -1659,8 +1685,8 @@ h3 {
 }
 
 /* Three columns with the hub between them leaves each lane about 205px at
-   700px wide, which is thirteen pixels per sixteenth of the track. The shape
-   is the point of the diagram, so it stacks well before the other
+   700px wide, which is about nine pixels per twenty-fourth of the track. The
+   shape is the point of the diagram, so it stacks well before the other
    breakpoints. */
 @media (max-width: 900px) {
   .lanes {

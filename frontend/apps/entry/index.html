@@ -38,6 +38,11 @@
       <path d="M5 24s7-12 19-12 19 12 19 12-7 12-19 12S5 24 5 24Z"></path>
       <circle cx="24" cy="24" r="5"></circle>
     </symbol>
+
+    <!-- Drawn at the end of each lane's last bar, to mark the survey finished. -->
+    <symbol id="icon-check" viewBox="0 0 48 48">
+      <path d="m9 25 10 11 20-24"></path>
+    </symbol>
   </svg>
 
   <!-- Sticky global navigation. -->
@@ -140,18 +145,20 @@
     </section>
 
     <!--
-      The one idea this page exists to land. The same five stages twice, and
-      the only thing the drawing says is where each one begins: every bar is
-      the same length and its right end fades out, so there is no duration on
-      the page to be misread. The earlier version put the stages on a twelfth
-      grid with real spans, which read as a timeline and needed a paragraph
-      underneath telling the visitor not to read it that way.
+      The one idea this page exists to land. The same five stages twice, drawn
+      as bars on a shared 24-column track: queued end to end above, started
+      earlier and overlapped below, each lane ending on a check.
 
-      Both lanes begin the second stage at the same column, deliberately.
-      Nothing in MARP starts before the vehicle is back: the claim is that the
-      turnaround after a dive is short, never that the work happens while the
-      survey is still in the water. A cascade that crept under the Collect bar
-      said the second thing, so the MARP lane starts its cascade after it.
+      The drawing carries the whole impression and the copy asserts none of it.
+      No sentence anywhere on this page quantifies the difference, and there is
+      no note under the diagram explaining how to read it. A version that needed
+      that note was the thing #152's review objected to.
+
+      Collect is drawn identically in both lanes, deliberately. A dive takes as
+      long as a dive, and nothing in MARP starts before the vehicle is back: the
+      claim is that the turnaround afterwards is short, never that the work
+      happens while the survey is still in the water. A MARP bar creeping under
+      the Collect bar above would say the second thing.
     -->
     <section class="page-section lanes-section" id="the-change" aria-labelledby="change-title">
       <div class="page-container">
@@ -177,25 +184,28 @@
           <section class="lane" aria-labelledby="lane-queued">
             <h3 class="lane__label" id="lane-queued">One stage at a time</h3>
             <ol class="lane__track">
-              <li class="lane__stage" style="--from:1">
+              <li class="lane__stage" style="--from:1; --span:4">
                 <span class="lane__name">Collect the video</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:3">
+              <li class="lane__stage" style="--from:5; --span:4">
                 <span class="lane__name">Line it up with the navigation</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:5">
+              <li class="lane__stage" style="--from:9; --span:5">
                 <span class="lane__name">Find the candidates</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:7">
+              <li class="lane__stage" style="--from:14; --span:5">
                 <span class="lane__name">Expert review</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:9">
+              <li class="lane__stage" style="--from:19; --span:4; --at:23">
                 <span class="lane__name">Analyse and report</span>
-                <span class="lane__rod"><i></i></span>
+                <span class="lane__rod">
+                  <i></i>
+                  <svg class="lane__done" role="img" aria-label="Done"><use href="#icon-check"></use></svg>
+                </span>
               </li>
             </ol>
             <p class="lane__note">Every stage waits for the whole of the one before it.</p>
@@ -218,25 +228,28 @@
           <section class="lane lane--marp" aria-labelledby="lane-marp">
             <h3 class="lane__label" id="lane-marp">The same survey, in MARP</h3>
             <ol class="lane__track">
-              <li class="lane__stage" style="--from:1">
+              <li class="lane__stage" style="--from:1; --span:4">
                 <span class="lane__name">Collect the video</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:3">
+              <li class="lane__stage" style="--from:5; --span:2">
                 <span class="lane__name">Line it up with the navigation</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:4">
+              <li class="lane__stage" style="--from:5; --span:3">
                 <span class="lane__name">Find the candidates</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:5">
+              <li class="lane__stage" style="--from:6; --span:4">
                 <span class="lane__name">Expert review</span>
                 <span class="lane__rod"><i></i></span>
               </li>
-              <li class="lane__stage" style="--from:6">
+              <li class="lane__stage" style="--from:7; --span:3; --at:10">
                 <span class="lane__name">Analyse and report</span>
-                <span class="lane__rod"><i></i></span>
+                <span class="lane__rod">
+                  <i></i>
+                  <svg class="lane__done" role="img" aria-label="Done"><use href="#icon-check"></use></svg>
+                </span>
               </li>
             </ol>
             <p class="lane__note">Each stage starts on whatever is ready.</p>

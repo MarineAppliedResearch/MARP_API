@@ -196,16 +196,21 @@ rather than a cursor placing points.
   `one record`, which is catchy and not what MARP is: it is a relational
   scientific dataset with connected entities and provenance, and the metaphor was
   becoming a claim about the data model that is false.
-- **The lanes diagram draws start points and nothing else.** Every bar spans the
-  same six of sixteen columns and fades out on the right, so the only thing the
-  drawing says is where a stage begins. It used to draw real spans on a twelfth
-  grid, which read as a timeline and needed a paragraph underneath asking the
-  visitor not to read it that way. A diagram that needs that paragraph needs
-  another pass instead. Keep `--from` at 10 or below, or the bar runs past the
-  last column into implicit tracks and comes out short. Both lanes start their
-  second stage at the same column on purpose: a MARP bar creeping under `Collect`
-  claims the work happens while the vehicle is down, which is the one thing this
-  page must not say.
+- **The lanes diagram is the only thing that says MARP is quicker.** `--from`,
+  `--span` and `--at` on each stage are the drawing, on a shared 24-column track:
+  the queued lane lays five stages end to end across the whole width, the MARP
+  lane starts them earlier, runs them shorter and overlaps them, and both end on
+  a check. Keep `--from` plus `--span` at or below 25, or a bar runs past the last
+  column into implicit tracks and silently comes out short.
+
+  Two rules about it, and both were learned rather than chosen. **No copy repeats
+  what the drawing says.** There is no fraction, no multiplier and no note
+  underneath explaining how to read it; a version that needed such a note was what
+  #152's review objected to, and a caveat apologising for a diagram means the
+  diagram needs another pass. **`Collect` is drawn identically in both lanes.** A
+  dive takes as long as a dive, and a MARP bar creeping under the `Collect` bar
+  above claims the work happens while the vehicle is still down, which is the one
+  thing this page must never say.
 - **The orbit rings on the capability diagram are spinning squares.** They are
   square elements rounded to circles, so a rotation grows their layout box by up
   to root two. At phone width that pushed the whole page sideways, which is why
