@@ -8,7 +8,8 @@
     "serve": "node tools/serve.mjs",
     "lint": "node tools/syntax-check.mjs && node tools/style-check.mjs",
     "shots": "node tools/mock-shots.mjs",
-    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/mock-shots.mjs"
+    "check:scroll": "node tools/scroll-check.mjs",
+    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/scroll-check.mjs && node tools/mock-shots.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"

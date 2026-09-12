@@ -967,12 +967,103 @@ function wireRowSelect() {
   });
 }
 
+/**
+ * The top bar gets out of the way of the reading (#151).
+ *
+ * Scroll down and it goes; start back up and it returns. There is deliberately **no
+ * control** for it here, and that is the difference from the Picture Mosaic Reviewer,
+ * which has a button: that app does not scroll, so hiding its chrome needs a gesture of
+ * its own. This one scrolls, so the gesture is already in the reader's hand.
+ *
+ * `.content` is the scroller, not the window -- `.app` is a `100dvh` grid and the tab
+ * content is the only thing in the app that scrolls, so a listener on `window` would
+ * never hear anything.
+ *
+ * Three things here are not obvious, and each is a way this goes wrong:
+ *
+ * - **A threshold, and it does not reset the mark.** Under six pixels nothing happens, so
+ *   trackpad noise and a momentum bounce cannot flap the bar. But the reference point is
+ *   left where it was, so a slow deliberate drag accumulates and still decides -- resetting
+ *   it per event is what makes a slow scroll unable to move the bar at all.
+ * - **A settle window after each toggle.** Hiding the bar hands its height to the content,
+ *   which *shrinks* the scroller's maximum scroll position -- so a reader already at the
+ *   bottom is clamped upward by exactly that height, which reads as scrolling up and brings
+ *   the bar straight back. The window is what stops the bottom of every long page flapping.
+ * - **The floor.** At the top of the content, and whenever there is nothing to scroll, the
+ *   bar is on screen -- no matter what happened on the way there. A bar that can be stuck
+ *   hidden is a defect, and the content can stop being scrollable without anybody scrolling,
+ *   which is why the observer below watches for the content changing under it.
+ */
+function wireTopbarAutohide() {
+  const bar = $('.topbar');
+  const content = $('.content');
+  if (!bar || !content) return;
+
+  /* Enough movement to be a decision rather than noise, and long enough for a layout
+     change to stop arriving as a scroll. Both are in DESIGN.md's sense of a number that
+     was chosen: see .marp/task.md for why these two. */
+  const STEP = 6;
+  const SETTLE = 180;
+
+  /** Returns whether this actually changed anything, so only a real move starts the timer. */
+  const set = (hidden) => {
+    const next = hidden ? 'hidden' : 'shown';
+    if (document.body.dataset.topbar === next) return false;
+    document.body.dataset.topbar = next;
+    return true;
+  };
+
+  /* The bar is offset by its own height, and only it knows what that is -- it follows its
+     content, and it wraps differently at the narrow widths. Measured rather than written
+     down in two places. A zero is refused: see `align-self: start` in mock.css, where a
+     measurement of zero is the shape the flap takes. */
+  const measure = () => {
+    const h = bar.offsetHeight;
+    if (h > 0) document.documentElement.style.setProperty('--topbar-h', `${h}px`);
+  };
+  new ResizeObserver(measure).observe(bar);
+  measure();
+
+  let mark = content.scrollTop;
+  let settled = 0;
+
+  /** The two places the bar always belongs on screen. True when it took the decision. */
+  const floor = () => {
+    const room = content.scrollHeight - content.clientHeight;
+    if (room <= STEP || content.scrollTop <= STEP) {
+      set(false);
+      mark = content.scrollTop;
+      return true;
+    }
+    return false;
+  };
+
+  content.addEventListener('scroll', () => {
+    if (floor()) return;
+    const y = content.scrollTop;
+    /* Inside the settle window the position is followed but not acted on -- the scroll
+       that arrives here is the layout's, not the reader's. */
+    if (Date.now() < settled) { mark = y; return; }
+    const moved = y - mark;
+    if (Math.abs(moved) < STEP) return;
+    mark = y;
+    if (set(moved > 0)) settled = Date.now() + SETTLE;
+  }, { passive: true });
+
+  /* A tab switch, a filter or a drawer can leave the content too short to scroll while the
+     bar is hidden, and no scroll event ever comes to put it right. */
+  new MutationObserver(floor).observe(content, { childList: true, subtree: true });
+  window.addEventListener('resize', floor);
+  floor();
+}
+
 /* ==================================================================== boot */
 
 document.body.dataset.rail = 'closed';
 mountSprite();
 mountRail();
 mountTopbar();
+wireTopbarAutohide();
 wireRailSheet();
 wireMenu();
 wireDrawer();

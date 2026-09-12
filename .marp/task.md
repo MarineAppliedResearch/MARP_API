@@ -32,16 +32,38 @@ the point of the page (see A1).
 - **R8** -- The state is legible without a screenshot: `document.body` carries a class, the
   way `rail-collapsed` already does, so the render tier can assert it.
 
+### Part 2 -- the ML Dashboard, where the gesture is the scroll
+
+The mosaic reviewer does not scroll, so a deliberate control is right for it. The ML
+Dashboard does scroll, so **the scroll is the gesture and there is no button** -- the
+human, 2026-09-12: *"when you scroll down, you start scrolling down in the page, the
+header disappears. But as soon as you start scrolling up again, the header reappears."*
+
+- **R9** -- Scrolling down in the content hides the top bar; scrolling up brings it back.
+- **R10** -- A small movement does nothing. Jitter, a trackpad's noise and a momentum
+  bounce must not flap the bar, and a slow deliberate drag must still work.
+- **R11** -- The bar is always on screen at the top of the content, whatever happened
+  on the way there.
+- **R12** -- The bar is always on screen when the content is too short to scroll, and it
+  comes back if the content becomes too short while it is hidden. A bar that can be
+  stuck hidden is a defect.
+- **R13** -- The space the bar gives up goes to the content, and taking it back does not
+  shift what the reader is looking at.
+- **R14** -- `prefers-reduced-motion: reduce` gets the same behaviour with no animation.
+- **R15** -- It is authored once, in the shell (`mockups/mock.js` and `mock.css`), so
+  every screen has it and no screen declares it. DESIGN.md rule 3.
+
 ## Open assumptions
 
-- [ ] **A1 | product/UI | non-blocking** -- should the **footer** collapse too? The issue
-  says this is a question and not an assumption to build on, so nothing here depends on the
+- [x] **A1 | product/UI | non-blocking** -- answered 2026-09-12: **the footer stays as it
+  is, and nothing collapses it.** The issue said this was a question and not an assumption
+  to build on, so nothing here depended on the
   answer and the mechanism extends to it in one rule if the answer is yes. Measured, so the
   answer can be an informed one: on a landscape phone hiding the footer as well adds **no**
   tiles, because a row is 150px there and the whole footer is 46px -- so the footer question
   is about reachability, not about room. In portrait the top chrome alone already buys a
   row (18 tiles -> 21, measured). **I want the answer before this pattern is replicated to
-  the ML Dashboard and the landing page.**
+  the ML Dashboard and the landing page.** It came back with the approval of the mosaic.
 - [ ] **A2 | product/UI | non-blocking** -- the control is a chevron in the **rail head**,
   beside the rail's own collapse button, because that strip is the only chrome that is
   always on screen in both layouts and it costs no tile area. The alternative was a handle
@@ -101,6 +123,20 @@ scope.** So it is named here and not built.
 - **2026-09-12** -- The avatar menu will be in three applications, so it is written once,
   in `frontend/shared/`. Whether the two apps that already have their own adopt it is the
   human's call and is not done silently.
+- **2026-09-12** -- Part 2's threshold is **6px of accumulated movement**, and a delta
+  under it is ignored *without* resetting the reference point -- so noise does nothing
+  and a slow drag still adds up to a decision. Chosen over a per-event delta, which
+  makes a slow scroll unable to move the bar at all.
+- **2026-09-12** -- A **180ms cooldown after each toggle**, because hiding the bar grows
+  the scroller and shrinks its maximum scroll position: a reader pinned to the bottom is
+  clamped upward by the bar's own height, which reads as scrolling up and shows the bar
+  again. Found by reasoning about the clamp before building it, and the cooldown is what
+  stops it being a flap at the bottom of every long page.
+- **2026-09-12** -- The bar hides by a **negative top margin of its own measured height**,
+  not a transform. Its grid row is `auto`, so a transform inside a collapsed row has a
+  0px box to translate and moves nothing; a negative margin collapses the row, gives the
+  pixels to the content, and animates.
+- **2026-09-12** -- `body[data-topbar]`, matching the shell's existing `body.dataset.rail`.
 - **2026-09-12** -- `body.top-hidden`, not `chrome-hidden`: it names the half it hides and
   leaves the name free if A1 is answered yes.
 

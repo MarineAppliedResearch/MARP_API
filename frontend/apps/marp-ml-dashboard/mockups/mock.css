@@ -164,6 +164,25 @@ svg { display: block; }
   background: var(--bar);
   backdrop-filter: blur(8px);
 }
+
+/* The bar gets out of the way of the reading, and comes back the moment the reader
+   starts back up the page (#151). The scroll is the whole gesture -- there is no control
+   for this, because this app scrolls and the gesture is already in the reader's hand.
+
+   **A negative top margin, not a transform.** The bar's row is `auto`, so a collapsed row
+   leaves a transform a 0px box to move and nothing happens. A negative margin of the bar's
+   own height collapses the row instead, which hands the pixels to the content.
+
+   **`align-self: start` is load-bearing.** Stretched, the bar would take the height of the
+   row it has just collapsed -- 0 -- so the height it is offset by would measure 0, the
+   margin would come back to 0, and the row would open again: a flap at 60fps rather than
+   a hidden bar. Started, its height stays its content's.
+
+   `--topbar-h` is written by `mock.js`, which measures the bar; the fallback of 0 means a
+   page whose script has not run yet simply keeps its bar. */
+.topbar { align-self: start; transition: margin-top 180ms ease; }
+body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px)); }
+@media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
 .topbar .heading { min-width: 0; }
 .topbar h1 {
   font-family: var(--display-font);
