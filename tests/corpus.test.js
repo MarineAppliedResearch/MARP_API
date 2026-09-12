@@ -54,27 +54,36 @@ describe('holdsCorpus', () => {
         // The case that matters. A fresh database is not an empty database --
         // the baseline and the migrations put rows in species, permissions and
         // users -- so a refusal keyed on "any row anywhere" would fire here.
-        expect(holdsCorpus(freshDatabase(), 0)).toBe(false);
+        expect(holdsCorpus(freshDatabase())).toBe(false);
     });
 
     it('says no when a corpus table is missing entirely', () => {
         // Before the baseline is loaded there are no tables at all, which
         // countCorpus reports as null. Nothing to lose.
         const noSchema = Object.fromEntries(CORPUS_TABLES.map((table) => [table, null]));
-        expect(holdsCorpus(noSchema, 0)).toBe(false);
+        expect(holdsCorpus(noSchema)).toBe(false);
     });
 
     it('says yes to a single row in any one corpus table', () => {
         for (const table of CORPUS_TABLES) {
             const counts = { ...freshDatabase(), [table]: 1 };
-            expect(holdsCorpus(counts, 0)).toBe(true);
+            expect(holdsCorpus(counts)).toBe(true);
         }
     });
 
-    it('says yes to thumbnail files with no rows behind them', () => {
-        // The files are half the corpus and are git-ignored, so nothing else
-        // would notice them going.
-        expect(holdsCorpus(freshDatabase(), 1)).toBe(true);
+    it('asks the database, and ignores anything it is handed about files', () => {
+        // The reversal (#132, R3). This used to assert the opposite -- that
+        // thumbnail files with no rows behind them made a database occupied --
+        // and that short circuit is what made a second database impossible to
+        // fill: a provably empty one was refused, and the refusal advised
+        // standing up the second database the caller was already standing up.
+        //
+        // It was a guard in front of the missing per-database storage rather
+        // than a bug on its own, and THUMBNAIL_STORAGE_DIR is what it guarded.
+        // The second argument is gone; passing one anyway must not resurrect
+        // the old answer, which is what this actually pins.
+        expect(holdsCorpus(freshDatabase(), 2079)).toBe(false);
+        expect(holdsCorpus({ ...freshDatabase(), observations: 1 }, 0)).toBe(true);
     });
 });
 

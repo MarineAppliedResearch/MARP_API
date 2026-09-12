@@ -181,8 +181,9 @@ const SEEK_LEAD_SECONDS = 2;
 const FFMPEG_TIMEOUT_MS = 120000;
 
 /**
- * Where the JPEG files live. A sister folder to the species pictures, served the
- * way they are served -- which is settled, not decided here.
+ * Where the JPEG files live when nothing says otherwise. A sister folder to the
+ * species pictures, served the way they are served -- which is settled, not
+ * decided here.
  *
  * `storage/` is git-ignored and a thumbnail has no seed set to be re-imported
  * from, so a fresh deployment starts with this directory empty. That is why R10
@@ -191,7 +192,43 @@ const FFMPEG_TIMEOUT_MS = 120000;
  * @constant
  * @type {string}
  */
-const STORAGE_DIR = path.join(__dirname, '..', 'storage', 'observation-thumbnails');
+const DEFAULT_STORAGE_DIR = path.join('storage', 'observation-thumbnails');
+
+/**
+ * Where the JPEG files live, and it belongs to a **database** rather than to a
+ * checkout (#132, R1).
+ *
+ * This was hardcoded, and that is what made a testing database impossible. The
+ * filename is in `observation_thumbnails` and the bytes are here, so the two are
+ * one corpus -- and with one directory per checkout, a development database and a
+ * testing database in the same checkout share it. `scripts/load-corpus.js`
+ * replaces this directory wholesale, so filling a testing database meant deleting
+ * the development corpus's pictures. There was no flag for it and no way to ask
+ * for a second one.
+ *
+ * So it reads an environment variable, beside the five `DB_*` ones and for the
+ * same reason: it is part of *which database this is*. Unset, it is exactly what
+ * it always was, so every existing checkout, CI and production are untouched.
+ *
+ * **Relative is resolved against the repository root, not the working
+ * directory.** `dotenv` resolves `.env` against the working directory and that
+ * has already cost time here -- a script run from elsewhere connects to the
+ * defaults and fails as though the database were down. The same trap with the
+ * corpus behind it would be worse: a `cd` would silently point the extractor at
+ * an empty directory and the pictures would look lost. An absolute value is used
+ * as given.
+ *
+ * Read at module load, the way `FFMPEG_PATH` below already is, so it needs
+ * `dotenv` to have run first. It has: `app.js` calls it before requiring any
+ * route, and every script in `scripts/` calls it on its first line.
+ *
+ * @constant
+ * @type {string}
+ */
+const STORAGE_DIR = path.resolve(
+    path.join(__dirname, '..'),
+    process.env.THUMBNAIL_STORAGE_DIR || DEFAULT_STORAGE_DIR
+);
 
 /**
  * The ffmpeg binary, located through configuration (A9).
