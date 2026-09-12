@@ -72,6 +72,20 @@
 
   <main class="container-fluid py-4">
     <div class="mb-3 d-flex flex-wrap gap-2">
+      <!-- The two applications, first and visually distinct from the dashboard's own
+           pages: nothing linked to either of them, so the only way in was a typed URL.
+           `/apps/marp-mosaic-review/` is gated on `observations:read` (app.js) and
+           redirects a reader who lacks it rather than saying so, which is #139.
+           `/apps/marp-ml-dashboard/` has **no gate at all** -- it answers 200 with no
+           session, because no `requirePermissionSession` line was registered for it.
+           That is worth deciding rather than inheriting. -->
+      <a class="btn btn-primary btn-sm" href="/apps/marp-mosaic-review/">
+        <i class="bi bi-grid-3x3-gap-fill"></i> Mosaic Reviewer
+      </a>
+      <a class="btn btn-primary btn-sm" href="/apps/marp-ml-dashboard/">
+        <i class="bi bi-cpu"></i> Machine Learning
+      </a>
+      <span class="vr d-none d-sm-inline mx-1"></span>
       <a class="btn btn-outline-primary btn-sm" href="/apps/dashboard/user-activity.html">User Activity</a>
       <a class="btn btn-outline-primary btn-sm" href="/apps/dashboard/user-hours.html">User Hours</a>
       <a class="btn btn-outline-primary btn-sm" href="/api-docs">API Docs</a>
