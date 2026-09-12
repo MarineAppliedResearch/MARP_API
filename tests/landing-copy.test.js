@@ -184,6 +184,89 @@ describe('landing page copy', () => {
         });
 
         /**
+         * R9 reaches further than the word itself. `Explore. Inform. Protect.` is
+         * MARE's tagline, and it closed both of these pages for a fortnight before
+         * anybody noticed: carrying the parent organisation's line is the same
+         * failure as carrying its name, and the word MARE never appears in it. It
+         * is a rule-of-three as well, which R14 forbids on its own, so a rework
+         * into three other imperatives is not the fix either.
+         *
+         * The gap between the words has to tolerate markup, which is how this
+         * check passed the first time it was pointed at the offending line: the
+         * three words were `<span>`, `<strong>` and `<em>`, so anything matching
+         * on punctuation alone walked straight past them.
+         */
+        it('does not close on a borrowed tagline', () => {
+            const hit = /explore[\s\S]{0,80}?inform[\s\S]{0,80}?protect/i.exec(stripped[page]);
+
+            expect(hit ? `${page} says "${hit[0]}"` : null).toBeNull();
+        });
+
+        /**
+         * These pages ship when the thing they describe is finished, so they are
+         * written from that side of the line: present tense, declarative, and no
+         * hedging about what exists yet. The application cards are included in
+         * that. What carries the honesty is the `Open` door, which two of the six
+         * have and four do not, and that is a fact about the markup rather than a
+         * qualifier in the copy.
+         */
+        it.each([
+            'is being built',
+            'is designed to',
+            'aims to',
+            'coming soon',
+            'in development',
+            'concept interface',
+            'will be able to',
+        ])('does not hedge with "%s"', (phrase) => {
+            const pattern = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            const hit = pattern.exec(stripped[page]);
+
+            expect(hit ? `${page} says "${hit[0]}"` : null).toBeNull();
+        });
+
+        /**
+         * MARP's claim is turnaround, and only turnaround. A dive happens, and the
+         * reviewed science comes back in a time that would previously have been a
+         * joke. It does **not** claim to be working while the vehicle is in the
+         * water, and putting it there is an overclaim rather than a flourish.
+         *
+         * This is a check because the wrong version arrived from three directions
+         * at once during #152's review: the reviewer's comment, the brief written
+         * from it, and the draft that followed all said some form of *the science
+         * starts moving while the data is still coming in*. It reads well, which
+         * is exactly why it needs something mechanical standing in front of it.
+         */
+        it.each([
+            'still in the water',
+            'still down there',
+            'while the survey is still',
+            'while the vehicle is still',
+            'during the dive',
+            'in real time',
+        ])('does not claim MARP works mid-survey with "%s"', (phrase) => {
+            const pattern = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            const hit = pattern.exec(stripped[page]);
+
+            expect(hit ? `${page} says "${hit[0]}"` : null).toBeNull();
+        });
+
+        /**
+         * `One record` was the hub label and the shorthand the whole architecture
+         * section leant on. It is catchy and it is not true: MARP is a relational
+         * scientific dataset with connected entities and provenance, so the
+         * metaphor had quietly become a claim about the data model. The honest
+         * version is that the video, the navigation, the observations, the review
+         * decisions, the corrections and the analyses stay connected as the work
+         * moves.
+         */
+        it('does not call MARP one record', () => {
+            const hit = /one record/i.exec(stripped[page]);
+
+            expect(hit ? `${page} says "${hit[0]}"` : null).toBeNull();
+        });
+
+        /**
          * R2. `Collect -> Review -> Process -> Assist -> Deliver` was the old
          * five-box workflow, and two of its names belong to nothing else on the
          * page -- so they are what a revival would show up as.

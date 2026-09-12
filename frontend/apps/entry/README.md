@@ -16,9 +16,9 @@ no static-server step: these are plain documents that the API serves.
 ## Why there are two pages
 
 The landing page used to carry the whole story and ran to about six and a half
-thousand pixels. It is 2,553 now, and that took two rounds of cutting rather than
-one. Anything that explains rather than pitches belongs on `how-it-works.html`,
-which is allowed to be as long as it needs.
+thousand pixels. Getting it down to roughly a third of that took three rounds of
+cutting rather than one. Anything that explains rather than pitches belongs on
+`how-it-works.html`, which is allowed to be as long as it needs.
 
 **The application cards are on the long-form page, not here.** That is deliberate
 and it is the second thing somebody will want to undo. The landing page reaches
@@ -40,13 +40,60 @@ Settled in #152, and it is the part most likely to be undone by accident.
   that, and it runs in CI.
 - **No em dashes, no rule-of-three lists, and no "it is not this, it is that."**
   Those are the patterns that make a page read as machine-written.
+- **Short paragraphs.** Two or three sentences and then a break, everywhere on
+  both pages. A `.section-heading__summary` may be several of them stacked, and
+  `.explainer` is a two-column block that wants short ones. What is banned is the
+  shape rather than the length: a heading stating an idea, a paragraph explaining
+  it, then a third explaining the explanation. Cut the third, keep the first two.
+  **This is not a licence to cut `/how-it-works` down.** That page exists to show
+  what MARP actually has, and its substance is wanted. Only the landing page is
+  short.
 - **No invented figures.** The page is qualitative on purpose. A survey takes a
   day and the science can take months are the human's own words; nothing else is
   quantified, and nothing should be added without a number somebody can stand
   behind.
-- **No claim the repository cannot support**, and what MARP does today stays
-  distinguishable from the direction it is built for.
-- **MARE appears nowhere.** MARP stands on its own.
+- **MARE appears nowhere.** MARP stands on its own, and that reaches further
+  than the word: `Explore. Inform. Protect.` was MARE's tagline and closed both
+  pages until it was noticed. A borrowed line is the same failure as a borrowed
+  name.
+- **The claim is turnaround, and only turnaround.** A dive happens and the
+  reviewed science comes back fast. MARP is never described as working while the
+  vehicle is in the water, in any paraphrase: not `as the data arrives`, not
+  `in real time`, not `during the dive`, not `while the survey is still running`.
+  The hero's contrast is the page's whole argument, and MARP compresses the gap
+  between the two rather than removing it or moving the work underwater. This
+  wrong version arrived from three directions at once during #152's review
+  because it reads well, which is why `tests/landing-copy.test.js` now stands in
+  front of it.
+- **MARP is written as finished and working.** Present tense, declarative, no
+  hedging anywhere: not `is being built`, not `is designed to`, not `will`. This
+  page ships when the thing it describes is done, so it is written from that
+  side of the line and the applications are included in that. Two of the six are
+  served from here and carry an `Open` door; the other four have nothing to link
+  to yet, and that missing door is the only place it shows.
+
+## What MARP does for the person doing the work
+
+The lanes section on the landing page is about a biologist's working week, and
+getting that wrong is the fastest way to lose the reader it is written for.
+
+**MARP removes the drudgery, never the human.** The repetitive part stops
+consuming somebody's weeks: trawling frame by frame for candidates, lining video
+up with navigation, the same mechanical pass over and over. What is left is the
+judgement, which is the part that needed a biologist in the first place. So the
+job stays one a person can keep doing well for years, and the survey turns into
+science sooner for exactly that reason.
+
+A biologist reading this page should recognise their own week getting better. A
+draft framed the same change as *some of it goes to the machines*, tagged two
+lane stages `Automated`, and said two of them stop being anybody's afternoon.
+All three made machines the subject of the sentence and the biologist the
+leftover, which is the Raytheon voice R8 exists to catch, arriving through the
+back door. Write what the scientist gets.
+
+Watch the other ditch too. `Humane` and `sustainable` are the ideas, and neither
+word has to appear; if the copy starts sounding like a human-resources page it
+has failed R8 just as surely.
 
 ## Machine learning is not the headline
 
@@ -55,19 +102,43 @@ what happens to the time between collecting data and understanding it. ML belong
 inside the review story, where a detection is a proposal and a biologist decides.
 `Biologists lead. MARP amplifies.` stays.
 
+**Two claims in that section were wrong on the public page and must not come
+back.** Both are scientific statements and both were corrected in #152's review.
+
+- **Never say a person cannot watch every frame.** People do watch the video, and
+  that is precisely why a project takes as long as it does. The honest point is
+  that human review grows with every hour of imagery collected and it is expert
+  time being spent.
+- **Never say a model's output is not an observation.** It is.
+  `service/observation-ingest.service.js` writes model findings as real
+  `observations` rows, marked by provenance rather than by a different shape. The
+  distinction that matters is scientific **acceptance**, which is an
+  `observation_reviews` row belonging to a named reviewer, and its absence is what
+  unreviewed means.
+
+**Keep models out of the villain role too.** No `poison the record`, no `nobody
+should trust a machine`. Models can be very accurate and very useful, and the
+page states the positive rule: models propose and accelerate, qualified people
+remain authoritative for acceptance and interpretation.
+
 ## The application cards
 
-On `how-it-works.html`. Six cards, in two rows of three. Two of the applications run in the browser here
-and carry an `Open` door; the rest are concepts and do not. That door is the only
-status marker on the card, deliberately (#152, A1). The card images are mockups
-and stay mockups: a screenshot of the Picture Mosaic Reviewer would put real
-survey imagery and real species identifications on a public page (#152, A2). The
-alt text says `Concept interface` only for the ones that are concepts.
+On `how-it-works.html`. Six cards, in two rows of three, and **every one of them
+describes a working application.** Two are served from here and carry an `Open`
+door; the other four have nothing to link to yet. That door is the only status
+marker on the card, deliberately (#152, A1), and it is a functional fact about
+the markup rather than a hedge in the copy. Do not invent a URL for the four, do
+not add text explaining why they have no door, and do not put `Concept interface`
+back into the alt text.
 
-**The Stereo Sizing card has no photographed mockup.** Its concept interface is
-drawn in the markup as an SVG and styled by the `.card-mock__*` rules, rather than
-shipped as another `.webp`. Anything else added to this section without a
-screenshot should be drawn the same way.
+The card images are mockups and stay mockups: a screenshot of the Picture Mosaic
+Reviewer would put real survey imagery and real species identifications on a
+public page (#152, A2).
+
+**The Stereo Sizing card has no photographed mockup.** Its interface is drawn in
+the markup as an SVG and styled by the `.card-mock__*` rules, rather than shipped
+as another `.webp`. Anything else added to this section without a screenshot
+should be drawn the same way.
 
 **A card says what comes out of an application, never how a person operates it.**
 This one said "pick the same two points in both cameras" and that was wrong to
@@ -107,8 +178,21 @@ rather than a cursor placing points.
   and was a leaked selector.
 - **The hub label sits inside the circle at `bottom: 13%`**, so a second line
   grows upward into the mark. The map's hub is wide enough for
-  `One API. One data model.`; the smaller one in the lanes is not, which is why
-  it says `One record.` and is pinned `nowrap`.
+  `One connected dataset.`; the smaller one in the lanes is not, which is why it
+  says `Stays connected.` and is pinned `nowrap`. Both labels used to lean on
+  `one record`, which is catchy and not what MARP is: it is a relational
+  scientific dataset with connected entities and provenance, and the metaphor was
+  becoming a claim about the data model that is false.
+- **The lanes diagram draws start points and nothing else.** Every bar spans the
+  same six of sixteen columns and fades out on the right, so the only thing the
+  drawing says is where a stage begins. It used to draw real spans on a twelfth
+  grid, which read as a timeline and needed a paragraph underneath asking the
+  visitor not to read it that way. A diagram that needs that paragraph needs
+  another pass instead. Keep `--from` at 10 or below, or the bar runs past the
+  last column into implicit tracks and comes out short. Both lanes start their
+  second stage at the same column on purpose: a MARP bar creeping under `Collect`
+  claims the work happens while the vehicle is down, which is the one thing this
+  page must not say.
 - **The orbit rings on the capability diagram are spinning squares.** They are
   square elements rounded to circles, so a rotation grows their layout box by up
   to root two. At phone width that pushed the whole page sideways, which is why
