@@ -145,10 +145,13 @@
           <p class="section-heading__eyebrow">Where the months go</p>
           <h2 id="gap-title">Recording it is the fast part.</h2>
           <p class="section-heading__summary">
-            A vehicle records for as long as it has power. Watching that back
-            and working out what is in it has never scaled with the cameras. The
-            bigger cost sits between the stages, in the work of getting from one
-            of them to the next.
+            A vehicle records for as long as it has power. Everything after it
+            surfaces is expert time.
+          </p>
+          <p class="section-heading__summary">
+            Watching the footage back, working out what is in it, checking the
+            result, getting it ready for whoever needs it next. That time grows
+            with every hour of imagery a survey brings home.
           </p>
         </header>
 
@@ -157,10 +160,9 @@
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
             <h3>Every step rebuilds the last one's context</h3>
             <p>
-              Video, navigation and observations get separated when they move
-              between tools, then joined back up by hand on the other side. That
-              rejoining work buys nothing. It gets you back to where the previous
-              stage already was.
+              Video, navigation and observations get separated moving between
+              tools, then joined back up by hand on the other side. All that
+              buys is getting back to where the last stage already was.
             </p>
           </article>
 
@@ -168,9 +170,9 @@
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
             <h3>Nothing starts until the step before it finishes</h3>
             <p>
-              Review waits on processing, and analysis waits on review. A stage
-              can sit idle with plenty of work available to it, because the batch
-              it has been told to wait for is still open.
+              Review waits on processing and analysis waits on review. A stage
+              sits idle with plenty of work available to it, because the batch
+              it was told to wait for is still open.
             </p>
           </article>
 
@@ -178,10 +180,10 @@
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-insight"></use></svg>
             <h3>The answers arrive after the questions moved on</h3>
             <p>
-              A survey goes out to answer something. How much is out there, or
-              whether it has changed since the last time anyone looked. The
-              longer the answers take, the less of that question is still open
-              when they arrive.
+              A survey goes out to answer something. How much is down there, or
+              whether it has changed since anyone last looked. The longer the
+              answers take, the less of that question is still open when they
+              land.
             </p>
           </article>
         </div>
@@ -201,24 +203,19 @@
 
         <div class="explainer reveal" data-reveal>
           <p>
-            Software built to support any scientific process has to ask which
-            files belong together and what happens to them next. Every project
-            answers those questions again, and the answers end up in somebody's
-            head or in a spreadsheet sitting next to the data.
+            Software that could support any scientific process has to be told
+            which files belong together and what happens to them next. Every
+            project answers that from scratch.
           </p>
           <p>
-            MARP is built around one sequence of work, so most of them are
-            already answered. Video belongs to a dive, a dive belongs to a
-            project, and a detection stays a proposal until a biologist has
-            looked at it. The application already knows all of that, which is
-            what lets the interface stay small. It can fill things in and hand
-            one stage to the next without being configured first.
+            MARP is built around one sequence of work, so the answers are
+            already in it. Video belongs to a dive. A candidate stays a proposal
+            until a biologist has looked at it.
           </p>
           <p>
-            The narrowness stops at the surface. Underneath are ordinary pieces,
-            one API and one data model, and those are reusable anywhere somebody
-            wants them. The workflow sitting on top is built for this job only,
-            on purpose.
+            So MARP fills things in, and hands one stage to the next, without
+            anybody setting it up first. That is what keeps the interface small
+            enough to sit down in front of.
           </p>
         </div>
       </div>
@@ -232,11 +229,12 @@
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
           <p class="section-heading__eyebrow">Underneath</p>
-          <h2 id="platform-title">One record, seen from six places.</h2>
+          <h2 id="platform-title">Nothing gets rebuilt between stages.</h2>
           <p class="section-heading__summary">
             None of these is a separate product with its own copy of the data.
-            That is the whole reason a stage can start before the one before it
-            has finished.
+            Video, navigation, observations, review decisions, corrections and
+            analyses stay connected as the work moves, and that is the whole
+            reason a stage can start before the one before it has finished.
           </p>
         </header>
 
@@ -272,7 +270,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-video"></use></svg>
               <div>
                 <h3>Video &amp; Imagery</h3>
-                <p>Dive video and the frames taken from it, addressable to the frame.</p>
+                <p>Dive video, and the exact frame an observation came from.</p>
               </div>
             </article>
 
@@ -285,11 +283,11 @@
             </article>
           </div>
 
-          <div class="platform-hub" aria-label="One API and one data model">
+          <div class="platform-hub" aria-label="One connected dataset">
             <div class="platform-hub__orbit platform-hub__orbit--outer"></div>
             <div class="platform-hub__orbit platform-hub__orbit--inner"></div>
             <img src="/assets/images/marp-mark.png" alt="MARP">
-            <span>One API. One data model.</span>
+            <span>One connected dataset.</span>
           </div>
 
           <div class="platform-map__column platform-map__column--right">
@@ -305,7 +303,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg>
               <div>
                 <h3>Machine Learning</h3>
-                <p>Models read every frame. Nothing they find is a fact yet.</p>
+                <p>Models read the footage and put candidates in front of a reviewer.</p>
               </div>
             </article>
 
@@ -313,7 +311,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-report"></use></svg>
               <div>
                 <h3>Reports &amp; Data Products</h3>
-                <p>What comes out the far end, built from that same record.</p>
+                <p>What comes out the far end, built from everything above it.</p>
               </div>
             </article>
           </div>
@@ -323,9 +321,8 @@
           <p>
             The video, where the vehicle was, what a model proposed, what a
             biologist decided and what got corrected are the same data
-            throughout. Nothing has to be rebuilt to move forward, and a
-            correction made during review is the version everything downstream
-            reads.
+            throughout. A correction made during review is the version every
+            report and every later analysis reads.
           </p>
         </div>
       </div>
@@ -333,9 +330,10 @@
 
     <!--
       One worked example of what "built for this job" means in practice. The
-      claims here come from marp-video-player's own README: a plain <video>
-      refuses a negative playbackRate, and seeks against streamed media land on
-      container keyframes rather than on the frame that was asked for.
+      mechanics of why a browser cannot do it, from marp-video-player's own
+      README, used to be three paragraphs here and are developer material: a
+      visitor needs the capability and the reason it matters, not the decoding.
+      Anything of that kind belongs in the player's own documentation.
     -->
     <section class="page-section lanes-section" id="video-player" aria-labelledby="player-title">
       <div class="page-container">
@@ -346,25 +344,21 @@
 
         <div class="explainer reveal" data-reveal>
           <p>
-            An analyst who spots something at a particular moment needs to get
-            back to that exact frame, rather than to somewhere in its
-            neighbourhood. A browser will not do that on its own. The video
-            element refuses a negative playback rate outright, so reviewing
-            footage in reverse becomes a series of backward seeks, and those
-            land wherever the container's keyframes allow. Against streamed
-            video that is usually not where the animal was.
+            Somebody who spots an animal at a particular moment needs to get
+            back to that exact frame rather than to somewhere near it. A browser
+            will not do that on its own.
           </p>
           <p>
-            So MARP has its own player. It fetches the media itself, demuxes the
-            container, decodes with WebCodecs and draws to a canvas, which means
-            it is holding the decoded frames and can put any one of them up on
-            demand. Forwards or backwards, one frame at a time, for as long as
-            somebody needs to keep checking.
+            So MARP has its own player. It steps through footage a frame at a
+            time, forwards or backwards, for as long as somebody needs to keep
+            looking.
           </p>
           <p>
-            A species identification rests on that. The observation is recorded
-            against a frame, so anyone checking the work later can return to the
-            same frame and see exactly what the first reviewer was looking at.
+            A species identification rests on that. An observation is recorded
+            against its frame, so anyone checking the work later returns to the
+            same frame and sees what the first reviewer saw.
+          </p>
+          <p>
             The player is a MARP component in its own right, and the desktop
             annotation tool runs on it.
           </p>
@@ -383,11 +377,18 @@
           <p class="section-heading__eyebrow">Who decides</p>
           <h2 id="why-title">Biologists lead. MARP amplifies.</h2>
           <p class="section-heading__summary">
-            A model can look at every frame of a survey, which no person has the
-            hours to do. It cannot tell you whether what it found matters, and it
-            is wrong often enough that treating its output as data would poison
-            the record. So a detection is a proposal until a biologist accepts
-            it, and the acceptance is recorded as that person's.
+            People have always watched the video, and that is much of why a
+            project takes as long as it does. Review grows with every hour of
+            imagery collected, and the hours are expert hours.
+          </p>
+          <p class="section-heading__summary">
+            A model goes through the same footage and puts candidates in front
+            of a reviewer, so those hours get spent on judgement instead.
+          </p>
+          <p class="section-heading__summary">
+            Who decides does not move. A candidate carries no scientific
+            acceptance until a biologist gives it one, and that decision is
+            recorded as theirs.
           </p>
         </header>
 
@@ -395,7 +396,7 @@
           <article class="feature-card reveal" data-reveal>
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg>
             <h3>A detection is a proposal</h3>
-            <p>Models put candidates in front of a reviewer. Nothing a model produced becomes an observation on its own.</p>
+            <p>What a model finds is recorded as the model's work, and it stays scientifically unreviewed until a biologist accepts it.</p>
           </article>
 
           <article class="feature-card reveal" data-reveal>
@@ -406,14 +407,14 @@
 
           <article class="feature-card reveal" data-reveal>
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
-            <h3>A correction goes upstream</h3>
-            <p>Fixing an identification changes the record everything else reads. There is no second copy inside one application to go and update afterwards.</p>
+            <h3>A correction reaches everything</h3>
+            <p>Fixing an identification changes what every other part of the work reads. There is no second copy inside one application to go and update afterwards.</p>
           </article>
 
           <article class="feature-card reveal" data-reveal>
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-process"></use></svg>
-            <h3>The dull half is the automated half</h3>
-            <p>Pulling frames, matching timecodes, moving files, assembling the page in front of the reviewer. None of it needs a scientist.</p>
+            <h3>Nobody spends a week on the mechanical part</h3>
+            <p>Pulling frames, matching timecodes, moving files, assembling the page in front of the reviewer. That work runs itself, and the week goes on the science.</p>
           </article>
         </div>
       </div>
@@ -421,8 +422,10 @@
 
     <!--
       Applications as evidence, at the end of the argument rather than on the
-      landing page. Two of them run here and carry a door; the rest are still
-      concepts, which is why they do not. See .application-card--live.
+      landing page. Every card describes a working application. Two of them are
+      served from here and carry a door; the other four have nothing to link to
+      yet, and the missing door is the only place that shows. Nothing in the
+      copy hedges about it. See .application-card--live.
     -->
     <section class="page-section applications-section" id="applications" aria-labelledby="applications-title">
       <div class="page-container page-container--wide">
@@ -430,20 +433,20 @@
           <p class="section-heading__eyebrow">Applications</p>
           <h2 id="applications-title">Where people actually work.</h2>
           <p class="section-heading__summary">
-            Six places to do a different part of the same job. They read and write
-            the same record, which is why work done in one turns up in the next.
+            Six places to do a different part of the same job. They work on the
+            same data, which is why what gets done in one turns up in the next.
           </p>
         </header>
 
         <div class="application-grid">
           <article class="application-card reveal" data-reveal>
             <div class="application-card__media">
-              <img src="assets/images/app-video-annotation.webp" alt="Concept interface for the MARP Video Annotation Tool" loading="lazy">
+              <img src="assets/images/app-video-annotation.webp" alt="The MARP Video Annotation Tool" loading="lazy">
             </div>
             <div class="application-card__body">
               <span class="application-card__index">01</span>
               <h3>Video Annotation Tool</h3>
-              <p>Frame-accurate annotation of dive video against the navigation, so an observation knows where it happened.</p>
+              <p>Marking what is in the footage, with every observation carrying the moment and the place it came from.</p>
             </div>
           </article>
 
@@ -454,21 +457,21 @@
             <div class="application-card__body">
               <span class="application-card__index">02</span>
               <h3>Picture Mosaic Reviewer</h3>
-              <p>Hundreds of candidates on one screen, so a reviewer can keep, correct or throw out a page at a time.</p>
+              <p>Hundreds of candidates on one screen, so a reviewer settles a page at a time instead of opening them one by one.</p>
               <a class="application-card__open" href="/apps/marp-mosaic-review/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
             </div>
           </article>
 
           <!--
-            The stereo sizing card has no photographed mockup, so its concept
-            interface is drawn here instead of shipped as another .webp. What it
-            shows is the actual idea: the same two points picked in a calibrated
-            pair, and the horizontal disparity between the panes is what the
-            length comes out of.
+            The stereo sizing card has no photographed mockup, so its interface
+            is drawn here instead of shipped as another .webp. What it shows is
+            the actual idea: the same two points in a calibrated pair, and the
+            horizontal disparity between the panes is what the length comes out
+            of.
           -->
           <article class="application-card reveal" data-reveal>
             <div class="application-card__media">
-              <svg class="card-mock" viewBox="0 0 270 200" role="img" aria-label="Concept interface for MARP Stereo Sizing">
+              <svg class="card-mock" viewBox="0 0 270 200" role="img" aria-label="MARP Stereo Sizing">
                 <defs>
                   <linearGradient id="mock-water" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0" stop-color="#0a3c55"></stop>
@@ -535,7 +538,7 @@
 
           <article class="application-card reveal" data-reveal>
             <div class="application-card__media">
-              <img src="assets/images/app-data-processing.webp" alt="Concept interface for the MARP Data Processing Workspace" loading="lazy">
+              <img src="assets/images/app-data-processing.webp" alt="The MARP Data Processing Workspace" loading="lazy">
             </div>
             <div class="application-card__body">
               <span class="application-card__index">04</span>
@@ -551,14 +554,14 @@
             <div class="application-card__body">
               <span class="application-card__index">05</span>
               <h3>Machine Learning Dashboard</h3>
-              <p>Training runs, the GPU workers doing them, and how a model behaves on real survey video.</p>
+              <p>Training runs, the workers running them, and how a model behaves on real survey video, so the people relying on its candidates know what it is good at.</p>
               <a class="application-card__open" href="/apps/marp-ml-dashboard/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
             </div>
           </article>
 
           <article class="application-card reveal" data-reveal>
             <div class="application-card__media">
-              <img src="assets/images/app-reporting.webp" alt="Concept interface for MARP Automated Report Generation" loading="lazy">
+              <img src="assets/images/app-reporting.webp" alt="MARP Automated Report Generation" loading="lazy">
             </div>
             <div class="application-card__body">
               <span class="application-card__index">06</span>
@@ -588,10 +591,11 @@
 
       <div class="page-container final-cta__inner reveal" data-reveal>
         <img src="/assets/images/marp-mark.png" alt="" aria-hidden="true">
-        <h2 id="cta-title"><span>Explore.</span> <strong>Inform.</strong> <em>Protect.</em></h2>
+        <h2 id="cta-title">A survey takes a day. <strong>The science can keep up.</strong></h2>
         <p class="final-cta__outcome">
-          More of what a survey collects can turn into science, sooner. That is
-          the whole of it.
+          Every survey that turns into understanding quickly is another piece of
+          the seafloor we actually know something about, and the people doing
+          that work get to spend their time finding it out.
         </p>
         <div class="final-cta__actions">
           <button class="button button--primary" type="button" data-login-open>Login to MARP</button>
@@ -621,7 +625,7 @@
     <div class="login-dialog__layout">
       <aside class="login-dialog__visual" aria-hidden="true">
         <img src="/assets/images/marp-mark.png" alt="">
-        <p>One record,<br>from the seafloor<br>to the report.</p>
+        <p>From the seafloor<br>to the report,<br>still connected.</p>
       </aside>
 
       <div class="login-dialog__content">
