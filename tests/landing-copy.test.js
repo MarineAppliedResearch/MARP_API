@@ -244,6 +244,19 @@ describe('landing page copy', () => {
     });
 
     /**
+     * R14 reaches the shared script as well, because some of its strings are
+     * copy: the login status line writes straight into the page. This was a
+     * real miss -- "Signed in - redirecting" carried an em dash that neither
+     * HTML file did, and checking only the two documents could never see it.
+     */
+    it('contains no em dash in the shared script either', () => {
+        const index = landingJs.indexOf('—');
+        const context = index === -1 ? null : landingJs.slice(Math.max(0, index - 60), index + 60);
+
+        expect(context).toBeNull();
+    });
+
+    /**
      * R11, across both pages. The landing page carries the doors into the two
      * applications that actually run; the docs links may sit on either page.
      */
