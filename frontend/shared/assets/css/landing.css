@@ -796,10 +796,15 @@ h3 {
 
 /* Queued lane, the record, the MARP lane. The middle column is sized by the
    hub rather than sharing the split, so neither lane is squeezed by it. */
+/* Stretch rather than centre, because only one lane carries a note now and
+   centring would offset its five rows against the other lane's by half that
+   note. Reading one stage across both lanes is the entire diagram, so the two
+   panels are the same height and their tracks line up row for row. The hub
+   between them sets its own align-self. */
 .lanes {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
+  align-items: stretch;
   gap: clamp(18px, 2.2vw, 34px);
 }
 
