@@ -7,7 +7,7 @@
  */
 import { state, MODES } from '../store.js';
 import {
-  existingState, decidedByMe, pendingException, borrowedTags,
+  existingState, decidedByMe, pendingTakeBack, borrowedTags,
   acceptedValue, markKind, MARK_ACCEPT
 } from '../model/modes.js';
 import { currentSpeciesName } from '../model/row.js';
@@ -196,18 +196,15 @@ export function tile(row) {
   const existing = existingState(state.mode, row);
   const showExisting = existing && !marked && !outcome;
 
-  /* The record still carries this mode's exception, but the reviewer has taken the
-     mark off and not committed yet. Showing FLAGGED there would deny the click ever
-     happened; showing nothing would hide a flag that is still on the record. */
-  const exception = pendingException(state.mode);
-  /* This sitting's outcome wins over the row's own column (#131). The `||` used to let
-     the record resurrect the state: `existing` is read off the row, the fixture mutates
-     that column in place and the API never does -- nothing writes it back and a commit
-     invalidates no cache -- so once the unflag was committed the outcome said accepted
-     while the stale row still said flagged, and the tile went on offering to take back
-     something already recorded. Mark over outcome over record, all the way down. */
-  const takingBack = !marked && exception && state.touched.has(id)
-    && (outcome ? outcome === exception : existing === exception);
+  /* The record still carries a decision, but the reviewer has taken the mark off and
+     nothing has been committed yet. Showing FLAGGED or PROMOTED there would deny the
+     click ever happened; showing nothing would hide a decision that is still on the
+     record. The rule is `model/`'s, because the commit button asks the same question and
+     the two must not disagree about which tiles are taking something back (#135). */
+  const takingBack = pendingTakeBack({
+    mode: state.mode, row, marks: state.marks, takenBack: state.takenBack,
+    outcomes: state.outcomes
+  });
   /* An id against the authenticated principal's id (A13). `decidedBy(row) === ME` was a
      name against a literal, and both halves were wrong: the row carries no name, and the
      literal was one developer's. */
@@ -249,7 +246,15 @@ export function tile(row) {
   /* The badge is its own control: tapping the tile marks, tapping the badge opens
      the panel. That keeps marking a single uninterrupted gesture. */
   const badge = takingBack
-      ? `<span class="badge b-rev" title="Not committed yet — the next commit accepts it">${markIcon()}TAKING BACK</span>`
+    /* Mint, which is what a take-back looks like here and what the tile's own dashed
+       outline already is -- and the **icon of the decision being withdrawn** (A4), so
+       taking back a promotion does not wear the exclusion mark. Violet for the badge
+       itself was the recorded assumption and is not what landed: it is the colour of
+       PROMOTED, and a violet badge inside a mint outline would say the tile is promoted
+       in the one slot that is saying it is about to stop being.
+       What the next commit does depends on which button (#135 A2), so the tooltip says
+       both rather than the one that used to be true of the sweep alone. */
+      ? `<span class="badge b-rev" title="Taking back ${takingBack} — not committed yet. Commit Marked withdraws it; a page commit accepts it.">${takingBack === acceptedValue(state.mode) ? acceptIcon() : markIcon()}TAKING BACK</span>`
     /* An accept mark, and **still exactly one `.badge`** (A6). It carries no `data-badge`:
        the panel chooses a flag or exclusion reason, and an acceptance has nothing in that
        vocabulary to say, so its badge is not a target rather than opening a panel that

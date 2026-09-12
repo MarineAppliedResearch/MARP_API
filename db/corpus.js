@@ -207,18 +207,33 @@ function countThumbnailFiles(directory) {
 }
 
 /**
- * Whether a set of counts represents work somebody would mind losing.
+ * Whether a database holds work somebody would mind losing.
  *
  * The decision a load's refusal turns on, kept here so it can be tested without
- * a database. A thumbnail file with no row still counts: the files are half the
- * corpus and are git-ignored, so nothing else would notice them going.
+ * a database.
+ *
+ * **It used to take the thumbnail file count as well, and short-circuit on it.**
+ * Files on disk made a database "occupied" before the database itself was looked
+ * at, so a provably empty second database was refused -- and the refusal then
+ * advised bringing up a second database on its own port, which is exactly what
+ * the caller had already done. That read as a bug and was not one: while the
+ * storage directory was hardcoded into the checkout there was only ever one of
+ * them, so those files were *some* database's corpus and no load could tell
+ * which. The short circuit was a guard standing in front of the missing
+ * per-database storage.
+ *
+ * `THUMBNAIL_STORAGE_DIR` (#132, R1) is the thing it was guarding, so it comes
+ * out: a directory belongs to a database now rather than to a checkout, and
+ * files sitting beside a database with no rows in it are that database's
+ * orphans. The count does not stop being reported -- `scripts/load-corpus.js`
+ * prints it, says how many orphaned files it is about to replace, and still
+ * compares it against the manifest afterwards. It stops being a *refusal*,
+ * which is the only thing it was ever wrong about.
  *
  * @param {Object<string, ?number>} counts - From countCorpus.
- * @param {number} thumbnailFiles - From countThumbnailFiles.
  * @returns {boolean} True when something is there to lose.
  */
-function holdsCorpus(counts, thumbnailFiles) {
-    if (thumbnailFiles > 0) { return true; }
+function holdsCorpus(counts) {
     return CORPUS_TABLES.some((table) => (counts[table] || 0) > 0);
 }
 
