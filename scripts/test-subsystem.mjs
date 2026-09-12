@@ -108,6 +108,11 @@ const SUBSYSTEMS = {
             // another route: it watches what a suite leaves behind rather than
             // what a migration does.
             'corpus-guard',
+            // #152: the public entry pages, read off disk. Here rather than in
+            // an entry group of its own -- one suite does not need a group, and
+            // this is the same kind of check as `schema`: an invariant about
+            // what the repository contains rather than about what it serves.
+            'landing-copy',
         ],
     },
     media: {
