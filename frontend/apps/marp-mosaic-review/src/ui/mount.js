@@ -240,6 +240,7 @@ export function mount() {
 
   $('#railReset').addEventListener('click', () => actions.clearFilters());
   $('#railbtn').addEventListener('click', () => actions.toggleRail());
+  $('#chromebtn').addEventListener('click', () => actions.toggleTopChrome());
   $('#markAll').addEventListener('click', () => actions.markAllOnPage());
   $('#clearMarks').addEventListener('click', () => actions.clearMarks());
   /* The main button (#126 R3, R5): only what was marked, each tile by its own kind. */

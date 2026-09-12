@@ -74,12 +74,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* 100dvh tracks the visible viewport as mobile browser chrome shows and hides;
    100vh does not, which is what let the footer scroll away. */
-.app { display: grid; grid-template-rows: 44px 30px minmax(0, 1fr) 46px;
+/* The four row heights are named because #151 has to remove two of them in either layout,
+   and a second copy of `44px 30px ... 46px` in the phone query is a copy that drifts. */
+.app { --hdr-h: 44px; --sub-h: 30px; --foot-h: 46px;
+       display: grid; grid-template-rows: var(--hdr-h) var(--sub-h) minmax(0, 1fr) var(--foot-h);
        height: 100vh; height: 100dvh;
        /* a grid item's automatic minimum is its content, so without these the
           header's controls make the whole app wider than the screen */
        width: 100%; max-width: 100vw; overflow: hidden; }
 .app > * { min-width: 0; }
+/* The top chrome, out of the way (#151 R1). `display: none` rather than a zero-height
+   track: a 0px `.hdr` with `overflow: hidden` still answers `isVisible` and still takes
+   the tab key, so a reviewer could land focus on a control nobody can see. With both gone
+   the remaining two children auto-place into the two tracks below. */
+body.top-hidden .app { grid-template-rows: minmax(0, 1fr) var(--foot-h); }
+body.top-hidden .hdr, body.top-hidden .sub { display: none; }
 .hdr, .sub, .foot { overflow: hidden; }
 .body { min-width: 0; }
 .field { min-width: 0; }
@@ -175,6 +184,24 @@ body.rail-collapsed .railreset { display: none; }
 .railbtn { width: 20px; height: 20px; display: grid; place-items: center;
            border: 1px solid var(--mode-line); border-radius: 4px; color: var(--cyan-300);
            font-size: 10px; line-height: 1; background: none; }
+/* Same size and the same idiom as the rail's collapse, because it is the same gesture
+   pointed at the other piece of chrome -- and it sits beside it so there is one corner
+   where the screen is given back rather than two. It exists only where the screen is
+   short or narrow: on a desktop there is nothing here worth reclaiming (R6).
+
+   **`max-height`, not only `max-width`.** A phone in landscape is 915px wide, so the
+   narrow query never fires there -- and landscape is the case #151 was reported from. */
+.chromebtn { display: none; width: 20px; height: 20px; place-items: center;
+             border: 1px solid var(--mode-line); border-radius: 4px; color: var(--cyan-300);
+             font-size: 10px; line-height: 1; background: none; padding: 0; margin-right: 6px; }
+/* The glyph points at what the press will do: up to take the chrome away, down to bring
+   it back. In CSS rather than JavaScript so it cannot disagree with the class it reads. */
+.chromebtn::before { content: "\25B2"; }
+body.top-hidden .chromebtn::before { content: "\25BC"; }
+@media (max-width: 760px), (max-height: 600px) { .chromebtn { display: grid; } }
+/* In the collapsed strip the head is a block and the buttons stack, so the gap that
+   separates them in a row has to become a vertical one. */
+body.rail-collapsed .chromebtn { margin: 0 0 6px; }
 .vlabel { display: none; writing-mode: vertical-rl; font-size: 9px; letter-spacing: .11em;
           text-transform: uppercase; color: var(--muted); }
 .fcount { display: none; min-width: 19px; height: 19px; place-items: center; border-radius: 10px;
@@ -544,7 +571,7 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
    The mosaic is the application, so everything else gets out of its way. */
 @media (max-width: 760px) {
   .grid { --min-tile: 96px; }
-  .app { grid-template-rows: 40px 26px minmax(0, 1fr) 44px; }
+  .app { --hdr-h: 40px; --sub-h: 26px; --foot-h: 44px; }
   .hdr { gap: 8px; padding: 0 8px; }
   .hdr img { height: 20px; }
   .hdr .title { display: none; }
@@ -582,6 +609,11 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   body:not(.rail-collapsed) .railhead { display: flex; margin: -2px 0 8px; }
   body:not(.rail-collapsed) .railhead .t { display: block; }
   body:not(.rail-collapsed) .vlabel, body:not(.rail-collapsed) .fcount { display: none; }
+  /* The overlay is positioned against the viewport, not against `.body` -- nothing
+     between them is positioned -- so its 70px top is the header and sub-bar measured by
+     hand. With those gone it has to start at the top or it hangs 70px into the mosaic
+     with a 70px gap above it (R7). */
+  body.top-hidden:not(.rail-collapsed) .rail { inset: 0 auto 44px 0; }
 
   /* Nothing in the bars may wrap: they are fixed-height rows, so a second line
      is simply clipped. Anything that cannot fit is dropped instead. */

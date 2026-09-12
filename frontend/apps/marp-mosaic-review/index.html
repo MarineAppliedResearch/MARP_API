@@ -54,6 +54,12 @@
              question without leaving the mode the reviewer is working in. -->
         <button class="railreset" id="railReset" type="button" aria-label="Reset the filters"
                 title="Back to the default question, keeping the mode you are in">&#8635;</button>
+        <!-- The top chrome's toggle lives here rather than in the chrome it hides, which
+             is the whole of #151 R2: a control inside the header cannot bring the header
+             back. This strip is the only chrome on screen in both layouts, and it costs
+             the mosaic no tile area. Its label and icon are written by ui/chrome.js. -->
+        <button class="chromebtn" id="chromebtn" type="button" aria-expanded="true"
+                aria-label="Hide the header" title="Hide the header and the bar under it"></button>
         <button class="railbtn" id="railbtn" aria-label="Collapse filters" title="Collapse the filter rail and give the mosaic the space">&#9664;</button>
       </div>
       <span class="vlabel">Filters</span>

@@ -123,6 +123,10 @@ export const state = {
   loading: true,
   ready: false,
   railCollapsed: window.matchMedia('(max-width: 760px)').matches,
+  /* Hidden to start on a **short** viewport, which is the landscape phone #151 reported.
+     Height, not width: a phone in landscape is 915px wide, so every width-keyed rule in
+     this app -- the line above included -- misses the case the issue is about. */
+  topChromeHidden: window.matchMedia('(max-height: 600px)').matches,
 
   filters: { ...filters.DEFAULT_FILTERS },
   sort: { ...filters.DEFAULT_SORT },
@@ -1547,6 +1551,20 @@ export const actions = {
   toggleRail() {
     state.railCollapsed = !state.railCollapsed;
     fire('toggleRail', { collapsed: state.railCollapsed });
+    notify();
+  },
+
+  /**
+   * The top chrome, out of the way and back again (#151).
+   *
+   * One action for both bars: the header and the sub-bar go together because a reviewer
+   * asking for the screen back is not asking to keep half of it. The field grows, so the
+   * page size follows -- `refresh` rather than `resetForNewQuery`, which is what keeps the
+   * marks on the page through the toggle.
+   */
+  toggleTopChrome() {
+    state.topChromeHidden = !state.topChromeHidden;
+    fire('toggleTopChrome', { hidden: state.topChromeHidden });
     notify();
   },
 

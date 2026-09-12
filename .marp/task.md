@@ -82,6 +82,20 @@ scope.** So it is named here and not built.
   would keep the mode selector reachable but costs the pixels the issue is about.
 - **2026-09-12** -- No keyboard shortcut. The rail's collapse has none either, and adding
   one to `model/keys.js` is scope this issue did not ask for.
+- **2026-09-12** -- The same complaint is in the ML Dashboard and the public landing page,
+  and those come after this one. "The front workspace" that is to gain the avatar menu is
+  `frontend/apps/entry`, the public landing page -- the human, 2026-09-12: *"We weren't
+  talking about the dashboard, we're talking about the public landing page."*
+- **2026-09-12** -- `frontend/apps/dashboard` was deferred (*"I'm not worried about the
+  unstyled dashboard, at this point"*) and then brought back the same day, deliberately
+  small: the avatar menu, the logo, and the MARP look via `frontend/shared/assets/css/
+  shell.css` recoloured from the tokens -- *"But I don't wanna spend a huge amount of time
+  on it because we are gonna go through and refactor the whole admin dashboard page
+  later."* The Bootstrap layout, the page structure and the content are left alone. The
+  constraint is part of the instruction, not a caveat on it.
+- **2026-09-12** -- The avatar menu will be in three applications, so it is written once,
+  in `frontend/shared/`. Whether the two apps that already have their own adopt it is the
+  human's call and is not done silently.
 - **2026-09-12** -- `body.top-hidden`, not `chrome-hidden`: it names the half it hides and
   leaves the name free if A1 is answered yes.
 

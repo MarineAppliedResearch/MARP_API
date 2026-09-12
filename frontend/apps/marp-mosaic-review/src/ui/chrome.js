@@ -17,6 +17,18 @@ import { $, ICON } from './dom.js';
 export function renderChrome() {
   document.body.dataset.mode = state.mode;
   document.body.classList.toggle('rail-collapsed', state.railCollapsed);
+  document.body.classList.toggle('top-hidden', state.topChromeHidden);
+  /* The one control that says what it will do next rather than what it did (#151 R2).
+     The glyph is CSS, keyed on the same class; what cannot be CSS is the label a screen
+     reader reads, and a button reading `Hide the header` while the header is gone is the
+     kind of lie a toggle makes easily. */
+  const chromeBtn = $('#chromebtn');
+  if (chromeBtn) {
+    const verb = state.topChromeHidden ? 'Show' : 'Hide';
+    chromeBtn.setAttribute('aria-expanded', String(!state.topChromeHidden));
+    chromeBtn.setAttribute('aria-label', `${verb} the header`);
+    chromeBtn.title = `${verb} the header and the bar under it`;
+  }
 
   const m = MODES[state.mode];
   $('#modeNote').textContent = m.note;
