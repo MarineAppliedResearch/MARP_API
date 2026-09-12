@@ -209,9 +209,10 @@ Routes, against the real server rather than the render tier's shim:
 /api-docs                 -> 301      /developer-docs           -> 301  (trailing slash)
 ```
 
-R15 in numbers. The landing page went from **6,503px to 3,536px** on a desktop,
-and from 11,590px to 6,018px on a phone. `/how-it-works` is 4,841px, which is
-the length the argument needed and the reason it is not on the landing page.
+R15 and R18 in numbers, after two rounds of cutting. The landing page went from
+**6,503px to 2,553px** on a desktop, and from 11,590px to 3,202px on a phone.
+`/how-it-works` is 6,184px, which is the length the argument needed and the
+reason it is not on the landing page.
 
 ### Known gap in tier 2
 

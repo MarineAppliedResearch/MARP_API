@@ -115,7 +115,7 @@
         <a href="#the-gap">The Gap</a>
         <a href="#workflow-shape">The Workflow</a>
         <a href="#platform">Underneath</a>
-        <a href="#who-decides">Who Decides</a>
+        <a href="#applications">Applications</a>
         <button class="button button--outline button--compact" type="button" data-login-open>Login</button>
       </nav>
     </div>
@@ -419,7 +419,158 @@
       </div>
     </section>
 
-    <!-- Back to the applications, and the doors in. -->
+    <!--
+      Applications as evidence, at the end of the argument rather than on the
+      landing page. Two of them run here and carry a door; the rest are still
+      concepts, which is why they do not. See .application-card--live.
+    -->
+    <section class="page-section applications-section" id="applications" aria-labelledby="applications-title">
+      <div class="page-container page-container--wide">
+        <header class="section-heading reveal" data-reveal>
+          <p class="section-heading__eyebrow">Applications</p>
+          <h2 id="applications-title">Where people actually work.</h2>
+          <p class="section-heading__summary">
+            Six places to do a different part of the same job. They read and write
+            the same record, which is why work done in one turns up in the next.
+          </p>
+        </header>
+
+        <div class="application-grid">
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-video-annotation.webp" alt="Concept interface for the MARP Video Annotation Tool" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">01</span>
+              <h3>Video Annotation Tool</h3>
+              <p>Frame-accurate annotation of dive video against the navigation, so an observation knows where it happened.</p>
+            </div>
+          </article>
+
+          <article class="application-card application-card--live reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-mosaic-reviewer.webp" alt="The MARP Picture Mosaic Reviewer" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">02</span>
+              <h3>Picture Mosaic Reviewer</h3>
+              <p>Hundreds of candidates on one screen, so a reviewer can keep, correct or throw out a page at a time.</p>
+              <a class="application-card__open" href="/apps/marp-mosaic-review/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
+            </div>
+          </article>
+
+          <!--
+            The stereo sizing card has no photographed mockup, so its concept
+            interface is drawn here instead of shipped as another .webp. What it
+            shows is the actual idea: the same two points picked in a calibrated
+            pair, and the horizontal disparity between the panes is what the
+            length comes out of.
+          -->
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <svg class="card-mock" viewBox="0 0 270 200" role="img" aria-label="Concept interface for MARP Stereo Sizing">
+                <defs>
+                  <linearGradient id="mock-water" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#0a3c55"></stop>
+                    <stop offset="1" stop-color="#04192b"></stop>
+                  </linearGradient>
+                </defs>
+
+                <rect width="270" height="200" fill="#030f1d"></rect>
+
+                <!-- window chrome -->
+                <rect x="0" y="0" width="270" height="15" fill="#07233a"></rect>
+                <circle cx="9" cy="7.5" r="2.2" fill="#2a4a63"></circle>
+                <circle cx="17" cy="7.5" r="2.2" fill="#2a4a63"></circle>
+                <rect x="28" y="5" width="52" height="5" rx="2.5" fill="#12384f"></rect>
+
+                <!-- the two calibrated views -->
+                <g class="card-mock__pane">
+                  <rect x="7" y="22" width="120" height="112" rx="3" fill="url(#mock-water)"></rect>
+                  <rect x="145" y="22" width="118" height="112" rx="3" fill="url(#mock-water)"></rect>
+                  <path d="M7 116q30-12 60-4t60-8v26H7z" fill="#06202f" opacity="0.85"></path>
+                  <path d="M145 116q30-12 60-4t58-8v26h-118z" fill="#06202f" opacity="0.85"></path>
+                </g>
+
+                <text class="card-mock__tag" x="12" y="33">LEFT</text>
+                <text class="card-mock__tag" x="150" y="33">RIGHT</text>
+
+                <!-- same animal in both panes, offset by the disparity -->
+                <g class="card-mock__fish">
+                  <ellipse cx="62" cy="76" rx="26" ry="8"></ellipse>
+                  <path d="M36 76l-11-7v14z"></path>
+                  <ellipse cx="212" cy="76" rx="26" ry="8"></ellipse>
+                  <path d="M186 76l-11-7v14z"></path>
+                </g>
+
+                <!-- the measurement, bracketed across the animal in both views -->
+                <g class="card-mock__pick">
+                  <path d="M25 66v20M88 66v20M25 96h63"></path>
+                  <path d="M175 66v20M238 66v20M175 96h63"></path>
+                </g>
+
+                <!-- the two views are of the same thing at the same instant -->
+                <g class="card-mock__match">
+                  <path d="M25 57 L175 57"></path>
+                  <path d="M88 57 L238 57"></path>
+                </g>
+
+                <!-- readout -->
+                <rect x="7" y="142" width="256" height="24" rx="4" fill="#07263a"></rect>
+                <text class="card-mock__label" x="16" y="157">LENGTH</text>
+                <text class="card-mock__value" x="70" y="158">41.8 cm</text>
+                <rect x="150" y="149" width="48" height="10" rx="5" fill="#0d3f4f"></rect>
+                <rect x="206" y="149" width="48" height="10" rx="5" fill="#0d3f4f"></rect>
+
+                <rect x="7" y="174" width="150" height="6" rx="3" fill="#0d2c40"></rect>
+                <rect x="7" y="186" width="98" height="6" rx="3" fill="#0b2537"></rect>
+              </svg>
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">03</span>
+              <h3>Stereo Sizing</h3>
+              <p>Stereo imagery turned into measured lengths, recorded against the observation and analysed with everything else.</p>
+            </div>
+          </article>
+
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-data-processing.webp" alt="Concept interface for the MARP Data Processing Workspace" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">04</span>
+              <h3>Data Processing Workspace</h3>
+              <p>Getting survey data into the shape the rest of the work can read, the same way every time.</p>
+            </div>
+          </article>
+
+          <article class="application-card application-card--live reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-machine-learning.webp" alt="The MARP Machine Learning Dashboard" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">05</span>
+              <h3>Machine Learning Dashboard</h3>
+              <p>Training runs, the GPU workers doing them, and how a model behaves on real survey video.</p>
+              <a class="application-card__open" href="/apps/marp-ml-dashboard/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
+            </div>
+          </article>
+
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <img src="assets/images/app-reporting.webp" alt="Concept interface for MARP Automated Report Generation" loading="lazy">
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">06</span>
+              <h3>Automated Report Generation</h3>
+              <p>Building the deliverable out of the reviewed record instead of reassembling it by hand at the end.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- The close. -->
     <section class="final-cta" id="get-started" aria-labelledby="cta-title">
       <svg class="network-wave network-wave--footer" viewBox="0 0 1200 320" preserveAspectRatio="none" aria-hidden="true">
         <g class="network-wave__paths">
@@ -443,8 +594,8 @@
           the whole of it.
         </p>
         <div class="final-cta__actions">
-          <a class="button button--primary" href="/#applications">See the applications</a>
-          <button class="button button--outline" type="button" data-login-open>Login to MARP</button>
+          <button class="button button--primary" type="button" data-login-open>Login to MARP</button>
+          <a class="button button--outline" href="/api-docs">API Docs</a>
           <a class="button button--outline" href="/developer-docs">Developer Docs</a>
         </div>
       </div>

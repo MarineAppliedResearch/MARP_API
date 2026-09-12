@@ -4,7 +4,7 @@ The public face of MARP. Two documents, one stylesheet, one script.
 
 | File | Served at | Job |
 | --- | --- | --- |
-| `index.html` | `/` | Short. States the problem, shows one diagram, opens the applications, hands off. |
+| `index.html` | `/` | Short. The problem, one diagram, one closing block. Nothing else. |
 | `how-it-works.html` | `/how-it-works` | Long. The whole argument, for somebody who wants it. |
 
 Both routes are registered in `app.js`; the shared assets come from
@@ -16,11 +16,15 @@ no static-server step: these are plain documents that the API serves.
 ## Why there are two pages
 
 The landing page used to carry the whole story and ran to about six and a half
-thousand pixels. Nobody reads that far down a landing page, so the argument was
-cut at the point where it stops being a pitch and starts being an explanation.
-The band at the bottom of `index.html` is the seam. Anything that belongs to the
-explanation goes on `how-it-works.html`, which is allowed to be as long as it
-needs to be.
+thousand pixels. It is 2,553 now, and that took two rounds of cutting rather than
+one. Anything that explains rather than pitches belongs on `how-it-works.html`,
+which is allowed to be as long as it needs.
+
+**The application cards are on the long-form page, not here.** That is deliberate
+and it is the second thing somebody will want to undo. The landing page reaches
+them from the closing block and from the `Applications` item in the navigation,
+and `tests/landing-copy.test.js` fails if both of those ever go away, because
+removing them would strand every application behind a page nothing links to.
 
 ## What governs the writing
 
@@ -53,19 +57,24 @@ inside the review story, where a detection is a proposal and a biologist decides
 
 ## The application cards
 
-Six cards, in two rows of three. Two of the applications run in the browser here
+On `how-it-works.html`. Six cards, in two rows of three. Two of the applications run in the browser here
 and carry an `Open` door; the rest are concepts and do not. That door is the only
 status marker on the card, deliberately (#152, A1). The card images are mockups
 and stay mockups: a screenshot of the Picture Mosaic Reviewer would put real
 survey imagery and real species identifications on a public page (#152, A2). The
 alt text says `Concept interface` only for the ones that are concepts.
 
-**The Stereo Sizing Tool card has no photographed mockup.** Its concept interface
-is drawn in the markup as an SVG and styled by the `.card-mock__*` rules, rather
-than shipped as another `.webp`. What it draws is the actual idea: the same two
-points picked in a calibrated pair of cameras, with the horizontal offset between
-the two panes being what a length comes out of. Anything else added to this
-section without a screenshot should be drawn the same way.
+**The Stereo Sizing card has no photographed mockup.** Its concept interface is
+drawn in the markup as an SVG and styled by the `.card-mock__*` rules, rather than
+shipped as another `.webp`. Anything else added to this section without a
+screenshot should be drawn the same way.
+
+**A card says what comes out of an application, never how a person operates it.**
+This one said "pick the same two points in both cameras" and that was wrong to
+publish: the picking is expected to be done by a model, inside the same workflow,
+so the card would have been describing a process MARP intends to replace. The
+drawn mockup follows the same rule, which is why it shows a measurement bracket
+rather than a cursor placing points.
 
 ## Traps
 
@@ -80,6 +89,11 @@ section without a screenshot should be drawn the same way.
 - **`.hero h1 span` runs white to green across 72% to 92% of its own width**, so
   a short span puts the colour break in the middle of a word. Give it a whole
   line.
+- **The orbit rings on the capability diagram are spinning squares.** They are
+  square elements rounded to circles, so a rotation grows their layout box by up
+  to root two. At phone width that pushed the whole page sideways, which is why
+  `.platform-map` clips below 680px. It measured clean twice before it was
+  caught, so trust the render tier rather than a spot check.
 - **`app.js` is server-side**, so a running server does not pick up a new route
   until it is restarted. `express.static` re-reads these HTML files per request,
   which makes the asymmetry easy to misread as a broken route.

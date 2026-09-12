@@ -67,6 +67,14 @@ earn the architecture and the applications on the way down.
 - **R16 · The video player gets a section on the long-form page.** Frame-accurate
   review forwards and backwards, and why a browser cannot do it on its own. The
   claims come from `marp-video-player`'s own README, not from invention.
+- **R17 · An application card says what comes out of it, never how a person
+  operates it.** The first Stereo Sizing copy described the interaction: pick the
+  same two points in both cameras. That is wrong to publish, because the work is
+  meant to be done by a model later and the card would then be describing a
+  workflow MARP had moved on from. Describe the output and where it lands.
+- **R18 · The landing page carries the hero, one diagram and one closing block.**
+  Nothing else. The application cards live on the long-form page, and the landing
+  page reaches them through the close and through the navigation.
 
 ## Open assumptions
 
@@ -138,6 +146,22 @@ earn the architecture and the applications on the way down.
   markup** rather than shipped as another `.webp`, following the decision above
   about new visuals. The reference product it is modelled on is not named on the
   page, per R9.
+- **2026-09-12** — Second round of shortening, on the human's instruction after
+  seeing the split page rendered. The landing page was still too long at 3,536px.
+  The application cards moved to the long-form page and the two closing sections
+  became one, taking it to 2,553px. Now R18.
+- **2026-09-12** — The Stereo Sizing card is named for what it produces rather
+  than for a tool somebody drives, and its copy and its drawn mockup both stopped
+  describing a person picking points. The human's reason is the one that matters:
+  the picking is expected to be done by a model, inside the same workflow, so a
+  card that describes the manual interaction would be publishing a process MARP
+  intends to replace. Now R17.
+- **2026-09-12** — `.platform-map` clips at phone width. The orbit rings around
+  the hub are square elements rounded to circles **and they spin**, so their
+  layout box grows by up to root two as they turn: a 270px hub becomes a 394px
+  box in a 390px viewport and scrolls the whole page sideways. Pre-existing, and
+  intermittent enough that it measured clean twice before it was caught. The
+  render tier's no-sideways-scroll assertion is what holds it now.
 - **2026-09-11** — Each page carries its own icon sprite, holding only the
   symbols it draws. The alternative was one shared sprite through
   `partials.js`, which fetches and assigns `innerHTML`: a `<use>` resolved
@@ -153,9 +177,10 @@ Two pages now, not one (R15).
 1. **Hero** — the gap, stated. Keeps the diver photograph, the logo and the wave.
 2. **What MARP changes** — two lanes of the same five stages, queued against
    overlapping. The one diagram this page gets (R2, R3).
-3. **Applications** — the cards, unchanged in shape (A1, A2).
-4. **Keep reading** — the handoff band.
-5. **Close** — `Explore. Inform. Protect.`, login, API docs, developer docs.
+3. **Close** — one block doing two jobs: `Explore. Inform. Protect.`, the
+   outcome the page opened on, and the door to the long-form page. The handoff
+   band and the call to action were two sections saying the same thing in
+   sequence, and the page did not have the room (R18).
 
 **`/how-it-works` — `frontend/apps/entry/how-it-works.html`**
 
@@ -166,7 +191,8 @@ Two pages now, not one (R15).
    paragraph (R1, and A4's folded-in idea).
 5. **Going back one frame** — the video player (R16).
 6. **Biologists lead. MARP amplifies.** — R5 and R6.
-7. **Close** — back to the applications, login, developer docs.
+7. **Applications** — the six cards, moved here off the landing page (R18).
+8. **Close** — login, API docs, developer docs.
 
 Then: `landing.css` loses section 6 (the five numbered boxes) and section 9 (the
 capability strip), and gains the lanes, the explainer, the pull quote, the

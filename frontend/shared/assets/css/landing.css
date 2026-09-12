@@ -1731,7 +1731,13 @@ h3 {
     margin-left: 0;
   }
 
+  /* The orbit rings are square elements rounded to circles, and they spin, so
+     their layout box grows by up to root two as they turn. At 270px that is a
+     394px box in a 390px viewport, which scrolls the whole page sideways. The
+     connectors are hidden at this width anyway, and what gets clipped is the
+     transparent corner of a rotating square rather than anything drawn. */
   .platform-map {
+    overflow: hidden;
     grid-template-columns: 1fr;
     grid-template-areas:
       "hub"

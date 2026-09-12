@@ -266,10 +266,19 @@ describe('landing page copy', () => {
         for (const target of ['/api-docs', '/developer-docs', '/apps/marp-mosaic-review/', '/apps/marp-ml-dashboard/']) {
             expect(everywhere).toContain(target);
         }
+    });
 
+    /**
+     * R11 and R15 together. The application cards moved off the landing page to
+     * keep it short, so the landing page no longer carries the doors itself and
+     * has to carry the way to them instead. Without this, cutting the handoff
+     * would strand every application behind a page nothing links to.
+     */
+    it('points the landing page at the long-form page in more than one place', () => {
         const landing = hrefs(raw['index.html']);
+        const onward = landing.filter((href) => href.startsWith('/how-it-works'));
 
-        expect(landing).toContain('/apps/marp-mosaic-review/');
-        expect(landing).toContain('/apps/marp-ml-dashboard/');
+        expect(onward.length).toBeGreaterThanOrEqual(2);
+        expect(landing).toContain('/how-it-works#applications');
     });
 });
