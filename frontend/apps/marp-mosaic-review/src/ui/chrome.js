@@ -116,9 +116,13 @@ function renderCommits({ m, markedCount, acceptCount, eligible }) {
   /* What each will really do, split by outcome -- so neither can offer to act on rows it
      is about to skip. A commit that would do nothing is disabled and says why, rather
      than looking normal and quietly achieving nothing. */
-  const swept = commitOutcome({ mode: state.mode, rows: state.rows, marks: state.marks });
+  const swept = commitOutcome({
+    mode: state.mode, rows: state.rows, marks: state.marks,
+    takenBack: state.takenBack, outcomes: state.outcomes
+  });
   const picked = selectionOutcome({
-    mode: state.mode, rows: state.rows, marks: state.marks, touched: state.touched
+    mode: state.mode, rows: state.rows, marks: state.marks, touched: state.touched,
+    takenBack: state.takenBack, outcomes: state.outcomes
   });
 
   paintCommit(sweep, {
@@ -134,6 +138,9 @@ function renderCommits({ m, markedCount, acceptCount, eligible }) {
       : oneButton
         ? `Permanently deletes the ${markedCount} marked tiles. The ${eligible - markedCount} unmarked tiles are untouched.`
         : `Every tile on this page: accepts ${swept.accepts}, flags ${swept.flags}`
+          /* Named rather than folded into the accepts: this button withdraws a take-back
+             too (R7), and a withdrawal removes a decision where the other two make one. */
+          + (swept.withdraws ? `, takes back ${swept.withdraws}` : '')
           + (swept.skips ? `, and skips ${swept.skips} with no imagery.` : '.')
   });
 
@@ -154,7 +161,12 @@ function renderCommits({ m, markedCount, acceptCount, eligible }) {
           + 'this button only commits decisions you made here.'
         : 'Mark a tile first: a click or tap flags it, a right click or a double tap accepts it.')
       : `Commits only these ${picked.acts}: accepts ${picked.accepts}, `
-        + `flags ${picked.flags}. Every other tile is left alone.`
+        + `flags ${picked.flags}`
+        /* Named rather than folded into the other two: a withdrawal removes a decision
+           and the other two make one, so a reviewer counting tiles would otherwise be
+           told a take-back was an acceptance (#135 R5). */
+        + (picked.withdraws ? `, takes back ${picked.withdraws}` : '')
+        + '. Every other tile is left alone.'
   });
 }
 

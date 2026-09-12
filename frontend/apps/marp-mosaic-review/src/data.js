@@ -1091,6 +1091,16 @@ export const MarpData = {
     const marked = marks instanceof Map
       ? marks
       : new Map(marks.map((m) => [m.observation_id, m]));
+    /**
+     * **A commit does not move `version`, because the endpoint's does not** (#135 R6).
+     *
+     * This used to add one to every row it wrote, and the store mirrored it. The endpoint
+     * writes `observation_reviews` and `observation_review_current` and never `UPDATE`s
+     * `observations`, so the trigger that maintains the token never fires -- and a client
+     * built against this fixture sent a version one too high on the second commit of the
+     * same tile and was told it had a conflict. A species correction *does* edit the row
+     * and does still bump it, here and there, which is the distinction.
+     */
     const withdrawn = new Set(withdraw);
 
     for (const entry of observations) {
@@ -1163,7 +1173,6 @@ export const MarpData = {
         row[dim.column] = null;
         row[reasonColumn] = null;
         row[reviewerColumn] = null;
-        row.version += 1;
         reverted.push({ observation_id: id, outcome: 'withdrawn' });
         continue;
       }
@@ -1177,7 +1186,6 @@ export const MarpData = {
         row[reviewerColumn] = ME.user_id;
         if (mode === 'scientific') row.flagged_at = new Date().toISOString();
 
-        row.version += 1;
         flagged.push({ observation_id: id, outcome: exception });
         if (wasAccepted) reverted.push({ observation_id: id, outcome: exception });
         continue;
@@ -1187,7 +1195,6 @@ export const MarpData = {
       row[reasonColumn] = null;
       row[reviewerColumn] = ME.user_id;
       reviewed.push({ observation_id: id, outcome: accepted });
-      row.version += 1;
     }
 
     return {

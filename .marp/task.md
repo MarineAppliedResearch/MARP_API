@@ -1,135 +1,338 @@
 ---
-task: MarineAppliedResearch/MARP_API#138
-repos: [marp-api]
-status: verifying
+task: MarineAppliedResearch/MARP_API#135
+repos: [MARP_API]
+status: design
 needs: []
 ---
 
+# Taking a promotion back, and committing the take-back
+
 ## Goal
 
-Once the reviewer commits a delete, the observation is gone from the database — no
-provenance row, and its keyframes and whole review history went with it. The tile stays on
-screen so the reviewer can see what they just destroyed, but it stops being something they
-can act on: no marking, no accept gesture, no correction panel, no double tap. Today every
-one of those still works on a tile whose row no longer exists, and a decision committed
-about it comes back as a `not-found` skip whose stated meaning is *"somebody else deleted
-this while you were working"* — when in fact the reviewer deleted it themselves a moment
-ago.
+In Training mode a reviewer right-clicks a tile to promote it and presses **Commit
+Marked**; the tile should read `PROMOTED`. Clicking it again should read as *taking the
+promotion back*, and committing that should record the withdrawal — leaving the tile with
+no training decision on screen and no projection row in the database. Today only the first
+of those three steps works, and it works only against a server new enough to understand
+what a right-click means.
+
+## What is actually broken, which is not what the issue guessed
+
+The issue proposed that the commit endpoint classifies a promotion as `reverted`. **It does
+not, on current `develop`.** Read in the code and confirmed by tests that already exist:
+
+- `repository/mosaic-commit.repository.js` — an `accept` mark is not `excepted()`, so it is
+  written as `mode.accepts` (`promoted`) and reported through `out.accept()` into
+  `reviewed` as `{observation_id, outcome: 'promoted'}`. `reverted` is only ever produced
+  by a withdrawal, or alongside `flagged` when an exception replaces an acceptance.
+- `tests/mosaic-commit.test.js`, *"promotes an accept mark on the training route"*, asserts
+  exactly that.
+
+**The badge the reviewer saw was `TAKING BACK`, the derived one — not `TAKEN BACK`.** The
+issue eliminated that branch on the grounds that an accept mark survives its own commit, so
+`!marked` cannot hold. That is true only when the commit comes back `promoted`. It comes
+back `excluded` from a server that predates #126 (`cf83352e`, 2026-09-10, the day before the
+report — and the issue itself records that *"the server-side JavaScript on that process was
+older"*), because such a server reads every mark as an exception. Then:
+
+`outcome = 'excluded'` → `survives()` in `model/page.js` drops the accept mark, because the
+outcome is not `acceptedValue('training')` → the tile is `!marked`, `touched`, and its
+outcome equals `pendingException('training')` → `takingBack` is true → **TAKING BACK**.
+
+So **step 1 is already fixed on `develop`** by the server half of #126, and what #135 leaves
+is a regression tripwire for it plus the two steps that were never built:
+
+- **Step 2 does nothing visible.** Right-clicking a committed promotion removes the accept
+  mark; `takingBack` only ever compares against the mode's *exception*, so it stays false
+  and the tile keeps drawing `PROMOTED` from its outcome. The click looks like it did
+  nothing, which is the one thing the app's own notes say must never happen to a committed
+  tile.
+- **Step 3 cannot be reached.** `selectedRows` requires a mark, so an unmarked take-back is
+  not in what **Commit Marked** sends, and the button is disabled. Nothing in the client has
+  ever sent `withdraw`, and `applyCommit` reads only `reviewed`, `flagged` and `conflicted`
+  — so even a withdrawal that was sent would leave the outcome saying `promoted`.
 
 ## Requirements
 
-- **R1** — Whether an observation has been destroyed in this sitting is a rule in `model/`,
-  not a condition written into a click handler. One predicate, so every caller asks the
-  same question.
-- **R2** — A destroyed tile refuses the exception gesture (left click / first tap):
-  `toggleMark` changes nothing and fires nothing. Not *"the id is absent from
-  `state.touched`"* — it is already there, because the reviewer marked the tile before
-  deleting it; what has to hold is that the dead click changes nothing.
-- **R3** — A destroyed tile refuses the accept gesture (right click on a pointer, double
-  tap on touch): `acceptMark` changes nothing and fires nothing. It is **not** the A4
-  refusal shape — no per-tile refusal message; a destroyed tile stops being a target rather
-  than explaining itself on each click.
-- **R4** — A destroyed tile refuses the correction panel by either route: `openPicker`
-  (the badge) and `openCorrection` (the "was X" chip) leave `state.picker` null. This
-  matters even though the `DELETED` badge carries no `data-badge`, because `openCorrection`
-  creates a mark of its own on the way in.
-- **R5** — A page-level mark does not reach a destroyed tile: `markAllOnPage` skips it, so
-  the next commit cannot be handed a row the server will answer `not-found` for.
-- **R6** — The tile says why it is inert. Its tooltip states that the observation was
-  removed from the database and nothing more can be recorded about it, instead of the
-  ordinary confidence/dive/timecode line.
-- **R7** — The tile keeps its picture and stays visible. The cascade deletes database rows
-  only; the JPEG is still there, and seeing what was destroyed for the rest of the sitting
-  is the point. It disappears on the next query, which is existing behaviour and correct.
-- **R8** — Assistive technology is told: the tile carries `aria-disabled="true"`. It stays
-  a real `<button>` in the DOM and a real click still reaches the store, which is what makes
-  "the click does nothing" observable at the render tier rather than swallowed by CSS.
+- **R1** — A promotion committed with **Commit Marked** leaves the tile reading `PROMOTED`.
+  Regression tripwire for step 1: a commit answering `reviewed: [{outcome: 'promoted'}]`
+  keeps the accept mark and draws the promoted badge; one answering `excluded` is what the
+  reviewer reported and must not be what a current client and current server produce.
+- **R2** — Un-marking a tile whose *acceptance* this sitting recorded, or whose acceptance
+  the record already carried, derives the take-back state, the same way un-marking an
+  exception already does. The tile says so rather than continuing to read `PROMOTED`.
+- **R3** — **Commit Marked** acts on those take-backs: they are sent as `withdraw`, so the
+  endpoint deletes the projection row in `observation_review_current` and logs a `withdrawn`
+  decision in `observation_reviews`, the log. The history is kept; the current decision is absent,
+  which is what *undecided* means.
+- **R4** — After that commit the take-back label is gone and the tile shows no training
+  decision, in the page and on a re-read from the endpoint.
+- **R5** — The button's count and disabled state include the take-backs it will commit, or
+  R3 is unreachable by clicking.
+- **R6** — A commit does not move `observations.version`, so the **second** commit of a tile
+  in one sitting is not refused as a conflict. The client added one itself, which was true
+  of `src/data.js` and false of the endpoint — a review commit writes `observation_reviews`
+  and `observation_review_current` and never `UPDATE`s `observations`, so the trigger that
+  maintains the token never fires. Found while tracing R3, which is a second commit, and
+  answered as its own defect (A3).
+
+The three that follow are the human's correction of 2026-09-12, and they supersede A2's
+first answer rather than extending it.
+
+- **R7** — **Either commit button applies the take-back.** A tile the reviewer has taken
+  back is *withdrawn* by **Commit Marked** and by the page sweep alike. The sweep does not
+  re-apply the decision that was just taken back, and it does not accept the tile instead:
+  a take-back is an instruction, and the sweep's rule that *everything unmarked is
+  accepted* does not reach a tile the reviewer has explicitly withdrawn. This replaces the
+  branch's earlier rule that the two buttons meant different things by the same gesture,
+  and it replaces #126's R7 in the other direction as well.
+- **R7a** — The take-back covers **any decision already on the record**, whether this
+  sitting committed it or it arrived with the page from an earlier one. Measured rather
+  than assumed — see below; this holds on the branch already and R7a is its tripwire, at
+  the tier that can see it.
+- **R7b** — After that commit the tile is in the **vanilla state for its mode** —
+  unreviewed in Scientific, undecided in Training. Not accepted, not reviewed, not
+  promoted, no `TAKING BACK`, and no `observation_review_current` row on a re-read.
+
+- **R8** — **A click on a tile carrying a committed decision takes that decision back**,
+  whichever of the mode's two values it is. `REVIEWED` and `PROMOTED` behave exactly as
+  `FLAGGED` and `EXCLUDED` already do. It is a **toggle against the record, not a cycle**:
+  clicking again puts the decision back rather than advancing to the exception, and a click
+  means "flag this" only once the record carries no decision. So there is **no one-click
+  route from a committed acceptance to a flag** and that is intended — taking back is a
+  decision the reviewer commits, and only then can they flag. The gesture is the ordinary
+  **left click or tap**; the right click is unchanged. A6 and A8.
+
+## What the API tier actually showed
+
+Run against a **copy** of the development corpus — `marp db dump`, a second database on its
+own port, `marp db load` into it, and the API served from a throwaway worktree so the shared
+`storage/` was never touched. The supervisor's diagnosis going in was that `existingState`
+cannot see a decision made in an earlier sitting, because *"on the real API a review commit
+never writes that column"*. **That is wrong, and it is worth writing down so nobody fixes
+it twice.** `repository/mosaic.repository.js`'s `ROW_COLUMNS` selects
+`rc.decision AS review_decision` and `rt.decision AS training_decision` straight out of
+`observation_review_current`, so a decision from any earlier sitting arrives *on the row*.
+What the endpoint does not do is write that column back **after a commit in this sitting** —
+which is the #131 defect, and is already handled by preferring `state.outcomes`.
+
+Measured, in Training, on a page holding one observation:
+
+```
+already promoted, loaded fresh:   arrival  marked=false  badge=PROMOTED · you
+                                  r-click  marked=true   badge=PROMOTED
+                                  r-click  marked=false  badge=TAKING BACK      <- R7a holds
+
+promoted in this sitting:         promote           badge=PROMOTED
+                                  Commit Marked     badge=PROMOTED    record=promoted
+                                  r-click           badge=TAKING BACK
+                                  Commit Marked     badge=(none)      record=null   <- R7b holds
+                                  page sweep        badge=PROMOTED    record=promoted <- R7 broken
+```
+
+So **one of the three rules was actually broken**: the sweep put the promotion straight
+back. The other two already held on this branch.
+
+**One thing that is not settled, and is deliberately not being guessed** — see A6.
 
 ## Open assumptions
 
-- [ ] **A1 · architectural · non-blocking** — *Destroyed is derived from the commit
-  outcome (`state.outcomes.get(id) === 'deleted'`), not from a new session-wide set of
-  destroyed ids.* Proposed, with the reasoning: that map has exactly the lifetime of the
-  `DELETED` badge the tile already draws, so inert and DELETED are the same fact rather
-  than two facts that can disagree. The alternative buys nothing reachable — outcomes are
-  parked per mode, but `cache.keyFor` includes the mode, so a mode switch empties the cache
-  and re-queries, and the deleted row does not come back from the server; a filter change
-  clears the outcomes *and* the cache for the same reason. A session-wide set would only
-  differ if a destroyed row could return to the screen, and no path found does that.
-- [ ] **A2 · product/UI · non-blocking** — *The tooltip wording is the issue's own:
-  "Removed from the database — nothing more can be recorded about it."* Proposed as
-  written, prefixed with the species name the tooltip already leads with.
-- [ ] **A3 · product/UI · non-blocking** — *The picture stays exactly as it is drawn
-  today* — greyscale, darkened and hatched by `.tile.out-deleted`, which already exists.
-  The issue asks whether it still shows its picture; it does, and this changes nothing.
-- [ ] **A4 · behavioural · non-blocking** — *`retryFailedThumbnails` is left alone.* A
-  page-level retry can still name a destroyed row whose thumbnail had failed, and the
-  endpoint would answer for a row that is gone. It is not one of the gestures #138 names,
-  it costs a request rather than a record, and widening the change to cover it is scope
-  this task did not ask for. Named here rather than fixed.
+- [x] **A1 · product/UI · blocking** — answered 2026-09-12: **both modes**, and **widened
+  the same day**: it is not only an acceptance and not only a decision made in this
+  sitting. *"Taking back is not only flagged and committed just now, but if you loaded it
+  and it was already flagged, you should be able to do taking back on it as well."* So the
+  rule is **any decision already on the record**, whichever mode and whichever sitting put
+  it there — see **R7a** below, and *What the API tier actually showed* for what that
+  turned out to cost, which was less than expected. Taking back an
+  acceptance applies to Scientific as well as Training; a withdrawal in the scientific case
+  is the `reviewed` decision coming off the record. Original question: **Does this apply to
+  Scientific mode as well?** The
+  issue is written entirely about Training and promotion. The mechanism is symmetric — an
+  acceptance in Scientific is `reviewed` — and building it for one mode only is a rule with
+  an exception in it. Build it for both, or for Training alone as written?
+
+- [x] **A2 · behavioural · blocking** — **corrected 2026-09-12, later the same day. The
+  answer below was framed badly and the correction reverses half of it.** What stands:
+  taking an exception back through **Commit Marked** withdraws it. What is wrong: the
+  sentence saying *"the page sweep is not the model here and is unchanged, so the two
+  buttons now mean different things by the same gesture"*. They do not. **Either commit
+  button applies the take-back** — the reviewer withdrew a decision and it is withdrawn by
+  whichever button they press. See **R7** below, which is the corrected rule, and the
+  measured evidence for why it matters is in *What the API tier actually showed*. The
+  superseded answer, kept so the history is visible: **withdraw it.** The reviewer
+  decided nothing about that observation and the record says so; it does not become an
+  accept. The page sweep is not the model here and is unchanged, so **the two buttons now
+  mean different things by the same gesture** — deliberately, and said out loud in the code
+  and in the report. This reverses #126's R7. Original question: **What should taking back
+  an *exception* through Commit Marked do?** Today nothing: an unmarked tile is not in the selection, so the main
+  button ignores it, while the page *sweep* records it as accepted (`reviewed`/`promoted`).
+  Once the main button carries take-backs, an un-marked flag has to mean something there.
+  Two coherent answers: (i) *withdraw* it, symmetric with R3 and consistent with "this
+  button decides only what I touched, and I have decided nothing about this one"; or (ii)
+  *accept* it, consistent with what the sweep does with the same gesture. They record
+  different things in the database, so this is not a detail. The sweep is unchanged either
+  way.
+
+- [x] **A3 · behavioural · blocking** — answered 2026-09-12: **fixed in this branch, the
+  small way.** The store stops bumping and `src/data.js` is aligned to what the endpoint
+  actually does. The commit response is **not** changed to carry the new version: that is a
+  published contract surface and it is not being changed here. It is a real defect rather
+  than setup, so it is **R6** below with its own test, and the test commits twice because
+  committing once cannot see it. Original finding: **The client bumps `row.version` after a
+  commit and the endpoint does not move it, so step 3's second commit comes back
+  `conflicted`.**
+  `store.js` does `row.version += 1` for every row a commit gave an outcome, which is
+  correct against `src/data.js` (the fixture bumps) and wrong against the API: a review
+  commit writes `observation_reviews` and `observation_review_current` and never `UPDATE`s
+  `observations`, and `observations.version` moves only on that trigger. So the second
+  commit of the same tile in one sitting sends a version one ahead of the live row and is
+  refused for a conflict that did not happen. **Step 3 is a second commit, so #135 cannot be
+  delivered without settling this.** The small fix is to stop the store bumping and align
+  `src/data.js` to the endpoint by not bumping either; the alternative is a contract change
+  making the commit response carry the new version, which is *ask first* under the
+  permissions. Which, and is it in this task or its own issue?
+
+- [x] **A4 · product/UI · non-blocking** — Assumed: the take-back of an acceptance draws the
+  **same `TAKING BACK` badge** the exception take-back draws, with the accepted value's
+  colour and icon rather than the exception's (violet tick for a promotion, not the amber
+  exclusion mark), since it is the promotion being withdrawn. Say if it wants different
+  wording — `WITHDRAWING` reads more precisely, at the cost of a second vocabulary for one
+  state.
+
+- [x] **A5 · behavioural · non-blocking** — Assumed: *"click it again"* in step 2 is the
+  **same gesture that promoted it** — a right-click (a double tap on touch), toggling the
+  accept mark off. A left-click is an exclusion mark, which is a new decision rather than a
+  take-back, and stays what it is.
+
+- [x] **A7 · behavioural · non-blocking** — **Delete Mode is out of scope**, said by the
+  human on 2026-09-12 and recorded rather than built for. A destroyed row has nothing to
+  take back, and #138 already made a committed delete refuse every gesture. It falls out of
+  the code rather than needing a special case: `acceptedValue('delete')` and
+  `pendingException('delete')` are both null, so `takesBack` answers false for either kind,
+  and `commitOutcome`'s Delete branch returns `withdraws: 0`. Nothing in Delete can enter
+  `state.takenBack`, and `src/api/index.js` drops a `withdraw` list on the delete route in
+  any case, because the endpoint refuses one.
+
+- [x] **A6 · product/UI · blocking** — **answered 2026-09-12, and it is the defect he was
+  reporting all along.** He tested this branch in both modes:
+
+  > *"I am in science mode... something that shows as reviewed and I click it, it just
+  > switches to flagged. Something that shows as reviewed and I click it, if it's already
+  > been committed and it shows as reviewed, I click it — it should go taking back."*
+  > *"Something already promoted in training mode, I click it and it just goes straight to
+  > excluded, and it should go to taking back. Now let's see if it was excluded and I click
+  > it — it does do taking back."*
+
+  **The rule is a toggle against the record.** While a committed decision is on the record
+  a click is about *that decision* and nothing else; a click means "flag this" only once
+  the record carries nothing. `REVIEWED` and `PROMOTED` behave exactly as `FLAGGED` and
+  `EXCLUDED` already do. See **R8**.
+
+  **It is the left click, not the right click** — this assumption was originally written up
+  as an accepted tile needing two *right* clicks, and that framing was wrong. The report is
+  about the ordinary click/tap and about the tile changing decision rather than being
+  withdrawn. The right-click gesture is unchanged.
+
+  He confirmed a decision made in the sitting and one loaded straight from the database
+  behave identically, which they do.
+
+- [x] **A8 · behavioural · blocking** — **superseded before it was built, 2026-09-12.** The
+  guess was that clicking a tile already reading `TAKING BACK` applies the mode's exception,
+  so `REVIEWED → click → TAKING BACK → click → FLAGGED`, on the reasoning that a take-back
+  swallowing the click for ever would leave no way to flag a reviewed tile. Overturned:
+
+  > *"No. No. No. If it's reviewed and you click and it goes to taking back, and then you
+  > click it again, it should go right to where it was already. It shouldn't go to flagged.
+  > If you reviewed, click and go to taking back, and then you hit commit, then it should
+  > clear. And if you hit it again, it should be flagged."*
+
+  So it is a **toggle, not a cycle**, and the way to a flag is through a commit:
+
+  ```
+  REVIEWED  --click-->  TAKING BACK  --click-->   REVIEWED     back where it was
+  REVIEWED  --click-->  TAKING BACK  --commit-->  (vanilla)    the decision is cleared
+  (vanilla) --click-->  FLAGGED                                now an ordinary mark
+  ```
+
+  Two consequences, written out so they are not undone by somebody being helpful:
+  **there is no one-click route from a committed acceptance to a flag, and that is
+  intended** — taking back is a decision the reviewer commits, and only then can they flag;
+  and **after the take-back commits the tile is in the vanilla state for its mode**, which
+  is R7b and is unchanged. Nothing was built to the superseded guess.
 
 ## Decisions
 
-- **2026-09-12** — The guard goes in the store actions, reading one rule from `model/`,
-  rather than in `ui/mount.js`. The issue is explicit about this: a guard in the click
-  handler alone leaves `toggleMark`, `acceptMark` and `openCorrection` each reachable by
-  another path (the picker's own controls, the keyboard, the console).
-- **2026-09-12** — Two of the five refusals are unreachable today and are kept anyway.
-  `acceptMark` (R3) cannot be reached because destroyed tiles exist only in Delete Mode and
-  Delete Mode has no accepted value (#126 A2); `openPicker` (R4) needs an exception mark,
-  which a destroyed tile can no longer have. `openCorrection` and `toggleMark` and
-  `markAllOnPage` are all reachable. The guards are one named question asked in five
-  places rather than four correct paths and a fifth that depends on an unrelated rule
-  staying true.
-- **2026-09-12** — The tile is not `disabled` and does not get `pointer-events: none`.
-  Either would make a click at the render tier a Playwright error rather than a click that
-  does nothing, which is the behaviour actually being asserted. `aria-disabled` says the
-  same thing to assistive technology without hiding the defect from its own test.
+- **2026-09-12** — **The take-back is recorded, not derived**, and that is a change of shape
+  rather than of scope. Derived from marks, touches and outcomes it cannot be right: an
+  unmarked, touched tile carrying an acceptance is either a promotion whose accept mark has
+  just come off or a tile the sweep accepted after a flag came off, and those want opposite
+  answers. The first implementation derived it and turned an existing render check red — the
+  second sweep in *a committed page is still editable* left the tile reading TAKING BACK.
+  `state.takenBack` holds the ids; `takesBack()` decides what goes in, on the rule that the
+  **kind** removed must match the decision it would be undoing; a new mark or a commit takes
+  one out. That also settles the case the issue's sequence does not mention — flag, sweep,
+  unflag, sweep — in the direction the existing test already asserted, so it needed no new
+  product decision.
+- **2026-09-12** — A4 landed one word differently from how it was recorded, and this is the
+  judgement call. The take-back badge keeps the **mint** `b-rev` colour, which is what a
+  take-back already looks like here and what the tile's own dashed outline is, and takes the
+  **icon** of the decision being withdrawn. Drawing the badge violet — the PROMOTED colour —
+  would have put "this is promoted" in the one slot that is saying it is about to stop
+  being, inside a mint outline. The tooltip names the decision, so nothing is lost.
+- **2026-09-12** — The issue's diagnosis is not adopted. The endpoint does not classify a
+  promotion as `reverted`; the reported badge is the derived `TAKING BACK`, reachable only
+  through a pre-#126 server. Recorded here rather than acted on, so the fix is not aimed at
+  code that is already correct.
 
 ## Plan
 
-1. `model/page.js`: one predicate, `isDestroyed(outcomes, id)`, beside the other outcome
-   rules. Unit test it.
-2. `store.js`: guard `toggleMark`, `acceptMark`, `openPicker`, `openCorrection`; skip
-   destroyed rows in `markAllOnPage`.
-3. `ui/tile.js`: the tooltip and `aria-disabled` on a destroyed tile.
-4. Unit test the rule (R1); contract-tier checks that the store refuses each gesture
-   (R2–R5); render-tier check that clicking a committed-deleted tile changes nothing on
-   screen (R2, R6, R8).
+Written against the answers above; the shape does not change, only which modes and which
+verb A1 and A2 settle.
+
+1. `model/modes.js` — a take-back derivation that knows both the mode's exception and its
+   accepted value, so `ui/tile.js` and the button's rule ask one question rather than two
+   that can disagree.
+2. `ui/tile.js` — draw it for an acceptance being withdrawn (A4).
+3. `model/modes.js` — `selectedRows` / `selectionOutcome` carry the take-backs, so the
+   button says what it will do and is enabled when it will do it (R5).
+4. `store.js` — send them as `withdraw`; `model/page.js` — fold `reverted` in `applyCommit`
+   so the outcome stops saying `promoted` after a withdrawal (R4).
+5. Whatever A3 settles about the version.
 
 ## Acceptance criteria
 
-- In Delete Mode, marking two tiles and committing leaves both showing `DELETED`; clicking
-  either one afterwards adds no `marked` class, no mark badge and no entry in
-  `state.marks`.
-- Right-clicking one of them does nothing; the correction chip and the badge open no panel.
-- "Flag all on page" after a delete commit leaves the destroyed tiles unmarked.
-- Hovering a destroyed tile explains that nothing more can be recorded about it.
-- `npm run test:unit` green; `npm run test:e2e` green at both viewports.
+- Right-click, **Commit Marked** → `PROMOTED`, and the mark survives (R1).
+- Right-click again → the tile says the promotion is being taken back (R2).
+- **Commit Marked** → the label is gone, the tile shows no training decision, and a re-read
+  from the endpoint has no `observation_review_current` row for that observation and purpose
+  (R3, R4).
+- The button is enabled and its count includes the take-back (R5).
 
 ## Test plan
 
-- **R1** — `tests/unit/model.test.mjs`, *"R1: an observation a commit destroyed is
-  destroyed, and nothing else is"*. Proved red first: `page.isDestroyed is not a function`.
-- **R2–R5** — `tests/requirements.js`, four checks under *Delete mode*, each driving a real
-  commit through the confirmation rather than writing an outcome by hand. Three went red
-  against the old store; R3 is a pin rather than a tripwire and says so in its comment.
-- **R2, R3, R4, R5, R6, R7, R8** — `tests/e2e/render.spec.mjs`, *"a tile whose row has been
-  destroyed"*, five tests. Red against the old files, on `class="tile marked"` drawn over a
-  destroyed observation. R5 is desktop-only: `.markall` is `display: none` under the phone
-  media query, so the page-level mark is not a gesture that exists there.
-- **Not covered** — the API tier. Nothing here is in the gap between what a commit
-  recorded and what the row still says: the refusal reads the commit's own answer, and both
-  backings put the same `deleted` outcome there (`data.js:1145`,
-  `repository/mosaic-commit.repository.js:942`). A `tests/api/` case would destroy a real
-  observation from the corpus to assert a client-side refusal, and there is nothing to
-  restore it with.
+Filled in at G3.
+
+The tiers this needs, named now because choosing wrong is how this gets reported twice:
+`tests/unit/` for the derivation and for what reaches the wire (`api-requests.test.mjs`
+asserts the *serialised* body, so a `withdraw` that never leaves the client is visible);
+`tests/e2e/render.spec.mjs` for the badges, because every rendering defect in this app has
+passed the store-level checks; `tests/api/` for R4's database half, because the fixture
+writes the row's status column in place and the endpoint does not — and that gap is the
+whole reason that tier exists. `npm run test:mosaic` if the endpoint needs anything, which
+on this reading it does not.
 
 ## Status
 
-- **Gate:** verifying
-- **Notes:** Implemented and verified at the unit, contract and render tiers. Four
-  assumptions are still open and none blocked implementation — each carries the answer it
-  was built on, so a one-line "yes" settles all four and a different answer is a small
-  change in each case. One thing found and left alone: `retryFailedThumbnails` (A4) can
-  still name a destroyed row.
+- **Gate:** verifying — G2 implemented against the corrected spec, G4 tiers run including
+  the API tier, which had never been run for this issue and is what caught R7.
+- **Notes:** R1–R6 implemented earlier on this branch. R7, R7a, R7b and **R8** are the
+  human's corrections of 2026-09-12, in that order. **R8 is the defect he was reporting all
+  along** — a click on a committed acceptance flipped the record from reviewed straight to
+  flagged instead of taking it back — and `clickTakesBack` in `model/modes.js` is the whole
+  of it. A6 is answered and A8 is recorded as superseded before it was built. **One of the three rules was actually broken** — the page sweep
+  re-applied a decision the reviewer had taken back — and it is fixed in `store.js`,
+  `model/modes.js` and `ui/chrome.js`. Nothing on the endpoint changed: its `withdraw`
+  branch has run before the imagery check since #106, so the whole fix is client-side.
+  Three tests asserting the superseded rule were corrected rather than deleted — one unit,
+  one contract, one render — each with a comment saying what it used to say and why.
+  **A6 is open and deliberately unanswered**; nothing implements it either way.
