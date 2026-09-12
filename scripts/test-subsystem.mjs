@@ -57,6 +57,9 @@ const SUBSYSTEMS = {
             // the mosaic's own contract.
             'thumbnails',
             'thumbnail-geometry',
+            // The stored filename is a content hash (#62). Here for the same
+            // reason as the two above: the name is how a tile reaches the mosaic.
+            'thumbnail-naming',
         ],
     },
     review: {
