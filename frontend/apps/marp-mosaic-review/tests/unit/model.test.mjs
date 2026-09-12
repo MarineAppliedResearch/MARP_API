@@ -15,6 +15,7 @@ import { MODES, isMode, commitActsOnMarked, commitCount, existingState, reviewer
   deleteImpact, commitOutcome, pageState, markedOnPage,
   retryablePage, markKind, isExcepted, isAccepted, acceptedValue, acceptRefusal,
   selectedRows, selectionOutcome, pendingTakeBack, takenBackRows, takesBack,
+  clickTakesBack,
   MARK_EXCEPT, MARK_ACCEPT } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
@@ -1479,6 +1480,55 @@ test('#135 R3: clicking a mark off makes the main button withdraw it', () => {
   assert.equal(outcome.acts, 1, 'the button has something to do');
   assert.equal(outcome.withdraws, 1, 'and it is a withdrawal, not an acceptance');
   assert.equal(outcome.accepts, 0);
+});
+
+test('#135 R8: a click on a committed acceptance is about that acceptance', () => {
+  /**
+   * The defect he reported, at the tier that decides it:
+   *
+   * > *"Something already promoted in training mode, I click it and it just goes straight
+   * > to excluded, and it should go to taking back. Now let's see if it was excluded and I
+   * > click it -- it does do taking back."*
+   *
+   * The click used to fall straight through to marking on an accepted tile, because
+   * nothing seeds an accept mark, so the record went from reviewed to flagged with no
+   * take-back step and no way to reach the vanilla state by clicking at all.
+   */
+  assert.equal(clickTakesBack({ mode: 'scientific', decided: 'reviewed' }), true);
+  assert.equal(clickTakesBack({ mode: 'training', decided: 'promoted' }), true);
+});
+
+test('#135 R8: a mark is newer than the record, so the click is about the mark', () => {
+  /* Precedence is unchanged: a mark outranks an outcome, which outranks the record. A tile
+     the reviewer has already marked in this sitting is theirs to re-mark, and the later
+     mark wins (#126 R7) rather than the gesture being swallowed by the record. */
+  assert.equal(
+    clickTakesBack({ mode: 'scientific', decided: 'reviewed', marked: true }), false);
+});
+
+test('#135 R8: with no decision on the record the click is an ordinary mark', () => {
+  /* And this is the half that must not move. `null` is the neutral state -- the absence of
+     a projection row -- and `withdrawn` is what a take-back this sitting committed leaves
+     behind, which is the same thing said by an outcome. Both are ordinary marks again,
+     which is what makes a flag reachable at all: *"if you hit it again, it should be
+     flagged."* */
+  assert.equal(clickTakesBack({ mode: 'scientific', decided: null }), false);
+  assert.equal(clickTakesBack({ mode: 'scientific', decided: 'withdrawn' }), false);
+});
+
+test('#135 R8: the mode exception is not this rule, because the mark is seeded instead', () => {
+  /* A flagged or excluded tile arrives *marked*, so its click removes a mark and
+     `takesBack` makes that a take-back. Answering true here as well would mean a seeded
+     tile's click was about the record while a mark sat on it -- two rules for one gesture. */
+  assert.equal(clickTakesBack({ mode: 'scientific', decided: 'flagged' }), false);
+  assert.equal(clickTakesBack({ mode: 'training', decided: 'excluded' }), false);
+});
+
+test('#135 R8: nothing in Delete is ever about a decision this way', () => {
+  /* Delete has no accepted value, so a null `decided` must not match a null `acceptedValue`
+     and swallow the gesture that marks a row for destruction. */
+  assert.equal(clickTakesBack({ mode: 'delete', decided: null }), false);
+  assert.equal(clickTakesBack({ mode: 'delete', decided: 'reviewed' }), false);
 });
 
 test('#135 R7: the sweep withdraws a take-back rather than deciding it again', () => {

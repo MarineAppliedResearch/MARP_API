@@ -567,9 +567,29 @@ test.describe('a committed page is still editable', () => {
        marked, and a positional locator would slide onto a different tile. */
     const id = await page.locator('.tile.out-reviewed').first().getAttribute('data-id');
     const accepted = page.locator(`.tile[data-id="${id}"]`);
+
+    /**
+     * **The click takes the acceptance back; it does not flag it** (#135 R8).
+     *
+     * This assertion read `FLAGGED`, one click after a commit, and that was the defect:
+     * *"something that shows as reviewed and I click it, it just switches to flagged...
+     * it should go taking back."* The property this test is named for is unchanged — what
+     * the reviewer just did outranks what the last commit did — and it is still asserted,
+     * twice: first the take-back displaces `REVIEWED`, then the mark displaces the
+     * withdrawal.
+     */
     await accepted.click();
-    await expect(accepted.locator('.badge')).toContainText('FLAGGED');
+    await expect(accepted.locator('.badge')).toContainText('TAKING BACK');
     await expect(accepted).not.toHaveClass(/out-reviewed/);
+
+    /* Commit the take-back, and the record carries nothing — so now an ordinary click is
+       an ordinary mark again, and it outranks the `withdrawn` outcome underneath it. */
+    await page.locator('#commitMarked').click();
+    await expect(accepted.locator('.badge')).toHaveCount(0);
+
+    await accepted.click();
+    await expect(accepted).toHaveClass(/marked/);
+    await expect(accepted.locator('.badge')).toContainText('FLAGGED');
   });
 });
 

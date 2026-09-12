@@ -296,13 +296,41 @@ endpoint does not do is write that column back **after a commit in this sitting*
 is #131, and is why `state.outcomes` is preferred over the column rather than the other way
 round.
 
-**It takes two right-clicks on an acceptance and one click on an exception**, because
-nothing seeds an accept mark: a tile arriving `promoted` arrives unmarked, so the first
-right-click marks it accepted — agreeing with what the record already says, and changing
-the badge from `PROMOTED · you` to `PROMOTED` and nothing else — and only the second takes
-it back. A tile arriving `flagged` or `excluded` *is* seeded, so one click is enough there.
-That asymmetry is open as A6 in `.marp/task.md` and is deliberately not resolved; the API
-tier asserts today's behaviour, so whichever way it is settled, a test says so.
+**A click on a tile carrying a committed decision takes that decision back** (#135 R8,
+answered 2026-09-12). Whichever of the mode's two values it is: `REVIEWED` and `PROMOTED`
+behave exactly as `FLAGGED` and `EXCLUDED` already do. *"Something already promoted in
+training mode, I click it and it just goes straight to excluded, and it should go to taking
+back. Now let's see if it was excluded and I click it -- it does do taking back."*
+
+**Why only half of it was broken**, which is the thing to know before somebody "tidies" the
+asymmetry away: a page arrives with its *exceptions* already marked (`page.seedMarks`), so
+a click on a flagged or excluded tile was already removing a mark, and `takesBack` turned
+that into a take-back. **Nothing seeds an accept mark**, so on a reviewed or promoted tile
+there was nothing to remove and the click fell through to marking -- and the record went
+from reviewed straight to flagged, with no take-back step and no way to reach the vanilla
+state by clicking at all. One rule, two routes into it, because the marks arrive
+asymmetrically. `clickTakesBack` in `model/modes.js` is the accepted-value route;
+`takesBack` is the seeded-mark one.
+
+**It is a toggle against the record, not a cycle through states.** Click again and the tile
+goes back to what it was; only a commit clears the decision:
+
+```
+REVIEWED  --click-->  TAKING BACK  --click-->   REVIEWED     back where it was
+REVIEWED  --click-->  TAKING BACK  --commit-->  (vanilla)    the decision is cleared
+(vanilla) --click-->  FLAGGED                                now an ordinary mark
+```
+
+**So there is no one-click route from a committed acceptance to a flag, and that is
+intended.** Taking back is a decision the reviewer commits, and only then can they flag.
+Do not add a shortcut. An earlier guess had the second click apply the exception and was
+overturned before it was built -- it is A8 in `.marp/task.md`, recorded so it is not
+re-proposed.
+
+**This is the left click. The right click is unchanged**, and still toggles an accept mark,
+so a reviewed tile can still be re-accepted by the gesture that accepts. An earlier draft
+of this section described the defect as an acceptance needing two *right* clicks; that was
+the wrong gesture and the paragraph is replaced rather than left to confuse.
 
 **The sweep still treats the marks as the page's exception set — not a scratchpad.** At a
 sweep commit, whatever is marked as the *exception* becomes the exception and everything

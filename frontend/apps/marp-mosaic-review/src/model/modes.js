@@ -270,6 +270,41 @@ export function takesBack({ mode, kind, decided }) {
 }
 
 /**
+ * Is this ordinary click about a decision already on the record? (#135 R8)
+ *
+ * The exception gesture -- a left click, a tap -- means two different things depending on
+ * what the record says, and answering that here rather than in the action is what keeps the
+ * tile, the button and the store from disagreeing about which.
+ *
+ * **While the mode's accepted value is on the record, the click is about that acceptance**
+ * -- take it back, or put it back -- and never a new flag. It was a new flag, and that is
+ * the defect: *"something that shows as reviewed and I click it, it just switches to
+ * flagged... it should go taking back."*
+ *
+ * The mode's **exception** is not here and does not need to be, which is worth knowing
+ * before somebody "fixes" the asymmetry. A page arrives with its exceptions already marked
+ * (`page.seedMarks`), so a click on a flagged or excluded tile is already *removing* a mark
+ * and `takesBack` turns that into a take-back. Nothing seeds an *accept* mark, so there was
+ * nothing to remove and the click fell through to marking. One rule, two routes, because
+ * the marks arrive asymmetrically.
+ *
+ * Delete answers null to `acceptedValue`, so nothing there is ever about a decision this
+ * way and the gesture goes on marking rows for destruction.
+ *
+ * @param {Object} args
+ * @param {string} args.mode - The active mode.
+ * @param {string|null} args.decided - What this sitting, or the record, says now.
+ * @param {boolean} [args.marked] - Whether the tile already carries a mark of any kind.
+ * @returns {boolean} True when the click toggles a take-back rather than a mark.
+ */
+export function clickTakesBack({ mode, decided, marked = false }) {
+  /* A mark is a newer intention than the record, so the click is about the mark. */
+  if (marked) return false;
+  const accepted = acceptedValue(mode);
+  return Boolean(accepted) && decided === accepted;
+}
+
+/**
  * The rows a selective commit will **withdraw** (#135 R3).
  *
  * Separate from {@link selectedRows} because they are two different things sent in two

@@ -9,7 +9,7 @@
    it, and the application never points that at the fixture -- A2. */
 import { MarpBackend } from './backend.js';
 import { isAbort, failureKind } from './api/errors.js';
-import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, acceptedValue, acceptRefusal, selectedRows, takenBackRows, takesBack, selectionOutcome, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage, MARK_EXCEPT, MARK_ACCEPT } from './model/modes.js';
+import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, acceptedValue, acceptRefusal, selectedRows, takenBackRows, takesBack, clickTakesBack, selectionOutcome, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage, MARK_EXCEPT, MARK_ACCEPT } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
@@ -579,12 +579,26 @@ function resume(mode) {
  */
 function recordTakeBack(id, removed) {
   if (!removed) { state.takenBack.delete(id); return; }
-  const row = state.rows.find((r) => r.observation_id === id);
-  const decided = state.outcomes.has(id)
-    ? state.outcomes.get(id)
-    : (row ? existingState(state.mode, row) : null);
+  const decided = decidedFor(id);
   if (takesBack({ mode: state.mode, kind: removed, decided })) state.takenBack.add(id);
   else state.takenBack.delete(id);
+}
+
+/**
+ * What the record says about this observation **right now**, in this mode.
+ *
+ * `state.outcomes` first, the row's own column second, and that order is #131: the endpoint
+ * never writes the column back after a commit, so the row goes on saying what it said when
+ * the page was fetched. Factored out because three callers ask it and one of them getting a
+ * different answer is how the tile and the commit button come to disagree.
+ *
+ * @param {number} id - The observation.
+ * @returns {string|null} `flagged`, `reviewed`, `promoted`, `excluded`, `withdrawn`, or null.
+ */
+function decidedFor(id) {
+  if (state.outcomes.has(id)) return state.outcomes.get(id);
+  const row = state.rows.find((r) => r.observation_id === id);
+  return row ? existingState(state.mode, row) : null;
 }
 
 /**
@@ -1213,6 +1227,51 @@ export const actions = {
        because a destroyed tile stops being a target rather than explaining itself on
        every click -- which is what separates this from A4's per-tile refusal. */
     if (destroyed(id)) return;
+
+    /**
+     * **While a committed decision is on the record, this click is about that decision**
+     * (#135 R8, answered 2026-09-12).
+     *
+     * *"Something already promoted in training mode, I click it and it just goes straight
+     * to excluded, and it should go to taking back. Now let's see if it was excluded and I
+     * click it -- it does do taking back."*
+     *
+     * The exception values were already right, because a page arrives with its exceptions
+     * marked (`page.seedMarks`) and this click removes that mark. The **accepted** values
+     * were not: nothing seeds an accept mark, so the same click fell straight through to
+     * marking, and the record went from reviewed to flagged with no take-back step in
+     * between -- and no way to reach the vanilla state by clicking at all.
+     *
+     * It is a **toggle against the record, not a cycle through states**: click again and
+     * the tile goes back to what it was, rather than on to the exception.
+     * `REVIEWED -> TAKING BACK -> REVIEWED`, and only a commit clears the decision. So
+     * **there is no one-click route from a committed acceptance to a flag**, deliberately:
+     * taking back is a decision the reviewer commits, and only then can they flag. An
+     * earlier guess had the second click apply the exception; it was overturned before it
+     * was built, and is recorded as A8.
+     *
+     * `clickTakesBack` is the rule and it lives in `model/` rather than here, so it can be
+     * proved without a browser -- and so the tile and this action cannot come to different
+     * conclusions about what a click on a given tile means. It also answers false in
+     * Delete, which has no accepted value, so that gesture goes on marking for destruction.
+     */
+    const accepted = acceptedValue(state.mode);
+    if (clickTakesBack({
+      mode: state.mode, decided: decidedFor(id), marked: state.marks.has(id)
+    })) {
+      const taking = !state.takenBack.has(id);
+      if (taking) state.takenBack.add(id);
+      else state.takenBack.delete(id);
+      state.touched.add(id);
+      /* The panel describes an exception and its reasons, and this gesture no longer makes
+         one -- so it closes rather than sitting open over a state it cannot describe. */
+      state.picker = null;
+      fire(taking ? 'takeBack' : 'restore',
+        { id, mode: state.mode, decision: accepted });
+      notify();
+      return;
+    }
+
     const had = state.marks.has(id) && (state.marks.get(id).kind || MARK_EXCEPT) === MARK_EXCEPT;
     state.marks = page.toggleMark(state.marks, id, MARK_EXCEPT);
     state.touched.add(id);

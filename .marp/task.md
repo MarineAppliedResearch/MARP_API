@@ -94,6 +94,15 @@ first answer rather than extending it.
   unreviewed in Scientific, undecided in Training. Not accepted, not reviewed, not
   promoted, no `TAKING BACK`, and no `observation_review_current` row on a re-read.
 
+- **R8** — **A click on a tile carrying a committed decision takes that decision back**,
+  whichever of the mode's two values it is. `REVIEWED` and `PROMOTED` behave exactly as
+  `FLAGGED` and `EXCLUDED` already do. It is a **toggle against the record, not a cycle**:
+  clicking again puts the decision back rather than advancing to the exception, and a click
+  means "flag this" only once the record carries no decision. So there is **no one-click
+  route from a committed acceptance to a flag** and that is intended — taking back is a
+  decision the reviewer commits, and only then can they flag. The gesture is the ordinary
+  **left click or tap**; the right click is unchanged. A6 and A8.
+
 ## What the API tier actually showed
 
 Run against a **copy** of the development corpus — `marp db dump`, a second database on its
@@ -204,23 +213,52 @@ back. The other two already held on this branch.
   `state.takenBack`, and `src/api/index.js` drops a `withdraw` list on the delete route in
   any case, because the endpoint refuses one.
 
-- [ ] **A6 · product/UI · non-blocking** — **Unanswered on purpose: a tile whose
-  acceptance is already on the record takes two right-clicks to take back, not one.**
-  Measured above. Nothing seeds an *accept* mark (`page.seedMarks` seeds exceptions and
-  says so), so a tile that arrives `promoted` arrives unmarked: the first right-click puts
-  an accept mark on a tile the record already agrees with — which changes the badge from
-  `PROMOTED · you` to `PROMOTED` and nothing else — and only the second takes it back. A
-  tile that arrives `flagged` or `excluded` *is* seeded, so there one click is enough. So
-  the gesture is asymmetric, and the half that looks like a no-op is the one #135 was
-  reported about.
+- [x] **A6 · product/UI · blocking** — **answered 2026-09-12, and it is the defect he was
+  reporting all along.** He tested this branch in both modes:
 
-  **Not guessed, because two reasonable answers change behaviour.** (i) Leave it: R7a is
-  satisfied by the letter — the reviewer *can* take it back — and no gesture changes
-  meaning. (ii) Make a mark that would record what the record already says read as a
-  take-back instead, so one right-click withdraws an existing acceptance, symmetric with
-  the one click that withdraws an existing flag. (ii) is the smaller code change and the
-  bigger behavioural one; it also removes a click that currently does nothing visible.
-  Nothing in this branch implements (ii).
+  > *"I am in science mode... something that shows as reviewed and I click it, it just
+  > switches to flagged. Something that shows as reviewed and I click it, if it's already
+  > been committed and it shows as reviewed, I click it — it should go taking back."*
+  > *"Something already promoted in training mode, I click it and it just goes straight to
+  > excluded, and it should go to taking back. Now let's see if it was excluded and I click
+  > it — it does do taking back."*
+
+  **The rule is a toggle against the record.** While a committed decision is on the record
+  a click is about *that decision* and nothing else; a click means "flag this" only once
+  the record carries nothing. `REVIEWED` and `PROMOTED` behave exactly as `FLAGGED` and
+  `EXCLUDED` already do. See **R8**.
+
+  **It is the left click, not the right click** — this assumption was originally written up
+  as an accepted tile needing two *right* clicks, and that framing was wrong. The report is
+  about the ordinary click/tap and about the tile changing decision rather than being
+  withdrawn. The right-click gesture is unchanged.
+
+  He confirmed a decision made in the sitting and one loaded straight from the database
+  behave identically, which they do.
+
+- [x] **A8 · behavioural · blocking** — **superseded before it was built, 2026-09-12.** The
+  guess was that clicking a tile already reading `TAKING BACK` applies the mode's exception,
+  so `REVIEWED → click → TAKING BACK → click → FLAGGED`, on the reasoning that a take-back
+  swallowing the click for ever would leave no way to flag a reviewed tile. Overturned:
+
+  > *"No. No. No. If it's reviewed and you click and it goes to taking back, and then you
+  > click it again, it should go right to where it was already. It shouldn't go to flagged.
+  > If you reviewed, click and go to taking back, and then you hit commit, then it should
+  > clear. And if you hit it again, it should be flagged."*
+
+  So it is a **toggle, not a cycle**, and the way to a flag is through a commit:
+
+  ```
+  REVIEWED  --click-->  TAKING BACK  --click-->   REVIEWED     back where it was
+  REVIEWED  --click-->  TAKING BACK  --commit-->  (vanilla)    the decision is cleared
+  (vanilla) --click-->  FLAGGED                                now an ordinary mark
+  ```
+
+  Two consequences, written out so they are not undone by somebody being helpful:
+  **there is no one-click route from a committed acceptance to a flag, and that is
+  intended** — taking back is a decision the reviewer commits, and only then can they flag;
+  and **after the take-back commits the tile is in the vanilla state for its mode**, which
+  is R7b and is unchanged. Nothing was built to the superseded guess.
 
 ## Decisions
 
@@ -287,8 +325,11 @@ on this reading it does not.
 
 - **Gate:** verifying — G2 implemented against the corrected spec, G4 tiers run including
   the API tier, which had never been run for this issue and is what caught R7.
-- **Notes:** R1–R6 implemented earlier on this branch. R7, R7a and R7b are the human's
-  correction of 2026-09-12. **One of the three rules was actually broken** — the page sweep
+- **Notes:** R1–R6 implemented earlier on this branch. R7, R7a, R7b and **R8** are the
+  human's corrections of 2026-09-12, in that order. **R8 is the defect he was reporting all
+  along** — a click on a committed acceptance flipped the record from reviewed straight to
+  flagged instead of taking it back — and `clickTakesBack` in `model/modes.js` is the whole
+  of it. A6 is answered and A8 is recorded as superseded before it was built. **One of the three rules was actually broken** — the page sweep
   re-applied a decision the reviewer had taken back — and it is fixed in `store.js`,
   `model/modes.js` and `ui/chrome.js`. Nothing on the endpoint changed: its `withdraw`
   branch has run before the imagery check since #106, so the whole fix is client-side.

@@ -305,11 +305,26 @@ test('Moving through pages',
     const id = target.observation_id;
     await actions.commitPage();
     eq(state.outcomes.get(id), 'reviewed', 'first commit accepts it');
+
+    /**
+     * **A click on a committed acceptance takes it back; it does not flag it** (#135 R8).
+     *
+     * This check used to go straight from `reviewed` to `flagged` in one click and one
+     * commit, which is exactly the defect he reported: *"something that shows as reviewed
+     * and I click it, it just switches to flagged... it should go taking back."* So the
+     * sequence is a step longer now, and the extra step is the point.
+     */
     actions.toggleMark(id);
     await actions.commitPage();
-    const row = state.rows.find((r) => r.observation_id === id);
-    ok(row.review_decision !== 'reviewed', 'the acceptance must be withdrawn');
-    eq(row.review_decision, 'flagged', 'and the observation is now flagged instead');
+    let row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_decision, null, 'committing the take-back clears the decision');
+
+    /* And *now* an ordinary click flags it, because the record carries nothing to be
+       about. Two clicks and two commits, never one -- taking back is its own decision. */
+    actions.toggleMark(id);
+    await actions.commitPage();
+    row = state.rows.find((r) => r.observation_id === id);
+    eq(row.review_decision, 'flagged', 'and the observation can then be flagged');
     /* A reviewer **id**, and it is now the flagger's rather than null (A13, F8). The
        old assertion read `reviewed_by`, a column the endpoint's row has never carried, so
        it was asserting `undefined === null` and passing for the wrong reason. */
@@ -777,7 +792,15 @@ test('Moving through pages',
     actions.goToPage(1);
     await new Promise((r) => setTimeout(r, 400));
 
-    actions.toggleMark(id);                       // change your mind about it
+    /* Change your mind about it. On a committed acceptance the first click takes the
+       acceptance back rather than flagging it (#135 R8), so reaching a flag from the same
+       page is two clicks and two commits -- which is what this check now walks. */
+    actions.toggleMark(id);
+    await actions.commitPage();
+    eq(state.rows.find((r) => r.observation_id === id).review_decision, null,
+       'the acceptance comes off first');
+
+    actions.toggleMark(id);
     await actions.commitPage();
     const row = state.rows.find((r) => r.observation_id === id);
     eq(row.review_decision, 'flagged', 'resubmitting applies the change');

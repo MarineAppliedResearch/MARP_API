@@ -54,6 +54,20 @@ async function onTheApi(page) {
 /** The tile, pinned by id — a locator describing a *state* slides onto a different tile. */
 const tileFor = (page, row) => page.locator(`.tile[data-id="${row.observation_id}"]`);
 
+/**
+ * An address holding this one row, **whatever decision it is carrying**.
+ *
+ * Both status dimensions are spelled out rather than left to the mode's default, and that is
+ * not belt and braces: Scientific opens on `['unreviewed', 'flagged']` and Training on
+ * `['undecided']`, so a row the test has just *accepted* drops straight out of the page and
+ * the failure reads as a missing tile rather than as a filter. It cost a run here.
+ */
+const addressFor = (mode, lone) => (mode === 'scientific'
+  ? `./?species=${lone.species}&line=${lone.line}`
+    + '&reviewStatus=unreviewed,flagged,reviewed'
+  : `./?mode=training&species=${lone.species}&line=${lone.line}`
+    + '&trainingDisposition=undecided,promoted,excluded');
+
 test('R8: a recorded take-back stops saying TAKING BACK', async ({ page, request }) => {
   const claim = await claimLoneRow(request, 'scientific');
   const { lone, row } = claim;
@@ -112,6 +126,128 @@ test('R8: a recorded take-back stops saying TAKING BACK', async ({ page, request
     await restore(request, 'scientific', claim);
   }
 });
+
+/**
+ * **#135 R8, in both modes and from both provenances** — the defect he was reporting all
+ * along, and the one A6 was opened for and then answered.
+ *
+ * > *"I am in science mode... something that shows as reviewed and I click it, it just
+ * > switches to flagged. ... it should go taking back."*
+ * > *"Something already promoted in training mode, I click it and it just goes straight to
+ * > excluded, and it should go to taking back. Now let's see if it was excluded and I click
+ * > it — it does do taking back."*
+ *
+ * The last clause is the shape of it: the *exception* values were right, because a page
+ * arrives with its exceptions marked and a click removes that mark. The *accepted* values
+ * were wrong, because nothing seeds an accept mark, so the same click added an exception and
+ * the record went from reviewed straight to flagged with no take-back step in between and no
+ * way to reach the vanilla state by clicking at all.
+ *
+ * Four cases, table-driven so the two that already worked stay covered beside the two that
+ * did not — the mode's accepted value is the fix, the mode's exception is the regression.
+ */
+for (const mode of ['scientific', 'training']) {
+  const accepted = mode === 'scientific' ? 'reviewed' : 'promoted';
+  const exception = mode === 'scientific' ? 'flagged' : 'excluded';
+  for (const [decided, label] of [[accepted, 'accepted'], [exception, 'exception']]) {
+    test(`#135 R8: in ${mode}, clicking a committed ${label} takes it back`, async ({ page, request }) => {
+      const claim = await claimLoneRow(request, mode);
+      const { lone, row } = claim;
+
+      try {
+        /* Put the decision on the record before the page is loaded. He confirmed both
+           provenances behave the same, and this is the one the client cannot have cached. */
+        await commitOne(request, mode, row, { kind: decided === exception ? 'except' : 'accept' });
+        expect(await decisionNow(request, mode, lone)).toBe(decided);
+
+        await page.goto(addressFor(mode, lone));
+        await onTheApi(page);
+
+        const tile = tileFor(page, row);
+        await expect(tile).toBeVisible();
+        await expect(page.locator('.tile')).toHaveCount(1);
+        await expect(tile.locator('.badge')).toContainText(decided.toUpperCase());
+
+        /* **One ordinary click — the exception gesture, not the right click.** */
+        await tile.click();
+
+        await expect(tile.locator('.badge')).toContainText('TAKING BACK');
+        /* And specifically *not* the other decision: before the fix, an accepted tile went
+           straight to the exception here, which is the whole report. */
+        await expect(tile.locator('.badge')).not.toContainText(exception.toUpperCase());
+        await expect(tile).not.toHaveClass(/marked/);
+
+        /* Committing it reaches the vanilla state, which is the half that makes the click
+           worth anything: reviewed -> flagged was a decision the reviewer could not undo. */
+        await page.locator('#commitMarked').click();
+        await expect(tile.locator('.badge')).toHaveCount(0);
+        expect(await decisionNow(request, mode, lone)).toBe(null);
+      } finally {
+        await restore(request, mode, claim);
+      }
+    });
+  }
+}
+
+test('#135 R8: clicking again puts the decision back, and only a commit reaches the flag',
+  async ({ page, request }) => {
+    /**
+     * **A toggle against the record, not a cycle through states**, answered 2026-09-12:
+     *
+     * > *"If it's reviewed and you click and it goes to taking back, and then you click it
+     * > again, it should go right to where it was already. It shouldn't go to flagged. If
+     * > you reviewed, click and go to taking back, and then you hit commit, then it should
+     * > clear. And if you hit it again, it should be flagged."*
+     *
+     * So while a committed decision is on the record, a click is about *that decision* and
+     * nothing else — take it back, or leave it alone. A click means "flag this" only once
+     * the record carries nothing. **There is no one-click route from a committed acceptance
+     * to a flag and that is intended**: taking back is a decision the reviewer commits, and
+     * only then can they flag. Do not add a shortcut.
+     *
+     * A superseded guess is recorded in A8: that the second click applied the exception, so
+     * `REVIEWED -> TAKING BACK -> FLAGGED`. It was overturned before it was built.
+     */
+    const claim = await claimLoneRow(request, 'scientific');
+    const { lone, row } = claim;
+
+    try {
+      await commitOne(request, 'scientific', row, { kind: 'accept' });
+      expect(await decisionNow(request, 'scientific', lone)).toBe('reviewed');
+
+      await page.goto(addressFor('scientific', lone));
+      await onTheApi(page);
+
+      const tile = tileFor(page, row);
+      await expect(tile.locator('.badge')).toContainText('REVIEWED');
+
+      await tile.click();
+      await expect(tile.locator('.badge')).toContainText('TAKING BACK');
+
+      /* Click again: right back where it was. Not flagged, and nothing pending. */
+      await tile.click();
+      await expect(tile.locator('.badge')).toContainText('REVIEWED');
+      await expect(tile.locator('.badge')).not.toContainText('TAKING BACK');
+      await expect(tile).not.toHaveClass(/marked/);
+      expect(await decisionNow(request, 'scientific', lone)).toBe('reviewed');
+
+      /* Take it back and commit: now the record carries nothing. */
+      await tile.click();
+      await expect(tile.locator('.badge')).toContainText('TAKING BACK');
+      await page.locator('#commitMarked').click();
+      await expect(tile.locator('.badge')).toHaveCount(0);
+      expect(await decisionNow(request, 'scientific', lone)).toBe(null);
+
+      /* And *now* an ordinary click flags it, because there is no decision to be about. */
+      await tile.click();
+      await expect(tile).toHaveClass(/marked/);
+      await expect(tile.locator('.badge')).toContainText('FLAGGED');
+      await page.locator('#commitMarked').click();
+      expect(await decisionNow(request, 'scientific', lone)).toBe('flagged');
+    } finally {
+      await restore(request, 'scientific', claim);
+    }
+  });
 
 test('R7a: a decision made in an earlier sitting can be taken back', async ({ page, request }) => {
   const claim = await claimLoneRow(request, 'training');

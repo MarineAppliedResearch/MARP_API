@@ -32,6 +32,22 @@
 | R7a | `take-back.spec.mjs` › *R7a: a decision made in an earlier sitting can be taken back* | **api** | A promotion written through the API **before the page is loaded** can be taken back. **This was green before any change** — see below. |
 | R7b | the two API tests above, last assertion of each | **api** | Vanilla for the mode is the *absence* of a projection row, read back from the endpoint rather than off the screen. |
 
+### R8 — a click on a committed decision, 2026-09-12
+
+| Requirement | Test | Tier | Proves |
+| --- | --- | --- | --- |
+| R8 | `take-back.spec.mjs` › *#135 R8: in {scientific,training}, clicking a committed {accepted,exception} takes it back* | **api** | Four cases, table-driven. The two **accepted** cases were the defect and were red; the two **exception** cases already passed and are there so the half that worked stays covered. Each writes the decision through the API *before* the page is loaded, so it is the record talking and not the sitting. |
+| R8 | `take-back.spec.mjs` › *#135 R8: clicking again puts the decision back, and only a commit reaches the flag* | **api** | The toggle, end to end: `REVIEWED → TAKING BACK → REVIEWED`, then take back and commit to reach vanilla, then an ordinary click flags it and commits as `flagged`. This is A8's answer asserted rather than described. |
+| R8 | `model.test.mjs` › five `#135 R8` cases | unit | `clickTakesBack` itself: an acceptance is the rule, a mark outranks it, `null` and `withdrawn` are ordinary marks, the mode's exception is *not* this rule (its mark is seeded instead), and Delete never matches. |
+| R8 | `requirements.js` › *a committed decision can be taken back by marking it and committing again* and *…changed and resubmitted from the same page* | contract | Both walked `reviewed → flagged` in one click and one commit. They now walk the two-step route, which is the behaviour change stated as a sequence. |
+| R8 | `render.spec.mjs` › a committed page is still editable › *a mark outranks what the last commit did* | render | Its last assertion read `FLAGGED` one click after a commit — the defect exactly. It now asserts the take-back displaces `REVIEWED`, and, after the commit, that an ordinary mark displaces the withdrawal — so the property the test is named for is asserted twice rather than lost. |
+
+**The gesture was mis-framed in the first write-up and that is worth recording.** A6 was
+opened describing an accepted tile as needing two *right* clicks. The report is about the
+ordinary **left click**, and about the tile changing decision rather than being withdrawn —
+two different code paths. `actions.toggleMark` is the one that changed; `actions.acceptMark`
+is untouched.
+
 **The supervising diagnosis was wrong, and R7a is the proof.** It said `existingState`
 cannot see a decision from an earlier sitting because the API never writes the row's status
 column. `ROW_COLUMNS` in `repository/mosaic.repository.js` selects
@@ -233,6 +249,84 @@ Green after:
 ✓ 3 [api] › take-back.spec.mjs:169 › R7: the page sweep withdraws a take-back instead of deciding it again (597ms)
 3 passed (2.0s)
 ```
+
+### API — R8, red first then green, 2026-09-12
+
+Same arrangement as above: a copy of the corpus on its own database and port, the API served
+from it, nothing written to the development database. **Red against the branch tip before
+any source change**, each case run on its own so the serial describe could not hide one
+behind another:
+
+```
+✘ #135 R8: in scientific, clicking a committed accepted takes it back (7.8s)
+    Error: expect(locator).toContainText(expected) failed
+    Received string:    "FLAGGED"
+
+✘ #135 R8: in training, clicking a committed accepted takes it back (7.8s)
+    Error: expect(locator).toContainText(expected) failed
+    Received string:    "EXCLUDED"
+
+✓ #135 R8: in scientific, clicking a committed exception takes it back (522ms)
+✓ #135 R8: in training, clicking a committed exception takes it back (525ms)
+
+✘ #135 R8: clicking again puts the decision back, and only a commit reaches the flag (8.0s)
+    Error: expect(locator).toContainText(expected) failed
+    Received string:    "FLAGGED"
+```
+
+`FLAGGED` and `EXCLUDED` are the report in two words. The two exception cases passing in the
+same run is what says the defect was half the rule rather than all of it.
+
+Green after, the whole file:
+
+```
+✓ 1 R8: a recorded take-back stops saying TAKING BACK (547ms)
+✓ 2 #135 R8: in scientific, clicking a committed accepted takes it back (431ms)
+✓ 3 #135 R8: in scientific, clicking a committed exception takes it back (446ms)
+✓ 4 #135 R8: in training, clicking a committed accepted takes it back (423ms)
+✓ 5 #135 R8: in training, clicking a committed exception takes it back (429ms)
+✓ 6 #135 R8: clicking again puts the decision back, and only a commit reaches the flag (558ms)
+✓ 7 R7a: a decision made in an earlier sitting can be taken back (403ms)
+✓ 8 R7: the page sweep withdraws a take-back instead of deciding it again (478ms)
+8 passed (4.2s)
+```
+
+**The unit cases were proved red too**, by a file copy of `model/modes.js` with
+`clickTakesBack` returning false — the pre-R8 behaviour — never `git checkout --`:
+
+```
+✖ #135 R8: a click on a committed acceptance is about that acceptance (0.5564ms)
+✔ #135 R8: a mark is newer than the record, so the click is about the mark
+✔ #135 R8: with no decision on the record the click is an ordinary mark
+✔ #135 R8: the mode exception is not this rule, because the mark is seeded instead
+✔ #135 R8: nothing in Delete is ever about a decision this way
+```
+
+The four that stayed green are the guards — they assert what must *not* change, so a fix
+that over-reached would turn them red instead. `modes.js` was restored from the copy and the
+file is identical to the committed version apart from the intended addition.
+
+### Browser and unit after R8
+
+`npm run test:unit` — **303 passed, 0 failed**. `npm run test:e2e` — **301 passed, 5
+skipped**, and then **300 passed, 1 failed, 5 skipped** on the re-run after the `model/`
+refactor, the single failure being the same `L4: confidence is one track carrying two
+handles` phone flake recorded below. It passed alone both times and nothing in this change
+touches the rail.
+
+Three fixture-backed checks were red after R8 landed and all three were asserting the
+behaviour R8 reverses, so all three were corrected rather than deleted:
+
+```
+contract: a committed decision can be taken back by marking it and committing again
+          and the observation is now flagged instead expected "flagged", got null
+contract: a committed decision can be changed and resubmitted from the same page
+          resubmitting applies the change expected "flagged", got null
+render:   a committed page is still editable › a mark outranks what the last commit did
+          expected "FLAGGED", got "TAKING BACK"
+```
+
+`got null` and `got "TAKING BACK"` are the fix, seen from the old expectation.
 
 ### Browser and unit, re-run after the correction
 
