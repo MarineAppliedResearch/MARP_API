@@ -1452,6 +1452,85 @@ test('Two kinds of mark',
     eq(state.marks.get(id).kind, 'accept', 'and the page never has to be redone');
   });
 
+/* --------------------------------- a committed delete is not interactive (#138) */
+
+/**
+ * Delete one tile for real, and hand back its id.
+ *
+ * Through the store and the confirmation, not by writing an outcome by hand: what makes
+ * the tile inert is what the *commit* said about it, and a check that stages that itself
+ * would pass with the commit doing anything at all.
+ */
+async function destroyOne() {
+  await reset('delete');
+  const id = state.rows[0].observation_id;
+  actions.toggleMark(id);
+  await actions.commitPage();
+  await actions.confirmDelete();
+  eq(state.outcomes.get(id), 'deleted', 'the commit should have destroyed it');
+  eq(state.marks.has(id), false, 'a deleted row is not a pending intention');
+  return id;
+}
+
+test('Delete mode',
+  'R2 (#138): a committed delete cannot be marked again', async () => {
+    const id = await destroyOne();
+    const touched = state.touched.size;
+    actions.toggleMark(id);
+    eq(state.marks.has(id), false, 'the row is gone from the database; nothing may mark it');
+    /* The id is already in `touched` -- the reviewer marked it before deleting it -- so
+       what this pins is that the dead click changed nothing, rather than the id's absence. */
+    eq(state.touched.size, touched, 'and the click decided nothing');
+
+    /* The other half of why this matters: a mark here would be sent by the next commit,
+       and the server would answer `not-found` -- a reason that means "somebody else
+       deleted this while you were working". */
+    await actions.commitPage();
+    eq(state.confirm, null, 'with nothing marked there is nothing left to commit');
+  });
+
+test('Delete mode',
+  'R3 (#138): the accept gesture does not reach a destroyed tile', async () => {
+    const id = await destroyOne();
+    /* A pin rather than a tripwire, and worth saying so: this also holds for an
+       independent reason today, because Delete Mode has no accepted value (#126 A2) and
+       destroyed tiles exist only in Delete Mode. The guard is what keeps it true if
+       either of those ever stops being. */
+    actions.acceptMark(id);
+    eq(state.marks.has(id), false, 'a right click or a double tap must do nothing');
+    eq(state.refused, null, 'and it is not the A4 refusal: a destroyed tile is not a target');
+  });
+
+test('Delete mode',
+  'R4 (#138): neither route into the correction panel opens on a destroyed tile', async () => {
+    const id = await destroyOne();
+    /* The reachable one. `openCorrection` creates an exception mark on its way in, so the
+       "was X" chip on a row corrected earlier in the sitting could mark a destroyed row
+       even with `toggleMark` guarded. */
+    actions.openCorrection(id);
+    eq(state.picker, null, 'the chip must not open the chooser');
+    eq(state.marks.has(id), false, 'and must not have marked it on the way');
+
+    actions.openPicker(id);
+    eq(state.picker, null, 'and the badge opens nothing either');
+  });
+
+test('Delete mode',
+  'R5 (#138): marking the page steps over what the page has already destroyed', async () => {
+    const id = await destroyOne();
+    const others = state.rows.filter((r) => r.observation_id !== id).length;
+
+    actions.markAllOnPage();
+    eq(state.marks.has(id), false, 'the destroyed row must not be marked');
+    eq(state.marks.size, others, 'every other row on the page is');
+
+    /* The count in front of a permanent deletion is the number that gets deleted, so it
+       has to have stepped over the destroyed row too. */
+    await actions.commitPage();
+    eq(state.confirm.count, others, 'the confirmation must name only rows that still exist');
+    actions.cancelDelete();
+  });
+
 export async function run(mount) {
   await MarpData.load();
   const out = [];

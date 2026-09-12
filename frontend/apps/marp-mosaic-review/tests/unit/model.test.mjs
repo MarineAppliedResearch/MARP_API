@@ -471,6 +471,30 @@ test('a deleted observation is not a pending intention', () => {
   assert.equal(page.marksAfterCommit(new Map(), outcomes, [1], pendingException('delete')).size, 0);
 });
 
+/**
+ * R1 (#138): destroyed is a rule, not a condition written into a click handler.
+ *
+ * The outcome map is the source because it has exactly the lifetime of the DELETED badge
+ * the tile already draws from it -- so "inert" and "DELETED" are one fact rather than two
+ * that can disagree. Both backings put the same word there: the fixture pushes
+ * `outcome: 'deleted'` and so does `commitDelete`, through `out.accept(id, mode.marks)`.
+ */
+test('R1: an observation a commit destroyed is destroyed, and nothing else is', () => {
+  const outcomes = page.applyCommit(new Map(), {
+    reviewed: [{ observation_id: 1, outcome: 'deleted' }, { observation_id: 2, outcome: 'reviewed' }],
+    flagged: [{ observation_id: 3, outcome: 'flagged' }],
+    conflicted: [{ observation_id: 4, reason: 'version' }]
+  });
+  assert.equal(page.isDestroyed(outcomes, 1), true);
+  assert.equal(page.isDestroyed(outcomes, 2), false, 'accepted is not destroyed');
+  assert.equal(page.isDestroyed(outcomes, 3), false, 'flagged is not destroyed');
+  /* A conflicted delete destroyed nothing: the row moved underneath the reviewer and the
+     statement matched no version, so the observation is still there to act on (R9). */
+  assert.equal(page.isDestroyed(outcomes, 4), false);
+  assert.equal(page.isDestroyed(outcomes, 99), false, 'an id no commit touched');
+  assert.equal(page.isDestroyed(new Map(), 1), false, 'nothing committed yet');
+});
+
 /* ------------------------- every mode filters on both status dimensions (#89) */
 
 test('R1: every mode filters on both dimensions, its own first', () => {

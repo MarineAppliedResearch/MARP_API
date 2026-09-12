@@ -1,117 +1,135 @@
 ---
-task: MarineAppliedResearch/MARP_API#140
+task: MarineAppliedResearch/MARP_API#138
 repos: [marp-api]
-status: design
+status: verifying
 needs: []
 ---
 
 ## Goal
 
-A developer who opens `/developer-docs` should land somewhere that plainly belongs to
-MARP. Today they land on a default docdash page: light grey, Source Sans Pro, a teal
-sidebar, and a front page whose every image is a broken icon because the README's paths
-resolve against the wrong directory. The rest of MARP -- the public page, the Mosaic
-Reviewer, the ML Dashboard -- shares one identity, dark navy with cyan, `Inter` over
-`Arial Narrow`, the compact logo top left. The generated documentation should read as the
-same product, and the logo on its front page should actually appear.
+Once the reviewer commits a delete, the observation is gone from the database — no
+provenance row, and its keyframes and whole review history went with it. The tile stays on
+screen so the reviewer can see what they just destroyed, but it stops being something they
+can act on: no marking, no accept gesture, no correction panel, no double tap. Today every
+one of those still works on a tile whose row no longer exists, and a decision committed
+about it comes back as a `not-found` skip whose stated meaning is *"somebody else deleted
+this while you were working"* — when in fact the reviewer deleted it themselves a moment
+ago.
 
 ## Requirements
 
-- **R1 - The logo resolves.** `docs/developer/index.html` renders `marp-logo.png` and the
-  mark at the foot, and the five application screenshots, with no 404 for any of them.
-  Verified against the built output, not against the README.
-- **R2 - One README.** The fix does not create a second front page to maintain, and does
-  not edit `README.md` into something that is wrong on GitHub.
-- **R3 - The documentation wears the MARP palette.** Ground, surfaces, borders, links,
-  code and the navigation take their colours from the same values as
-  `frontend/shared/assets/css/tokens.css`, and the type is the MARP pairing rather than
-  docdash's.
-- **R4 - No colour is restated by hand.** The documentation stylesheet declares the
-  palette once, from the token values, the way every other MARP surface does. A hex
-  typed into a rule is the failure this is guarding against; it is how the video player
-  ended up referencing an `--amber-300` that did not exist.
-- **R5 - The chrome names the product.** The navigation carries the MARP logo and a way
-  back to the platform, so a page reached from a deep link says what it is part of.
-- **R6 - Nothing generated is edited by hand.** Everything in `docs/developer/` is
-  produced by `npm run docs:build` from sources that are tracked, and a rebuild from a
-  clean checkout reproduces it.
-- **R7 - The fork is a diff, not a rewrite.** The docdash template is copied into this
-  repository and changed deliberately. What changed from upstream, and which version it
-  was forked from, is written down beside it, so the next upgrade is a comparison rather
-  than an excavation. docdash's search, collapse and mobile navigation keep working.
-- **R8 - It is legible.** Body text, code, the nav and the signature colours all clear
-  the contrast the rest of MARP holds to, at the small sizes docdash uses.
-- **R9 - `/api-docs` matches.** The Swagger UI is recoloured and re-typed from the same
-  palette, and carries the same chrome, so the two documentation surfaces read as one
-  product rather than two vendors.
-- **R10 - Both surfaces link to each other and back.** From either documentation site
-  there is a way to the other one and a way back to MARP.
+- **R1** — Whether an observation has been destroyed in this sitting is a rule in `model/`,
+  not a condition written into a click handler. One predicate, so every caller asks the
+  same question.
+- **R2** — A destroyed tile refuses the exception gesture (left click / first tap):
+  `toggleMark` changes nothing and fires nothing. Not *"the id is absent from
+  `state.touched`"* — it is already there, because the reviewer marked the tile before
+  deleting it; what has to hold is that the dead click changes nothing.
+- **R3** — A destroyed tile refuses the accept gesture (right click on a pointer, double
+  tap on touch): `acceptMark` changes nothing and fires nothing. It is **not** the A4
+  refusal shape — no per-tile refusal message; a destroyed tile stops being a target rather
+  than explaining itself on each click.
+- **R4** — A destroyed tile refuses the correction panel by either route: `openPicker`
+  (the badge) and `openCorrection` (the "was X" chip) leave `state.picker` null. This
+  matters even though the `DELETED` badge carries no `data-badge`, because `openCorrection`
+  creates a mark of its own on the way in.
+- **R5** — A page-level mark does not reach a destroyed tile: `markAllOnPage` skips it, so
+  the next commit cannot be handed a row the server will answer `not-found` for.
+- **R6** — The tile says why it is inert. Its tooltip states that the observation was
+  removed from the database and nothing more can be recorded about it, instead of the
+  ordinary confidence/dive/timecode line.
+- **R7** — The tile keeps its picture and stays visible. The cascade deletes database rows
+  only; the JPEG is still there, and seeing what was destroyed for the rest of the sitting
+  is the point. It disappears on the next query, which is existing behaviour and correct.
+- **R8** — Assistive technology is told: the tile carries `aria-disabled="true"`. It stays
+  a real `<button>` in the DOM and a real click still reaches the store, which is what makes
+  "the click does nothing" observable at the render tier rather than swallowed by CSS.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** - answered 2026-09-11: fork the docdash template
-      into this repository. It buys a real MARP header bar, the stylesheet in `<head>`
-      rather than at the end of `<body>`, and a MARP footer. The cost, owning a template
-      that drifts from upstream, is accepted and is what R7 exists to contain.
-- [x] **A2 · product/UI · blocking** - answered 2026-09-11: yes, both. `/api-docs` is
-      branded in this change too, so the two documentation surfaces match. That is wider
-      than #140's text, which names the developer docs only.
-- [ ] **A3 · cross-repository · non-blocking** - The second half of #140 is that five
-      repositories disagree about the logo, and one still carries the retired MARE icon.
-      That spans repositories, so the assumption here is that it becomes its own tracking
-      issue rather than part of this branch. Say so if it should be in scope.
+- [ ] **A1 · architectural · non-blocking** — *Destroyed is derived from the commit
+  outcome (`state.outcomes.get(id) === 'deleted'`), not from a new session-wide set of
+  destroyed ids.* Proposed, with the reasoning: that map has exactly the lifetime of the
+  `DELETED` badge the tile already draws, so inert and DELETED are the same fact rather
+  than two facts that can disagree. The alternative buys nothing reachable — outcomes are
+  parked per mode, but `cache.keyFor` includes the mode, so a mode switch empties the cache
+  and re-queries, and the deleted row does not come back from the server; a filter change
+  clears the outcomes *and* the cache for the same reason. A session-wide set would only
+  differ if a destroyed row could return to the screen, and no path found does that.
+- [ ] **A2 · product/UI · non-blocking** — *The tooltip wording is the issue's own:
+  "Removed from the database — nothing more can be recorded about it."* Proposed as
+  written, prefixed with the species name the tooltip already leads with.
+- [ ] **A3 · product/UI · non-blocking** — *The picture stays exactly as it is drawn
+  today* — greyscale, darkened and hatched by `.tile.out-deleted`, which already exists.
+  The issue asks whether it still shows its picture; it does, and this changes nothing.
+- [ ] **A4 · behavioural · non-blocking** — *`retryFailedThumbnails` is left alone.* A
+  page-level retry can still name a destroyed row whose thumbnail had failed, and the
+  endpoint would answer for a row that is gone. It is not one of the gestures #138 names,
+  it costs a request rather than a record, and widening the change to cover it is scope
+  this task did not ask for. Named here rather than fixed.
 
 ## Decisions
 
-- **2026-09-11** - The images are copied into the built output at the path the README
-  already uses (`docs/developer/frontend/shared/assets/images/`) rather than referenced by
-  a `/assets/...` URL. It is the first option #140 lists, it keeps one README with no
-  rewriting step, and the built page works opened from disk as well as served. The cost is
-  about 1.1 MB duplicated into committed output, on a directory that is already 120 MB.
-- **2026-09-11** - `docs/developer-theme/` is the source directory. jsdoc copies it into
-  the output through `templates.default.staticFiles`, which strips the include root, so
-  the theme directory is laid out as the output expects it.
+- **2026-09-12** — The guard goes in the store actions, reading one rule from `model/`,
+  rather than in `ui/mount.js`. The issue is explicit about this: a guard in the click
+  handler alone leaves `toggleMark`, `acceptMark` and `openCorrection` each reachable by
+  another path (the picker's own controls, the keyboard, the console).
+- **2026-09-12** — Two of the five refusals are unreachable today and are kept anyway.
+  `acceptMark` (R3) cannot be reached because destroyed tiles exist only in Delete Mode and
+  Delete Mode has no accepted value (#126 A2); `openPicker` (R4) needs an exception mark,
+  which a destroyed tile can no longer have. `openCorrection` and `toggleMark` and
+  `markAllOnPage` are all reachable. The guards are one named question asked in five
+  places rather than four correct paths and a fifth that depends on an unrelated rule
+  staying true.
+- **2026-09-12** — The tile is not `disabled` and does not get `pointer-events: none`.
+  Either would make a click at the render tier a Playwright error rather than a click that
+  does nothing, which is the behaviour actually being asserted. `aria-disabled` says the
+  same thing to assistive technology without hiding the defect from its own test.
 
 ## Plan
 
-1. Fork docdash 2.0.2's template into `docs/developer-theme/`, with a note beside it
-   saying what was changed and from which version.
-2. Take the palette out of `tokens.css` into the theme's stylesheet, once, and write
-   every rule against it.
-3. Give the layout a MARP header: the compact logo, the product name, and links to the
-   platform and to `/api-docs`.
-4. Point `templates.default.staticFiles` at `frontend/shared/assets/images` so the
-   README's own paths resolve in the output.
-5. Rebuild and check every image on the front page against the network, at the tier that
-   can see a 404.
-6. Rewrite `swagger.css` against the same palette, and give it the same chrome.
-7. Add the fast-tier tests: the theme restates no colour, the config still points at the
-   fork, both stylesheets exist, and the built front page carries the images.
-8. Rebuild `docs/developer/` and commit the generated diff.
+1. `model/page.js`: one predicate, `isDestroyed(outcomes, id)`, beside the other outcome
+   rules. Unit test it.
+2. `store.js`: guard `toggleMark`, `acceptMark`, `openPicker`, `openCorrection`; skip
+   destroyed rows in `markAllOnPage`.
+3. `ui/tile.js`: the tooltip and `aria-disabled` on a destroyed tile.
+4. Unit test the rule (R1); contract-tier checks that the store refuses each gesture
+   (R2–R5); render-tier check that clicking a committed-deleted tile changes nothing on
+   screen (R2, R6, R8).
 
 ## Acceptance criteria
 
-- `/developer-docs` serves a dark MARP page with the logo present and no failed request.
-- `/api-docs` is recognisably the same product as `/developer-docs`.
-- `npm run docs:build` from a clean checkout reproduces the committed output.
-- Neither stylesheet contains a hex outside its own token block.
-- docdash's search, collapse and mobile navigation still work.
+- In Delete Mode, marking two tiles and committing leaves both showing `DELETED`; clicking
+  either one afterwards adds no `marked` class, no mark badge and no entry in
+  `state.marks`.
+- Right-clicking one of them does nothing; the correction chip and the badge open no panel.
+- "Flag all on page" after a delete commit leaves the destroyed tiles unmarked.
+- Hovering a destroyed tile explains that nothing more can be recorded about it.
+- `npm run test:unit` green; `npm run test:e2e` green at both viewports.
 
 ## Test plan
 
-Filled in at G3.
+- **R1** — `tests/unit/model.test.mjs`, *"R1: an observation a commit destroyed is
+  destroyed, and nothing else is"*. Proved red first: `page.isDestroyed is not a function`.
+- **R2–R5** — `tests/requirements.js`, four checks under *Delete mode*, each driving a real
+  commit through the confirmation rather than writing an outcome by hand. Three went red
+  against the old store; R3 is a pin rather than a tripwire and says so in its comment.
+- **R2, R3, R4, R5, R6, R7, R8** — `tests/e2e/render.spec.mjs`, *"a tile whose row has been
+  destroyed"*, five tests. Red against the old files, on `class="tile marked"` drawn over a
+  destroyed observation. R5 is desktop-only: `.markall` is `display: none` under the phone
+  media query, so the page-level mark is not a gesture that exists there.
+- **Not covered** — the API tier. Nothing here is in the gap between what a commit
+  recorded and what the row still says: the refusal reads the commit's own answer, and both
+  backings put the same `deleted` outcome there (`data.js:1145`,
+  `repository/mosaic-commit.repository.js:942`). A `tests/api/` case would destroy a real
+  observation from the corpus to assert a client-side refusal, and there is nothing to
+  restore it with.
 
 ## Status
 
 - **Gate:** verifying
-- **Notes:** #152's spec was still on `develop` when this branch was cut; it is reachable
-  at `git show 152-landing-page-narrative:.marp/task.md`.
-
-  A1 and A2 were both answered the larger way, so this change is wider than #140's text:
-  the API reference is themed as well as the developer documentation. A3 is still open and
-  is not blocking -- the five repositories that disagree about the logo are untouched here.
-
-  Found during implementation and not part of the issue: **six hand-written markdown
-  documents live inside `docs/developer/`**, which is generated output. jsdoc will never
-  put them back, and a clean rebuild takes all six. They were lost once during this change
-  and restored; there is now a test that fails if it happens again.
+- **Notes:** Implemented and verified at the unit, contract and render tiers. Four
+  assumptions are still open and none blocked implementation — each carries the answer it
+  was built on, so a one-line "yes" settles all four and a different answer is a small
+  change in each case. One thing found and left alone: `retryFailedThumbnails` (A4) can
+  still name a destroyed row.

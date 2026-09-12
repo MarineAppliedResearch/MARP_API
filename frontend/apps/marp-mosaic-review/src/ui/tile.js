@@ -11,6 +11,7 @@ import {
   acceptedValue, markKind, MARK_ACCEPT
 } from '../model/modes.js';
 import { currentSpeciesName } from '../model/row.js';
+import { isDestroyed } from '../model/page.js';
 import { MarpBackend } from '../backend.js';
 import { ICON } from './dom.js';
 
@@ -212,6 +213,10 @@ export function tile(row) {
      literal was one developer's. */
   const byMe = decidedByMe(state.mode, row, state.me);
   const noImage = row.thumbnail_status !== 'ready';
+  /* The row is gone from the database, so every gesture the store offers is refused
+     (#138). The same rule the refusals ask, so the tile cannot look inert while still
+     acting, or act while looking inert. */
+  const gone = isDestroyed(state.outcomes, id);
 
   /* Which of the two things this mark says (#126). It fits **inside** the existing
      precedence rather than beside it: a mark still outranks an outcome, which still
@@ -271,11 +276,15 @@ export function tile(row) {
      showed the old animal for ever on any observation that had been corrected, while the
      species filter -- which is `species_id` -- matched the new one. */
   const name = currentSpeciesName(row);
-  const tip = row.thumbnail_permanent
-    ? `${name} · no image, and retrying cannot help${row.thumbnail_reason ? ' — ' + row.thumbnail_reason : ''}`
-    : noImage
-      ? `${name} · no image — markable, but excluded from the page commit`
-      : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
+  /* Why the clicks do nothing, which is the reviewer's actual question. DELETED states
+     the fact; this states the consequence (#138). */
+  const tip = gone
+    ? `${name} · removed from the database — nothing more can be recorded about it`
+    : row.thumbnail_permanent
+      ? `${name} · no image, and retrying cannot help${row.thumbnail_reason ? ' — ' + row.thumbnail_reason : ''}`
+      : noImage
+        ? `${name} · no image — markable, but excluded from the page commit`
+        : `${name} · ${row.confidence} · ${row.dive} line ${row.line} · ${row.tc}`;
 
   /* Its own slot, never the badge's (A4, A6). A refusal is an acknowledgement that a
      gesture did not take, not a state the tile is in, and letting it reach `.badge` is
@@ -284,7 +293,10 @@ export function tile(row) {
     ? `<span class="refusal" data-refused="${id}">${ICON.cross}${refused.reason}</span>`
     : '';
 
-  return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}">
+  /* `aria-disabled`, never `disabled`: the tile stays a real button that a real click
+     still reaches, so "the click does nothing" is a thing the render tier can observe
+     rather than something the browser swallows before the app sees it. */
+  return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}"${gone ? ' aria-disabled="true"' : ''}>
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
       ${refusal}${borrowed(row)}<span class="cap">${name}</span></button>`;
 }

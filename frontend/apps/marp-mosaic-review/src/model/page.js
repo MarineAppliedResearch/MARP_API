@@ -142,6 +142,26 @@ export function applyCommit(outcomes, result) {
 }
 
 /**
+ * Did a commit destroy this observation? (#138)
+ *
+ * A delete leaves nothing behind -- no provenance row, and the keyframes and the whole
+ * review history go with it -- so a tile whose row has been destroyed is a picture of
+ * something that no longer has a record, and no gesture may reach it. Every refusal asks
+ * this one question rather than each caller spelling the outcome out.
+ *
+ * The outcome map is the source, and deliberately: it has exactly the lifetime of the
+ * DELETED badge the tile already draws from it, so *inert* and *DELETED* are one fact
+ * rather than two that can disagree. A different question clears the outcomes, empties
+ * the cache (the key carries the mode and the filters) and re-queries -- and the row is
+ * gone from the server, so it does not come back without its outcome.
+ *
+ * @param {Map} outcomes - `state.outcomes`.
+ * @param {number} id - An observation id.
+ * @returns {boolean} True when the last commit deleted it.
+ */
+export const isDestroyed = (outcomes, id) => outcomes.get(id) === 'deleted';
+
+/**
  * The ids a commit refused for a moved version, so the page can offer a re-read (R9).
  *
  * Their marks are deliberately kept: nothing was written, so the reviewer's intention is
