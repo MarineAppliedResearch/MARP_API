@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#151
 repos: [marp-api]
-status: implementing
+status: verifying
 needs: []
 ---
 
@@ -38,9 +38,10 @@ the point of the page (see A1).
   says this is a question and not an assumption to build on, so nothing here depends on the
   answer and the mechanism extends to it in one rule if the answer is yes. Measured, so the
   answer can be an informed one: on a landscape phone hiding the footer as well adds **no**
-  tiles (a row is 150px there and the whole footer is 46px); in portrait it would add one
-  row, 18 tiles -> 21. **I want the answer before this pattern is replicated to the ML
-  Dashboard and the entry page.**
+  tiles, because a row is 150px there and the whole footer is 46px -- so the footer question
+  is about reachability, not about room. In portrait the top chrome alone already buys a
+  row (18 tiles -> 21, measured). **I want the answer before this pattern is replicated to
+  the ML Dashboard and the landing page.**
 - [ ] **A2 | product/UI | non-blocking** -- the control is a chevron in the **rail head**,
   beside the rail's own collapse button, because that strip is the only chrome that is
   always on screen in both layouts and it costs no tile area. The alternative was a handle
@@ -68,9 +69,13 @@ the point of the page (see A1).
 The consequence for this issue, measured rather than estimated: a tile is square and its
 size follows the column width, so a row on a landscape phone is **150px tall**. Giving the
 field the top chrome's 74px therefore buys **no extra row** -- 10 tiles before, 10 after.
-What it does buy is that the two rows stop overflowing a 292px field (2 x 150 = 300) and
-the mosaic band grows from 71% to 89% of the screen. In portrait the same is true for a
-different reason: 66px against a 124px row.
+What it does buy is that the two rows stop overflowing a 292px field (2 x 150 = 300), so
+the field stops scrolling, and the mosaic band grows from 71% to 89% of the screen.
+
+**Portrait is the better case, and measured rather than predicted: 18 tiles become 21.**
+A row there is about 118px against the 66px recovered, which this arithmetic said would
+not reach a row and the browser says does -- the estimate was wrong and the measurement
+stands. The field goes from 88% to 95% of the screen.
 
 **To turn that space into more mosaic rather than more slack, the landscape phone needs the
 phone's smaller tiles -- and the issue puts tile sizing and column count explicitly out of
@@ -126,6 +131,6 @@ Filled in at G3 in `.marp/verification.md`.
 
 ## Status
 
-- **Gate:** implementing
+- **Gate:** verifying
 - **Notes:** No blocking assumption. A1 is the issue's own open question and nothing built
   here depends on it; it needs an answer before the pattern is copied to the other two apps.

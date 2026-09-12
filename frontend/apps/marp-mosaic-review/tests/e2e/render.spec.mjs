@@ -3945,3 +3945,183 @@ test.describe('two kinds of mark, and two commit buttons', () => {
       expect(bright).toBe('none');
     });
 });
+
+/**
+ * The top chrome, out of the way of the mosaic (#151).
+ *
+ * This tier and no other. Whether the header is on screen, how tall the field is and
+ * whether the grid overflows it are rendering facts: the store knows the flag is set and
+ * nothing else, so a check there would pass against a stylesheet that does nothing.
+ *
+ * **Both phone orientations, and they are not the same case.** The `phone` project is a
+ * Pixel 7 held upright, 412 x 915. Turned on its side it is 915 x 412 -- *wider* than the
+ * 760px the app's narrow rules are keyed on -- so a landscape phone gets the desktop
+ * layout, and the viewport the issue was actually reported from is invisible to every
+ * width-keyed test in this file. The landscape checks below build their own context for
+ * that reason.
+ */
+test.describe('#151 the top chrome', () => {
+  /** Both bars, measured the way the reviewer experiences them: height on screen. */
+  const chromeHeight = (page) => page.evaluate(() => {
+    const h = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? Math.round(el.getBoundingClientRect().height) : 0;
+    };
+    return { hdr: h('.hdr'), sub: h('.sub'), field: h('.field'), foot: h('.foot') };
+  });
+
+  /** A landscape phone: the case the issue came from, which no width-keyed rule can see. */
+  async function landscape(browser, page) {
+    await page.goto('./');
+    const url = page.url();                       // carries the fixture hash
+    const context = await browser.newContext({ viewport: { width: 915, height: 412 }, hasTouch: true });
+    const wide = await context.newPage();
+    await wide.goto(url);
+    await ready(wide);
+    return { context, wide };
+  }
+
+  test('R1: the control takes the header and the sub-bar away, and the field gets the pixels',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone', 'about the phone layout');
+      await page.goto('./');
+      await ready(page);
+
+      const before = await chromeHeight(page);
+      expect(before.hdr, 'the header is on screen to begin with').toBeGreaterThan(0);
+      expect(before.sub, 'and so is the bar under it').toBeGreaterThan(0);
+
+      await page.locator('#chromebtn').click();
+
+      const after = await chromeHeight(page);
+      expect(after.hdr, 'the header is gone from layout, not merely invisible').toBe(0);
+      expect(after.sub).toBe(0);
+      /* Every pixel, not merely more of them: chrome that hides and gives the space to
+         nothing is the same screen the reviewer complained about. */
+      expect(after.field - before.field).toBe(before.hdr + before.sub);
+    });
+
+  test('R8: the state is on the body, the way the rail already says its own',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone', 'about the phone layout');
+      await page.goto('./');
+      await ready(page);
+      await expect(page.locator('body')).not.toHaveClass(/top-hidden/);
+      await page.locator('#chromebtn').click();
+      await expect(page.locator('body')).toHaveClass(/top-hidden/);
+    });
+
+  test('R2: the control is still reachable once the chrome it hides is gone',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone', 'about the phone layout');
+      await page.goto('./');
+      await ready(page);
+      const before = await chromeHeight(page);
+
+      const btn = page.locator('#chromebtn');
+      await btn.click();
+      /* The whole of R2: a control living inside the header cannot bring the header back,
+         and a reviewer who hides the chrome on a phone has no other way to reach it. */
+      await expect(btn).toBeVisible();
+      await expect(btn).toHaveAttribute('aria-expanded', 'false');
+
+      await btn.click();
+      const back = await chromeHeight(page);
+      expect(back.hdr).toBe(before.hdr);
+      expect(back.sub).toBe(before.sub);
+      await expect(btn).toHaveAttribute('aria-expanded', 'true');
+    });
+
+  test('R3: the footer and both commit buttons are untouched', async ({ page }, info) => {
+    test.skip(info.project.name !== 'phone', 'about the phone layout');
+    await page.goto('./');
+    await ready(page);
+    const before = await chromeHeight(page);
+
+    await page.locator('#chromebtn').click();
+
+    /* This issue is about the *top* chrome. The footer carries the commit buttons, which
+       are the point of the page, and hiding them is a separate question nobody has
+       answered -- so a change that quietly took them too would be out of scope and wrong. */
+    const after = await chromeHeight(page);
+    expect(after.foot).toBe(before.foot);
+    await expect(page.locator('#commit')).toBeVisible();
+    await expect(page.locator('#commitMarked')).toBeVisible();
+  });
+
+  test('R4: a mark made before the chrome is hidden is still there after',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone', 'about the phone layout');
+      await page.goto('./');
+      await ready(page);
+
+      /* Hiding the chrome grows the field, and the page size follows the field -- so this
+         re-queries. The marks must survive that, or the control costs the reviewer the
+         work they had already done on the page. */
+      const id = await page.locator('.tile:not(.failed):not(.queued)').first()
+        .getAttribute('data-id');
+      await page.locator(`.tile[data-id="${id}"]`).click();
+      await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/marked/);
+
+      await page.locator('#chromebtn').click();
+      await ready(page);
+      await expect(page.locator(`.tile[data-id="${id}"]`)).toHaveClass(/marked/);
+    });
+
+  test('R5: on a landscape phone the chrome starts out of the way',
+    async ({ browser, page }, info) => {
+      test.skip(info.project.name !== 'phone', 'one landscape context is enough');
+      const { context, wide } = await landscape(browser, page);
+      try {
+        /* The reported case: 915 x 412, where the chrome was 120 of 412 pixels. It starts
+           hidden here and nowhere else, because this is the viewport that cannot spare it. */
+        await expect(wide.locator('body')).toHaveClass(/top-hidden/);
+        const hidden = await chromeHeight(wide);
+        expect(hidden.hdr).toBe(0);
+        expect(hidden.sub).toBe(0);
+
+        await wide.locator('#chromebtn').click();
+        const shown = await chromeHeight(wide);
+        expect(shown.hdr).toBeGreaterThan(0);
+        expect(hidden.field - shown.field).toBe(shown.hdr + shown.sub);
+      } finally {
+        await context.close();
+      }
+    });
+
+  test('R7: the rail overlay follows the chrome rather than hanging below where it was',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone', 'the rail only overlays the mosaic here');
+      await page.goto('./');
+      await ready(page);
+
+      await page.locator('#chromebtn').click();
+      await openRail(page);
+
+      /* The overlay is positioned against the viewport, and its top was the header and
+         sub-bar measured by hand. With them gone it has to come up with them, or it floats
+         70px into the mosaic with 70px of nothing above it. */
+      const top = await page.locator('.rail')
+        .evaluate((el) => Math.round(el.getBoundingClientRect().top));
+      expect(top).toBeLessThan(10);
+
+      /* And `.app` still clips rather than scrolls, which is what #151 was warned about. */
+      const overflow = await page.evaluate(() =>
+        document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow).toBe(0);
+    });
+
+  test('R6: a desktop has no such control, because it has no such problem',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'desktop', 'about the desktop layout');
+      await page.goto('./');
+      await ready(page);
+      /* Present in the markup and not displayed, asserted as two things. `toBeHidden`
+       * alone is also true of an element that does not exist, so on its own this check
+       * passed against the code before #151 -- a test that cannot go red is not a test. */
+      await expect(page.locator('#chromebtn')).toHaveCount(1);
+      await expect(page.locator('#chromebtn')).toBeHidden();
+      await expect(page.locator('body')).not.toHaveClass(/top-hidden/);
+      await expect(page.locator('.hdr')).toBeVisible();
+    });
+});

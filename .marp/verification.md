@@ -1,104 +1,115 @@
-# Verification — MARP_API#138, a committed delete is not interactive
+# Verification — MARP_API#151, the mosaic reviewer's top chrome
+
+Part 1 of three applications. The ML Dashboard and the public landing page are not covered
+here and are not started.
 
 ## What each test proves
 
+All eight are in `frontend/apps/marp-mosaic-review/tests/e2e/render.spec.mjs`, under
+`#151 the top chrome`. Every one was proved red against the code before the change and is
+green after it.
+
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `tests/unit/model.test.mjs` — *R1: an observation a commit destroyed is destroyed, and nothing else is* | unit | `page.isDestroyed` answers for a deleted outcome and for nothing else — not accepted, not flagged, not conflicted, not an untouched id |
-| R2 | `tests/requirements.js` — *R2 (#138): a committed delete cannot be marked again* | contract | after a real delete commit, `toggleMark` leaves `state.marks` and `state.touched` exactly as they were, and the next commit has nothing to send |
-| R3 | `tests/requirements.js` — *R3 (#138): the accept gesture does not reach a destroyed tile* | contract | `acceptMark` marks nothing and raises no A4 refusal |
-| R4 | `tests/requirements.js` — *R4 (#138): neither route into the correction panel opens on a destroyed tile* | contract | `openCorrection` opens no panel **and creates no mark on the way in**; `openPicker` opens none either |
-| R5 | `tests/requirements.js` — *R5 (#138): marking the page steps over what the page has already destroyed* | contract | `markAllOnPage` marks every other row and not the destroyed one, and the delete confirmation names only rows that still exist |
-| R2, R8 | `tests/e2e/render.spec.mjs` — *R2/R8 (#138): clicking it does nothing, and it says it is not a target* | render | a real click on a committed-deleted tile draws no `marked` class and no second badge; the tile still reads `DELETED` and carries `aria-disabled` |
-| R6 | `tests/e2e/render.spec.mjs` — *R6 (#138): the tooltip says why nothing happens* | render | the tile's `title` says the observation was removed from the database |
-| R3, R4 | `tests/e2e/render.spec.mjs` — *R3/R4 (#138): neither the accept gesture nor the badge reaches it* | render | a right click leaves the tile unmarked and raises no refusal; clicking the badge opens no `.pick` panel |
-| R7 | `tests/e2e/render.spec.mjs` — *R7 (#138): it stays on screen with its picture* | render | the destroyed tile still draws its `<img>` |
-| R5 | `tests/e2e/render.spec.mjs` — *R5 (#138): "flag all on page" steps over it* | render | the page-level mark marks the rest of the page and not the destroyed tile. Desktop only: `.markall` is `display: none` under the phone media query, so the gesture does not exist there |
+| R1 | `R1: the control takes the header and the sub-bar away, and the field gets the pixels` | render (phone) | Both bars measure 0 afterwards, and the field grows by **exactly** their combined height — chrome that hides without giving the space away would still pass a visibility check |
+| R2 | `R2: the control is still reachable once the chrome it hides is gone` | render (phone) | The control is visible with the chrome hidden, says `aria-expanded=false`, and brings both bars back to their original heights |
+| R3 | `R3: the footer and both commit buttons are untouched` | render (phone) | The footer's height is unchanged and `#commit` and `#commitMarked` are both still visible — the scope guard for the question the issue left open |
+| R4 | `R4: a mark made before the chrome is hidden is still there after` | render (phone) | A marked tile is still marked after the toggle re-pages the mosaic |
+| R5 | `R5: on a landscape phone the chrome starts out of the way` | render (landscape context, 915×412) | The reported viewport starts hidden, and showing the chrome costs the field exactly the two bars' height |
+| R6 | `R6: a desktop has no such control, because it has no such problem` | render (desktop) | The control exists in the markup (`toHaveCount(1)`) and is not displayed |
+| R7 | `R7: the rail overlay follows the chrome rather than hanging below where it was` | render (phone) | The rail overlay's top comes up with the chrome, and `document.documentElement` gains no horizontal overflow |
+| R8 | `R8: the state is on the body, the way the rail already says its own` | render (phone) | `body.top-hidden` is absent, then present — the handle every other test and any future one reads |
 
-**Why these tiers.** The rule is a rule, so it is proved in `model/` in sixty
-milliseconds. *"The click now does nothing"* is a fact about what was drawn, and every
-rendering defect in this app so far passed the store-level checks — so it is asserted in
-Playwright, with a real click. The contract tier sits between them and is where the
-refusals themselves are pinned, because it can drive a real commit through the
-confirmation and then ask the store what it did.
+**Why every one of these is in the browser tier.** Whether a bar is on screen, how tall the
+field is and whether the rail overlay is in the right place are rendering facts. The store
+knows only that a flag was flipped, so a store-level check would pass against a stylesheet
+that does nothing at all. The one thing that *is* checkable without a browser — that the
+control is wired to something that draws it — is covered by the existing
+`tests/unit/wiring.test.mjs`, which picked the new id up with no edit.
 
 ## Requirements with no test
 
-None. R1–R8 each have at least one test above.
+None. R1 to R8 each have a named test above.
 
 ## Edge cases
 
-- **A destroyed tile in another mode.** Cannot happen: `cache.keyFor` carries the mode, so
-  a mode switch empties the cache and re-queries, and the row is gone from the server. This
-  is why the rule reads the outcome map rather than a session-wide set of destroyed ids
-  (A1), and why the guards cannot be defeated by switching modes and back.
-- **A conflicted delete destroyed nothing.** The statement matched no version, the row is
-  still there, and the tile must stay actionable. Asserted in the unit test.
-- **The id is already in `state.touched`.** The reviewer marked the tile before deleting
-  it, so R2 pins that the dead click *changes* nothing rather than that the id is absent —
-  the first draft of that assertion was wrong and the check caught it.
-- **`aria-disabled` is advisory.** Playwright reads it as *not enabled* and would wait the
-  tile out, so the render tests click with `force` — which is the dead click a reviewer
-  actually makes, refused by the store rather than swallowed by the harness.
+- **A landscape phone is 915px wide.** Every narrow rule in this app is behind
+  `@media (max-width: 760px)`, so the viewport the issue was reported from was invisible to
+  every existing test in the file. R5 builds its own 915×412 context for that reason, and
+  the feature is keyed on `max-height: 600px` as well as the existing width query.
+- **Hidden, not zero-height.** `display: none` rather than a 0px track, because a 0px `.hdr`
+  with `overflow: hidden` still answers `isVisible()` and still takes the tab key — focus
+  could land on a control nobody can see. R1 asserts the measured height is 0.
+- **The toggle re-pages the mosaic.** Page size follows the field, so growing the field
+  re-queries. R4 is the guard that this costs the reviewer no marks.
+- **The rail overlay is positioned against the viewport**, not against `.body` — nothing
+  between them is positioned — so its `70px` top was the two bars measured by hand. R7 is
+  the test for the trap that created.
 
 ## Regression coverage
 
-All four render tests and three of the four contract checks were run against the old files
-first and failed, on `class="tile marked"` drawn over an observation the same session had
-destroyed. That is the reported defect, at the tier that can see it.
+- R6 was written as `toBeHidden()` alone and **passed against the code before the change**,
+  because `toBeHidden` is also true of an element that does not exist. It now asserts
+  `toHaveCount(1)` first and fails red as it should. A test that cannot go red is not a test.
 
 ## Known gaps
 
-- **`retryFailedThumbnails` is not covered and is not guarded** (A4). A page-level retry
-  can still name a destroyed row whose thumbnail had failed. It costs a request rather than
-  a record, it is not one of the gestures #138 names, and it is left alone deliberately.
-- **No API-tier test.** Nothing here lives in the gap between what a commit recorded and
-  what the row still says — the refusal reads the commit's own answer, and both backings
-  put the same `deleted` outcome there. An API-tier case would have to destroy a real
-  corpus observation to assert a client-side refusal, with nothing to restore it with.
-- **CI runs the fast tiers only**, so a green pipeline is not this verification.
+- **Two phone shapes, not phones in general.** 412×915 and 915×412. A tablet, a fold and a
+  desktop window that is merely short all now match `max-height: 600px` and none was tried.
+- **No real-device run.** Chromium at a phone viewport with touch emulated, which is what
+  this tier is.
+- **The API tier is untouched.** Nothing here writes, reads or changes a request, so there
+  was nothing for `--project=api` to see.
+- **Not a narrated walkthrough**, deliberately: none was asked for.
 
-## Manual steps
+## Results, as run
 
-None. Everything above is automated.
+`npm run test:unit` — 283 pass, 0 fail (about 0.9 s), including the wiring check that now
+sees `#chromebtn`.
 
----
-
-## Results
-
-From `frontend/apps/marp-mosaic-review`, on 2026-09-12, against `develop` at 7fe355e3.
+Red first, against the pre-change sources restored from a file copy (never `git checkout
+--`), `npx playwright test --project=phone --project=desktop -g "#151"`:
 
 ```
-$ npm run test:unit
-ℹ tests 283
-ℹ pass 283
-ℹ fail 0
+  7 failed
+    [phone] › #151 the top chrome › R1: the control takes the header and the sub-bar away, and the field gets the pixels
+    [phone] › #151 the top chrome › R8: the state is on the body, the way the rail already says its own
+    [phone] › #151 the top chrome › R2: the control is still reachable once the chrome it hides is gone
+    [phone] › #151 the top chrome › R3: the footer and both commit buttons are untouched
+    [phone] › #151 the top chrome › R4: a mark made before the chrome is hidden is still there after
+    [phone] › #151 the top chrome › R5: on a landscape phone the chrome starts out of the way
+    [phone] › #151 the top chrome › R7: the rail overlay follows the chrome rather than hanging below where it was
+  8 skipped
+  1 passed (44.0s)
 ```
 
-```
-$ npm run test:e2e
-  5 skipped
-  295 passed (2.0m)
-```
-
-Four of the five skips are pre-existing; the fifth is R5 at phone width, skipped because
-the control it drives is not rendered there.
-
-**Red first.** With `src/store.js` reverted, three of the four contract checks failed:
+The failure in each case was `Error: locator.click: Test timeout of 30000ms exceeded.
+Call log: - waiting for locator('#chromebtn')` — the control did not exist. The one that
+passed was R6, which is why it was strengthened; proved red separately afterwards:
 
 ```
-"R2 (#138): a committed delete cannot be marked again
- the row is gone from the database; nothing may mark it expected false, got true",
-"R4 (#138): neither route into the correction panel opens on a destroyed tile
- the chip must not open the chooser expected null, got {"id":100129,"correcting":true}",
-"R5 (#138): marking the page steps over what the page has already destroyed
- the destroyed row must not be marked expected false, got true",
+  1 failed
+    [desktop] › #151 the top chrome › R6: a desktop has no such control, because it has no such problem
+  7 skipped
 ```
 
-R3 passed there, as its own comment says it would. With `src/store.js` and `src/ui/tile.js`
-reverted, all four render tests failed, on the tile the same session had destroyed:
+Green, same command, after restoring the implementation from the copy:
 
 ```
-Error: expect(locator).not.toHaveClass(expected) failed
-    18 × locator resolved to <button data-id="100129" class="tile marked" ...>
+  8 skipped
+  8 passed (4.7s)
 ```
+
+Whole render tier, `npm run test:e2e` (desktop and phone projects), run twice:
+
+```
+run 1:  1 failed / 13 skipped / 302 passed (2.1m)
+          [phone] › the filter rail, cleaned up › L4: confidence is one track carrying two handles
+run 2:  0 failed / 13 skipped / 303 passed (2.1m)
+```
+
+**The L4 failure is not this change.** It passes alone, it passed in the second full run,
+and the geometry it is sensitive to is identical with and without the change — the rail,
+the rail head and the confidence control measure `0,70 190x801`, `10,78 169x20` and
+`10,454 159x20` in the phone overlay in both cases. It is reported rather than chased: it
+is an instability in a test another agent's branch also touches.
