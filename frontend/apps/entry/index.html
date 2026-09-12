@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="MARP is a proven workflow platform for processing ecological data, supporting expert review, video, machine learning, and reporting.">
+  <meta name="description" content="A survey takes a day; turning it into science can take months. MARP keeps collection, processing, expert review and reporting attached to one record, so those stages can advance together instead of waiting in line.">
   <meta name="theme-color" content="#020b18">
 
-  <title>MARP | Marine Analysis and Reporting Platform</title>
+  <title>MARP — from survey to science, without the months in between</title>
 
   <!--
     The landing page is intentionally split into a small HTML document,
@@ -118,6 +118,12 @@
       <path d="M5 24s7-12 19-12 19 12 19 12-7 12-19 12S5 24 5 24Z"></path>
       <circle cx="24" cy="24" r="5"></circle>
     </symbol>
+
+    <!-- Added for the queue section: the thing every stage spends its time doing. -->
+    <symbol id="icon-clock" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="18"></circle>
+      <path d="M24 13v11l8 5"></path>
+    </symbol>
   </svg>
 
   <!-- Sticky global navigation. -->
@@ -140,10 +146,10 @@
       </button>
 
       <nav class="primary-nav" id="primary-navigation" aria-label="Primary navigation" data-primary-nav>
-        <a href="#platform">Platform</a>
+        <a href="#the-gap">The Gap</a>
+        <a href="#the-change">What Changes</a>
         <a href="#how-it-works">How It Works</a>
         <a href="#applications">Applications</a>
-        <a href="#why-marp">About</a>
         <button class="button button--outline button--compact" type="button" data-login-open>Login</button>
       </nav>
     </div>
@@ -154,6 +160,9 @@
       Hero: real HTML content over layered artwork. The background image is a
       decorative crop, while the headings and controls remain responsive and
       accessible at every viewport size.
+
+      The heading states the problem rather than describing the product. Issue
+      #152: a visitor should meet the reason MARP exists before its parts.
     -->
     <section class="hero" id="home" aria-labelledby="hero-title">
       <div class="hero__art" aria-hidden="true"></div>
@@ -193,35 +202,222 @@
         <div class="hero__copy reveal" data-reveal>
           <img class="hero__logo" src="assets/images/marp-logo.png" alt="MARP - Marine Analysis and Reporting Platform">
 
-          <h1 id="hero-title">From field data<br>to <span>trusted output.</span></h1>
+          <h1 id="hero-title">A survey takes a day.<br>The science can take <span>months.</span></h1>
 
           <p>
-            MARP is a proven workflow platform for processing ecological data,
-            supporting expert review, video, machine learning, and reporting.
+            We are still working out what lives on the seafloor, and we can now
+            look at it faster than we can understand what we saw. MARP is being
+            built to close that gap.
           </p>
 
           <div class="hero__actions">
-            <a class="button button--primary" href="#platform">Explore MARP</a>
+            <a class="button button--primary" href="#the-change">What MARP changes</a>
             <button class="button button--outline" type="button" data-login-open>Login</button>
           </div>
         </div>
       </div>
 
-      <a class="hero__scroll-cue" href="#platform" aria-label="Scroll to learn what MARP is">
-        <span>Discover the platform</span>
+      <a class="hero__scroll-cue" href="#the-gap" aria-label="Scroll to find out where the months go">
+        <span>Where the months go</span>
         <span aria-hidden="true">↓</span>
       </a>
     </section>
 
-    <!-- Central platform/capability diagram. -->
+    <!--
+      The bottleneck. Named concretely: the friction is the handoffs between
+      stages, not the difficulty of any one stage.
+    -->
+    <section class="page-section page-section--panel" id="the-gap" aria-labelledby="gap-title">
+      <div class="page-container">
+        <header class="section-heading reveal" data-reveal>
+          <p class="section-heading__eyebrow">Where the months go</p>
+          <h2 id="gap-title">Recording it is the fast part.</h2>
+          <p class="section-heading__summary">
+            A vehicle records for as long as it has power. Watching that back and
+            working out what is in it has never scaled with the cameras — and the
+            watching is not even where most of the time goes. It goes into
+            everything between the stages.
+          </p>
+        </header>
+
+        <div class="feature-grid">
+          <article class="feature-card reveal" data-reveal>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
+            <h3>Every step rebuilds the last one's context</h3>
+            <p>
+              Video, navigation and observations get separated when they move
+              between tools, then joined back up by hand on the other side.
+              Putting them back together is not the science. It is the toll for
+              doing the science.
+            </p>
+          </article>
+
+          <article class="feature-card reveal" data-reveal>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
+            <h3>Nothing starts until the step before it finishes</h3>
+            <p>
+              Review waits on processing, analysis waits on review, and the
+              report waits on all of it. A stage sits idle not because there is
+              nothing to do, but because the batch it needs is not finished.
+            </p>
+          </article>
+
+          <article class="feature-card reveal" data-reveal>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-insight"></use></svg>
+            <h3>The answers arrive after the questions moved on</h3>
+            <p>
+              A survey goes out to answer something — how much is out there,
+              whether it is changing, what this place looks like now. The longer
+              the answers take, the less of that they can still affect.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!--
+      The change, as a picture. Two lanes of the same five stages: laid end to
+      end, then overlapping. Deliberately drawn as shapes with no time axis —
+      the claim is about when a stage can start, not how long a project takes.
+    -->
+    <section class="page-section lanes-section" id="the-change" aria-labelledby="change-title">
+      <div class="page-container">
+        <header class="section-heading reveal" data-reveal>
+          <p class="section-heading__eyebrow">What MARP changes</p>
+          <h2 id="change-title">The same stages, no longer standing in line.</h2>
+          <p class="section-heading__summary">
+            MARP does not make any of this work disappear. It keeps every stage
+            attached to the same record, so a stage can start on what is ready
+            instead of waiting for the one before it to finish everything.
+          </p>
+        </header>
+
+        <div class="lanes reveal" data-reveal>
+          <section class="lane" aria-labelledby="lane-queued">
+            <h3 class="lane__label" id="lane-queued">One stage at a time</h3>
+            <ol class="lane__track">
+              <li class="lane__stage" style="--from:1; --span:2">
+                <span class="lane__name">Collect</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:3; --span:2">
+                <span class="lane__name">Ingest and align</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:5; --span:2">
+                <span class="lane__name">Detect</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:7; --span:3">
+                <span class="lane__name">Expert review</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:10; --span:3">
+                <span class="lane__name">Analyse and report</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+            </ol>
+            <p class="lane__note">Each stage starts when the one before it ends.</p>
+          </section>
+
+          <section class="lane lane--marp" aria-labelledby="lane-marp">
+            <h3 class="lane__label" id="lane-marp">The same work, in MARP</h3>
+            <ol class="lane__track">
+              <li class="lane__stage" style="--from:1; --span:2">
+                <span class="lane__name">Collect</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:2; --span:2">
+                <span class="lane__name">Ingest and align</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:3; --span:2">
+                <span class="lane__name">Detect</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:4; --span:3">
+                <span class="lane__name">Expert review</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+              <li class="lane__stage" style="--from:5; --span:3">
+                <span class="lane__name">Analyse and report</span>
+                <span class="lane__rod"><i></i></span>
+              </li>
+            </ol>
+            <p class="lane__note">Each stage starts on whatever is ready.</p>
+          </section>
+        </div>
+
+        <p class="lanes__caveat reveal" data-reveal>
+          Shapes, not a schedule. A stage still takes as long as it takes — what
+          moves is when it is allowed to begin.
+        </p>
+
+        <div class="pull-quote reveal" data-reveal>
+          <p>
+            All of that rests on one thing: there is a single record underneath.
+            The video, where the vehicle was, what a model proposed, what a
+            biologist decided and what got corrected are the same data
+            throughout. Nothing has to be rebuilt to move forward, and a
+            correction made during review is the version everything downstream
+            reads.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!--
+      The differentiator, explained rather than sloganised. "MARP knows what
+      comes next" is shorthand from the design discussion, not copy.
+    -->
+    <section class="page-section page-section--textured" id="how-it-works" aria-labelledby="shape-title">
+      <div class="page-container">
+        <header class="section-heading reveal" data-reveal>
+          <p class="section-heading__eyebrow">Why the workflow is narrow on purpose</p>
+          <h2 id="shape-title">A system that can do anything has to be told everything.</h2>
+        </header>
+
+        <div class="explainer reveal" data-reveal>
+          <p>
+            Software built to support any scientific process has to ask. Which
+            files belong together. What this column means. Which step comes
+            after this one. What the finished thing is supposed to look like.
+            Every project answers those questions again, and the answers end up
+            in somebody's head or in a spreadsheet beside the data.
+          </p>
+          <p>
+            MARP is built around one sequence of work, so most of them are
+            already answered. It knows video belongs to a dive and a dive
+            belongs to a project. It knows a detection is a proposal until a
+            biologist has looked at it. It knows what a reviewed observation is
+            for. That is what lets the interface stay small — it can fill things
+            in, hand one stage to the next, and otherwise stay out of the way.
+          </p>
+          <p>
+            The narrowness is the point, and it stops at the surface. Underneath
+            are ordinary pieces — one API, one data model, services that do one
+            job each — and those are reusable anywhere. The workflow sitting on
+            top of them is deliberately not.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!--
+      The capability diagram. Unchanged as a drawing; it has been moved below
+      the narrative so it arrives as evidence rather than as something to
+      decode first. It also now carries the point the deleted capability strip
+      was making badly: one API, one data model.
+    -->
     <section class="page-section page-section--panel" id="platform" aria-labelledby="platform-title">
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
-          <p class="section-heading__eyebrow">What MARP Is</p>
-          <h2 id="platform-title">One proven workflow for ecological data processing.</h2>
+          <p class="section-heading__eyebrow">Underneath</p>
+          <h2 id="platform-title">One record, seen from six places.</h2>
           <p class="section-heading__summary">
-            MARP is built around a practical, tested workflow for turning
-            ecological observations, video, and data into trusted outputs.
+            None of these is a separate product with its own copy of the data.
+            That is the whole reason a stage can start before the one before it
+            has finished.
           </p>
         </header>
 
@@ -249,7 +445,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-database"></use></svg>
               <div>
                 <h3>Ecological Data</h3>
-                <p>Ingest, organize, and manage diverse datasets.</p>
+                <p>Observations, species, sessions, and the survey they came from.</p>
               </div>
             </article>
 
@@ -257,7 +453,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-video"></use></svg>
               <div>
                 <h3>Video &amp; Imagery</h3>
-                <p>Store, stream, and review underwater content.</p>
+                <p>Dive video and the frames taken from it, addressable to the frame.</p>
               </div>
             </article>
 
@@ -265,16 +461,16 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-expert"></use></svg>
               <div>
                 <h3>Expert Review</h3>
-                <p>Biologist-led interpretation and quality assurance.</p>
+                <p>A biologist's decision, recorded as theirs, with the earlier ones kept.</p>
               </div>
             </article>
           </div>
 
-          <div class="platform-hub" aria-label="MARP shared platform hub">
+          <div class="platform-hub" aria-label="One API and one data model">
             <div class="platform-hub__orbit platform-hub__orbit--outer"></div>
             <div class="platform-hub__orbit platform-hub__orbit--inner"></div>
             <img src="assets/images/marp-mark.png" alt="MARP">
-            <span>Shared API + Data Model</span>
+            <span>One API. One data model.</span>
           </div>
 
           <div class="platform-map__column platform-map__column--right">
@@ -282,7 +478,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-process"></use></svg>
               <div>
                 <h3>Data Processing</h3>
-                <p>Clean, standardize, and transform data at scale.</p>
+                <p>The unglamorous joining: timecodes, navigation, species lists.</p>
               </div>
             </article>
 
@@ -290,7 +486,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg>
               <div>
                 <h3>Machine Learning</h3>
-                <p>Models assist experts without replacing them.</p>
+                <p>Models read every frame. Nothing they find is a fact yet.</p>
               </div>
             </article>
 
@@ -298,7 +494,7 @@
               <svg class="line-icon" aria-hidden="true"><use href="#icon-report"></use></svg>
               <div>
                 <h3>Reports &amp; Data Products</h3>
-                <p>Generate reports and deliver trusted outputs.</p>
+                <p>What comes out the far end, built from that same record.</p>
               </div>
             </article>
           </div>
@@ -306,112 +502,67 @@
       </div>
     </section>
 
-    <!-- Five-stage platform workflow. -->
-    <section class="page-section workflow-section" id="how-it-works" aria-labelledby="workflow-title">
-      <div class="page-container">
-        <header class="section-heading section-heading--compact reveal" data-reveal>
-          <p class="section-heading__eyebrow">How MARP Works</p>
-          <h2 id="workflow-title">A connected path from field data to trusted outputs.</h2>
-        </header>
-
-        <ol class="workflow reveal" data-reveal>
-          <li class="workflow__step">
-            <span class="workflow__number">1</span>
-            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-collect"></use></svg></div>
-            <div class="workflow__copy">
-              <h3>Collect</h3>
-              <p>Gather data in the field or from connected systems.</p>
-            </div>
-          </li>
-
-          <li class="workflow__step">
-            <span class="workflow__number">2</span>
-            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-expert"></use></svg></div>
-            <div class="workflow__copy">
-              <h3>Review</h3>
-              <p>Experts review and annotate video, imagery, and data.</p>
-            </div>
-          </li>
-
-          <li class="workflow__step">
-            <span class="workflow__number">3</span>
-            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-process"></use></svg></div>
-            <div class="workflow__copy">
-              <h3>Process</h3>
-              <p>Data is cleaned, standardized, and prepared at scale.</p>
-            </div>
-          </li>
-
-          <li class="workflow__step">
-            <span class="workflow__number">4</span>
-            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg></div>
-            <div class="workflow__copy">
-              <h3>Assist</h3>
-              <p>Machine learning highlights patterns and observations.</p>
-            </div>
-          </li>
-
-          <li class="workflow__step">
-            <span class="workflow__number">5</span>
-            <div class="workflow__icon"><svg class="line-icon" aria-hidden="true"><use href="#icon-report"></use></svg></div>
-            <div class="workflow__copy">
-              <h3>Deliver</h3>
-              <p>Trusted reports and data products are ready to use.</p>
-            </div>
-          </li>
-        </ol>
-      </div>
-    </section>
-
-    <!-- Expert-support philosophy. -->
-    <section class="page-section page-section--textured" id="why-marp" aria-labelledby="why-title">
+    <!--
+      Human authority, and machine learning put in its place. These belong in
+      one section: the reason ML is not the headline is the same reason the
+      review step exists.
+    -->
+    <section class="page-section workflow-section" id="who-decides" aria-labelledby="why-title">
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
-          <p class="section-heading__eyebrow">Why MARP Matters</p>
+          <p class="section-heading__eyebrow">Who decides</p>
           <h2 id="why-title">Biologists lead. MARP amplifies.</h2>
           <p class="section-heading__summary">
-            MARP reduces repetitive work while keeping ecological judgment,
-            validation, and interpretation in expert hands.
+            A model can look at every frame of a survey, which no person has the
+            hours to do. It cannot tell you whether what it found matters, and it
+            is wrong often enough that treating its output as data would poison
+            the record. So a detection is a proposal until a biologist accepts
+            it, and the acceptance is recorded as that person's.
           </p>
         </header>
 
         <div class="feature-grid">
           <article class="feature-card reveal" data-reveal>
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg>
-            <h3>AI Assistance</h3>
-            <p>MARP handles repetitive tasks so experts can focus on interpretation.</p>
+            <h3>A detection is a proposal</h3>
+            <p>Models put candidates in front of a reviewer. Nothing a model produced becomes an observation on its own.</p>
           </article>
 
           <article class="feature-card reveal" data-reveal>
             <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-expert"></use></svg>
-            <h3>Expert Control</h3>
-            <p>Biological expertise drives decisions and quality at every step.</p>
+            <h3>The decision has a name on it</h3>
+            <p>MARP records who reviewed what and what they decided, and keeps the earlier decisions instead of writing over them.</p>
           </article>
 
           <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-speed"></use></svg>
-            <h3>Faster Workflows</h3>
-            <p>Connected workflows reduce delays between observation and analysis.</p>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
+            <h3>A correction goes upstream</h3>
+            <p>Fixing an identification changes the record everything else reads, not a copy of it inside one application.</p>
           </article>
 
           <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-insight"></use></svg>
-            <h3>Deeper Insight</h3>
-            <p>Discover patterns, monitor change, and support ecological decisions.</p>
+            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-process"></use></svg>
+            <h3>The dull half is the automated half</h3>
+            <p>Pulling frames, matching timecodes, moving files, assembling the page in front of the reviewer. None of it needs a scientist.</p>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- Product/application showcase. -->
+    <!--
+      Applications last, as evidence. Two of the five are running here and
+      carry a door; the other three are still concepts, which is why they do
+      not. See .application-card--live in landing.css.
+    -->
     <section class="page-section applications-section" id="applications" aria-labelledby="applications-title">
       <div class="page-container page-container--wide">
         <header class="section-heading reveal" data-reveal>
           <p class="section-heading__eyebrow">Applications</p>
-          <h2 id="applications-title">Purpose-built tools for MARP's workflow.</h2>
+          <h2 id="applications-title">Where people actually work.</h2>
           <p class="section-heading__summary">
-            Purpose-built applications share MARP data and capabilities while
-            supporting the stages of our proven ecological workflow.
+            Five places to do a different part of the same job. They are not five
+            products — they read and write the same record, which is why work
+            done in one turns up in the next.
           </p>
         </header>
 
@@ -423,18 +574,18 @@
             <div class="application-card__body">
               <span class="application-card__index">01</span>
               <h3>Video Annotation Tool</h3>
-              <p>Annotate and catalog species, events, and habitats in video.</p>
+              <p>Frame-accurate annotation of dive video — species, events and habitat, against where the vehicle was.</p>
             </div>
           </article>
 
           <article class="application-card application-card--live reveal" data-reveal>
             <div class="application-card__media">
-              <img src="assets/images/app-mosaic-reviewer.webp" alt="Concept interface for the MARP Picture Mosaic Reviewer" loading="lazy">
+              <img src="assets/images/app-mosaic-reviewer.webp" alt="The MARP Picture Mosaic Reviewer" loading="lazy">
             </div>
             <div class="application-card__body">
               <span class="application-card__index">02</span>
               <h3>Picture Mosaic Reviewer</h3>
-              <p>Review and validate imagery efficiently and precisely.</p>
+              <p>Hundreds of candidates on one screen, so a reviewer can keep, correct or throw out a page at a time.</p>
               <a class="application-card__open" href="/apps/marp-mosaic-review/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
             </div>
           </article>
@@ -446,18 +597,18 @@
             <div class="application-card__body">
               <span class="application-card__index">03</span>
               <h3>Data Processing Workspace</h3>
-              <p>Prepare and standardize ecological data with reproducible tools.</p>
+              <p>Getting survey data into the shape the rest of the work can read, the same way every time.</p>
             </div>
           </article>
 
           <article class="application-card application-card--live reveal" data-reveal>
             <div class="application-card__media">
-              <img src="assets/images/app-machine-learning.webp" alt="Concept interface for the MARP Machine Learning Dashboard" loading="lazy">
+              <img src="assets/images/app-machine-learning.webp" alt="The MARP Machine Learning Dashboard" loading="lazy">
             </div>
             <div class="application-card__body">
               <span class="application-card__index">04</span>
               <h3>Machine Learning Dashboard</h3>
-              <p>Train, evaluate, deploy, and monitor models and workers.</p>
+              <p>Training runs, the GPU workers doing them, and how a model behaves on real survey video.</p>
               <a class="application-card__open" href="/apps/marp-ml-dashboard/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
             </div>
           </article>
@@ -469,38 +620,14 @@
             <div class="application-card__body">
               <span class="application-card__index">05</span>
               <h3>Automated Report Generation</h3>
-              <p>Create polished reports and products from verified MARP data.</p>
+              <p>Building the deliverable out of the reviewed record instead of reassembling it by hand at the end.</p>
             </div>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- Compact platform credibility strip. -->
-    <section class="capability-strip" aria-label="MARP platform capabilities">
-      <div class="page-container">
-        <div class="capability-strip__grid reveal" data-reveal>
-          <article>
-            <svg class="line-icon" aria-hidden="true"><use href="#icon-lock"></use></svg>
-            <div><h3>Secure API</h3><p>Controlled access and protected services.</p></div>
-          </article>
-          <article>
-            <svg class="line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
-            <div><h3>Connected Data</h3><p>Integrate instruments, platforms, and databases.</p></div>
-          </article>
-          <article>
-            <svg class="line-icon" aria-hidden="true"><use href="#icon-cloud"></use></svg>
-            <div><h3>Scalable Compute</h3><p>Expand processing across available workers.</p></div>
-          </article>
-          <article>
-            <svg class="line-icon" aria-hidden="true"><use href="#icon-cube"></use></svg>
-            <div><h3>Reusable Services</h3><p>Shared capabilities for applications and partners.</p></div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- Final conversion area. -->
+    <!-- Back to the outcome, then the doors in. -->
     <section class="final-cta" id="get-started" aria-labelledby="cta-title">
       <svg class="network-wave network-wave--footer" viewBox="0 0 1200 320" preserveAspectRatio="none" aria-hidden="true">
         <g class="network-wave__paths">
@@ -519,7 +646,11 @@
       <div class="page-container final-cta__inner reveal" data-reveal>
         <img src="assets/images/marp-mark.png" alt="" aria-hidden="true">
         <h2 id="cta-title"><span>Explore.</span> <strong>Inform.</strong> <em>Protect.</em></h2>
-        <p>Connect to the platform, review the API, or explore the developer documentation.</p>
+        <p class="final-cta__outcome">
+          More of what a survey collects can turn into science, sooner. That is
+          the whole of it.
+        </p>
+        <p>Sign in, read the API, or look at how it is put together.</p>
         <div class="final-cta__actions">
           <button class="button button--primary" type="button" data-login-open>Login to MARP</button>
           <a class="button button--outline" href="/api-docs">API Docs</a>
@@ -548,7 +679,7 @@
     <div class="login-dialog__layout">
       <aside class="login-dialog__visual" aria-hidden="true">
         <img src="assets/images/marp-mark.png" alt="">
-        <p>One proven workflow.<br>Trusted ecological processing.</p>
+        <p>One record,<br>from the seafloor<br>to the report.</p>
       </aside>
 
       <div class="login-dialog__content">
@@ -558,7 +689,7 @@
 
         <p class="section-heading__eyebrow">Secure Access</p>
         <h2 id="login-dialog-title">Sign in to MARP</h2>
-        <p class="login-dialog__intro">Use your MARP account to access platform applications and data.</p>
+        <p class="login-dialog__intro">Your MARP account opens the applications and data you have been given access to.</p>
 
         <form class="login-form" data-login-form novalidate>
           <label>

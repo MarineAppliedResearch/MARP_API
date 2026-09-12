@@ -726,88 +726,150 @@ h3 {
 }
 
 /* --------------------------------------------------------------------------
-   6. Workflow
+   6. Lanes: the same stages queued, then overlapping
    -------------------------------------------------------------------------- */
+
+/* Kept for the section that now uses it -- the who-decides block. The five
+   numbered workflow boxes this file used to style are gone; see #152. */
 .workflow-section {
   background:
     radial-gradient(circle at 50% 40%, rgba(9, 76, 108, 0.16), transparent 33rem),
     linear-gradient(180deg, rgba(1, 8, 17, 0), rgba(3, 16, 29, 0.76), rgba(1, 8, 17, 0));
 }
 
-.workflow {
+.lanes-section {
+  background:
+    radial-gradient(circle at 50% 30%, rgba(9, 76, 108, 0.18), transparent 34rem),
+    linear-gradient(180deg, rgba(1, 8, 17, 0), rgba(3, 16, 29, 0.76), rgba(1, 8, 17, 0));
+}
+
+.lanes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 26px;
+}
+
+.lane {
+  min-width: 0;
+  padding: 26px clamp(18px, 2.4vw, 32px) 22px;
+  border: 1px solid rgba(42, 214, 220, 0.12);
+  border-radius: var(--radius-md);
+  background: linear-gradient(140deg, rgba(7, 30, 47, 0.5), rgba(3, 17, 30, 0.72));
+}
+
+/* The MARP lane is the one the reader is meant to end up looking at, so it
+   is the only one that gets colour, weight and a shadow. */
+.lane--marp {
+  border-color: var(--border);
+  background: linear-gradient(140deg, rgba(7, 40, 58, 0.82), rgba(3, 20, 34, 0.9));
+  box-shadow: var(--shadow-md);
+}
+
+.lane__label {
+  margin-bottom: 22px;
+  font-size: 1.16rem;
+  color: var(--muted);
+}
+
+.lane--marp .lane__label {
+  color: var(--white);
+}
+
+.lane__track {
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   list-style: none;
-}
-
-.workflow__step {
-  position: relative;
-  min-width: 0;
-  padding-inline: clamp(10px, 1.6vw, 26px);
-  text-align: center;
-}
-
-.workflow__step:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 71px;
-  right: -10%;
-  width: 20%;
-  height: 2px;
-  background: linear-gradient(90deg, var(--cyan-500), var(--blue-400));
-  box-shadow: 0 0 10px rgba(34, 215, 220, 0.45);
-}
-
-.workflow__step:not(:last-child)::before {
-  content: "";
-  position: absolute;
-  top: 65px;
-  right: -10%;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-  border-left: 9px solid var(--blue-400);
-  transform: translateX(1px);
-}
-
-.workflow__number {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--green-400);
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.workflow__icon {
-  width: 106px;
-  aspect-ratio: 1;
-  margin: 0 auto 20px;
   display: grid;
-  place-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  color: var(--cyan-400);
-  background: radial-gradient(circle, rgba(9, 53, 75, 0.68), rgba(3, 17, 30, 0.96));
-  box-shadow: inset 0 0 28px rgba(34, 215, 220, 0.07);
+  gap: 15px;
 }
 
-.workflow__icon .line-icon {
-  width: 48px;
-  height: 48px;
+/* Name above, rod below. The name always gets the full width of the track,
+   so a long stage name can never overflow its own two-twelfths of it --
+   which is what a label placed inside the bar would do on a phone. */
+.lane__stage {
+  display: grid;
+  gap: 5px;
 }
 
-.workflow__copy h3 {
-  margin-bottom: 6px;
-  font-size: 1.5rem;
+.lane__name {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  color: var(--faint);
 }
 
-.workflow__copy p {
-  margin-bottom: 0;
+.lane--marp .lane__name {
+  color: var(--text);
+}
+
+.lane__rod {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(42, 214, 220, 0.07);
+}
+
+/* --from and --span are set per stage in the markup: they are the diagram. */
+.lane__rod i {
+  grid-column: var(--from) / span var(--span);
+  border-radius: 999px;
+  background: var(--faint);
+}
+
+.lane--marp .lane__rod i {
+  background: linear-gradient(90deg, var(--green-400), var(--cyan-400));
+  box-shadow: 0 0 14px rgba(34, 215, 220, 0.35);
+}
+
+.lane__note {
+  margin: 20px 0 0;
+  font-size: 0.92rem;
   color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.55;
-  font-weight: bold;
+}
+
+.lane--marp .lane__note {
+  color: var(--cyan-300);
+}
+
+/* Stops the diagram being read as a timeline with a duration on it. */
+.lanes__caveat {
+  margin: 24px auto 0;
+  max-width: 54ch;
+  text-align: center;
+  font-size: 0.92rem;
+  color: var(--faint);
+}
+
+.pull-quote {
+  margin: 54px auto 0;
+  max-width: 64ch;
+  padding-left: clamp(18px, 2.4vw, 30px);
+  border-left: 2px solid var(--border-strong);
+}
+
+.pull-quote p {
+  margin: 0;
+  font-size: clamp(1.04rem, 1.4vw, 1.2rem);
+  line-height: 1.72;
+  color: var(--text);
+}
+
+/* Three paragraphs of argument, in two columns so they do not read as a wall. */
+.explainer {
+  margin-top: 6px;
+  columns: 2;
+  column-gap: clamp(26px, 3.4vw, 54px);
+}
+
+.explainer p {
+  margin: 0 0 1.05em;
+  break-inside: avoid;
+  font-size: 1.02rem;
+  line-height: 1.72;
+}
+
+.explainer p:last-child {
+  margin-bottom: 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -971,59 +1033,6 @@ h3 {
 }
 
 /* --------------------------------------------------------------------------
-   9. Platform capability strip
-   -------------------------------------------------------------------------- */
-.capability-strip {
-  padding: 28px 0 82px;
-  background: var(--navy-950);
-}
-
-.capability-strip__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: linear-gradient(140deg, rgba(7, 34, 52, 0.86), rgba(3, 17, 30, 0.92));
-  box-shadow: var(--shadow-md);
-}
-
-.capability-strip article {
-  min-height: 150px;
-  padding: 26px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 17px;
-}
-
-.capability-strip article:not(:last-child) {
-  border-right: 1px solid rgba(37, 215, 220, 0.14);
-}
-
-.capability-strip .line-icon {
-  width: 45px;
-  height: 45px;
-  color: var(--green-400);
-}
-
-.capability-strip article:nth-child(even) .line-icon {
-  color: var(--cyan-400);
-}
-
-.capability-strip h3 {
-  margin-bottom: 5px;
-  font-size: 1.18rem;
-}
-
-.capability-strip p {
-  margin-bottom: 0;
-  color: var(--muted);
-  font-size: 1rem;
-  font-weight: bold;
-  line-height: 1.45;
-}
-
-/* --------------------------------------------------------------------------
    10. Final call to action and footer
    -------------------------------------------------------------------------- */
 .final-cta {
@@ -1081,6 +1090,15 @@ h3 {
   margin: 0 auto;
   color: var(--muted);
   font-weight: bold;
+}
+
+/* The page opened on the problem; this is the one line that answers it, so
+   it outranks the sign-in line sitting under it. */
+.final-cta p.final-cta__outcome {
+  margin-bottom: 18px;
+  color: var(--text);
+  font-size: clamp(1.05rem, 1.5vw, 1.24rem);
+  line-height: 1.62;
 }
 
 .final-cta__actions {
@@ -1393,18 +1411,6 @@ h3 {
   .platform-map__connectors {
     opacity: 0.58;
   }
-
-  .capability-strip__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .capability-strip article:nth-child(2) {
-    border-right: 0;
-  }
-
-  .capability-strip article:nth-child(-n+2) {
-    border-bottom: 1px solid rgba(37, 215, 220, 0.14);
-  }
 }
 
 @media (max-width: 980px) {
@@ -1494,18 +1500,8 @@ h3 {
     display: none;
   }
 
-  .workflow {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 44px 16px;
-  }
-
-  .workflow__step:not(:last-child)::before,
-  .workflow__step:not(:last-child)::after {
-    display: none;
-  }
-
-  .workflow__step:nth-child(4) {
-    grid-column: 1 / 2;
+  .explainer {
+    columns: 1;
   }
 
   .application-grid {
@@ -1607,58 +1603,14 @@ h3 {
     padding: 18px;
   }
 
-  .workflow {
-    position: relative;
+  /* Stacked rather than side by side, but on the same twelve columns, so
+     the two shapes are still being compared against each other. */
+  .lanes {
     grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .workflow::before {
-    content: "";
-    position: absolute;
-    top: 48px;
-    bottom: 48px;
-    left: 47px;
-    width: 1px;
-    background: linear-gradient(var(--green-400), var(--cyan-400), var(--blue-400));
-    opacity: 0.55;
-  }
-
-  .workflow__step,
-  .workflow__step:nth-child(4) {
-    grid-column: auto;
-    min-height: 128px;
-    padding: 0 0 28px;
-    display: grid;
-    grid-template-columns: 96px 1fr;
-    grid-template-rows: auto 1fr;
-    gap: 0 18px;
-    text-align: left;
-  }
-
-  .workflow__number {
-    grid-column: 1;
-    grid-row: 1;
-    margin: 0 0 5px;
-    text-align: center;
-  }
-
-  .workflow__icon {
-    grid-column: 1;
-    grid-row: 2;
-    width: 78px;
-    margin: 0 auto;
-  }
-
-  .workflow__copy {
-    grid-column: 2;
-    grid-row: 1 / 3;
-    align-self: center;
   }
 
   .feature-grid,
-  .application-grid,
-  .capability-strip__grid {
+  .application-grid {
     grid-template-columns: 1fr;
   }
 
@@ -1668,16 +1620,6 @@ h3 {
 
   .application-card__body {
     min-height: auto;
-  }
-
-  .capability-strip article,
-  .capability-strip article:nth-child(2) {
-    border-right: 0;
-    border-bottom: 1px solid rgba(37, 215, 220, 0.14);
-  }
-
-  .capability-strip article:last-child {
-    border-bottom: 0;
   }
 
   .final-cta__actions {
