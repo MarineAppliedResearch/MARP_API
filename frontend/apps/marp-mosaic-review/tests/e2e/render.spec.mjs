@@ -528,7 +528,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
 });
 
 test.describe('a committed page is still editable', () => {
-  test('the flag stays marked, a click takes it back, and committing accepts it', async ({ page }) => {
+  test('the flag stays marked, a click takes it back, and committing withdraws it', async ({ page }) => {
     await page.goto('./');
     await ready(page);
     const tile = page.locator('.tile:not(.failed):not(.queued)').first();
@@ -544,8 +544,19 @@ test.describe('a committed page is still editable', () => {
     await expect(tile).not.toHaveClass(/marked/);
     await expect(tile.locator('.badge')).toContainText('TAKING BACK');
 
+    /**
+     * **The second sweep withdraws it** (#135 R7), and this line used to expect `REVIEWED`.
+     *
+     * It was asserting the rule that the two buttons meant different things by the same
+     * gesture — *Commit Marked* withdrew a take-back, the sweep accepted it. Reversed on
+     * 2026-09-12: a take-back is an instruction about a tile, not a property of which
+     * button reads it, so the tile ends in the vanilla state for the mode either way.
+     * The sweep's own rule is untouched: everything merely *unmarked* is still accepted,
+     * which is what the tile beside this one is doing.
+     */
     await page.locator('#commit').click();
-    await expect(tile.locator('.badge')).toContainText('REVIEWED');
+    await expect(tile.locator('.badge')).toHaveCount(0);
+    await expect(tile).not.toHaveClass(/marked/);
   });
 
   test('a mark outranks what the last commit did', async ({ page }) => {
@@ -556,9 +567,29 @@ test.describe('a committed page is still editable', () => {
        marked, and a positional locator would slide onto a different tile. */
     const id = await page.locator('.tile.out-reviewed').first().getAttribute('data-id');
     const accepted = page.locator(`.tile[data-id="${id}"]`);
+
+    /**
+     * **The click takes the acceptance back; it does not flag it** (#135 R8).
+     *
+     * This assertion read `FLAGGED`, one click after a commit, and that was the defect:
+     * *"something that shows as reviewed and I click it, it just switches to flagged...
+     * it should go taking back."* The property this test is named for is unchanged — what
+     * the reviewer just did outranks what the last commit did — and it is still asserted,
+     * twice: first the take-back displaces `REVIEWED`, then the mark displaces the
+     * withdrawal.
+     */
     await accepted.click();
-    await expect(accepted.locator('.badge')).toContainText('FLAGGED');
+    await expect(accepted.locator('.badge')).toContainText('TAKING BACK');
     await expect(accepted).not.toHaveClass(/out-reviewed/);
+
+    /* Commit the take-back, and the record carries nothing — so now an ordinary click is
+       an ordinary mark again, and it outranks the `withdrawn` outcome underneath it. */
+    await page.locator('#commitMarked').click();
+    await expect(accepted.locator('.badge')).toHaveCount(0);
+
+    await accepted.click();
+    await expect(accepted).toHaveClass(/marked/);
+    await expect(accepted.locator('.badge')).toContainText('FLAGGED');
   });
 });
 
@@ -1837,6 +1868,93 @@ test.describe('each commit button reports only on itself', () => {
     await expect(badge).toHaveAttribute('title', /click to flag it instead/);
     await expect(badge).toHaveText(/REVIEWED/);
   });
+});
+
+test.describe('taking a promotion back (#135)', () => {
+  /**
+   * The three steps of the report, drawn rather than derived.
+   *
+   * The store was right about step 1 the whole time and the tile was what the reviewer
+   * read, so this is the tier that can see what was actually wrong -- a badge. Steps 2 and
+   * 3 were never built: un-marking a committed promotion left the tile still reading
+   * PROMOTED, so the click looked as though it had done nothing, and the main button had
+   * nothing to commit because a take-back is not a mark.
+   */
+  async function promotableTile(page) {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    /* Pinned by id, because a locator describing a *state* slides onto another tile the
+       moment the state changes. */
+    return page.locator('.tile:not(.failed):not(.queued):not(.marked)').first()
+      .getAttribute('data-id');
+  }
+
+  test('step 1: promoting and committing leaves the tile reading PROMOTED', async ({ page }) => {
+    const id = await promotableTile(page);
+    const badge = page.locator(`.tile[data-id="${id}"] .badge`);
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await page.locator('#commitMarked').click();
+    await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+    await expect(badge).toContainText('PROMOTED');
+    await expect(badge).not.toContainText('TAKING BACK');
+    await expect(badge).not.toContainText('TAKEN BACK');
+    await expect(page.locator(`.tile[data-id="${id}"]`)).not.toHaveClass(/out-reverted/);
+  });
+
+  test('step 2: clicking it again says the promotion is being taken back', async ({ page }) => {
+    const id = await promotableTile(page);
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+    const badge = tile.locator('.badge');
+
+    await tile.click({ button: 'right' });
+    await page.locator('#commitMarked').click();
+    await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+    await tile.click({ button: 'right' });                 // take it back
+    await expect(badge).toContainText('TAKING BACK');
+    await expect(tile).toHaveClass(/out-reverted/);
+    /* Which decision, so a reviewer cannot read it as taking back an exclusion. */
+    await expect(badge).toHaveAttribute('title', /Taking back promoted/);
+    /* And the button is enabled and says it will act, or step 3 is unreachable. */
+    await expect(page.locator('#commitMarked')).toBeEnabled();
+    await expect(page.locator('#commitMarked')).toHaveAttribute('title', /takes back 1/);
+  });
+
+  test('step 3: committing the take-back clears the label and the decision',
+    async ({ page }) => {
+      const id = await promotableTile(page);
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+
+      await tile.click({ button: 'right' });
+      await page.locator('#commitMarked').click();
+      await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+      await tile.click({ button: 'right' });
+      await expect(tile.locator('.badge')).toContainText('TAKING BACK');
+
+      await page.locator('#commitMarked').click();
+      await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+      /* Nothing is claimed about it any more: no badge at all, which is what "undecided"
+         looks like. Not a MOVED badge either -- the second commit of a tile is not a
+         conflict, because a commit does not move the observation's version (R6). */
+      await expect(tile.locator('.badge')).toHaveCount(0);
+      await expect(tile).not.toHaveClass(/out-reverted/);
+      await expect(page.locator('.tile .badge', { hasText: 'MOVED' })).toHaveCount(0);
+
+      /* And in the data behind the page, read from the store rather than off the screen. */
+      const decision = await page.evaluate(async (target) => {
+        const { state } = await import('./src/store.js');
+        const row = state.rows.find((r) => String(r.observation_id) === String(target));
+        return { decision: row.training_decision, outcome: state.outcomes.get(row.observation_id) };
+      }, id);
+      expect(decision.outcome).toBe('withdrawn');
+      expect(decision.decision).toBe(null);
+    });
 });
 
 test.describe('how many pages are done', () => {

@@ -210,6 +210,121 @@ export function acceptRefusal(modeId, row) {
 }
 
 /**
+ * What this tile's last gesture took back, if it took anything back (#135).
+ *
+ * `state.takenBack` is the whole of it, and it is **recorded rather than derived** —
+ * because the derivation cannot see the one thing that decides it. A tile that is
+ * unmarked, touched and carries an acceptance is two different situations: the reviewer
+ * has just removed the accept mark that put it there (a take-back), or a page sweep
+ * accepted it after they took a *flag* off (not one — they decided nothing about the
+ * acceptance). Both look identical to a rule reading marks, touches and outcomes, and the
+ * first version of this read the second as a take-back and left the tile saying TAKING
+ * BACK for ever.
+ *
+ * What the store records is narrower than "a mark came off": {@link takesBack} answers
+ * whether the mark that came off was undoing what the record actually says.
+ *
+ * @param {Object} args
+ * @param {string} args.mode - The active mode.
+ * @param {Object} args.row - The row the tile is drawing.
+ * @param {Map} args.marks - `state.marks`.
+ * @param {Set<number>} args.takenBack - `state.takenBack`.
+ * @param {Map} [args.outcomes] - `state.outcomes`.
+ * @returns {string|null} The decision being withdrawn — `flagged`, `reviewed`, `promoted`
+ *   or `excluded` — or null when this tile is not taking anything back.
+ */
+export function pendingTakeBack({ mode, row, marks, takenBack, outcomes = new Map() }) {
+  const id = row.observation_id;
+  /* A mark outranks everything: the reviewer has said something newer than this. The
+     store drops the take-back when a mark goes back on, so this is belt and braces. */
+  if (marks.has(id)) return null;
+  if (!takenBack || !takenBack.has(id)) return null;
+
+  /* **This sitting's outcome outranks the row's own column** (#131): the endpoint never
+     writes that column back, so the row goes on saying what it said when it was fetched. */
+  return (outcomes.has(id) ? outcomes.get(id) : existingState(mode, row)) || null;
+}
+
+/**
+ * Did removing this mark take back what the record says? (#135)
+ *
+ * The rule the store records a take-back by, and the reason it is not simply "a mark came
+ * off": **the kind that came off has to match the decision it would be undoing.** Removing
+ * an accept mark from a promoted tile is taking the promotion back; removing a *flag* from
+ * a tile the record says is `reviewed` is the reviewer cancelling their own flag and
+ * deciding nothing about the acceptance, which is what the sweep's own test has asserted
+ * since long before this.
+ *
+ * @param {Object} args
+ * @param {string} args.mode - The active mode.
+ * @param {string} args.kind - The kind of the mark that has just been removed.
+ * @param {string|null} args.decided - What the record, or this sitting, says now.
+ * @returns {boolean} True when that is a take-back waiting to be committed.
+ */
+export function takesBack({ mode, kind, decided }) {
+  if (!decided) return null;
+  /* Delete answers null to both, so nothing there ever takes anything back: it records no
+     acceptance, and a destroyed row is not a pending intention. */
+  const want = kind === MARK_ACCEPT ? acceptedValue(mode) : pendingException(mode);
+  return Boolean(want) && decided === want;
+}
+
+/**
+ * Is this ordinary click about a decision already on the record? (#135 R8)
+ *
+ * The exception gesture -- a left click, a tap -- means two different things depending on
+ * what the record says, and answering that here rather than in the action is what keeps the
+ * tile, the button and the store from disagreeing about which.
+ *
+ * **While the mode's accepted value is on the record, the click is about that acceptance**
+ * -- take it back, or put it back -- and never a new flag. It was a new flag, and that is
+ * the defect: *"something that shows as reviewed and I click it, it just switches to
+ * flagged... it should go taking back."*
+ *
+ * The mode's **exception** is not here and does not need to be, which is worth knowing
+ * before somebody "fixes" the asymmetry. A page arrives with its exceptions already marked
+ * (`page.seedMarks`), so a click on a flagged or excluded tile is already *removing* a mark
+ * and `takesBack` turns that into a take-back. Nothing seeds an *accept* mark, so there was
+ * nothing to remove and the click fell through to marking. One rule, two routes, because
+ * the marks arrive asymmetrically.
+ *
+ * Delete answers null to `acceptedValue`, so nothing there is ever about a decision this
+ * way and the gesture goes on marking rows for destruction.
+ *
+ * @param {Object} args
+ * @param {string} args.mode - The active mode.
+ * @param {string|null} args.decided - What this sitting, or the record, says now.
+ * @param {boolean} [args.marked] - Whether the tile already carries a mark of any kind.
+ * @returns {boolean} True when the click toggles a take-back rather than a mark.
+ */
+export function clickTakesBack({ mode, decided, marked = false }) {
+  /* A mark is a newer intention than the record, so the click is about the mark. */
+  if (marked) return false;
+  const accepted = acceptedValue(mode);
+  return Boolean(accepted) && decided === accepted;
+}
+
+/**
+ * The rows a selective commit will **withdraw** (#135 R3).
+ *
+ * Separate from {@link selectedRows} because they are two different things sent in two
+ * different fields — the marks say what a row becomes, `withdraw` says a row becomes
+ * nothing — and folding them into one list is how an id ends up in both, which the
+ * endpoint refuses outright.
+ *
+ * @param {Object} args
+ * @param {string} args.mode - The active mode.
+ * @param {Array<Object>} args.rows - The page.
+ * @param {Map} args.marks - `state.marks`.
+ * @param {Set<number>} args.takenBack - `state.takenBack`.
+ * @param {Map} [args.outcomes] - `state.outcomes`.
+ * @returns {Array<Object>} The rows, in page order.
+ */
+export function takenBackRows({ mode, rows, marks, takenBack, outcomes = new Map() }) {
+  return rows.filter((r) => pendingTakeBack({ mode, row: r, marks, takenBack, outcomes }));
+}
+
+/**
  * The rows a **selective** commit will be sent for (#126 R3, A3).
  *
  * Only what the reviewer marked **by hand in this sitting**. `state.touched` is the whole
@@ -220,8 +335,11 @@ export function acceptRefusal(modeId, row) {
  * `observation_reviews` records a reviewer per row, so that is the scientific record
  * asserting a decision that was never made.
  *
- * A take-back is not a mark, so it is not here: clicking a mark off leaves the tile
- * untouched by this button (R7). The sweep still accepts it, which is R4.
+ * A take-back is not a mark, so it is not here — but it *is* committed, in
+ * {@link takenBackRows} and as `withdraw`. **#126's R7 said the opposite** and #135
+ * reversed it: leaving a take-back to the sweep meant the only way to undo a promotion was
+ * a gesture that also decides every other tile on the page, which is the whole thing this
+ * button exists to avoid.
  *
  * @param {Object} args
  * @param {Array<Object>} args.rows - The page.
@@ -242,20 +360,30 @@ export function selectedRows({ rows, marks, touched }) {
  * `skips` is zero by construction outside Delete: an accept mark on a tile with no picture
  * is refused at click time (A4), and an exception mark never needed one.
  */
-export function selectionOutcome({ mode, rows, marks, touched }) {
+export function selectionOutcome({
+  mode, rows, marks, touched, takenBack = new Set(), outcomes = new Map()
+}) {
   const picked = selectedRows({ rows, marks, touched });
 
   if (commitActsOnMarked(mode)) {
     /* Delete has one button, not two (A2) -- this exists so a caller asking anyway gets
        the same answer the single button gives rather than a second opinion. */
-    return { acts: picked.length, accepts: 0, flags: 0, deletes: picked.length, skips: 0 };
+    return {
+      acts: picked.length, accepts: 0, flags: 0, deletes: picked.length,
+      withdraws: 0, skips: 0
+    };
   }
 
   const flags = picked.filter((r) => isExcepted(marks, r.observation_id)).length;
   const ready = picked.filter((r) => isAccepted(marks, r.observation_id)
     && r.thumbnail_status === 'ready').length;
   const skips = picked.length - flags - ready;
-  return { acts: flags + ready, accepts: ready, flags, deletes: 0, skips };
+  /* The take-backs this button will send as `withdraw` (#135 R5). Counted here rather
+     than left out, because a button that is disabled while there is a take-back waiting
+     is a take-back the reviewer cannot commit at all -- which is what step 3 of #135 was.
+     A withdrawal needs no imagery: it removes a decision rather than making one. */
+  const withdraws = takenBackRows({ mode, rows, marks, takenBack, outcomes }).length;
+  return { acts: flags + ready + withdraws, accepts: ready, flags, deletes: 0, withdraws, skips };
 }
 
 /**
@@ -346,7 +474,9 @@ export function deleteImpact({ rows, marks }) {
  * So a marked row without imagery is flagged, an unmarked row without imagery is skipped,
  * and the interface can stop claiming to act on rows it is about to drop.
  */
-export function commitOutcome({ mode, rows, marks }) {
+export function commitOutcome({
+  mode, rows, marks, takenBack = new Set(), outcomes = new Map()
+}) {
   const ready = (r) => r.thumbnail_status === 'ready';
   /* The exception set, which is what a mark used to be by definition. An accept mark is
      not an exception: under the sweep it is accepted, which is what an unmarked tile is
@@ -357,13 +487,31 @@ export function commitOutcome({ mode, rows, marks }) {
     /* Delete acts on what is marked. Destroying something nobody could see is a decision
        for the human, and the confirmation names the count either way. */
     const targets = rows.filter(marked);
-    return { acts: targets.length, accepts: 0, flags: 0, deletes: targets.length, skips: 0 };
+    return {
+      acts: targets.length, accepts: 0, flags: 0, deletes: targets.length,
+      withdraws: 0, skips: 0
+    };
   }
 
+  /* **A take-back is withdrawn by this button too** (R7), so it is not one of the accepts.
+     Counted first and removed from the other two, because a reviewer reading "accepts 12"
+     over a page where one of the twelve is about to have its decision *removed* is being
+     told the opposite of what will happen. A merely unmarked tile is still an accept --
+     only an explicit take-back is here, which is what `state.takenBack` records. */
+  const withdrawn = new Set(
+    takenBackRows({ mode, rows, marks, takenBack, outcomes }).map((r) => r.observation_id)
+  );
+  const taken = (r) => withdrawn.has(r.observation_id);
+
   const flags = rows.filter((r) => marked(r)).length;
-  const accepts = rows.filter((r) => !marked(r) && ready(r)).length;
-  const skips = rows.filter((r) => !marked(r) && !ready(r)).length;
-  return { acts: flags + accepts, accepts, flags, deletes: 0, skips };
+  const accepts = rows.filter((r) => !marked(r) && !taken(r) && ready(r)).length;
+  /* A take-back needs no imagery -- it removes a decision rather than making one -- so it
+     is never a skip, even on a tile whose thumbnail never arrived. */
+  const skips = rows.filter((r) => !marked(r) && !taken(r) && !ready(r)).length;
+  const withdraws = withdrawn.size;
+  return {
+    acts: flags + accepts + withdraws, accepts, flags, deletes: 0, withdraws, skips
+  };
 }
 
 /**
