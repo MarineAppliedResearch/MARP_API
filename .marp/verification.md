@@ -162,6 +162,44 @@ each is something the fixture agrees with itself about:
    carried a decision, so clicking it is a take-back rather than a mark. Fixed by choosing
    the row on what the endpoint says about it.
 
+**Then the whole thing was run cold** — testing database dropped, thumbnails deleted,
+stamp removed, launcher run as the only command — and **two more failures appeared that
+every warm run had hidden**, which is the point of running it cold:
+
+```
+Error: observation 582 was corrected to species 775 and cannot be found there to be put back.
+```
+
+5. **A corrected observation leaves the default question.** `reviewStatus` opens at
+   `['unreviewed', 'flagged']` and a correction records `corrected`, which is neither — so
+   the row the test had just moved dropped out of the page it would have used to put it
+   back. `whateverItsStatus()` clears both status dimensions for any lookup whose job is
+   restoration.
+6. **The same message again, for a different reason**: the restoration looked at page one
+   of the species it had moved the row to, and that species has more than a page of rows on
+   that line. `findRow()` sweeps instead. Both of these worked against a database that had
+   been written to before and failed against one built from a clean dump — a restoration
+   that works until the day it matters.
+
+### The launcher, cold and warm
+
+```
+##### COLD #####     (mare_test dropped, storage/testing deleted, stamp removed)
+Testing database: PROVISIONED  (mare_test built from a dump)
+  10 passed (15.2s)
+The API tier passed, against a real server on the testing database.
+real    0m19.723s
+
+##### WARM #####     (nothing else changed)
+Testing database: REUSED  (mare_test was already there)
+  10 passed (14.5s)
+The API tier passed, against a real server on the testing database.
+real    0m16.167s
+```
+
+The difference between the two runs is the provisioning, measured on its own above at
+**2.6 s against 0.26 s**; the rest is the ten browser tests, which run either way.
+
 ### The fixture tier is untouched — R12
 
 ```

@@ -36,12 +36,14 @@ import {
   expectRealBacking,
   facetsFor,
   findPageOf,
+  findRow,
   lonePage,
   pageOf,
   pageSizeOf,
   ready,
   restoreDecision,
-  sweepForRow
+  sweepForRow,
+  whateverItsStatus
 } from './support.mjs';
 
 /** The route a scientific page commit goes to. What the first three tests intercept. */
@@ -190,13 +192,19 @@ test.describe('what the fixture used to fake', () => {
       await expect(page.locator('.pagestate--conflict')).toBeVisible({ timeout: 15_000 });
     } finally {
       if (corrected) {
-        /* Back to the species it had. It is under the *other* species now, so that is
-           where it is looked for, and the correction bumped the version -- so the live
-           row is re-read rather than assumed. A failure to put it back is thrown, not
-           swallowed: a testing database that quietly drifts is one whose next failure
-           is unexplainable. */
-        const moved = await pageOf(request, { species: [other.value], line: [lone.line] });
-        const live = moved.rows.find((r) => r.observation_id === row.observation_id);
+        /* Back to the species it had. Three things have to be right here, and the last
+           one is the one that was wrong: it is under the *other* species now, so that is
+           where it is looked for; the correction bumped the version, so the live row is
+           re-read rather than assumed; and the lookup ignores review status, because
+           **a correction records a `corrected` decision and that takes the row out of
+           the default question entirely**. Looking under the default filters found it
+           on a database that had been written to before and lost it on one built from a
+           clean dump. A failure to put it back is thrown rather than swallowed. */
+        const live = await findRow(
+          request,
+          whateverItsStatus({ species: [other.value], line: [lone.line] }),
+          row.observation_id
+        );
         expect(live, `observation ${row.observation_id} was corrected to species `
           + `${other.value} and cannot be found there to be put back.`).toBeTruthy();
         await correctSpecies(request, live, originalSpecies);

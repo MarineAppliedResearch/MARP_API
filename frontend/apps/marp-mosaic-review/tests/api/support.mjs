@@ -87,6 +87,28 @@ export function question(narrowed = {}) {
   return { ...DEFAULT_FILTERS, ...narrowed };
 }
 
+/**
+ * The same question with both status dimensions switched off.
+ *
+ * **A row can leave the default question by being acted on**, and a test that then
+ * goes looking for it under the default question will not find it. That is not
+ * hypothetical: `reviewStatus` opens at `['unreviewed', 'flagged']`, and a species
+ * correction records a `corrected` decision -- which is neither -- so an
+ * observation corrected by a test drops out of the very page the test would use to
+ * put it back. It passed against a database that had been written to before and
+ * failed the first time one was built from a clean dump, which is the worst way
+ * round for a test to be wrong.
+ *
+ * So anything whose job is *restoration* asks with the status filters cleared. An
+ * empty array is not filtering, which is what `isActive` means by it.
+ *
+ * @param {Object} narrowed - Dimensions to narrow by.
+ * @returns {Object} The same, with both status dimensions off.
+ */
+export function whateverItsStatus(narrowed = {}) {
+  return { ...narrowed, reviewStatus: [], trainingDisposition: [] };
+}
+
 /** The sort the application opens on, from the application. */
 const SORT = sortTerms(DEFAULT_SORT);
 
@@ -192,6 +214,31 @@ export async function sweepForRow(request, matches, describe, narrowed = {}) {
   }
 
   return found;
+}
+
+/**
+ * One observation, wherever it is under a question.
+ *
+ * **Not `pageOf(...).rows.find(...)`.** That looks at page one only, and a row put
+ * somewhere by a test is rarely on page one of where it landed -- a correction moves
+ * an observation onto another species, and that species may have hundreds of rows on
+ * the same line. Looking only at the first page found it when the other species was
+ * small and lost it when it was not, which is a restoration that works until the day
+ * it matters.
+ *
+ * Pair it with `whateverItsStatus` when the row may have been acted on.
+ *
+ * @param {import('@playwright/test').APIRequestContext} request - Playwright's request fixture.
+ * @param {Object} narrowed - Dimensions to narrow the search by.
+ * @param {number} observationId - The row to find.
+ * @returns {Promise<?Object>} The row, or null if it is not under that question at all.
+ */
+export async function findRow(request, narrowed, observationId) {
+  return sweep(
+    request,
+    narrowed,
+    (row) => (row.observation_id === observationId ? row : null)
+  );
 }
 
 /**
