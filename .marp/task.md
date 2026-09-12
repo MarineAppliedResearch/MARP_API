@@ -76,9 +76,65 @@ is a regression tripwire for it plus the two steps that were never built:
   maintains the token never fires. Found while tracing R3, which is a second commit, and
   answered as its own defect (A3).
 
+The three that follow are the human's correction of 2026-09-12, and they supersede A2's
+first answer rather than extending it.
+
+- **R7** — **Either commit button applies the take-back.** A tile the reviewer has taken
+  back is *withdrawn* by **Commit Marked** and by the page sweep alike. The sweep does not
+  re-apply the decision that was just taken back, and it does not accept the tile instead:
+  a take-back is an instruction, and the sweep's rule that *everything unmarked is
+  accepted* does not reach a tile the reviewer has explicitly withdrawn. This replaces the
+  branch's earlier rule that the two buttons meant different things by the same gesture,
+  and it replaces #126's R7 in the other direction as well.
+- **R7a** — The take-back covers **any decision already on the record**, whether this
+  sitting committed it or it arrived with the page from an earlier one. Measured rather
+  than assumed — see below; this holds on the branch already and R7a is its tripwire, at
+  the tier that can see it.
+- **R7b** — After that commit the tile is in the **vanilla state for its mode** —
+  unreviewed in Scientific, undecided in Training. Not accepted, not reviewed, not
+  promoted, no `TAKING BACK`, and no `observation_review_current` row on a re-read.
+
+## What the API tier actually showed
+
+Run against a **copy** of the development corpus — `marp db dump`, a second database on its
+own port, `marp db load` into it, and the API served from a throwaway worktree so the shared
+`storage/` was never touched. The supervisor's diagnosis going in was that `existingState`
+cannot see a decision made in an earlier sitting, because *"on the real API a review commit
+never writes that column"*. **That is wrong, and it is worth writing down so nobody fixes
+it twice.** `repository/mosaic.repository.js`'s `ROW_COLUMNS` selects
+`rc.decision AS review_decision` and `rt.decision AS training_decision` straight out of
+`observation_review_current`, so a decision from any earlier sitting arrives *on the row*.
+What the endpoint does not do is write that column back **after a commit in this sitting** —
+which is the #131 defect, and is already handled by preferring `state.outcomes`.
+
+Measured, in Training, on a page holding one observation:
+
+```
+already promoted, loaded fresh:   arrival  marked=false  badge=PROMOTED · you
+                                  r-click  marked=true   badge=PROMOTED
+                                  r-click  marked=false  badge=TAKING BACK      <- R7a holds
+
+promoted in this sitting:         promote           badge=PROMOTED
+                                  Commit Marked     badge=PROMOTED    record=promoted
+                                  r-click           badge=TAKING BACK
+                                  Commit Marked     badge=(none)      record=null   <- R7b holds
+                                  page sweep        badge=PROMOTED    record=promoted <- R7 broken
+```
+
+So **one of the three rules was actually broken**: the sweep put the promotion straight
+back. The other two already held on this branch.
+
+**One thing that is not settled, and is deliberately not being guessed** — see A6.
+
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — answered 2026-09-12: **both modes.** Taking back an
+- [x] **A1 · product/UI · blocking** — answered 2026-09-12: **both modes**, and **widened
+  the same day**: it is not only an acceptance and not only a decision made in this
+  sitting. *"Taking back is not only flagged and committed just now, but if you loaded it
+  and it was already flagged, you should be able to do taking back on it as well."* So the
+  rule is **any decision already on the record**, whichever mode and whichever sitting put
+  it there — see **R7a** below, and *What the API tier actually showed* for what that
+  turned out to cost, which was less than expected. Taking back an
   acceptance applies to Scientific as well as Training; a withdrawal in the scientific case
   is the `reviewed` decision coming off the record. Original question: **Does this apply to
   Scientific mode as well?** The
@@ -86,7 +142,15 @@ is a regression tripwire for it plus the two steps that were never built:
   acceptance in Scientific is `reviewed` — and building it for one mode only is a rule with
   an exception in it. Build it for both, or for Training alone as written?
 
-- [x] **A2 · behavioural · blocking** — answered 2026-09-12: **withdraw it.** The reviewer
+- [x] **A2 · behavioural · blocking** — **corrected 2026-09-12, later the same day. The
+  answer below was framed badly and the correction reverses half of it.** What stands:
+  taking an exception back through **Commit Marked** withdraws it. What is wrong: the
+  sentence saying *"the page sweep is not the model here and is unchanged, so the two
+  buttons now mean different things by the same gesture"*. They do not. **Either commit
+  button applies the take-back** — the reviewer withdrew a decision and it is withdrawn by
+  whichever button they press. See **R7** below, which is the corrected rule, and the
+  measured evidence for why it matters is in *What the API tier actually showed*. The
+  superseded answer, kept so the history is visible: **withdraw it.** The reviewer
   decided nothing about that observation and the record says so; it does not become an
   accept. The page sweep is not the model here and is unchanged, so **the two buttons now
   mean different things by the same gesture** — deliberately, and said out loud in the code
@@ -130,6 +194,33 @@ is a regression tripwire for it plus the two steps that were never built:
   **same gesture that promoted it** — a right-click (a double tap on touch), toggling the
   accept mark off. A left-click is an exclusion mark, which is a new decision rather than a
   take-back, and stays what it is.
+
+- [x] **A7 · behavioural · non-blocking** — **Delete Mode is out of scope**, said by the
+  human on 2026-09-12 and recorded rather than built for. A destroyed row has nothing to
+  take back, and #138 already made a committed delete refuse every gesture. It falls out of
+  the code rather than needing a special case: `acceptedValue('delete')` and
+  `pendingException('delete')` are both null, so `takesBack` answers false for either kind,
+  and `commitOutcome`'s Delete branch returns `withdraws: 0`. Nothing in Delete can enter
+  `state.takenBack`, and `src/api/index.js` drops a `withdraw` list on the delete route in
+  any case, because the endpoint refuses one.
+
+- [ ] **A6 · product/UI · non-blocking** — **Unanswered on purpose: a tile whose
+  acceptance is already on the record takes two right-clicks to take back, not one.**
+  Measured above. Nothing seeds an *accept* mark (`page.seedMarks` seeds exceptions and
+  says so), so a tile that arrives `promoted` arrives unmarked: the first right-click puts
+  an accept mark on a tile the record already agrees with — which changes the badge from
+  `PROMOTED · you` to `PROMOTED` and nothing else — and only the second takes it back. A
+  tile that arrives `flagged` or `excluded` *is* seeded, so there one click is enough. So
+  the gesture is asymmetric, and the half that looks like a no-op is the one #135 was
+  reported about.
+
+  **Not guessed, because two reasonable answers change behaviour.** (i) Leave it: R7a is
+  satisfied by the letter — the reviewer *can* take it back — and no gesture changes
+  meaning. (ii) Make a mark that would record what the record already says read as a
+  take-back instead, so one right-click withdraws an existing acceptance, symmetric with
+  the one click that withdraws an existing flag. (ii) is the smaller code change and the
+  bigger behavioural one; it also removes a click that currently does nothing visible.
+  Nothing in this branch implements (ii).
 
 ## Decisions
 
@@ -194,8 +285,13 @@ on this reading it does not.
 
 ## Status
 
-- **Gate:** verifying — G2 implemented against the answered spec, G4 tiers run.
-- **Notes:** R1–R6 implemented. #126's R7 is reversed by A2 and its unit test is rewritten
-  to the new rule rather than deleted. Nothing on the endpoint changed: the server half of
-  step 1 was already right, and `withdraw` has been supported since #106 with no client
-  sending it.
+- **Gate:** verifying — G2 implemented against the corrected spec, G4 tiers run including
+  the API tier, which had never been run for this issue and is what caught R7.
+- **Notes:** R1–R6 implemented earlier on this branch. R7, R7a and R7b are the human's
+  correction of 2026-09-12. **One of the three rules was actually broken** — the page sweep
+  re-applied a decision the reviewer had taken back — and it is fixed in `store.js`,
+  `model/modes.js` and `ui/chrome.js`. Nothing on the endpoint changed: its `withdraw`
+  branch has run before the imagery check since #106, so the whole fix is client-side.
+  Three tests asserting the superseded rule were corrected rather than deleted — one unit,
+  one contract, one render — each with a comment saying what it used to say and why.
+  **A6 is open and deliberately unanswered**; nothing implements it either way.

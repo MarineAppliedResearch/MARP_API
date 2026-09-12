@@ -852,8 +852,12 @@ test('Review states',
     ok(state.marks.has(id), 'the flag stays marked so a click can take it back');
     actions.toggleMark(id);
     await actions.commitPage();
-    eq(state.rows.find((r) => r.observation_id === id).review_decision, 'reviewed',
-       'and committing again accepts it');
+    /* **Withdrawn, and this line expected `reviewed`** (#135 R7). Taking the flag off is a
+       take-back, and a take-back is withdrawn by whichever button commits it -- the sweep
+       included, which is the half that was wrong. The sweep's own rule is untouched:
+       everything merely unmarked on this page was still accepted by the same commit. */
+    eq(state.rows.find((r) => r.observation_id === id).review_decision, null,
+       'and committing again withdraws it, rather than accepting it');
   });
 
 test('Scientific review and training review are independent',

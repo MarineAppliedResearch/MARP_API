@@ -116,13 +116,38 @@ the fixture, paints a permanent `FIXTURE — not the API` banner, and stamps
 `documentElement.dataset.backing`. The render tier passes it and asserts the banner, so a
 run cannot grade the fixture while claiming to be the API.
 
-**Neither the flag nor the fixture is coming out**, and this paragraph used to say they
-would "when the seeded database lands". The database landed and the conclusion was wrong
-(#132): the fixture tier is the *fast loop* — it runs every test at two viewports in under a
-minute, and it can break a commit on purpose, which no real server will do for you. What
-changed is that it is no longer the **only** browser tier. The `api` project runs against a
-real server, and it exists for the defects the fixture masks by construction — see *The API
-tier* below.
+**The fixture is scaffolding, it is on its way out, and a new browser test does not go on
+it.** Settled by the human on 2026-09-12: *"The fixture was only put in place so we could do
+iterative development until we got it over to the API. That fixture is not even supposed to
+be there anymore. Our tests are supposed to be written to an actual dump to database."*
+
+This paragraph said the opposite for months — *"neither the flag nor the fixture is coming
+out"*, on the grounds that the fixture tier is the fast loop and can break a commit on
+purpose. That is the most misleading thing this file has ever said, because it is the
+sentence that tells the next person a fixture-backed browser tier is the right home for a
+new test. It is not.
+
+**The reason is not tidiness, it is that the fixture masks a whole class of defect by
+construction.** `src/data.js` is not a small API, it is a *different* one: it writes the
+row's own status column in place when a page is committed, and the endpoint never does that
+— a decision is a projection row, the row is served from a cache, and a commit deliberately
+invalidates nothing. Anything living in the gap between what a commit recorded and what the
+row still says is therefore invisible on the fixture at **every** tier that uses it. #130,
+#124's F6 and #124's F8 were all that shape, and so was #135 R7: three fixture-backed step
+tests passed while the page sweep put back a promotion the reviewer had just withdrawn,
+because on the fixture the row had already been rewritten and the sweep's mistake did not
+show. One test against a real server on a dumped corpus caught it in a single run.
+
+**Where a browser test goes now:** `tests/api/`, against a real API serving a **copy** of
+the corpus — `marp db dump`, `marp db up -Port <yours>`, `marp db load` into that second
+database, and the API pointed at it. *The API tier* below is the how.
+
+**What is still true about the fixture.** It is fast, it runs at two viewports, and it can
+break a commit on purpose — `failNextCommit`, `slowNextCommit`, `breakThumbnails`,
+`bumpVersion`, `reload` — which no real server will do for you. The existing fixture-backed
+suites are staying where they are for now, deliberately: migrating them is its own piece of
+work and not a thing to do by surprise in the middle of a bug fix. So read them as *the way
+it used to be done*, not as the pattern to copy.
 
 The cost of two backings is that they can drift, and the answer is that **they present the
 same method set**: `backend.js` writes the list out rather than proxying, so a method one
@@ -236,15 +261,48 @@ beside them, in `withdraw`** (#135). A withdrawal deletes the projection row, an
 absence of a row is what *undecided* means, so the decision comes off the record while
 `observation_reviews` -- the decision log -- keeps its rows.
 
-**So the two buttons now mean different things by the same gesture, deliberately.** Un-mark
-a tile and press *Commit Marked* and the decision is withdrawn — you decided nothing about
-it; press the sweep and it is accepted, because everything unmarked is what a sweep accepts.
-#126's R7 said this button ignored a take-back altogether, which left the only way to undo a
-promotion being the gesture that also decides every other tile on the page (#135 A2).
+**Either button applies a take-back, and this paragraph used to say the opposite** (#135
+R7). It said *"the two buttons now mean different things by the same gesture,
+deliberately"* — *Commit Marked* withdrew the decision, the sweep accepted it. That was
+wrong, it shipped, and it is the defect #135 was reopened for: taking a promotion back and
+pressing the sweep promoted it straight again, so the reviewer's withdrawal was undone by
+the button next to the one that honoured it. The rule is **a take-back is an instruction
+about a tile, not a property of which button reads it**: *"if you hit commit it again, it
+should be in the vanilla state for that mode"* — unreviewed in Scientific, undecided in
+Training, whichever commit that is.
+
+**What is not changed is the sweep's own rule.** Everything merely *unmarked* is still
+accepted, exactly as it always was. Only an explicit take-back is withdrawn, and
+`state.takenBack` is the only thing that can tell the two apart — which is the same reason
+it is recorded rather than derived. `runCommit` therefore builds its withdrawal list for
+both buttons, and `commitOutcome` counts those separately from the accepts so the sweep's
+tooltip does not report a withdrawal as an acceptance.
+
+#126's R7 said *Commit Marked* ignored a take-back altogether, which left the only way to
+undo a promotion being the gesture that also decides every other tile on the page. Both
+halves of that are now gone.
 
 **It pins nothing and marks no page committed**: `page.pinnedIds` becomes the query's `exclude` set, so pinning there would
 take every untouched tile on the page out of the reviewer's remaining work without saying
-so. The smaller button to its right is the page sweep, unchanged.
+so. The smaller button to its right is the page sweep.
+
+**A decision from an *earlier* sitting can be taken back too**, and it always could — the
+supervising diagnosis for #135 said it could not, on the theory that the endpoint never
+writes the row's status column, and that is worth writing down so nobody fixes it twice.
+`ROW_COLUMNS` in `repository/mosaic.repository.js` selects `rc.decision AS review_decision`
+and `rt.decision AS training_decision` straight out of `observation_review_current`, so a
+decision made at any time arrives *on the row* and `existingState` finds it. What the
+endpoint does not do is write that column back **after a commit in this sitting** — which
+is #131, and is why `state.outcomes` is preferred over the column rather than the other way
+round.
+
+**It takes two right-clicks on an acceptance and one click on an exception**, because
+nothing seeds an accept mark: a tile arriving `promoted` arrives unmarked, so the first
+right-click marks it accepted — agreeing with what the record already says, and changing
+the badge from `PROMOTED · you` to `PROMOTED` and nothing else — and only the second takes
+it back. A tile arriving `flagged` or `excluded` *is* seeded, so one click is enough there.
+That asymmetry is open as A6 in `.marp/task.md` and is deliberately not resolved; the API
+tier asserts today's behaviour, so whichever way it is settled, a test says so.
 
 **The sweep still treats the marks as the page's exception set — not a scratchpad.** At a
 sweep commit, whatever is marked as the *exception* becomes the exception and everything
@@ -642,15 +700,33 @@ not writing back, and that was rejected on 2026-09-11: *"if the fixture doesn't 
 error and the actual system does, that doesn't make any sense."* A better fake is not the fix
 for damage done by a fake.
 
-**Three rules, and they are not negotiable, because this tier writes to a real database.**
-The only one available is the development corpus — three GPU inference runs over real dives,
-real thumbnails, and real review decisions that are the evidence behind recorded
-walkthroughs, with nothing to restore from until MARP_API#125:
+**It stopped being the fifth tier on 2026-09-12 and became the default one.** See *The two
+backings*: the fixture was scaffolding for the months before this app had an API, and a new
+browser test belongs here. #135 R7 is the worked example — three fixture-backed step tests
+passed while the page sweep put back a promotion the reviewer had just withdrawn.
 
-- **Touch as few rows as the assertion needs, and know which.** `tests/api/take-back.spec.mjs`
-  filters to a species with exactly one observation, so the page it sweeps holds one row
-  rather than fifty — and it *checks* that, failing with an explanation rather than
-  committing rows it never inspected.
+**Point it at a copy of the corpus, not at the corpus.** This is the first rule now, and it
+is what makes the tier ordinary rather than frightening. `marp db dump` reads the
+development database and writes both halves — the rows and the thumbnails — into
+`.marp/local/`; `marp db up -Port <yours> -DataDirName <yours>` brings up a second
+PostgreSQL beside it; `marp db load <dump> <thumbnails> --apply` fills it. Serve the API
+from that database and the tests write to a copy nobody is relying on.
+
+One trap in that, found on 2026-09-12 and worth ten minutes: **`load` refuses when the
+repository's `storage/observation-thumbnails` is not empty**, and that directory is shared
+with whatever else is running out of the checkout — so loading into an empty second
+database is refused because of files belonging to the first. The answer is not `--force`.
+Run the load from a throwaway `git worktree` (junction `node_modules` into it) so it has a
+`storage/` of its own; the shared one is then never touched at all.
+
+**Three rules that still hold even against a copy**, because a test that only works on a
+disposable database is a test nobody can run anywhere else:
+
+- **Touch as few rows as the assertion needs, and know which.** `tests/api/corpus.mjs`
+  discovers a `{species, line}` pair with exactly one observation, so the page it sweeps
+  holds one row rather than fifty — and it *checks* that, failing with an explanation rather
+  than committing rows it never inspected. It pins no species, no line and no observation:
+  it was `const LONE_SPECIES = 622` once, and seven CAMPA2026 dives landed the same night.
 - **Restore what you changed, in a `finally`, through the API.** A failed assertion must
   still put the record back. `withdraw` on the commit route deletes the projection row, and
   the absence of a row is what `undecided` means, so an observation nobody had decided about
@@ -667,14 +743,17 @@ proves is about what gets written and read back, not about layout.
 ### Where a new test goes
 
 - A rule — what a mark means, what a commit does, how filters nest → `tests/unit/`,
-  as a plain `node:test` case. No browser, no DOM, no fixture loading.
-- A behaviour the requirements in #68 name → `tests/requirements.js`, registered with
-  `test(requirement, name, fn)` where `requirement` is the heading from the issue. Each
-  check calls `reset()` first, which reloads the fixture so checks cannot contaminate
-  one another.
-- Anything visible → `tests/e2e/render.spec.mjs`.
-- Anything the **fixture cannot be wrong about the way the endpoint is** → `tests/api/`, and
-  read *The API tier* above first: it writes to the corpus, so it restores what it touches.
+  as a plain `node:test` case. No browser, no DOM, no fixture loading. This is still the
+  first place to look, and it is unaffected by everything below.
+- **Anything that needs a browser → `tests/api/`**, against a real server on a dumped
+  corpus. Read *The API tier* below first. This used to say `tests/e2e/render.spec.mjs` for
+  "anything visible" and `tests/api/` only for what the fixture could be wrong about, and
+  that ranking is reversed: see *The two backings* — you cannot tell in advance which
+  defects the fixture is going to mask, and #135 R7 is the one that proves it.
+- The two fixture-backed browser tiers — `tests/requirements.js` and
+  `tests/e2e/render.spec.mjs` — are **not** where new work goes. They are still run and
+  still maintained, and a test already in them that your change breaks is yours to fix;
+  they are simply not the destination any more.
 
 **The locator trap.** A Playwright locator is re-resolved on every use, so a selector
 that describes a *state* stops matching the moment the state changes:

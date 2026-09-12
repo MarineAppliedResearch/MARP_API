@@ -617,13 +617,21 @@ async function runCommit({ selective }) {
   /* What the reviewer marked by hand, **and** what they have taken back (#135 R3). Both
      go in `observations`, because the endpoint refuses a `withdraw` naming an id the
      request did not send -- and they are two different instructions about those rows, so
-     they stay two lists all the way to the wire. */
-  const takeBacks = selective
-    ? takenBackRows({
-      mode: state.mode, rows: state.rows, marks: state.marks,
-      takenBack: state.takenBack, outcomes: state.outcomes
-    })
-    : [];
+     they stay two lists all the way to the wire.
+
+     **Both buttons, not only the selective one** (R7). This was `selective ? ... : []`, on
+     the rule that the sweep accepts everything unmarked and a take-back was the main
+     button's business alone -- so pressing the sweep after taking a promotion back
+     promoted it straight again, and the reviewer's withdrawal was undone by the button
+     next to the one that honours it. A take-back is an instruction about a tile, not a
+     property of which button reads it: *"if you hit commit it again, it should be in the
+     vanilla state for that mode"*, whichever commit that is. The sweep's own rule is
+     untouched -- a merely unmarked tile is still accepted; only an explicit take-back is
+     withdrawn, and `state.takenBack` is what tells those apart. */
+  const takeBacks = takenBackRows({
+    mode: state.mode, rows: state.rows, marks: state.marks,
+    takenBack: state.takenBack, outcomes: state.outcomes
+  });
   const pageRows = selective
     ? [...selectedRows({ rows: state.rows, marks: state.marks, touched: state.touched }),
       ...takeBacks]

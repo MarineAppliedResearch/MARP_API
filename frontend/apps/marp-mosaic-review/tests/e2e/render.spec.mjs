@@ -528,7 +528,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
 });
 
 test.describe('a committed page is still editable', () => {
-  test('the flag stays marked, a click takes it back, and committing accepts it', async ({ page }) => {
+  test('the flag stays marked, a click takes it back, and committing withdraws it', async ({ page }) => {
     await page.goto('./');
     await ready(page);
     const tile = page.locator('.tile:not(.failed):not(.queued)').first();
@@ -544,8 +544,19 @@ test.describe('a committed page is still editable', () => {
     await expect(tile).not.toHaveClass(/marked/);
     await expect(tile.locator('.badge')).toContainText('TAKING BACK');
 
+    /**
+     * **The second sweep withdraws it** (#135 R7), and this line used to expect `REVIEWED`.
+     *
+     * It was asserting the rule that the two buttons meant different things by the same
+     * gesture — *Commit Marked* withdrew a take-back, the sweep accepted it. Reversed on
+     * 2026-09-12: a take-back is an instruction about a tile, not a property of which
+     * button reads it, so the tile ends in the vanilla state for the mode either way.
+     * The sweep's own rule is untouched: everything merely *unmarked* is still accepted,
+     * which is what the tile beside this one is doing.
+     */
     await page.locator('#commit').click();
-    await expect(tile.locator('.badge')).toContainText('REVIEWED');
+    await expect(tile.locator('.badge')).toHaveCount(0);
+    await expect(tile).not.toHaveClass(/marked/);
   });
 
   test('a mark outranks what the last commit did', async ({ page }) => {

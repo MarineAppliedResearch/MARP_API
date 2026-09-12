@@ -1469,10 +1469,8 @@ test('#135 R3: clicking a mark off makes the main button withdraw it', () => {
    * was the only button that could express one and it ignored it, so the only way to undo
    * a decision was the gesture that also decides every other tile on the page.
    *
-   * The two buttons now mean different things by the same gesture, deliberately (#135
-   * A2): unmarking and pressing *Commit Marked* withdraws -- the reviewer decided nothing
-   * about this observation and the record says so -- while the sweep still accepts it,
-   * because everything unmarked is what a sweep accepts.
+   * Unmarking and pressing *Commit Marked* withdraws: the reviewer decided nothing about
+   * this observation and the record says so.
    */
   const outcome = selectionOutcome({
     mode: 'scientific', rows, marks: new Map(), touched: new Set([1]),
@@ -1481,8 +1479,47 @@ test('#135 R3: clicking a mark off makes the main button withdraw it', () => {
   assert.equal(outcome.acts, 1, 'the button has something to do');
   assert.equal(outcome.withdraws, 1, 'and it is a withdrawal, not an acceptance');
   assert.equal(outcome.accepts, 0);
-  assert.equal(commitOutcome({ mode: 'scientific', rows, marks: new Map() }).accepts, 1,
-    'while the sweep is unchanged and still accepts it');
+});
+
+test('#135 R7: the sweep withdraws a take-back rather than deciding it again', () => {
+  /**
+   * **This line used to say the opposite**, and it is the correction of 2026-09-12 rather
+   * than a new rule beside an old one. It asserted that "the sweep is unchanged and still
+   * accepts it", on A2's first answer -- that the two buttons meant different things by
+   * the same gesture, deliberately. They do not: *"if it's already been committed and it
+   * shows that it's flagged, then you take it back... then if you hit commit it again, it
+   * should be in the vanilla state for that mode."* Whichever commit that is.
+   *
+   * The sweep's own rule is untouched. Everything merely *unmarked* is still accepted --
+   * see the test below, which is the same page with an empty `takenBack`. Only an explicit
+   * take-back is withdrawn, and `state.takenBack` is the only thing that tells them apart.
+   */
+  const flagged = row(1, { review_decision: 'flagged' });
+  const rows = [flagged];
+
+  const swept = commitOutcome({
+    mode: 'scientific', rows, marks: new Map(), takenBack: new Set([1])
+  });
+  assert.equal(swept.withdraws, 1, 'the sweep withdraws it');
+  assert.equal(swept.accepts, 0, 'and does not accept it');
+  assert.equal(swept.acts, 1, 'it is still one act, so the button is not disabled');
+
+  /* The same page with nothing taken back: an unmarked tile is an acceptance, as ever. */
+  const plain = commitOutcome({ mode: 'scientific', rows, marks: new Map() });
+  assert.equal(plain.accepts, 1, 'a merely unmarked tile is still swept into an acceptance');
+  assert.equal(plain.withdraws, 0);
+});
+
+test('#135 R7: a take-back with no imagery is withdrawn rather than skipped', () => {
+  /* A withdrawal removes a decision instead of making one, so it needs no picture -- the
+     rule that an acceptance does (R12) has nothing to say about it, and the endpoint agrees:
+     its `withdraw` branch runs before the imagery check. */
+  const flagged = row(1, { review_decision: 'flagged', thumbnail_status: 'failed' });
+  const swept = commitOutcome({
+    mode: 'scientific', rows: [flagged], marks: new Map(), takenBack: new Set([1])
+  });
+  assert.equal(swept.withdraws, 1);
+  assert.equal(swept.skips, 0, 'it is not skipped for having no imagery');
 });
 
 /* ------------------------------------------------------- taking a decision back (#135) */

@@ -439,7 +439,9 @@ export function deleteImpact({ rows, marks }) {
  * So a marked row without imagery is flagged, an unmarked row without imagery is skipped,
  * and the interface can stop claiming to act on rows it is about to drop.
  */
-export function commitOutcome({ mode, rows, marks }) {
+export function commitOutcome({
+  mode, rows, marks, takenBack = new Set(), outcomes = new Map()
+}) {
   const ready = (r) => r.thumbnail_status === 'ready';
   /* The exception set, which is what a mark used to be by definition. An accept mark is
      not an exception: under the sweep it is accepted, which is what an unmarked tile is
@@ -456,13 +458,25 @@ export function commitOutcome({ mode, rows, marks }) {
     };
   }
 
+  /* **A take-back is withdrawn by this button too** (R7), so it is not one of the accepts.
+     Counted first and removed from the other two, because a reviewer reading "accepts 12"
+     over a page where one of the twelve is about to have its decision *removed* is being
+     told the opposite of what will happen. A merely unmarked tile is still an accept --
+     only an explicit take-back is here, which is what `state.takenBack` records. */
+  const withdrawn = new Set(
+    takenBackRows({ mode, rows, marks, takenBack, outcomes }).map((r) => r.observation_id)
+  );
+  const taken = (r) => withdrawn.has(r.observation_id);
+
   const flags = rows.filter((r) => marked(r)).length;
-  const accepts = rows.filter((r) => !marked(r) && ready(r)).length;
-  const skips = rows.filter((r) => !marked(r) && !ready(r)).length;
-  /* Zero, and said out loud rather than left absent: the sweep accepts an unmarked tile,
-     which is what it has always done and what #135 A2 deliberately left alone. Both
-     buttons answer in the same shape so the chrome draws them through one path. */
-  return { acts: flags + accepts, accepts, flags, deletes: 0, withdraws: 0, skips };
+  const accepts = rows.filter((r) => !marked(r) && !taken(r) && ready(r)).length;
+  /* A take-back needs no imagery -- it removes a decision rather than making one -- so it
+     is never a skip, even on a tile whose thumbnail never arrived. */
+  const skips = rows.filter((r) => !marked(r) && !taken(r) && !ready(r)).length;
+  const withdraws = withdrawn.size;
+  return {
+    acts: flags + accepts + withdraws, accepts, flags, deletes: 0, withdraws, skips
+  };
 }
 
 /**

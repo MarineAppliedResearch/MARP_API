@@ -19,6 +19,28 @@
 | R6 | `data-scale.test.mjs` › *#135 R6: a species correction still moves it* | unit | The distinction: a correction edits the observation, so its token does move. |
 | R6 | `requirements.js` › Training data review › *committing the same page twice is not a phantom conflict* | contract | The same defect through the real store, which is the half that was wrong. |
 
+### The corrected rules, 2026-09-12 — and the tier they are proved at
+
+| Requirement | Test | Tier | Proves |
+| --- | --- | --- | --- |
+| R7 | `take-back.spec.mjs` › *R7: the page sweep withdraws a take-back instead of deciding it again* | **api** | The issue's own sequence, in Training, against a real server: promote, *Commit Marked*, click again, then press the **sweep** — and the tile ends with no badge and `observation_review_current` holds no row. Red before the fix: badge `PROMOTED`, record `promoted`. |
+| R7 | `take-back.spec.mjs` › *R8: a recorded take-back stops saying TAKING BACK* | **api** | The same rule in Scientific, on a flag the record carried before the page was loaded. Its previous expectation — `REVIEWED` — was the superseded rule, and is the line that changed. |
+| R7 | `model.test.mjs` › *#135 R7: the sweep withdraws a take-back rather than deciding it again* | unit | The rule itself, plus the half that must **not** change: the same page with an empty `takenBack` still accepts the unmarked tile. |
+| R7 | `model.test.mjs` › *#135 R7: a take-back with no imagery is withdrawn rather than skipped* | unit | A withdrawal removes a decision instead of making one, so the imagery rule has nothing to say about it — matching the endpoint, whose `withdraw` branch runs before its imagery check. |
+| R7 | `requirements.js` › Review states › *a committed page stays editable: the exceptions are still marked* | contract | The same reversal through the real store. Its last assertion expected `reviewed` and now expects `null`. |
+| R7 | `render.spec.mjs` › a committed page is still editable › *the flag stays marked, a click takes it back, and committing withdraws it* | render | What is drawn after the second sweep: no badge, not marked. Its name and its last assertion both changed. |
+| R7a | `take-back.spec.mjs` › *R7a: a decision made in an earlier sitting can be taken back* | **api** | A promotion written through the API **before the page is loaded** can be taken back. **This was green before any change** — see below. |
+| R7b | the two API tests above, last assertion of each | **api** | Vanilla for the mode is the *absence* of a projection row, read back from the endpoint rather than off the screen. |
+
+**The supervising diagnosis was wrong, and R7a is the proof.** It said `existingState`
+cannot see a decision from an earlier sitting because the API never writes the row's status
+column. `ROW_COLUMNS` in `repository/mosaic.repository.js` selects
+`rc.decision AS review_decision` and `rt.decision AS training_decision` out of
+`observation_review_current`, so it arrives on the row and the derivation finds it. What the
+endpoint does not do is write that column back **after a commit in this sitting**, which is
+#131 and is already handled by preferring `state.outcomes`. R7a is kept as a tripwire, not
+as a fix.
+
 **Why the endpoint is not in this table.** Nothing on the server changed. The server half of
 step 1 landed with #126 and `tests/mosaic-commit.test.js` › *promotes an accept mark on the
 training route* already holds it; `withdraw` has been supported since #106 with no client
@@ -53,16 +75,21 @@ rendering tier, because the defect was something drawn.
 
 ## Known gaps
 
-- **The API tier was not run.** `tests/api/take-back.spec.mjs` needs a server, a login and
-  the development corpus, and it writes to that corpus. R4's database half is proved here
-  against the fixture, which for *this* defect is honest — `src/data.js` implements
-  `withdraw` the way the endpoint does, deleting the decision rather than storing a fourth
-  value — but the claim that the endpoint deletes the projection row rests on
-  `tests/mosaic-commit.test.js` and on reading `releaseWithdrawn`, not on a run here.
-- **Nothing re-reads the page from the endpoint after a withdrawal.** The tile stops
-  claiming a decision because the outcome says `withdrawn`; that a *fresh query* then serves
-  the row as undecided is the endpoint's behaviour and is not asserted by anything added
-  here.
+- ~~**The API tier was not run.**~~ **Closed 2026-09-12.** It has been run, against a copy of
+  the corpus, and it is what caught R7 — three fixture-backed step tests were green while the
+  page sweep put a withdrawn promotion straight back. See *Results*. This gap was the whole
+  cost of the entry above it: the tier that could see the defect was the one nobody ran.
+- ~~**Nothing re-reads the page from the endpoint after a withdrawal.**~~ **Closed.** All
+  three API tests read the decision back through `/mosaic/observations/pages` rather than off
+  the screen, and assert it is null.
+- **A6 is open and is not built.** A tile whose *acceptance* is already on the record takes
+  two right-clicks to take back, because nothing seeds an accept mark — the first marks it
+  accepted, agreeing with the record, and only the second takes it back. A tile carrying an
+  *exception* is seeded and takes one click. The API tier asserts today's behaviour, with a
+  comment saying it is the test that changes if A6 is answered the other way.
+- **`observation_reviews` is not asserted.** R7b is about the projection row being absent,
+  and the log keeping its rows is the endpoint's contract, covered by
+  `tests/mosaic-commit.test.js`. Nothing added here reads the log.
 - **No walkthrough**, and none is proposed. One is recorded only when the human asks.
 
 ## Manual steps
@@ -168,7 +195,63 @@ The API tier is not in this run at all; see *Known gaps*.
 I asserted these were the API specs before checking, and they are not — corrected here rather
 than left standing, because a wrong sentence in the evidence is worse than no sentence.
 
+### API — `--project=api`, 2026-09-12, against a copy of the corpus
+
+*Known gaps* said this tier had not been run and that the work would not be finished until it
+had. It has been run now, and it is what found the defect. The arrangement, because it is the
+part worth repeating: `marp db dump` of the development database, `marp db up -Port 5442
+-DataDirName agent135` beside it, `marp db load … --apply` into that second database, and the
+API served from it on a port of its own. **Nothing was written to the development database
+and no `--force` was used.**
+
+Red first, on the branch tip, before any source change:
+
+```
+✘ take-back.spec.mjs:57 › R8: a recorded take-back stops saying TAKING BACK (7.9s)
+  Error: expect(locator).toHaveCount(expected) failed
+  Locator:  locator('.tile[data-id="582"]').locator('.badge')
+  Expected: 0
+  Received: 1
+
+✘ take-back.spec.mjs:169 › R7: the page sweep withdraws a take-back instead of deciding it again (7.8s)
+  Error: expect(locator).toHaveCount(expected) failed
+  Locator:  locator('.tile[data-id="582"]').locator('.badge')
+  Expected: 0
+  Received: 1
+
+✓ take-back.spec.mjs:116 › R7a: a decision made in an earlier sitting can be taken back (561ms)
+```
+
+R7a passing there is the evidence that the supervising diagnosis was wrong, and it is
+recorded rather than quietly dropped.
+
+Green after:
+
+```
+✓ 1 [api] › take-back.spec.mjs:57  › R8: a recorded take-back stops saying TAKING BACK (566ms)
+✓ 2 [api] › take-back.spec.mjs:116 › R7a: a decision made in an earlier sitting can be taken back (394ms)
+✓ 3 [api] › take-back.spec.mjs:169 › R7: the page sweep withdraws a take-back instead of deciding it again (597ms)
+3 passed (2.0s)
+```
+
+### Browser and unit, re-run after the correction
+
+`npm run test:unit` — **298 passed, 0 failed**, 0.9 s. `npm run test:e2e` — **301 passed, 5
+skipped**, 2.1 minutes, the same five viewport-conditional skips as before.
+
+The first e2e run after the change had three failures and all three are recorded here rather
+than only the tidy result:
+
+- `contract.spec.mjs` on both projects — `a committed page stays editable … expected
+  "reviewed", got null`. That is R7 landing, on a check asserting the rule R7 reverses. The
+  check was corrected.
+- `render.spec.mjs:2596 [phone] › L4: confidence is one track carrying two handles` —
+  `--from:0%;--to:100%` instead of `--from: 40%`. **Not mine**: nothing in this change
+  touches the rail or the confidence dimension. It passed alone and did not recur on the
+  re-run, so it is flaky under six parallel workers. Named here rather than fixed.
+
 ### What was not run, and why
 
-`npm run test:mosaic` — nothing on the endpoint changed. `npm test` — not run, and not a
-working loop. The API tier — see *Known gaps*.
+`npm run test:mosaic` — nothing on the endpoint changed; the `withdraw` branch it relies on
+has been there since #106 and runs before the imagery check, which is what makes R7 a
+client-only fix. `npm test` — not run, and not a working loop. No walkthrough was recorded.
