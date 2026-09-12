@@ -99,6 +99,11 @@ const SUBSYSTEMS = {
             'schema',
             'readonly-endpoints',
             'data-integrity',
+            // #125: what "the corpus" is, and the refusal that stands between a
+            // mistyped load and a database with no backup. Here rather than in a
+            // group of its own -- it is about the schema and about not losing
+            // rows, which is what this group already owns.
+            'corpus',
             // The corpus guard (#142). Here because it is data integrity by
             // another route: it watches what a suite leaves behind rather than
             // what a migration does.
