@@ -20,6 +20,7 @@
   -->
   <link rel="stylesheet" href="assets/css/landing.css">
   <script src="assets/js/landing.js" defer></script>
+  <script src="assets/js/account-menu.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -68,7 +69,25 @@
         <a href="#the-change">What Changes</a>
         <a href="/how-it-works">How It Works</a>
         <a href="/how-it-works#applications">Applications</a>
-        <button class="button button--outline button--compact" type="button" data-login-open>Login</button>
+        <button class="button button--outline button--compact" type="button"
+                data-login-open data-signed-out-only>Login</button>
+        <!-- Signed in, this replaces the invitation to sign in beside it: a person
+             already in MARP does not need to be asked again. It stays hidden until
+             /api/v2/auth/me has answered, so a visitor and a page that cannot reach
+             the API both simply keep the Login button. Shared with the Mosaic Reviewer
+             and the ML Dashboard by way of assets/js/account-menu.js. -->
+        <div class="account" data-account hidden>
+          <button class="account__button" type="button" data-account-button
+                  aria-haspopup="true" aria-expanded="false" aria-label="Account">MA</button>
+          <div class="account__menu" role="menu" data-account-menu hidden>
+            <p class="account__who" data-account-who>Signed in</p>
+            <a class="account__item" role="menuitem" href="/apps/dashboard/index.html">Open the dashboard</a>
+            <a class="account__item" role="menuitem" href="/apps/marp-mosaic-review/">Picture Mosaic Reviewer</a>
+            <a class="account__item" role="menuitem" href="/apps/marp-ml-dashboard/">Machine Learning Dashboard</a>
+            <hr class="account__rule">
+            <button class="account__item" type="button" role="menuitem" data-account-signout>Sign out</button>
+          </div>
+        </div>
       </nav>
     </div>
   </header>

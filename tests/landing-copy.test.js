@@ -49,6 +49,8 @@ const stripped = Object.fromEntries(
 
 const css = fs.readFileSync(path.join(ROOT, 'frontend', 'shared', 'assets', 'css', 'landing.css'), 'utf8');
 const landingJs = fs.readFileSync(path.join(ROOT, 'frontend', 'shared', 'assets', 'js', 'landing.js'), 'utf8');
+const accountJs = fs.readFileSync(
+    path.join(ROOT, 'frontend', 'shared', 'assets', 'js', 'account-menu.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
 
 const pageNames = Object.keys(PAGES);
@@ -379,6 +381,30 @@ describe('landing page copy', () => {
         const context = index === -1 ? null : landingJs.slice(Math.max(0, index - 60), index + 60);
 
         expect(context).toBeNull();
+    });
+
+    /**
+     * R14 again, for the second shared script. `account-menu.js` writes the signed-in
+     * line straight into the header, so its strings are copy on the page in exactly the
+     * way the login status line is -- and a rule that covered only the first script would
+     * have missed them for the same reason it once missed that one.
+     */
+    it('contains no em dash in the account menu script either', () => {
+        const index = accountJs.indexOf('—');
+        const context = index === -1 ? null : accountJs.slice(Math.max(0, index - 60), index + 60);
+
+        expect(context).toBeNull();
+    });
+
+    /**
+     * The account menu is one component in one place (#151). Three applications draw this
+     * control now, and the point of the shared copy is that the third one was the last.
+     */
+    it('loads the shared account menu on both pages', () => {
+        for (const page of pageNames) {
+            expect(raw[page]).toMatch(/<script src="[^"]*assets\/js\/account-menu\.js" defer><\/script>/);
+            expect(raw[page]).toMatch(/data-account\b/);
+        }
     });
 
     /**

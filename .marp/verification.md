@@ -207,3 +207,106 @@ passed while proving nothing — the `room > 200` assertion is what said so out 
 is an assertion rather than a skip for that reason. The second run was driven on `models`,
 whose 368px of room put the pixel-exact checks at the bottom of the page, where they
 measured the clamp instead of the threshold. Both are recorded in the file.
+
+---
+
+# Part 3 - the public landing page
+
+Two things in one header: it follows the reading, and it knows who is reading. The
+gesture is the ML Dashboard's, because this is a scrolling document; the argument for
+that over the mosaic's button is in `.marp/task.md`.
+
+## What each test proves
+
+Thirteen checks in `frontend/apps/entry/tests/e2e/render.spec.mjs` under `#151 the
+header`, run at all three of that app's projects - `desktop`, `phone`, and
+`phone-landscape`, which is the viewport this whole issue is about. All were proved red.
+
+| Requirement | Test | Tier | Proves |
+| --- | --- | --- | --- |
+| R16 | it leaves on the way down and comes back on the way up | render x3 | The header's bottom edge goes off the top of the screen and returns |
+| R16 | a few pixels of noise does not flap it | render x3 | Three and five pixels do nothing, seven is heard |
+| R17 | at the top of the page the header is always there | render x3 | After going down and back, it is on screen at scrollTop 0 |
+| R17 | it does not slide out from under an open sheet | render x2 | The same scroll hides it with the sheet shut and does not with it open |
+| R18 | signed out, the invitation stays | render x3 | The account control exists, is hidden, and the Login button is reachable |
+| R19 | signed in, the account menu instead | render x3 | Initials drawn from the name, the Login button gone, the menu opens and Escape closes it |
+| R19 | signing out tells the server | render x3 | The POST to `/api/v2/auth/logout` actually happens |
+| R21 | a probe that fails still draws the signed-out header | render x3 | A 500 from the session endpoint reads as *not signed in* |
+| R22 | reduced motion | render x3 | No perceptible transition, and the behaviour still works |
+| R20 | the menu is loaded from one shared file | text tier | `tests/landing-copy.test.js`: both pages load `assets/js/account-menu.js` and carry `data-account` |
+
+## Edge cases, each of which was a real failure first
+
+- **`hidden` did not hide, twice.** The attribute is only the user agent's
+  `display: none`, so any rule setting `display` outranks it. `.primary-nav .button` left
+  the *Login* button on screen beside the avatar that had just replaced it, and
+  `.account__menu`'s own `display: grid` left the dropdown open before anybody clicked.
+  Both are now stated at a specificity that wins, without `!important`.
+- **On a landscape phone the menu opened into nothing.** The navigation sheet fills a
+  340px screen, so a dropdown hanging below the avatar put *Sign out* at y=468: 128px
+  past the bottom, unreachable by any gesture. The sheet is now bounded to the screen and
+  scrolls, and inside it the menu is part of the list rather than a dropdown off it.
+  **This was a defect in this work, found by a test at the viewport the issue is about.**
+- **The probe's 401 is not a bad response.** The render tier fails a page that produces
+  one, and for a visitor `GET /api/v2/auth/me` answers 401 by design - 404 in this tier,
+  where there is no API at all. The check now excludes exactly that URL with exactly
+  those two statuses; a 500 from it still fails, and R21 proves the page copes anyway.
+
+## A pre-existing flake, made worse and then fixed
+
+`the landing page hero > puts the headline, the copy and both buttons on the first
+screen` at `phone-landscape` failed intermittently. Measured rather than guessed:
+
+```
+before #151:  2 failures in 8 runs
+after  #151:  4 failures in 8 runs
+the failure:  "buttons: 298..342 of 340"
+settled page: actions 276..320 of 340, identical on three consecutive runs
+```
+
+`.hero__copy` is a `data-reveal` element: it starts 22px low and animates up over 650ms,
+and 320 + 22 = 342. The test was catching the animation in flight. It is not a layout
+difference - the page measures the same with and without this work - but adding a script
+and a request to the page's load changed which frame the measurement landed on. The test
+now waits for the reveal to finish and passes **8 runs in 8**.
+
+Fonts were the first hypothesis and were wrong: `document.fonts.ready` changed nothing,
+and the failure stayed at exactly 342.
+
+## Known gaps
+
+- **The signed-in state is tested against an intercepted route, not a real session.**
+  The render tier runs on a static server with no API. What is proved is that the header
+  draws correctly given each answer, not that the server gives that answer - though the
+  endpoint's own behaviour is covered by the API suite, and two applications already
+  depend on it.
+- **The two in-page Login buttons are untouched** (A6), so a signed-in visitor still
+  meets them further down the page.
+- **The Mosaic Reviewer and the ML Dashboard still carry their own menus.** Adopting the
+  shared one is the human's call and is not done here.
+
+## Results, as run
+
+Red first, with the four page files restored from a copy and `account-menu.js` moved
+aside: **13 failed, 2 passed**. Those two were the R17 sheet check at two viewports,
+which asserted only that the header does *not* move and so passed against a page whose
+header never moved at all; it now proves the contrast first and fails red.
+
+Green, the whole entry tier at all three viewports:
+
+```
+  1 skipped
+  59 passed (27.3s)
+```
+
+The skip is the sheet check at desktop, where the hamburger does not exist.
+
+And the text tier that owns this page's markup:
+
+```
+Test: landing page copy > uses no class landing.css has no rule for ......... PASS
+Test: landing page copy > contains no em dash in the account menu script .... PASS
+Test: landing page copy > loads the shared account menu on both pages ....... PASS
+  Test Suites : 1 passed, 0 failed, 1 total
+  Result: ALL TESTS PASSED
+```

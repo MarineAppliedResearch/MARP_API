@@ -7,7 +7,8 @@
  * 3. Provide the password visibility control.
  * 4. Submit the login form to POST /api/v2/auth/login and, on success,
  *    redirect to the dashboard app.
- * 5. Add subtle scroll-based header and reveal behavior.
+ * 5. Add subtle scroll-based header and reveal behavior, including moving the header
+ *    out of the reader's way down the page and back on the way up.
  */
 
 "use strict";
@@ -232,8 +233,62 @@ function initializeScrollEffects() {
     .map((link) => document.querySelector(link.getAttribute("href")))
     .filter(Boolean);
 
+  /**
+   * How far the reader has to move before the header takes it as a decision.
+   *
+   * Under this, nothing happens: a trackpad twitch and the bounce at the end of a
+   * momentum scroll are not instructions. The mark is deliberately not reset by a movement
+   * this small, so a slow deliberate scroll still adds up to one.
+   */
+  const MOVE_STEP = 6;
+
+  /**
+   * Where the reader was, last time the header made a decision.
+   */
+  let mark = window.scrollY;
+
+  /**
+   * Is something open that the header must not take away with it?
+   *
+   * The navigation sheet lives inside the header on a phone, and the login dialog is
+   * opened from it. Sliding the header out from under either is how a menu disappears
+   * mid-tap.
+   */
+  const headerBusy = () => {
+    const toggle = document.querySelector("[data-menu-toggle]");
+    const dialog = document.querySelector("[data-login-dialog]");
+    return toggle?.getAttribute("aria-expanded") === "true" || Boolean(dialog?.open);
+  };
+
+  /**
+   * The header follows the reading: away down the page, back on the way up (#151).
+   *
+   * The same gesture the ML Dashboard uses, and for the same reason -- this is a document
+   * somebody scrolls, so the scroll is the instruction and a control would be one more
+   * thing to understand. It needs none of that app's settle window, though: this header is
+   * `position: fixed`, so hiding it changes no scroll metric, there is no maximum scroll
+   * position to shrink, and therefore no clamp to absorb.
+   *
+   * At the top of the page it is always on screen. The first screen of a landing page is
+   * the whole first impression, and it is also the only place a reader has not yet told us
+   * anything about where they want to be.
+   */
   const updateHeader = () => {
-    header?.classList.toggle("is-scrolled", window.scrollY > 18);
+    const y = window.scrollY;
+    header?.classList.toggle("is-scrolled", y > 18);
+
+    if (y <= MOVE_STEP || headerBusy()) {
+      header?.classList.remove("is-hidden");
+      mark = y;
+      return;
+    }
+
+    const moved = y - mark;
+    if (Math.abs(moved) < MOVE_STEP) {
+      return;
+    }
+    mark = y;
+    header?.classList.toggle("is-hidden", moved > 0);
   };
 
   updateHeader();

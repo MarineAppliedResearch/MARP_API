@@ -53,6 +53,29 @@ header disappears. But as soon as you start scrolling up again, the header reapp
 - **R15** -- It is authored once, in the shell (`mockups/mock.js` and `mock.css`), so
   every screen has it and no screen declares it. DESIGN.md rule 3.
 
+### Part 3 -- the public landing page, where the header has two states
+
+`frontend/apps/entry`, served at `/` and `/how-it-works`. It is the only surface a person
+reaches **without being signed in**, so its header has to serve a visitor and a member of
+the project at once.
+
+- **R16** -- The header gets out of the way as the reader moves down the page, and comes
+  back as soon as they move back up. Same gesture as the ML Dashboard, because this is a
+  scrolling document; the argument for it over the mosaic's button is in the decisions.
+- **R17** -- The header is on screen at the top of the page, and while the mobile
+  navigation sheet or the login dialog is open -- a header that hides with its own menu
+  open takes the menu with it.
+- **R18** -- Signed out, the header carries the *Sign in* control it carries today and the
+  login dialog still opens and closes. Nothing about the signed-out page changes.
+- **R19** -- Signed in, the header carries the avatar menu the Mosaic Reviewer and the ML
+  Dashboard carry, rather than inviting somebody to sign in again.
+- **R20** -- The avatar and its menu are written once, in `frontend/shared/`, so the third
+  copy of this component is also the last one.
+- **R21** -- A page that cannot reach the API draws the signed-out header. The render tier
+  runs against a static server with no API at all, and a probe that fails must read as
+  *not signed in* rather than as an error on the page.
+- **R22** -- `prefers-reduced-motion: reduce` gets the behaviour with no animation.
+
 ## Open assumptions
 
 - [x] **A1 | product/UI | non-blocking** -- answered 2026-09-12: **the footer stays as it
@@ -73,6 +96,15 @@ header disappears. But as soon as you start scrolling up again, the header reapp
   the app's existing `max-width: 760px`. A landscape phone is **915px wide**, so every
   width-keyed rule in this app misses it (see the finding below); height is the only signal
   that sees it.
+- [ ] **A5 | product/UI | non-blocking** -- what the landing page's avatar menu offers.
+  The other two carry *Preferences* and *Keyboard shortcuts*, both of which are dead stubs
+  there and would be meaningless here, so this one carries the name it is signed in as, a
+  way into the dashboard, and *Sign out* -- which is the one item that really acts. Say so
+  if it should mirror the other two item for item instead.
+- [ ] **A6 | product/UI | non-blocking** -- the two **in-page** *Login* buttons, mid-page
+  and in the closing call to action, still say *Login* to somebody already signed in. Only
+  the header was asked for and only the header is changed; those two are named here rather
+  than quietly rewritten.
 - [ ] **A4 | behavioural | non-blocking** -- toggling re-pages the mosaic, because page size
   follows the field. Marks survive (`setPageSize` calls `refresh`, not `resetForNewQuery`),
   but the ids on the page change, exactly as they already do when the rail is collapsed or
@@ -123,6 +155,26 @@ scope.** So it is named here and not built.
 - **2026-09-12** -- The avatar menu will be in three applications, so it is written once,
   in `frontend/shared/`. Whether the two apps that already have their own adopt it is the
   human's call and is not done silently.
+- **2026-09-12** -- Part 3 uses **the ML Dashboard's gesture, not the mosaic's button**.
+  The landing page is a scrolling document, so the gesture is already in the reader's
+  hand and a chrome control on a page somebody is reading for the first time is a control
+  asking to be understood before the page is. The reservation raised with this part -- that
+  a header sliding over a hero reads differently from one over a data table -- is answered
+  by R17 rather than by a different mechanism: at the top of the page, which is the whole
+  of a first impression, the header is always there. It leaves only once the reader has
+  decided to go down the page, and returns the moment they turn round.
+- **2026-09-12** -- Part 3 needs **no settle window**, and that is a real difference rather
+  than an oversight. The landing header is `position: fixed`, so hiding it changes no
+  scroll metric at all -- there is no maximum scroll position to shrink and therefore no
+  clamp to absorb, which is the whole reason part 2 has one. The 6px threshold is kept,
+  because trackpad noise and a momentum bounce are the same everywhere.
+- **2026-09-12** -- The page learns whether it is signed in from **`GET /api/v2/auth/me`**,
+  which is not an invention: the route documents itself as *"Session introspection endpoint
+  used by clients to confirm auth state"*, answers 401 without a session and `{user}` with
+  one, requires no permission beyond having a session, and **two applications already ask
+  it exactly this question** -- `frontend/apps/dashboard/index.html` reads it to decide
+  whether to show its Admin link, and the Mosaic Reviewer reads it for the reviewer's
+  identity. So no new endpoint, no cookie reading, and no auth surface invented.
 - **2026-09-12** -- Part 2's threshold is **6px of accumulated movement**, and a delta
   under it is ignored *without* resetting the reference point -- so noise does nothing
   and a slow drag still adds up to a decision. Chosen over a per-event delta, which
