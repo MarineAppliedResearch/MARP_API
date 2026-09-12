@@ -20,7 +20,7 @@
     "docs:api:build": "node ./scripts/generate-openapi.js",
     "docs:schema:infer": "node ./scripts/infer-openapi-schema.js",
     "docs:erd": "node ./sequelize-erd.js",
-    "docs:dev:build": "jsdoc -c ./jsdoc.config.json --lenient",
+    "docs:dev:build": "node ./scripts/build-developer-docs.js",
     "docs:build": "npm run docs:api:build && npm run docs:dev:build",
     "test:app:mosaic-review": "npm --prefix frontend/apps/marp-mosaic-review test",
     "test:app:entry": "npm --prefix frontend/apps/entry test",

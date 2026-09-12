@@ -360,6 +360,9 @@ const generatedSwaggerDocument = buildOpenApiSpec();
 /**
  * Custom CSS applied to the Swagger UI documentation site.
  *
+ * The MARP theme: the palette, the type and the operation blocks. See
+ * `swagger.css` for why the colours are copied rather than linked.
+ *
  * @constant
  * @type {string}
  */
@@ -368,12 +371,32 @@ const customCss = fs.readFileSync(
     'utf8'
 );
 
+/**
+ * Inline script that puts the MARP bar at the top of the Swagger UI page.
+ *
+ * swagger-ui-express renders from a template string with no seam for markup,
+ * so the one piece of chrome the page needs has to arrive as a script. The
+ * developer documentation renders the same bar from its own template.
+ *
+ * @constant
+ * @type {string}
+ */
+const customJsStr = fs.readFileSync(
+    path.join(__dirname, 'swagger-chrome.js'),
+    'utf8'
+);
+
 
 // Serve the interactive Swagger UI documentation site.
 app.use(
     '/api-docs',
     swaggerUi.serveFiles(generatedSwaggerDocument),
-    swaggerUi.setup(generatedSwaggerDocument, { customCss })
+    swaggerUi.setup(generatedSwaggerDocument, {
+        customCss,
+        customJsStr,
+        customSiteTitle: 'MARP API reference',
+        customfavIcon: '/assets/images/marp-mark.png'
+    })
 );
 
 

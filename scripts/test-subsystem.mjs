@@ -113,6 +113,10 @@ const SUBSYSTEMS = {
             // this is the same kind of check as `schema`: an invariant about
             // what the repository contains rather than about what it serves.
             'landing-copy',
+            // #140: the two documentation surfaces and the forked jsdoc
+            // template, read off disk. Same reasoning as `landing-copy` -- an
+            // invariant about what the repository contains.
+            'docs-branding',
         ],
     },
     media: {
