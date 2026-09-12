@@ -1,7 +1,612 @@
+/* ==========================================================================
+   MARP API reference
+   --------------------------------------------------------------------------
+   The theme for the Swagger UI served at `/api-docs`. Read by `app.js` and
+   handed to `swagger-ui-express` as `customCss`, which emits it in a <style>
+   after Swagger's own stylesheet, so it wins on document order.
+
+   This file used to be six lines that hid the topbar. Everything else on the
+   page was stock Swagger: white ground, Titillium Web, the green and blue
+   operation blocks that every Swagger site on the internet has. MARP_API#140
+   asked for the documentation to look like the platform it documents.
+
+   The palette below is COPIED from `frontend/shared/assets/css/tokens.css`.
+   Unlike the developer docs this page is only ever served, so it could have
+   linked the token file -- it does not, because a rule that holds for one of
+   the two documentation surfaces and not the other is a rule nobody remembers.
+   `tests/docs-branding.test.js` fails when a value here stops matching the one
+   in `tokens.css`, and that check can only see this block, so there is no hex
+   anywhere below it.
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  --navy-1000: #01050d;
+  --navy-950: #020814;
+  --navy-900: #03101f;
+  --navy-850: #051828;
+  --navy-800: #07233a;
+
+  --cyan-300: #64f6f2;
+  --cyan-400: #22d7dc;
+  --cyan-500: #05b9c8;
+  --blue-400: #2d9cff;
+  --green-300: #c7ff62;
+  --green-400: #a7ec35;
+  --mint-300: #7ff0c0;
+  --violet-300: #c3b2f2;
+  --amber-300: #f6c453;
+  --red-400: #e0616b;
+  --grey-400: #8b93a0;
+
+  --white: #f7fbff;
+  --text: #c7d4dd;
+  --muted: #8198a8;
+  --faint: #587181;
+
+  --border: rgba(42, 214, 220, 0.28);
+  --border-strong: rgba(42, 214, 220, 0.52);
+  --line: rgba(42, 214, 220, 0.10);
+
+  --body-font: Inter, Aptos, "Segoe UI", Helvetica, Arial, sans-serif;
+  --display-font: "Arial Narrow", "Aptos Narrow", "Roboto Condensed", sans-serif;
+
+  /* Local. The scrim is the one colour tokens.css cannot carry: navy-1000 at an
+     alpha, which CSS has no way to derive from a hex custom property. */
+  --bar-height: 52px;
+  --mono-font: "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  --scrim: rgba(1, 5, 13, 0.72);
+}
+
+/* --------------------------------------------------------------------------
+   1. The page
+   -------------------------------------------------------------------------- */
+
+body {
+  background: var(--navy-950);
+  margin: 0;
+}
+
+.swagger-ui {
+  color: var(--text);
+  font-family: var(--body-font);
+}
+
+.swagger-ui .wrapper {
+  max-width: 1180px;
+}
+
+/* Swagger's own header. MARP supplies its own bar, in `swagger-chrome.js`. */
 .swagger-ui .topbar {
   display: none;
 }
 
 .swagger-ui .information-container {
   margin-bottom: 12px;
+  padding: 28px 0 8px;
+}
+
+/* Swagger sets an explicit colour on most text nodes, so a body rule does not
+   reach them. This is the sweep that catches the ones no component styles. */
+.swagger-ui,
+.swagger-ui p,
+.swagger-ui li,
+.swagger-ui table,
+.swagger-ui label,
+.swagger-ui .info li,
+.swagger-ui .info p,
+.swagger-ui .info table,
+.swagger-ui .markdown p,
+.swagger-ui .renderedMarkdown p,
+.swagger-ui .opblock-description-wrapper p,
+.swagger-ui .opblock-external-docs-wrapper p,
+.swagger-ui .opblock-title_normal p {
+  color: var(--text);
+}
+
+.swagger-ui h1,
+.swagger-ui h2,
+.swagger-ui h3,
+.swagger-ui h4,
+.swagger-ui h5,
+.swagger-ui .info .title,
+.swagger-ui .opblock-tag,
+.swagger-ui .scheme-container .schemes-title {
+  color: var(--white);
+  font-family: var(--display-font);
+}
+
+.swagger-ui .info .title small {
+  background: var(--navy-800);
+  border: 1px solid var(--line);
+}
+
+.swagger-ui .info .title small pre {
+  background: none;
+  color: var(--muted);
+  font-family: var(--mono-font);
+}
+
+.swagger-ui a,
+.swagger-ui .info a,
+.swagger-ui .info a:hover {
+  color: var(--cyan-300);
+}
+
+.swagger-ui .info .base-url,
+.swagger-ui .info .url {
+  color: var(--muted);
+  font-family: var(--mono-font);
+}
+
+/* Every inline icon Swagger draws is an SVG with no fill of its own, so they
+   all come through black on the dark ground unless this is set. */
+.swagger-ui svg:not(:root) {
+  fill: var(--muted);
+}
+
+.swagger-ui .expand-operation svg,
+.swagger-ui .opblock-summary-control svg {
+  fill: var(--cyan-300);
+}
+
+/* --------------------------------------------------------------------------
+   2. Tag sections
+   -------------------------------------------------------------------------- */
+
+.swagger-ui .opblock-tag {
+  border-bottom: 1px solid var(--line);
+  font-size: 20px;
+  letter-spacing: 0.04em;
+}
+
+.swagger-ui .opblock-tag:hover {
+  background: var(--navy-900);
+}
+
+.swagger-ui .opblock-tag small {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   3. Operations
+   --------------------------------------------------------------------------
+   Swagger tints a whole block by method -- green for GET, blue for POST, and
+   so on -- which on a dark ground turns the page into a stack of coloured
+   slabs. The tint moves to the method chip and a single edge down the left,
+   so the method still reads at a glance and the content stays legible. */
+
+.swagger-ui .opblock {
+  background: var(--navy-900);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: none;
+  margin: 0 0 12px;
+}
+
+.swagger-ui .opblock .opblock-summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.swagger-ui .opblock .opblock-summary-method {
+  background: var(--navy-800);
+  color: var(--white);
+  border-radius: 3px;
+  font-family: var(--display-font);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-shadow: none;
+  min-width: 74px;
+}
+
+.swagger-ui .opblock .opblock-summary-path,
+.swagger-ui .opblock .opblock-summary-path__deprecated,
+.swagger-ui .opblock .opblock-summary-path a {
+  color: var(--white);
+  font-family: var(--mono-font);
+}
+
+.swagger-ui .opblock .opblock-summary-description {
+  color: var(--muted);
+}
+
+/* Swagger declares the tint at `.opblock.opblock-get`, which outranks the
+   `.opblock` rule above, so the ground and the outline have to be restated here
+   or the block keeps its pastel fill. */
+.swagger-ui .opblock.opblock-get,
+.swagger-ui .opblock.opblock-post,
+.swagger-ui .opblock.opblock-put,
+.swagger-ui .opblock.opblock-patch,
+.swagger-ui .opblock.opblock-delete,
+.swagger-ui .opblock.opblock-head,
+.swagger-ui .opblock.opblock-options {
+  background: var(--navy-900);
+  border-color: var(--line);
+}
+
+.swagger-ui .opblock.opblock-get .opblock-summary,
+.swagger-ui .opblock.opblock-post .opblock-summary,
+.swagger-ui .opblock.opblock-put .opblock-summary,
+.swagger-ui .opblock.opblock-patch .opblock-summary,
+.swagger-ui .opblock.opblock-delete .opblock-summary,
+.swagger-ui .opblock.opblock-head .opblock-summary,
+.swagger-ui .opblock.opblock-options .opblock-summary {
+  border-color: var(--line);
+}
+
+.swagger-ui .opblock.opblock-get { border-left: 3px solid var(--cyan-500); }
+.swagger-ui .opblock.opblock-post { border-left: 3px solid var(--green-400); }
+.swagger-ui .opblock.opblock-put { border-left: 3px solid var(--blue-400); }
+.swagger-ui .opblock.opblock-patch { border-left: 3px solid var(--violet-300); }
+.swagger-ui .opblock.opblock-delete { border-left: 3px solid var(--red-400); }
+.swagger-ui .opblock.opblock-head,
+.swagger-ui .opblock.opblock-options { border-left: 3px solid var(--faint); }
+
+.swagger-ui .opblock.opblock-get .opblock-summary-method { background: var(--cyan-500); color: var(--navy-1000); }
+.swagger-ui .opblock.opblock-post .opblock-summary-method { background: var(--green-400); color: var(--navy-1000); }
+.swagger-ui .opblock.opblock-put .opblock-summary-method { background: var(--blue-400); color: var(--navy-1000); }
+.swagger-ui .opblock.opblock-patch .opblock-summary-method { background: var(--violet-300); color: var(--navy-1000); }
+.swagger-ui .opblock.opblock-delete .opblock-summary-method { background: var(--red-400); color: var(--navy-1000); }
+
+.swagger-ui .opblock.is-open .opblock-summary {
+  border-bottom-color: var(--line);
+}
+
+.swagger-ui .opblock .opblock-section-header {
+  background: var(--navy-850);
+  border-top: 1px solid var(--line);
+  box-shadow: none;
+}
+
+.swagger-ui .opblock .opblock-section-header h4,
+.swagger-ui .opblock .opblock-section-header > label {
+  color: var(--white);
+  font-family: var(--display-font);
+  letter-spacing: 0.08em;
+}
+
+.swagger-ui .opblock-title_normal,
+.swagger-ui .opblock-description-wrapper h4,
+.swagger-ui .responses-inner h4,
+.swagger-ui .responses-inner h5 {
+  color: var(--white);
+}
+
+/* --------------------------------------------------------------------------
+   4. Tables, parameters and responses
+   -------------------------------------------------------------------------- */
+
+.swagger-ui table thead tr td,
+.swagger-ui table thead tr th {
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--display-font);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.swagger-ui .parameters-col_description p,
+.swagger-ui .response-col_description p {
+  color: var(--text);
+}
+
+.swagger-ui .parameter__name,
+.swagger-ui .response-col_status {
+  color: var(--white);
+  font-family: var(--mono-font);
+}
+
+.swagger-ui .parameter__name.required span {
+  color: var(--red-400);
+}
+
+.swagger-ui .parameter__type {
+  color: var(--violet-300);
+  font-family: var(--mono-font);
+}
+
+.swagger-ui .parameter__in,
+.swagger-ui .parameter__deprecated,
+.swagger-ui .prop-format {
+  color: var(--faint);
+}
+
+.swagger-ui .response-col_links {
+  color: var(--faint);
+}
+
+.swagger-ui .responses-table .response-col_status {
+  font-size: 14px;
+}
+
+/* --------------------------------------------------------------------------
+   5. Code and models
+   -------------------------------------------------------------------------- */
+
+.swagger-ui .microlight,
+.swagger-ui .highlight-code > .microlight,
+.swagger-ui .model-example,
+.swagger-ui pre {
+  background: var(--navy-1000) !important;
+  color: var(--text) !important;
+  font-family: var(--mono-font) !important;
+}
+
+.swagger-ui .highlight-code > .microlight {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.swagger-ui .model,
+.swagger-ui .model-title,
+.swagger-ui .model-toggle:after {
+  color: var(--text);
+}
+
+.swagger-ui .model-box {
+  background: var(--navy-850);
+  border-radius: 3px;
+}
+
+.swagger-ui section.models {
+  background: var(--navy-900);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.swagger-ui section.models.is-open h4 {
+  border-bottom: 1px solid var(--line);
+}
+
+.swagger-ui section.models h4 {
+  color: var(--white);
+  font-family: var(--display-font);
+}
+
+.swagger-ui section.models .model-container {
+  background: var(--navy-850);
+  border-radius: 3px;
+}
+
+.swagger-ui section.models .model-container:hover {
+  background: var(--navy-800);
+}
+
+.swagger-ui .prop-type {
+  color: var(--violet-300);
+}
+
+/* --------------------------------------------------------------------------
+   6. Controls
+   -------------------------------------------------------------------------- */
+
+.swagger-ui .btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: none;
+  color: var(--cyan-300);
+  font-family: var(--body-font);
+}
+
+.swagger-ui .btn:hover {
+  border-color: var(--border-strong);
+  box-shadow: none;
+  color: var(--white);
+}
+
+.swagger-ui .btn.execute {
+  background: var(--cyan-500);
+  border-color: var(--cyan-500);
+  color: var(--navy-1000);
+  font-weight: 600;
+}
+
+.swagger-ui .btn.execute:hover {
+  background: var(--cyan-400);
+  border-color: var(--cyan-400);
+  color: var(--navy-1000);
+}
+
+.swagger-ui .btn.cancel {
+  border-color: var(--red-400);
+  color: var(--red-400);
+}
+
+.swagger-ui .btn.authorize {
+  border-color: var(--green-400);
+  color: var(--green-400);
+}
+
+.swagger-ui .btn.authorize svg {
+  fill: var(--green-400);
+}
+
+.swagger-ui select,
+.swagger-ui input[type=text],
+.swagger-ui input[type=password],
+.swagger-ui input[type=search],
+.swagger-ui input[type=email],
+.swagger-ui input[type=file],
+.swagger-ui textarea {
+  background: var(--navy-850);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: none;
+  color: var(--white);
+  font-family: var(--body-font);
+  outline: none;
+}
+
+.swagger-ui textarea {
+  font-family: var(--mono-font);
+}
+
+.swagger-ui select:focus,
+.swagger-ui input:focus,
+.swagger-ui textarea:focus {
+  border-color: var(--border-strong);
+}
+
+.swagger-ui input::placeholder,
+.swagger-ui textarea::placeholder {
+  color: var(--faint);
+}
+
+.swagger-ui .scheme-container {
+  background: var(--navy-900);
+  border-bottom: 1px solid var(--line);
+  box-shadow: none;
+}
+
+.swagger-ui .servers-title,
+.swagger-ui .servers > label {
+  color: var(--muted);
+}
+
+.swagger-ui .copy-to-clipboard {
+  background: var(--navy-800);
+  border-radius: 3px;
+}
+
+.swagger-ui .copy-to-clipboard button {
+  background: none;
+}
+
+.swagger-ui .tab li {
+  color: var(--muted);
+}
+
+.swagger-ui .tab li.active {
+  color: var(--cyan-300);
+}
+
+.swagger-ui .tab li::after {
+  background: var(--line);
+}
+
+.swagger-ui .loading-container .loading::after {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   7. Dialogs and failures
+   -------------------------------------------------------------------------- */
+
+.swagger-ui .dialog-ux .modal-ux {
+  background: var(--navy-900);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.swagger-ui .dialog-ux .modal-ux-header {
+  border-bottom: 1px solid var(--line);
+}
+
+.swagger-ui .dialog-ux .modal-ux-header h3,
+.swagger-ui .dialog-ux .modal-ux-content h4 {
+  color: var(--white);
+  font-family: var(--display-font);
+}
+
+.swagger-ui .dialog-ux .modal-ux-content p,
+.swagger-ui .dialog-ux .modal-ux-content code {
+  color: var(--text);
+}
+
+.swagger-ui .dialog-ux .backdrop-ux {
+  background: var(--scrim);
+}
+
+.swagger-ui .errors-wrapper {
+  background: var(--navy-900);
+  border: 1px solid var(--red-400);
+  border-radius: 4px;
+}
+
+.swagger-ui .errors-wrapper .errors h4,
+.swagger-ui .errors-wrapper hgroup h4 {
+  color: var(--red-400);
+  font-family: var(--display-font);
+}
+
+.swagger-ui .errors-wrapper .errors small {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   8. The MARP bar
+   --------------------------------------------------------------------------
+   The markup is built by `swagger-chrome.js`, because swagger-ui-express
+   renders the page from a template string that has no seam for markup -- only
+   for a stylesheet and a script. It is the same bar the developer docs carry,
+   where the template renders it directly. Two copies of ten lines of markup;
+   `tests/docs-branding.test.js` asserts they hold the same links. */
+
+.marp-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: var(--bar-height);
+  padding: 0 20px;
+  background: var(--navy-1000);
+  border-bottom: 1px solid var(--border);
+}
+
+.marp-bar__brand {
+  display: flex;
+  align-items: center;
+}
+
+.marp-bar__brand img {
+  display: block;
+  height: 26px;
+  width: auto;
+}
+
+.marp-bar__here {
+  font-family: var(--display-font);
+  font-size: 15px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
+.marp-bar__links {
+  display: flex;
+  gap: 22px;
+  margin-left: auto;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.marp-bar__links a {
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  padding-bottom: 2px;
+}
+
+.marp-bar__links a:hover,
+.marp-bar__links a:focus-visible {
+  color: var(--cyan-300);
+  border-bottom-color: var(--border-strong);
+}
+
+@media only screen and (max-width: 680px) {
+  .marp-bar {
+    gap: 12px;
+    padding: 0 14px;
+  }
+
+  .marp-bar__here {
+    display: none;
+  }
 }

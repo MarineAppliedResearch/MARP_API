@@ -10,7 +10,7 @@
     "destination": "docs/developer",
     "recurse": true,
     "readme": "README.md",
-    "template": "node_modules/docdash"
+    "template": "docs/developer-theme"
   },
   "templates": {
     "default": {
@@ -23,6 +23,10 @@
     "search": true,
     "collapse": true,
     "typedefs": true,
-    "removeQuotes": "none"
+    "removeQuotes": "none",
+    "meta": {
+      "title": "MARP developer documentation",
+      "description": "Generated source documentation for the MARP API and application backend."
+    }
   }
 }
