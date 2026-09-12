@@ -6,7 +6,7 @@
  * markup — a rendering change should not break them, and a behaviour change should.
  */
 import { state, actions, MODES, subscribe } from '../src/store.js';
-import { pendingException, statusDimensions, STATUS_DIMENSIONS } from '../src/model/modes.js';
+import { pendingException, pendingTakeBack, statusDimensions, STATUS_DIMENSIONS } from '../src/model/modes.js';
 import { MarpData } from '../src/data.js';
 import { useBackend } from '../src/backend.js';
 
@@ -448,6 +448,70 @@ test('Training data review',
     await actions.refresh();
     const seen = state.rows.find((r) => r.observation_id === id);
     if (seen) eq(seen.training_decision, 'promoted');
+  });
+
+test('Training data review',
+  'promoting one tile and committing it reads as promoted, not as a take-back (#135)',
+  async () => {
+    /**
+     * All three steps of #135, at the tier that drives the real store.
+     *
+     * Step 1 was reported as landing straight in the state that belongs to step 2. That
+     * was a **server** older than #126 answering `excluded` for an accept mark: the mark
+     * then does not survive its own commit, the tile is unmarked and touched, and its
+     * outcome equals the mode's exception -- which is exactly what a take-back is. The
+     * endpoint has answered `promoted` since, and this holds it there.
+     */
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const target = state.rows.find((r) => r.thumbnail_status === 'ready');
+    ok(target, 'page 1 should contain a promotable track');
+    const id = target.observation_id;
+
+    actions.acceptMark(id);                       // right click: promote this one
+    await actions.commitMarked();
+    eq(state.outcomes.get(id), 'promoted', 'step 1: the tile reads as promoted');
+    ok(state.marks.has(id), 'and the accept mark survives the commit that honoured it');
+
+    actions.acceptMark(id);                       // click it again: take it back
+    ok(!state.marks.has(id), 'step 2: the mark comes off');
+    const row = state.rows.find((r) => r.observation_id === id);
+    eq(pendingTakeBack({
+      mode: 'training', row, marks: state.marks, takenBack: state.takenBack,
+      outcomes: state.outcomes
+    }), 'promoted', 'and the promotion is what is being taken back');
+
+    await actions.commitMarked();
+    eq(state.outcomes.get(id), 'withdrawn', 'step 3: the withdrawal is recorded');
+    eq(state.conflicted.length, 0, 'and it is not refused as a conflict');
+    eq(pendingTakeBack({
+      mode: 'training', row, marks: state.marks, takenBack: state.takenBack,
+      outcomes: state.outcomes
+    }), null, 'so the take-back label goes -- in the page');
+    eq(row.training_decision, null, 'and in the record, which now carries no decision');
+  });
+
+test('Training data review',
+  'committing the same page twice is not a phantom conflict (#135 R6)', async () => {
+    /**
+     * **A commit does not move `observations.version`**, so the second commit of a tile in
+     * one sitting sends the version the endpoint still holds. The client used to add one
+     * itself, which was true of the fixture and false of the endpoint -- and made every
+     * row of a second commit come back `conflicted` for a conflict that had not happened.
+     *
+     * It commits twice because committing once cannot see it.
+     */
+    await reset('training');
+    state.filters.trainingDisposition = ['undecided'];
+    await actions.refresh();
+    const id = state.rows.find((r) => r.thumbnail_status === 'ready').observation_id;
+
+    await actions.commitPage();
+    eq(state.conflicted.length, 0, 'the first commit lands');
+    await actions.commitPage();
+    eq(state.conflicted.length, 0, 'and so does the second, on the same versions');
+    eq(state.outcomes.get(id), 'promoted');
   });
 
 test('Filter and sort dimensions',

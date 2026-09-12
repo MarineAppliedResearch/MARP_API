@@ -118,8 +118,9 @@ export const pinnedIds = (members) => {
 export const clearPins = () => new Map();
 
 /**
- * Fold a commit response into the outcome map. Reverted entries carry the outcome
- * they were changed to, not a separate label, so the tile shows the current truth.
+ * Fold a commit response into the outcome map. A reverted entry carries what the
+ * observation is now — the value it was changed to, or `withdrawn` where the decision was
+ * taken off the record entirely — so the tile shows the current truth.
  *
  * **Keyed by `observation_id`, never by `id` and never by position** (F5, R8). This read
  * `r.id`, which no entry of `MosaicCommitResult` has ever carried — every one of the five
@@ -137,6 +138,14 @@ export function applyCommit(outcomes, result) {
   const next = new Map(outcomes);
   (result.reviewed || []).forEach((r) => next.set(r.observation_id, r.outcome));
   (result.flagged || []).forEach((r) => next.set(r.observation_id, r.outcome));
+  /* `reverted` is folded too (#135 R4). It used to be skipped on the grounds that its
+     entries duplicate `flagged` -- true of the one that co-occurs, which carries the value
+     the row was changed *to*, so setting it again changes nothing. A **withdrawal** is the
+     other kind and appears in no other array: it carries `withdrawn`, which no badge
+     draws, so the tile stops claiming a decision instead of going on showing the one that
+     has just been taken off the record. It must land after `flagged` for the same reason
+     `flagged` lands after `reviewed`. */
+  (result.reverted || []).forEach((r) => next.set(r.observation_id, r.outcome));
   (result.conflicted || []).forEach((r) => next.set(r.observation_id, 'conflicted'));
   return next;
 }

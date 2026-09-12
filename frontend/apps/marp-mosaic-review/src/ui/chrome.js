@@ -118,7 +118,8 @@ function renderCommits({ m, markedCount, acceptCount, eligible }) {
      than looking normal and quietly achieving nothing. */
   const swept = commitOutcome({ mode: state.mode, rows: state.rows, marks: state.marks });
   const picked = selectionOutcome({
-    mode: state.mode, rows: state.rows, marks: state.marks, touched: state.touched
+    mode: state.mode, rows: state.rows, marks: state.marks, touched: state.touched,
+    takenBack: state.takenBack, outcomes: state.outcomes
   });
 
   paintCommit(sweep, {
@@ -154,7 +155,12 @@ function renderCommits({ m, markedCount, acceptCount, eligible }) {
           + 'this button only commits decisions you made here.'
         : 'Mark a tile first: a click or tap flags it, a right click or a double tap accepts it.')
       : `Commits only these ${picked.acts}: accepts ${picked.accepts}, `
-        + `flags ${picked.flags}. Every other tile is left alone.`
+        + `flags ${picked.flags}`
+        /* Named rather than folded into the other two: a withdrawal removes a decision
+           and the other two make one, so a reviewer counting tiles would otherwise be
+           told a take-back was an acceptance (#135 R5). */
+        + (picked.withdraws ? `, takes back ${picked.withdraws}` : '')
+        + '. Every other tile is left alone.'
   });
 }
 

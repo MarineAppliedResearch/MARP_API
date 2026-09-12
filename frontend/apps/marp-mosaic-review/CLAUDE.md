@@ -191,8 +191,25 @@ Their precedence in `tile.js` is fixed and load-bearing: **a mark outranks an ou
 which outranks the record.** Once the reviewer touches a committed tile they are
 editing it, and the screen has to show the new intention rather than the old answer —
 otherwise the click appears to do nothing. A fourth derived state, *taking back*, covers
-the gap: the record still carries the exception, the reviewer has removed the mark, and
+the gap: the record still carries a decision, the reviewer has removed the mark, and
 nothing is written until the next commit.
+
+**It covers either of the mode's two values, not only its exception** (#135). It asked about
+the exception alone, so taking a *promotion* back derived nothing at all: the tile went on
+drawing PROMOTED from its own outcome and the click looked as though it had done nothing.
+
+**And it is recorded rather than derived**, which is the part that will look like extra
+state until you remove it. `state.takenBack` holds the ids, `takesBack()` is the rule that
+puts one there, and a new mark or a commit takes it out. Derived, it cannot be right: a tile
+that is unmarked, touched and carrying an acceptance is either a promotion whose accept mark
+has just come off — a take-back — or a tile the sweep accepted after a *flag* came off, which
+is not one, and no combination of marks, touches and outcomes tells those apart. The first
+version of #135 derived it, and the second sweep in *a committed page is still editable* left
+the tile reading TAKING BACK for the rest of the sitting. **The kind of mark that came off is
+what separates them, and only the store sees it.**
+
+`pendingTakeBack` is what the tile and the commit button both ask, because what the tile says
+is being taken back and what the button withdraws must not be two answers.
 
 **A mark carries a kind, and there are two of them** (#126). `except` is what a mark has
 always meant — flagged, excluded, deleted — and it is what a left click records and what
@@ -214,8 +231,18 @@ commits **only what the reviewer marked by hand in this sitting**, each tile by 
 kind — `state.touched` is the "by hand" half and it is not a nicety, because the page still
 arrives with the record's flags already marked and `observation_reviews` records a reviewer
 per row. It sends only the marked rows as `observations`, which is how "commit just these"
-is expressible in the existing contract with no new field. **It pins nothing and marks no
-page committed**: `page.pinnedIds` becomes the query's `exclude` set, so pinning there would
+is expressible in the existing contract with no new field — **and the reviewer's take-backs
+beside them, in `withdraw`** (#135). A withdrawal deletes the projection row, and the
+absence of a row is what *undecided* means, so the decision comes off the record while
+`observation_reviews` -- the decision log -- keeps its rows.
+
+**So the two buttons now mean different things by the same gesture, deliberately.** Un-mark
+a tile and press *Commit Marked* and the decision is withdrawn — you decided nothing about
+it; press the sweep and it is accepted, because everything unmarked is what a sweep accepts.
+#126's R7 said this button ignored a take-back altogether, which left the only way to undo a
+promotion being the gesture that also decides every other tile on the page (#135 A2).
+
+**It pins nothing and marks no page committed**: `page.pinnedIds` becomes the query's `exclude` set, so pinning there would
 take every untouched tile on the page out of the reviewer's remaining work without saying
 so. The smaller button to its right is the page sweep, unchanged.
 
@@ -392,6 +419,14 @@ never from a row, which has never carried it.
 **A conflict is not a refusal for being second.** The last commit wins, always. `conflicted`
 fires only where a row moved *underneath the page the reviewer was looking at*; nothing was
 written, the marks are kept, and the page offers to re-read.
+
+**A commit does not move `observations.version`, so nothing local may bump it** (#135). A
+decision is written to `observation_reviews` and `observation_review_current`; the token
+moves only on the observation row's own `BEFORE UPDATE` trigger, which a review commit never
+fires. The store used to add one itself — true of `src/data.js`, false of the endpoint — so
+the *second* commit of a tile in one sitting sent a version one ahead of the live row and
+came back `conflicted` for a conflict that had not happened. A species correction does edit
+the row, and does still bump it.
 
 **A committed page is not finished.** The reviewer can take a flag back and commit
 again. Anything that treats a commit as terminal — clearing marks, locking tiles,

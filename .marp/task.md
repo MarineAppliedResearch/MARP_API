@@ -63,22 +63,35 @@ is a regression tripwire for it plus the two steps that were never built:
   exception already does. The tile says so rather than continuing to read `PROMOTED`.
 - **R3** — **Commit Marked** acts on those take-backs: they are sent as `withdraw`, so the
   endpoint deletes the projection row in `observation_review_current` and logs a `withdrawn`
-  decision in `observation_review_log`. The history is kept; the current decision is absent,
+  decision in `observation_reviews`, the log. The history is kept; the current decision is absent,
   which is what *undecided* means.
 - **R4** — After that commit the take-back label is gone and the tile shows no training
   decision, in the page and on a re-read from the endpoint.
 - **R5** — The button's count and disabled state include the take-backs it will commit, or
   R3 is unreachable by clicking.
+- **R6** — A commit does not move `observations.version`, so the **second** commit of a tile
+  in one sitting is not refused as a conflict. The client added one itself, which was true
+  of `src/data.js` and false of the endpoint — a review commit writes `observation_reviews`
+  and `observation_review_current` and never `UPDATE`s `observations`, so the trigger that
+  maintains the token never fires. Found while tracing R3, which is a second commit, and
+  answered as its own defect (A3).
 
 ## Open assumptions
 
-- [ ] **A1 · product/UI · blocking** — **Does this apply to Scientific mode as well?** The
+- [x] **A1 · product/UI · blocking** — answered 2026-09-12: **both modes.** Taking back an
+  acceptance applies to Scientific as well as Training; a withdrawal in the scientific case
+  is the `reviewed` decision coming off the record. Original question: **Does this apply to
+  Scientific mode as well?** The
   issue is written entirely about Training and promotion. The mechanism is symmetric — an
   acceptance in Scientific is `reviewed` — and building it for one mode only is a rule with
   an exception in it. Build it for both, or for Training alone as written?
 
-- [ ] **A2 · behavioural · blocking** — **What should taking back an *exception* through
-  Commit Marked do?** Today nothing: an unmarked tile is not in the selection, so the main
+- [x] **A2 · behavioural · blocking** — answered 2026-09-12: **withdraw it.** The reviewer
+  decided nothing about that observation and the record says so; it does not become an
+  accept. The page sweep is not the model here and is unchanged, so **the two buttons now
+  mean different things by the same gesture** — deliberately, and said out loud in the code
+  and in the report. This reverses #126's R7. Original question: **What should taking back
+  an *exception* through Commit Marked do?** Today nothing: an unmarked tile is not in the selection, so the main
   button ignores it, while the page *sweep* records it as accepted (`reviewed`/`promoted`).
   Once the main button carries take-backs, an un-marked flag has to mean something there.
   Two coherent answers: (i) *withdraw* it, symmetric with R3 and consistent with "this
@@ -87,8 +100,14 @@ is a regression tripwire for it plus the two steps that were never built:
   different things in the database, so this is not a detail. The sweep is unchanged either
   way.
 
-- [ ] **A3 · behavioural · blocking** — **The client bumps `row.version` after a commit and
-  the endpoint does not move it, so step 3's second commit comes back `conflicted`.**
+- [x] **A3 · behavioural · blocking** — answered 2026-09-12: **fixed in this branch, the
+  small way.** The store stops bumping and `src/data.js` is aligned to what the endpoint
+  actually does. The commit response is **not** changed to carry the new version: that is a
+  published contract surface and it is not being changed here. It is a real defect rather
+  than setup, so it is **R6** below with its own test, and the test commits twice because
+  committing once cannot see it. Original finding: **The client bumps `row.version` after a
+  commit and the endpoint does not move it, so step 3's second commit comes back
+  `conflicted`.**
   `store.js` does `row.version += 1` for every row a commit gave an outcome, which is
   correct against `src/data.js` (the fixture bumps) and wrong against the API: a review
   commit writes `observation_reviews` and `observation_review_current` and never `UPDATE`s
@@ -100,20 +119,37 @@ is a regression tripwire for it plus the two steps that were never built:
   making the commit response carry the new version, which is *ask first* under the
   permissions. Which, and is it in this task or its own issue?
 
-- [ ] **A4 · product/UI · non-blocking** — Assumed: the take-back of an acceptance draws the
+- [x] **A4 · product/UI · non-blocking** — Assumed: the take-back of an acceptance draws the
   **same `TAKING BACK` badge** the exception take-back draws, with the accepted value's
   colour and icon rather than the exception's (violet tick for a promotion, not the amber
   exclusion mark), since it is the promotion being withdrawn. Say if it wants different
   wording — `WITHDRAWING` reads more precisely, at the cost of a second vocabulary for one
   state.
 
-- [ ] **A5 · behavioural · non-blocking** — Assumed: *"click it again"* in step 2 is the
+- [x] **A5 · behavioural · non-blocking** — Assumed: *"click it again"* in step 2 is the
   **same gesture that promoted it** — a right-click (a double tap on touch), toggling the
   accept mark off. A left-click is an exclusion mark, which is a new decision rather than a
   take-back, and stays what it is.
 
 ## Decisions
 
+- **2026-09-12** — **The take-back is recorded, not derived**, and that is a change of shape
+  rather than of scope. Derived from marks, touches and outcomes it cannot be right: an
+  unmarked, touched tile carrying an acceptance is either a promotion whose accept mark has
+  just come off or a tile the sweep accepted after a flag came off, and those want opposite
+  answers. The first implementation derived it and turned an existing render check red — the
+  second sweep in *a committed page is still editable* left the tile reading TAKING BACK.
+  `state.takenBack` holds the ids; `takesBack()` decides what goes in, on the rule that the
+  **kind** removed must match the decision it would be undoing; a new mark or a commit takes
+  one out. That also settles the case the issue's sequence does not mention — flag, sweep,
+  unflag, sweep — in the direction the existing test already asserted, so it needed no new
+  product decision.
+- **2026-09-12** — A4 landed one word differently from how it was recorded, and this is the
+  judgement call. The take-back badge keeps the **mint** `b-rev` colour, which is what a
+  take-back already looks like here and what the tile's own dashed outline is, and takes the
+  **icon** of the decision being withdrawn. Drawing the badge violet — the PROMOTED colour —
+  would have put "this is promoted" in the one slot that is saying it is about to stop
+  being, inside a mint outline. The tooltip names the decision, so nothing is lost.
 - **2026-09-12** — The issue's diagnosis is not adopted. The endpoint does not classify a
   promotion as `reverted`; the reported badge is the derived `TAKING BACK`, reachable only
   through a pre-#126 server. Recorded here rather than acted on, so the fix is not aimed at
@@ -158,6 +194,8 @@ on this reading it does not.
 
 ## Status
 
-- **Gate:** design — stopped at G1 with A1, A2 and A3 open.
-- **Notes:** the diagnosis is verified in the code and against existing tests; nothing is
-  implemented.
+- **Gate:** verifying — G2 implemented against the answered spec, G4 tiers run.
+- **Notes:** R1–R6 implemented. #126's R7 is reversed by A2 and its unit test is rewritten
+  to the new rule rather than deleted. Nothing on the endpoint changed: the server half of
+  step 1 was already right, and `withdraw` has been supported since #106 with no client
+  sending it.

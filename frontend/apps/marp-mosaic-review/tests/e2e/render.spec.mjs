@@ -1839,6 +1839,93 @@ test.describe('each commit button reports only on itself', () => {
   });
 });
 
+test.describe('taking a promotion back (#135)', () => {
+  /**
+   * The three steps of the report, drawn rather than derived.
+   *
+   * The store was right about step 1 the whole time and the tile was what the reviewer
+   * read, so this is the tier that can see what was actually wrong -- a badge. Steps 2 and
+   * 3 were never built: un-marking a committed promotion left the tile still reading
+   * PROMOTED, so the click looked as though it had done nothing, and the main button had
+   * nothing to commit because a take-back is not a mark.
+   */
+  async function promotableTile(page) {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    /* Pinned by id, because a locator describing a *state* slides onto another tile the
+       moment the state changes. */
+    return page.locator('.tile:not(.failed):not(.queued):not(.marked)').first()
+      .getAttribute('data-id');
+  }
+
+  test('step 1: promoting and committing leaves the tile reading PROMOTED', async ({ page }) => {
+    const id = await promotableTile(page);
+    const badge = page.locator(`.tile[data-id="${id}"] .badge`);
+
+    await page.locator(`.tile[data-id="${id}"]`).click({ button: 'right' });
+    await page.locator('#commitMarked').click();
+    await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+    await expect(badge).toContainText('PROMOTED');
+    await expect(badge).not.toContainText('TAKING BACK');
+    await expect(badge).not.toContainText('TAKEN BACK');
+    await expect(page.locator(`.tile[data-id="${id}"]`)).not.toHaveClass(/out-reverted/);
+  });
+
+  test('step 2: clicking it again says the promotion is being taken back', async ({ page }) => {
+    const id = await promotableTile(page);
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+    const badge = tile.locator('.badge');
+
+    await tile.click({ button: 'right' });
+    await page.locator('#commitMarked').click();
+    await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+    await tile.click({ button: 'right' });                 // take it back
+    await expect(badge).toContainText('TAKING BACK');
+    await expect(tile).toHaveClass(/out-reverted/);
+    /* Which decision, so a reviewer cannot read it as taking back an exclusion. */
+    await expect(badge).toHaveAttribute('title', /Taking back promoted/);
+    /* And the button is enabled and says it will act, or step 3 is unreachable. */
+    await expect(page.locator('#commitMarked')).toBeEnabled();
+    await expect(page.locator('#commitMarked')).toHaveAttribute('title', /takes back 1/);
+  });
+
+  test('step 3: committing the take-back clears the label and the decision',
+    async ({ page }) => {
+      const id = await promotableTile(page);
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+
+      await tile.click({ button: 'right' });
+      await page.locator('#commitMarked').click();
+      await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+      await tile.click({ button: 'right' });
+      await expect(tile.locator('.badge')).toContainText('TAKING BACK');
+
+      await page.locator('#commitMarked').click();
+      await expect(page.locator('#commitMarked')).toContainText('Saved');
+
+      /* Nothing is claimed about it any more: no badge at all, which is what "undecided"
+         looks like. Not a MOVED badge either -- the second commit of a tile is not a
+         conflict, because a commit does not move the observation's version (R6). */
+      await expect(tile.locator('.badge')).toHaveCount(0);
+      await expect(tile).not.toHaveClass(/out-reverted/);
+      await expect(page.locator('.tile .badge', { hasText: 'MOVED' })).toHaveCount(0);
+
+      /* And in the data behind the page, read from the store rather than off the screen. */
+      const decision = await page.evaluate(async (target) => {
+        const { state } = await import('./src/store.js');
+        const row = state.rows.find((r) => String(r.observation_id) === String(target));
+        return { decision: row.training_decision, outcome: state.outcomes.get(row.observation_id) };
+      }, id);
+      expect(decision.outcome).toBe('withdrawn');
+      expect(decision.decision).toBe(null);
+    });
+});
+
 test.describe('how many pages are done', () => {
   test('the count rises with each committed page, beside the swatch', async ({ page }) => {
     await page.goto('./');

@@ -14,7 +14,7 @@ import { MODES, isMode, commitActsOnMarked, commitCount, existingState, reviewer
   decidedByMe, pendingException, statusDimensions, commitIsDestructive, borrowedTags,
   deleteImpact, commitOutcome, pageState, markedOnPage,
   retryablePage, markKind, isExcepted, isAccepted, acceptedValue, acceptRefusal,
-  selectedRows, selectionOutcome,
+  selectedRows, selectionOutcome, pendingTakeBack, takenBackRows, takesBack,
   MARK_EXCEPT, MARK_ACCEPT } from '../../src/model/modes.js';
 import * as page from '../../src/model/page.js';
 import * as filters from '../../src/model/filters.js';
@@ -1461,17 +1461,163 @@ test('A3: the main button ignores a seeded mark the reviewer never touched', () 
     selectedRows({ rows, marks, touched }).map((r) => r.observation_id), [1]);
 });
 
-test('R7: clicking a mark off leaves the tile untouched by the main button', () => {
+test('#135 R3: clicking a mark off makes the main button withdraw it', () => {
   const flagged = row(1, { review_decision: 'flagged' });
   const rows = [flagged];
-  /* Taking a mark back leaves `touched` set and `marks` empty -- which is a take-back,
-     not a mark, so this button says nothing about it at all. The sweep still accepts it,
-     which is R4 and is today's behaviour unchanged. */
+  /**
+   * **This reverses #126's R7**, which said the main button left a take-back alone. It
+   * was the only button that could express one and it ignored it, so the only way to undo
+   * a decision was the gesture that also decides every other tile on the page.
+   *
+   * The two buttons now mean different things by the same gesture, deliberately (#135
+   * A2): unmarking and pressing *Commit Marked* withdraws -- the reviewer decided nothing
+   * about this observation and the record says so -- while the sweep still accepts it,
+   * because everything unmarked is what a sweep accepts.
+   */
   const outcome = selectionOutcome({
-    mode: 'scientific', rows, marks: new Map(), touched: new Set([1])
+    mode: 'scientific', rows, marks: new Map(), touched: new Set([1]),
+    takenBack: new Set([1])
   });
-  assert.equal(outcome.acts, 0);
-  assert.equal(commitOutcome({ mode: 'scientific', rows, marks: new Map() }).accepts, 1);
+  assert.equal(outcome.acts, 1, 'the button has something to do');
+  assert.equal(outcome.withdraws, 1, 'and it is a withdrawal, not an acceptance');
+  assert.equal(outcome.accepts, 0);
+  assert.equal(commitOutcome({ mode: 'scientific', rows, marks: new Map() }).accepts, 1,
+    'while the sweep is unchanged and still accepts it');
+});
+
+/* ------------------------------------------------------- taking a decision back (#135) */
+
+test('#135 R2: taking back a promotion this sitting recorded is a take-back', () => {
+  /**
+   * The defect, at the tier that decides it. Right click promotes, *Commit Marked*
+   * records it, and clicking again takes the mark off -- and the derivation asked only
+   * about the mode's *exception*, so it answered nothing at all. The tile went on drawing
+   * PROMOTED from its own outcome and the click looked as though it had done nothing.
+   */
+  const promoted = row(1, { training_decision: null });
+  /* The store records it when the accept mark comes off a tile the record says is
+     promoted -- `takesBack` is that rule -- and this is what the tile then draws. */
+  assert.equal(takesBack({ mode: 'training', kind: MARK_ACCEPT, decided: 'promoted' }), true);
+  const takeBack = pendingTakeBack({
+    mode: 'training', row: promoted, marks: new Map(), takenBack: new Set([1]),
+    outcomes: new Map([[1, 'promoted']])
+  });
+  assert.equal(takeBack, 'promoted', 'and it names what is being taken back');
+});
+
+test('#135: taking a flag off a tile the sweep accepted is not a take-back', () => {
+  /**
+   * The case that made this recorded rather than derived, and it is a real sequence: flag
+   * a tile, sweep the page, click the flag off, sweep again. The second sweep **accepts**
+   * it, and the reviewer has decided nothing about that acceptance -- but the tile is then
+   * unmarked, touched and carrying `reviewed`, which is indistinguishable from a promotion
+   * whose accept mark has just been removed. Derived, it read as a take-back and the tile
+   * said TAKING BACK for the rest of the sitting.
+   *
+   * The kind that came off is what separates them, and only the store sees it.
+   */
+  assert.equal(takesBack({ mode: 'scientific', kind: MARK_EXCEPT, decided: 'reviewed' }), false,
+    'a flag coming off is not withdrawing an acceptance');
+  assert.equal(takesBack({ mode: 'scientific', kind: MARK_ACCEPT, decided: 'reviewed' }), true,
+    'the accept mark coming off is');
+});
+
+test('#135 R2: it is the accepted value in scientific mode too, not only training', () => {
+  /* A1, answered 2026-09-12: both modes. An acceptance is `reviewed` here and `promoted`
+     there, and a rule with one mode excepted is a rule nobody can predict. */
+  const seen = row(1);
+  assert.equal(takesBack({ mode: 'scientific', kind: MARK_ACCEPT, decided: 'reviewed' }), true);
+  assert.equal(pendingTakeBack({
+    mode: 'scientific', row: seen, marks: new Map(), takenBack: new Set([1]),
+    outcomes: new Map([[1, 'reviewed']])
+  }), 'reviewed');
+});
+
+test('#135 R2: taking back an exception still derives, which is the older half', () => {
+  const flagged = row(1, { review_decision: 'flagged' });
+  assert.equal(takesBack({ mode: 'scientific', kind: MARK_EXCEPT, decided: 'flagged' }), true);
+  assert.equal(pendingTakeBack({
+    mode: 'scientific', row: flagged, marks: new Map(), takenBack: new Set([1])
+  }), 'flagged', 'from the record, where this sitting has no outcome for it');
+});
+
+test('#135 R4: a committed withdrawal stops being a take-back', () => {
+  /* The outcome outranks the row's own column (#131), which is what makes this true
+     against the endpoint: it never writes that column back, so the row still says
+     `promoted` for the rest of the sitting. */
+  const stale = row(1, { training_decision: 'promoted' });
+  /* The commit empties the take-back, because the withdrawal is on the record now. */
+  assert.equal(pendingTakeBack({
+    mode: 'training', row: stale, marks: new Map(), takenBack: new Set(),
+    outcomes: new Map([[1, 'withdrawn']])
+  }), null, 'the label goes, in the page as well as in the database');
+});
+
+test('#135: a mark outranks it, and an untouched tile is not taking anything back', () => {
+  const promoted = row(1, { training_decision: 'promoted' });
+  assert.equal(pendingTakeBack({
+    mode: 'training', row: promoted, marks: new Map([[1, mark(MARK_ACCEPT)]]),
+    takenBack: new Set([1])
+  }), null, 'a mark is newer than anything it could be taking back');
+  assert.equal(pendingTakeBack({
+    mode: 'training', row: promoted, marks: new Map(), takenBack: new Set()
+  }), null, 'and nobody has taken this one back');
+});
+
+test('#135: Delete Mode takes nothing back, because it records no decision', () => {
+  /* Both halves are null there -- no accepted value, and a destroyed row is not a pending
+     intention -- so a `null === null` comparison must not make every touched tile in
+     Delete read as a take-back. */
+  assert.equal(takesBack({ mode: 'delete', kind: MARK_EXCEPT, decided: 'flagged' }), false);
+  assert.equal(takesBack({ mode: 'delete', kind: MARK_ACCEPT, decided: 'deleted' }), false);
+});
+
+test('#135 R3: the take-backs are their own list, and the marks are not in it', () => {
+  const rows = [row(1, { training_decision: 'promoted' }), row(2)];
+  const marks = new Map([[2, mark(MARK_ACCEPT)]]);
+  const touched = new Set([1, 2]);
+  assert.deepEqual(
+    takenBackRows({ mode: 'training', rows, marks, takenBack: new Set([1]) })
+      .map((r) => r.observation_id),
+    [1], 'the marked one is committed as a mark, not withdrawn');
+  assert.deepEqual(
+    selectedRows({ rows, marks, touched }).map((r) => r.observation_id), [2]);
+});
+
+test('#135 R5: the button counts a take-back, or it is disabled and unreachable', () => {
+  /* This is the whole of step 3 being unreachable: `selectedRows` needs a mark, so an
+     unmarked take-back was not in what the button would send and the button was disabled
+     with nothing to do. */
+  const rows = [row(1)];
+  const outcome = selectionOutcome({
+    mode: 'training', rows, marks: new Map(), touched: new Set([1]),
+    takenBack: new Set([1]), outcomes: new Map([[1, 'promoted']])
+  });
+  assert.equal(outcome.withdraws, 1);
+  assert.equal(outcome.acts, 1, 'so the button is enabled and says what it will do');
+});
+
+test('#135 R4: applyCommit folds a withdrawal, which appears in no other array', () => {
+  /* `reverted` was deliberately not read, on the grounds that its entries duplicate
+     `flagged`. That is true of the one that co-occurs and false of a withdrawal, so the
+     outcome went on saying `promoted` after the promotion had been taken off the record. */
+  const outcomes = page.applyCommit(new Map([[1, 'promoted']]), {
+    reviewed: [], flagged: [],
+    reverted: [{ observation_id: 1, outcome: 'withdrawn' }]
+  });
+  assert.equal(outcomes.get(1), 'withdrawn');
+});
+
+test('#135 R4: a revert that co-occurs with a flag still lands on the flag', () => {
+  /* The endpoint reports an acceptance replaced by an exception in **both** arrays, with
+     the same value in each -- so folding `reverted` after `flagged` changes nothing here.
+     The arrays are not a partition, which is the thing that makes the order matter. */
+  const outcomes = page.applyCommit(new Map(), {
+    reviewed: [],
+    flagged: [{ observation_id: 1, outcome: 'flagged' }],
+    reverted: [{ observation_id: 1, outcome: 'flagged' }]
+  });
+  assert.equal(outcomes.get(1), 'flagged');
 });
 
 test('A4: the main button cannot be asked to accept a tile with no picture', () => {

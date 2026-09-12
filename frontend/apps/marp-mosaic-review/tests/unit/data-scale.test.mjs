@@ -745,3 +745,59 @@ test('setting the scale renumbers the set and drops simulated edits', async () =
   MarpData.setScale(1);
   assert.equal(MarpData.scale(), 1);
 });
+
+/* ------------------------------------------------ what a commit does to the version */
+
+test('#135 R6: a commit does not move the version, because the endpoint\'s does not', async () => {
+  /**
+   * The fixture used to add one to every row it committed, and the store mirrored it. The
+   * endpoint writes `observation_reviews` and `observation_review_current` and never
+   * `UPDATE`s `observations`, so `observations_bump_version_trigger` does not fire -- and
+   * a client built against this fixture sent a version one too high on the **second**
+   * commit of the same tile and was told it had a conflict that had not happened.
+   *
+   * So this commits twice, because committing once cannot see it.
+   */
+  await fixtureAt(1);
+  const open = await MarpData.query({
+    filters: { species: [41] }, page: 1, pageSize: 2          // Bat Star, by key
+  });
+  const before = open.rows.map((r) => r.version);
+
+  const first = await commit('scientific', open.rows);
+  assert.equal(first.conflicted.length, 0, 'the first commit lands');
+
+  const [after] = await MarpData.byIds([ids(open.rows)[0]]);
+  assert.equal(after.version, before[0], 'and the observation is untouched by the decision');
+
+  /* The same rows, carrying the same versions the reviewer was shown. Against the old
+     behaviour this came back conflicted for every row. */
+  const second = await commit('scientific', open.rows);
+  assert.deepEqual(second.conflicted, [], 'so committing them again is not a conflict');
+  assert.equal(second.reviewed.length, open.rows.length);
+});
+
+test('#135 R6: a species correction still moves it, which is the distinction', async () => {
+  /* A correction edits the observation row, so the trigger fires there and the token has
+     to move -- otherwise a stale decision could be applied to a classification the
+     reviewer never saw, which is the whole reason the version is mandatory. */
+  await fixtureAt(1);
+  const open = await MarpData.query({
+    filters: { species: [41] }, page: 1, pageSize: 1
+  });
+  const target = open.rows[0];
+  /* Any other species in the catalogue: a correction to the one it already carries is
+     refused as `unchanged` and writes nothing, which would pass this test vacuously. */
+  const other = MarpData.species().find((sp) => sp.species_id !== target.species_id);
+
+  /* Read out, not read through: at scale 1 the served row **is** the fixture row, so
+     `target.version` moves under the assertion the moment the correction lands. */
+  const was = target.version;
+
+  const done = await MarpData.setSpecies({
+    observationId: target.observation_id, speciesId: other.species_id, version: was
+  });
+  assert.equal(done.ok, true, 'the correction was applied');
+  const [after] = await MarpData.byIds([target.observation_id]);
+  assert.equal(after.version, was + 1);
+});

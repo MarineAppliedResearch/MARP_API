@@ -9,7 +9,7 @@
    it, and the application never points that at the fixture -- A2. */
 import { MarpBackend } from './backend.js';
 import { isAbort, failureKind } from './api/errors.js';
-import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, acceptedValue, acceptRefusal, selectedRows, selectionOutcome, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage, MARK_EXCEPT, MARK_ACCEPT } from './model/modes.js';
+import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, acceptedValue, acceptRefusal, selectedRows, takenBackRows, takesBack, selectionOutcome, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage, MARK_EXCEPT, MARK_ACCEPT } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
@@ -130,6 +130,17 @@ export const state = {
 
   marks: new Map(),        // what the reviewer marked: id -> { kind, reason }
   touched: new Set(),      // what the reviewer decided by hand; never re-seeded
+  /**
+   * What the reviewer has taken back and not yet committed (#135).
+   *
+   * **Recorded, not derived.** A tile that is unmarked, touched and carries an acceptance
+   * is either a promotion whose mark has just been removed or a tile a sweep accepted
+   * after a flag came off, and nothing in the marks, the touches or the outcomes tells
+   * those apart -- so deriving it made the second read as a take-back for the rest of the
+   * sitting. `takesBack()` is the rule for what goes in here; a commit and a new mark are
+   * what take an id out.
+   */
+  takenBack: new Set(),
   changed: new Map(),      // id -> { from, to } for this session
   outcomes: new Map(),     // id -> what the last commit did
   /**
@@ -476,6 +487,7 @@ function resetForNewQuery() {
   state.page = 1;
   state.marks = new Map();
   state.touched = new Set();
+  state.takenBack = new Set();
   state.outcomes = new Map();
   /* A refused commit belonged to the page that was on screen, and this is a different
      question -- so the prompt to re-read has nothing left to re-read. */
@@ -551,6 +563,31 @@ function resume(mode) {
 }
 
 /**
+ * Remember, or forget, that this tile is taking a decision back (#135).
+ *
+ * Called by both mark gestures with the kind that has just come **off**, or null when one
+ * has just gone on. A mark going on ends any take-back: the reviewer has said something
+ * newer, and leaving the id in would send a withdrawal for a tile that is marked.
+ *
+ * `takesBack()` is what decides, and it is narrower than "a mark came off": the kind that
+ * came off has to match what the record says, or taking a flag off a tile the sweep has
+ * already accepted would read as withdrawing that acceptance.
+ *
+ * @param {number} id - The observation.
+ * @param {string|null} removed - The kind removed, or null when a mark was added.
+ * @returns {void}
+ */
+function recordTakeBack(id, removed) {
+  if (!removed) { state.takenBack.delete(id); return; }
+  const row = state.rows.find((r) => r.observation_id === id);
+  const decided = state.outcomes.has(id)
+    ? state.outcomes.get(id)
+    : (row ? existingState(state.mode, row) : null);
+  if (takesBack({ mode: state.mode, kind: removed, decided })) state.takenBack.add(id);
+  else state.takenBack.delete(id);
+}
+
+/**
  * Send a commit and fold the answer back in. Shared by both buttons (#126).
  *
  * One function rather than two, because everything that made `commitPage` correct is
@@ -577,8 +614,19 @@ function resume(mode) {
  * @returns {Promise<void>}
  */
 async function runCommit({ selective }) {
+  /* What the reviewer marked by hand, **and** what they have taken back (#135 R3). Both
+     go in `observations`, because the endpoint refuses a `withdraw` naming an id the
+     request did not send -- and they are two different instructions about those rows, so
+     they stay two lists all the way to the wire. */
+  const takeBacks = selective
+    ? takenBackRows({
+      mode: state.mode, rows: state.rows, marks: state.marks,
+      takenBack: state.takenBack, outcomes: state.outcomes
+    })
+    : [];
   const pageRows = selective
-    ? selectedRows({ rows: state.rows, marks: state.marks, touched: state.touched })
+    ? [...selectedRows({ rows: state.rows, marks: state.marks, touched: state.touched }),
+      ...takeBacks]
     : state.rows;
 
   /* Nothing to send is not a commit. Both buttons are disabled in this state, so reaching
@@ -617,7 +665,8 @@ async function runCommit({ selective }) {
     mode: startedIn, page: startedPage,
     willAct: selective
       ? selectionOutcome({
-        mode: startedIn, rows: state.rows, marks: state.marks, touched: state.touched
+        mode: startedIn, rows: state.rows, marks: state.marks, touched: state.touched,
+        takenBack: state.takenBack, outcomes: state.outcomes
       }).acts
       : commitCount({ mode: startedIn, rows: state.rows, marks })
   });
@@ -627,7 +676,9 @@ async function runCommit({ selective }) {
 
   let res;
   try {
-    res = await MarpBackend.commitPage({ mode: startedIn, rows: sent, marks });
+    res = await MarpBackend.commitPage({
+      mode: startedIn, rows: sent, marks, withdraw: takeBacks.map((r) => r.observation_id)
+    });
   } catch (err) {
     /* Nothing is applied. The marks are untouched, so the reviewer can try again
        without redoing the page -- and that holds for all three of A4's failures, which
@@ -699,18 +750,31 @@ async function runCommit({ selective }) {
     fire(request + ':conflicted', { ids: state.conflicted });
   }
 
-  /* The versions the commit moved. Without this the next commit on the same page would
-     send the versions from before it and every row would come back conflicted -- which
-     reads exactly like somebody else editing under you, and is not. */
-  for (const row of pageRows) {
-    if (state.outcomes.get(row.observation_id) === 'conflicted') continue;
-    if (state.outcomes.has(row.observation_id)) row.version += 1;
-  }
+  /**
+   * **A commit does not move the observation's version, so nothing is bumped here**
+   * (#135 R6).
+   *
+   * This used to add one to every row the commit gave an outcome, which was true of the
+   * fixture and false of the endpoint: a decision is written to `observation_reviews` and
+   * `observation_review_current`, and `observations.version` moves only on its own
+   * `BEFORE UPDATE` trigger -- which a review commit never fires. So the *second* commit
+   * of a tile in one sitting sent a version one ahead of the live row and came back
+   * `conflicted` for a conflict that had not happened, which reads exactly like somebody
+   * else editing under you. `src/data.js` no longer bumps either, so the two backings
+   * agree about what a commit changes.
+   */
   /* The marks stay wherever the record now agrees with them. A committed page is still
      editable -- clicking a flag takes it back -- and a mark has to keep meaning the same
      thing before and after a commit, or the same gesture reverses its meaning underneath
      the reviewer. The selective form rebuilds only what it sent, because everything else
      on the page is untouched and its marks are still pending. */
+  /* A commit settles every take-back it carried: the withdrawal is on the record, so the
+     intention is no longer pending. A `conflicted` id keeps its take-back for the same
+     reason it keeps its mark -- nothing was written for it (R9). */
+  for (const id of ids) {
+    if (state.outcomes.get(id) === 'conflicted') continue;
+    state.takenBack.delete(id);
+  }
   const exception = pendingException(state.mode);
   const accepted = acceptedValue(state.mode);
   state.marks = selective
@@ -1121,6 +1185,7 @@ export const actions = {
     state.refused = null;
     state.page = 1;
     state.touched = new Set();
+    state.takenBack = new Set();
     state.lastCommit = null;
     state.filters = filters.defaultStatusFor(mode, state.filters);
     fire('setMode', { mode });
@@ -1143,6 +1208,7 @@ export const actions = {
     const had = state.marks.has(id) && (state.marks.get(id).kind || MARK_EXCEPT) === MARK_EXCEPT;
     state.marks = page.toggleMark(state.marks, id, MARK_EXCEPT);
     state.touched.add(id);
+    recordTakeBack(id, had ? MARK_EXCEPT : null);
     if (had) state.picker = null;
     fire(had ? 'unmark' : 'mark',
       { id, mode: state.mode, kind: MARK_EXCEPT, mark: MODES[state.mode].mark });
@@ -1180,6 +1246,7 @@ export const actions = {
     const had = state.marks.get(id) && state.marks.get(id).kind === MARK_ACCEPT;
     state.marks = page.toggleMark(state.marks, id, MARK_ACCEPT);
     state.touched.add(id);
+    recordTakeBack(id, had ? MARK_ACCEPT : null);
     /* The panel belongs to an exception and its reason vocabulary, so it closes rather
        than sitting open over a mark it can no longer describe. */
     state.picker = null;
@@ -1361,7 +1428,11 @@ export const actions = {
     const n = markedOnPage({ rows: state.rows, marks: state.marks });
     const ids = state.rows.map((r) => r.observation_id);
 
-    for (const id of ids) { state.marks.delete(id); state.touched.delete(id); }
+    for (const id of ids) {
+      state.marks.delete(id);
+      state.touched.delete(id);
+      state.takenBack.delete(id);
+    }
     state.marks = new Map(state.marks);          // a new Map, so subscribers see the change
     state.picker = null;
 
@@ -1619,6 +1690,7 @@ export const actions = {
     state.page = 1;
     state.marks = new Map();
     state.touched = new Set();
+    state.takenBack = new Set();
     state.outcomes = new Map();
     state.pageMembers = page.clearPins();
     state.committedPages.clear();
@@ -1631,6 +1703,7 @@ export const actions = {
     state.page = 1;
     state.marks = new Map();
     state.touched = new Set();
+    state.takenBack = new Set();
     state.outcomes = new Map();
     state.pageMembers = page.clearPins();
     state.committedPages.clear();

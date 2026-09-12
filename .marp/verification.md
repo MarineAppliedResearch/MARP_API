@@ -1,104 +1,169 @@
-# Verification — MARP_API#138, a committed delete is not interactive
+# Verification — MARP_API#135, taking a promotion back
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `tests/unit/model.test.mjs` — *R1: an observation a commit destroyed is destroyed, and nothing else is* | unit | `page.isDestroyed` answers for a deleted outcome and for nothing else — not accepted, not flagged, not conflicted, not an untouched id |
-| R2 | `tests/requirements.js` — *R2 (#138): a committed delete cannot be marked again* | contract | after a real delete commit, `toggleMark` leaves `state.marks` and `state.touched` exactly as they were, and the next commit has nothing to send |
-| R3 | `tests/requirements.js` — *R3 (#138): the accept gesture does not reach a destroyed tile* | contract | `acceptMark` marks nothing and raises no A4 refusal |
-| R4 | `tests/requirements.js` — *R4 (#138): neither route into the correction panel opens on a destroyed tile* | contract | `openCorrection` opens no panel **and creates no mark on the way in**; `openPicker` opens none either |
-| R5 | `tests/requirements.js` — *R5 (#138): marking the page steps over what the page has already destroyed* | contract | `markAllOnPage` marks every other row and not the destroyed one, and the delete confirmation names only rows that still exist |
-| R2, R8 | `tests/e2e/render.spec.mjs` — *R2/R8 (#138): clicking it does nothing, and it says it is not a target* | render | a real click on a committed-deleted tile draws no `marked` class and no second badge; the tile still reads `DELETED` and carries `aria-disabled` |
-| R6 | `tests/e2e/render.spec.mjs` — *R6 (#138): the tooltip says why nothing happens* | render | the tile's `title` says the observation was removed from the database |
-| R3, R4 | `tests/e2e/render.spec.mjs` — *R3/R4 (#138): neither the accept gesture nor the badge reaches it* | render | a right click leaves the tile unmarked and raises no refusal; clicking the badge opens no `.pick` panel |
-| R7 | `tests/e2e/render.spec.mjs` — *R7 (#138): it stays on screen with its picture* | render | the destroyed tile still draws its `<img>` |
-| R5 | `tests/e2e/render.spec.mjs` — *R5 (#138): "flag all on page" steps over it* | render | the page-level mark marks the rest of the page and not the destroyed tile. Desktop only: `.markall` is `display: none` under the phone media query, so the gesture does not exist there |
+| R1 | `render.spec.mjs` › taking a promotion back (#135) › *step 1: promoting and committing leaves the tile reading PROMOTED* | render | The badge the reviewer actually reads says PROMOTED, and neither TAKING BACK nor TAKEN BACK. This is the report itself, at the only tier that can see a badge. |
+| R1 | `requirements.js` › Training data review › *promoting one tile and committing it reads as promoted, not as a take-back* | contract | The store folds the commit to `promoted` and the accept mark survives it — the two facts that, when either fails, produce the reported badge. |
+| R2 | `model.test.mjs` › *#135 R2: taking back a promotion this sitting recorded is a take-back* (and the scientific and exception siblings) | unit | The rule names what is being taken back, for an acceptance in both modes and for an exception as before. |
+| R2 | `render.spec.mjs` › *step 2: clicking it again says the promotion is being taken back* | render | The badge appears, the tile carries `out-reverted`, and the tooltip names the promotion — so the click stops looking as though it did nothing. |
+| R3 | `model.test.mjs` › *#135 R3: the take-backs are their own list, and the marks are not in it* | unit | The two lists stay two lists, which is what keeps an id out of both `marks` and `withdraw` — the endpoint refuses a request carrying both. |
+| R3 | `model.test.mjs` › *#135 R3: clicking a mark off makes the main button withdraw it* | unit | A2's answer, and the reversal of #126's R7 in the one place that decides it. |
+| R3, R4 | `requirements.js` › Training data review › the same three-step check | contract | The withdrawal reaches the backing, the outcome becomes `withdrawn`, and the row carries no training decision afterwards. |
+| R4 | `model.test.mjs` › *#135 R4: applyCommit folds a withdrawal* and *…a revert that co-occurs with a flag* | unit | `reverted` is read, and reading it does not disturb the entry that co-occurs with `flagged`. |
+| R4 | `render.spec.mjs` › *step 3: committing the take-back clears the label and the decision* | render | No badge at all afterwards — which is what undecided looks like — plus the row's decision read back through the store. |
+| R5 | `model.test.mjs` › *#135 R5: the button counts a take-back* | unit | The count includes it, so the button is enabled; without this step 3 is unreachable by clicking. |
+| R5 | `render.spec.mjs` › step 2, the last two assertions | render | The button is enabled and its title says *takes back 1*. |
+| R6 | `data-scale.test.mjs` › *#135 R6: a commit does not move the version* | unit | Two commits of the same rows, and the second is not conflicted. **It commits twice because committing once cannot observe it.** |
+| R6 | `data-scale.test.mjs` › *#135 R6: a species correction still moves it* | unit | The distinction: a correction edits the observation, so its token does move. |
+| R6 | `requirements.js` › Training data review › *committing the same page twice is not a phantom conflict* | contract | The same defect through the real store, which is the half that was wrong. |
 
-**Why these tiers.** The rule is a rule, so it is proved in `model/` in sixty
-milliseconds. *"The click now does nothing"* is a fact about what was drawn, and every
-rendering defect in this app so far passed the store-level checks — so it is asserted in
-Playwright, with a real click. The contract tier sits between them and is where the
-refusals themselves are pinned, because it can drive a real commit through the
-confirmation and then ask the store what it did.
+**Why the endpoint is not in this table.** Nothing on the server changed. The server half of
+step 1 landed with #126 and `tests/mosaic-commit.test.js` › *promotes an accept mark on the
+training route* already holds it; `withdraw` has been supported since #106 with no client
+sending it. So `npm run test:mosaic` proves nothing about this change and was not run.
 
 ## Requirements with no test
 
-None. R1–R8 each have at least one test above.
+None. R1 to R6 each have at least one test above, and R1, R2, R4 and R5 have one at the
+rendering tier, because the defect was something drawn.
 
 ## Edge cases
 
-- **A destroyed tile in another mode.** Cannot happen: `cache.keyFor` carries the mode, so
-  a mode switch empties the cache and re-queries, and the row is gone from the server. This
-  is why the rule reads the outcome map rather than a session-wide set of destroyed ids
-  (A1), and why the guards cannot be defeated by switching modes and back.
-- **A conflicted delete destroyed nothing.** The statement matched no version, the row is
-  still there, and the tile must stay actionable. Asserted in the unit test.
-- **The id is already in `state.touched`.** The reviewer marked the tile before deleting
-  it, so R2 pins that the dead click *changes* nothing rather than that the id is absent —
-  the first draft of that assertion was wrong and the check caught it.
-- **`aria-disabled` is advisory.** Playwright reads it as *not enabled* and would wait the
-  tile out, so the render tests click with `force` — which is the dead click a reviewer
-  actually makes, refused by the store rather than swallowed by the harness.
+- **A withdrawal draws no badge**, rather than a badge saying "withdrawn". `outcomeBadge`
+  has no case for it, and the outcome still outranks the record — so a row the endpoint
+  served as `promoted` does not go back to reading PROMOTED for the rest of the sitting.
+- **A `conflicted` id keeps its take-back**, the way it keeps its mark: nothing was written
+  for it, so the intention is still pending.
+- **Delete Mode takes nothing back.** Both its exception and its accepted value are null, so
+  a `null === null` comparison must not make every touched tile there read as a take-back.
+  Asserted directly.
 
 ## Regression coverage
 
-All four render tests and three of the four contract checks were run against the old files
-first and failed, on `class="tile marked"` drawn over an observation the same session had
-destroyed. That is the reported defect, at the tier that can see it.
+- **`render.spec.mjs` › *a committed page is still editable* › the flag stays marked, a click
+  takes it back, and committing accepts it.** Not a new test — it is the existing one that
+  went red against the first implementation, and is why the take-back is recorded rather
+  than derived. Its unit-tier counterpart is *#135: taking a flag off a tile the sweep
+  accepted is not a take-back*.
+- **`model.test.mjs` › *#135 R3: clicking a mark off makes the main button withdraw it*** is
+  #126's R7 test rewritten to A2's answer rather than deleted, so the reversal is visible in
+  the history instead of the old rule quietly disappearing.
 
 ## Known gaps
 
-- **`retryFailedThumbnails` is not covered and is not guarded** (A4). A page-level retry
-  can still name a destroyed row whose thumbnail had failed. It costs a request rather than
-  a record, it is not one of the gestures #138 names, and it is left alone deliberately.
-- **No API-tier test.** Nothing here lives in the gap between what a commit recorded and
-  what the row still says — the refusal reads the commit's own answer, and both backings
-  put the same `deleted` outcome there. An API-tier case would have to destroy a real
-  corpus observation to assert a client-side refusal, with nothing to restore it with.
-- **CI runs the fast tiers only**, so a green pipeline is not this verification.
+- **The API tier was not run.** `tests/api/take-back.spec.mjs` needs a server, a login and
+  the development corpus, and it writes to that corpus. R4's database half is proved here
+  against the fixture, which for *this* defect is honest — `src/data.js` implements
+  `withdraw` the way the endpoint does, deleting the decision rather than storing a fourth
+  value — but the claim that the endpoint deletes the projection row rests on
+  `tests/mosaic-commit.test.js` and on reading `releaseWithdrawn`, not on a run here.
+- **Nothing re-reads the page from the endpoint after a withdrawal.** The tile stops
+  claiming a decision because the outcome says `withdrawn`; that a *fresh query* then serves
+  the row as undecided is the endpoint's behaviour and is not asserted by anything added
+  here.
+- **No walkthrough**, and none is proposed. One is recorded only when the human asks.
 
 ## Manual steps
 
-None. Everything above is automated.
+None. Everything above runs headless.
 
 ---
 
 ## Results
 
-From `frontend/apps/marp-mosaic-review`, on 2026-09-12, against `develop` at 7fe355e3.
+Run on 2026-09-12, on branch `135-promote-commit-take-back-label`.
+
+### Unit — `npm run test:unit`, from the app directory
 
 ```
-$ npm run test:unit
-ℹ tests 283
-ℹ pass 283
+> node tools/syntax-check.mjs
+✓ 48 files parse
+…
+ℹ tests 296
+ℹ pass 296
 ℹ fail 0
 ```
 
+### Each new test proved red first, against the old behaviour
+
+One file at a time, with the old behaviour put back by a file copy and restored from it —
+never `git checkout --`.
+
+`src/model/modes.js`, the rule narrowed back to the mode's exception and the button's
+take-back count forced to zero:
+
 ```
-$ npm run test:e2e
+✖ #135 R3: clicking a mark off makes the main button withdraw it
+✖ #135 R2: taking back a promotion this sitting recorded is a take-back
+✖ #135 R2: it is the accepted value in scientific mode too, not only training
+✖ #135 R3: the take-backs are their own list, and the marks are not in it
+✖ #135 R5: the button counts a take-back, or it is disabled and unreachable
+ℹ tests 138  ℹ pass 133  ℹ fail 5
+```
+
+`src/model/page.js`, with the `reverted` fold removed:
+
+```
+✖ #135 R4: applyCommit folds a withdrawal, which appears in no other array
+ℹ tests 138  ℹ pass 137  ℹ fail 1
+```
+
+`src/data.js`, with the version bump put back:
+
+```
+✖ #135 R6: a commit does not move the version, because the endpoint's does not
+ℹ tests 29  ℹ pass 28  ℹ fail 1
+```
+
+### Browser — `npm run test:e2e` (contract and render, desktop and phone)
+
+The first run, against the **derived** take-back, is recorded here because it is the reason
+the implementation changed shape:
+
+```
+2 failed
+  [desktop] › render.spec.mjs:531 › a committed page is still editable › the flag stays marked, a click takes it back, and committing accepts it
+  [phone]   › render.spec.mjs:531 › a committed page is still editable › the flag stays marked, a click takes it back, and committing accepts it
+5 skipped
+299 passed (2.1m)
+```
+
+```
+Error: expect(locator).toContainText(expected) failed
+Expected substring: "REVIEWED"
+Received string:    "TAKING BACK"
+  - locator resolved to <span class="badge b-rev" title="Taking back reviewed — not committed yet…">
+```
+
+The second run, with `state.takenBack` recording the take-back instead:
+
+```
   5 skipped
-  295 passed (2.0m)
+  301 passed (2.1m)
 ```
 
-Four of the five skips are pre-existing; the fifth is R5 at phone width, skipped because
-the control it drives is not rendered there.
-
-**Red first.** With `src/store.js` reverted, three of the four contract checks failed:
-
 ```
-"R2 (#138): a committed delete cannot be marked again
- the row is gone from the database; nothing may mark it expected false, got true",
-"R4 (#138): neither route into the correction panel opens on a destroyed tile
- the chip must not open the chooser expected null, got {"id":100129,"correcting":true}",
-"R5 (#138): marking the page steps over what the page has already destroyed
- the destroyed row must not be marked expected false, got true",
+✓ [desktop] render.spec.mjs:1863 › taking a promotion back (#135) › step 1: promoting and committing leaves the tile reading PROMOTED (1.7s)
+✓ [desktop] render.spec.mjs:1877 › taking a promotion back (#135) › step 2: clicking it again says the promotion is being taken back (1.7s)
+✓ [desktop] render.spec.mjs:1896 › taking a promotion back (#135) › step 3: committing the take-back clears the label and the decision (2.2s)
+✓ [phone]   render.spec.mjs:1863 › taking a promotion back (#135) › step 1 … (2.0s)
+✓ [phone]   render.spec.mjs:1877 › taking a promotion back (#135) › step 2 … (2.1s)
+✓ [phone]   render.spec.mjs:1896 › taking a promotion back (#135) › step 3 … (2.4s)
+✓ [desktop] render.spec.mjs:531 › a committed page is still editable › the flag stays marked, a click takes it back, and committing accepts it (1.6s)
+✓ [phone]   render.spec.mjs:531 › a committed page is still editable › the flag stays marked … (1.9s)
+✓ [desktop] contract.spec.mjs:18 › the requirement checks in tests.html all pass (59.9s)
+✓ [phone]   contract.spec.mjs:18 › the requirement checks in tests.html all pass (59.1s)
 ```
 
-R3 passed there, as its own comment says it would. With `src/store.js` and `src/ui/tile.js`
-reverted, all four render tests failed, on the tile the same session had destroyed:
+The contract tier runs every check in `tests/requirements.js` inside `tests.html`, so the two
+added there — the three-step sequence and the phantom conflict — are inside those two lines.
 
-```
-Error: expect(locator).not.toHaveClass(expected) failed
-    18 × locator resolved to <button data-id="100129" class="tile marked" ...>
-```
+The 5 skipped are the API-tier specs, which are skipped without `MARP_API_BASE`; see *Known
+gaps*.
+
+### What was not run, and why
+
+`npm run test:mosaic` — nothing on the endpoint changed. `npm test` — not run, and not a
+working loop. The API tier — see *Known gaps*.
