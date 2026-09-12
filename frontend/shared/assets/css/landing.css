@@ -787,10 +787,18 @@ h3 {
     linear-gradient(180deg, rgba(1, 8, 17, 0), rgba(3, 16, 29, 0.76), rgba(1, 8, 17, 0));
 }
 
+/* Queued lane, the record, the MARP lane. The middle column is sized by the
+   hub rather than sharing the split, so neither lane is squeezed by it. */
 .lanes {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 26px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(18px, 2.2vw, 34px);
+}
+
+.lanes .platform-hub {
+  align-self: center;
+  width: clamp(190px, 17vw, 270px);
 }
 
 .lane {
@@ -1711,9 +1719,16 @@ h3 {
   }
 
   /* Stacked rather than side by side, but on the same twelve columns, so
-     the two shapes are still being compared against each other. */
+     the two shapes are still being compared against each other. The clip is
+     for the orbit rings: see the note on .platform-map below. */
   .lanes {
+    overflow: hidden;
     grid-template-columns: 1fr;
+  }
+
+  .lanes .platform-hub {
+    width: min(200px, 58vw);
+    margin-inline: auto;
   }
 
   .feature-grid,
