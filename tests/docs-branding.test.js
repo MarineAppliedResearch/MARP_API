@@ -114,6 +114,30 @@ function filesUnder(directory) {
     return found.sort();
 }
 
+/**
+ * Line endings, removed before anything is compared.
+ *
+ * The fork is tracked and `node_modules/docdash` is not, so on Windows git hands back
+ * the fork with CRLF while npm leaves upstream at LF. Comparing bytes then reports every
+ * one of the 27 unchanged files as drifted, on a checkout where nothing has drifted at
+ * all -- and it passes in CI, which is Linux, so the suite is green in the one place
+ * nobody is reading it. That is how this shipped. `lib.mjs` in the umbrella had already
+ * learned it: *"Line endings differ across these repositories; comparing them is never
+ * the point."*
+ *
+ * @param {string} value the text to normalise.
+ * @returns {string} the same text with CRLF collapsed and trailing whitespace dropped.
+ */
+const normalise = (value) => value.split('\r\n').join('\n').trimEnd();
+
+/**
+ * A file's contents, with its line endings normalised.
+ *
+ * @param {string} file absolute path.
+ * @returns {string} the normalised text.
+ */
+const text = (file) => normalise(fs.readFileSync(file, 'utf8'));
+
 /** The MARP theme for the generated site. */
 const marpDocsCss = read(THEME, 'static', 'styles', 'marp-docs.css');
 
@@ -351,13 +375,12 @@ describe('the fork stayed a diff', () => {
         expect(unexpected).toEqual([]);
     });
 
-    test('every unchanged file is byte-identical to docdash', () => {
+    test('every unchanged file still matches docdash', () => {
         const differing = filesUnder(THEME)
             .filter((file) => !ADDED.includes(file))
             .filter((file) => !CHANGED.includes(file))
             .filter((file) => fs.existsSync(path.join(UPSTREAM, file)))
-            .filter((file) => !fs.readFileSync(path.join(THEME, file))
-                .equals(fs.readFileSync(path.join(UPSTREAM, file))));
+            .filter((file) => text(path.join(THEME, file)) !== text(path.join(UPSTREAM, file)));
 
         expect(differing).toEqual([]);
     });
@@ -371,10 +394,10 @@ describe('the fork stayed a diff', () => {
         const mine = read(THEME, 'static', 'styles', 'jsdoc.css');
         const theirs = read(UPSTREAM, 'static', 'styles', 'jsdoc.css');
 
-        const kept = mine.slice(0, mine.indexOf('/* The four @font-face blocks')).trimEnd();
+        const kept = normalise(mine.slice(0, mine.indexOf('/* The four @font-face blocks')));
 
         expect(kept.length).toBeGreaterThan(1000);
-        expect(theirs.startsWith(kept)).toBe(true);
+        expect(normalise(theirs).startsWith(kept)).toBe(true);
     });
 
     test('publish.js forks no logic', () => {
