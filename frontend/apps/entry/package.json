@@ -7,7 +7,7 @@
   "scripts": {
     "serve": "node tools/serve.mjs",
     "test": "npm run test:e2e",
-    "test:e2e": "playwright test --project=desktop --project=phone",
+    "test:e2e": "playwright test --project=desktop --project=phone --project=phone-landscape",
     "test:e2e:headed": "playwright test --headed"
   },
   "devDependencies": {

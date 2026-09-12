@@ -52,7 +52,24 @@ export default defineConfig({
        the floor most of the remaining phones sit at. Pixel 7's own 412 would let
        a layout that breaks at 390 through, and headless Chrome clamps a viewport
        set any other way -- Playwright honours this one. */
-    { name: 'phone', testDir: './tests/e2e', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } }
+    { name: 'phone', testDir: './tests/e2e', use: { ...devices['Pixel 7'], viewport: { width: 390, height: 844 } } },
+    /* A phone held sideways. Worth its own project because the failure it
+       catches is keyed on HEIGHT, which neither of the other two can see: the
+       hero carried a 760px floor, so on a 340px-tall screen the whole first
+       screen was the header and an empty photograph, with the headline, the
+       copy and both buttons below the fold.
+
+       Built the same way the `phone` project is, and for the same two reasons.
+       The descriptor is a Chromium one because only Chromium is installed here
+       and `devices['iPhone 14 landscape']` asks for WebKit, which fails the
+       whole project at launch rather than at an assertion. The viewport is then
+       overridden to iPhone 14 landscape's own 750x340: Pixel 7 sideways is
+       360px tall and would let a layout that breaks at 340 through. */
+    {
+      name: 'phone-landscape',
+      testDir: './tests/e2e',
+      use: { ...devices['Pixel 7 landscape'], viewport: { width: 750, height: 340 } }
+    }
   ],
 
   /* Nothing to start when a real API is already serving the pages. */

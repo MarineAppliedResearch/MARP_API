@@ -1829,6 +1829,73 @@ h3 {
 }
 
 /* --------------------------------------------------------------------------
+   13b. Short viewports
+   --------------------------------------------------------------------------
+   These are keyed on height, not width, because the thing that breaks is the
+   hero being taller than the screen. A phone held sideways is about 340px
+   tall and the 760px floor put every word of the hero below the fold. */
+
+@media (max-height: 700px) {
+  .hero {
+    min-height: 100svh;
+    padding: calc(var(--header-height) + 20px) 0 32px;
+  }
+
+  .hero__logo {
+    width: clamp(200px, 24vw, 300px);
+    margin-bottom: 12px;
+  }
+
+  .hero h1 {
+    margin-bottom: 16px;
+    font-size: clamp(2rem, 5.2vw, 3.2rem);
+  }
+
+  .hero__copy > p {
+    font-size: 0.98rem;
+    line-height: 1.5;
+  }
+
+  /* A 320px-wide phone wraps both the paragraph and the buttons far enough to
+     push the call to action off a 568px screen by about 25px. */
+  .hero__actions .button {
+    min-height: 46px;
+  }
+}
+
+/* Landscape on a phone. The header already carries the logo, and the scroll
+   cue is competing for the few pixels the copy needs. */
+@media (max-height: 480px) {
+  .hero {
+    padding: calc(var(--header-height) + 12px) 0 20px;
+  }
+
+  .hero__logo,
+  .hero__scroll-cue {
+    display: none;
+  }
+
+  .hero h1 {
+    margin-bottom: 10px;
+    font-size: clamp(1.6rem, 4.4vw, 2.4rem);
+  }
+
+  .hero__copy > p {
+    margin-bottom: 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .hero__actions {
+    margin-top: 16px;
+  }
+
+  .hero__actions .button {
+    min-height: 44px;
+  }
+}
+
+/* --------------------------------------------------------------------------
    14. Reduced motion
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {

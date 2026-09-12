@@ -149,3 +149,49 @@ for (const { name, path } of PAGES) {
     });
   });
 }
+
+/**
+ * The hero has to fit the screen it is opened on.
+ *
+ * This is the one check keyed on viewport HEIGHT rather than width, and it is
+ * here because nothing keyed on width could see the failure. `.hero` carried
+ * `min-height: max(760px, 100svh)`, so a floor of 760px applied however short
+ * the screen was. On a phone held sideways, which is about 340px tall, the
+ * entire first screen was the header and an empty photograph: the headline, the
+ * paragraph and both buttons were all below the fold, and the page looked like
+ * it had failed to load its content.
+ *
+ * It runs on every project on purpose. A desktop window dragged short is the
+ * same failure, and the two phone projects differ by orientation alone.
+ */
+test.describe('the landing page hero', () => {
+  test('puts the headline, the copy and both buttons on the first screen', async ({ page }) => {
+    await open(page, '/');
+
+    const offscreen = await page.evaluate(() => {
+      const fold = document.documentElement.clientHeight;
+
+      return [
+        ['headline', '.hero h1'],
+        ['paragraph', '.hero__copy > p'],
+        ['buttons', '.hero__actions']
+      ]
+        .map(([label, selector]) => {
+          const element = document.querySelector(selector);
+
+          if (!element) {
+            return `${label}: missing`;
+          }
+
+          const box = element.getBoundingClientRect();
+
+          return box.top >= 0 && box.bottom <= fold
+            ? null
+            : `${label}: ${Math.round(box.top)}..${Math.round(box.bottom)} of ${fold}`;
+        })
+        .filter(Boolean);
+    });
+
+    expect(offscreen).toEqual([]);
+  });
+});

@@ -89,6 +89,15 @@ rather than a cursor placing points.
 - **`.hero h1 span` runs white to green across 72% to 92% of its own width**, so
   a short span puts the colour break in the middle of a word. Give it a whole
   line.
+- **The hero has to fit a SHORT screen, not just a narrow one.** `.hero` carried
+  `min-height: max(760px, 100svh)`, which floors it at 760px however short the
+  viewport is. A phone held sideways is about 340px tall, so the whole first
+  screen was the header and an empty photograph: the headline, the paragraph and
+  both buttons were below the fold, and it read as a page that had failed to
+  load. The corrections live in section 13b and are keyed on `max-height`, so
+  they **must stay after every width-keyed block** or the phone-width rules win
+  at equal specificity and put it back. The `phone-landscape` project and the
+  first-screen assertion in the render tier exist for exactly this.
 - **`.platform-hub` is used in two different grids now**, the capability diagram
   on the long page and the lanes on the landing page, so any rule about its
   placement has to be scoped to `.platform-map`. An unscoped
