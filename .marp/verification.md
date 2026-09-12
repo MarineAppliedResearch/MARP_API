@@ -123,7 +123,113 @@ and from 11,590px to 6,018px on a phone.
   them, because they lead into Swagger and JSDoc, which are not this issue.
 - **`old_index.html`.** Left in place, not served, not checked.
 
+## Results
+
+Run 2026-09-12. Both automated tiers green. Tier 3 is still the human's.
+
+### Tier 1, `npm run test:core` / `npx jest tests/landing-copy.test.js`
+
+```
+  Test Suites : 1 passed, 0 failed, 1 total
+  Tests       : 53 passed, 0 failed, 0 skipped, 53 total
+  Duration    : 1.6s
+  Result: ALL TESTS PASSED
+```
+
+Registered in the `core` group, which went from 9 suites to 10:
+
+```
+  core          10  projects, sessions, tasks, schema, and data integrity
+  ok   every suite belongs to exactly one subsystem
+```
+
+### Tier 2, `npm run test:app:entry`
+
+```
+  20 passed (18.6s)
+```
+
+Two pages, two viewports, five checks each.
+
+### Every check was proved red before it was believed
+
+Eight mutations against scratch copies of the pages, each producing one failure
+and naming the offender:
+
+```
+Received: "index.html says \"seamless\""
+Received: "...<!-- Sticky global navigation - with an em dash. -->..."
+Received: "index.html says \"MARE\""
++   "Deliver",   +   "icon-nowhere",   +   "ghost-block"
+Expected pattern: /app\.get\(\s*'\/how-it-works'[\s\S]{0,400}?'how-it-works\.html'/
+Expected value: "/apps/marp-ml-dashboard/"
+```
+
+And for the render tier:
+
+```
+Expected: 1600 / 390    Received: 3000                    (sideways)
+expect(locator).toBeHidden() ... Received: visible        (dialog)
++   "section-heading reveal", "lanes reveal", ...         (12 and 10 unrevealed)
+```
+
+The response check proved itself without being asked: the first version of the
+render tier's static shim did not alias `/assets`, and the test failed with four
+verbatim 404s.
+
+### What the tiers caught that reading did not
+
+- **An em dash in `landing.js`.** `"Signed in - redirecting..."` is written
+  straight into the page by the login handler, so R14 covers it, and neither
+  HTML file had one. Checking only the two documents could never have seen it.
+  Fixed, and the copy suite now reads the shared script too.
+- **A blank page in the first capture.** Everything below the hero photographed
+  at `opacity: 0`, because the reveals are IntersectionObserver-driven and the
+  capture scrolled faster than the observer delivers. That is now an assertion
+  in the render tier rather than a thing somebody has to remember.
+- **A colour break in the middle of a word.** `.hero h1 span` runs white to
+  green across 72% to 92% of its own width, so `<span>months.</span>` painted
+  `month` white and `s.` green. The whole second line is the span now. Caught by
+  looking, not by a test, and it stays that way.
+
+### Manual evidence
+
+Login, from both pages, against the real API:
+
+```
+/              dialog open: true    bad password: "Invalid username or password."    -> /apps/dashboard/index.html
+/how-it-works  dialog open: true    bad password: "Invalid username or password."    -> /apps/dashboard/index.html
+```
+
+Routes, against the real server rather than the render tier's shim:
+
+```
+/                         -> 200      /apps/marp-mosaic-review/ -> 302  (permission gate)
+/how-it-works             -> 200      /apps/marp-ml-dashboard/  -> 200
+/api-docs                 -> 301      /developer-docs           -> 301  (trailing slash)
+```
+
+R15 in numbers. The landing page went from **6,503px to 3,536px** on a desktop,
+and from 11,590px to 6,018px on a phone. `/how-it-works` is 4,841px, which is
+the length the argument needed and the reason it is not on the landing page.
+
+### Known gap in tier 2
+
+The render tier serves the pages from `frontend/apps/entry/tools/serve.mjs`, a
+static shim, rather than from the real API. So it reproduces the routing rather
+than proving it, which is why the `app.js` route assertion lives in tier 1 and
+why the route table above was walked by hand against a real server. Setting
+`MARP_API_BASE` runs the same specs against the API; the pages are public, so
+there is no sign-in step. The alternative was dragging a database and the
+thumbnail extractor into a layout test.
+
 ## Status
 
-- **Gate:** verifying
-- Tier 1 and tier 2 are being written now. Tier 3 needs the human.
+- **Gate:** ready-for-pr
+- **Tier 3 is outstanding and is the human's**, and it is the tier that covers
+  R1, R3, R4, R5, R6, R7, R10, R15 and R16. Read both pages once at full width
+  and once on a phone, against the issue's eight acceptance questions. Four of
+  those eight are answered only on `/how-it-works`: why the workflow is narrow,
+  where machine learning helps, where scientists stay authoritative, and most of
+  why the work is slow today. That is the direct cost of a short landing page
+  and it should be a decision rather than a surprise.

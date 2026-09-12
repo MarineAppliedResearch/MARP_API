@@ -191,7 +191,7 @@ Filled at G3, after the gate.
 
 ## Status
 
-- **Gate:** implementing
+- **Gate:** ready-for-pr
 - **Notes:** All five assumptions settled 2026-09-11. A1 and A2 both came back
   conservative — the application cards keep the shape they have, and no real survey
   imagery goes on a public page. That leaves the rewrite where the issue wanted it: a
