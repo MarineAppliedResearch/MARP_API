@@ -160,8 +160,13 @@ The second run, with `state.takenBack` recording the take-back instead:
 The contract tier runs every check in `tests/requirements.js` inside `tests.html`, so the two
 added there — the three-step sequence and the phantom conflict — are inside those two lines.
 
-The 5 skipped are the API-tier specs, which are skipped without `MARP_API_BASE`; see *Known
-gaps*.
+The 5 skipped are **viewport-conditional render tests**, each `test.skip`ped on the project
+it is not about — a phone-layout check on desktop, and `#138`'s page-level mark on the phone,
+where that control is hidden. None of them is mine and none is a prerequisite skipped away.
+The API tier is not in this run at all; see *Known gaps*.
+
+I asserted these were the API specs before checking, and they are not — corrected here rather
+than left standing, because a wrong sentence in the evidence is worse than no sentence.
 
 ### What was not run, and why
 
