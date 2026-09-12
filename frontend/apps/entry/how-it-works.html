@@ -65,22 +65,8 @@
       <path d="M17 38h16"></path>
     </symbol>
 
-    <symbol id="icon-insight" viewBox="0 0 48 48">
-      <path d="M7 40h35"></path>
-      <path d="M11 36V25h6v11M22 36V17h6v19M33 36V9h6v27"></path>
-      <path d="m9 18 10-7 8 4 12-11"></path>
-    </symbol>
 
-    <symbol id="icon-link" viewBox="0 0 48 48">
-      <path d="m20 29-3 3a9 9 0 0 1-13-13l7-7a9 9 0 0 1 13 0"></path>
-      <path d="m28 19 3-3a9 9 0 0 1 13 13l-7 7a9 9 0 0 1-13 0"></path>
-      <path d="m17 24 14 0"></path>
-    </symbol>
 
-    <symbol id="icon-clock" viewBox="0 0 48 48">
-      <circle cx="24" cy="24" r="18"></circle>
-      <path d="M24 13v11l8 5"></path>
-    </symbol>
 
     <symbol id="icon-close" viewBox="0 0 48 48">
       <path d="M12 12l24 24M36 12 12 36"></path>
@@ -143,10 +129,9 @@
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
           <p class="section-heading__eyebrow">Where the months go</p>
-          <h2 id="gap-title">Recording it is the fast part.</h2>
+          <h2 id="gap-title">Recording the survey is the fast part.</h2>
           <p class="section-heading__summary">
-            A vehicle records for as long as it has power. Everything after it
-            surfaces is expert time.
+            The slow part begins afterward.
           </p>
           <p class="section-heading__summary">
             Watching the footage back, working out what is in it, checking the
@@ -154,39 +139,6 @@
             with every hour of imagery a survey brings home.
           </p>
         </header>
-
-        <div class="feature-grid">
-          <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
-            <h3>Every step rebuilds the last one's context</h3>
-            <p>
-              Video, navigation and observations get separated moving between
-              tools, then joined back up by hand on the other side. All that
-              buys is getting back to where the last stage already was.
-            </p>
-          </article>
-
-          <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-clock"></use></svg>
-            <h3>Nothing starts until the step before it finishes</h3>
-            <p>
-              Review waits on processing and analysis waits on review. A stage
-              sits idle with plenty of work available to it, because the batch
-              it was told to wait for is still open.
-            </p>
-          </article>
-
-          <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-insight"></use></svg>
-            <h3>The answers arrive after the questions moved on</h3>
-            <p>
-              A survey goes out to answer something. How much is down there, or
-              whether it has changed since anyone last looked. The longer the
-              answers take, the less of that question is still open when they
-              land.
-            </p>
-          </article>
-        </div>
       </div>
     </section>
 
@@ -213,9 +165,8 @@
             until a biologist has looked at it.
           </p>
           <p>
-            So MARP fills things in, and hands one stage to the next, without
-            anybody setting it up first. That is what keeps the interface small
-            enough to sit down in front of.
+            That means a biologist can sit down and work instead of configuring
+            a workflow first.
           </p>
         </div>
       </div>
@@ -229,12 +180,13 @@
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
           <p class="section-heading__eyebrow">Underneath</p>
-          <h2 id="platform-title">Nothing gets rebuilt between stages.</h2>
+          <h2 id="platform-title">Everything learned from a survey stays with the survey.</h2>
           <p class="section-heading__summary">
-            None of these is a separate product with its own copy of the data.
-            Video, navigation, observations, review decisions, corrections and
-            analyses stay connected as the work moves, and that is the whole
-            reason a stage can start before the one before it has finished.
+            The footage, where it was recorded, what the models found, what
+            biologists accepted or corrected, and the analyses built from that
+            work all stay connected. As the work advances, the scientific
+            picture can start taking shape instead of being assembled again at
+            the very end.
           </p>
         </header>
 
@@ -317,14 +269,6 @@
           </div>
         </div>
 
-        <div class="pull-quote reveal" data-reveal>
-          <p>
-            The video, where the vehicle was, what a model proposed, what a
-            biologist decided and what got corrected are the same data
-            throughout. A correction made during review is the version every
-            report and every later analysis reads.
-          </p>
-        </div>
       </div>
     </section>
 
@@ -339,28 +283,15 @@
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
           <p class="section-heading__eyebrow">One thing this bought us</p>
-          <h2 id="player-title">Going back one frame, as many times as it takes.</h2>
+          <h2 id="player-title">Every observation leads back to the exact frame.</h2>
         </header>
 
         <div class="explainer reveal" data-reveal>
           <p>
-            Somebody who spots an animal at a particular moment needs to get
-            back to that exact frame rather than to somewhere near it. A browser
-            will not do that on its own.
-          </p>
-          <p>
-            So MARP has its own player. It steps through footage a frame at a
-            time, forwards or backwards, for as long as somebody needs to keep
-            looking.
-          </p>
-          <p>
-            A species identification rests on that. An observation is recorded
-            against its frame, so anyone checking the work later returns to the
-            same frame and sees what the first reviewer saw.
-          </p>
-          <p>
-            The player is a MARP component in its own right, and the desktop
-            annotation tool runs on it.
+            MARP's player lets a reviewer move through footage frame by frame in
+            either direction and return to the exact moment behind an
+            observation. That keeps the scientific record tied to what the
+            reviewer actually saw.
           </p>
         </div>
       </div>
@@ -375,48 +306,13 @@
       <div class="page-container">
         <header class="section-heading reveal" data-reveal>
           <p class="section-heading__eyebrow">Who decides</p>
-          <h2 id="why-title">Biologists lead. MARP amplifies.</h2>
+          <h2 id="why-title">Models make the first pass. Biologists make the result trustworthy.</h2>
           <p class="section-heading__summary">
-            People have always watched the video, and that is much of why a
-            project takes as long as it does. Review grows with every hour of
-            imagery collected, and the hours are expert hours.
-          </p>
-          <p class="section-heading__summary">
-            A model goes through the same footage and puts candidates in front
-            of a reviewer, so those hours get spent on judgement instead.
-          </p>
-          <p class="section-heading__summary">
-            Who decides does not move. A candidate carries no scientific
-            acceptance until a biologist gives it one, and that decision is
-            recorded as theirs.
+            Models can scan survey footage quickly and surface likely
+            observations. Biologists review and correct those results, and that
+            reviewed data helps train better models for the next round.
           </p>
         </header>
-
-        <div class="feature-grid">
-          <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-ai"></use></svg>
-            <h3>A detection is a proposal</h3>
-            <p>What a model finds is recorded as the model's work, and it stays scientifically unreviewed until a biologist accepts it.</p>
-          </article>
-
-          <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-expert"></use></svg>
-            <h3>The decision has a name on it</h3>
-            <p>MARP records who reviewed what and what they decided, and keeps the earlier decisions instead of writing over them.</p>
-          </article>
-
-          <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-link"></use></svg>
-            <h3>A correction reaches everything</h3>
-            <p>Fixing an identification changes what every other part of the work reads. There is no second copy inside one application to go and update afterwards.</p>
-          </article>
-
-          <article class="feature-card reveal" data-reveal>
-            <svg class="feature-card__icon line-icon" aria-hidden="true"><use href="#icon-process"></use></svg>
-            <h3>Nobody spends a week on the mechanical part</h3>
-            <p>Pulling frames, matching timecodes, moving files, assembling the page in front of the reviewer. That work runs itself, and the week goes on the science.</p>
-          </article>
-        </div>
       </div>
     </section>
 
@@ -532,7 +428,7 @@
             <div class="application-card__body">
               <span class="application-card__index">03</span>
               <h3>Stereo Sizing</h3>
-              <p>Stereo imagery turned into measured lengths, recorded against the observation and analysed with everything else.</p>
+              <p>Stereo imagery turned into measured lengths, recorded against the observation and analyzed with everything else.</p>
             </div>
           </article>
 
@@ -554,7 +450,7 @@
             <div class="application-card__body">
               <span class="application-card__index">05</span>
               <h3>Machine Learning Dashboard</h3>
-              <p>Training runs, the workers running them, and how a model behaves on real survey video, so the people relying on its candidates know what it is good at.</p>
+              <p>Manage the models that make the first pass through survey footage, and use expert-reviewed results to make the next models better.</p>
               <a class="application-card__open" href="/apps/marp-ml-dashboard/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
             </div>
           </article>
@@ -591,11 +487,10 @@
 
       <div class="page-container final-cta__inner reveal" data-reveal>
         <img src="/assets/images/marp-mark.png" alt="" aria-hidden="true">
-        <h2 id="cta-title">A survey takes a day. <strong>The science can keep up.</strong></h2>
+        <h2 id="cta-title">A survey takes a day. <strong>But now the science can keep up.</strong></h2>
         <p class="final-cta__outcome">
-          Every survey that turns into understanding quickly is another piece of
-          the seafloor we actually know something about, and the people doing
-          that work get to spend their time finding it out.
+          The sooner a survey becomes usable science, the sooner another piece
+          of the seafloor becomes something we actually understand.
         </p>
         <div class="final-cta__actions">
           <button class="button button--primary" type="button" data-login-open>Login to MARP</button>

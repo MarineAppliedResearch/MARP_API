@@ -267,6 +267,48 @@ describe('landing page copy', () => {
         });
 
         /**
+         * The same correction as `one record`, arriving by a different route.
+         * What MARP holds is *connected* data: the footage, where it was
+         * recorded, what the models found, what biologists accepted or corrected
+         * and the analyses built on them are separate things that stay attached
+         * to each other. `the same data` and `the same record` both collapse that
+         * into one blob and make a claim about the data model that is not true.
+         */
+        it.each(['the same data', 'that same record', 'the same record'])(
+            'does not flatten connected data into "%s"',
+            (phrase) => {
+                const pattern = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                const hit = pattern.exec(stripped[page]);
+
+                expect(hit ? `${page} says "${hit[0]}"` : null).toBeNull();
+            }
+        );
+
+        /**
+         * US spelling throughout, settled on the final wording pass. It matters
+         * because the mixture is what looks wrong rather than either spelling:
+         * the diagram label became `Analyze and report` and left `analysed` on a
+         * card two sections away, which reads as a page nobody proofread. The
+         * pattern deliberately allows `analyses`, the plural of analysis, which
+         * is the same word in both.
+         */
+        it.each([
+            'analyse',
+            'behaviour',
+            'organis',
+            'recognis',
+            'neighbour',
+            'catalogu',
+            'prioritis',
+            'summaris',
+            'optimis',
+        ])('uses US spelling, not "%s"', (stem) => {
+            const hit = new RegExp(`${stem}(?!s\\b)[a-z]*`, 'i').exec(stripped[page]);
+
+            expect(hit ? `${page} says "${hit[0]}"` : null).toBeNull();
+        });
+
+        /**
          * R2. `Collect -> Review -> Process -> Assist -> Deliver` was the old
          * five-box workflow, and two of its names belong to nothing else on the
          * page -- so they are what a revival would show up as.
