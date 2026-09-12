@@ -907,6 +907,19 @@ h3 {
   color: var(--cyan-300);
 }
 
+/* The section's conclusion, so it outranks the lane notes rather than sitting
+   under the diagram as a footnote. It replaced a caveat that used to apologise
+   for the diagram from the same position. */
+.lanes__payoff {
+  margin: 40px auto 0;
+  max-width: 56ch;
+  text-align: center;
+  color: var(--white);
+  font-size: clamp(1.06rem, 1.5vw, 1.3rem);
+  font-weight: bold;
+  line-height: 1.58;
+}
+
 .pull-quote {
   margin: 54px auto 0;
   max-width: 64ch;
