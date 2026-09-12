@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#132
 repos: [marp-api]
-status: design
+status: verifying
 needs: []
 ---
 
@@ -72,7 +72,7 @@ fixture that cannot be wrong the way the endpoint is.
 
 ## Open assumptions
 
-- [ ] **A1 - architectural** -- The testing database is a second **database** inside
+- [ ] **A1 · architectural · non-blocking** -- The testing database is a second **database** inside
   whatever PostgreSQL `DB_*` already points at (default name `mare_test`), not a second
   PostgreSQL cluster on its own port. #132's reopening comment says *"a second database on
   its own port"*, and a port was the only isolation available while storage was shared.
@@ -81,20 +81,20 @@ fixture that cannot be wrong the way the endpoint is.
   may not change. **A second cluster still works** and costs nothing to choose: point
   `DB_PORT` at it and the same command runs. Not blocking: the design supports both, and
   R7 is the guard that matters either way.
-- [ ] **A2 - security/permissions** -- The provisioning command creates a reviewer login in
+- [ ] **A2 · security/permissions · non-blocking** -- The provisioning command creates a reviewer login in
   the testing database and writes its generated password to `.marp/local/`, which is
   git-ignored. Without that, "one command" is two: create a user, then run. Recommendation
   as described; it honours `MARP_REVIEW_USERNAME`/`MARP_REVIEW_PASSWORD` when they are
   already set. Not blocking.
-- [ ] **A3 - environment** -- The dump is found as the newest directory under this
+- [ ] **A3 · environment · non-blocking** -- The dump is found as the newest directory under this
   checkout's git-ignored `.marp/local/corpus/`, overridable with `MARP_CORPUS_DUMP`, and
   its absence is a loud failure naming `marp db dump` rather than an invented dataset.
   There is no separate curated test corpus and none is being created. Not blocking.
-- [ ] **A4 - environment** -- The API the launcher starts binds an ephemeral free port
+- [ ] **A4 · environment · non-blocking** -- The API the launcher starts binds an ephemeral free port
   rather than a fixed one. Nothing outside needs to know the number -- the launcher hands
   it to Playwright as `MARP_API_BASE` -- and a fixed port is how a browser run once graded
   a different checkout for an hour. Not blocking.
-- [ ] **A5 - behavioural** -- When the dump on disk is newer than the one the testing
+- [ ] **A5 · behavioural · non-blocking** -- When the dump on disk is newer than the one the testing
   database was built from, the command **says so and reuses anyway**. Re-loading by
   surprise would throw away whatever a test run had set up, and a stale corpus is a
   judgement rather than an error. `--reset` reloads deliberately. Not blocking.
