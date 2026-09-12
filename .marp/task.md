@@ -73,7 +73,7 @@ fixture that cannot be wrong the way the endpoint is.
 ## Open assumptions
 
 - [ ] **A1 · architectural · non-blocking** -- The testing database is a second **database** inside
-  whatever PostgreSQL `DB_*` already points at (default name `mare_test`), not a second
+  whatever PostgreSQL `DB_*` already points at (default name `marp_test`), not a second
   PostgreSQL cluster on its own port. #132's reopening comment says *"a second database on
   its own port"*, and a port was the only isolation available while storage was shared.
   With R1 done, a second name isolates just as completely, needs no second cluster, and

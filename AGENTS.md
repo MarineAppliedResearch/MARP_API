@@ -485,7 +485,7 @@ npm run testing-db status              # what is there, and which dump it came f
 npm run testing-db reset               # throw it away and load the dump again
 ```
 
-The first run builds `mare_test` from the newest dump under `.marp/local/corpus/`, gives
+The first run builds `marp_test` from the newest dump under `.marp/local/corpus/`, gives
 it a thumbnails directory of its own, migrates it up to this branch, and creates the
 reviewer login. Every run after that finds it and starts in seconds. **The output says
 which of the two happened** -- `PROVISIONED` or `REUSED` -- rather than leaving it to be
