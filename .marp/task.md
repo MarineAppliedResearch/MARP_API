@@ -69,9 +69,13 @@ earn the architecture and the applications on the way down.
   application cards and a handoff, and nothing else. The first draft ran to
   6,503px on a desktop. The long-form argument lives on a second page, which is
   allowed to be as long as it needs.
-- **R16 · The video player gets a section on the long-form page.** Frame-accurate
-  review forwards and backwards, and why a browser cannot do it on its own. The
-  claims come from `marp-video-player`'s own README, not from invention.
+- **R16 · The video player gets a section on the long-form page.** Revised
+  2026-09-12. It says that an observation leads back to the exact frame and that a
+  reviewer can move through the footage in either direction, and it stops there.
+  The original requirement also asked it to explain **why a browser cannot do this
+  on its own**; the final wording pass forbids exactly that, along with playback
+  rates, decoding and container mechanics, as developer material. The later
+  decision wins.
 - **R17 · An application card says what comes out of it, never how a person
   operates it.** The first Stereo Sizing copy described the interaction: pick the
   same two points in both cameras. That is wrong to publish, because the work is

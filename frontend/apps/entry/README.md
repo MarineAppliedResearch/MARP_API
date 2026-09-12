@@ -111,9 +111,14 @@ has failed R8 just as surely.
 ## Machine learning is not the headline
 
 MARP is not interesting because it contains models. It is interesting because of
-what happens to the time between collecting data and understanding it. ML belongs
-inside the review story, where a detection is a proposal and a biologist decides.
-`Biologists lead. MARP amplifies.` stays.
+what happens to the time between collecting data and understanding it. So the
+section says what models do for the work and what biologists do with the result,
+in two sentences: models make the first pass, biologists make the result
+trustworthy, and the reviewed data improves the next models.
+
+`Biologists lead. MARP amplifies.` used to close that section and no longer
+appears. It was replaced in the final wording pass, which asked for the same idea
+said shorter and with the training feedback in it.
 
 **Two claims in that section were wrong on the public page and must not come
 back.** Both are scientific statements and both were corrected in #152's review.
