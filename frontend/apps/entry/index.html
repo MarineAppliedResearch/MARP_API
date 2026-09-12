@@ -231,9 +231,8 @@
           <p class="section-heading__eyebrow">Applications</p>
           <h2 id="applications-title">Where people actually work.</h2>
           <p class="section-heading__summary">
-            Five places to do a different part of the same job. They read and
-            write the same record, which is why work done in one turns up in the
-            next.
+            Six places to do a different part of the same job. They read and write
+            the same record, which is why work done in one turns up in the next.
           </p>
         </header>
 
@@ -261,12 +260,88 @@
             </div>
           </article>
 
+          <!--
+            The stereo sizing card has no photographed mockup, so its concept
+            interface is drawn here instead of shipped as another .webp. What it
+            shows is the actual idea: the same two points picked in a calibrated
+            pair, and the horizontal disparity between the panes is what the
+            length comes out of.
+          -->
+          <article class="application-card reveal" data-reveal>
+            <div class="application-card__media">
+              <svg class="card-mock" viewBox="0 0 270 200" role="img" aria-label="Concept interface for the MARP Stereo Sizing Tool">
+                <defs>
+                  <linearGradient id="mock-water" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#0a3c55"></stop>
+                    <stop offset="1" stop-color="#04192b"></stop>
+                  </linearGradient>
+                </defs>
+
+                <rect width="270" height="200" fill="#030f1d"></rect>
+
+                <!-- window chrome -->
+                <rect x="0" y="0" width="270" height="15" fill="#07233a"></rect>
+                <circle cx="9" cy="7.5" r="2.2" fill="#2a4a63"></circle>
+                <circle cx="17" cy="7.5" r="2.2" fill="#2a4a63"></circle>
+                <rect x="28" y="5" width="52" height="5" rx="2.5" fill="#12384f"></rect>
+
+                <!-- the two calibrated views -->
+                <g class="card-mock__pane">
+                  <rect x="7" y="22" width="120" height="112" rx="3" fill="url(#mock-water)"></rect>
+                  <rect x="145" y="22" width="118" height="112" rx="3" fill="url(#mock-water)"></rect>
+                  <path d="M7 116q30-12 60-4t60-8v26H7z" fill="#06202f" opacity="0.85"></path>
+                  <path d="M145 116q30-12 60-4t58-8v26h-118z" fill="#06202f" opacity="0.85"></path>
+                </g>
+
+                <text class="card-mock__tag" x="12" y="33">LEFT</text>
+                <text class="card-mock__tag" x="150" y="33">RIGHT</text>
+
+                <!-- same animal in both panes, offset by the disparity -->
+                <g class="card-mock__fish">
+                  <ellipse cx="62" cy="76" rx="26" ry="8"></ellipse>
+                  <path d="M36 76l-11-7v14z"></path>
+                  <ellipse cx="212" cy="76" rx="26" ry="8"></ellipse>
+                  <path d="M186 76l-11-7v14z"></path>
+                </g>
+
+                <!-- the two picked points, in both views -->
+                <g class="card-mock__pick">
+                  <path d="M25 69v14M18 76h14"></path>
+                  <path d="M88 69v14M81 76h14"></path>
+                  <path d="M175 69v14M168 76h14"></path>
+                  <path d="M238 69v14M231 76h14"></path>
+                </g>
+
+                <!-- the match between the panes is the measurement -->
+                <g class="card-mock__match">
+                  <path d="M25 90 L175 90"></path>
+                  <path d="M88 62 L238 62"></path>
+                </g>
+
+                <!-- readout -->
+                <rect x="7" y="142" width="256" height="24" rx="4" fill="#07263a"></rect>
+                <text class="card-mock__label" x="16" y="157">LENGTH</text>
+                <text class="card-mock__value" x="70" y="158">41.8 cm</text>
+                <rect x="150" y="149" width="48" height="10" rx="5" fill="#0d3f4f"></rect>
+                <rect x="206" y="149" width="48" height="10" rx="5" fill="#0d3f4f"></rect>
+
+                <rect x="7" y="174" width="150" height="6" rx="3" fill="#0d2c40"></rect>
+                <rect x="7" y="186" width="98" height="6" rx="3" fill="#0b2537"></rect>
+              </svg>
+            </div>
+            <div class="application-card__body">
+              <span class="application-card__index">03</span>
+              <h3>Stereo Sizing Tool</h3>
+              <p>Pick the same two points in both cameras, and the calibrated pair turns them into a length recorded against the observation.</p>
+            </div>
+          </article>
+
           <article class="application-card reveal" data-reveal>
             <div class="application-card__media">
               <img src="assets/images/app-data-processing.webp" alt="Concept interface for the MARP Data Processing Workspace" loading="lazy">
             </div>
             <div class="application-card__body">
-              <span class="application-card__index">03</span>
+              <span class="application-card__index">04</span>
               <h3>Data Processing Workspace</h3>
               <p>Getting survey data into the shape the rest of the work can read, the same way every time.</p>
             </div>
@@ -277,7 +352,7 @@
               <img src="assets/images/app-machine-learning.webp" alt="The MARP Machine Learning Dashboard" loading="lazy">
             </div>
             <div class="application-card__body">
-              <span class="application-card__index">04</span>
+              <span class="application-card__index">05</span>
               <h3>Machine Learning Dashboard</h3>
               <p>Training runs, the GPU workers doing them, and how a model behaves on real survey video.</p>
               <a class="application-card__open" href="/apps/marp-ml-dashboard/">Open<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.4M9 4.6 12.4 8 9 11.4"/></svg></a>
@@ -289,7 +364,7 @@
               <img src="assets/images/app-reporting.webp" alt="Concept interface for MARP Automated Report Generation" loading="lazy">
             </div>
             <div class="application-card__body">
-              <span class="application-card__index">05</span>
+              <span class="application-card__index">06</span>
               <h3>Automated Report Generation</h3>
               <p>Building the deliverable out of the reviewed record instead of reassembling it by hand at the end.</p>
             </div>

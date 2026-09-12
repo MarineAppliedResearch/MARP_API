@@ -129,6 +129,15 @@ earn the architecture and the applications on the way down.
   - **The page is too long for a landing page.** Split, with a learn-more band
     handing off to a second page. Now R15, and `/how-it-works` in `app.js`.
   - **The video player belongs in the long-form page.** Now R16.
+- **2026-09-11** — A sixth application card, the **Stereo Sizing Tool**, added on
+  the human's instruction. It is a concept like the Data Processing Workspace and
+  Automated Report Generation, so it carries no `Open` door. Two consequences:
+  the grid drops from five across to three, because six across leaves about
+  190px per card and the body copy will not sit in that; and the card has no
+  photographed mockup, so its concept interface is **drawn as an SVG in the
+  markup** rather than shipped as another `.webp`, following the decision above
+  about new visuals. The reference product it is modelled on is not named on the
+  page, per R9.
 - **2026-09-11** — Each page carries its own icon sprite, holding only the
   symbols it draws. The alternative was one shared sprite through
   `partials.js`, which fetches and assigns `innerHTML`: a `<use>` resolved
@@ -144,7 +153,7 @@ Two pages now, not one (R15).
 1. **Hero** — the gap, stated. Keeps the diver photograph, the logo and the wave.
 2. **What MARP changes** — two lanes of the same five stages, queued against
    overlapping. The one diagram this page gets (R2, R3).
-3. **Applications** — the five cards, unchanged in shape (A1, A2).
+3. **Applications** — the cards, unchanged in shape (A1, A2).
 4. **Keep reading** — the handoff band.
 5. **Close** — `Explore. Inform. Protect.`, login, API docs, developer docs.
 

@@ -53,12 +53,19 @@ inside the review story, where a detection is a proposal and a biologist decides
 
 ## The application cards
 
-Five cards. Two of the applications run in the browser here and carry an `Open`
-door; the rest are concepts and do not. That door is the only status marker on
-the card, deliberately (#152, A1). The card images are mockups and stay mockups:
-a screenshot of the Picture Mosaic Reviewer would put real survey imagery and
-real species identifications on a public page (#152, A2). The alt text says
-`Concept interface` only for the three that are concepts.
+Six cards, in two rows of three. Two of the applications run in the browser here
+and carry an `Open` door; the rest are concepts and do not. That door is the only
+status marker on the card, deliberately (#152, A1). The card images are mockups
+and stay mockups: a screenshot of the Picture Mosaic Reviewer would put real
+survey imagery and real species identifications on a public page (#152, A2). The
+alt text says `Concept interface` only for the ones that are concepts.
+
+**The Stereo Sizing Tool card has no photographed mockup.** Its concept interface
+is drawn in the markup as an SVG and styled by the `.card-mock__*` rules, rather
+than shipped as another `.webp`. What it draws is the actual idea: the same two
+points picked in a calibrated pair of cameras, with the horizontal offset between
+the two panes being what a length comes out of. Anything else added to this
+section without a screenshot should be drawn the same way.
 
 ## Traps
 
