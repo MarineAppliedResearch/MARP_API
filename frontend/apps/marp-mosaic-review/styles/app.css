@@ -448,7 +448,7 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 /* ---------------------------------------------------------------- committed outcomes */
 /* After a commit the page stays loaded, so the result has to be visible on the tiles
    themselves — otherwise a delete looks identical to a mark that never happened. */
-.tile.out-deleted  { outline: 2px solid var(--red-500); }
+.tile.out-deleted  { outline: 2px solid var(--red-500); cursor: default; }
 .tile.out-deleted img { filter: grayscale(1) brightness(.28); }
 .tile.out-deleted::after {
   content: ""; position: absolute; inset: 0; z-index: 2;

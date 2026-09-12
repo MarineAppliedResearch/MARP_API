@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#138
 repos: [marp-api]
-status: design
+status: verifying
 needs: []
 ---
 
@@ -22,7 +22,9 @@ ago.
   not a condition written into a click handler. One predicate, so every caller asks the
   same question.
 - **R2** — A destroyed tile refuses the exception gesture (left click / first tap):
-  `toggleMark` changes nothing, fires nothing, and does not add the id to `state.touched`.
+  `toggleMark` changes nothing and fires nothing. Not *"the id is absent from
+  `state.touched`"* — it is already there, because the reviewer marked the tile before
+  deleting it; what has to hold is that the dead click changes nothing.
 - **R3** — A destroyed tile refuses the accept gesture (right click on a pointer, double
   tap on touch): `acceptMark` changes nothing and fires nothing. It is **not** the A4
   refusal shape — no per-tile refusal message; a destroyed tile stops being a target rather
@@ -72,6 +74,13 @@ ago.
   rather than in `ui/mount.js`. The issue is explicit about this: a guard in the click
   handler alone leaves `toggleMark`, `acceptMark` and `openCorrection` each reachable by
   another path (the picker's own controls, the keyboard, the console).
+- **2026-09-12** — Two of the five refusals are unreachable today and are kept anyway.
+  `acceptMark` (R3) cannot be reached because destroyed tiles exist only in Delete Mode and
+  Delete Mode has no accepted value (#126 A2); `openPicker` (R4) needs an exception mark,
+  which a destroyed tile can no longer have. `openCorrection` and `toggleMark` and
+  `markAllOnPage` are all reachable. The guards are one named question asked in five
+  places rather than four correct paths and a fifth that depends on an unrelated rule
+  staying true.
 - **2026-09-12** — The tile is not `disabled` and does not get `pointer-events: none`.
   Either would make a click at the render tier a Playwright error rather than a click that
   does nothing, which is the behaviour actually being asserted. `aria-disabled` says the
@@ -100,11 +109,27 @@ ago.
 
 ## Test plan
 
-Filled in at G3.
+- **R1** — `tests/unit/model.test.mjs`, *"R1: an observation a commit destroyed is
+  destroyed, and nothing else is"*. Proved red first: `page.isDestroyed is not a function`.
+- **R2–R5** — `tests/requirements.js`, four checks under *Delete mode*, each driving a real
+  commit through the confirmation rather than writing an outcome by hand. Three went red
+  against the old store; R3 is a pin rather than a tripwire and says so in its comment.
+- **R2, R3, R4, R5, R6, R7, R8** — `tests/e2e/render.spec.mjs`, *"a tile whose row has been
+  destroyed"*, five tests. Red against the old files, on `class="tile marked"` drawn over a
+  destroyed observation. R5 is desktop-only: `.markall` is `display: none` under the phone
+  media query, so the page-level mark is not a gesture that exists there.
+- **Not covered** — the API tier. Nothing here is in the gap between what a commit
+  recorded and what the row still says: the refusal reads the commit's own answer, and both
+  backings put the same `deleted` outcome there (`data.js:1145`,
+  `repository/mosaic-commit.repository.js:942`). A `tests/api/` case would destroy a real
+  observation from the corpus to assert a client-side refusal, and there is nothing to
+  restore it with.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** Four assumptions, none blocking — each is stated with the answer proposed and
-  the reasoning, so a one-line "yes" settles all four. Implementation follows the plan
-  above; if any of them is answered differently the change is small in each case.
+- **Gate:** verifying
+- **Notes:** Implemented and verified at the unit, contract and render tiers. Four
+  assumptions are still open and none blocked implementation — each carries the answer it
+  was built on, so a one-line "yes" settles all four and a different answer is a small
+  change in each case. One thing found and left alone: `retryFailedThumbnails` (A4) can
+  still name a destroyed row.

@@ -456,6 +456,14 @@ function reorder() {
   state.parked = new Map();
 }
 
+/**
+ * Has this sitting's commit destroyed this observation? (#138)
+ *
+ * One question in one place, because the refusal has five callers and a condition copied
+ * five times is a condition that will be right in four of them.
+ */
+const destroyed = (id) => page.isDestroyed(state.outcomes, id);
+
 /* ---------------------------------------------------------------- actions */
 
 /**
@@ -1128,6 +1136,10 @@ export const actions = {
    */
   toggleMark(id) {
     if (!state.rows.some((r) => r.observation_id === id)) return;
+    /* Nothing more can be recorded about a row the commit destroyed (#138). Silently,
+       because a destroyed tile stops being a target rather than explaining itself on
+       every click -- which is what separates this from A4's per-tile refusal. */
+    if (destroyed(id)) return;
     const had = state.marks.has(id) && (state.marks.get(id).kind || MARK_EXCEPT) === MARK_EXCEPT;
     state.marks = page.toggleMark(state.marks, id, MARK_EXCEPT);
     state.touched.add(id);
@@ -1153,6 +1165,7 @@ export const actions = {
   acceptMark(id) {
     const row = state.rows.find((r) => r.observation_id === id);
     if (!row) return;
+    if (destroyed(id)) return;                     // gone from the database (#138)
     if (!acceptedValue(state.mode)) return;        // Delete: inert, and silently so
 
     const { ok, reason } = acceptRefusal(state.mode, row);
@@ -1183,6 +1196,9 @@ export const actions = {
   },
 
   openPicker(id) {
+    /* A destroyed row has nothing left to describe: the reason the panel would record
+       lives on `observation_reviews`, which the delete cascaded away (#138). */
+    if (destroyed(id)) return;
     /* An **exception** only. The panel chooses a flag or exclusion reason, and an accept
        mark has nothing in that vocabulary to say (#126) -- so its badge is not a target. */
     if (!state.marks.has(id) || (state.marks.get(id).kind || MARK_EXCEPT) !== MARK_EXCEPT) return;
@@ -1201,6 +1217,10 @@ export const actions = {
 
   /** Straight back into the chooser from a tile that was already changed. */
   openCorrection(id) {
+    /* Before the mark, not after: this route *creates* an exception mark on its way in,
+       so guarding only `toggleMark` would leave the chip able to mark a destroyed
+       row (#138). */
+    if (destroyed(id)) return;
     /* An **exception** mark, because that is what the panel describes and because saying
        the species is wrong is saying something is wrong. This already created one on an
        unmarked tile; #126 only makes it say which kind. */
@@ -1308,11 +1328,16 @@ export const actions = {
   },
 
   markAllOnPage() {
-    state.marks = page.markAll(state.marks, state.rows);
+    /* The page, less whatever this sitting destroyed (#138). Marking a destroyed row here
+       is how the app manufactures the `not-found` skip against itself: the next commit
+       sends a row the reviewer deleted a moment ago, and the reason the server gives back
+       says somebody *else* deleted it. */
+    const targets = state.rows.filter((r) => !destroyed(r.observation_id));
+    state.marks = page.markAll(state.marks, targets);
     /* Marking the page *is* a decision on every row of it, so every row is hand-decided
        now and must not be re-seeded behind the reviewer. Clear is what undoes it. */
-    state.rows.forEach((r) => state.touched.add(r.observation_id));
-    fire('markAllOnPage', { count: state.rows.length, scope: 'page' });
+    targets.forEach((r) => state.touched.add(r.observation_id));
+    fire('markAllOnPage', { count: targets.length, scope: 'page' });
     notify();
   },
 

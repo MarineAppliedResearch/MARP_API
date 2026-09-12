@@ -1981,6 +1981,104 @@ test.describe('progress is not in the rail', () => {
     });
 });
 
+/* ------------------------------ a committed delete is not interactive (#138) */
+
+test.describe('a tile whose row has been destroyed', () => {
+  /**
+   * Delete two tiles in Delete Mode and hand back the first one's id.
+   *
+   * The tile is pinned by the same id throughout: a locator describing a *state* -- and
+   * `.tile:not(.marked)` is one -- slides onto a different tile the moment the state
+   * changes, which is how three tests here were wrong before they were right.
+   */
+  async function destroyTwo(page) {
+    await page.goto('./');
+    await ready(page);
+    await page.locator('.seg button', { hasText: 'Delete' }).click();
+    await ready(page);
+
+    const ids = [];
+    for (let i = 0; i < 2; i++) {
+      const id = await page.locator('.tile:not(.marked):not(.failed)').first()
+        .getAttribute('data-id');
+      ids.push(id);
+      await page.locator(`.tile[data-id="${id}"]`).click();
+    }
+    await page.locator('#commit').click();
+    await page.locator('[data-confirm="go"]').click();
+    await expect(page.locator('.tile.out-deleted')).toHaveCount(2);
+    return ids[0];
+  }
+
+  test('R2/R8 (#138): clicking it does nothing, and it says it is not a target',
+    async ({ page }) => {
+      const id = await destroyTwo(page);
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+
+      /* The reported defect, at the tier that can see it: the store was correct about
+         everything else on this page, and the click still marked a row that no longer
+         existed. */
+      /* `force`, and it is the point rather than a workaround: Playwright reads
+         `aria-disabled` as *not enabled* and would wait the tile out, which would prove
+         the attribute and not the behaviour. The browser dispatches the click regardless
+         -- `aria-disabled` is advisory -- so this is the dead click a reviewer makes, and
+         the store is what refuses it. */
+      await tile.click({ force: true });
+      await expect(tile).not.toHaveClass(/marked/);
+      await expect(tile).toHaveClass(/out-deleted/);
+      await expect(tile.locator('.badge')).toHaveText(/DELETED/);
+      /* Exactly one badge, still: a mark badge appearing beside DELETED is what the
+         click used to draw. */
+      await expect(tile.locator('.badge')).toHaveCount(1);
+      await expect(tile).toHaveAttribute('aria-disabled', 'true');
+    });
+
+  test('R6 (#138): the tooltip says why nothing happens', async ({ page }) => {
+    const id = await destroyTwo(page);
+    /* DELETED states the fact. The reviewer's actual question is why their clicks do
+       nothing, and that is what the title answers. */
+    await expect(page.locator(`.tile[data-id="${id}"]`))
+      .toHaveAttribute('title', /removed from the database/i);
+  });
+
+  test('R3/R4 (#138): neither the accept gesture nor the badge reaches it',
+    async ({ page }) => {
+      const id = await destroyTwo(page);
+      const tile = page.locator(`.tile[data-id="${id}"]`);
+
+      await tile.click({ button: 'right', force: true });     // see the note above
+      await expect(tile).not.toHaveClass(/marked|accept/);
+      await expect(tile.locator('.refusal')).toHaveCount(0);
+
+      /* The badge is not a target either: `outcomeBadge` gives the deleted case no
+         `data-badge`, and the store refuses the panel by both routes anyway. */
+      await tile.locator('.badge').click({ force: true });
+      await expect(page.locator('.pick')).toHaveCount(0);
+      await expect(tile).not.toHaveClass(/marked/);
+    });
+
+  test('R7 (#138): it stays on screen with its picture', async ({ page }) => {
+    const id = await destroyTwo(page);
+    /* Still there to be looked at -- the cascade takes database rows, not the JPEG --
+       which is the point of leaving it up for the rest of the sitting. It goes on the
+       next query, which is existing behaviour and correct. */
+    await expect(page.locator(`.tile[data-id="${id}"]`).locator('img')).toHaveCount(1);
+  });
+
+  test('R5 (#138): "flag all on page" steps over it', async ({ page }, info) => {
+    /* Desktop only, and not for convenience: `.markall` is `display: none` under the
+       phone media query, so the page-level mark is not a gesture that exists there. */
+    test.skip(info.project.name === 'phone', 'the page-level mark is hidden on a phone');
+    const id = await destroyTwo(page);
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+
+    await page.locator('#markAll').click();
+    await expect(page.locator('.tile.marked').first()).toBeVisible();
+    await expect(tile).not.toHaveClass(/marked/);
+    await expect(page.locator('.tile.out-deleted')).toHaveCount(2);
+  });
+});
+
 /* ------------------------------------------- the delete confirmation (#71) */
 
 test.describe('the delete confirmation', () => {
