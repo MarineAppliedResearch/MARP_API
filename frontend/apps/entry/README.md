@@ -40,6 +40,19 @@ Settled in #152, and it is the part most likely to be undone by accident.
   that, and it runs in CI.
 - **No em dashes, no rule-of-three lists, and no "it is not this, it is that."**
   Those are the patterns that make a page read as machine-written.
+- **Contrast only with what really happens.** Setting MARP against an
+  alternative works only when the alternative is what people actually do today,
+  because that is the only comparison a reader recognises. The worked example is
+  `a biologist opens a screen of candidates rather than an empty one`, which was
+  cut: nobody was ever going to open an empty screen, so the sentence invented an
+  alternative that was never on the table and then credited MARP with avoiding
+  it. That is the `it is not X, it is Y` tic above, wearing `rather than`
+  instead. The contrasts that survive on these pages all pass the test, because a
+  normal player really does land near the frame, overwriting a decision really is
+  the usual thing to do, reviewing one observation at a time really is the old
+  way of working, and a general tool really does have to be configured first. If
+  a reader would not have imagined the alternative unprompted, delete it and
+  state the thing plainly.
 - **Short paragraphs.** Two or three sentences and then a break, everywhere on
   both pages. A `.section-heading__summary` may be several of them stacked, and
   `.explainer` is a two-column block that wants short ones. What is banned is the
