@@ -175,7 +175,11 @@ export const state = {
   /* What the commit button is doing. A page commit is the one action here that can
      take real time and can fail, and it is also the irreversible one, so it says so
      rather than leaving the reviewer wondering whether the click registered. */
-  commit: { busy: false, status: null },  // status: null | 'ok' | 'failed'
+  /* Which button ran, so the acknowledgement lands on that one alone (#131). The
+     status was one field serving two controls, so committing only the marked tiles
+     also turned the page sweep green -- the page looked accepted when it was not. */
+  commit: { busy: false, status: null, which: null },  // status: null | 'ok' | 'failed'
+                                                      // which:  null | 'sweep' | 'marked'
   /* What a destructive commit is waiting to be told to do: null, or the impact the
      reviewer is being asked to accept. Held in the store rather than the dialog so the
      rule about what is destroyed and the thing that destroys it cannot drift apart. */
@@ -219,7 +223,7 @@ let commitStatusTimer = null;
 function clearCommitStatus(after = 2400) {
   clearTimeout(commitStatusTimer);
   commitStatusTimer = setTimeout(() => {
-    state.commit = { ...state.commit, status: null };
+    state.commit = { ...state.commit, status: null, which: null };
     notify();
   }, after);
 }
@@ -265,24 +269,28 @@ function clearFailure() {
 }
 
 /**
- * Which annotation list an observation's species belongs to (A11, F15).
+ * Which annotation list an observation may be corrected against (A11, F15; #130 A1).
  *
- * **From the facets, not from a copy of the session-type map.** A11 noted that the list is
- * implied by the owning session's `type` through `db/species-lists.js`, and that a second
- * copy of a mapping which governs scientific meaning is the worse of the two available
- * answers. It is not needed: the facets answer already carries `list` per species, because
- * A10(c) needs it to know when one common name is standing for two organisms. So the
- * observation's own species is looked up in the list the server just sent.
+ * **The row says so, because the server resolved it.** This used to look the observation's
+ * own `species_id` up in `state.facets.species`, and it was **always null against the
+ * API** — the row has never carried `species_id`, so the lookup could not miss, and the
+ * picker's search was refused before a request was sent (#130).
  *
- * Null where the observation has no species — about 4% of rows legitimately do not — and
- * null is exactly the case A11's "widen to the full catalogue" action exists for, along
- * with the `Other` session type, which maps to no list at all.
+ * The replacement is not the copy of `db/species-lists.js` that A11 rejected. A11's
+ * objection stands and is satisfied rather than contradicted: **the client is not doing
+ * the mapping**, the server is, and it sends the answer as `species_list`.
+ *
+ * The list is the **session's**, not the current species'. That is the part worth keeping:
+ * scoping the picker by whatever the observation is classified as *now* means an
+ * observation corrected onto the wrong list only ever offers candidates from that wrong
+ * list, and the mistake can never be corrected back through the tool. The session type is
+ * the invariant.
+ *
+ * Null where the session type names no list — `Other` genuinely does not say which was in
+ * use — and that is exactly the case the "search all lists" action exists for.
  */
 function speciesListFor(row) {
-  if (!row || row.species_id == null) return null;
-  const options = state.facets.species || [];
-  const hit = options.find((o) => String(o.value) === String(row.species_id));
-  return (hit && hit.list) || null;
+  return (row && row.species_list) || null;
 }
 
 /**
@@ -606,7 +614,7 @@ async function runCommit({ selective }) {
       : commitCount({ mode: startedIn, rows: state.rows, marks })
   });
 
-  state.commit = { busy: true, status: null };
+  state.commit = { busy: true, status: null, which: selective ? 'marked' : 'sweep' };
   notify();
 
   let res;
@@ -616,7 +624,7 @@ async function runCommit({ selective }) {
     /* Nothing is applied. The marks are untouched, so the reviewer can try again
        without redoing the page -- and that holds for all three of A4's failures, which
        is R20: none of them may silently discard the reviewer's work. */
-    state.commit = { busy: false, status: 'failed' };
+    state.commit = { busy: false, status: 'failed', which: selective ? 'marked' : 'sweep' };
     recordFailure(err, request);
     clearCommitStatus();
     notify();
@@ -624,7 +632,7 @@ async function runCommit({ selective }) {
   }
   clearFailure();
 
-  state.commit = { busy: false, status: 'ok' };
+  state.commit = { busy: false, status: 'ok', which: selective ? 'marked' : 'sweep' };
   clearCommitStatus();
 
   /**
@@ -1639,12 +1647,14 @@ export const actions = {
    * **Scoped to the observation's own list, with an explicit action to widen.** A common
    * name identifies a species only *within* a list (F15) — taxserials below 10000 are
    * local codes invented per list and reused — so an unscoped search can offer two
-   * different organisms under one label. The list is implied by the owning session's
-   * `type`, which the row carries as `session_type`.
+   * different organisms under one label. The list is the owning session's, resolved by the
+   * server and carried on the row as `species_list` (#130 A1).
    *
    * A11 was answered so that an off-list correction stays **possible but deliberate**: the
    * contract already contemplates one, and the `Other` session type maps to no list at all,
-   * so widening is how those observations get a picker at all.
+   * so widening is how those observations get a picker at all. **Widening is a real
+   * request now** — `GET /api/v2/species/search` — where a null list used to be turned into
+   * an empty array without anything being asked (#130 R3).
    *
    * **Nothing is sent for an empty term.** `GET /api/v2/species/list/:list/search` rejects
    * an empty `q` with a 400, deliberately — "an empty search returning all 224 entries

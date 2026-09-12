@@ -1,201 +1,105 @@
 ---
-task: MarineAppliedResearch/MARP_API#126
+task: MarineAppliedResearch/MARP_API#104
 repos: [marp-api]
 status: design
 needs: []
 ---
 
-# Two kinds of mark, and two commits
+## Goal
 
-Design specification for MARP_API#126.
-
-**G1 only. Nothing is implemented while a `blocking` assumption below is open.**
-
-## Where this came from
-
-The human reviewed real observations in the mosaic for the first time on 2026-09-10, against
-1,062 rows from three dives, and the commit gesture did not hold up:
-
-> *"The mosaic reviewer's idea of flagging certain things and then hitting a button and having
-> everything else accepted isn't really working when trying it out for real. There are times
-> when you just want to exclude things, or just approve certain items, without it affecting
-> anything else."*
-
-**This is the only feedback in the project that came from using the tool rather than from
-reading the code**, which is why it outranks Phase 9.
-
-## What the reviewer gets
-
-Settled by the human, 2026-09-10.
-
-- **Left click marks a tile as the exception**, exactly as it does now — `flagged` in
-  Scientific, `excluded` in Training, `deleted` in Delete.
-- **Right click marks a tile as accepted** — `reviewed` in Scientific, `promoted` in Training.
-  This is new: **a mark now carries a kind.**
-- **The main commit button is new, and is the bigger one.** It commits **only what has been
-  marked**, each tile according to its own mark, and says nothing at all about a tile nobody
-  touched.
-- **The existing sweep survives as a smaller, secondary button to its right**, doing exactly
-  what it does today.
-
-His words: *"the new button will be the main button, the bigger button… that will only accept
-the ones that you've already marked, and the current button will be kind of a smaller button
-on the right hand side that will do what it currently does."*
-
-## What is already true, checked rather than assumed
-
-- **A mark has no kind today.** `state.marks` is a set of `observation_id`, and
-  `commitOutcome` reads it with a bare `marks.has(r.observation_id)`
-  (`src/model/modes.js:220`). Every kind-aware rule below is new behaviour, not a rename.
-- **Each mode already declares both halves of the vocabulary.** `MODES[mode].marks` is what a
-  marked tile becomes, `MODES[mode].accepts` is what an unmarked one becomes
-  (`modes.js:18-60`). So "accept this one specifically" has a value to write in every mode
-  that has one — and **`delete` has `accepts: null`**, which is the exception.
-- **Delete already commits only what is marked.** `commitActsOnMarked(mode)` branches
-  `commitOutcome` for exactly that (`modes.js:222-227`). **The new main button is that
-  behaviour generalised**, so its shape is proven rather than invented.
-- **Accepting needs imagery; flagging does not.** An unmarked tile without a ready thumbnail
-  counts as `skips`, never `accepts` (`modes.js:230-231`).
-- **A page arrives with its existing exceptions already marked** (`page.seedMarks`), because
-  committing a page holding untouched flags used to clear them silently.
-- **`state.touched` records what the reviewer decided by hand**, so a take-back is not
-  re-seeded.
-- **The commit button already reports on itself** — it shows the count, disables when a commit
-  would do nothing, and says how many will be skipped.
-- **There is one commit button** (`index.html:94`) and **no `contextmenu` handler** anywhere
-  in `src/ui/`.
-- **The render tier runs every test at desktop *and* phone width, deliberately.**
-
-## Open assumptions
-
-- [x] **A1 · product/UI · blocking** — **What is the accept gesture on a touch screen?**
-  Right click does not exist on a phone, and the render tier runs the whole suite at phone
-  width on purpose. This is the gesture the human expects to use *most*, so it cannot be
-  desktop-only.
-  Candidates: **long press**, the conventional touch analogue, but slow for a gesture repeated
-  hundreds of times a page; a **second tap zone** on the tile, fast but it shrinks the target;
-  a **mode toggle** making left click mean accept until switched back, fastest for a run of
-  accepts and worst for a mixed page; or **no touch equivalent**, accepting that phone review
-  uses the two buttons only.
-  **Recommendation: long press, with the phone cost said out loud rather than hidden.** The
-  human's call — he is the one who will do it thousands of times.
-
-- [x] **A2 · product/UI · blocking** — **What does right click mean in Delete Mode?**
-  `MODES.delete.accepts` is `null`: the opposite of deleting is leaving a row alone, which
-  needs no record, so an accept mark has nothing to mean there.
-  Candidates: **inert**; **clears a mark**, which is useful and consistent; or Delete is
-  **excluded** from the feature and keeps its single button.
-  **Recommendation: inert, and the two buttons collapse to one in Delete** — the new main
-  button and today's Delete button would do the identical thing, so showing both would be two
-  controls with one meaning.
-
-- [x] **A3 · behavioural · blocking** — **Does a page still arrive with its existing exceptions
-  marked, now that a mark has a kind?**
-  `seedMarks` exists because committing a page holding untouched flags silently cleared them —
-  **under the sweep.** The new main button cannot clear what it was never told about, so that
-  reason does not apply to it.
-  The risk runs the other way: if arriving flags are seeded and the reviewer presses the *main*
-  button, they re-commit decisions they never made — harmless to the record but dishonest about
-  who decided what, and `observation_reviews` carries a reviewer per row.
-  Candidates: seed as now and let the main button re-write them; seed nothing and let the
-  sweep's old trap return; or **seed as now, and have the main button ignore seeded marks the
-  reviewer has not touched** — `state.touched` already tells them apart.
-  **Recommendation: the third.** The only one that keeps both buttons honest, and the data to
-  do it already exists.
-
-- [x] **A4 · product/UI · blocking** — **What does an accept mark on a tile with no picture
-  do?** Accepting needs imagery and flagging does not; that rule is settled and on the record.
-  An explicit accept mark is the reviewer saying *"I have judged this one"*, which they cannot
-  have done without seeing it.
-  Candidates: **refuse the mark** at click time, with the tile saying why; **allow it and skip
-  at commit**, reported in the skip count as today; or allow it outright and let *"No imagery"*
-  become a legitimate acceptance.
-  **Recommendation: refuse at click time.** The skip count explains a *sweep*, where the
-  reviewer never singled the tile out; refusing a deliberate click is clearer than accepting it
-  and quietly not doing it.
-
-- [x] **A5 · API contract · blocking** — **Does the commit request change shape?**
-  The endpoint takes `observations: [{ observation_id, version }]` plus `marks`. The main
-  button must send only the marked, each with its kind — which the existing request can express
-  if `marks` carries the kind and cannot if it does not.
-  **Recommendation: extend `marks` with the kind rather than adding a second list**, because
-  one list keyed by `observation_id` is what `applyCommit` already folds by, and two lists
-  reintroduce the question of what an id appearing in both means.
-  **This is a change to a published contract with a snapshot tripwire over it**, so whatever is
-  chosen is *moved into* that list, never admitted by loosening it.
-
-- [x] **A6 · product/UI · non-blocking** — **What does a tile look like for each kind?**
-  The tile already derives four things at once — marked, existing, outcome, borrowed — with a
-  fixed precedence, and it is the area of the app that has produced the most reported bugs. A
-  fifth distinction has to fit that table rather than sit beside it.
-  Recommendation: today's mark styling for an exception mark and the mode's accept colour for
-  an accept mark, with no new slot — `.badge` stays exactly one element per tile.
-
-## Decisions
-
-Answered by the human on 2026-09-10 unless noted.
-
-- **A1 — the accept gesture on touch is a double tap, with a long press as the fallback.**
-  *"I'm thinking A1 might be a double tap, and if it can't be a double tap, then a long tap
-  will be okay for now."* Double tap is the faster gesture and this is the one repeated
-  hundreds of times a page, so it is worth attempting first. **If double tap cannot be made
-  reliable** — it competes with the browser's own double-tap-to-zoom on a phone, and
-  distinguishing it from two separate marks needs a timing window that will feel wrong if it
-  is tuned badly — **fall back to long press and say so in the report rather than shipping a
-  flaky gesture.**
-
-- **A3 — the page still arrives looking pre-marked, and the main button ignores what the
-  reviewer did not touch.** *"I want it to look pre-marked before you touch anything. You can
-  change it if you want it."*
-  So `seedMarks` is unchanged: flags already on the record are drawn as marks the moment the
-  page loads, which is what the reviewer asked to see.
-  The second half is settled here rather than by him, as offered: **the main button acts only
-  on marks the reviewer made in this sitting.** `state.touched` already holds exactly that set.
-  Without it, pressing the main button on a freshly loaded page would re-commit flags nobody
-  touched, under this reviewer's name and today's date — and `observation_reviews` records a
-  reviewer per row, so that is the record asserting a decision that was never made. The sweep
-  is unaffected and keeps working as it does today.
-
-- **A2 — right click is inert in Delete Mode, and Delete keeps one button.** Taken as
-  recommended. `MODES.delete.accepts` is `null` because the opposite of deleting is leaving a
-  row alone, which needs no record — so an accept mark has nothing to mean. And the new main
-  button would do exactly what today's Delete button does, so showing both would be two
-  controls with one meaning.
-
-- **A4 — an accept mark is refused at click time on a tile with no picture**, with the tile
-  saying why. Taken as recommended. Accepting needs imagery and flagging does not; the skip
-  count exists to explain a *sweep*, where the reviewer never singled the tile out. Refusing a
-  deliberate click is clearer than accepting it and quietly not doing it.
-
-- **A5 — `marks` carries the kind; no second list.** Taken as recommended. One list keyed by
-  `observation_id` is what `applyCommit` already folds by, and two lists reintroduce the
-  question of what an id appearing in both means. **This changes a published contract with a
-  snapshot tripwire over it, so the key is moved into that list and the test is never
-  loosened.**
-
-- **A6 — non-blocking, taken as recommended.** Today's mark styling for an exception mark, the
-  mode's accept colour for an accept mark, no new slot, and `.badge` stays exactly one element
-  per tile.
+MARP gets a Machine Learning Dashboard: the operator surface for running inference and
+training on the distributed GPU pool, managing saved training datasets and registered
+models, and understanding the worker pool. This task is the **interactive HTML mockup** of
+that application — eight tabs, real look and feel, real operation, fixture data. Nobody
+runs a job from it yet. Its purpose is to settle the design so that a later phase can wire
+it to the API without re-litigating layout, vocabulary or workflow.
 
 ## Requirements
 
-- **R1** — Left click marks the exception, unchanged in every mode.
-- **R2** — Right click marks accepted, in every mode that has an accepted value.
-- **R3** — The main commit button writes **only** marked tiles, each according to its kind,
-  and writes nothing for a tile that was not marked.
-- **R4** — The secondary button keeps today's behaviour exactly.
-- **R5** — The main button is visually primary; the secondary is smaller and to its right.
-- **R6** — Both buttons report what they will do before doing it, and both disable when they
-  would do nothing.
-- **R7** — A tile marked one way then the other ends with the later mark. Clicking a mark off
-  leaves the tile untouched by either button.
-- **R8** — Every new behaviour has a test at a tier that can observe it: the rules in
-  `model/`, the gestures and both buttons in the render tier at **both** viewports.
-- **R9** — Nothing is admitted to the mosaic row or the commit contract by loosening a
-  tripwire.
+- **R1 · Visual family** — the app reads as MARP. Palette comes from
+  `frontend/shared/assets/css/tokens.css` and is never restated. Logo is
+  `marp-logo-compact.png`, the treatment the Picture Mosaic Reviewer uses. Dense compact
+  panels, 12px base, `tabular-nums`, dark marine ground, restrained luminous accents.
+- **R2 · Shell** — a fixed left rail carrying the logo, the eight destinations and a
+  status foot; a top bar carrying the page title, the project scope, search and the two
+  primary job actions. The shell is identical on every tab and is authored once.
+- **R3 · Eight tabs, each recognisably the drawn mockup** — Dashboard, Jobs, Inference,
+  Training, Datasets, Models, Workers, History. Each is drawn from its own mockup on #104,
+  which is the reference for layout and content.
+- **R4 · Basic operation, not a picture** — the rail navigates; in-page tab strips switch;
+  selects and search filter the rows they are drawn above; sliders and steppers move and
+  their read-outs follow; paging pages; a row opens its detail; a form's summary reflects
+  what has been chosen. Every control either does its thing or is visibly disabled.
+- **R5 · One fixture, one shape** — every tab reads `fixtures/ml-dashboard.json`. Field
+  names match the real API response shapes recorded on #104 wherever the API can already
+  answer, so wiring the app later is a change of source and not a change of vocabulary.
+- **R6 · Honest about what is not built** — where a screen shows something the API has no
+  representation for (a logical job over a project, "completed with issues", a job event
+  log, an artifact download, worker mutation), the app still draws it, and `DESIGN.md`
+  records it in one list. A mockup that quietly invents an API is how the implementation
+  agent gets misled.
+- **R7 · Responsive** — usable at desktop width and at phone width. The rail collapses to
+  icons and then to a sheet; tables that cannot fit scroll inside their own panel and never
+  scroll the page sideways.
+- **R8 · Its own package** — the app owns its `package.json`, a static server, a syntax
+  check and its walkthrough scenarios, the way `marp-mosaic-review` does, so it can be
+  extracted later without untangling anything.
 
-## Out of scope
+## Open assumptions
 
-- Phase 9 (scale) and Phase 10 (the video drill-down).
-- The reason vocabulary.
-- Thumbnails, the sweeper (#121), the file server (#120).
+- [x] **A1 · product/UI · non-blocking** — answered 2026-09-09 from #104 and the mockups:
+  the mockups are drawn as they are, including surfaces the API cannot answer yet. The
+  issue's mockup process asks for exactly that, and R6 is how the gap is recorded rather
+  than hidden. Getting this wrong costs a label, not a rebuild.
+- [x] **A2 · product/UI · non-blocking** — answered 2026-09-09: the mockups' top-bar
+  **Environment: Production** select is dropped. MARP has no environment concept, and a
+  mockup that offers a Production/Staging switch teaches the implementation agent that one
+  exists. **Project** stays; it is real.
+- [x] **A3 · product/UI · non-blocking** — answered 2026-09-09: the rail carries eight
+  destinations, following the mockups, where #104's prose lists seven functional domains.
+  History is drawn as its own tab there and Jobs keeps the active/recent view.
+- [ ] **A4 · product/UI · non-blocking** — the Inference tab's mockup carries a
+  **Scheduled Inference** sub-tab. Nothing in #104 asks for scheduling and no API
+  represents it. Drawn as a disabled sub-tab labelled as a later milestone unless told
+  otherwise.
+
+## Decisions
+
+- **2026-09-09** — the app lives at `frontend/apps/marp-ml-dashboard/`. `app.js` already
+  serves any folder under `frontend/apps/` by name, so adding it is a folder and not a
+  route.
+- **2026-09-09** — one shared stylesheet holds the shell and the component vocabulary;
+  each group of tabs adds its own stylesheet for what only it needs. This is what lets
+  three agents draw eight tabs without fighting over one file.
+- **2026-09-09** — a tab is an ES module exporting `render(ctx)` and optionally
+  `mount(el, ctx)`. The router owns the shell and never reaches inside a tab.
+
+## Plan
+
+1. Shell and design system, authored once: `index.html`, `styles/app.css`, `src/app.js`,
+   `src/lib/dom.js`, `src/data.js`, `fixtures/ml-dashboard.json`, `DESIGN.md`, the package
+   and its tools.
+2. Eight tabs, three agents, disjoint files:
+   - Dashboard, Jobs, History — the table-and-rollup screens.
+   - Inference, Training — the two creation flows.
+   - Datasets, Models, Workers — the asset and pool screens.
+3. Integrate: one screenshot per tab at desktop and phone width.
+4. Narrated walkthrough per tab group, for the human's review.
+
+## Acceptance criteria
+
+- Every one of the eight tabs renders at 1672x941 and at 390x844 with no horizontal page
+  scroll and no element overlapping another.
+- Every control listed in R4 has been exercised in a browser test and asserted on its
+  effect, not on the fact that it was clicked.
+- `styles/*.css` contains no hex colour that is not a token reference, except the few
+  local surfaces `tokens.css` genuinely does not carry — each with a comment saying why.
+- `DESIGN.md` lists every surface that has no API behind it.
+- The app runs from a fixture with no server beyond a static file server.
+
+## Test plan
+
+Written at G3, in `.marp/verification.md`. The tiers this app has are the mosaic
+reviewer's: a syntax check, unit tests over anything with logic, Playwright at two
+viewports for what was drawn, and narrated walkthroughs. A store-level check cannot see a
+layout, and that is the failure mode this design is most exposed to.

@@ -1,0 +1,16 @@
+{
+  "name": "marp-ml-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MARP Machine Learning Dashboard \u2014 the design mockups. Static screens, no data layer yet; see DESIGN.md.",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "lint": "node tools/syntax-check.mjs && node tools/style-check.mjs",
+    "shots": "node tools/mock-shots.mjs",
+    "test": "node tools/syntax-check.mjs && node tools/style-check.mjs && node tools/mock-shots.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

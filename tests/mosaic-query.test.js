@@ -54,6 +54,9 @@ const seeded = {
     sessions: {},
     observations: {},
     userIds: [],
+    // A catalogue entry on a list the `Invert` session does not read against.
+    // Looked up rather than hard-coded: its id is a fact about one database.
+    offListSpeciesId: null,
 };
 
 /**
@@ -237,6 +240,41 @@ describe('the mosaic query (#105)', () => {
 
             seeded.sessions[key] = session.session_id;
         }
+
+        // Two sessions whose `type` the species-list map has an opinion about, so
+        // `species_list` can be asserted as a value rather than only as a key: one
+        // that names a list and one that deliberately names none.
+        for (const [key, type] of [['invertList', 'Invert'], ['otherList', 'Other']]) {
+            const [session] = await q(
+                `INSERT INTO sessions (project_id, user_id, dive, line, "lineId", type, "createdAt", "updatedAt")
+                 VALUES (:projectId, 1, :dive, 'L1', 'LID1', :type, NOW(), NOW())
+                 RETURNING session_id`,
+                { projectId: seeded.projectId, dive: `JEST-${key}-${runId}`, type }
+            );
+
+            seeded.sessions[key] = session.session_id;
+        }
+
+        // Seeded, not borrowed: the assertion is that the list follows the session
+        // rather than the species, and it means nothing without a species that is
+        // on some other list.
+        const [offList] = await q(
+            "SELECT id FROM species WHERE species_list = 'Fish' AND is_active = true ORDER BY id LIMIT 1"
+        );
+
+        seeded.offListSpeciesId = offList ? offList.id : null;
+
+        // One row per typed session. The `Invert` one is classified as a *Fish*
+        // species on purpose -- #130's A1 is that the picker's list comes from the
+        // session, not from whatever the observation happens to be classified as
+        // now, and this is the row that can tell the two apart.
+        await addObservations([
+            {
+                group: 'typed', sessionKey: 'invertList', obsID: 950000,
+                speciesId: seeded.offListSpeciesId,
+            },
+            { group: 'typed', sessionKey: 'otherList', obsID: 950001 },
+        ]);
 
         // Six rows, every `confidence` and every `updatedAt` identical, so the only
         // thing that can order them is the appended tie-break.
@@ -1112,6 +1150,14 @@ describe('the mosaic query (#105)', () => {
                 // exact keys is the tripwire, and relaxing it would disable the
                 // tripwire permanently to admit one field.
                 'species_comname',
+                // Owed to #130's A1: which annotation list the correction picker may
+                // offer from. **A property of the owning session's type, resolved by
+                // the server** -- deriving it from the observation's current species
+                // scopes the picker by whatever the species happens to be now, so an
+                // observation corrected onto the wrong list could never be corrected
+                // back. **Moved into this list rather than the list being loosened** --
+                // naming the exact keys is the tripwire.
+                'species_list',
                 'tc',
                 // Owed to #118 R11, and the last field Phase 6 adds to this row:
                 // whether the tile has a picture yet. **Moved into this list
@@ -1129,6 +1175,34 @@ describe('the mosaic query (#105)', () => {
                 // channel that can carry it.
                 'version',
             ]);
+        });
+
+        it('resolves species_list from the session type, not from the species (#130 R2)', async () => {
+            const res = await global.api.post(PAGES).send({
+                filters: { session: [seeded.sessions.invertList] }, pageSize: 1, pages: [1],
+            });
+
+            const row = res.body.pages[0].rows[0];
+
+            expect(seeded.offListSpeciesId).not.toBeNull();
+            expect(row.session_type).toBe('Invert');
+            // Classified as a Fish-list species, and the list is still the
+            // session's. Scoping by the current species instead would leave an
+            // observation corrected onto the wrong list unable to be corrected back.
+            expect(row.species_list).toBe('Inverts');
+        });
+
+        it('sends a null species_list where the session type names none', async () => {
+            const res = await global.api.post(PAGES).send({
+                filters: { session: [seeded.sessions.otherList] }, pageSize: 1, pages: [1],
+            });
+
+            const row = res.body.pages[0].rows[0];
+
+            // `Other` genuinely does not say which list was in use, and a default
+            // would attribute the observation to a list nobody chose.
+            expect(row.session_type).toBe('Other');
+            expect(row.species_list).toBeNull();
         });
 
         it('carries no processor_name, lineId or scientific_name', async () => {

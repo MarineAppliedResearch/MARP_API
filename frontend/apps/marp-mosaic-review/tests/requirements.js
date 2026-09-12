@@ -604,9 +604,13 @@ test('Correcting an observation',
   'a correction under a species filter takes the row off the page, and the other marks stay',
   async () => {
     await reset();
-    const species = state.rows[0].species_id;
-    state.filters.species = [species];       // the mosaic's premise: one predicted species
-    await actions.refresh();
+    /* `reset()` already asks the mosaic's premise -- one predicted species, Bat Star by
+       key. This line used to re-derive that same id from `state.rows[0].species_id`, a
+       field **only the fixture's row carries**: the endpoint has never sent one (#130), so
+       the check's premise could not have been set up against the real API at all, and it
+       was reading a value the filter above it had just chosen. */
+    ok(state.filters.species.length === 1,
+       'the premise: the page is one predicted species');
 
     const [a, b, c] = state.rows.slice(0, 3).map((r) => r.observation_id);
     ok(c != null, 'this check needs three rows of one species to be meaningful');

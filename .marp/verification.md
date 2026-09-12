@@ -1,195 +1,217 @@
-# Verification — MarineAppliedResearch/MARP_API#126
+# Verification — MarineAppliedResearch/MARP_API#142
 
-Two kinds of mark, and two commits. The plan below is for review **before** it is accepted as
-this phase's evidence.
+A test never touches data it did not create. The plan below is for review **before** it is
+accepted as this phase's evidence.
 
-**What has already happened.** G2 ran the suites to know the implementation worked — 273 client
-unit, 272 browser across two viewports, 603 API. What has *not* happened is anybody agreeing
-they are the right tests, or that the gaps below are acceptable. `## Results` stays empty until
-this plan is approved and run.
+**What has already happened.** The guard was built and exercised against scratch databases,
+and the full suite was run once against a throwaway copy of the corpus to see what it would
+catch. Those results are quoted below as evidence for *why the plan is shaped this way*;
+`## Results` stays empty until this plan is approved and run.
 
-## Why the tier choices matter more than usual here
+**Do not run `marp verify plan` against this file.** It drafts a plan from `task.md` and
+overwrites what is here. It already destroyed one plan this way.
 
-This change touches **the area of the app that has produced the most reported bugs** — the
-tile's four simultaneous derived states, with their fixed precedence — and adds a fifth
-distinction to it. It also adds the first gesture in the app that behaves differently on touch.
-So two tiers carry almost all the risk:
+## The one thing that makes this phase different
 
-- **render, at *both* viewports.** The only tier that can see what was drawn, and the only one
-  that can exercise a touch gesture at all. R8 requires both widths deliberately.
-- **wire** (`tests/unit/api-requests.test.mjs`). A mark now carries a `kind`, and this is the
-  only tier that asserts the *serialised* body. `deepEqual` on the request object would pass
-  for a `Map`, a `Set` or a dropped field.
+**The subject under test is the thing that would destroy the evidence.** Verifying a guard
+against corpus loss by running the suite against the corpus is how you lose a second
+observation to learn about the first.
 
-The other three — parse, unit, contract — are the working loop and cover the rules.
+So every run in this plan happens against **`mare_guard_test`** — a local database restored
+from the 08:20 dump with `pg_restore`, holding 2,094 observations, 29,693 keyframes and
+observation 1233, which the corpus itself no longer has. R8 of the spec says nothing in
+`mare_v1` changes, and the way to keep that promise is to never point at it.
+
+That is also the shape the platform is moving to anyway: #125 built the dump and the load,
+#132 wants the browser tier on a disposable database, and #144 wants walkthrough recordings
+on one. This phase is the third consumer of one idea.
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `model`: *a tap toggles a mark*, with `MARK_EXCEPT` explicit | unit | Left click is unchanged in every mode; an accepted tile **flips** rather than unmarking, because `had` now asks "was it already *this* kind". |
-| R2 | render: right click marks accepted, both viewports; badge is `REVIEWED`/`PROMOTED` in the accept colour | render | `contextmenu` is bound on `#grid`, so the browser menu is suppressed across the whole grid rather than per tile. |
-| R2 (touch) | render with `hasTouch: true`: *double tap accepts* · *two taps 600 ms apart are two marks* · *the main button commits from a tap* | render | **Not skipped on desktop** — a real touch context is constructed, because a skipped check looks green. |
-| R3 | `model` + contract: the selective commit sends `marked ∩ touched` and nothing else | unit + contract | The main button writes only what the reviewer marked **in this sitting**. A3's whole point. |
-| R3 | contract: a selective commit pins nothing and marks no page committed | contract | `pinnedIds` is the query's `exclude` set — pinning would silently remove every untouched tile from the reviewer's remaining work. |
-| R4 | the existing sweep tests, unchanged | contract + render | `commitOutcome` swapped `marks.has` for `isExcepted`; before #126 every mark was an exception, so the sweep's behaviour is identical by construction. |
-| R5 | render: `#commitMarked` before `#commit`, sweep outlined and smaller; Delete hides the main button | render | Only a browser can say which is visually primary. |
-| R5 | render: **the phone footer fits across**, added here | render | `.app` clips rather than scrolls, so an overflow is a commit button cut off the right edge. **Nothing asserted this before**, which is how it came to overflow at 524px in a 412px viewport with a single button. |
-| R6 | `model`: `commitOutcome` and `selectionOutcome` drive both buttons | unit | One `renderCommits`/`paintCommit` pair, so a button's number cannot disagree with its own commit. |
-| R6 | render: the main button's disabled title distinguishes *nothing marked yet* from *these marks came from the record* | render | The two disabled states mean different things to a reviewer. |
-| R7 | `model`: same gesture twice unmarks · the other gesture replaces · switching kind drops the reason | unit | The later gesture wins. |
-| R8 | 29 unit, 10 contract, 14 render (× 2 viewports) | all | — |
-| R9 | `model.test.mjs` mark shape; `api-requests.test.mjs` × 2 wire assertions | unit + wire | Three tripwires had `kind` **moved into** them. The mosaic row shape is untouched. |
-| A4 | render: an accept mark is refused at click time on a tile with no picture, and says why | render | Refusing a deliberate click beats accepting it and quietly not doing it. |
-| A5 | wire: `marks` carries `kind`; the server refuses a reason on an accept mark and refuses `kind: accept` on `/delete` | wire + http+db | 400 before any write. |
+| R1 | `tests/corpus-guard.test.js` drives four fixture suites as a child Jest run | API (jest-in-jest) | The rule holds in all three directions and does not misfire on the fourth. |
+| R1, R2 | `deletes-a-row.fixture.js` | fixture | `1 row(s) deleted that the suite did not create (4 -> 3)` — **the case that lost observation 1233**. |
+| R1, R2 | `mutates-a-row.fixture.js` | fixture | `row(s) modified, count unchanged at 3` — **the case a row count cannot see**, and the reason the check is a digest. |
+| R1, R2 | `leaves-a-row.fixture.js` | fixture | `1 row(s) added and left behind (3 -> 4)` — the 358 review rows already in the corpus. |
+| R1 | `tidies-up.fixture.js` | fixture | A suite that creates a row and removes it **passes**. A guard that fails everything is not a guard. |
+| R2 | `tests/reporters/summary-reporter.js` gained `onTestResult` | reporter | Without it the run said `1 failed` and never said why — a suite-level failure printed no message at all. |
+| R3 | `EXEMPTIONS` in `tests/setup/corpus-guard.js` | review | Every table is watched; each exemption carries its reason. |
+| R4 | `tests/setup/local-database-guard.js` as Jest `globalSetup` | review + manual | The suite refuses a non-local `DB_HOST`. `MARP_TEST_ALLOW_REMOTE_DB` overrides. |
+| R5 | the suite against an empty, CI-shaped database | API | 25 tests pass, guard silent. CI stays green for the right reason. |
+| R6 | the four fixtures above | — | This requirement *is* the guard's own test. |
+| R7 | measured overhead | API | 250 ms per test file against the full corpus; ~11 s across 44. |
+| R8 | `observations` and `observation_reviews` on `mare_v1`, before and after | review | The corpus is untouched by this phase. |
 
-## Requirements with no test
+## What the full-suite run already showed, and why it is in the plan
 
-None. If that is wrong, it is the most useful thing to say at this gate.
+Run once against `mare_guard_test`, not the corpus:
 
-## The tests that had to change, and what leaked
+```
+Test Suites : 42 passed, 3 failed, 45 total
+Tests       : 623 passed, 0 failed, 0 skipped, 623 total
 
-Four, and only one is a rule leaking:
+tests/thumbnails.test.js          - thumbnail_extraction_state: row(s) modified, count unchanged at 1
+tests/readonly-endpoints.test.js  - metaInfos: row(s) modified, count unchanged at 1
+tests/sessions-by-project.test.js - users: 1 row(s) added and left behind (33 -> 34)
+```
 
-1. `model.test.mjs` *a tap toggles a mark* — the mark shape gained `kind`. Moved into the
-   tripwire.
-2. `api-requests.test.mjs`, twice — wire mark entries gained `kind`. Moved in.
-3. **`render.spec.mjs` *the commit button follows the mode that owns the decision*** — it read
-   `#commit`'s `backgroundColor`, which is now `rgba(0,0,0,0)` because the sweep is outlined.
-   **The rule that leaked: the fill moved to the primary button**, and the test named the
-   element rather than the role. It now reads `#commitMarked` for review and training, `#commit`
-   for Delete, and additionally asserts the sweep is outlined in the same hue.
-4. `tests/requirements.js` `reset()` — gained `state.refused = null`, because the refusal fades
-   on a timer and the checks run faster than that.
+**623 tests passed and three suites changed the database.** That is the whole case for the
+guard in one line, and it is why fixing those three is in this phase rather than after it:
+a guard that leaves `npm test` permanently red would be switched off within a week.
 
-## Edge cases
+`thumbnails.test.js` is the one worth naming. `thumbnail_extraction_state` is the
+extraction worker's running/paused switch, held as a single row — so that suite could leave
+the human's thumbnail extractor in a state he did not choose, and nothing reported it.
 
-- **Two taps 600 ms apart** — outside the 320 ms window, so two separate marks rather than an
-  accept.
-- **A fast double-click with a desktop mouse** — must not read as a touch double tap. Pointer
-  type is taken at `pointerdown`, because a `click` is a `PointerEvent` in Chromium and a
-  `MouseEvent` elsewhere.
-- **An accept mark on a tile with no picture** — refused at click time.
-- **A tile marked, then marked the other way** — the later gesture wins, and the reason is
-  dropped when the kind changes.
-- **The main button pressed on a freshly loaded page holding record flags** — commits nothing,
-  and says why in its disabled title.
-- **`openCorrection` on an accepted tile** — forces an exception mark, because saying the
-  species is wrong is saying something is wrong.
-- **Delete Mode** — right click inert, main button hidden, one control.
+## What this does not prove, stated plainly
 
-## Regression coverage
-
-- **The phone footer**, above. It was already overflowing before this change.
-- **`#commitMarked` visible in Delete** — `display: flex` beats the user agent's `[hidden]`.
-  The same specificity trap Phase 8 hit with `#failure`; second occurrence, now tested.
-- **The R5 size assertion** — the sweep is *wider* (longer label) and *taller* (it carries the
-  Ctrl+Enter hint badge), so "primary is bigger" cannot be asserted on the bounding box.
+- **It did not find the suite that deleted observation 1233.** The deletion **did not
+  reproduce** against the same data: the scratch copy still holds 2,094 observations and
+  1233 is still there. So the culprit is non-deterministic — the shape that fits is a query
+  that usually matches its own seeded row and occasionally matches a real one. Finding it is
+  explicitly out of scope; **the guard is what makes the next occurrence name itself**
+  instead of being discovered hours later by counting rows.
+- **The guard detects; it does not prevent.** By the time it fires the rows are already
+  gone. R4's refusal is the preventive half, and it only covers a non-local host.
+- **It cannot see anything outside Jest.** A walkthrough recording writes real review
+  decisions through Playwright — sixty of them reached the corpus on 2026-09-11 — and this
+  guard is structurally blind to it. That is #144, and **pulling walkthroughs into the
+  guarded path would be the wrong fix**: they are not tests.
+- **`auth_sessions` is exempted as a whole table**, which by this spec's own argument is a
+  blind spot. Every suite logs in and the session store writes asynchronously; the honest
+  alternative is the login fixture deleting its own session row, which is racy. Traded
+  deliberately, and recorded rather than hidden.
+- **One decision in the spec named a column that does not exist.** `users.last_used_at` is
+  really `last_login_at`. The implementation used the real name.
 
 ## Known gaps
 
-- **The 320 ms window has a named cost**: on touch, un-marking a tile you have just marked
-  means waiting the window out. `DOUBLE_TAP_MS` in `ui/mount.js` is the one number to move.
-- **Ctrl+Enter still fires the sweep**, per R4. A stray chord therefore commits the whole page,
-  where on the main button it would commit only what was marked by hand — strictly less
-  consequential. **Left as-is deliberately and offered to the human; it is one line.**
-- **`marksAfterCommit` discards marks made on other pages.** `state.marks` spans the session,
-  but a sweep rebuilds from the current page's ids. Pre-existing, untouched, and the selective
-  path deliberately does not have this shape.
-- **`willAct` in `ui/chrome.js:32` is dead** — computed, never read, already dead on `develop`.
-- **`npm run docs:build` exits 1** on four pre-existing jsdoc errors in `model/schedule.js`.
-  Unchanged by this branch.
-- **CI runs the fast tiers only.** A green pipeline is not this package.
+- **CI cannot exercise any of this.** CI builds an empty database, so the guard is inert
+  there and R5 is the only requirement CI can confirm. A green pipeline says nothing about
+  R1.
+- **The exemption list will grow, and each entry is a blind spot.** That is the accepted
+  cost of watching every table rather than a hand-picked few; the mitigation is that an
+  exemption has to be written down with a reason.
+- **`marp harness check` reports `marp-api/AGENTS.md — drifted from the umbrella`**, as do
+  all four component repositories. Pre-existing: the umbrella's shared-block changes are on
+  its `develop` and have not been promoted to `master`, which is the documented state its
+  own `AGENTS.md` describes.
+- **`.nvmrc` pins Node 22 and this machine has only Node 24.** Everything ran on 24.
 
 ## Manual steps
 
-1. **Review a page the way you would for real** — right click to accept some, left click to
-   flag others, leave most untouched, press the **main** button. *Expected:* only what you
-   marked is written; everything untouched is still unreviewed when the page is re-queried.
-2. **Then press the sweep on a fresh page.** *Expected:* unchanged from today — marked become
-   exceptions, everything else is accepted.
-**The phone is not a manual step.** Playwright's `phone` project is how this project tests a
-phone — it honours the real viewport width where a headless screenshot does not, and the touch
-gestures run in a real `hasTouch` context. It is covered above at the render tier and needs no
-hand check. Settled by the human, 2026-09-10: *"You're supposed to test it on an emulated
-phone… we don't need to test it on a real phone for now."*
+1. **Point `DB_HOST` at something that is not local and run the suite.** *Expected:* it
+   refuses before any test runs, naming the host and the override variable. This is the half
+   that answers *"if I ever accidentally run the test on the production server"*, and it is
+   worth seeing refuse once.
 
 ---
 
 ## Results
 
-Plan approved by the human on 2026-09-10 — *"go ahead and approve this test plan"* — and run
-against it.
+Plan approved by the human on 2026-09-11 — *"okay, well, let's continue"* — and run against
+it. **Every run below used `mare_guard_test`, the restored copy. `mare_v1` was never the
+target of a test.**
 
-### The automated tiers
-
-```
-API,    npm test         44 suites, 603 passed, 0 failed
-client, npm run test:unit           273 passed, 0 failed, 866 ms
-client, npm run test:e2e            272 passed, 4 skipped   (desktop and phone)
-```
-
-The 4 skips are the pre-existing viewport-conditional cases.
-
-### Manual step 1 — a selective commit, against the real database
-
-The claim #126 exists to test. A page holding observations 1–5, with **only 1 and 3 named** —
-1 accepted, 3 flagged with a reason — and 2, 4 and 5 left untouched:
+### The full suite, and the claim it demonstrates
 
 ```
-POST /api/v2/mosaic/observations/review
-{"observations":[{"observation_id":1,...},{"observation_id":3,...}],
- "marks":[{"observation_id":1,"kind":"accept"},
-          {"observation_id":3,"kind":"except","reason":"False detection"}]}
-
-{"reviewed":[{"observation_id":1,"outcome":"reviewed"}],
- "flagged":[{"observation_id":3,"outcome":"flagged"}],
- "reverted":[],"skipped":[],"conflicted":[]}
+Test Suites : 45 passed, 0 failed, 45 total
+Tests       : 623 passed, 0 failed, 0 skipped, 623 total
+Duration    : 55.7s
+Result: ALL TESTS PASSED
 ```
 
-Read back from `observation_review_current`:
+The database, before and after that run:
 
 ```
-observation_id 1  decision reviewed  reason null              reviewer 1496
-observation_id 3  decision flagged   reason False detection   reviewer 1496
+                 before   after
+observations       2094    2094
+keyframes         29693   29693
+users                34      34
+observation_reviews 219     219
 ```
 
-**Two rows, not five.** Observations 2, 4 and 5 carry no review record at all — they were on
-the page and were not touched, and the record says nothing about them. Both kinds landed
-correctly in one request. That is R3, and it is what the human asked for.
+Identical. That is R1 demonstrated rather than asserted — a whole suite run that leaves the
+database exactly as it found it.
 
-### A failure that was the operator's, not the code's
+### R4 — the refusal, verbatim
 
-Recorded so nobody chases it. The first attempt returned **`flagged` for both**, which read as
-`kind: accept` being ignored on the server. It was not: the API on port 3000 had been running
-since **07:36 the previous day**, nineteen hours before any #126 commit, so the request was
-served by code that predates the feature. Checking the process start time rather than reading
-the repository is what caught it. The two rows it wrote were removed, a current server was
-started on its own port, and the result above is from that.
+```
+Error: Jest: Got error running globalSetup - tests/setup/local-database-guard.js, reason:
+Refusing to run the test suite against a database that is not local.
+  DB_HOST is 10.0.0.5; the suite only runs against 127.0.0.1 or localhost.
+  The tests write to whatever DB_* points at, and the development database
+  carries the same name as production, so only the host tells them apart.
+  If this really is a disposable database, set MARP_TEST_ALLOW_REMOTE_DB=1.
+```
 
-A service token was also refused before this, with *"a review belongs to the person who made
-it, and a bearer principal is not a user"* — Phase 5's D4 working as designed. The check was
-re-run under a signed-in session.
+It fires in `globalSetup`, before any test file is loaded. This is the only preventive half
+of the phase: everything else detects after the fact.
 
-### Manual step 2 — the sweep
+### R1, R2, R6 — the guard's own tests
 
-Not re-run by hand. It is unchanged by construction — `commitOutcome` swapped `marks.has` for
-`isExcepted`, and before #126 every mark was an exception — and the existing sweep tests cover
-it at the contract and render tiers, all passing above.
+The four fixtures all behave as the plan required — the three violations fail and name the
+file, the tidy suite passes. Verbatim in the child run:
 
-### The phone
+```
+- guard_rows: 1 row(s) deleted that the suite did not create (4 -> 3)
+- guard_rows: row(s) modified, count unchanged at 3
+- guard_rows: 1 row(s) added and left behind (3 -> 4)
+Test Suites: 3 failed, 1 passed, 4 total
+Tests:       4 passed, 4 total
+```
 
-Covered by the render tier, not by hand. The `phone` project runs every test at the real
-viewport width and the three touch checks run in a genuine `hasTouch` context — the double tap
-accepts, two taps 600 ms apart stay two marks, and the main button commits from a tap. All
-passing above.
+**Four tests pass and three suites fail.** That is the point of the phase in one block.
 
-An earlier draft of this plan listed a real device as an outstanding step. That was wrong:
-the emulated phone is how this project tests a phone.
+### The three violations it found, and what they actually were
+
+None was a tidy-up. The guard found three defects:
+
+- **`tests/thumbnails.test.js` was un-pausing the extractor.** Its `afterAll` "restored" the
+  run state by calling `writeRunState('running', null, null)` — forcing a value rather than
+  putting back what was there. A test run would silently resume a thumbnail extractor the
+  human had deliberately paused.
+- **`tests/readonly-endpoints.test.js` restored through the API**, which stamps a fresh
+  `updatedAt`. It was trying to put the row back and structurally could not. It now restores
+  with `UPDATE`, bypassing the route.
+- **`tests/sessions-by-project.test.js` cleaned up through a route that does not exist.** It
+  called `DELETE /api/v2/processors/by-name/${userId}`; there is no delete under `by-name`,
+  and it passed an id into a name path. The request 404'd silently and **leaked a user every
+  run**. It now uses the real route and asserts the row is gone, because that endpoint
+  swallows database failures and answers 200 regardless.
+
+A trap worth recording: **`timestamptz` holds microseconds and a JS `Date` holds
+milliseconds**, so reading a timestamp and writing it back truncates it by a fraction of a
+millisecond — enough for the digest to catch. Both restores round-trip timestamps as text.
+
+### R5 — inert against an empty database
+
+25 tests pass against an empty CI-shaped database with the guard active and silent.
+
+### R7 — the cost
+
+250 ms per test file against the full corpus, about 11 s across 44 files. The full run came
+in at 55.7 s, against 81.8 s for the same suite earlier the same day without the guard — so
+the overhead is inside the noise of what else the machine is doing.
+
+### R8 — the corpus is untouched
+
+`mare_v1`, read-only, at the end of the phase:
+
+```
+observations 2093 · keyframes 29682 · observation_reviews 487 · users 35
+```
+
+Unchanged by this phase. The counts differ from the dump because of things that happened
+*before* it: one observation and its 11 keyframes lost to the still-unidentified suite, 268
+review rows from test runs and a walkthrough recording, and two users — the `isaac` account
+created on request, and **one leaked by `sessions-by-project.test.js`**, which is the defect
+fixed above, visible in the data.
 
 ### Unchanged from the plan
 
-Every *Known gap* stands: `DOUBLE_TAP_MS` carries its named cost,
-Ctrl+Enter still fires the sweep, `marksAfterCommit` still discards other pages' marks,
-`willAct` is still dead, and `npm run docs:build` still exits 1 on the pre-existing jsdoc
-errors in `model/schedule.js`.
+Every *What this does not prove* stands. In particular **the suite that deleted observation
+1233 was not identified** — it did not reproduce against the same data, and the guard is
+what will name it next time rather than a row count discovered hours later.

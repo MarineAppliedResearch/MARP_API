@@ -151,6 +151,22 @@ describe('V2 species routes require a permission', () => {
   });
 
   /**
+   * The cross-list search (#130 R3) is a new path on this prefix, and a new path
+   * is exactly where a missing gate goes unnoticed: every check above names an
+   * older route, so all of them would still pass with this one wide open.
+   */
+  it('gates the cross-list search the same way', async () => {
+    const anonymous = await request(app).get('/api/v2/species/search?q=rockfish');
+    const wrong = await outsider.agent.get('/api/v2/species/search?q=rockfish');
+    const right = await reader.agent.get('/api/v2/species/search?q=rockfish');
+
+    expect(anonymous.status).toBe(401);
+    expect(wrong.status).toBe(403);
+    expect(right.status).toBe(200);
+    expect(Array.isArray(right.body)).toBe(true);
+  });
+
+  /**
    * The gate is middleware in front of the same handler, so passing it must not
    * change the answer. Compared against a caller holding every permission rather
    * than against V1, which no longer exists.

@@ -17,9 +17,18 @@ import { markIcon } from './tile.js';
  * catalogue calls it `species_id`, so both are read: the field name is the one thing the
  * two backings genuinely spell differently, and it is a catalogue rather than a mosaic row
  * so it is outside A1's rename.
+ *
+ * `showList` draws which list the candidate is on, and it is **only true for a widened
+ * search** (#130 A3). A common name is not unique across the seven lists — `Red sea
+ * urchin` is one entry on `Inverts` and a different organism on `GULF_Inverts` — so a
+ * widened result without its list lets a reviewer silently correct onto the wrong list,
+ * and a correction is written to the record. A scoped result is all one list by
+ * construction, so labelling every row with it would be noise.
  */
-const speciesRow = (s) => `<button class="srow" data-species="${s.id != null ? s.id : s.species_id}">${s.comname}
-  <span class="sci">${s.species}</span></button>`;
+const speciesRow = (s, showList = false) =>
+  `<button class="srow" data-species="${s.id != null ? s.id : s.species_id}">${s.comname}
+  <span class="sci">${s.species}</span>${(showList && s.species_list)
+    ? `<span class="slist">${s.species_list}</span>` : ''}</button>`;
 
 /**
  * How many characters before a search is worth sending.
@@ -31,6 +40,18 @@ const speciesRow = (s) => `<button class="srow" data-species="${s.id != null ? s
  * is better than showing six arbitrary organisms.
  */
 const MIN_SEARCH = 2;
+
+/**
+ * What the results are scoped to, said out loud.
+ *
+ * It **names the list** rather than saying "this observation's list", and where the
+ * session type names none it says that instead of implying a scope that does not exist
+ * (#130 R5). The heading is the only place the reviewer can read what they are searching.
+ */
+const scopeLabel = (list, widen) =>
+  widen ? 'Matches &middot; the whole MARP taxonomy'
+    : list ? `Matches &middot; ${list}`
+      : 'Matches &middot; no list for this session type';
 
 function bindSpecies(panel, id) {
   panel.querySelectorAll('[data-species]').forEach((b) =>
@@ -116,10 +137,10 @@ export async function renderPicker() {
              an unscoped search can offer two different organisms under one label. Widening
              is how an off-list correction stays possible but deliberate -- and it is the
              only path for an observation whose session type maps to no list at all. -->
-        <div class="sugghead"><span id="spScope">Matches &middot; this observation&rsquo;s list</span>
+        <div class="sugghead"><span id="spScope">${scopeLabel(row.species_list, false)}</span>
           <button type="button" class="widen" data-act="widen"
             title="Search the whole MARP taxonomy, not only this observation's list">Search all lists</button></div>
-        <div id="spList">${matches.map(speciesRow).join('')}</div></div>` : ''}
+        <div id="spList">${matches.map((s) => speciesRow(s)).join('')}</div></div>` : ''}
       <div class="consq ${consqClass}">${consqText}</div>
       <div class="pickfoot">
         <button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${m.mark.toLowerCase()}</button>
@@ -147,10 +168,25 @@ export async function renderPicker() {
     let widen = false;
     let searchSeq = 0;
 
+    /* Whether a scoped search can be asked at all. The list is the owning session's and
+       the server sends it; `Other` names no list, and for those rows only a widened search
+       can return anything. Kept apart from "nothing matched" because they are different
+       facts and the panel used to state the wrong one (#130 R5). */
+    const scoped = row.species_list || null;
+
     const draw = async () => {
       const term = search.value.trim();
       const listEl = panel.querySelector('#spList');
       const mine = ++searchSeq;
+
+      if (!widen && !scoped) {
+        /* Nothing is sent, and saying "nothing matches" here would be a lie about the
+           catalogue rather than a fact about this observation. */
+        listEl.innerHTML = '<div class="mnote">This observation’s session type names no '
+          + 'species list, so there is nothing to search within. Use “Search all '
+          + 'lists”.</div>';
+        return;
+      }
 
       if (term.length < MIN_SEARCH) {
         /* Nothing is sent. The route refuses an empty `q` and a one-letter search over a
@@ -162,8 +198,11 @@ export async function renderPicker() {
       const found = await actions.searchSpecies(term, { widen });
       if (mine !== searchSeq) return;                 // a newer keystroke already won
       listEl.innerHTML = found.length
-        ? found.map(speciesRow).join('')
-        : '<div class="mnote">Nothing matches. Try “Search all lists”.</div>';
+        ? found.map((s) => speciesRow(s, widen)).join('')
+        : (widen
+          ? '<div class="mnote">Nothing in the MARP taxonomy matches.</div>'
+          : `<div class="mnote">Nothing on ${scoped} matches. Try “Search all
+             lists”.</div>`);
       bindSpecies(panel, id);
     };
 
@@ -176,11 +215,7 @@ export async function renderPicker() {
         widenBtn.classList.toggle('on', widen);
         widenBtn.textContent = widen ? 'Back to this list' : 'Search all lists';
         const scope = panel.querySelector('#spScope');
-        if (scope) {
-          scope.innerHTML = widen
-            ? 'Matches &middot; the whole MARP taxonomy'
-            : 'Matches &middot; this observation&rsquo;s list';
-        }
+        if (scope) scope.innerHTML = scopeLabel(scoped, widen);
         draw();
       });
     }

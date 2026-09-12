@@ -119,6 +119,10 @@ frontend/apps/*/playwright-report/
 
 frontend/apps/*/demo/
 
+# Screenshots from `npm run shots` in a frontend app -- how whoever is drawing a
+# screen looks at what they drew. Regenerated on demand, never a build input.
+frontend/apps/*/shots/
+
 # --- Harness: machine-specific operational notes ---
 # Hosts, accounts and key paths for one developer. Repository files may say that a
 # credential exists and where it lives, never its value.

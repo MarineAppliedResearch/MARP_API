@@ -98,7 +98,13 @@ export function renderChrome() {
  * primary control again, which it has always been.
  */
 function renderCommits({ m, markedCount, acceptCount, eligible }) {
-  const { busy, status } = state.commit;
+  /* The acknowledgement belongs to the button that ran, and to no other (#131). The
+     idle button keeps its default appearance -- not disabled, not blanked, not spun
+     (A4): a button that says "Saving..." while saving nothing is the same lie as one
+     that says "Saved", one step earlier. */
+  const { busy, status, which } = state.commit;
+  const ranSweep = which === 'sweep';
+  const ranMarked = which === 'marked';
   const oneButton = commitActsOnMarked(state.mode);
 
   const sweep = $('#commit');
@@ -116,7 +122,7 @@ function renderCommits({ m, markedCount, acceptCount, eligible }) {
   });
 
   paintCommit(sweep, {
-    busy, status, acts: swept.acts,
+    busy: busy && ranSweep, status: ranSweep ? status : null, acts: swept.acts,
     /* Its secondary label while there are two buttons, its own while it is the only one. */
     label: oneButton ? m.commit : m.sweep,
     short: oneButton ? m.verb : 'Page',
@@ -134,7 +140,7 @@ function renderCommits({ m, markedCount, acceptCount, eligible }) {
   if (oneButton) return;
 
   paintCommit(main, {
-    busy, status, acts: picked.acts,
+    busy: busy && ranMarked, status: ranMarked ? status : null, acts: picked.acts,
     label: 'Commit Marked',
     short: 'Commit',
     /* Why there is nothing to do matters here, and there are two different reasons. A page
