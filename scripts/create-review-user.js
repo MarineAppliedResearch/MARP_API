@@ -23,6 +23,7 @@
  *   MARP_REVIEW_PASSWORD=secret node scripts/create-review-user.js --username walkthrough
  *   node scripts/create-review-user.js --username walkthrough \
  *     --permissions observations:read,observations:write,species:read
+ *   node scripts/create-review-user.js --username isaac --all-permissions
  *
  *   --username     The username to log in with. Required.
  *   --name         Display name. Defaults to the username.
@@ -31,6 +32,12 @@
  *                  of shell history.
  *   --permissions  Comma-separated permission keys. Defaults to the three the
  *                  mosaic reviewer needs.
+ *   --all-permissions
+ *                  Every key in the catalogue, read from the catalogue rather
+ *                  than listed here. `admin` is not a bypass -- requirePermission
+ *                  compares the key exactly -- so "all rights" has to mean every
+ *                  key actually granted, and a list typed into a script goes
+ *                  stale the next time a migration seeds one.
  *
  * **Local development only.** It needs no authentication, which is exactly
  * why it is a script and must never become a route.
@@ -137,9 +144,25 @@ async function main() {
         process.exit(EXIT_REFUSED);
     }
 
-    const wanted = flags.permissions && flags.permissions !== true
-        ? String(flags.permissions).split(',').map((k) => k.trim()).filter(Boolean)
-        : DEFAULT_PERMISSIONS;
+    // Every key, read from the catalogue. Asked for by name rather than listed,
+    // so a key a migration seeds tomorrow is included without anybody
+    // remembering to come back here.
+    const everything = Boolean(flags['all-permissions']);
+
+    const wanted = everything
+        ? (await db.permissions.findAll()).map((permission) => permission.key)
+        : (flags.permissions && flags.permissions !== true
+            ? String(flags.permissions).split(',').map((k) => k.trim()).filter(Boolean)
+            : DEFAULT_PERMISSIONS);
+
+    if (everything && wanted.length === 0) {
+        // An empty catalogue means the permission migration has not run here,
+        // and granting nothing quietly is how that becomes a working login that
+        // gets 403 on every request -- which reads as a broken app.
+        console.error('The permission catalogue is empty, so --all-permissions would grant nothing.');
+        console.error('It is seeded by migrations/*seed-resource-permissions*; run db:migrate first.');
+        process.exit(EXIT_REFUSED);
+    }
 
     // Refuse an unknown key rather than granting nothing quietly. The
     // catalogue is seeded by migration and grants to nobody by default, so a
