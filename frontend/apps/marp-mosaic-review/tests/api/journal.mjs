@@ -31,6 +31,18 @@
  * destroys; anything else reaching the delete route is a test about to damage a corpus
  * it did not create, and `restore()` fails naming the ids.
  *
+ * **One thing it cannot put back, and it is worth knowing exactly what.** A species
+ * correction *"invalidates every review decision on the observation, for both purposes,
+ * regardless of who made them"*. So a check that corrects a row somebody else had already
+ * decided about destroys that decision, and the only way to re-make it through the API is
+ * as the reviewer this run signed in as -- `observation_reviews.reviewer_id` is NOT NULL
+ * and a decision belongs to the person who made it. The decision and its reason come back
+ * exactly; **the attribution moves to the test reviewer.** It is one column, on the
+ * intersection of "rows a check corrected" and "rows somebody had decided about", on a
+ * testing database `testing-db reset` rebuilds. It is not fixable through the API, and
+ * writing it back around the API would be a test modifying a corpus row directly, which
+ * is the thing the rules forbid outright.
+ *
  * Refs #157.
  *
  * @module tests/api/journal
@@ -279,13 +291,29 @@ async function putSpeciesBack(request, { versions, corrected }) {
  * @returns {Promise<void>} Resolves when the record is back, and checked.
  */
 async function putDecisionsBack(request, { first, versions, committed, corrected, questions, destroyed }) {
-  /* A correction records a `corrected` decision of its own, so a row this test
-     corrected has a scientific decision to put back whether it was committed or not. */
+  /**
+   * **A correction destroys both dimensions, so both go back.**
+   *
+   * "A correction invalidates every review decision on the observation, **for both
+   * purposes**. The scientific review and the training disposition are removed regardless
+   * of who made them" -- `mosaic-correction.routes.js`. So a row this test corrected has a
+   * scientific *and* a training decision to put back, whether it was committed in either
+   * or not.
+   *
+   * This added the id to `scientific` alone, and the cost was exact and silent: one
+   * observation went into a run carrying a training promotion somebody else had made and
+   * came out with none, while every check passed. Found by digesting
+   * `observation_review_current` before and after a full run and diffing the rows, which
+   * is the only thing that would have found it.
+   */
   const byMode = { scientific: new Set(), training: new Set() };
   for (const [id, modes] of committed) {
     for (const mode of modes) byMode[mode].add(id);
   }
-  for (const id of corrected.keys()) byMode.scientific.add(id);
+  for (const id of corrected.keys()) {
+    byMode.scientific.add(id);
+    byMode.training.add(id);
+  }
   for (const id of destroyed) { byMode.scientific.delete(id); byMode.training.delete(id); }
 
   const current = await reread(request, questions, new Set([...byMode.scientific, ...byMode.training]));
