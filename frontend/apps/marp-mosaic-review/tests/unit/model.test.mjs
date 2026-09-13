@@ -1782,3 +1782,29 @@ test('the two kinds are counted separately, so neither number is a lie', () => {
   assert.equal(markedOnPage({ rows, marks, kind: MARK_EXCEPT }), 1);
   assert.equal(markedOnPage({ rows, marks, kind: MARK_ACCEPT }), 1);
 });
+
+for (const mode of ['scientific', 'training']) {
+  test(`#137 R1-R2: ${mode} completion requires every row committed`, () => {
+    const rows = [row(1), row(2)];
+    const outcomes = new Map();
+    assert.equal(page.isComplete(rows, outcomes, mode), false);
+    outcomes.set(1, MODES[mode].accepts);
+    assert.equal(page.isComplete(rows, outcomes, mode), false);
+    outcomes.set(2, MODES[mode].marks);
+    assert.equal(page.isComplete(rows, outcomes, mode), true);
+    outcomes.set(2, 'conflicted');
+    assert.equal(page.isComplete(rows, outcomes, mode), false);
+    outcomes.set(2, 'withdrawn');
+    assert.equal(page.isComplete(rows, outcomes, mode), false);
+    outcomes.set(2, null);
+    assert.equal(page.isComplete(rows, outcomes, mode), false);
+  });
+}
+
+test('#137 R1: existing decisions count only in their own mode', () => {
+  const rows = [row(1, { review_decision: 'reviewed' })];
+  assert.equal(page.isComplete(rows, new Map(), 'scientific'), true);
+  assert.equal(page.isComplete(rows, new Map(), 'training'), false);
+  assert.equal(page.isComplete(rows, new Map([[1, 'conflicted']]), 'scientific'), false);
+  assert.equal(page.isComplete([], new Map(), 'scientific'), false);
+});
