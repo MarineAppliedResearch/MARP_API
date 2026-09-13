@@ -163,6 +163,8 @@ svg { display: block; }
   border-bottom: 1px solid var(--hairline);
   background: var(--bar);
   backdrop-filter: blur(8px);
+  position: relative;
+  z-index: 30;
 }
 
 /* The bar gets out of the way of the reading, and comes back the moment the reader

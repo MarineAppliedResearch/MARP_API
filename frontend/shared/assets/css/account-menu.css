@@ -1,14 +1,11 @@
 /*
  * The MARP account menu (#151).
  *
- * One component, three applications: the public landing page, the Picture Mosaic
- * Reviewer and the Machine Learning Dashboard. It used to be three implementations that
- * looked alike, and the ML Dashboard's copy had a person's name typed into it -- which
- * the Mosaic Reviewer's own notes record as a bug that shipped once, because a hard-coded
- * identity tells everybody they are one developer.
+ * One visual and interaction component across MARP. Each host owns its menu contents, so a
+ * later app setting can be added without appearing in every other application (#166).
  *
  * `frontend/shared/assets/js/account-menu.js` is the behaviour. This is the look, and it
- * takes its colours from tokens.css, which all three already link.
+ * takes its colours from tokens.css, which every host already links.
  *
  * **One knob, deliberately.** `--account-size` is the avatar's diameter, because an
  * operator console at 12px base and a landing page at 16px genuinely want different
@@ -92,6 +89,12 @@
   text-align: left;
   text-decoration: none;
   cursor: pointer;
+}
+
+/* Session state uses the HTML `hidden` attribute for Sign in and Sign out. As with the
+   menu itself, the component's display rule would otherwise override the browser rule. */
+.account__item[hidden] {
+  display: none;
 }
 
 .account__item:hover {

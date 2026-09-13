@@ -88,13 +88,28 @@ button { font: inherit; color: inherit; cursor: pointer; }
    the tab key, so a reviewer could land focus on a control nobody can see. With both gone
    the remaining two children auto-place into the two tracks below. */
 body.top-hidden .app { grid-template-rows: minmax(0, 1fr) var(--foot-h); }
-body.top-hidden .hdr, body.top-hidden .sub { display: none; }
-.hdr, .sub, .foot { overflow: hidden; }
+body.top-hidden .sub { display: none; }
+/* Keep the account reachable when a short landscape phone starts with its top chrome
+   hidden. The zero-size fixed header stays out of the grid while its account sits in the
+   screen corner; every other header control remains part of the chrome being hidden. */
+body.top-hidden .hdr {
+  position: fixed;
+  inset: 8px 8px auto auto;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  display: block;
+}
+body.top-hidden .hdr > :not(.right) { display: none; }
+body.top-hidden .hdr .right { position: absolute; top: 0; right: 0; }
+.sub, .foot { overflow: hidden; }
 .body { min-width: 0; }
 .field { min-width: 0; }
 
 /* ---------------------------------------------------------------- header */
 .hdr { display: flex; align-items: center; gap: 11px; padding: 0 12px;
+       position: relative; z-index: 30; overflow: visible;
        background: var(--chrome); border-bottom: 1px solid var(--mode-line); }
 .hdr img { height: 26px; width: auto; }
 .hdr .title { font-size: 13px; color: var(--white); font-weight: 600; }
@@ -576,10 +591,9 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   .hdr img { height: 20px; }
   .hdr .title { display: none; }
   .mode-note { display: none; }
-  .hdr { overflow-x: auto; scrollbar-width: none; }
-  .hdr .right { display: none; }        /* the account menu is not worth the width here */
-  .hdr::-webkit-scrollbar { display: none; }
-  .seg { margin-left: 4px; flex: none; }
+  .hdr .right { display: flex; }
+  .seg { margin-left: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .seg::-webkit-scrollbar { display: none; }
   .sub { overflow-x: auto; scrollbar-width: none; }
   .foot { overflow-x: auto; scrollbar-width: none; }
   .seg button { padding: 4px 8px; font-size: 11px; }
@@ -618,6 +632,9 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   /* Nothing in the bars may wrap: they are fixed-height rows, so a second line
      is simply clipped. Anything that cannot fit is dropped instead. */
   .hdr > *, .sub > *, .foot > * { white-space: nowrap; flex: none; }
+  /* Keep the account control fixed at the visible edge and let only the mode choices
+     consume the remaining width. */
+  .hdr > .seg { flex: 1 1 auto; min-width: 0; }
   /* The sort is the same control here as anywhere else — same size, same menu. It was
      hidden on a phone under a comment saying it lived in the rail instead; it never did,
      so a phone had no way to reorder the mosaic at all. A shrunken variant was the next

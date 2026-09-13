@@ -223,8 +223,8 @@ function mountTopbar() {
       ? '<button class="btn icon" aria-label="More" title="Export, columns and settings">'
         + ico('dots') + '</button>'
       : '')
-    /* The account menu, shared with the Picture Mosaic Reviewer and the public landing
-       page (#151). It used to be written here, with `IT` and `Isaac Travers` as literals --
+    /* Account behavior and presentation are shared, while this application owns the rows
+       inside its menu (#166). It used to be written here with identity literals --
        which is the bug the Mosaic Reviewer's notes record as having shipped once, telling
        everybody they were one developer. Nobody's name is typed into this application now.
 
@@ -239,10 +239,9 @@ function mountTopbar() {
     + '<div class="account__menu" role="menu" data-account-menu hidden>'
     + '<p class="account__who" data-account-who>Not signed in</p>'
     + '<a class="account__item" role="menuitem" href="/apps/dashboard/index.html">Open the dashboard</a>'
-    + '<a class="account__item" role="menuitem" href="/apps/marp-mosaic-review/">Picture Mosaic Reviewer</a>'
-    + '<a class="account__item" role="menuitem" href="/apps/marp-ml-dashboard/">Machine Learning Dashboard</a>'
     + '<hr class="account__rule">'
-    + '<button class="account__item" type="button" role="menuitem" data-account-signout>Sign out</button>'
+    + '<a class="account__item" role="menuitem" data-account-signin href="/">Sign in</a>'
+    + '<button class="account__item" type="button" role="menuitem" data-account-signout hidden>Sign out</button>'
     + '</div></div>';
   bar.appendChild(tools);
 }
@@ -1042,6 +1041,12 @@ function wireTopbarAutohide() {
   content.addEventListener('scroll', () => {
     if (floor()) return;
     const y = content.scrollTop;
+    /* The menu belongs to the bar. Keep both on screen while somebody is using it. */
+    if (!bar.querySelector('[data-account-menu]')?.hidden) {
+      set(false);
+      mark = y;
+      return;
+    }
     /* Inside the settle window the position is followed but not acted on -- the scroll
        that arrives here is the layout's, not the reader's. */
     if (Date.now() < settled) { mark = y; return; }
