@@ -739,17 +739,9 @@ async function runCommit({ selective }) {
     return;
   }
 
-  /**
-   * A page counts as *committed* only when the whole page was committed.
-   *
-   * The pin is not decoration: `page.pinnedIds` becomes the query's `exclude` set, so
-   * pinning here would take every untouched tile on the page out of the reviewer's
-   * remaining work without saying so. A selective commit deliberately claims nothing about
-   * the tiles it did not name, so it pins nothing and the pager still shows the page as
-   * outstanding -- because it is.
-   */
+  // Only a sweep pins membership: selective commits must not exclude untouched rows.
   if (!selective) {
-    state.committedPages.add(state.page);
+    if (state.mode === 'delete') state.committedPages.add(state.page);
     state.pageMembers = page.pinPage(state.pageMembers, state.page, ids);
     /* And the rows themselves, so returning to this page needs nothing from the cache and
        nothing from the network. These are the objects the reviewer was looking at. */
@@ -759,6 +751,17 @@ async function runCommit({ selective }) {
      carried, so one entry landed under `undefined` and **every tile on a committed page
      showed no outcome at all** (F5, R8). */
   state.outcomes = page.applyCommit(state.outcomes, res);
+  if (state.mode !== 'delete') {
+    // Refusals and take-backs must supersede an earlier successful decision.
+    for (const result of res.skipped || []) {
+      state.outcomes.set(result.observation_id, null);
+    }
+    if (page.isComplete(state.rows, state.outcomes, state.mode)) {
+      state.committedPages.add(state.page);
+    } else {
+      state.committedPages.delete(state.page);
+    }
+  }
   state.lastCommit = res;
 
   /**
@@ -1263,9 +1266,15 @@ export const actions = {
       mode: state.mode, decided: decidedFor(id), marked: state.marks.has(id)
     })) {
       const taking = !state.takenBack.has(id);
-      if (taking) state.takenBack.add(id);
-      else state.takenBack.delete(id);
-      state.touched.add(id);
+      if (taking) {
+        state.takenBack.add(id);
+        state.touched.add(id);
+      } else {
+        state.takenBack.delete(id);
+        /* The reviewer canceled the withdrawal, so the record is once again the whole
+           truth and Commit Marked has nothing pending for this tile (#167). */
+        state.touched.delete(id);
+      }
       /* The panel describes an exception and its reasons, and this gesture no longer makes
          one -- so it closes rather than sitting open over a state it cannot describe. */
       state.picker = null;
@@ -1276,8 +1285,10 @@ export const actions = {
     }
 
     const had = state.marks.has(id) && (state.marks.get(id).kind || MARK_EXCEPT) === MARK_EXCEPT;
+    const restoring = !had && state.takenBack.has(id);
     state.marks = page.toggleMark(state.marks, id, MARK_EXCEPT);
-    state.touched.add(id);
+    if (restoring) state.touched.delete(id);
+    else state.touched.add(id);
     recordTakeBack(id, had ? MARK_EXCEPT : null);
     if (had) state.picker = null;
     fire(had ? 'unmark' : 'mark',

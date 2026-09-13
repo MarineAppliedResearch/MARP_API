@@ -2,7 +2,9 @@
  * A static server for the app, with no dependencies.
  *
  * It serves `frontend/` rather than the app folder, because the app links MARP's
- * shared design tokens and the shared logo from ../../shared/. That is the one
+ * shared design tokens and the shared logo from ../../shared/. `/assets/` mirrors the
+ * API's alias for `frontend/shared/assets/`, so this browser tier can also render the
+ * legacy dashboard without grading a different server. That is the one
  * coupling to resolve if this application is ever extracted from MARP_API —
  * either vendor the shared assets or take them as a package. Same arrangement as
  * the Picture Mosaic Reviewer's server, deliberately.
@@ -32,6 +34,7 @@ createServer(async (req, res) => {
   try {
     let path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (path.endsWith('/')) path += 'index.html';
+    if (path.startsWith('/assets/')) path = '/shared' + path;
 
     const file = normalize(join(ROOT, path));
     if (!file.startsWith(ROOT)) { res.writeHead(403).end('forbidden'); return; }

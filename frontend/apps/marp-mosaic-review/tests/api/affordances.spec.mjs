@@ -81,10 +81,15 @@ test.describe('what the fixture used to fake', () => {
 
     await expect(commit).toContainText('Failed');
     await expect(commit).toHaveClass(/bad/);
+    // #137: a failed commit cannot complete this page.
+    await expect(page.locator('#pagesDone b').first()).toHaveText('0');
 
     /* The mark survives, so the page need not be redone. That is the requirement --
        a failed commit that also loses the reviewer's work costs them twice. */
     await expect(tile).toHaveClass(/marked/);
+    await expect(tile).not.toHaveClass(/recorded/);
+    expect(await tile.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe('3px');
+    expect(await tile.locator('img').evaluate((img) => getComputedStyle(img).filter)).toBe('none');
 
     /* And nothing reached the record. Asserted against the server rather than against
        the screen: the screen saying "Failed" is what the client believes, and the
@@ -190,6 +195,12 @@ test.describe('what the fixture used to fake', () => {
          has to appear -- the store knowing it conflicted while nothing is drawn is
          precisely the class of defect this tier exists for. */
       await expect(page.locator('.pagestate--conflict')).toBeVisible({ timeout: 15_000 });
+      // #137: a successful HTTP response containing a conflict is not completion.
+      await expect(page.locator('#pagesDone b').first()).toHaveText('0');
+      // #167: a refused mark stays visually pending rather than looking recorded.
+      await expect(tile).not.toHaveClass(/recorded/);
+      expect(await tile.evaluate((el) => getComputedStyle(el).outlineWidth)).toBe('3px');
+      expect(await tile.locator('img').evaluate((img) => getComputedStyle(img).filter)).toBe('none');
     } finally {
       if (corrected) {
         /* Back to the species it had. Three things have to be right here, and the last

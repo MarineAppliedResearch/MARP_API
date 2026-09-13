@@ -9,7 +9,7 @@
  *   outcomes    what the last commit did to each observation
  */
 
-import { MARK_EXCEPT, MARK_ACCEPT, markKind } from './modes.js';
+import { MARK_EXCEPT, MARK_ACCEPT, markKind, MODES, existingState } from './modes.js';
 
 /**
  * Marks are keyed by observation, so they survive paging and re-queries.
@@ -284,3 +284,15 @@ export function pageWindow(current, total, span = 2) {
 }
 
 export const clampPage = (n, total) => Math.min(Math.max(1, Math.floor(n) || 1), Math.max(1, total));
+
+/** A page is complete only when every row has a committed decision in this mode (#137). */
+export function isComplete(rows, outcomes, mode) {
+  const definition = MODES[mode];
+  if (!definition || mode === 'delete' || !rows.length) return false;
+  return rows.every((row) => {
+    const id = row.observation_id;
+    // A refused or withdrawn outcome overrides a decision read before the commit.
+    const decision = outcomes.has(id) ? outcomes.get(id) : existingState(mode, row);
+    return decision === definition.accepts || decision === definition.marks;
+  });
+}

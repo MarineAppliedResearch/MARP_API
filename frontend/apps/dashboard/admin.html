@@ -30,6 +30,7 @@
     }
     body { background: var(--bg); color: var(--text); }
     .navbar, .offcanvas { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .navbar { position: sticky; top: 0; z-index: 1000; }
     .navbar .navbar-brand, .navbar .nav-link, .navbar .btn { color: var(--white) !important; }
     .brand-gradient { color: var(--white); font-weight: bold; }
     /* The logo sits where the Bootstrap icon was, at the height the other
@@ -77,10 +78,9 @@
               <div class="account__menu" role="menu" data-account-menu hidden>
                 <p class="account__who" data-account-who>Not signed in</p>
                 <a class="account__item" role="menuitem" href="/apps/dashboard/index.html">Open the dashboard</a>
-                <a class="account__item" role="menuitem" href="/apps/marp-mosaic-review/">Picture Mosaic Reviewer</a>
-                <a class="account__item" role="menuitem" href="/apps/marp-ml-dashboard/">Machine Learning Dashboard</a>
                 <hr class="account__rule">
-                <button class="account__item" type="button" role="menuitem" data-account-signout>Sign out</button>
+                <a class="account__item" role="menuitem" data-account-signin href="/">Sign in</a>
+                <button class="account__item" type="button" role="menuitem" data-account-signout hidden>Sign out</button>
               </div>
             </div>
           </li>

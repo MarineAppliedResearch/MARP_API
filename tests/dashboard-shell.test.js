@@ -71,7 +71,10 @@ describe('the legacy dashboard shell', () => {
             expect(markup).toMatch(/data-account\b/);
             expect(markup).toMatch(/data-account-button/);
             expect(markup).toMatch(/data-account-menu/);
+            expect(markup).toMatch(/data-account-signin/);
             expect(markup).toMatch(/data-account-signout/);
+            expect(markup).toMatch(/href="\/apps\/dashboard\/index\.html"/);
+            expect(markup).not.toMatch(/account__item[^>]+href="\/apps\/marp-(?:mosaic-review|ml-dashboard)\//);
         });
 
         /** The compact mark, which is the treatment every other application uses. */
@@ -115,5 +118,10 @@ describe('the legacy dashboard shell', () => {
         for (const page of PAGES) {
             expect(raw[page]).not.toMatch(/Isaac|Travers/i);
         }
+    });
+
+    it('keeps both application links on the main dashboard', () => {
+        expect(raw['index.html']).toMatch(/href="\/apps\/marp-mosaic-review\//);
+        expect(raw['index.html']).toMatch(/href="\/apps\/marp-ml-dashboard\//);
     });
 });
