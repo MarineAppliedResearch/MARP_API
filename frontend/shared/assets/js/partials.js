@@ -15,6 +15,14 @@
         }
 
         node.innerHTML = await response.text();
+
+        /* A partial can carry a control that wires itself, and by the time it lands the
+           wiring has already been and gone: the shared account menu mounts on
+           DOMContentLoaded, which is over before this fetch returns, so the header drew
+           nobody for ever (#151). Mounting is idempotent, so asking again is safe. */
+        if (window.MarpAccountMenu) {
+          window.MarpAccountMenu.mountAll();
+        }
       } catch (error) {
         console.error(error);
         node.innerHTML = '<!-- Failed to load ' + includePath + ' -->';

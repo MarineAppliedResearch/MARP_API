@@ -93,6 +93,21 @@ learning dashboard menu to the shared one. So it's always the same menu."*
 - **R26** -- The ML Dashboard is not session-gated, so signed out is a state it really
   has. It says so plainly rather than drawing a plausible stranger.
 
+### Part 5 -- the legacy dashboard, roughly
+
+The human, 2026-09-12: *"This isn't supposed to be a complicated dashboard restyle. We
+just wanna roughly restyle it to use the MARP look and feel, and we don't wanna spend a lot
+of cycles on this because we're gonna redesign the entire admin dashboard and dashboard
+later."* **Rough is the target, not a compromise**, and everything beyond the palette, the
+logo and the menu is work thrown away twice.
+
+- **R27** -- All four pages of `frontend/apps/dashboard` read as MARP: the palette comes
+  from `tokens.css`, and no page states a colour of its own in its palette block.
+- **R28** -- Each carries the compact MARP logo and the shared account menu, which is the
+  same component the other three applications draw.
+- **R29** -- The Bootstrap layout, the page structure and the content are untouched. No
+  table, map, chart or control moved.
+
 ## Open assumptions
 
 - [x] **A1 | product/UI | non-blocking** -- answered 2026-09-12: **the footer stays as it
@@ -172,6 +187,17 @@ scope.** So it is named here and not built.
 - **2026-09-12** -- The avatar menu will be in three applications, so it is written once,
   in `frontend/shared/`. Whether the two apps that already have their own adopt it is the
   human's call and is not done silently.
+- **2026-09-12** -- Bootstrap's own `data-bs-theme="dark"` is what makes the legacy
+  dashboard legible on a dark ground: one attribute per page against a pile of overrides
+  for cards, tables and forms. The cheapest thing that works, on an application that is
+  being replaced.
+- **2026-09-12** -- `index.html` and `admin.html` already routed every colour through eight
+  custom properties, so the restyle is those values repointed at tokens and nothing else.
+  `--text` and `--muted` are dropped rather than repointed, because tokens.css names both
+  and a self-reference computes to nothing.
+- **2026-09-12** -- The existing *Logout* button stays beside the new account menu on the
+  two Bootstrap pages. Removing it is a content change on an application whose content was
+  to be left alone, and two ways out is not a defect.
 - **2026-09-12** -- The menu is **the same four rows in all three applications**: who is
   signed in, the three doors into MARP, and Sign out. The Mosaic Reviewer's old menu
   offered *Preferences*, *Keyboard shortcuts* and *Tile density*, and the ML Dashboard's

@@ -388,3 +388,54 @@ ML         ok  32 shots, nothing clipped, no console errors
 entry      1 skipped, 59 passed (26.9s)           three viewports
 API        Test Suites : 1 passed, 0 failed       tests/landing-copy.test.js
 ```
+
+---
+
+# Part 5 - the legacy dashboard, roughly
+
+## What was judged sufficient, and why
+
+**A file-reading check, and no browser tier.** `tests/dashboard-shell.test.js` holds that
+all four pages link the shared component, are given the palette, ask Bootstrap for its dark
+mode, carry the logo and the account markup, state no colour of their own, define no second
+account menu, and **name nobody**. It is in `core` beside `landing-copy` and `docs-branding`,
+which are the same kind of invariant.
+
+Building a render tier for an application that is about to be redesigned would cost more
+than the restyle did, which is the whole instruction. What a browser draws was checked once,
+by hand, below.
+
+## The one-off browser check
+
+All four pages rendered through a scratch server mirroring `app.js`'s static mounts, with
+the session probe answered:
+
+```
+index.html           bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0  errors none
+admin.html           bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0
+user-activity.html   bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0
+user-hours.html      bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0
+```
+
+`rgb(1, 5, 13)` is `--navy-1000` and `rgb(199, 212, 221)` is `--text`, so the palette
+reaches the body on every page. The errors on the three pages other than `index.html` are
+404s from the scratch server, which has no API for them to fetch their data from.
+
+## Two things the first attempt got wrong
+
+- **Bootstrap paints the ground too, and it was winning.** `shell.css` was linked before
+  Bootstrap, so the body came out `rgb(33, 37, 41)` -- Bootstrap's dark grey, not MARP's
+  navy. The shell now loads after it on those two pages.
+- **The account menu mounted before its own markup existed.** `user-activity.html` and
+  `user-hours.html` draw their header from a partial fetched by `partials.js`, which lands
+  well after `DOMContentLoaded` -- so the component looked, found nothing, and those two
+  headers drew nobody permanently. `partials.js` now asks it to mount again once a partial
+  is in, which is safe because mounting is idempotent.
+
+## Known gaps
+
+- **Nothing here is proved by an automated browser check**, by choice. A palette that stops
+  reaching a page would pass this file-reading tier as long as the links are present.
+- **`frontend/apps/entry/old_index.html` also links `shell.css`** and therefore changed
+  colour. It is the page the landing page replaced, kept for reference and not served.
+- **The pages' own content is untouched**, including anything about it that looks wrong.
