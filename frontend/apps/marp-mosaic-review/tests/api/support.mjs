@@ -399,11 +399,14 @@ export async function correctSpecies(request, row, speciesId) {
 /**
  * Assert this page really is talking to the API.
  *
- * Every test in this directory calls it. Without it a run can grade a fixture and
- * report it as the API, which is the failure this whole tier exists to make
- * impossible -- `tests/e2e/` injects `?backing=fixture` in a `beforeEach` and this
- * project's `testDir` simply does not include that file, so the only thing
- * standing between the two is saying so out loud.
+ * Every test in this directory calls it, and there is nothing left for it to catch --
+ * #157 deleted `src/data.js` and the flag that selected it, so `src/backend.js` holds one
+ * backing and the application cannot be pointed anywhere else.
+ *
+ * **It stays anyway, and that is the point of it.** A run grading a fixture and reporting
+ * it as the API is the failure this tier exists to make impossible, and a second backing
+ * arrives as somebody's convenience rather than as a decision. This is the assertion that
+ * refuses it, and it costs a millisecond.
  *
  * @param {import('@playwright/test').Page} page - The page.
  * @returns {Promise<void>} Resolves when it is confirmed.

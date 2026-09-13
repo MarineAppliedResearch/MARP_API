@@ -595,13 +595,18 @@ test('Concurrent review: R9: a row that moved under the page comes back conflict
 test('The states never rendered: R6: a queued thumbnail becomes ready, and a commit waits for it',
   async ({ page }) => {
     /**
-     * `thumbnail: 'none'` rather than `'queued'`, and the difference is not cosmetic. The
-     * mosaic coalesces a missing thumbnail row to `queued`, which is the state a picture
-     * nobody has asked for is genuinely in -- and with no row there is nothing for the
-     * extraction runner to claim, so the state this check is about cannot move underneath
-     * it between the seed and the assertion. A row seeded `queued` is live work.
+     * **`thumbnail: 'queued'`, and it is seeded already claimed.** `seed.mjs` does that
+     * part; what matters here is why a check about a queued picture needs it.
+     *
+     * This was `'none'` first, on the reasoning that a missing row coalesces to `queued`
+     * and leaves the extraction runner nothing to take. That is half true and the wrong
+     * half: the page query's own backstop inserts a real queued row, the runner claims it
+     * within a second, finds a seeded observation has no keyframes, and records a
+     * permanent failure -- so the row read `failed` by the time the assertion got to it.
+     * It passed at one viewport and failed at the other in the same run, which is what a
+     * race looks like from the outside.
      */
-    const seeded = await seedFor({ count: 2, thumbnail: 'none' });
+    const seeded = await seedFor({ count: 2, thumbnail: 'queued' });
 
     await open(page, seeded.address);
     await page.evaluate(async ({ line, id }) => {

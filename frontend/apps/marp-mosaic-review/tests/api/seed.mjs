@@ -73,8 +73,10 @@ async function connect() {
  * @param {Object} options - What to make.
  * @param {number} [options.count] - How many observations.
  * @param {string} [options.thumbnail] - `ready`, `failed`, `queued`, or `none` for no row
- *   at all -- which the mosaic query coalesces to `queued`, the state a row that has never
- *   been asked for is in.
+ *   at all. `queued` is seeded **already claimed**, because the running extractor takes an
+ *   unclaimed one within a second and fails it; see the note beside the insert. `none` is
+ *   not a substitute -- the mosaic coalesces a missing row to `queued`, but the page
+ *   query's own backstop then inserts a real one and the runner claims that.
  * @param {boolean} [options.permanent] - Mark the thumbnail beyond retrying.
  * @param {string} [options.sessionType] - The session's `type`, which is what decides
  *   which species list the correction panel searches. `'Other'` names none, which is the
@@ -203,18 +205,38 @@ export async function seedPage({
          * `observation_thumbnails_observation_id_key`, which reads like a seeding mistake
          * and is the application doing its job.
          */
+        /**
+         * **A `queued` row is seeded already claimed, and that is what makes it stay
+         * queued long enough to be looked at.**
+         *
+         * The API is running, and its extraction loop ticks every second: `claimBatch`
+         * takes any `queued` row whose `claimed_at` is null or older than the claim
+         * timeout, finds a seeded observation has no keyframes and no `video_source`, and
+         * records a permanent failure. So a row seeded plainly `queued` is `failed` about
+         * a second later, and a check that reads it races the runner -- which is exactly
+         * how this was found, passing at one viewport and failing at the other in the same
+         * run.
+         *
+         * `claimed_at = NOW()` is not a trick to hide from the runner. It is the state a
+         * picture somebody is *currently extracting* is genuinely in, and the lease is two
+         * minutes, which is far longer than any check.
+         */
+        const claimed = thumbnail === 'queued';
+
         await client.query(
           `INSERT INTO observation_thumbnails
              (observation_id, status, permanent, filename, content_type, generation,
-              attempts, requested_at, completed_at, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 'image/jpeg', 1, 1, NOW(), NOW(), NOW(), NOW())
+              attempts, requested_at, claimed_at, completed_at, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'image/jpeg', 1, 1, NOW(),
+                   CASE WHEN $5 THEN NOW() ELSE NULL END, NOW(), NOW(), NOW())
            ON CONFLICT (observation_id) DO UPDATE
               SET status = EXCLUDED.status,
                   permanent = EXCLUDED.permanent,
                   filename = EXCLUDED.filename,
+                  claimed_at = EXCLUDED.claimed_at,
                   last_error = NULL,
                   updated_at = NOW()`,
-          [id, thumbnail, permanent, filename]
+          [id, thumbnail, permanent, filename, claimed]
         );
       }
     }
