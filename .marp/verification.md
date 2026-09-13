@@ -1,441 +1,183 @@
-# Verification — MARP_API#151, the mosaic reviewer's top chrome
+# Verification plan - MARP_API #137: Commit Marked page completion
 
-Part 1 of three applications. The ML Dashboard and the public landing page are not covered
-here and are not started.
+Issue: https://github.com/MarineAppliedResearch/MARP_API/issues/137
 
-## What each test proves
+## Problem and agreed outcome
 
-All eight are in `frontend/apps/marp-mosaic-review/tests/e2e/render.spec.mjs`, under
-`#151 the top chrome`. Every one was proved red against the code before the change and is
-green after it.
+Committing all tiles with Commit Marked saves their decisions but leaves the page uncoloured and its completed-page count at zero. Completion must depend on every tile having a committed decision, whether in one commit or several. Partial or refused work stays incomplete. Delete Mode stays unchanged. Selective commits do not pin rows or page membership.
 
-| Requirement | Test | Tier | Proves |
-| --- | --- | --- | --- |
-| R1 | `R1: the control takes the header and the sub-bar away, and the field gets the pixels` | render (phone) | Both bars measure 0 afterwards, and the field grows by **exactly** their combined height — chrome that hides without giving the space away would still pass a visibility check |
-| R2 | `R2: the control is still reachable once the chrome it hides is gone` | render (phone) | The control is visible with the chrome hidden, says `aria-expanded=false`, and brings both bars back to their original heights |
-| R3 | `R3: the footer and both commit buttons are untouched` | render (phone) | The footer's height is unchanged and `#commit` and `#commitMarked` are both still visible — the scope guard for the question the issue left open |
-| R4 | `R4: a mark made before the chrome is hidden is still there after` | render (phone) | A marked tile is still marked after the toggle re-pages the mosaic |
-| R5 | `R5: on a landscape phone the chrome starts out of the way` | render (landscape context, 915×412) | The reported viewport starts hidden, and showing the chrome costs the field exactly the two bars' height |
-| R6 | `R6: a desktop has no such control, because it has no such problem` | render (desktop) | The control exists in the markup (`toHaveCount(1)`) and is not displayed |
-| R7 | `R7: the rail overlay follows the chrome rather than hanging below where it was` | render (phone) | The rail overlay's top comes up with the chrome, and `document.documentElement` gains no horizontal overflow |
-| R8 | `R8: the state is on the body, the way the rail already says its own` | render (phone) | `body.top-hidden` is absent, then present — the handle every other test and any future one reads |
+## Current baseline and test system
 
-**Why every one of these is in the browser tier.** Whether a bar is on screen, how tall the
-field is and whether the rail overlay is in the right place are rendering facts. The store
-knows only that a flag was flipped, so a store-level check would pass against a stylesheet
-that does nothing at all. The one thing that *is* checkable without a browser — that the
-control is wired to something that draws it — is covered by the existing
-`tests/unit/wiring.test.mjs`, which picked the new id up with no edit.
+The task branch is based on origin/develop at a3a7990a (through merged #165). The user authorized updating to the pushed testing changes, provisioning the test database and beginning testing. This replaces the earlier fixture-only plan.
 
-## Requirements with no test
+New browser tests use tests/api/, a real API and this workspace's separate `marp_test` database built from the existing local corpus dump. Provisioning verified 2,092 observations, 29,666 keyframes, 2,092 thumbnail rows and 2,079 thumbnail files against the dump manifest. The runner selects a free API port, runs one browser worker, and stops its API afterward. Settings and credentials stay local and untracked. The human's development database is not the test target.
 
-None. R1 to R8 each have a named test above.
+## Cases and expected results
 
-## Edge cases
+| Case | Actions | Assertions |
+| --- | --- | --- |
+| Original report, R1/R4 | Discover a final page of 2-8 ready observations; clear its decisions through the API; mark all and Commit Marked. | Count is zero before save and one after; all selected decisions are read back from the real API. Move to the preceding page: completed chip has the done class and a different computed colour. |
+| Multiple commits, R1/R2 | Commit the first half; then the remainder. | First commit leaves count zero and untouched decisions null. Second commit makes count one. Pager class/colour shows completion. |
+| Marks alone, R1/R2 | Mark the selected tiles, without committing yet. | Count remains zero, including when every tile is marked. |
+| No selective pins, R3 | Inspect membership pins and held rows after each selective commit. | Both collections remain empty; re-reading the same API query returns the expected rows, including the still-undecided half. |
+| Sweep regression, R4 | Reset the short page, load fresh, use Review page or Promote page. | Save succeeds and the completed-page count/chip/colour are correct. |
+| Real failed request, R2 | Existing affordance test aborts the browser's actual commit request. | Error UI remains correct, decision is unchanged on the server, completion count is zero. |
+| Real version conflict, R2 | Existing affordance test corrects species through the API between page read and commit. | Conflict UI appears and completion count remains zero; existing finally restores species. |
+| Rule edge cases, R1/R2/R5 | Evaluate incremental outcomes, existing decisions, another mode's decision, conflict, withdrawal, refused/null outcome and an empty page. | Only complete successful decisions in the active mode return true; later refusals override earlier decisions. |
 
-- **A landscape phone is 915px wide.** Every narrow rule in this app is behind
-  `@media (max-width: 760px)`, so the viewport the issue was reported from was invisible to
-  every existing test in the file. R5 builds its own 915×412 context for that reason, and
-  the feature is keyed on `max-height: 600px` as well as the existing width query.
-- **Hidden, not zero-height.** `display: none` rather than a 0px track, because a 0px `.hdr`
-  with `overflow: hidden` still answers `isVisible()` and still takes the tab key — focus
-  could land on a control nobody can see. R1 asserts the measured height is 0.
-- **The toggle re-pages the mosaic.** Page size follows the field, so growing the field
-  re-queries. R4 is the guard that this costs the reviewer no marks.
-- **The rail overlay is positioned against the viewport**, not against `.body` — nothing
-  between them is positioned — so its `70px` top was the two bars measured by hand. R7 is
-  the test for the trap that created.
+The new completion tests run Scientific and Training review at desktop and phone viewports: eight browser cases, with the sweep check included in each one-batch case. The failure/conflict cases use their existing desktop API tests.
 
-## Regression coverage
+## Data restoration
 
-- R6 was written as `toBeHidden()` alone and **passed against the code before the change**,
-  because `toBeHidden` is also true of an element that does not exist. It now asserts
-  `toHaveCount(1)` first and fails red as it should. A test that cannot go red is not a test.
+The short-page tests capture the original decision and reason of every row they may touch. Setup and commits happen inside try/finally; finally restores decisions via the API and asserts the decision/reason values match the original. IDs, species, line and page size are discovered on each run, not hard-coded. Review-history entries remain by the API's existing append-only design, in the testing copy only.
 
-## Known gaps
+## Commands and sequence
 
-- **Two phone shapes, not phones in general.** 412×915 and 915×412. A tablet, a fold and a
-  desktop window that is merely short all now match `max-height: 600px` and none was tried.
-- **No real-device run.** Chromium at a phone viewport with touch emulated, which is what
-  this tier is.
-- **The API tier is untouched.** Nothing here writes, reads or changes a request, so there
-  was nothing for `--project=api` to see.
-- **Not a narrated walkthrough**, deliberately: none was asked for.
+From the repository root:
 
-## Results, as run
+1. `node --test --test-name-pattern="#137" frontend/apps/marp-mosaic-review/tests/unit/model.test.mjs`
+2. Prove the original bug with just the desktop Scientific one-batch browser case, temporarily substituting develop's store.js from a saved copy and restoring our implementation in finally.
+3. `npm run test:app:mosaic-review:api -- page-completion.spec.mjs`
+4. `npm run test:app:mosaic-review:api -- affordances.spec.mjs -g "an aborted commit|a species corrected"`
+5. If green, run the existing take-back file because develop's #135 changes overlap this commit path: `npm run test:app:mosaic-review:api -- take-back.spec.mjs`.
 
-`npm run test:unit` — 283 pass, 0 fail (about 0.9 s), including the wiring check that now
-sees `#chromebtn`.
+No whole-suite run or walkthrough. Each command's real output is retained locally; results and failures are recorded below.
 
-Red first, against the pre-change sources restored from a file copy (never `git checkout
---`), `npx playwright test --project=phone --project=desktop -g "#151"`:
+## Limits
 
-```
-  7 failed
-    [phone] › #151 the top chrome › R1: the control takes the header and the sub-bar away, and the field gets the pixels
-    [phone] › #151 the top chrome › R8: the state is on the body, the way the rail already says its own
-    [phone] › #151 the top chrome › R2: the control is still reachable once the chrome it hides is gone
-    [phone] › #151 the top chrome › R3: the footer and both commit buttons are untouched
-    [phone] › #151 the top chrome › R4: a mark made before the chrome is hidden is still there after
-    [phone] › #151 the top chrome › R5: on a landscape phone the chrome starts out of the way
-    [phone] › #151 the top chrome › R7: the rail overlay follows the chrome rather than hanging below where it was
-  8 skipped
-  1 passed (44.0s)
+These checks prove the specified rule, real commit persistence and rendered completion. They do not test navigating during a commit, a broad concurrent-review workload, every mode/filter combination, or the entire application. Delete Mode is deliberately unchanged and its full suite is not part of this run. Restoration preserves current decisions and reasons, not a history with no evidence the tests ever ran.
+
+## Results
+
+Verified against freshly fetched origin/develop a3a7990a. HEAD and origin/develop had zero commits of divergence before the issue commit.
+
+| Run | Result |
+| --- | --- |
+| Focused #137 model file selection | 3 passed, 0 failed, 0 skipped (53.5ms) |
+| Original-bug tripwire using develop store.js | Failed as expected: completed count stayed 0 after all rows were saved |
+| Real-API completion file, desktop and phone | 8 passed (21.9s) |
+| Real aborted-request and species-conflict cases | 2 passed (2.1s) |
+| Existing real-API take-back file | 8 passed (4.5s) |
+| git diff --check | Passed |
+| marp spec check | 2 assumptions answered; 5 requirements; clear to implement |
+
+All eight completion tests reached and passed their finally restoration assertions. The runner reused the testing database and stopped its API after every run. No whole suite was run.
+
+### Failures retained, including test setup failures
+
+After the rebase, the first testing-database provisioning command found no dump because the isolated workspace's corpus directory was empty. Nothing was changed. Re-running with `MARP_CORPUS_DUMP` pointed at the existing verified dump provisioned `marp_test` and passed the manifest round-trip checks.
+
+The first post-rebase model invocation failed before loading tests because the sandbox refused Node's test-worker spawn with `spawn EPERM`. The identical command passed when allowed to spawn its local worker. This is recorded as an environment failure, not a product result.
+
+The first tripwire attempt did not reach the completion assertion: the setup queried without status filters while the browser URL reapplied default statuses. Fixed by spelling out the same status selections in both queries. Its assertion output was:
+
+```text
+Error: expect(received).toEqual(expected) // deep equality
+- Expected  - 6
++ Received  + 0
 ```
 
-The failure in each case was `Error: locator.click: Test timeout of 30000ms exceeded.
-Call log: - waiting for locator('#chromebtn')` — the control did not exist. The one that
-passed was R6, which is why it was strengthened; proved red separately afterwards:
+The command displaying that saved log also failed with a Python Windows console encoding error. The implemented store had already been restored in finally; the saved log was read with explicit UTF-8 afterward. No test result was inferred from the console error.
 
-```
-  1 failed
-    [desktop] › #151 the top chrome › R6: a desktop has no such control, because it has no such problem
-  7 skipped
-```
+The corrected tripwire then failed on the actual reported bug:
 
-Green, same command, after restoring the implementation from the copy:
-
-```
-  8 skipped
-  8 passed (4.7s)
+```text
+Error: expect(locator).toHaveText(expected) failed
+Locator:  locator('#pagesDone b').first()
+Expected: "1"
+Received: "0"
+Timeout:  7000ms
 ```
 
-Whole render tier, `npm run test:e2e` (desktop and phone projects), run twice:
+The first run against the implementation passed all four desktop cases, but failed all four phone cases in setup. The phone's initial layout changed the requested page while adjusting page size. Fixed by loading and settling first, then navigating with the page-number input before asserting exact membership. Its first assertion output was:
 
-```
-run 1:  1 failed / 13 skipped / 302 passed (2.1m)
-          [phone] › the filter rail, cleaned up › L4: confidence is one track carrying two handles
-run 2:  0 failed / 13 skipped / 303 passed (2.1m)
-```
-
-**The L4 failure is not this change.** It passes alone, it passed in the second full run,
-and the geometry it is sensitive to is identical with and without the change — the rail,
-the rail head and the confidence control measure `0,70 190x801`, `10,78 169x20` and
-`10,454 159x20` in the phone overlay in both cases. It is reported rather than chased: it
-is an instability in a test another agent's branch also touches.
-
----
-
-# Part 2 — the ML Dashboard's top bar
-
-A different mechanism on purpose. The mosaic reviewer does not scroll, so its chrome
-needs a control; this app scrolls, so the scroll is the gesture and there is no control.
-
-## What each test proves
-
-All of them are in `frontend/apps/marp-ml-dashboard/tools/scroll-check.mjs`, run by
-`npm run check:scroll` and as part of that app's `npm test`. It is a script that collects
-problems and exits 1, which is this app's existing idiom for a check — `mock-shots.mjs` is
-the same shape. The whole set was proved red against the shell before the change.
-
-| Requirement | Test | Tier | Proves |
-| --- | --- | --- | --- |
-| R9 | the gesture itself | browser | A wheel down hides the bar and puts its bottom edge off the top of the screen; a wheel up brings it back |
-| R10 | noise does nothing | browser | Three pixels does nothing, five does nothing, seven is heard — so jitter cannot flap it and a slow drag still works |
-| R11 | at the top | browser | After a jump down and back, the bar is on screen at `scrollTop` 0 |
-| R12 | nothing to scroll | browser | With the bar hidden, the content is emptied until it no longer scrolls, and the bar comes back on its own |
-| R13 | the space goes to the content | browser | `.content`'s `clientHeight` grows when the bar hides |
-| R14 | reduced motion | browser | The transition is non-zero ordinarily and zero under `prefers-reduced-motion`, **and the behaviour still works** |
-| R15 | authored once | browser | Every screen that scrolls at 941px hides its bar — 5 of 8, asserted to be at least 4 so the check cannot pass vacuously |
-
-## Edge cases
-
-- **The clamp cascade at the bottom of a page, which is the defect this design is most
-  likely to have had.** Hiding the bar hands its height to the content, which *shrinks*
-  the scroller's maximum scroll position — so a reader near the bottom is clamped upward,
-  and an upward move is the signal that brings the bar back. Instrumenting the real page
-  showed the clamp arriving as a cascade of eleven scroll events walking from 368 to 306,
-  every one of them reading as *up*. The 180ms settle window absorbs it and the state
-  stays `hidden` throughout. Without it, the bottom of every long page would flap.
-- **A measurement of zero is how the animation could have flapped at 60fps.** The bar is
-  offset by its own measured height; stretched to a collapsed grid row it would measure 0,
-  the offset would come back to 0 and the row would open again. `align-self: start` on the
-  bar and a refusal to record a zero height are the two guards, and both carry a comment.
-- **Content can stop being scrollable with nobody scrolling** — a tab switch, a filter, a
-  drawer. No scroll event ever arrives to put the bar back, so a MutationObserver on the
-  content watches for it. R12 is that case.
-
-## Known gaps
-
-- **One assertion inside R10 cannot go red**: that seven pixels *shows* the bar passes
-  trivially against code where the bar is always shown. The block around it goes red, and
-  the threshold it measures only exists once the feature does.
-- **The `dashboard` screen does not scroll at 1672×941 and neither do `jobs` or
-  `training`.** Three of the eight screens cannot exercise this at desktop height, which
-  is why the check names how many did.
-- **Desktop width only.** The behaviour is not width-dependent — it is the same listener
-  on the same scroller at every breakpoint — but it was only driven at 1672×941.
-- **No touch-momentum run.** A real phone's rubber-band bounce is the case the threshold
-  is for, and Chromium's wheel is not that gesture.
-
-## Results, as run
-
-Red first, with `mock.js` and `mock.css` restored from a file copy — 15 problems, the
-whole set:
-
-```
-[x] R9: scrolling down should hide the bar, got "shown"
-[x] R9: the bar should be off the top, its bottom edge is at 62px
-[x] R13: the content should gain the bar's height, 879 -> 879
-[x] R9: a jump down should hide it
-[x] R10: setup -- the bar should be hidden at 400px
-[x] R10: three pixels of movement should not bring the bar back
-[x] R10: five pixels is still noise
-[x] R12: setup -- the bar should be hidden
-[x] R14: the bar should animate ordinarily, duration is "0s"
-[x] R14: reduced motion removes the animation, not the behaviour
-[x] R15: datasets scrolls but its bar does not hide
-[x] R15: history scrolls but its bar does not hide
-[x] R15: inference scrolls but its bar does not hide
-[x] R15: models scrolls but its bar does not hide
-[x] R15: workers scrolls but its bar does not hide
+```text
+Error: expect(received).toEqual(expected) // deep equality
+- Expected  -  5
++ Received  + 15
 ```
 
-Green after restoring the implementation, and the app's whole check suite with it:
+The second run of all eight cases passed. These setup failures are not claimed as evidence of the product bug.
 
-```
-    5 of 8 screens scroll at 941px, and each hides its bar
-ok  the top bar hides on the way down, comes back on the way up, and cannot get stuck
-ok  6 files parse
-ok  no raw colours, no states outside the vocabulary
-ok  32 shots, nothing clipped, no console errors
-```
+### Earlier evidence files
 
-**Two of those failures were the check being wrong rather than the code.** The first run
-was driven on `dashboard`, which does not scroll at all at that height, so every check
-passed while proving nothing — the `room > 200` assertion is what said so out loud, and it
-is an assertion rather than a skip for that reason. The second run was driven on `models`,
-whose 368px of room put the pixel-exact checks at the bottom of the page, where they
-measured the clamp instead of the threshold. Both are recorded in the file.
+Full command output from the pre-rebase run is retained in this workspace's git-ignored .marp/local/. The authoritative post-rebase results are the table above.
 
----
+- 137-model-results.txt
+- 137-red-results.txt (first setup failure)
+- 137-red-results-2.txt (actual regression on develop)
+- 137-api-results.txt (desktop pass / phone setup failure)
+- 137-api-results-2.txt (8 passing completion cases)
+- 137-refusal-results.txt (2 passing refusal cases)
+- 137-take-back-results.txt (8 passing take-back cases)
 
-# Part 3 - the public landing page
+### Passing test output
 
-Two things in one header: it follows the reading, and it knows who is reading. The
-gesture is the ML Dashboard's, because this is a scrolling document; the argument for
-that over the mosaic's button is in `.marp/task.md`.
 
-## What each test proves
+137-model-results.txt
 
-Thirteen checks in `frontend/apps/entry/tests/e2e/render.spec.mjs` under `#151 the
-header`, run at all three of that app's projects - `desktop`, `phone`, and
-`phone-landscape`, which is the viewport this whole issue is about. All were proved red.
-
-| Requirement | Test | Tier | Proves |
-| --- | --- | --- | --- |
-| R16 | it leaves on the way down and comes back on the way up | render x3 | The header's bottom edge goes off the top of the screen and returns |
-| R16 | a few pixels of noise does not flap it | render x3 | Three and five pixels do nothing, seven is heard |
-| R17 | at the top of the page the header is always there | render x3 | After going down and back, it is on screen at scrollTop 0 |
-| R17 | it does not slide out from under an open sheet | render x2 | The same scroll hides it with the sheet shut and does not with it open |
-| R18 | signed out, the invitation stays | render x3 | The account control exists, is hidden, and the Login button is reachable |
-| R19 | signed in, the account menu instead | render x3 | Initials drawn from the name, the Login button gone, the menu opens and Escape closes it |
-| R19 | signing out tells the server | render x3 | The POST to `/api/v2/auth/logout` actually happens |
-| R21 | a probe that fails still draws the signed-out header | render x3 | A 500 from the session endpoint reads as *not signed in* |
-| R22 | reduced motion | render x3 | No perceptible transition, and the behaviour still works |
-| R20 | the menu is loaded from one shared file | text tier | `tests/landing-copy.test.js`: both pages load `assets/js/account-menu.js` and carry `data-account` |
-
-## Edge cases, each of which was a real failure first
-
-- **`hidden` did not hide, twice.** The attribute is only the user agent's
-  `display: none`, so any rule setting `display` outranks it. `.primary-nav .button` left
-  the *Login* button on screen beside the avatar that had just replaced it, and
-  `.account__menu`'s own `display: grid` left the dropdown open before anybody clicked.
-  Both are now stated at a specificity that wins, without `!important`.
-- **On a landscape phone the menu opened into nothing.** The navigation sheet fills a
-  340px screen, so a dropdown hanging below the avatar put *Sign out* at y=468: 128px
-  past the bottom, unreachable by any gesture. The sheet is now bounded to the screen and
-  scrolls, and inside it the menu is part of the list rather than a dropdown off it.
-  **This was a defect in this work, found by a test at the viewport the issue is about.**
-- **The probe's 401 is not a bad response.** The render tier fails a page that produces
-  one, and for a visitor `GET /api/v2/auth/me` answers 401 by design - 404 in this tier,
-  where there is no API at all. The check now excludes exactly that URL with exactly
-  those two statuses; a 500 from it still fails, and R21 proves the page copes anyway.
-
-## A pre-existing flake, made worse and then fixed
-
-`the landing page hero > puts the headline, the copy and both buttons on the first
-screen` at `phone-landscape` failed intermittently. Measured rather than guessed:
-
-```
-before #151:  2 failures in 8 runs
-after  #151:  4 failures in 8 runs
-the failure:  "buttons: 298..342 of 340"
-settled page: actions 276..320 of 340, identical on three consecutive runs
+```text
+✔ #137 R1-R2: scientific completion requires every row committed (1.2984ms)
+✔ #137 R1-R2: training completion requires every row committed (0.075ms)
+✔ #137 R1: existing decisions count only in their own mode (0.0624ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 53.5475
 ```
 
-`.hero__copy` is a `data-reveal` element: it starts 22px low and animates up over 650ms,
-and 320 + 22 = 342. The test was catching the animation in flight. It is not a layout
-difference - the page measures the same with and without this work - but adding a script
-and a request to the page's load changed which frame the measurement landed on. The test
-now waits for the reveal to finish and passes **8 runs in 8**.
+137-api-results-2.txt
 
-Fonts were the first hypothesis and were wrong: `document.fonts.ready` changed nothing,
-and the failure stayed at exactly 342.
-
-## Known gaps
-
-- **The signed-in state is tested against an intercepted route, not a real session.**
-  The render tier runs on a static server with no API. What is proved is that the header
-  draws correctly given each answer, not that the server gives that answer - though the
-  endpoint's own behaviour is covered by the API suite, and two applications already
-  depend on it.
-- **The two in-page Login buttons are untouched** (A6), so a signed-in visitor still
-  meets them further down the page.
-- **The Mosaic Reviewer and the ML Dashboard still carry their own menus.** Adopting the
-  shared one is the human's call and is not done here.
-
-## Results, as run
-
-Red first, with the four page files restored from a copy and `account-menu.js` moved
-aside: **13 failed, 2 passed**. Those two were the R17 sheet check at two viewports,
-which asserted only that the header does *not* move and so passed against a page whose
-header never moved at all; it now proves the contrast first and fails red.
-
-Green, the whole entry tier at all three viewports:
-
-```
-  1 skipped
-  59 passed (27.3s)
+```text
+  ok 1 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › scientific: every tile committed in 1 batch(es) completes the pager (3.6s)
+  ok 2 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › scientific: every tile committed in 2 batch(es) completes the pager (2.2s)
+  ok 3 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › training: every tile committed in 1 batch(es) completes the pager (3.4s)
+  ok 4 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › training: every tile committed in 2 batch(es) completes the pager (2.2s)
+  ok 5 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › scientific: every tile committed in 1 batch(es) completes the pager (2.9s)
+  ok 6 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › scientific: every tile committed in 2 batch(es) completes the pager (2.0s)
+  ok 7 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › training: every tile committed in 1 batch(es) completes the pager (3.0s)
+  ok 8 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › training: every tile committed in 2 batch(es) completes the pager (1.9s)
+  8 passed (21.9s)
 ```
 
-The skip is the sheet check at desktop, where the hamburger does not exist.
+137-refusal-results.txt
 
-And the text tier that owns this page's markup:
-
-```
-Test: landing page copy > uses no class landing.css has no rule for ......... PASS
-Test: landing page copy > contains no em dash in the account menu script .... PASS
-Test: landing page copy > loads the shared account menu on both pages ....... PASS
-  Test Suites : 1 passed, 0 failed, 1 total
-  Result: ALL TESTS PASSED
+```text
+  ok 1 [api] › tests\api\affordances.spec.mjs:54:3 › what the fixture used to fake › R10: an aborted commit says Failed, changes nothing, and keeps the mark (826ms)
+  ok 2 [api] › tests\api\affordances.spec.mjs:148:3 › what the fixture used to fake › R10: a species corrected underneath the page conflicts rather than overwriting (730ms)
+  2 passed (2.1s)
 ```
 
----
+137-take-back-results.txt
 
-# Part 4 - one account menu, drawn by one component
-
-## What each test proves
-
-| Requirement | Test | Tier | Proves |
-| --- | --- | --- | --- |
-| R23 | `#151 the account menu` R23 x3, mosaic `tests/e2e/render.spec.mjs` | render | The header draws one control, on the component's own hooks, and it opens and shuts |
-| R23 | mosaic `R23: it draws whoever the backing says is signed in, not a literal` | render | The initials are **derived from `window.MARP.state.me`**, so a hard-coded avatar fails even when the letters would have matched |
-| R24 | mosaic `R24: it survives a re-render` | render | After marking a tile - a full chrome redraw - the control is still there, still says the same thing, and still opens |
-| R23 | ML `tools/account-check.mjs` | browser | All 8 screens draw exactly one shared control; signed in it shows that session's initials |
-| R25 | ML `account-check`: no person named in the top bar | browser | Asserted against the **rendered** top bar, so a literal anywhere in the shell fails |
-| R26 | ML `account-check`: signed out | browser | Nobody, `Not signed in`, and Sign out not offered - against a real 404 from the probe |
-| R25 | landing `R19` (part 3) | render | Unchanged and still green after the component moved |
-
-## A bug this work introduced, and the check that caught it the first time it ran
-
-`mount()` already had a local `show(open)` for opening the dropdown. The new
-`show(root, user)` that paints the identity is declared at module level, so **inside
-`mount` the local one shadowed it** - and the paint call was toggling the menu with a DOM
-node for its argument. Every application drew nobody, for ever, and the landing page's
-signed-in path would have gone with it.
-
-`tools/account-check.mjs` failed on it the first time it was run. The local is now
-`setOpen`, and the comment says why.
-
-## Two harness changes, both narrow, both stated
-
-- **`tests/landing-copy.test.js` now reads the stylesheets a page links** instead of only
-  `landing.css`. The component's rules moved to `account-menu.css`, which all three apps
-  link, and the alternatives were duplicating those rules - the drift this conversion
-  exists to end - or letting the classes through unstyled. **Changed, not weakened, and
-  demonstrated:** an unstyled class added to `index.html` still fails the check, on that
-  page only.
-- **The ML Dashboard's harnesses answer the session probe as nobody** (a 200 carrying no
-  user). That tier serves files and has no API, so the probe 404s, and a failed request
-  is a console error - which those checks fail on, for reasons that have nothing to do
-  with this. The 404 path is not skipped: `account-check.mjs` lets it happen and asserts
-  the signed-out state.
-
-## Known gaps
-
-- **The mosaic's render tier runs on the fixture**, whose `me` is `I. Travers` - so what
-  is proved there is that the avatar follows the backing's identity, not that a real
-  session reaches it. The API tier and the real server cover the endpoint.
-- **The fixture still names a real person** (`src/data.js`, `tools/make-fixture.mjs`).
-  That is test data rather than application chrome, and it is deliberately a person so
-  `decidedByMe` can be exercised. Named for a decision rather than changed here.
-- **The signed-in state of the ML Dashboard is tested through an intercepted route.**
-  It is not gated, so a real session there is a person signing in elsewhere first.
-
-## Results, as run
-
-Red first for the mosaic's four, against the pre-conversion files restored from a copy:
-
-```
-  4 failed
-    R23: the header draws one shared account control, and it is the shared one
-    R23: it draws whoever the backing says is signed in, not a literal
-    R23: it opens, and it shuts
-    R24: it survives a re-render
+```text
+  ok 1 [api] › tests\api\take-back.spec.mjs:71:1 › R8: a recorded take-back stops saying TAKING BACK (592ms)
+  ok 2 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in scientific, clicking a committed accepted takes it back (469ms)
+  ok 3 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in scientific, clicking a committed exception takes it back (436ms)
+  ok 4 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in training, clicking a committed accepted takes it back (474ms)
+  ok 5 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in training, clicking a committed exception takes it back (509ms)
+  ok 6 [api] › tests\api\take-back.spec.mjs:192:1 › #135 R8: clicking again puts the decision back, and only a commit reaches the flag (559ms)
+  ok 7 [api] › tests\api\take-back.spec.mjs:252:1 › R7a: a decision made in an earlier sitting can be taken back (402ms)
+  ok 8 [api] › tests\api\take-back.spec.mjs:305:1 › R7: the page sweep withdraws a take-back instead of deciding it again (515ms)
+  8 passed (4.5s)
 ```
 
-Then green, everywhere:
+## Files touched
 
-```
-mosaic     303 unit pass, 0 fail
-mosaic     14 skipped, 316 passed (2.1m)          render, phone and desktop
-ML         ok  7 files parse
-ML         ok  no raw colours, no states outside the vocabulary
-ML         ok  the top bar hides on the way down, comes back on the way up
-ML         ok  the account menu is the shared one, and it names nobody it has not been told about
-ML         ok  32 shots, nothing clipped, no console errors
-entry      1 skipped, 59 passed (26.9s)           three viewports
-API        Test Suites : 1 passed, 0 failed       tests/landing-copy.test.js
-```
+- .marp/task.md: #137 scope, settled decisions, updated base and status.
+- .marp/verification.md: this plan, evidence and coverage limits.
+- frontend/apps/marp-mosaic-review/src/model/page.js: pure completion predicate.
+- frontend/apps/marp-mosaic-review/src/store.js: completion separated from sweep-only pinning; skipped outcomes prevent completion; merged take-back/version behavior preserved.
+- frontend/apps/marp-mosaic-review/tests/unit/model.test.mjs: focused completion-rule cases.
+- frontend/apps/marp-mosaic-review/tests/api/page-completion.spec.mjs: real-API desktop/phone completion, pins, persistence and restoration assertions.
+- frontend/apps/marp-mosaic-review/tests/api/affordances.spec.mjs: incomplete-count assertions in the existing aborted-request and real-conflict cases.
 
----
+No generated files, testing infrastructure, shared application code outside this feature, or other workspaces were edited. The earlier fixture test draft was removed; that file now matches develop. The original pre-update draft remains in a local safety stash.
 
-# Part 5 - the legacy dashboard, roughly
+## Status
 
-## What was judged sufficient, and why
-
-**A file-reading check, and no browser tier.** `tests/dashboard-shell.test.js` holds that
-all four pages link the shared component, are given the palette, ask Bootstrap for its dark
-mode, carry the logo and the account markup, state no colour of their own, define no second
-account menu, and **name nobody**. It is in `core` beside `landing-copy` and `docs-branding`,
-which are the same kind of invariant.
-
-Building a render tier for an application that is about to be redesigned would cost more
-than the restyle did, which is the whole instruction. What a browser draws was checked once,
-by hand, below.
-
-## The one-off browser check
-
-All four pages rendered through a scratch server mirroring `app.js`'s static mounts, with
-the session probe answered:
-
-```
-index.html           bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0  errors none
-admin.html           bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0
-user-activity.html   bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0
-user-hours.html      bg rgb(1,5,13)  text rgb(199,212,221)  avatar AL  Signed in as Ada Lovelace  logo loaded  sideways 0
-```
-
-`rgb(1, 5, 13)` is `--navy-1000` and `rgb(199, 212, 221)` is `--text`, so the palette
-reaches the body on every page. The errors on the three pages other than `index.html` are
-404s from the scratch server, which has no API for them to fetch their data from.
-
-## Two things the first attempt got wrong
-
-- **Bootstrap paints the ground too, and it was winning.** `shell.css` was linked before
-  Bootstrap, so the body came out `rgb(33, 37, 41)` -- Bootstrap's dark grey, not MARP's
-  navy. The shell now loads after it on those two pages.
-- **The account menu mounted before its own markup existed.** `user-activity.html` and
-  `user-hours.html` draw their header from a partial fetched by `partials.js`, which lands
-  well after `DOMContentLoaded` -- so the component looked, found nothing, and those two
-  headers drew nobody permanently. `partials.js` now asks it to mount again once a partial
-  is in, which is safe because mounting is idempotent.
-
-## Known gaps
-
-- **Nothing here is proved by an automated browser check**, by choice. A palette that stops
-  reaching a page would pass this file-reading tier as long as the links are present.
-- **`frontend/apps/entry/old_index.html` also links `shell.css`** and therefore changed
-  colour. It is the page the landing page replaced, kept for reference and not served.
-- **The pages' own content is untouched**, including anything about it that looks wrong.
+- **Gate:** G4 complete, evidence recorded. The branch is ready for G5, which requires the human to ask for a pull request.
