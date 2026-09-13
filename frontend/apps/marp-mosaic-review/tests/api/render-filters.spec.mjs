@@ -208,7 +208,19 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
     }, cut);
     await ready(page);
 
-    expect(await total(page)).toBeLessThan(before);
+    /**
+     * **Polled rather than read once**, and the phone is why.
+     *
+     * `ready` waits for the tiles to settle, and on a narrow viewport the tiles can settle
+     * before `#total` has been rewritten -- the grid re-measures, `setPageSize` re-queries,
+     * and the count is the last thing to land. Read once, this took the old total and
+     * failed the comparison, intermittently and only at `api-phone`. `expect.poll` is the
+     * same assertion with the retry a real round trip needs.
+     */
+    await expect.poll(() => total(page),
+      { message: 'raising the confidence floor must narrow the result' })
+      .toBeLessThan(before);
+
     await expect(page.locator('[data-span="confidence"]')).toBeVisible();
   });
 
@@ -565,12 +577,28 @@ async function aNarrowingDive(request) {
  */
 async function aConfidenceThatNarrows(request) {
   const first = await pageOf(request, {}, { page: 1, pageSize: 1, includeTotal: true });
-  /* The default sort is confidence ascending, so page one of size one is the floor. */
-  const lowest = Number(first.rows.length ? first.rows[0].confidence : NaN);
-  expect(Number.isFinite(lowest), 'the lowest-confidence row of the default question '
-    + 'carries no confidence, so there is no threshold to set the slider to.').toBe(true);
+  expect(first.total, 'the default question is empty, so there is nothing to narrow.')
+    .toBeGreaterThan(2);
 
-  const cut = (Math.floor(lowest * 100) + 1) / 100;          // the slider's step is 0.01
+  /**
+   * **The middle of the range, not one step above the floor.**
+   *
+   * The default sort is confidence ascending, so page *n* of size one is the *n*th row by
+   * confidence -- and the middle one is a cut that drops about half the result.
+   *
+   * This took one slider step above the lowest row, which is the smallest cut that
+   * narrows anything, and on this corpus that was **three rows out of 1,947**. The check
+   * then passed alone and failed in sequence: any earlier check that decides one of three
+   * particular rows takes them out of the default question, and the smallest possible cut
+   * stops cutting. A margin that thin is not a discovered value, it is a coincidence.
+   */
+  const middle = await pageOf(request, {},
+    { page: Math.max(2, Math.floor(first.total / 2)), pageSize: 1, includeTotal: false });
+  const at = Number(middle.rows.length ? middle.rows[0].confidence : NaN);
+  expect(Number.isFinite(at), 'the middle row of the default question carries no '
+    + 'confidence, so there is no threshold to set the slider to.').toBe(true);
+
+  const cut = Math.round(at * 100) / 100;                    // the slider's step is 0.01
   const kept = await pageOf(request, { confidence: { from: cut, to: 1 } },
     { page: 1, pageSize: 1, includeTotal: true });
 

@@ -249,13 +249,23 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
 
   test('R1/R5: a committed flag reaches training as the record, not as an outcome',
     async ({ page }) => {
-      await page.goto(undecided());
+      /**
+       * **Undecided in *both* dimensions, and the address is what guarantees it.**
+       *
+       * This asked for `undecided()` alone and said that a tile with no badge carries no
+       * decision in any dimension. That is not true and it cost a run: a training decision
+       * draws an `.rtag`, not a `.badge` (#85) -- they are deliberately different elements --
+       * so `freshTile` will happily return a row that is already promoted. Training then
+       * opens on its own default of `undecided` and filters that very row out, and the walk
+       * at the end reports the tile missing.
+       *
+       * Narrowing the borrowed dimension in the address is the fix. A borrowed dimension
+       * arrives not filtering at all, by design, so nothing else was going to do it.
+       */
+      await page.goto(undecided('trainingDisposition=undecided'));
       await expectRealBacking(page);
       await ready(page);
 
-      /* An undecided row, so training's own default filter still shows it afterwards.
-         `undecided()` plus `freshTile` is what guarantees that here: the address asks for
-         unreviewed rows and a tile with no badge carries no decision in any dimension. */
       const first = await freshTile(page);
       const line = await first.evaluate((el) => {
         const row = (window.MARP.state.rows || [])
@@ -269,7 +279,7 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
          left to put the row on screen without reloading, which would discard the very
          outcomes R5 is about. Narrowing can only move a row *earlier* in the order, so the
          tile that was on page 1 of the wider question is still on page 1 of this one. */
-      await page.goto(undecided(`line=${encodeURIComponent(line)}`));
+      await page.goto(undecided(`trainingDisposition=undecided&line=${encodeURIComponent(line)}`));
       await ready(page);
 
       const tile = await freshTile(page);
