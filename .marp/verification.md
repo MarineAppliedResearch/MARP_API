@@ -1,136 +1,171 @@
-# Verification plan — MARP_API #167: pending and recorded decisions
+# Verification plan — MARP_API #166: application account menus
 
-Issue: https://github.com/MarineAppliedResearch/MARP_API/issues/167
+Issue: https://github.com/MarineAppliedResearch/MARP_API/issues/166
 
-## What is being tested
+## What each test proves
 
-Issue #167 reports that a pending choice and the committed decision look alike. The first implementation dimmed only committed exceptions; user testing rejected both parts of that treatment. The corrected change applies to flags, reviews, exclusions, promotions, and taking back. Pending work uses a 3px outline; recorded decisions use a 1px outline in the same established color and solid/dashed pattern. Scientific and Training imagery remains unfiltered.
+| Requirement | Test | Tier | Proves |
+| --- | --- | --- | --- |
+| R1/R3/R6 | `frontend/apps/marp-ml-dashboard/tools/account-check.mjs`: signed-in ML menu at desktop, phone portrait, and phone landscape | rendered browser | ML shows identity, Dashboard, and Sign out only; no Mosaic self-link, other app link, or inert settings control appears. |
+| R2/R7 | `account-check.mjs`: signed-out and signed-in ML states | rendered browser | A signed-out session shows Not signed in, Dashboard, and Sign in; a signed-in session shows the returned name and initials, hides Sign in, and offers Sign out. The menu opens, closes on an outside click, and closes on Escape. |
+| R3 | `account-check.mjs`: dashboard home at all three viewports | rendered browser | The dashboard page visibly retains separate links to Mosaic and ML, while its account menu contains only identity, Dashboard, and Sign out. |
+| R4 | `account-check.mjs`: ML menu geometry at all three viewports | rendered browser | All four menu corners remain inside the viewport and `elementFromPoint` resolves to the menu at each corner, so panels or controls cannot cover it. |
+| R3/R5 | `frontend/apps/marp-mosaic-review/tests/api/account-menu.spec.mjs`: `Mosaic account menu works` at all three viewports | real-API rendered browser | The control is visible in the top 80 pixels, opens with real session identity, shows Dashboard and Sign out only, stays inside the viewport, and is the top painted element at all four corners. |
+| R3 | `account-menu.spec.mjs`: `the Mosaic dashboard item reaches the main dashboard` | real-API rendered browser | Activating Dashboard navigates to `/apps/dashboard/index.html` under the same authenticated session. |
+| R1/R3/R7 | `tests/dashboard-shell.test.js`: account markup and dashboard application links | file contract | All four legacy dashboard pages carry Dashboard, Sign in, and Sign out hooks, no account-menu link to Mosaic or ML, and the dashboard home retains both app links. |
+| R2/R7/R9 | Existing entry browser cases `R18`, `R19`, and `R21` in `frontend/apps/entry/tests/e2e/render.spec.mjs` | rendered browser | The public entry keeps its visible Login invitation when signed out, derives signed-in identity, opens and dismisses the menu, posts Sign out, and handles a failed session probe. |
+| R8 | The ML/dashboard and Mosaic browser cases above at the named three viewports | rendered browser | The reported content, visibility, clipping, stacking, and interaction defects each have an assertion at a tier that can observe them. |
 
-The browser must observe the rendered outline and unchanged image filter while the API confirms each decision. A store or model test cannot prove either visible treatment or persistence, and the retired fixture cannot faithfully represent the difference between a commit outcome and the unchanged row already displayed by the real API.
+## Requirements with no test
 
-## Requirement coverage
+None. R6 does not invent tests for future app-specific settings; it is proved by asserting
+that the current menus contain no inert settings rows.
 
-| Requirement | Scenario | Evidence required |
-| --- | --- | --- |
-| R1/R2 | Start with one ready, undecided observation. Mark an exception, then separately mark an acceptance, without committing. | FLAGGED, REVIEWED, EXCLUDED, and PROMOTED each have one badge, lack `recorded`, use a 3px outline, and leave the image filter `none`. |
-| R2 | Press Commit Marked for each pending choice. | The real response succeeds, the API reads back the expected decision, the same tile gains `recorded`, the outline becomes 1px, and the image filter remains `none`. |
-| R3 | Reload after each successful commit. | The page is API-backed; each existing decision remains `recorded`, has one primary badge, uses a 1px outline, and leaves the image filter `none`. |
-| R4 | Inspect the image before marking, while pending, after committing, and after reload. | Its computed filter is `none` at every Scientific and Training state. |
-| R5 | Click each reloaded committed tile once, then again. Separately abort a real commit request and create a real observation-version conflict. | TAKING BACK lacks `recorded` and uses 3px; canceling restores `recorded` and 1px and disables Commit Marked because nothing remains pending. Failed and conflicted marks remain pending at 3px and do not reach the record. |
-| R6 | Inspect every pending, committed, reloaded, and take-back state above. | Each tile has exactly one `.badge`; mark > outcome > record precedence remains visible and a borrowed `.rtag` never becomes the primary badge. |
-| R7 | Run all four decisions at desktop and phone viewports. Review the Delete selectors in the diff. | Eight successful-transition cases pass. Delete's destructive filter and treatment are unchanged; no Delete action is executed. |
+## Edge cases
 
-## Real-API data setup and restoration
+- **A signed-out open application.** ML is not session-gated, so it must offer Sign in rather
+  than Sign out while still providing the Dashboard route.
+- **Phone landscape selects a wider breakpoint.** The 915 by 412 browser case catches rules
+  that key only on portrait width and menus that run below a short screen.
+- **Mosaic clips its own descendants.** The geometry check samples actual painted points,
+  rather than trusting a high `z-index` on a menu still clipped by its header.
+- **ML has nested stacking contexts.** The same point sampling catches content painted over
+  the dropdown even when the menu itself reports a high `z-index`.
+- **The top bar moves while reading.** The ML browser opens the menu from the live top bar;
+  the implementation keeps the bar shown while that menu remains open.
+- **A menu initially renders before session introspection finishes.** Sign in and Sign out
+  are both present in markup, but the shared controller makes exactly one visible for the
+  resolved session state.
 
-The runner uses this workspace's disposable `marp_test`, never `mare_v1`. `npm run testing-db status` reports the target and source dump. If the isolated workspace has no dump of its own, set `MARP_CORPUS_DUMP` to the newest existing local dump before provisioning; do not copy an environment path into tracked documentation.
+## Regression coverage
 
-Each successful-transition test discovers a species and line containing exactly one ready observation. It captures that row's original mode decision and reason, withdraws the decision through the API to establish the pending baseline, and restores the original decision and reason in `finally`. IDs and filters are discovered on every run. Append-only review-history rows remain in the disposable testing copy by design.
-
-The existing failure and conflict tests already restore the row or species they touch. The conflict is produced through the correction API rather than by editing the database.
+- PR #165 placed Dashboard, Mosaic, and ML links in every account menu. The new browser and
+  file-contract assertions require the settled identity/Dashboard/session-action contents.
+- Mosaic deliberately hid `.hdr .right` below 760px and clipped dropdown overflow in the
+  header. The portrait test requires a visible top control and a fully painted menu.
+- ML allowed its content row to paint over the top-bar dropdown. The three viewport geometry
+  checks fail whenever any sampled menu corner belongs to a panel, table, or other overlay.
+- A session action could previously offer only Sign out even when the session probe returned
+  nobody. The signed-out ML case requires Sign in and excludes Sign out.
 
 ## Commands, in order
 
-From the issue workspace repository root, after provisioning or reusing `marp_test`:
+Run from the issue workspace repository root after this plan is approved:
 
-1. `npm run test:app:mosaic-review:api -- decision-state.spec.mjs`
-   - Eight cases: Scientific and Training, exception and acceptance, at desktop and phone viewports.
-   - Proves pending and recorded border weights, unchanged imagery, API persistence, reload behavior, take-back/cancel behavior, and one-badge precedence.
-2. `npm run test:app:mosaic-review:api -- affordances.spec.mjs -g "an aborted commit|a species corrected"`
-   - Two existing real failure paths with new #167 assertions.
-   - Proves aborted and conflicted marks stay visually pending at 3px.
-3. Run `git diff --check` and `marp spec check`.
+1. `npm --prefix frontend/apps/marp-ml-dashboard run lint`
+   - Parses the changed ML script and checks its stylesheet vocabulary.
+2. `npm --prefix frontend/apps/marp-ml-dashboard run check:account`
+   - Runs the focused rendered-browser checks for ML and the legacy dashboard at desktop,
+     phone portrait, and phone landscape sizes.
+3. `npm run test:app:mosaic-review:api -- account-menu.spec.mjs`
+   - Provisions or reuses the disposable testing database, starts a private API on an
+     operating-system-selected port, signs in, runs four focused real-API browser cases,
+     and stops the API.
+4. `npm run test:core -- --runTestsByPath tests/dashboard-shell.test.js`
+   - Runs only the dashboard markup contract changed by this issue.
+5. `npm run test:app:entry`
+   - Runs the entry application's own group because both entry menu bodies and the shared
+     session controller changed. Its existing account cases cover signed-out, signed-in,
+     failed-probe, dismissal, and sign-out behavior.
+6. Run `git diff --check`, `marp spec check`, and `marp harness check`.
 
-Every browser command starts its own API on a free port, signs in with the narrow testing reviewer, uses one worker, and stops that API afterward.
+The browser runners start and stop their own servers. No running agent server is adopted.
 
-## What is not covered
+## Known gaps
 
-- No whole-suite or narrated walkthrough run; those belong to the end-of-phase gate and the human's call.
-- No visual-regression screenshot threshold. The test asserts the browser's computed outline width and image filter exactly, which observes this CSS behavior without making unrelated pixels part of the contract.
-- No Delete commit is performed. Delete's selector and destructive dimming are outside the changed rules and are reviewed in the diff.
-- No production or development corpus is read or written.
+- No future application settings are tested because none exist. The host-owned markup seam
+  leaves room to add a real item with its own behavior and test later.
+- Sign in is asserted as a link to the public entry surface. The existing entry browser tier
+  separately proves that surface opens and submits the login dialog; this plan does not
+  repeat the login endpoint test from every application.
+- The legacy dashboard still carries its older standalone Logout buttons in addition to the
+  account menu's Sign out action. Removing those controls is outside #166.
+- No screenshot threshold is used. Bounding boxes and hit testing observe clipping and
+  coverage without making unrelated application pixels part of the contract.
+- No whole repository suite or narrated walkthrough is planned. The targeted application
+  groups cover the files and behaviors changed here; the end-of-phase suite remains the
+  human's call.
+- No production or development corpus is read or written. The one real-API browser command
+  uses the disposable testing database managed by the repository.
+
+## Manual steps
+
+No manual step is required for verification. After the automated evidence passes, the
+workspace can be started for the human's visual review using the API address reported by
+`marp agent list`.
+
+---
 
 ## Results
 
-Verified against the isolated `marp_test` database. The API runner reused the populated copy, started its own API on an operating-system-selected port, used one browser worker, restored each decision in `finally`, and stopped its API after each command. The review server remained available on port 3012 and returned HTTP 200 after verification.
+Plan approved by the human on 2026-09-13. All commands below ran from the isolated issue
+workspace against the current `origin/develop` commit reported by `git fetch`.
+The human then reviewed the application running against the populated disposable corpus and
+accepted the behavior and this evidence on 2026-09-13.
 
-| Run | Result |
-| --- | --- |
-| Decision-state real-API browser cases | 8 passed, 0 failed, 0 skipped (10.0s) |
-| Aborted-request and species-conflict cases | 2 passed, 0 failed, 0 skipped (2.1s) |
-| `git diff --check` | Passed; only existing Windows line-ending notices |
-| `marp spec check` | Passed: 5 assumptions answered, 7 requirements, clear |
+### Passing evidence
 
-### Passing browser output
+- ML parse and vocabulary lint: `ok 7 files parse` and
+  `ok no raw colours, no states outside the vocabulary`.
+- Focused ML/dashboard browser check: `8 screens, each drawing one account control`, then
+  `ok the account menu is the shared one, and it names nobody it has not been told about`.
+- Focused Mosaic real-API browser check: all four named cases passed in 4.7 seconds. This
+  used the disposable test database with 2,092 observations and 2,079 thumbnail files;
+  the runner reported `The API tier passed, against a real server on the testing database.`
+- Dashboard shell contract: 27 passed, 0 failed, 0 skipped.
+- Entry application browser group: 59 passed and one desktop-only case skipped by its own
+  viewport condition. Its signed-out, failed-probe, signed-in, dismissal, and sign-out
+  account cases passed at desktop, phone portrait, and phone landscape sizes.
+- `git diff --check`: passed. The only output was Git's local LF-to-CRLF warning; there
+  were no whitespace errors.
+- Spec check: `ok 3 assumptions answered`, `ok 9 numbered requirements`, and
+  `ok clear to implement`.
+- Harness check: `ok both gates behave as documented`, no conflicting ports or exclusive
+  resources, and `ok everything the harness can verify is consistent`.
+- After the final fetch, `git rev-list --left-right --count HEAD...origin/develop` reported
+  `0 0`, so the verification base is current.
+
+### Failures observed and corrected
+
+The first sandboxed ML lint invocation could not spawn its parser children and emitted an
+empty error for all seven files. Direct `node --check` succeeded, and the same lint command
+outside the process sandbox produced the passing evidence above.
+
+The first Mosaic database attempt refused to run because this new workspace did not yet
+have a corpus dump configured. The reusable local test corpus was then supplied to the
+repository's test-database provisioner; no shared database was used or changed.
+
+The first completed Mosaic browser run had one passing navigation case and three failed
+viewport cases. Desktop and portrait exposed both session actions because the component's
+`display: block` rule overrode the HTML `hidden` state:
 
 ```text
-Running 8 tests using 1 worker
-
-  ok 1 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › scientific: a pending exception becomes a lighter recorded decision (1.3s)
-  ok 2 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › scientific: a pending acceptance becomes a lighter recorded decision (1.2s)
-  ok 3 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › training: a pending exception becomes a lighter recorded decision (1.2s)
-  ok 4 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › training: a pending acceptance becomes a lighter recorded decision (1.2s)
-  ok 5 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › scientific: a pending exception becomes a lighter recorded decision (1.1s)
-  ok 6 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › scientific: a pending acceptance becomes a lighter recorded decision (1.1s)
-  ok 7 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › training: a pending exception becomes a lighter recorded decision (1.2s)
-  ok 8 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › training: a pending acceptance becomes a lighter recorded decision (1.1s)
-
-  8 passed (10.0s)
-
-The API tier passed, against a real server on the testing database.
+Expected ["Open the dashboard","Sign out"]
+Received ["Open the dashboard","Sign in","Sign out"]
 ```
 
+Phone landscape also reproduced the reported missing control:
+
 ```text
-Running 2 tests using 1 worker
-
-  ok 1 [api] › tests\api\affordances.spec.mjs:54:3 › what the fixture used to fake › R10: an aborted commit says Failed, changes nothing, and keeps the mark (854ms)
-  ok 2 [api] › tests\api\affordances.spec.mjs:151:3 › what the fixture used to fake › R10: a species corrected underneath the page conflicts rather than overwriting (720ms)
-
-  2 passed (2.1s)
-
-The API tier passed, against a real server on the testing database.
+Error: expect(locator).toBeVisible() failed
+Locator:  locator('[data-account-button]')
+Expected: visible
+Received: hidden
 ```
 
-### Failures retained
+The shared stylesheet now preserves hidden session actions. Mosaic keeps #151's short-screen
+chrome collapse but fixes its one account control in the visible top corner while collapsed.
+The subsequent real-API run passed desktop, portrait, landscape, and Dashboard navigation.
 
-The first command was refused before starting an API or browser because the live review server's local `.env` deliberately points at the disposable database:
-
-```text
-Refused: the testing database and the development database are both "marp_test".
-
-Nothing has been changed. A testing database is a second database --
-give it a different name with MARP_TESTING_DB_NAME, or point DB_NAME at
-the development one. `marp db status` says which is which.
-```
-
-The rerun supplied `DB_NAME=mare_v1` only to the launcher as its comparison value. The launcher continued to override its child API with `DB_NAME=marp_test`; no process connected to the development database.
-
-That run then reached the temporary API and authenticated, but the sandbox refused Playwright's worker process before any test case ran:
+A later sandboxed Mosaic rerun and the first harness run were unable to spawn child
+processes. Their exact process error and harness symptom were:
 
 ```text
-Running 8 tests using 1 worker
-
 Error: spawn EPERM
-    at ChildProcess.spawn (node:internal/child_process:421:11)
-    at spawn (node:child_process:796:9)
-    at Object.fork (node:child_process:174:10)
-    at WorkerHost.startRunner (frontend\apps\marp-mosaic-review\node_modules\playwright\lib\runner\index.js:1899:49)
+FAIL blocked spec, editing source → unparseable: , expected deny
+FAIL 23 gate assertion(s) failed
 ```
 
-The identical approved command passed when allowed to spawn the local worker. Neither setup failure is claimed as a product result.
-
-## Files touched
-
-- `.marp/task.md`: corrected scope, requirements, decisions, and gate state.
-- `.marp/verification.md`: approved plan, actual results, failures, and coverage limits.
-- `frontend/apps/marp-mosaic-review/src/ui/tile.js`: one derived `recorded` state for every Scientific and Training decision.
-- `frontend/apps/marp-mosaic-review/src/store.js`: canceling a take-back clears the stale pending touch.
-- `frontend/apps/marp-mosaic-review/styles/app.css`: 3px pending and 1px recorded outlines; Scientific and Training decision dimming removed.
-- `frontend/apps/marp-mosaic-review/tests/api/decision-state.spec.mjs`: real-API coverage for both modes, both decision kinds, both viewports, reload, take-back, cancel, and image visibility.
-- `frontend/apps/marp-mosaic-review/tests/api/affordances.spec.mjs`: pending-state assertions for aborted and conflicted commits.
-
-No generated files, API contracts, schema, dependencies, or Delete Mode behavior were changed.
-
-## Status
-
-- **Gate:** G4 verification complete and accepted by the human.
-- **Next:** The human authorized commit, push, pull-request creation, and merge for issue #167.
+Both exact commands passed when rerun outside the Windows child-process restriction. These
+were execution-environment failures; neither produced an application or harness assertion
+failure in the unrestricted rerun.

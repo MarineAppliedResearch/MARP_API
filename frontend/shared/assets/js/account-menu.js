@@ -1,15 +1,12 @@
 /**
  * The MARP account menu, written once (#151).
  *
- * The Picture Mosaic Reviewer and the ML Dashboard each carry their own copy of this
- * control. This is the third place that needs it, so it is the place it stops being
- * copied: the behaviour lives here and the two existing applications can adopt it when
- * somebody decides they should, which is a judgement rather than a refactor to slip in.
+ * Each application owns the links and actions inside its menu. This file owns the behavior
+ * they share: session identity, opening and dismissal, and the sign-in/sign-out state.
  *
- * What makes the landing page different from the other two is the only interesting part.
- * Both of those are served behind a session gate in `app.js`, so by the time their code
- * runs there is certainly a session. The landing page is deliberately open, so it has to
- * ask, and it has to be able to hear "no" without looking broken:
+ * Some hosts are session-gated and some, including the landing page and ML Dashboard, are
+ * deliberately open. The component therefore asks by default and has to hear "no" without
+ * looking broken:
  *
  * - **It asks `GET /api/v2/auth/me`**, which describes itself as the session introspection
  *   endpoint, answers 401 with no session and the user with one, and needs no permission
@@ -177,6 +174,7 @@
     }
     var button = root.querySelector("[data-account-button]");
     var who = root.querySelector("[data-account-who]");
+    var signIn = root.querySelector("[data-account-signin]");
     var signOut = root.querySelector("[data-account-signout]");
     if (!button) {
       return;
@@ -196,7 +194,10 @@
       if (who) who.textContent = "Not signed in";
     }
 
-    /* Signing out is only offered to somebody who is signed in. */
+    /* The session action always matches the identity above it. */
+    if (signIn) {
+      signIn.hidden = Boolean(name);
+    }
     if (signOut) {
       signOut.hidden = !name;
     }

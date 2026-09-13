@@ -1,56 +1,105 @@
 ---
-task: MarineAppliedResearch/MARP_API#167
-repos: [marp-api]
+task: MarineAppliedResearch/MARP_API#166
+repos: [MARP_API]
 status: ready-for-pr
 needs: []
 ---
 
 ## Goal
 
-Make every pending Scientific or Training decision visibly different from one that has reached the record, without obscuring the image being reviewed.
+Restore each MARP application dropdown as that application's own menu while keeping the
+shared MARP appearance, account interaction, and route back to the main dashboard. The ML
+Dashboard and Picture Mosaic Reviewer menus must remain visible, usable, and above their
+application content on desktop and phone layouts.
 
 ## Requirements
 
-- **R1** — Every pending decision in Scientific and Training has a strong 3px outline in the decision's established color and pattern: flag, review, exclude, promote, and taking back.
-- **R2** — After a successful Commit Marked or page commit, every recorded Scientific or Training decision has a lighter 1px outline in that same color and pattern. This applies equally to flags, reviews, exclusions, and promotions.
-- **R3** — A recorded decision already present when the page loads has the same 1px treatment as one saved in the current sitting.
-- **R4** — Scientific and Training images retain normal brightness and color in pending and committed states. The decision state must not make evidence harder to inspect.
-- **R5** — A failed or conflicted commit retains the pending treatment. Taking back a committed decision uses the strong pending outline until the withdrawal succeeds; canceling the take-back restores the committed treatment.
-- **R6** — The primary badge remains exactly one element and keeps the established mark > outcome > record precedence. The visual treatment does not introduce a second status or let a record tag outrank a pending choice.
-- **R7** — Scientific and Training behave consistently at desktop and phone viewports. Delete Mode retains its existing destructive treatment.
+- **R1** — The legacy dashboard, Machine Learning Dashboard, and Picture Mosaic Reviewer
+  each own their dropdown contents. Every menu has room for its host application to add
+  settings or other local actions later without adding them to every other application.
+- **R2** — The applications continue to share the account menu's visual treatment, identity
+  rendering, open/close interaction, Escape and outside-click dismissal, and sign-out
+  behavior.
+- **R3** — Every application menu identifies the signed-in user and provides a working link
+  to the main dashboard. The main dashboard itself provides separate visible links to each
+  application rather than putting those application links in every account menu.
+- **R4** — The Machine Learning Dashboard's open dropdown paints above its panels, tables,
+  top bar, and other visible application content at desktop, phone portrait, and phone
+  landscape viewports.
+- **R5** — The Picture Mosaic Reviewer exposes its account-menu control at the top of the
+  visible interface at desktop, phone portrait, and phone landscape viewports. The control
+  opens the menu and the open menu is neither clipped nor covered.
+- **R6** — Every displayed application-specific menu item performs its defined action; no
+  inert placeholder item is presented as a working control.
+- **R7** — Session-derived identity and signed-out behavior remain accurate. Signed-in menus
+  offer Sign out. Signed-out applications offer a Sign in link to the login surface. No
+  application introduces a literal person's name or initials.
+- **R8** — Rendered browser checks assert each application's expected menu contents,
+  interaction, bounding box, and stacking at desktop, phone portrait, and phone landscape
+  sizes. They exercise the Mosaic control and at least one working menu item.
+- **R9** — The public entry application's existing signed-in and signed-out account-menu
+  behavior remains functional while the shared behavior and styles change.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — Settled by the user: do not dim Scientific or Training imagery; distinguish state with border thickness instead.
-- [x] **A2 · product/UI · blocking** — Settled by the user: the distinction applies to every decision, including flagged, reviewed, excluded, promoted, and taking back, rather than exceptions alone.
-- [x] **A3 · product/UI · non-blocking** — Settled by the user's example: pending uses a slightly thicker border and committed uses a slightly thinner border. Use 3px and 1px so the difference remains visible over the mosaic at desktop and phone sizes.
-- [x] **A4 · behavioural · non-blocking** — Settled by the existing tile contract: a committed exception remains marked and editable; this change adds a rendering distinction without changing the gestures or commit behavior.
-- [x] **A5 · product/UI · non-blocking** — Settled by the earlier direction: leave Delete Mode alone, including its existing destructive dimming.
+- [x] **A1 · product/UI · blocking** — Answered 2026-09-13: omit the old nonfunctional
+  *Preferences*, *Keyboard shortcuts*, *Tile density*, and *Worker service tokens* buttons.
+  Each menu contains identity, Dashboard, and Sign in or Sign out, with a host-owned slot for
+  real application settings or actions when those exist later.
+- [x] **A2 · product/UI · blocking** — Answered 2026-09-13: the legacy dashboard uses the
+  same identity, Dashboard, and Sign in or Sign out core. Its main page, outside the account
+  menu, links to every application. Existing dashboard controls such as Refresh remain where
+  they are.
+- [x] **A3 · product/UI · non-blocking** — Answered by the same rule for all applications:
+  the public entry menu keeps the core identity, Dashboard, and session action. It does not
+  use the account menu as a second list of application links or invent entry-specific actions.
 
 ## Decisions
 
-- **2026-09-12** — Derive one recorded class for both decision kinds rather than encode flags and accepts separately. Outcomes identify a successful current commit; the row identifies a decision from an earlier sitting.
-- **2026-09-12** — Keep each decision's existing hue and solid/dashed pattern. Thickness alone carries pending versus recorded, so the vocabulary remains consistent and image pixels stay unchanged.
-- **2026-09-12** — Canceling a take-back clears the tile's touched state. The reviewer has restored the recorded decision, so the border and Commit Marked must both say that nothing is pending.
-- **2026-09-12** — Test the distinction in the real-API browser tier because the fixture writes status columns in place and cannot faithfully represent the gap between a commit outcome and the row loaded before it.
+- **2026-09-13** — The issue's later, specific correction supersedes #151's decision to use
+  identical menu contents. Shared means appearance, reusable interaction, session identity,
+  Sign out, and the dashboard route; each host supplies its own entries.
+- **2026-09-13** — The issue's phone requirement supersedes #151's decision to hide the
+  Mosaic account control below 760px.
+- **2026-09-13** — Browser tests are required because file-reading and DOM-only checks cannot
+  observe clipping, overlap, stacking, or whether a control is actually visible and usable.
+- **2026-09-13** — The core menu contents are identity, Dashboard, and the session action.
+  A signed-out user gets Sign in; a signed-in user gets Sign out. Application-owned entries
+  can be inserted later, but this issue does not show controls for features that do not exist.
+- **2026-09-13** — Links to Mosaic and ML belong on the main dashboard, where they already
+  exist as separate application buttons, rather than inside every account menu.
 
 ## Plan
 
-1. Derive one committed-decision class in `src/ui/tile.js` for exceptions and acceptances without changing badge precedence.
-2. Clear the pending touch when a reviewer cancels a take-back so the rendered state and Commit Marked agree.
-3. Apply strong pending and light committed outlines in `styles/app.css`, and remove Scientific/Training decision dimming.
-4. Add focused real-API browser coverage for both decision kinds, taking back, successful reload, and refused states in both modes and viewports.
-4. Write the issue-specific verification plan for human review before running it.
+1. Keep the shared account controller responsible for identity, open/close behavior, and
+   sign-out while allowing each application to supply its own menu body.
+2. Give the legacy dashboard, ML Dashboard, and Mosaic Reviewer their settled menu entries
+   without changing unrelated page structure or application behavior.
+3. Correct ML stacking and Mosaic desktop/phone placement using the smallest local layout
+   changes that keep the menu inside the viewport and above application content.
+4. Write the G3 verification plan with named browser checks for R1-R9 and present it for
+   human review before running any test.
 
 ## Acceptance criteria
 
-A reviewer can distinguish any unsaved Scientific or Training decision from a saved one by border thickness before and after committing and after reloading, while the evidence image stays fully visible. A refused save and a pending take-back never look recorded. Existing badge, reason, gesture, and Delete behavior remain unchanged.
+- Each reproduction area shows only its settled menu entries plus the shared account
+  elements, and every presented item works.
+- ML and Mosaic menus open above visible content without clipping at all three required
+  viewport classes.
+- Mosaic's account control is visible at the top of both phone layouts.
+- The dashboard route, identity, dismissal, and Sign out work from each applicable menu.
+- Named browser regressions fail for the reported content, stacking, clipping, visibility,
+  and interaction defects and pass after the implementation.
+- The public entry account states continue to work.
 
 ## Test plan
 
-Filled in at G3 in `.marp/verification.md` after implementation, before tests are run.
+Filled in at G3 after the blocking product decisions are settled. No tests are run before
+the human reviews `.marp/verification.md`.
 
 ## Status
 
 - **Gate:** ready-for-pr
-- **Notes:** The approved G3 plan passed: 8 decision-state browser cases and 2 failure-path browser cases against the real API and disposable database. Setup refusals and passing output are recorded verbatim in `.marp/verification.md`. The human accepted the visual result and G4 evidence and authorized the pull request and merge.
+- **Notes:** G0-G4 are complete. The human reviewed the running application and accepted
+  the recorded verification evidence on 2026-09-13. `marp agent list` reports this
+  workspace's assigned API and disposable database ports.
