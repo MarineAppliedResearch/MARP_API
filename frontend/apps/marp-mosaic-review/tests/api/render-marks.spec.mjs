@@ -44,7 +44,7 @@ import {
 /** Every check in this file may commit, so every one of them puts the record back. */
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
 /**
@@ -348,7 +348,7 @@ test.describe('two kinds of mark, and two commit buttons', () => {
        see -- it is watching `page`. So this page gets a ledger of its own, attached
        before it navigates. */
     const { context, watched: touched, touch } = await touchContext(
-      browser, page, (fresh) => journal(fresh, request)
+      browser, page, (fresh) => journal(fresh)
     );
     try {
       const tile = await freshTile(touch);

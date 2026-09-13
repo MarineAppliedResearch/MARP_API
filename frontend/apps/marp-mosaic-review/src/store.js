@@ -46,8 +46,8 @@ const logListeners = new Set();
 const cache = createCache();
 
 /* How long the prefetcher yields for after the visible page has settled, and then the
-   endpoint's own cap on one page-set request: `requestedPages` in data.js rejects a
-   bigger one with a 400 rather than truncating it, so the cap is respected here. */
+   endpoint's own cap on one page-set request: it answers 400 to a bigger one rather than
+   truncating it, so the cap is respected here. */
 const PREFETCH_IDLE = 250;
 const MAX_PAGES = 12;
 const MAX_ROWS = 600;
@@ -786,8 +786,7 @@ async function runCommit({ selective }) {
    * `BEFORE UPDATE` trigger -- which a review commit never fires. So the *second* commit
    * of a tile in one sitting sent a version one ahead of the live row and came back
    * `conflicted` for a conflict that had not happened, which reads exactly like somebody
-   * else editing under you. `src/data.js` no longer bumps either, so the two backings
-   * agree about what a commit changes.
+   * else editing under you.
    */
   /* The marks stay wherever the record now agrees with them. A committed page is still
      editable -- clicking a flag takes it back -- and a mark has to keep meaning the same
@@ -1730,9 +1729,9 @@ export const actions = {
   /**
    * Add or remove one value of a set dimension.
    *
-   * The reachable map comes from the data layer, so removing a project keeps the dives
-   * that still apply instead of clearing them all -- only `data.js` knows which dives
-   * belong to which project.
+   * The reachable map comes from the facets, so removing a project keeps the dives that
+   * still apply instead of clearing them all -- the client does not know on its own which
+   * dives belong to which project.
    */
   toggleDimension(key, value) {
     const toggled = filters.toggleValue(state.filters, key, value);

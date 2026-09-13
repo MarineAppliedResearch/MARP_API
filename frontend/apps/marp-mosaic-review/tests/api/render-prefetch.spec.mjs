@@ -41,7 +41,7 @@ import {
 /** Two checks here commit a page, so every one of them puts the record back. */
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
 /* ------------------------------------------------------------------ #99: never waiting */

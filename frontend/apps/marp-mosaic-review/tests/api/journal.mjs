@@ -70,11 +70,9 @@ const FALLBACK_REASON = 'Other / unsure';
  * read-only test makes no requests at all.
  *
  * @param {import('@playwright/test').Page} page - The page about to be driven.
- * @param {import('@playwright/test').APIRequestContext} [api] - Needed only to undo a
- *   species correction; see `watchCorrections`.
- * @returns {Object} `{restore, allowDeletes, wrote, seenRow}`.
+ * @returns {Object} `{restore, forget, allowDeletes, wrote, seenRow}`.
  */
-export function journal(page, api = null) {
+export function journal(page) {
   /** observation_id -> the row as it was first served. The "before" picture. */
   const first = new Map();
 
@@ -107,12 +105,21 @@ export function journal(page, api = null) {
       const body = await response.json().catch(() => null);
       if (!body) return;
 
-      /* A correction answers with the version the trigger just moved to, which is the
-         only way to know it without asking again. */
+      /**
+       * **A correction's own answer carries both halves of what undoing it needs.**
+       *
+       * `observation.version` is where the trigger moved the row to -- the version the
+       * client should send next -- and `previous.species_id` is the species it was on
+       * before. That second field is the reason this stayed a listener: the mosaic row
+       * has never carried `species_id`, so the original looked unknowable from the page's
+       * own traffic, and the route was briefly intercepted to read it before the write.
+       * It does not need to be. The endpoint already says.
+       */
       if (url.includes(SPECIES)) {
-        if (body.observation_id != null && body.version != null) {
-          versions.set(Number(body.observation_id), Number(body.version));
-        }
+        if (!body.ok || !body.observation) return;
+        const id = Number(body.observation.observation_id);
+        if (!corrected.has(id) && body.previous) corrected.set(id, body.previous.species_id);
+        if (body.observation.version != null) versions.set(id, Number(body.observation.version));
         return;
       }
 
@@ -125,38 +132,6 @@ export function journal(page, api = null) {
       }
     })().catch(() => { /* a response that is not JSON is not a page of rows */ }));
   });
-
-  /**
-   * A correction is the one write whose "before" the page response cannot carry.
-   *
-   * The mosaic row has **never carried `species_id`** -- it carries `comname`, the frozen
-   * label, and `species_comname`, the catalogue's current name for whatever the id now
-   * points at. Neither is the key a correction takes. So the only moment the original is
-   * knowable is just before the correction lands, and this is the one route that is
-   * intercepted rather than listened to.
-   *
-   * It is a cold route: a test corrects at most a row or two, so the cost the interception
-   * would have on the page query -- which the prefetching checks count and time -- is not
-   * paid here at all.
-   */
-  if (api) {
-    page.route(`**${SPECIES}`, async (route) => {
-      let body = null;
-      try { body = route.request().postDataJSON(); } catch { body = null; }
-      const id = body && body.observation_id != null ? Number(body.observation_id) : null;
-
-      if (id !== null && !corrected.has(id)) {
-        const before = await api.get(`/api/v2/observation/${id}`).catch(() => null);
-        if (before && before.ok()) {
-          const observation = await before.json().catch(() => null);
-          const was = observation && (observation.species_id ?? (observation.observation || {}).species_id);
-          if (was != null) corrected.set(id, Number(was));
-        }
-      }
-
-      await route.continue();
-    });
-  }
 
   page.on('request', (request) => {
     const url = request.url();
@@ -270,19 +245,12 @@ export function journal(page, api = null) {
  */
 async function putSpeciesBack(request, { versions, corrected }) {
   for (const [id, was] of corrected) {
-    /* The version is read back rather than remembered. A correction moves it on the
-       observation row's own trigger and the answer carries the new one under
-       `observation`, not at the top level -- so trusting what the response listener
-       scraped came back `conflicted`, which writes nothing and says nothing. Asking is
-       one request and cannot be wrong. */
-    const live = await request.get(`/api/v2/observation/${id}`);
-    expect(live.ok(), `observation ${id} could not be read back to be put on species ${was}: `
-      + `${live.status()}`).toBeTruthy();
-    const version = (await live.json()).version;
-    versions.set(id, Number(version));
-
+    /* The version the correction's own answer reported. `GET /api/v2/observation/:id` is
+       not an alternative and was tried: the Sequelize model does not declare `version`,
+       so that route answers without one and the correction is refused as *carries no
+       version* -- a 400 that reads like the test's mistake and is the reader's. */
     const res = await request.post('/api/v2/mosaic/observations/species', {
-      data: { observation_id: id, version, species_id: was }
+      data: { observation_id: id, version: versions.get(id), species_id: was }
     });
     expect(res.ok(), `putting observation ${id} back on species ${was} was refused: `
       + `${res.status()} ${await res.text()}`).toBeTruthy();

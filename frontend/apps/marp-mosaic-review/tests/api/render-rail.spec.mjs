@@ -27,6 +27,7 @@
 import { test, expect } from '@playwright/test';
 
 import { journal } from './journal.mjs';
+import { seedPage } from './seed.mjs';
 import {
   expectRealBacking,
   facetsFor,
@@ -41,7 +42,7 @@ import {
 /** Every check in this file may commit, so every one of them puts the record back. */
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
 /**
@@ -206,6 +207,15 @@ test.describe('the filter rail, cleaned up', () => {
 
     const from = page.locator('[data-span="confidence"] [data-end="from"]');
     const to = page.locator('[data-span="confidence"] [data-end="to"]');
+
+    /* Waited for rather than measured straight away. Rendering is a full re-render, and
+       opening the rail is one -- so a box read the instant `openRail` returns can come
+       back null from an element that was detached and redrawn, which then dies as
+       "Cannot read properties of null" and says nothing about layout. Phone only, where
+       the rail is an overlay and the redraw is bigger. */
+    await expect(from).toBeVisible();
+    await expect(to).toBeVisible();
+
     const a = await from.boundingBox();
     const b = await to.boundingBox();
 
@@ -433,37 +443,52 @@ test.describe('the filter rail, cleaned up', () => {
         return page.locator('.tile').evaluateAll((els) => els.map((e) => e.dataset.id));
       };
 
-      const up = await idsFor('confidence.asc,keyframe_count.asc');
+      /**
+       * **The tie is made, because a real corpus does not reliably have one.**
+       *
+       * The fixture's own shape guaranteed it -- two decimal places over four hundred-odd
+       * rows -- and inference output does not: every confidence on page one of this corpus
+       * is distinct, so the secondary term would have no work to do and the check would
+       * pass while observing nothing. `tie` gives every seeded row the same confidence and
+       * a different number of keyframes, which is exactly the situation the tie-break is
+       * for, served and ordered by the real query.
+       */
+      const seeded = await seedPage({ count: 6, thumbnail: 'ready', tie: true });
 
-      /* The fixture's own shape guaranteed the ties; a real corpus has to be asked. This
-         is the endpoint answering the same two questions the browser is about to ask, at
-         the page size this viewport settled on -- so what the browser does below is
-         measured against something that is not the application. A corpus whose first page
-         holds no tie fails here, saying so, rather than failing the comparison and
-         reading like a sort defect. */
-      const question = { reviewStatus: ['unreviewed'] };
-      const size = await pageSizeOf(page);
-      const straight = await idsUnder(request, question, tieBreak('asc'), size);
-      const reversed = await idsUnder(request, question, tieBreak('desc'), size);
-      expect(reversed.join(','), 'nothing on page one of this corpus ties on confidence, so '
-        + 'the tie-break has no work to do and this check cannot observe it')
-        .not.toBe(straight.join(','));
+      try {
+        const narrowed = `line=${encodeURIComponent(seeded.line)}`;
+        const up = await idsFor(`confidence.asc,keyframe_count.asc&${narrowed}`);
 
-      const down = await idsFor('confidence.asc,keyframe_count.desc');
+        /* The endpoint answering the same two questions the browser is about to ask, at
+           the page size this viewport settled on -- so what the browser does below is
+           measured against something that is not the application. */
+        const question = { reviewStatus: ['unreviewed'], line: [seeded.line] };
+        const size = await pageSizeOf(page);
+        const straight = await idsUnder(request, question, tieBreak('asc'), size);
+        const reversed = await idsUnder(request, question, tieBreak('desc'), size);
+        expect(reversed.join(','), 'the seeded rows do not tie on confidence, so the '
+          + 'tie-break has no work to do and this check cannot observe it')
+          .not.toBe(straight.join(','));
 
-      expect(up.length).toBeGreaterThan(10);
-      expect(down.length).toBe(up.length);
-      expect(down.join(','), 'reversing the tie-break must reorder the page')
-        .not.toBe(up.join(','));
+        const down = await idsFor(`confidence.asc,keyframe_count.desc&${narrowed}`);
 
-      /* The primary is still the first word: whatever the tie-break does, confidence never
-         goes backwards. Read from the store, because a tile does not draw its confidence. */
-      const climbing = await page.evaluate(async () => {
-        const { state } = await import('./src/store.js');
-        return state.rows.every((r, i) => i === 0 || r.confidence >= state.rows[i - 1].confidence);
-      });
-      expect(climbing, 'the secondary must only break ties, never reorder across them')
-        .toBe(true);
+        expect(up.length).toBe(seeded.ids.length);
+        expect(down.length).toBe(up.length);
+        expect(down.join(','), 'reversing the tie-break must reorder the page')
+          .not.toBe(up.join(','));
+
+        /* The primary is still the first word: whatever the tie-break does, confidence
+           never goes backwards. Read from the store, because a tile does not draw it. */
+        const climbing = await page.evaluate(async () => {
+          const { state } = await import('./src/store.js');
+          return state.rows.every((r, i) => i === 0 || r.confidence >= state.rows[i - 1].confidence);
+        });
+        expect(climbing, 'the secondary must only break ties, never reorder across them')
+          .toBe(true);
+      } finally {
+        await ledger.forget(seeded.ids);
+        await seeded.remove();
+      }
     });
 
   test('M3: a phone sorts with the same control, at the same size', async ({ page }, info) => {

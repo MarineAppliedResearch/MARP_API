@@ -38,8 +38,8 @@
         {
             "type": "npm",
             "script": "test:app:mosaic-review",
-            "label": "test: Mosaic Reviewer (all tiers)",
-            "detail": "syntax check, model unit tests, then Playwright render + contract",
+            "label": "test: Mosaic Reviewer (its own suite)",
+            "detail": "syntax check and the model unit tests -- the browser tier needs a server",
             "group": "test",
             "problemMatcher": []
         },
@@ -56,18 +56,10 @@
         },
         {
             "type": "npm",
-            "script": "test:app:mosaic-review:e2e",
-            "label": "test: Mosaic Reviewer (Playwright, desktop + phone)",
-            "detail": "the render tier and the requirement checks, in a real browser",
+            "script": "test:app:mosaic-review:api",
+            "label": "test: Mosaic Reviewer (browser, desktop + phone)",
+            "detail": "provisions the testing database if needed, serves, runs, stops",
             "group": "test",
-            "problemMatcher": []
-        },
-        {
-            "type": "npm",
-            "script": "serve:app:mosaic-review",
-            "label": "serve: Mosaic Reviewer",
-            "detail": "standalone static server, no database -- http://localhost:8123/apps/marp-mosaic-review/",
-            "isBackground": true,
             "problemMatcher": []
         },
         {

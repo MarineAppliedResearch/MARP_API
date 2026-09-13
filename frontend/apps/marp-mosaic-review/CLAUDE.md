@@ -39,9 +39,10 @@ lets a reviewer return to a page and see, and undo, what they submitted. The
 query-derived decision is about *reload* — on a fresh load the filters apply normally and
 finished work is expected to have left the view. Do not remove the pin.
 
-**The app talks to MARP_API.** `src/api/` is the seam; `src/data.js` survives as a
-**test** fixture and nothing else. Which backing is in force is `src/backend.js`, and the
-application never points it at the fixture — see *The two backings* below.
+**The app talks to MARP_API, and to nothing else.** `src/api/` is the seam and
+`src/backend.js` is the one place that holds it. There is no second backing and no way to
+select one -- #157 deleted `src/data.js` and the `?backing=fixture` flag. See *One backing,
+and why there used to be two* below; the reasoning matters more than the deletion.
 
 ### How this app is worked on
 
@@ -70,8 +71,7 @@ more effective at finding defects than the suite, so:
 ```
 ui/  ──calls──▶  store.js  ──asks──▶  model/       (pure rules)
                     │
-                    └────asks──▶  backend.js  ──▶  api/     (the real thing)
-                                       └────────▶  data.js  (the fixture, tests only)
+                    └────asks──▶  backend.js  ──▶  api/     (the real thing, and the only thing)
 ```
 
 Dependencies point one way only. Nothing lower ever imports something higher.
@@ -80,7 +80,6 @@ Dependencies point one way only. Nothing lower ever imports something higher.
 | --- | --- | --- |
 | `model/` | its own arguments | the DOM, the network, `state` |
 | `api/` | `fetch`, a URL, a header, a status | the DOM, `state` |
-| `data.js` | the fixture | the DOM, `state` |
 | `store.js` | `model/`, `backend.js`, `state` | the DOM, a URL, a status |
 | `ui/` | `state`, `actions`, the DOM | `state` **as a writable thing** |
 
@@ -99,59 +98,64 @@ shape.** `grep -nE "/api/|fetch\(" src/` outside `src/api/` finds nothing, and t
 requirement rather than tidiness — it is what let the fixture be swapped for the endpoint
 without rewriting the interface.
 
-### The two backings
+### One backing, and why there used to be two
 
-`src/backend.js` holds one of them, and the **selection is per entry point, never a
-runtime flag the application can be subject to**:
+`src/backend.js` holds `src/api/`, and that is the whole of it. There is no fixture, no
+flag, and no way for anything -- the application, a test, or a person with a URL bar -- to
+point the seam anywhere else.
 
-- **`index.html` imports the store and nothing else**, so the app is on `src/api/` however
-  it is launched. It has no reference to the fixture to reach for.
-- **`tests.html`** — the contract tier — installs the fixture explicitly. Those checks are
-  about the *rules* and they drive `failNextCommit`, `slowNextCommit`, `breakThumbnails`,
-  `bumpVersion` and `reload`; none of that is expressible against a real server.
-- **the unit tier** imports `src/data.js` directly, as it always has.
+**It keeps `data-backing="api"` on the root element even so**, and every check in
+`tests/api/` asserts it (`expectRealBacking` in `tests/api/support.mjs`). That looks like a
+leftover and is not: a tier that *cannot* grade the wrong thing is worth keeping unable to,
+because the next second backing will arrive as somebody's convenience and the assertion is
+what refuses it.
 
-There is **one exception and it is deliberately loud**: `?backing=fixture` puts the app on
-the fixture, paints a permanent `FIXTURE — not the API` banner, and stamps
-`documentElement.dataset.backing`. The render tier passes it and asserts the banner, so a
-run cannot grade the fixture while claiming to be the API.
+**There used to be `src/data.js`**, a fixture, and `?backing=fixture` to select it. #157
+deleted both on 2026-09-12, and the reason is the part worth carrying:
 
-**The fixture is scaffolding, it is on its way out, and a new browser test does not go on
-it.** Settled by the human on 2026-09-12: *"The fixture was only put in place so we could do
-iterative development until we got it over to the API. That fixture is not even supposed to
-be there anymore. Our tests are supposed to be written to an actual dump to database."*
+> *"The fact that it's testing against the fixture on the Mosaic reviewer is wrong. The
+> fixture was only put in place so we could do iterative development until we got it over
+> to the API. That fixture is not even supposed to be there anymore."*
+>
+> *"If we change a bunch of things in the API, and it breaks, but none of our regression
+> tests break because it's not doing actual tests, that means the actual tests are
+> bullshit."*
 
-This paragraph said the opposite for months — *"neither the flag nor the fixture is coming
-out"*, on the grounds that the fixture tier is the fast loop and can break a commit on
-purpose. That is the most misleading thing this file has ever said, because it is the
-sentence that tells the next person a fixture-backed browser tier is the right home for a
-new test. It is not.
-
-**The reason is not tidiness, it is that the fixture masks a whole class of defect by
-construction.** `src/data.js` is not a small API, it is a *different* one: it writes the
-row's own status column in place when a page is committed, and the endpoint never does that
-— a decision is a projection row, the row is served from a cache, and a commit deliberately
+**The fixture masked a whole class of defect by construction**, which is why this is not
+tidiness. `src/data.js` was not a small API, it was a *different* one: it wrote the row's
+own status column in place when a page was committed, and the endpoint never does -- a
+decision is a projection row, the row is served from a cache, and a commit deliberately
 invalidates nothing. Anything living in the gap between what a commit recorded and what the
-row still says is therefore invisible on the fixture at **every** tier that uses it. #130,
-#124's F6 and #124's F8 were all that shape, and so was #135 R7: three fixture-backed step
-tests passed while the page sweep put back a promotion the reviewer had just withdrawn,
-because on the fixture the row had already been rewritten and the sweep's mistake did not
-show. One test against a real server on a dumped corpus caught it in a single run.
+row still said was therefore invisible to it at **every** tier that used it. #130, #124's F6
+and F8, and #135's R7 were all that shape: three fixture-backed step tests passed while the
+page sweep put back a promotion the reviewer had just withdrawn, because on the fixture the
+row had already been rewritten and the sweep's mistake did not show. One test against a real
+server caught it in a single run.
 
-**Where a browser test goes now:** `tests/api/`, against a real API serving a **copy** of
-the corpus — `marp db dump`, `marp db up -Port <yours>`, `marp db load` into that second
-database, and the API pointed at it. *The API tier* below is the how.
+**This section argued the other way for months**, and that is recorded rather than quietly
+replaced. It said *"neither the flag nor the fixture is coming out"*, on the grounds that
+the fixture tier was the fast loop and could break a commit on purpose. Both halves were
+answered. Speed is not worth a suite that cannot see the defect, and *"it can break a commit
+on purpose"* is `page.route()` -- which aborts or delays the real request, so the client's
+real error path runs instead of a simulation of it. `tests/api/affordances.spec.mjs` is the
+demonstration: all four affordances, none of them needing a fake backing.
 
-**What is still true about the fixture.** It is fast, it runs at two viewports, and it can
-break a commit on purpose — `failNextCommit`, `slowNextCommit`, `breakThumbnails`,
-`bumpVersion`, `reload` — which no real server will do for you. The existing fixture-backed
-suites are staying where they are for now, deliberately: migrating them is its own piece of
-work and not a thing to do by surprise in the middle of a bug fix. So read them as *the way
-it used to be done*, not as the pattern to copy.
+**What replaced each of the four:**
 
-The cost of two backings is that they can drift, and the answer is that **they present the
-same method set**: `backend.js` writes the list out rather than proxying, so a method one
-of them lacks fails by name.
+| Was | Is |
+| --- | --- |
+| `failNextCommit` | `page.route()` on the commit endpoint, aborted |
+| `slowNextCommit` | the same interception, fulfilled after a delay with the real answer |
+| `bumpVersion` | a real species correction between the read and the commit |
+| `breakThumbnails` | a row whose picture genuinely failed -- the corpus has fifteen -- or a seeded row, where the state is one the corpus does not hold |
+
+**Where a state does not exist in the corpus, it is seeded rather than faked.**
+`tests/api/seed.mjs` makes observations in a session of their own, in any thumbnail state,
+and removes them afterwards: a page where every picture failed (which cannot be *asked* for,
+because thumbnail status is a field on the row and not a dimension), a session naming no
+species list, and observations a check may destroy. Rewriting the endpoint's answer on the
+way past was the alternative and was rejected -- it is a fake in the one place this whole
+change exists to remove one.
 
 ### Two names for a species, and they are not interchangeable
 
@@ -437,8 +441,10 @@ sets only the mode's own dimensions, and `DEFAULT_FILTERS` derives its status en
 `statusDimensions('scientific')` rather than naming `MODES.training.defaultStatus` — that
 second one is the route the trap arrives by even when the first is right, because
 `defaultQuery()` copies `DEFAULT_FILTERS` straight out with no `defaultStatusFor` pass.
-`render.spec.mjs` measures the default total against the fixture for exactly this reason;
-a test that compares the app to itself cannot see the count move.
+`render-rail.spec.mjs` measures the default total against the endpoint's own answer for
+exactly this reason — asked with a filters object written out in the test rather than
+through the app's `DEFAULT_FILTERS`, because a test that compares the app to itself cannot
+see the count move.
 
 **In the address, absence of a borrowed dimension means "not filtering"** — never "use the
 owning mode's default". That is the same distinction that stops a cleared species filter
@@ -453,7 +459,7 @@ null, so nothing in Delete ever arrives marked, and the commit acts only on what
 reviewer picked in this sitting.
 
 The status counts are unchanged and are **not** conditioned on either status dimension:
-`store.countFilters()` sends `{ species, project, dive }`, `data.js:counts()` returns all
+`store.countFilters()` sends `{ species, project, dive }`, the counts endpoint returns all
 six values, and `ui/chrome.js` reads `state.counts[value]` by value alone. So a borrowed
 count can exceed the result total, exactly as it already could in Delete — and the two
 vocabularies have to stay disjoint, or one dimension's count would appear beside the
@@ -540,10 +546,10 @@ scrolls sideways. `.app` also pins `width: 100%; max-width: 100vw; overflow: hid
 
 **Do not trust a headless screenshot's width.** Headless Chrome clamps the viewport at
 roughly 500px, so a screenshot can show phantom grid overflow that does not exist. The
-Playwright `phone` project honours the real width; use that, not a screenshot, to judge
-layout.
+Playwright `api-phone` project honours the real width; use that, not a screenshot, to judge
+layout. `isPhone(info)` in `tests/api/support.mjs` is how a check asks which one it is in.
 
-**Accepting needs imagery; flagging does not.** `data.js` used to drop every row whose
+**Accepting needs imagery; flagging does not.** The fixture used to drop every row whose
 thumbnail had not arrived *before* it looked at the marks, so a flag on a broken tile was
 silently thrown away. "Reviewed" means somebody looked at it, and that needs a picture.
 "Flagged" means somebody is saying something is wrong, and a thumbnail that never arrived
@@ -636,20 +642,24 @@ chosen, so the rail never offers a combination that returns nothing.
 and the only one that can fail, so it spins while working and then shows a tick or a
 cross that fades after a couple of seconds — an acknowledgement, not a state. A failed
 commit applies nothing and **leaves the marks alone**, so the page never has to be
-redone. `MarpData.failNextCommit()` exists only so that path can be tested.
+redone. That path is tested by aborting the commit request with `page.route()`, which runs
+the client's real error handling rather than a simulation of it — see
+`tests/api/affordances.spec.mjs`.
 
 ## The test tiers, and which one catches what
 
-Five tiers plus the walkthrough videos. They fail in genuinely different ways, and
-choosing the wrong one is how bugs ship.
+Two tiers plus the walkthrough videos, and they fail in genuinely different ways.
 
 | Tier | Command | Catches | Cannot catch |
 | --- | --- | --- | --- |
 | Parse | `npm run lint` | a file that will not parse | anything else |
 | Unit | `npm run test:unit` | the rules in `model/`, and **what reaches the wire** | anything rendered |
-| Contract | part of `test:e2e` | store behaviour against the requirements in #68, by name | whether it was drawn |
-| Render | `npm run test:e2e` | badges actually drawn, panels on-screen, colours, no console errors | meaning |
-| API | `--project=api`, see below | what a **real server** does and the fixture does not | anything needing a broken backing |
+| Browser | `npm run test:app:mosaic-review:api`, from the repository root | what a **real server** does, at two viewports: badges drawn, panels on screen, colours, what a commit wrote and what the row says afterwards | anything needing hardware — a real Jellyfin extraction, most of all |
+
+**There used to be five**, and three of them ran on a fixture: a contract tier in
+`tests.html`, a render tier in `tests/e2e/render.spec.mjs`, and an API tier beside them.
+#157 merged the three into one against a real server and deleted the fixture. See *One
+backing, and why there used to be two*.
 
 **`tests/unit/api-requests.test.mjs` is the tier that can see a serialisation defect**, and
 every assertion in it goes through `JSON.parse(JSON.stringify(body))`. That is not
@@ -659,29 +669,37 @@ An exclusion set left this client as an empty object for months — the endpoint
 nothing, every committed page came back among the pages still to do, and the arithmetic on
 screen stayed plausible throughout. **Assert the serialised body, never the argument.**
 
-`npm test` runs all of them. `npm run test:unit` runs the parse check first.
-
 ### Running tests while you work
 
 Two commands, and the difference between them is the difference between a working loop
 and a person watching a progress bar.
 
 ```bash
-npm run test:unit     # 60 ms.  After every single change. This is the loop.
-npm run test:e2e      # minutes. Once, when the work is finished.
+npm run test:unit                        # 60 ms, from here.  After every single change.
+npm run test:app:mosaic-review:api       # minutes, from the repository root. Once, at the end.
 ```
 
 **`npm run test:unit` after every change, without asking.** Parse check plus every rule
 in `model/`. It is fast enough that there is never a reason to skip it, and it is the tier
 that would have caught most of what has been reported by hand.
 
-**`npm run test:e2e` is not part of the loop.** It drives real Chromium across two
-viewports and takes minutes. Run it when the work is done, before saying it is done —
-not between edits, and not to check a change you just made. A rule you are iterating on
-belongs in a unit test where you can run it fifty times.
+**The browser tier is not part of the loop, and it costs more than it used to.** It runs a
+real browser against a real API on a testing database, one worker, at two viewports. That
+is minutes rather than the fixture's ninety seconds, and the minutes are the price of a tier
+that can see what the endpoint did. Run it when the work is done, before saying it is done —
+not between edits. A rule you are iterating on belongs in a unit test where you can run it
+fifty times.
 
-**Never run a bare `playwright test` during development** and never leave a dev server
-behind: a stale one holding the port makes the next run fail outright, by design.
+`-g` narrows it, and that is the thing to reach for while fixing one check:
+
+```bash
+npm run test:app:mosaic-review:api -- -g "take-back"
+npm run test:app:mosaic-review:api -- --project=api render-marks
+```
+
+**Never run a bare `playwright test`.** The config refuses without `MARP_API_BASE` — loudly,
+naming the command that supplies it — because there is no fixture left to fall back to and a
+silent fallback is what #157 exists to prevent.
 
 **The walkthroughs are neither.** `npm run demo:narrated -- <scenario>` records a video to
 show the user that a finished feature works. Only when asked. See *The narrated
@@ -700,145 +718,123 @@ observe it is how several defects got reported twice.
 
 ### The API tier
 
-`--project=api` runs `tests/api/` in a real browser against a **real MARP API**, with a real
-session, and no fixture anywhere in it. It is opt-in on `MARP_API_BASE`, and asking for the
-project without it is a loud refusal rather than *Project "api" not found*.
-
-```bash
-npm start                                   # from the repository root, on a port of your own
-set -a; . .marp/local/<your>.env; set +a    # the reviewer login, git-ignored
-MARP_API_BASE=http://localhost:<port> npx playwright test --project=api
-```
-
-`tools/api-session.mjs` is a `globalSetup` that signs in and writes a Playwright storage
-state, because `/apps/marp-mosaic-review` is session-gated in `app.js` and the app is not
-even served without one. The login is created by `scripts/create-review-user.js` and needs
-`observations:read`, `observations:write` and `species:read`; `MARP_REVIEW_USERNAME` and
-`MARP_REVIEW_PASSWORD` are how it is passed, and it is a credential, so it lives in
-`.marp/local/` and never in a tracked file.
-
-**Why a fifth tier rather than more render tests.** `src/data.js` is not a small API, it is a
-*different* one — it writes the row's own status column in place when a page is committed,
-and the endpoint never does that: a decision is a projection row, the row is served from a
-cache, and a commit deliberately invalidates nothing. So anything living in the gap between
-what a commit recorded and what the row still says is invisible on the fixture at every tier.
-#130, #124's F6 and #124's F8 were all that shape, and so is the take-back defect this tier
-was built for. The first answer to it was a fixture affordance that *simulated* the endpoint
-not writing back, and that was rejected on 2026-09-11: *"if the fixture doesn't trigger the
-error and the actual system does, that doesn't make any sense."* A better fake is not the fix
-for damage done by a fake.
-
-**It stopped being the fifth tier on 2026-09-12 and became the default one.** See *The two
-backings*: the fixture was scaffolding for the months before this app had an API, and a new
-browser test belongs here. #135 R7 is the worked example — three fixture-backed step tests
-passed while the page sweep put back a promotion the reviewer had just withdrawn.
-
-**Point it at a copy of the corpus, not at the corpus.** This is the first rule now, and it
-is what makes the tier ordinary rather than frightening. `marp db dump` reads the
-development database and writes both halves — the rows and the thumbnails — into
-`.marp/local/`; `marp db up -Port <yours> -DataDirName <yours>` brings up a second
-PostgreSQL beside it; `marp db load <dump> <thumbnails> --apply` fills it. Serve the API
-from that database and the tests write to a copy nobody is relying on.
-
-One trap in that, found on 2026-09-12 and worth ten minutes: **`load` refuses when the
-repository's `storage/observation-thumbnails` is not empty**, and that directory is shared
-with whatever else is running out of the checkout — so loading into an empty second
-database is refused because of files belonging to the first. The answer is not `--force`.
-Run the load from a throwaway `git worktree` (junction `node_modules` into it) so it has a
-`storage/` of its own; the shared one is then never touched at all.
-
-**Three rules that still hold even against a copy**, because a test that only works on a
-disposable database is a test nobody can run anywhere else:
-
-- **Touch as few rows as the assertion needs, and know which.** `tests/api/corpus.mjs`
-  discovers a `{species, line}` pair with exactly one observation, so the page it sweeps
-  holds one row rather than fifty — and it *checks* that, failing with an explanation rather
-  than committing rows it never inspected. It pins no species, no line and no observation:
-  it was `const LONE_SPECIES = 622` once, and seven CAMPA2026 dives landed the same night.
-- **Restore what you changed, in a `finally`, through the API.** A failed assertion must
-  still put the record back. `withdraw` on the commit route deletes the projection row, and
-  the absence of a row is what `undecided` means, so an observation nobody had decided about
-  goes back to exactly that.
-- **Every test asserts `data-backing`.** No `?backing=fixture` is injected here — that is a
-  `beforeEach` in `tests/e2e/render.spec.mjs`, and this project's `testDir` does not include
-  it — but asserting the backing is what makes a run unable to grade a fixture and report it
-  as the API.
-
-It is **not** part of the loop and not in `npm test`: it needs a server, a database and a
-login, and a missing one of those must fail rather than skip. Desktop viewport only — what it
-proves is about what gets written and read back, not about layout.
-
-#### It runs on a testing database now, and that is one command
-
-The invocation above still works, and is what to use when you already have a server. The
-ordinary way in is from the repository root:
+`tests/api/` **is** the browser tier. It runs in a real browser against a real MARP API,
+with a real session, at desktop and phone width, and there is no fixture anywhere in it.
 
 ```bash
 npm run test:app:mosaic-review:api            # provisions if needed, serves, runs, stops
 npm run test:app:mosaic-review:api -- -g take-back
+npm run testing-db status                     # what is there, and which dump it came from
+npm run testing-db reset                      # throw it away and load the dump again
 ```
 
-It builds a second database from a corpus dump the first time and reuses it every time
-after, starts an API of its own on a port nothing else holds, and stops it. `MARP_API`'s
-own `AGENTS.md` has the details, under *The testing database*. **The three rules above do
-not relax** — this tier still writes, and what it writes to is still full of real review
-decisions, so touch as few rows as the assertion needs and restore them in a `finally`.
-What changed is that those decisions are no longer the only copy: `testing-db reset`
-rebuilds from the dump.
+The first run builds the testing database from the newest corpus dump, gives it a
+thumbnails directory of its own, migrates it and creates the reviewer login; every run
+after that finds it and starts in seconds. `MARP_API`'s own `AGENTS.md` has the detail,
+under *The testing database*. `tools/api-session.mjs` is the `globalSetup` that signs in and
+writes a Playwright storage state, because `/apps/marp-mosaic-review` is session-gated in
+`app.js` and the app is not even served without one.
 
-**The four affordances are done (#157, R10).** `tests/api/affordances.spec.mjs` replaces
-`failNextCommit` and `slowNextCommit` with `page.route()` — an abort, and a real response
-held open — `bumpVersion` with a real species correction between the read and the commit,
-and `breakThumbnails` with rows whose picture genuinely failed, of which the corpus has
-fifteen. None of them needs a fake backing, and each runs the client's real path rather
-than a simulation of it. `tests/api/render-slice.spec.mjs` is five checks from the render
-tier, proving the mechanism end to end; the other 231 have not moved yet.
+**It writes to a copy of the corpus, not to the corpus**, and that is what makes this tier
+ordinary rather than frightening. It is still full of real review decisions, so the three
+rules do not relax:
 
-Three things that will bite, all of them found by failing rather than by reading:
+- **Touch as few rows as the assertion needs, and know which.** `tests/api/corpus.mjs`
+  discovers a `{species, line}` pair with exactly one observation, so the page it sweeps
+  holds one row rather than fifty — and it *checks* that, failing with an explanation rather
+  than committing rows it never inspected.
+- **Put back what you changed.** `tests/api/journal.mjs` does this for every check, and it
+  is the piece that made moving 231 checks possible at all — see below.
+- **Every test asserts `data-backing`.** There is nothing left for it to catch, which is
+  exactly when an assertion is cheapest to keep and most useful to have.
 
-- **The `api` project runs one worker.** There is one database and every test in the
-  project writes to it, so two tests that each isolate "the species with exactly one
-  observation" isolate the *same* observation — and one corrects its species out from
-  under the other. `playwright.config.mjs` keys `workers` off `MARP_API_BASE`.
-- **The page size follows the viewport**, so it is 50 here and not the 45 `store.js`
-  declares. A `?page=n` computed against 45 addresses a different set of rows, and the
-  tile is simply absent — which reads like the app failing to draw a row it was given.
+#### The journal puts back what a check wrote
+
+Forty-three of the migrated checks commit, and a page sweep decides fifty observations at
+once. Writing forty-three bespoke `finally` blocks is forty-three chances to miss one, so
+`tests/api/journal.mjs` watches instead:
+
+```js
+let ledger = null;
+test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.afterEach(async ({ request }) => { await ledger.restore(request); });
+```
+
+It records **every row the page was served** — the "before" picture, free, because the
+mosaic response already carries every decision column — and **every observation the page
+committed or corrected**, from the request bodies. `restore()` puts those back through the
+API and **checks its own work**: a restore that quietly did not apply is worse than none,
+because the next run inherits it and the failure arrives somewhere unrelated hours later.
+
+Four things about it that are not obvious, and each was a bug or a decision first:
+
+- **It listens; it does not intercept.** `page.on('response')`, never `page.route()` on the
+  page query — the prefetching checks count requests and assert their order, and an
+  interception layer that fetches and re-fulfils every query changes the thing they measure.
+- **A correction is the exception**, and it is the one route that *is* intercepted. The
+  mosaic row has never carried `species_id`, so the only moment the original is knowable is
+  just before the correction lands. That route is cold, so the interception costs nothing
+  where it would have mattered.
+- **A delete is refused rather than restored.** Nothing can un-delete an observation, so a
+  check that means to destroy one seeds what it destroys and names the ids with
+  `allowDeletes`; anything else reaching that route fails the check naming them.
+  `forget(ids)` is the other half — a seeded check that also *commits* takes its rows off
+  the journal's books before removing them, because a row already deleted cannot be read
+  back.
+- **The proof that it works is a digest, not a test.** Take the digest of
+  `observation_review_current` before a run and again after; they match. That is how the
+  one real defect in it was found — the re-read stepped past pages two and three of its own
+  sweep and left twelve decisions behind, silently. It fails loudly now.
+
+Three things that will bite, all found by failing rather than by reading:
+
+- **One worker.** There is one database and every check writes to it, so two checks that
+  each isolate "the species with exactly one observation" isolate the *same* observation —
+  and one corrects its species out from under the other.
+- **The page size follows the viewport**, so it is 50 at desktop width and not the 45
+  `store.js` declares. A `?page=n` computed against 45 addresses a different set of rows and
+  the tile is simply absent, which reads like the app failing to draw a row it was given.
   `support.mjs`'s `pageSizeOf` asks the running store; do not assume a number.
 - **A bare address is not `filters: {}`.** `DEFAULT_FILTERS` carries Scientific's opening
   status filter, so a query with no filters sees rows the mosaic never shows. `question()`
   merges over the app's own defaults rather than restating them.
 
+And one that is the single biggest difference from the fixture tier: **the default question
+shows flagged rows, and a page arrives with its exceptions already marked.** So a click on
+the first tile is frequently a *take-back* rather than a mark, and every inherited check of
+the form "mark a tile, assert one tile is marked" was written against a page where that
+could not happen. `undecided()` is the address those checks open on — the default question
+minus the rows that arrive already decided — and `freshTile(page)` is how a tile is chosen,
+never by position.
+
 ### Where a new test goes
 
 - A rule — what a mark means, what a commit does, how filters nest → `tests/unit/`,
-  as a plain `node:test` case. No browser, no DOM, no fixture loading. This is still the
-  first place to look, and it is unaffected by everything below.
-- **Anything that needs a browser → `tests/api/`**, against a real server on a dumped
-  corpus. Read *The API tier* below first. This used to say `tests/e2e/render.spec.mjs` for
-  "anything visible" and `tests/api/` only for what the fixture could be wrong about, and
-  that ranking is reversed: see *The two backings* — you cannot tell in advance which
-  defects the fixture is going to mask, and #135 R7 is the one that proves it.
-- The two fixture-backed browser tiers — `tests/requirements.js` and
-  `tests/e2e/render.spec.mjs` — are **not** where new work goes. They are still run and
-  still maintained, and a test already in them that your change breaks is yours to fix;
-  they are simply not the destination any more.
+  as a plain `node:test` case. No browser, no DOM. This is still the first place to look.
+- **Anything that needs a browser → `tests/api/`.** There is nowhere else; that is what
+  #157 settled. Read *The API tier* above first, and copy the shape of a file already
+  there rather than inventing one.
 
 **The locator trap.** A Playwright locator is re-resolved on every use, so a selector
 that describes a *state* stops matching the moment the state changes:
 `.tile:not(.marked)` clicked once no longer matches that tile, and `.first()` silently
-slides onto a different one. Read `data-id` first and pin the tile:
-``page.locator(`.tile[data-id="${id}"]`)``. Three tests were wrong this way before they
-were right.
+slides onto a different one. Read `data-id` first and pin the tile by it. Three tests were
+wrong this way before they were right, and `freshTile` exists so a fourth is not.
 
 **The commit race.** `commitPage` is async and re-seeds the marks when it lands. A click
 sent before it finishes is overwritten. Wait for the outcome badge, not a timeout. When you
-need to drive what happens *during* a commit, `MarpData.slowNextCommit(ms)` holds one open —
-racing a 260 ms latency reports the wrong thing about one run in ten.
+need to drive what happens *during* a commit, hold the request open with `page.route()` —
+`route.fetch()`, wait, `route.fulfill({response})`, so the write really lands and the
+journal has something to put back. `affordances.spec.mjs` and `render-commit.spec.mjs` both
+have it. **A localhost round trip has no latency to race**, which is why this is needed at
+all now: the fixture's invented 140 ms was what made the in-flight state observable.
 
 **On a phone the rail overlays the mosaic.** It is collapsed by default there, so a test
-touching a filter must open it — and then collapse it again before clicking tiles, or every
-tile is present and covered. Playwright reports that as resolved-and-never-visible, which
-reads like a missing tile and is not one. Three tests learned this separately.
+touching a filter must open it — `openRail(page)` — and then `closeRail(page, info)` before
+clicking tiles, or every tile is present and covered. Playwright reports that as
+resolved-and-never-visible, which reads like a missing tile and is not one. A check that
+branches on width asks `isPhone(info)`, never a pixel count: headless Chrome clamps a
+screenshot's viewport and will lie to you about it.
 
 **The page you are standing on is an `<input>`, not a chip.** `renderPager` draws a typable
 box for the current page, so it carries neither `data-page` nor the committed marker. A
@@ -853,9 +849,16 @@ why the rail also listens on `focusout` and Enter.
 
 **Read a computed colour by polling for a value that parses.** Rendering is a full
 re-render, so a handle taken the instant an element appears can be detached before
-`getComputedStyle` runs — and that returns an empty string, so `.match(/\d+/g)` is null and
+`getComputedStyle` runs — and that returns an empty string, so the digits match is null and
 the test dies with "Cannot read properties of null" without saying anything about colour.
 `commitAndReadBadge` is the pattern.
+
+**Never pin a fact about the data.** A species key, a dive name, a line number, a row
+count: all of them were true of one local database on one day. `facetsFor`, `pageOf` and
+`sweepForRow` in `support.mjs` discover what a check needs and **fail loudly** when the
+corpus cannot supply it, because a skipped check looks green. `const LONE_SPECIES = 622` is
+the worked example of getting this wrong: it was the one species with a single observation
+on the day it was written, and seven CAMPA2026 dives landed that night.
 
 **Reintroduce a defect with a file copy, never `git checkout --`.** Proving a test fails
 against the old behaviour is the right instinct, and `git checkout -- <file>` on a file
@@ -864,8 +867,8 @@ holding uncommitted work discards all of it. `cp` it first and restore from the 
 **The cost of an action is the number of times it notifies.** Rendering is a full re-render
 from state, deliberately — so an action that notifies per row costs a full rebuild of the
 grid per row. `retryFailedThumbnails` did that and cost a hundred renders for one button
-press, which is what made two browser tests flaky under parallel workers. A contract check
-now fails if a page-level retry re-renders per tile.
+press, which is what made two browser tests flaky under parallel workers. A check now fails
+if a page-level retry re-renders per tile.
 
 ## The narrated walkthroughs
 
@@ -1075,9 +1078,6 @@ follows is what the code itself cannot tell you.
   agrees with neither. `model/query-url.js` is the whole of it, and a bare address means
   the default question while any other address is read literally — which is why clearing
   the species filter survives a reload instead of being handed back.
-- **`src/data.js` is a fixture, not an API.** Everything above it is written as though the
-  API already existed, which is the point — but no claim in this file about latency,
-  ordering or failure modes has been tested against a real server.
-- **The Model dimension filters simulated data.** The fixture generates `model_name`,
-  because a control nobody can exercise is a control nobody can judge — but no column
-  links an observation to a model in the real schema. That is Phase 3 of #68.
+- **The Model dimension filters a column that does not exist.** No column links an
+  observation to a model in the real schema, so the control is there and narrows nothing.
+  It survived the fixture that invented `model_name` for it. That is Phase 3 of #68.

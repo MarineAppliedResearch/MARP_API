@@ -56,7 +56,7 @@ let ledger = null;
 let planted = [];
 const after = (seeded) => planted.push(seeded);
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); planted = []; });
+test.beforeEach(({ page }) => { ledger = journal(page); planted = []; });
 test.afterEach(async ({ request }) => {
   for (const seeded of planted) ledger.forget(seeded.ids);
   await ledger.restore(request);

@@ -26,6 +26,7 @@
 import { test, expect } from '@playwright/test';
 
 import { journal } from './journal.mjs';
+import { seedPage } from './seed.mjs';
 import {
   expectRealBacking,
   facetsFor,
@@ -46,7 +47,7 @@ import { timeOfDayMs } from '../../src/model/match.js';
 /** Only one check here writes, but the ledger is per-file and costs nothing when none does. */
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
 test.describe('filtering by where the observation came from', () => {
@@ -243,9 +244,39 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
 
   test('R5: the date filter says how many observations it could not see',
     async ({ page, request }) => {
-      /* `toBe(2)` was the fixture's two deliberately unreadable rows. The corpus has
-         whatever it has, so the endpoint is asked -- and the note then has to agree with
-         it exactly, which is a stronger statement than the literal ever was. */
+      /**
+       * **The unreadable rows are made, because every `tc` in this corpus is readable.**
+       *
+       * `toBe(2)` was the fixture's two deliberately unreadable rows, put there because a
+       * rule with nothing to report is a rule nothing watches. A corpus built from
+       * inference derives `tc` for every row it ingests, so it has none -- and asserting
+       * "the note stayed hidden" would be a check that passes while the reporting is
+       * entirely broken. Two seeded rows whose `tc` is not a clock put the rule back in
+       * the position it exists for; the count is still read from the endpoint rather than
+       * assumed to be two, which is a stronger statement than the literal ever was.
+       */
+      const seeded = await seedPage({ count: 2, thumbnail: 'ready', tc: 'n/a' });
+
+      try {
+        await theDateNote(page, request, seeded);
+      } finally {
+        ledger.forget(seeded.ids);
+        await seeded.remove();
+      }
+    });
+
+  /**
+   * The body of `R5`, with the seeded rows already in place.
+   *
+   * Split out only so the `finally` that removes them does not swallow the whole check in
+   * one indent; every assertion below is its ancestor's.
+   *
+   * @param {import('@playwright/test').Page} page - The page.
+   * @param {import('@playwright/test').APIRequestContext} request - The request fixture.
+   * @param {Object} seeded - What `seedPage` made.
+   * @returns {Promise<void>} Resolves when the note has been checked.
+   */
+  async function theDateNote(page, request, seeded) {
       const unanswerable = await unanswerableForDate(request, { date: { from: '00:00', to: null } });
 
       await page.goto('./');
@@ -279,19 +310,19 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
          nothing to report, and asserting "the note stayed hidden" would be a check that
          passes while the reporting is entirely broken -- which is the one thing this line
          exists to prevent. So it fails, and says what is missing. */
-      expect(unanswerable, 'no observation in this corpus carries a `tc` the date filter '
-        + 'cannot read, so the note has nothing to report and there is nothing here for '
-        + 'this check to be about. It fails rather than skipping: a skipped branch looks '
-        + 'green, and this note is the only thing between a reviewer and a result they '
-        + 'cannot explain. Give the testing database an observation whose `tc` is not a '
-        + 'clock, or retire the check deliberately.').toBeGreaterThan(0);
+      expect(unanswerable, `the ${seeded.ids.length} rows seeded with an unreadable \`tc\` `
+        + 'did not reach the endpoint\'s count of what the date filter could not answer '
+        + 'for, so either the seeding or the counting is wrong. It fails rather than '
+        + 'skipping: a skipped branch looks green, and this note is the only thing between '
+        + 'a reviewer and a result they cannot explain.')
+        .toBeGreaterThanOrEqual(seeded.ids.length);
 
       await expect(note).toBeVisible();
       const said = await note.innerText();
       expect(said).toMatch(/\d+/);
       expect(Number(said.replace(/\D/g, ''))).toBe(unanswerable);
       expect(said.toLowerCase()).toContain('no recorded date');
-    });
+  }
 });
 
 test.describe('the question survives a reload', () => {

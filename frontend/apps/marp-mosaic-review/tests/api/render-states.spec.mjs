@@ -50,7 +50,7 @@ import {
 /** Several checks here commit, so every one of them puts the record back. */
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
 /* ------------------------------------------- the delete confirmation (#71) */

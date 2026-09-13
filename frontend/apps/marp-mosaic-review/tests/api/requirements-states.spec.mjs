@@ -54,7 +54,7 @@ let ledger = null;
 let disposable = [];
 
 test.beforeEach(({ page, request }) => {
-  ledger = journal(page, request);
+  ledger = journal(page);
   disposable = [];
 });
 

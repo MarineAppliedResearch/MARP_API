@@ -54,7 +54,7 @@ const HELD_BRIEFLY = 1500;
 /** Every check here may commit, so every one of them puts the record back. */
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
 test.describe('a page resets, and a commit stays in its own mode', () => {
@@ -255,6 +255,7 @@ test.describe('a mode keeps its own session work', () => {
 
     const before = (await session(page)).marks;
     const tile = await freshTile(page);
+    const id = await tile.getAttribute('data-id');
     await tile.click();
     expect((await session(page)).marks).toBe(before + 1);
 
@@ -263,10 +264,29 @@ test.describe('a mode keeps its own session work', () => {
     await page.locator('.seg button', { hasText: 'Scientific Data Review' }).click();
     await ready(page);
 
-    /* An uncommitted mark is a pending intention the reviewer walked away from. Only
-       what reached the record comes back — and the record's own exceptions re-seed, which
-       is why this compares against the arrival count rather than zero. */
-    expect((await session(page)).marks).toBe(before);
+    /**
+     * An uncommitted mark is a pending intention the reviewer walked away from. Only what
+     * reached the record comes back — and the record's own exceptions re-seed, which is
+     * why this is not simply "nothing is marked".
+     *
+     * **It compares against the record rather than against the arrival count**, and that
+     * is not cosmetic: the page size follows the viewport, and on a phone the first query
+     * runs at the store's declared size and is re-asked at the settled one — so the count
+     * taken on arrival and the count taken after a mode switch are counts of two
+     * differently sized pages. Reading how many rows the record flags *now* asks the
+     * question the check is actually about, at whatever size the page settled to.
+     */
+    const after = await page.evaluate(async () => {
+      const { state } = await import('./src/store.js');
+      return {
+        marks: state.marks.size,
+        flagged: state.rows.filter((r) => r.review_decision === 'flagged').length
+      };
+    });
+
+    expect(after.marks, 'the marks left are the record\'s own exceptions, re-seeded')
+      .toBe(after.flagged);
+    await expect(page.locator(`.tile[data-id="${id}"]`)).not.toHaveClass(/marked/);
   });
 
   test('R3: the other mode still sees none of this mode\'s outcomes', async ({ page }) => {

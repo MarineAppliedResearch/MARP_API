@@ -44,7 +44,7 @@ let ledger = null;
    re-read rows that no longer exist, so the hook is told it has already happened. */
 let settled = false;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); settled = false; });
+test.beforeEach(({ page }) => { ledger = journal(page); settled = false; });
 test.afterEach(async ({ request }) => { if (!settled) await ledger.restore(request); });
 
 /** Open the application and wait for it to settle, before a check drives the store. */

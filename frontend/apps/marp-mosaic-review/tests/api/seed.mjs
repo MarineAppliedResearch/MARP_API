@@ -79,12 +79,23 @@ async function connect() {
  * @param {string} [options.sessionType] - The session's `type`, which is what decides
  *   which species list the correction panel searches. `'Other'` names none, which is the
  *   case #130 R5 is about and which no session in the corpus happens to be in.
+ * @param {string} [options.tc] - The timecode. A value that is not a clock -- `'n/a'` --
+ *   is a row the date filter cannot answer for, which is what its "could not see" note
+ *   counts and which every `tc` in the corpus happens to be readable enough to avoid.
+ * @param {boolean} [options.tie] - Give every row the **same** confidence and a different
+ *   number of keyframes, so the primary sort ties and the secondary has work to do. A
+ *   corpus of inference output ties rarely, and never reliably on page one.
  * @returns {Promise<Object>} `{line, ids, address, remove}`.
  */
 export async function seedPage({
-  count = 4, thumbnail = 'ready', permanent = false, sessionType = 'Invert'
+  count = 4, thumbnail = 'ready', permanent = false, sessionType = 'Invert',
+  tc = '10:00:00', tie = false
 } = {}) {
   const client = await connect();
+
+  /* What has actually been inserted so far, so a seed that dies halfway can take it away
+     again. `ids`, `sessionId` and `files` below are views onto this. */
+  const planted = { ids: [], sessionId: null, files: [] };
 
   try {
     /* A line of its own, unique per run, is what makes `?line=...` a page holding only
@@ -111,6 +122,7 @@ export async function seedPage({
        RETURNING session_id`,
       [project.project_id, `${MARK} dive`, line, sessionType]
     );
+    planted.sessionId = session.session_id;
 
     /* `observation_id` is assigned here rather than left to the column default: the
        repository sets it as max + 1 and the sequence has drifted behind the table as a
@@ -119,7 +131,7 @@ export async function seedPage({
       'SELECT coalesce(max(observation_id), 0) + 1 AS next FROM observations'
     );
 
-    const ids = [];
+    const ids = planted.ids;
     for (let n = 0; n < count; n += 1) {
       const id = Number(next) + n;
       await client.query(
@@ -127,15 +139,32 @@ export async function seedPage({
            (observation_id, project_id, session_id, "obsID", confidence, comname,
             species_id, tc, version, "createdAt", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, NOW(), NOW())`,
-        [id, project.project_id, session.session_id, 900000 + n, 0.5 + (n / 1000),
-          `${MARK} organism`, species.id, '10:00:00']
+        [id, project.project_id, session.session_id, 900000 + n,
+          tie ? 0.5 : 0.5 + (n / 1000),
+          `${MARK} organism`, species.id, tc]
       );
       ids.push(id);
+
+      /* `keyframe_count` is a lateral count over this table, and it is the secondary sort
+         term. A different number per row is what makes the tie-break observable once the
+         primary ties -- and it is the only way to make it observable at all, because a
+         corpus of inference output happens not to tie on page one. */
+      if (tie) {
+        for (let k = 0; k <= n; k += 1) {
+          await client.query(
+            `INSERT INTO keyframes
+               (observation_id, subset, comname, type, framenum, x, y, width, height,
+                "createdAt", "updatedAt")
+             VALUES ($1, 'test', $2, 'box', $3, 0.1, 0.1, 0.2, 0.2, NOW(), NOW())`,
+            [id, `${MARK} organism`, 1000 + k]
+          );
+        }
+      }
     }
 
     /* Files written beside the testing database's own thumbnails, so `remove` can take
        them away again. Empty unless something was copied. */
-    const files = [];
+    const files = planted.files;
 
     if (thumbnail !== 'none') {
       /**
@@ -164,11 +193,27 @@ export async function seedPage({
           files.push(join(store, filename));
         }
 
+        /**
+         * **`ON CONFLICT`, because the server gets there first.**
+         *
+         * The API is running while this seeds, and its thumbnail extraction loop ticks
+         * every second and enqueues a row for any observation that has none -- so between
+         * inserting the observations and inserting their thumbnails there is a window in
+         * which the row already exists. A plain insert then dies on
+         * `observation_thumbnails_observation_id_key`, which reads like a seeding mistake
+         * and is the application doing its job.
+         */
         await client.query(
           `INSERT INTO observation_thumbnails
              (observation_id, status, permanent, filename, content_type, generation,
               attempts, requested_at, completed_at, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 'image/jpeg', 1, 1, NOW(), NOW(), NOW(), NOW())`,
+           VALUES ($1, $2, $3, $4, 'image/jpeg', 1, 1, NOW(), NOW(), NOW(), NOW())
+           ON CONFLICT (observation_id) DO UPDATE
+              SET status = EXCLUDED.status,
+                  permanent = EXCLUDED.permanent,
+                  filename = EXCLUDED.filename,
+                  last_error = NULL,
+                  updated_at = NOW()`,
           [id, thumbnail, permanent, filename]
         );
       }
@@ -191,6 +236,7 @@ export async function seedPage({
       async remove() {
         const second = await connect();
         try {
+          await second.query('DELETE FROM keyframes WHERE observation_id = ANY($1)', [ids]);
           await second.query('DELETE FROM observation_thumbnails WHERE observation_id = ANY($1)', [ids]);
           await second.query('DELETE FROM observation_reviews WHERE observation_id = ANY($1)', [ids]);
           await second.query('DELETE FROM observation_review_current WHERE observation_id = ANY($1)', [ids]);
@@ -205,9 +251,49 @@ export async function seedPage({
         for (const file of files) rmSync(file, { force: true });
       }
     };
+  } catch (error) {
+    /**
+     * **A seed that dies halfway still has to take its rows away.**
+     *
+     * Everything before the  is inserts, so a throw in the middle leaves
+     * observations and a session behind and hands the caller nothing to remove them with.
+     * Eighteen observations and three sessions were left in the testing database exactly
+     * that way, and the next seed then looked like the failure rather than the sequel to
+     * one.
+     */
+    await sweepUp(planted).catch(() => { /* the original failure is the one worth reading */ });
+    throw error;
   } finally {
     await client.end();
   }
+}
+
+/**
+ * Delete whatever a half-finished seed managed to insert.
+ *
+ * @param {Object} planted - `{ids, sessionId, files}`, filled as the seed proceeds.
+ * @returns {Promise<void>} Resolves when nothing is left behind.
+ */
+async function sweepUp({ ids, sessionId, files }) {
+  if (!ids.length && sessionId == null) return;
+
+  const client = await connect();
+  try {
+    if (ids.length) {
+      await client.query('DELETE FROM keyframes WHERE observation_id = ANY($1)', [ids]);
+      await client.query('DELETE FROM observation_thumbnails WHERE observation_id = ANY($1)', [ids]);
+      await client.query('DELETE FROM observation_reviews WHERE observation_id = ANY($1)', [ids]);
+      await client.query('DELETE FROM observation_review_current WHERE observation_id = ANY($1)', [ids]);
+      await client.query('DELETE FROM observations WHERE observation_id = ANY($1)', [ids]);
+    }
+    if (sessionId != null) {
+      await client.query('DELETE FROM sessions WHERE session_id = $1', [sessionId]);
+    }
+  } finally {
+    await client.end();
+  }
+
+  for (const file of files) rmSync(file, { force: true });
 }
 
 /**

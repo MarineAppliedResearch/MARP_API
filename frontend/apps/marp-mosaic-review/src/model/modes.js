@@ -409,8 +409,8 @@ export function markedOnPage({ rows, marks, kind = null }) {
 }
 
 export function commitCount({ mode, rows, marks }) {
-  /* Delete acts on what is marked, imagery or not -- `data.js` only skips a row with no
-     picture when it is *unmarked*, so a marked one is destroyed either way. Filtering here
+  /* Delete acts on what is marked, imagery or not -- a row with no picture is skipped
+     only when it is *unmarked*, so a marked one is destroyed either way. Filtering here
      first made this under-count in Delete Mode, and it agreed with `deleteImpact`, which
      had the same fault: the two were consistent with each other and wrong about what the
      commit does. Fixed 2026-09-06. */

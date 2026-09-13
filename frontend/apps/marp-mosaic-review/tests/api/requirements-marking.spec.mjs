@@ -22,7 +22,7 @@ import { expectRealBacking, ready, undecided } from './support.mjs';
 
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
+test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
 /** Open the application and wait for it to settle, before a check drives the store. */

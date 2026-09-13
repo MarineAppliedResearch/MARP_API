@@ -4,8 +4,8 @@
  * Pure, so the midnight wrap and the nesting rule are unit-testable. Both are arithmetic
  * and a browser proves nothing about either.
  *
- * `data.js` uses this so the fixture and the API cannot disagree about what a filter
- * means. When the API arrives, the same rules go into the query it builds.
+ * `src/api/` builds its query from the same declarations, so what a filter means is
+ * written once. The fixture read these rules too, for the same reason, until #157.
  */
 
 import { DIMENSIONS, DIMENSION, KIND, dependentsOf, isActive, emptyValue } from './dimensions.js';

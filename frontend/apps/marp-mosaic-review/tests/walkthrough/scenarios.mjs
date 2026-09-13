@@ -12,6 +12,11 @@
  * one another. Silent runs fall back to a fixed hold.
  */
 
+/* Rows in states the corpus does not hold, seeded into a session of their own. Two
+   scenes below need a page where no picture arrived, and the mosaic has no
+   thumbnail-status filter -- so such a page is made rather than looked for. */
+import { seedPage } from '../api/seed.mjs';
+
 const tilesIn = (page) => page.locator('.tile:not(.failed):not(.queued)');
 
 /**
@@ -224,25 +229,6 @@ async function watchAhead(page) {
       }
     });
   });
-}
-
-/** Take the fixture to production depth, and answer with the shape that produced. */
-function deepen(page, scale = 147) {
-  return page.evaluate((n) => new Promise((resolve, reject) => {
-    Promise.all([import('./src/data.js'), import('./src/store.js')])
-      .then(([{ MarpData }, { actions, subscribe }]) => {
-        MarpData.setScale(n);
-        const bail = setTimeout(() => reject(new Error('the deep question never settled')), 25_000);
-        const off = subscribe((s) => {
-          if (s.loading) return;
-          clearTimeout(bail); off();
-          resolve({ pageCount: s.pageCount, total: s.total, pageSize: s.pageSize });
-        });
-        /* The scale is invisible to the cache key, so ask a different question in the same
-           breath -- a stale scale-1 page served at depth would look exactly like a defect. */
-        actions.setSort('confidence', 'desc');
-      }, reject);
-  }), scale);
 }
 
 /**
@@ -712,93 +698,42 @@ export const scenarios = {
     ]
   },
 
-  /* ------------------------------------------------ verifying: the demo imagery */
+  /* ------------------------------------- verifying: a tile with no picture counts */
   'verify-imagery': {
-    title: 'Verifying: the demo data',
+    title: 'Verifying: a tile with no picture is still counted',
     scenes: [
       {
-        caption: 'Real photographs, five species',
-        say: "The mosaic is running on real pictures now — fifty-eight of them across five "
-           + "species, reused across three thousand observations. Reuse costs nothing here: "
-           + "you are judging the organism against the name it was given, not whether you "
-           + "have seen this exact frame before.",
-        async act({ page, expect }) {
-          const srcs = await page.locator('.tile img').evaluateAll(
-            (els) => els.map((e) => e.getAttribute('src')));
-          const real = srcs.filter((s) => s && !s.includes('marp-mark'));
-          expect(real.length).toBeGreaterThan(30);
-          expect(real.every((s) => s.endsWith('.jpg'))).toBe(true);
-        }
-      },
-      {
-        caption: 'A couple on every page are wrong',
-        say: "And this is what the tool is for. Every tile here claims to be a bat star. "
-           + "About two on each page are not — the label is what the model said, and the "
-           + "picture is what is really there. Those two things being different is the "
-           + "whole job.",
-        async act({ page, expect }) {
-          const caps = await page.locator('.tile .cap').allInnerTexts();
-          expect(caps.every((c) => c.trim() === 'Bat Star')).toBe(true);
-          expect(caps.length).toBeGreaterThan(20);
-        }
-      },
-      {
-        caption: 'Whichever species you ask for',
-        say: "It is not only bat stars. Every species carries the same rate, so filtering "
-           + "to rock crabs gives you pages of crabs with a couple of intruders — because "
-           + "four of the five species used to lead somewhere with nothing to practise on.",
-        async act({ page, expect, settled }) {
-          await page.locator('[data-dim="species"]').click();
-          await page.locator('.menu .msearch').fill('Rock Crab');
-          await page.waitForTimeout(400);
-          await page.locator('.menu [data-v]').first().click();
-          await page.locator('.menu .msearch').fill('Bat Star');
-          await page.waitForTimeout(400);
-          await page.locator('.menu [data-v]').first().click();
-          await page.keyboard.press('Escape');
-          await settled();
-
-          const caps = await page.locator('.tile .cap').allInnerTexts();
-          expect(caps.length).toBeGreaterThan(10);
-          expect(caps.every((c) => c.trim() === 'Rock Crab')).toBe(true);
-        }
-      },
-      {
         caption: 'Deleting counts what it will destroy',
-        say: "One last thing, and it is the serious one. In delete mode, a tile whose "
-           + "picture never arrived can still be marked — and the commit really does delete "
-           + "it. The confirmation was leaving those out of its count, so it would say one "
-           + "observation and then destroy two. It counts everything it is about to "
-           + "destroy now.",
+        say: "This is the serious one. In delete mode, a tile whose picture never arrived "
+           + "can still be marked — and the commit really does delete it. The confirmation "
+           + "was leaving those out of its count, so it would say one observation and then "
+           + "destroy two. Here is a page where not one picture arrived.",
         async act({ page, expect, settled }) {
-          await page.locator('#railReset').click();
-          await settled();
-          await page.locator('.seg button', { hasText: 'Delete' }).click();
-          await settled();
+          /* A page of rows whose extraction failed, in a session of its own. The mosaic
+             has no thumbnail-status filter, so such a page cannot be asked for. */
+          const seeded = await seedPage({ count: 4, thumbnail: 'failed' });
+          try {
+            /* Delete Mode on nothing but these rows, so the tiles this scene marks are
+               the ones it seeded and nothing of anybody else's is ever at risk. */
+            await page.goto(`${seeded.address}&mode=delete`);
+            await settled();
+            await expect(page.locator('.tile.failed')).toHaveCount(seeded.ids.length);
 
-          /* Break one deliberately rather than hoping the page happens to hold one. A
-             scene that quietly returns when its subject is absent narrates a claim it
-             never checked, which is the one thing a walkthrough must never do. */
-          const brokenId = await page.evaluate(async () => {
-            const { state, actions } = await import('./src/store.js');
-            const { MarpData } = await import('./src/data.js');
-            const id = state.rows[2].observation_id;
-            MarpData.breakThumbnails([id]);
-            await actions.refresh();
-            return id;
-          });
-          await settled();
-          await expect(page.locator(`.tile[data-id="${brokenId}"]`)).toHaveClass(/failed/);
-          await page.locator(`.tile[data-id="${brokenId}"]`).click();
-          const good = page.locator('.tile:not(.failed):not(.queued)').first();
-          await good.click();
-          await expect(page.locator('.tile.marked')).toHaveCount(2);
+            await page.locator(`.tile[data-id="${seeded.ids[0]}"]`).click();
+            await page.locator(`.tile[data-id="${seeded.ids[1]}"]`).click();
+            await expect(page.locator('.tile.marked')).toHaveCount(2);
 
-          await page.locator('#commit').click();
-          await expect(page.locator('.confirm__box')).toBeVisible();
-          /* Two marked, two named. The one with no picture is not quietly left out. */
-          await expect(page.locator('.confirm__title')).toContainText('2 observations');
-          await page.keyboard.press('Escape');
+            await page.locator('#commit').click();
+            await expect(page.locator('.confirm__box')).toBeVisible();
+            /* Two marked, two named, and neither of them has a picture. Before the fix
+               this said one observation and the commit destroyed both. */
+            await expect(page.locator('.confirm__title')).toContainText('2 observations');
+            await beat(page, DWELL);
+            await page.keyboard.press('Escape');
+          } finally {
+            /* Whatever happened above. A scene that seeds owns what it seeded. */
+            await seeded.remove();
+          }
         }
       }
     ]
@@ -1060,17 +995,24 @@ export const scenarios = {
         caption: 'And it says so when it cannot',
         say: "On a page with nothing to commit, the shortcut nudges the button that is "
            + "already telling you why, rather than sitting there looking broken.",
-        async act({ page, expect }) {
-          await page.evaluate(async () => {
-            const { state, actions } = await import('./src/store.js');
-            const { MarpData } = await import('./src/data.js');
-            MarpData.breakThumbnails(state.rows.map((r) => r.observation_id));
-            await actions.refresh();
-          });
-          await expect(page.locator('#commit')).toBeDisabled();
-          await page.keyboard.press('Control+Enter');
-          await expect(page.locator('#commit')).toHaveClass(/nudge/);
-          await page.waitForTimeout(1600);
+        async act({ page, expect, settled }) {
+          /* A whole page where no picture arrived. Accepting needs imagery, so there is
+             nothing here the sweep could write and the button says so. Seeded, because
+             the corpus holds a handful of failed rows and no way to gather them. */
+          const seeded = await seedPage({ count: 4, thumbnail: 'failed' });
+          try {
+            await page.goto(seeded.address);
+            await settled();
+            await expect(page.locator('.tile.failed')).toHaveCount(seeded.ids.length);
+
+            await expect(page.locator('#commit')).toBeDisabled();
+            await page.keyboard.press('Control+Enter');
+            await expect(page.locator('#commit')).toHaveClass(/nudge/);
+            await page.waitForTimeout(1600);
+          } finally {
+            /* Whatever happened above. A scene that seeds owns what it seeded. */
+            await seeded.remove();
+          }
         }
       }
     ]
@@ -1196,14 +1138,14 @@ export const scenarios = {
           await watchWaits(page);
           await watchAhead(page);
           await settled();
-          await meter(page, 'page 1   loading states drawn: 0   fixture latency: 140 ms');
+          await meter(page, 'page 1   loading states drawn: 0   requests: 0');
         }
       },
       {
         caption: 'Watch the tiles',
-        say: "So keep your eye on the tiles, and on that counter. The fixture still takes a "
-           + "hundred and forty milliseconds to answer a real query, so if anything gets "
-           + "fetched here, you will see it happen.",
+        say: "So keep your eye on the tiles, and on that counter. The server still takes a "
+           + "good fraction of a second to answer a real query, so if anything gets fetched "
+           + "here, you will see it happen.",
         async act({ page }) {
           await beat(page, 900);                        // nothing to do; just let it be said
         }
@@ -1221,7 +1163,7 @@ export const scenarios = {
           const waits = await page.evaluate(() => window.__waits);
           expect(asks, 'a held page must not be fetched').toBe(0);
           expect(waits, 'no loading state may be drawn at any instant').toBe(0);
-          expect(ms, 'a cache hit cannot take a fixture latency').toBeLessThan(60);
+          expect(ms, 'a cache hit cannot take a server latency').toBeLessThan(60);
           await expect(page.locator('.tile').first()).toBeVisible();
 
           await meter(page, `page 2 arrived in ${Math.round(ms)} ms   `
@@ -1319,48 +1261,33 @@ export const scenarios = {
         }
       },
       {
-        caption: 'Now the real size',
-        say: "That is three thousand rows, though, which is not a real test of anything. A "
-           + "prefetcher looks instant when the whole result already fits in memory. So let us "
-           + "make it the size it will really be.",
-        async act({ page }) {
-          await beat(page, 900);
-        }
-      },
-      {
-        caption: 'A hundred and fifty nine thousand',
-        say: "Growing it now \u2026 and there. A hundred and fifty nine thousand observations, and "
-           + "thousands of pages of them.",
-        async act({ page, expect, store }) {
-          await beat(page, CUE);                        // "growing it now"
-          const deep = await deepen(page);
-          expect(deep.pageCount, 'the fixture must actually be deep').toBeGreaterThan(1000);
-          store.deep = deep;
-          await meter(page, `${deep.total.toLocaleString()} observations, `
-            + `${deep.pageCount.toLocaleString()} pages`);
-          await beat(page, DWELL);
-        }
-      },
-      {
         caption: 'The end is held on purpose',
         say: "The scheduler deliberately holds the first few pages and the last few, because a "
            + "reviewer jumps to the end more often than you would think. So watch what the very "
            + "last page costs.",
-        async act({ page, store }) {
-          /* Wait for the tail band here rather than in the acting scene, so the action there
-             is not sitting behind a poll of unknown length. */
-          await waitPrefetch(page, [store.deep.pageCount]);
+        async act({ page, expect, store }) {
+          /* How deep this corpus actually is, read off the store rather than narrated.
+             The fixture was inflated to production depth for these scenes; a real corpus
+             is a couple of thousand rows and there is no equivalent. */
+          store.pageCount = await page.evaluate(() => window.MARP.state.pageCount);
+
+          /* The scheduler holds eleven pages at most, whatever the total -- so on a result
+             this shallow the head and tail bands meet and the jump two scenes below is a
+             cache hit, which would prove the opposite of its line. Loud, never green. */
+          expect(store.pageCount, 'this corpus is too shallow for the jump scenes: the '
+            + 'head and tail bands meet in the middle, so no page here is one the '
+            + 'scheduler could not have guessed').toBeGreaterThan(15);
           await beat(page, 700);
         }
       },
       {
         caption: 'Jump to the last page',
-        say: "Jumping to the end now \u2026 and there. The last page of thousands, and nothing was "
-           + "fetched at all.",
+        say: "Jumping to the end now \u2026 and there. The last page of the whole result, and "
+           + "nothing was fetched at all.",
         async act({ page, expect, store }) {
           await beat(page, CUE);                        // "jumping to the end now"
           await fromHere(page);
-          const last = await timedPage(page, store.deep.pageCount);
+          const last = await timedPage(page, store.pageCount);
 
           expect(await page.evaluate(() => window.__asks.length),
             'the last page is in the tail band, so it is already held').toBe(0);
@@ -1368,8 +1295,8 @@ export const scenarios = {
           expect(last).toBeLessThan(60);
           await expect(page.locator('.tile').first()).toBeVisible();
 
-          await meter(page, `page ${store.deep.pageCount.toLocaleString()} of `
-            + `${store.deep.pageCount.toLocaleString()} in ${Math.round(last)} ms \u2014 no request`);
+          await meter(page, `page ${store.pageCount.toLocaleString()} of `
+            + `${store.pageCount.toLocaleString()} in ${Math.round(last)} ms \u2014 no request`);
           await beat(page, DWELL);
         }
       },
@@ -1381,7 +1308,10 @@ export const scenarios = {
         async act({ page, store }) {
           store.middle = await page.evaluate(async () => {
             const { state } = await import('./src/store.js');
-            return Math.round(state.pageCount / 2) + 7;
+            /* The middle, which is as far from the head band as from the tail one. It
+               was the middle plus seven while the result was thousands of pages deep;
+               on a real corpus that lands inside the tail band and is a cache hit. */
+            return Math.round(state.pageCount / 2);
           });
           await beat(page, 900);
         }
@@ -1426,17 +1356,17 @@ export const scenarios = {
       },
       {
         caption: 'Two milliseconds, and no spinner',
-        say: "And that is the whole thing. A page change was a hundred and forty eight "
-           + "milliseconds and a skeleton grid; it is now two milliseconds and nothing at all. "
-           + "Committing keeps what is behind you. And thousands of pages deep, the end of the "
-           + "result is already held, while a jump into the middle costs one request and then "
-           + "the pages either side of it are free.",
+        say: "And that is the whole thing. A page change used to go and ask for data every "
+           + "time, and you sat looking at a skeleton grid while it did; it is now a couple of "
+           + "milliseconds and nothing at all. Committing keeps what is behind you. The end of "
+           + "the result is already held, while a jump into the middle costs one request and "
+           + "then the pages either side of it are free.",
         async act({ page, expect }) {
           /* Nothing new is claimed here, so nothing new is asserted — but the summary must
              not play over a broken app, so the tiles have to still be on screen. */
           await expect(page.locator('.tile').first()).toBeVisible();
-          await meter(page, 'before: 148 ms a page, 4 loading states   '
-            + 'after: 2 ms a page, 1 \u2014 the opening load');
+          await meter(page, 'before: a request and a skeleton grid on every page change   '
+            + 'after: the opening load, and nothing since');
         }
       }
     ]
@@ -1689,8 +1619,8 @@ export const scenarios = {
           expect(await page.evaluate(() => Boolean(window.MARP.data)),
             'the fixture is not loaded').toBe(false);
 
-          /* And the reviewer is a principal the server named. `src/data.js` used to hold
-             the literal 'I. Travers', which was true for one person on one machine. */
+          /* And the reviewer is a principal the server named. The retired fixture used
+             to hold the literal 'I. Travers', true for one person on one machine. */
           const me = await page.request.get(`${store.origin}/api/v2/auth/me`);
           expect(me.status()).toBe(200);
           store.me = (await me.json()).user;
