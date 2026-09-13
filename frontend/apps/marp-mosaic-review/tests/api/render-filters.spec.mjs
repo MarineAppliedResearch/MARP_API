@@ -217,9 +217,20 @@ test.describe('filtering by when it happened, and how sure the model was', () =>
      * failed the comparison, intermittently and only at `api-phone`. `expect.poll` is the
      * same assertion with the retry a real round trip needs.
      */
-    await expect.poll(() => total(page),
-      { message: 'raising the confidence floor must narrow the result' })
-      .toBeLessThan(before);
+    let after = before;
+    for (let attempt = 0; attempt < 20 && after >= before; attempt += 1) {
+      await page.waitForTimeout(250);
+      after = await total(page);
+    }
+
+    const applied = await page.evaluate(() => ({
+      confidence: window.MARP.state.filters.confidence,
+      total: window.MARP.state.total
+    }));
+
+    expect(after, `raising the confidence floor to ${cut} must narrow the result: the `
+      + `mosaic said ${before} before and ${after} after, with the store applying `
+      + `${JSON.stringify(applied)}`).toBeLessThan(before);
 
     await expect(page.locator('[data-span="confidence"]')).toBeVisible();
   });
@@ -496,8 +507,30 @@ test.describe('the question survives a reload', () => {
    is not mine to edit. Everything below discovers; nothing pins a fact about the corpus. */
 
 /** What the sub-bar says is matching, as a number. */
-const total = async (page) =>
-  Number((await page.locator('#total').innerText()).replace(/\D/g, ''));
+/**
+ * How many rows the mosaic says it matched, once it has actually said.
+ *
+ * **Polled rather than read straight, and the empty string is why.** `#total` is written
+ * by the render, and between opening the rail and the re-query that a phone's re-layout
+ * triggers there is a moment when it holds nothing at all -- `Number(''.replace(...))` is
+ * `0`, and a `before` of nought makes "narrowing must make this smaller" impossible to
+ * satisfy. It failed exactly that way: green running the file alone, red once the desktop
+ * project had run first and shifted the timing.
+ *
+ * @param {import('@playwright/test').Page} page - The page.
+ * @returns {Promise<number>} The total the mosaic is showing.
+ */
+async function total(page) {
+  let seen = 0;
+
+  for (let attempt = 0; attempt < 40 && seen === 0; attempt += 1) {
+    const said = await page.locator('#total').innerText().catch(() => '');
+    seen = Number(said.replace(/\D/g, '')) || 0;
+    if (seen === 0) await page.waitForTimeout(100);
+  }
+
+  return seen;
+}
 
 /**
  * Type into one end of a two-ended control and let the rail's change handler run.
