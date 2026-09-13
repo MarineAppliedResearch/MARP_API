@@ -322,21 +322,19 @@ body.rail-collapsed .fcount { display: grid; }
 .b-del  { background: var(--red-400);   color: #2b0409; }
 .b-exc  { background: var(--grey-400);  color: #15181d; }
 .b-pro  { background: var(--violet-400); color: #150c2b; }
-.tile.marked  { outline: 2px solid var(--amber-300); }
+.tile.marked  { outline: 3px solid var(--amber-300); }
 /**
  * An accept mark (#126 A6).
  *
  * The mode's commit hue, because that is exactly what the next commit will record for it,
- * and **no dimming** -- the tile stepping back is what a judgement against it looks like,
- * and an acceptance is the opposite. Colour is not carrying this on its own: an exception
- * is a dimmed tile with an amber or grey outline, an acceptance is a bright one.
+ * and no image treatment. Border thickness says whether this choice is pending or recorded
+ * while the established colour says which choice it is (#167).
  */
-.tile.marked.accept { outline: 2px solid var(--commit); }
-/* Each mode dims its own marked tiles, so each has to be told not to dim this one. */
+.tile.marked.accept { outline: 3px solid var(--commit); }
 .tile.marked.accept img,
 body[data-mode="scientific"] .tile.marked.accept img,
 body[data-mode="training"] .tile.marked.accept img { filter: none; }
-body[data-mode="training"] .tile.marked.accept { outline: 2px solid var(--commit); }
+body[data-mode="training"] .tile.marked.accept { outline: 3px solid var(--commit); }
 
 /**
  * A refused accept mark, in its own slot (#126 A4).
@@ -362,12 +360,12 @@ body[data-mode="delete"] .tile.marked img { filter: brightness(.55) saturate(.5)
 body[data-mode="delete"] .tile.marked::before {
   content: ""; position: absolute; inset: 0; z-index: 1;
   background: repeating-linear-gradient(45deg, rgba(224,97,107,.10) 0 6px, transparent 6px 16px); }
-body[data-mode="training"] .tile.marked { outline: 2px dashed var(--grey-400); }
-body[data-mode="training"] .tile.marked img { filter: brightness(.55) saturate(.5); }
-/* A flag is a judgement already made, so the tile steps back the way an excluded or
-   a doomed one does. Lighter than those two on purpose: flagged work stays in the
-   default view precisely so it can be looked at again and resolved. */
-body[data-mode="scientific"] .tile.marked img { filter: brightness(.66) saturate(.75); }
+body[data-mode="training"] .tile.marked { outline: 3px dashed var(--grey-400); }
+/* Once a pending decision reaches the record, only its thickness steps back; the
+   photograph stays unchanged (#167). */
+.tile.marked.recorded,
+body[data-mode="scientific"] .tile.marked.recorded,
+body[data-mode="training"] .tile.marked.recorded { outline-width: 1px; }
 
 /* fallbacks hold their slot rather than reordering the mosaic */
 .tile.queued, .tile.failed { display: grid; place-items: center; gap: 7px; }
@@ -482,8 +480,8 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 .tile.out-deleted::after {
   content: ""; position: absolute; inset: 0; z-index: 2;
   background: repeating-linear-gradient(45deg, rgba(224,97,107,.16) 0 6px, transparent 6px 14px); }
-.tile.out-reviewed { outline: 2px solid rgba(167, 236, 53, .55); }
-.tile.out-promoted { outline: 2px solid var(--violet-400); }
+.tile.out-reviewed { outline: 1px solid rgba(167, 236, 53, .55); }
+.tile.out-promoted { outline: 1px solid var(--violet-400); }
 .b-out { background: var(--green-400); color: #0d1a02; }
 .b-gone { background: var(--red-500); color: #fff; }
 
@@ -559,7 +557,7 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .commit .spin { animation-duration: 2.4s; } }
 
-.tile.out-reverted { outline: 2px dashed var(--mint-400); }
+.tile.out-reverted { outline: 3px dashed var(--mint-400); }
 .b-rev { background: var(--mint-400); color: #052015; }
 
 .menu .msearch { width: 100%; height: 30px; margin-bottom: 5px; padding: 0 9px; border-radius: 4px;
@@ -667,15 +665,13 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 }
 
 /* a disposition the record already carries, distinct from a mark made just now */
-.tile.has-excluded { outline: 2px dashed var(--grey-400); }
-.tile.has-excluded img { filter: grayscale(.55) brightness(.62); }
-.tile.has-promoted { outline: 2px solid var(--violet-400); }
-.tile.has-reviewed { outline: 2px solid rgba(167, 236, 53, .5); }
+.tile.has-excluded { outline: 1px dashed var(--grey-400); }
+.tile.has-promoted { outline: 1px solid var(--violet-400); }
+.tile.has-reviewed { outline: 1px solid rgba(167, 236, 53, .5); }
 
-.tile.has-flagged { outline: 2px solid var(--amber-300); }
-.tile.out-flagged { outline: 2px solid var(--amber-300); }
-.tile.out-excluded { outline: 2px dashed var(--grey-400); }
-.tile.out-excluded img { filter: grayscale(.55) brightness(.62); }
+.tile.has-flagged { outline: 1px solid var(--amber-300); }
+.tile.out-flagged { outline: 1px solid var(--amber-300); }
+.tile.out-excluded { outline: 1px dashed var(--grey-400); }
 
 /* Tags another workflow put on the record, shown in every mode (#85).
    Bottom left, above the caption and clear of the corner chip, so the top left keeps
