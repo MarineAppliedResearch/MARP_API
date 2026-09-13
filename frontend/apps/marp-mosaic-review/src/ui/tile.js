@@ -224,6 +224,18 @@ export function tile(row) {
      recorded it. "Committed" means *this sitting*: after a reload there is no accept mark
      at all, so the tile falls to a badge with no tooltip and nothing false survives. */
   const acceptRecorded = accepted && outcome === acceptedValue(state.mode);
+  /* One recorded state for both halves of the decision (#167). `outcomes` is authoritative
+     after a commit in this sitting, including a withdrawal; otherwise the row is the
+     record. A pending mark only agrees with that record when it names the same decision.
+     Taking back is always pending, even though the old value still exists underneath it. */
+  const recordedValue = state.outcomes.has(id) ? outcome : existing;
+  const markedValue = marked
+    ? (accepted ? acceptedValue(state.mode) : MODES[state.mode].marks)
+    : null;
+  const recorded = !takingBack
+    && (recordedValue === acceptedValue(state.mode) || recordedValue === MODES[state.mode].marks)
+    && (!marked || (markedValue === recordedValue
+      && (state.outcomes.has(id) || !state.touched.has(id))));
   /* The one accept mark the reviewer just tried to make and could not (A4). */
   const refused = state.refused && state.refused.id === id ? state.refused : null;
 
@@ -233,6 +245,7 @@ export function tile(row) {
   if (row.thumbnail_permanent) cls.push('permanent');
   if (marked) cls.push('marked');
   if (accepted) cls.push('accept');
+  if (recorded) cls.push('recorded');
   if (refused) cls.push('refused');
   if (state.picker && state.picker.id === id) cls.push('active');
   if (changed) cls.push('changed');

@@ -1,183 +1,136 @@
-# Verification plan - MARP_API #137: Commit Marked page completion
+# Verification plan — MARP_API #167: pending and recorded decisions
 
-Issue: https://github.com/MarineAppliedResearch/MARP_API/issues/137
+Issue: https://github.com/MarineAppliedResearch/MARP_API/issues/167
 
-## Problem and agreed outcome
+## What is being tested
 
-Committing all tiles with Commit Marked saves their decisions but leaves the page uncoloured and its completed-page count at zero. Completion must depend on every tile having a committed decision, whether in one commit or several. Partial or refused work stays incomplete. Delete Mode stays unchanged. Selective commits do not pin rows or page membership.
+Issue #167 reports that a pending choice and the committed decision look alike. The first implementation dimmed only committed exceptions; user testing rejected both parts of that treatment. The corrected change applies to flags, reviews, exclusions, promotions, and taking back. Pending work uses a 3px outline; recorded decisions use a 1px outline in the same established color and solid/dashed pattern. Scientific and Training imagery remains unfiltered.
 
-## Current baseline and test system
+The browser must observe the rendered outline and unchanged image filter while the API confirms each decision. A store or model test cannot prove either visible treatment or persistence, and the retired fixture cannot faithfully represent the difference between a commit outcome and the unchanged row already displayed by the real API.
 
-The task branch is based on origin/develop at a3a7990a (through merged #165). The user authorized updating to the pushed testing changes, provisioning the test database and beginning testing. This replaces the earlier fixture-only plan.
+## Requirement coverage
 
-New browser tests use tests/api/, a real API and this workspace's separate `marp_test` database built from the existing local corpus dump. Provisioning verified 2,092 observations, 29,666 keyframes, 2,092 thumbnail rows and 2,079 thumbnail files against the dump manifest. The runner selects a free API port, runs one browser worker, and stops its API afterward. Settings and credentials stay local and untracked. The human's development database is not the test target.
-
-## Cases and expected results
-
-| Case | Actions | Assertions |
+| Requirement | Scenario | Evidence required |
 | --- | --- | --- |
-| Original report, R1/R4 | Discover a final page of 2-8 ready observations; clear its decisions through the API; mark all and Commit Marked. | Count is zero before save and one after; all selected decisions are read back from the real API. Move to the preceding page: completed chip has the done class and a different computed colour. |
-| Multiple commits, R1/R2 | Commit the first half; then the remainder. | First commit leaves count zero and untouched decisions null. Second commit makes count one. Pager class/colour shows completion. |
-| Marks alone, R1/R2 | Mark the selected tiles, without committing yet. | Count remains zero, including when every tile is marked. |
-| No selective pins, R3 | Inspect membership pins and held rows after each selective commit. | Both collections remain empty; re-reading the same API query returns the expected rows, including the still-undecided half. |
-| Sweep regression, R4 | Reset the short page, load fresh, use Review page or Promote page. | Save succeeds and the completed-page count/chip/colour are correct. |
-| Real failed request, R2 | Existing affordance test aborts the browser's actual commit request. | Error UI remains correct, decision is unchanged on the server, completion count is zero. |
-| Real version conflict, R2 | Existing affordance test corrects species through the API between page read and commit. | Conflict UI appears and completion count remains zero; existing finally restores species. |
-| Rule edge cases, R1/R2/R5 | Evaluate incremental outcomes, existing decisions, another mode's decision, conflict, withdrawal, refused/null outcome and an empty page. | Only complete successful decisions in the active mode return true; later refusals override earlier decisions. |
+| R1/R2 | Start with one ready, undecided observation. Mark an exception, then separately mark an acceptance, without committing. | FLAGGED, REVIEWED, EXCLUDED, and PROMOTED each have one badge, lack `recorded`, use a 3px outline, and leave the image filter `none`. |
+| R2 | Press Commit Marked for each pending choice. | The real response succeeds, the API reads back the expected decision, the same tile gains `recorded`, the outline becomes 1px, and the image filter remains `none`. |
+| R3 | Reload after each successful commit. | The page is API-backed; each existing decision remains `recorded`, has one primary badge, uses a 1px outline, and leaves the image filter `none`. |
+| R4 | Inspect the image before marking, while pending, after committing, and after reload. | Its computed filter is `none` at every Scientific and Training state. |
+| R5 | Click each reloaded committed tile once, then again. Separately abort a real commit request and create a real observation-version conflict. | TAKING BACK lacks `recorded` and uses 3px; canceling restores `recorded` and 1px and disables Commit Marked because nothing remains pending. Failed and conflicted marks remain pending at 3px and do not reach the record. |
+| R6 | Inspect every pending, committed, reloaded, and take-back state above. | Each tile has exactly one `.badge`; mark > outcome > record precedence remains visible and a borrowed `.rtag` never becomes the primary badge. |
+| R7 | Run all four decisions at desktop and phone viewports. Review the Delete selectors in the diff. | Eight successful-transition cases pass. Delete's destructive filter and treatment are unchanged; no Delete action is executed. |
 
-The new completion tests run Scientific and Training review at desktop and phone viewports: eight browser cases, with the sweep check included in each one-batch case. The failure/conflict cases use their existing desktop API tests.
+## Real-API data setup and restoration
 
-## Data restoration
+The runner uses this workspace's disposable `marp_test`, never `mare_v1`. `npm run testing-db status` reports the target and source dump. If the isolated workspace has no dump of its own, set `MARP_CORPUS_DUMP` to the newest existing local dump before provisioning; do not copy an environment path into tracked documentation.
 
-The short-page tests capture the original decision and reason of every row they may touch. Setup and commits happen inside try/finally; finally restores decisions via the API and asserts the decision/reason values match the original. IDs, species, line and page size are discovered on each run, not hard-coded. Review-history entries remain by the API's existing append-only design, in the testing copy only.
+Each successful-transition test discovers a species and line containing exactly one ready observation. It captures that row's original mode decision and reason, withdraws the decision through the API to establish the pending baseline, and restores the original decision and reason in `finally`. IDs and filters are discovered on every run. Append-only review-history rows remain in the disposable testing copy by design.
 
-## Commands and sequence
+The existing failure and conflict tests already restore the row or species they touch. The conflict is produced through the correction API rather than by editing the database.
 
-From the repository root:
+## Commands, in order
 
-1. `node --test --test-name-pattern="#137" frontend/apps/marp-mosaic-review/tests/unit/model.test.mjs`
-2. Prove the original bug with just the desktop Scientific one-batch browser case, temporarily substituting develop's store.js from a saved copy and restoring our implementation in finally.
-3. `npm run test:app:mosaic-review:api -- page-completion.spec.mjs`
-4. `npm run test:app:mosaic-review:api -- affordances.spec.mjs -g "an aborted commit|a species corrected"`
-5. If green, run the existing take-back file because develop's #135 changes overlap this commit path: `npm run test:app:mosaic-review:api -- take-back.spec.mjs`.
+From the issue workspace repository root, after provisioning or reusing `marp_test`:
 
-No whole-suite run or walkthrough. Each command's real output is retained locally; results and failures are recorded below.
+1. `npm run test:app:mosaic-review:api -- decision-state.spec.mjs`
+   - Eight cases: Scientific and Training, exception and acceptance, at desktop and phone viewports.
+   - Proves pending and recorded border weights, unchanged imagery, API persistence, reload behavior, take-back/cancel behavior, and one-badge precedence.
+2. `npm run test:app:mosaic-review:api -- affordances.spec.mjs -g "an aborted commit|a species corrected"`
+   - Two existing real failure paths with new #167 assertions.
+   - Proves aborted and conflicted marks stay visually pending at 3px.
+3. Run `git diff --check` and `marp spec check`.
 
-## Limits
+Every browser command starts its own API on a free port, signs in with the narrow testing reviewer, uses one worker, and stops that API afterward.
 
-These checks prove the specified rule, real commit persistence and rendered completion. They do not test navigating during a commit, a broad concurrent-review workload, every mode/filter combination, or the entire application. Delete Mode is deliberately unchanged and its full suite is not part of this run. Restoration preserves current decisions and reasons, not a history with no evidence the tests ever ran.
+## What is not covered
+
+- No whole-suite or narrated walkthrough run; those belong to the end-of-phase gate and the human's call.
+- No visual-regression screenshot threshold. The test asserts the browser's computed outline width and image filter exactly, which observes this CSS behavior without making unrelated pixels part of the contract.
+- No Delete commit is performed. Delete's selector and destructive dimming are outside the changed rules and are reviewed in the diff.
+- No production or development corpus is read or written.
 
 ## Results
 
-Verified against freshly fetched origin/develop a3a7990a. HEAD and origin/develop had zero commits of divergence before the issue commit.
+Verified against the isolated `marp_test` database. The API runner reused the populated copy, started its own API on an operating-system-selected port, used one browser worker, restored each decision in `finally`, and stopped its API after each command. The review server remained available on port 3012 and returned HTTP 200 after verification.
 
 | Run | Result |
 | --- | --- |
-| Focused #137 model file selection | 3 passed, 0 failed, 0 skipped (53.5ms) |
-| Original-bug tripwire using develop store.js | Failed as expected: completed count stayed 0 after all rows were saved |
-| Real-API completion file, desktop and phone | 8 passed (21.9s) |
-| Real aborted-request and species-conflict cases | 2 passed (2.1s) |
-| Existing real-API take-back file | 8 passed (4.5s) |
-| git diff --check | Passed |
-| marp spec check | 2 assumptions answered; 5 requirements; clear to implement |
+| Decision-state real-API browser cases | 8 passed, 0 failed, 0 skipped (10.0s) |
+| Aborted-request and species-conflict cases | 2 passed, 0 failed, 0 skipped (2.1s) |
+| `git diff --check` | Passed; only existing Windows line-ending notices |
+| `marp spec check` | Passed: 5 assumptions answered, 7 requirements, clear |
 
-All eight completion tests reached and passed their finally restoration assertions. The runner reused the testing database and stopped its API after every run. No whole suite was run.
-
-### Failures retained, including test setup failures
-
-After the rebase, the first testing-database provisioning command found no dump because the isolated workspace's corpus directory was empty. Nothing was changed. Re-running with `MARP_CORPUS_DUMP` pointed at the existing verified dump provisioned `marp_test` and passed the manifest round-trip checks.
-
-The first post-rebase model invocation failed before loading tests because the sandbox refused Node's test-worker spawn with `spawn EPERM`. The identical command passed when allowed to spawn its local worker. This is recorded as an environment failure, not a product result.
-
-The first tripwire attempt did not reach the completion assertion: the setup queried without status filters while the browser URL reapplied default statuses. Fixed by spelling out the same status selections in both queries. Its assertion output was:
+### Passing browser output
 
 ```text
-Error: expect(received).toEqual(expected) // deep equality
-- Expected  - 6
-+ Received  + 0
+Running 8 tests using 1 worker
+
+  ok 1 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › scientific: a pending exception becomes a lighter recorded decision (1.3s)
+  ok 2 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › scientific: a pending acceptance becomes a lighter recorded decision (1.2s)
+  ok 3 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › training: a pending exception becomes a lighter recorded decision (1.2s)
+  ok 4 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 desktop › training: a pending acceptance becomes a lighter recorded decision (1.2s)
+  ok 5 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › scientific: a pending exception becomes a lighter recorded decision (1.1s)
+  ok 6 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › scientific: a pending acceptance becomes a lighter recorded decision (1.1s)
+  ok 7 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › training: a pending exception becomes a lighter recorded decision (1.2s)
+  ok 8 [api] › tests\api\decision-state.spec.mjs:29:9 › #167 phone › training: a pending acceptance becomes a lighter recorded decision (1.1s)
+
+  8 passed (10.0s)
+
+The API tier passed, against a real server on the testing database.
 ```
 
-The command displaying that saved log also failed with a Python Windows console encoding error. The implemented store had already been restored in finally; the saved log was read with explicit UTF-8 afterward. No test result was inferred from the console error.
-
-The corrected tripwire then failed on the actual reported bug:
-
 ```text
-Error: expect(locator).toHaveText(expected) failed
-Locator:  locator('#pagesDone b').first()
-Expected: "1"
-Received: "0"
-Timeout:  7000ms
-```
+Running 2 tests using 1 worker
 
-The first run against the implementation passed all four desktop cases, but failed all four phone cases in setup. The phone's initial layout changed the requested page while adjusting page size. Fixed by loading and settling first, then navigating with the page-number input before asserting exact membership. Its first assertion output was:
+  ok 1 [api] › tests\api\affordances.spec.mjs:54:3 › what the fixture used to fake › R10: an aborted commit says Failed, changes nothing, and keeps the mark (854ms)
+  ok 2 [api] › tests\api\affordances.spec.mjs:151:3 › what the fixture used to fake › R10: a species corrected underneath the page conflicts rather than overwriting (720ms)
 
-```text
-Error: expect(received).toEqual(expected) // deep equality
-- Expected  -  5
-+ Received  + 15
-```
-
-The second run of all eight cases passed. These setup failures are not claimed as evidence of the product bug.
-
-### Earlier evidence files
-
-Full command output from the pre-rebase run is retained in this workspace's git-ignored .marp/local/. The authoritative post-rebase results are the table above.
-
-- 137-model-results.txt
-- 137-red-results.txt (first setup failure)
-- 137-red-results-2.txt (actual regression on develop)
-- 137-api-results.txt (desktop pass / phone setup failure)
-- 137-api-results-2.txt (8 passing completion cases)
-- 137-refusal-results.txt (2 passing refusal cases)
-- 137-take-back-results.txt (8 passing take-back cases)
-
-### Passing test output
-
-
-137-model-results.txt
-
-```text
-✔ #137 R1-R2: scientific completion requires every row committed (1.2984ms)
-✔ #137 R1-R2: training completion requires every row committed (0.075ms)
-✔ #137 R1: existing decisions count only in their own mode (0.0624ms)
-ℹ tests 3
-ℹ suites 0
-ℹ pass 3
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 53.5475
-```
-
-137-api-results-2.txt
-
-```text
-  ok 1 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › scientific: every tile committed in 1 batch(es) completes the pager (3.6s)
-  ok 2 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › scientific: every tile committed in 2 batch(es) completes the pager (2.2s)
-  ok 3 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › training: every tile committed in 1 batch(es) completes the pager (3.4s)
-  ok 4 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 desktop › training: every tile committed in 2 batch(es) completes the pager (2.2s)
-  ok 5 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › scientific: every tile committed in 1 batch(es) completes the pager (2.9s)
-  ok 6 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › scientific: every tile committed in 2 batch(es) completes the pager (2.0s)
-  ok 7 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › training: every tile committed in 1 batch(es) completes the pager (3.0s)
-  ok 8 [api] › tests\api\page-completion.spec.mjs:124:9 › #137 phone › training: every tile committed in 2 batch(es) completes the pager (1.9s)
-  8 passed (21.9s)
-```
-
-137-refusal-results.txt
-
-```text
-  ok 1 [api] › tests\api\affordances.spec.mjs:54:3 › what the fixture used to fake › R10: an aborted commit says Failed, changes nothing, and keeps the mark (826ms)
-  ok 2 [api] › tests\api\affordances.spec.mjs:148:3 › what the fixture used to fake › R10: a species corrected underneath the page conflicts rather than overwriting (730ms)
   2 passed (2.1s)
+
+The API tier passed, against a real server on the testing database.
 ```
 
-137-take-back-results.txt
+### Failures retained
+
+The first command was refused before starting an API or browser because the live review server's local `.env` deliberately points at the disposable database:
 
 ```text
-  ok 1 [api] › tests\api\take-back.spec.mjs:71:1 › R8: a recorded take-back stops saying TAKING BACK (592ms)
-  ok 2 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in scientific, clicking a committed accepted takes it back (469ms)
-  ok 3 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in scientific, clicking a committed exception takes it back (436ms)
-  ok 4 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in training, clicking a committed accepted takes it back (474ms)
-  ok 5 [api] › tests\api\take-back.spec.mjs:153:5 › #135 R8: in training, clicking a committed exception takes it back (509ms)
-  ok 6 [api] › tests\api\take-back.spec.mjs:192:1 › #135 R8: clicking again puts the decision back, and only a commit reaches the flag (559ms)
-  ok 7 [api] › tests\api\take-back.spec.mjs:252:1 › R7a: a decision made in an earlier sitting can be taken back (402ms)
-  ok 8 [api] › tests\api\take-back.spec.mjs:305:1 › R7: the page sweep withdraws a take-back instead of deciding it again (515ms)
-  8 passed (4.5s)
+Refused: the testing database and the development database are both "marp_test".
+
+Nothing has been changed. A testing database is a second database --
+give it a different name with MARP_TESTING_DB_NAME, or point DB_NAME at
+the development one. `marp db status` says which is which.
 ```
+
+The rerun supplied `DB_NAME=mare_v1` only to the launcher as its comparison value. The launcher continued to override its child API with `DB_NAME=marp_test`; no process connected to the development database.
+
+That run then reached the temporary API and authenticated, but the sandbox refused Playwright's worker process before any test case ran:
+
+```text
+Running 8 tests using 1 worker
+
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:421:11)
+    at spawn (node:child_process:796:9)
+    at Object.fork (node:child_process:174:10)
+    at WorkerHost.startRunner (frontend\apps\marp-mosaic-review\node_modules\playwright\lib\runner\index.js:1899:49)
+```
+
+The identical approved command passed when allowed to spawn the local worker. Neither setup failure is claimed as a product result.
 
 ## Files touched
 
-- .marp/task.md: #137 scope, settled decisions, updated base and status.
-- .marp/verification.md: this plan, evidence and coverage limits.
-- frontend/apps/marp-mosaic-review/src/model/page.js: pure completion predicate.
-- frontend/apps/marp-mosaic-review/src/store.js: completion separated from sweep-only pinning; skipped outcomes prevent completion; merged take-back/version behavior preserved.
-- frontend/apps/marp-mosaic-review/tests/unit/model.test.mjs: focused completion-rule cases.
-- frontend/apps/marp-mosaic-review/tests/api/page-completion.spec.mjs: real-API desktop/phone completion, pins, persistence and restoration assertions.
-- frontend/apps/marp-mosaic-review/tests/api/affordances.spec.mjs: incomplete-count assertions in the existing aborted-request and real-conflict cases.
+- `.marp/task.md`: corrected scope, requirements, decisions, and gate state.
+- `.marp/verification.md`: approved plan, actual results, failures, and coverage limits.
+- `frontend/apps/marp-mosaic-review/src/ui/tile.js`: one derived `recorded` state for every Scientific and Training decision.
+- `frontend/apps/marp-mosaic-review/src/store.js`: canceling a take-back clears the stale pending touch.
+- `frontend/apps/marp-mosaic-review/styles/app.css`: 3px pending and 1px recorded outlines; Scientific and Training decision dimming removed.
+- `frontend/apps/marp-mosaic-review/tests/api/decision-state.spec.mjs`: real-API coverage for both modes, both decision kinds, both viewports, reload, take-back, cancel, and image visibility.
+- `frontend/apps/marp-mosaic-review/tests/api/affordances.spec.mjs`: pending-state assertions for aborted and conflicted commits.
 
-No generated files, testing infrastructure, shared application code outside this feature, or other workspaces were edited. The earlier fixture test draft was removed; that file now matches develop. The original pre-update draft remains in a local safety stash.
+No generated files, API contracts, schema, dependencies, or Delete Mode behavior were changed.
 
 ## Status
 
-- **Gate:** G4 complete, evidence recorded. The branch is ready for G5, which requires the human to ask for a pull request.
+- **Gate:** G4 verification complete and accepted by the human.
+- **Next:** The human authorized commit, push, pull-request creation, and merge for issue #167.

@@ -1,5 +1,5 @@
 ---
-task: MarineAppliedResearch/MARP_API#137
+task: MarineAppliedResearch/MARP_API#167
 repos: [marp-api]
 status: ready-for-pr
 needs: []
@@ -7,44 +7,50 @@ needs: []
 
 ## Goal
 
-Make the pager colour and completed-page count reflect a fully decided page after Commit Marked, including decisions accumulated across several commits.
+Make every pending Scientific or Training decision visibly different from one that has reached the record, without obscuring the image being reviewed.
 
 ## Requirements
 
-- **R1** — In Scientific and Training review, a successful selective commit completes the page only when every displayed row has a decision in the current mode, from this sitting or its existing record.
-- **R2** — Partial selective commits leave the page incomplete until the remaining rows are decided.
-- **R3** — Selective commits never pin page membership or rows, even when the completion indicator changes.
-- **R4** — A fully successful sweep continues to show completion. The pager colour and completed-page count use the same completion state.
-- **R5** — Completion is a pure rule in model/page.js, exercised by focused logic and browser assertions.
+- **R1** — Every pending decision in Scientific and Training has a strong 3px outline in the decision's established color and pattern: flag, review, exclude, promote, and taking back.
+- **R2** — After a successful Commit Marked or page commit, every recorded Scientific or Training decision has a lighter 1px outline in that same color and pattern. This applies equally to flags, reviews, exclusions, and promotions.
+- **R3** — A recorded decision already present when the page loads has the same 1px treatment as one saved in the current sitting.
+- **R4** — Scientific and Training images retain normal brightness and color in pending and committed states. The decision state must not make evidence harder to inspect.
+- **R5** — A failed or conflicted commit retains the pending treatment. Taking back a committed decision uses the strong pending outline until the withdrawal succeeds; canceling the take-back restores the committed treatment.
+- **R6** — The primary badge remains exactly one element and keeps the established mark > outcome > record precedence. The visual treatment does not introduce a second status or let a record tag outrank a pending choice.
+- **R7** — Scientific and Training behave consistently at desktop and phone viewports. Delete Mode retains its existing destructive treatment.
 
 ## Open assumptions
 
-- [x] **A1 · behavioural · blocking** — Settled by the user: leave Delete Mode alone.
-- [x] **A2 · behavioural · blocking** — Settled by the user: a page only shows complete when everything on it has been committed. A conflicted outcome is not a successful commit.
+- [x] **A1 · product/UI · blocking** — Settled by the user: do not dim Scientific or Training imagery; distinguish state with border thickness instead.
+- [x] **A2 · product/UI · blocking** — Settled by the user: the distinction applies to every decision, including flagged, reviewed, excluded, promoted, and taking back, rather than exceptions alone.
+- [x] **A3 · product/UI · non-blocking** — Settled by the user's example: pending uses a slightly thicker border and committed uses a slightly thinner border. Use 3px and 1px so the difference remains visible over the mosaic at desktop and phone sizes.
+- [x] **A4 · behavioural · non-blocking** — Settled by the existing tile contract: a committed exception remains marked and editable; this change adds a rendering distinction without changing the gestures or commit behavior.
+- [x] **A5 · product/UI · non-blocking** — Settled by the earlier direction: leave Delete Mode alone, including its existing destructive dimming.
 
 ## Decisions
 
-- 2026-09-12 — Rebased onto pushed develop a3a7990a; preserved #135 take-back/version fixes and #151 phone chrome. Browser tests use the real-API runner and the isolated `marp_test` database.
-- 2026-09-12 — Work is isolated on 137-commit-marked-pager. No API or schema changes are planned.
-- 2026-09-12 — The inherited task specification described #138; it is replaced on this task branch only. Its original record remains in Git history.
-- 2026-09-12 — Other registered workspaces cover #151 and #157. Their task files currently also describe #138, so they cannot establish precise file ownership. Keep edits confined to completion logic and its focused tests; do not modify their layouts or browser infrastructure.
+- **2026-09-12** — Derive one recorded class for both decision kinds rather than encode flags and accepts separately. Outcomes identify a successful current commit; the row identifies a decision from an earlier sitting.
+- **2026-09-12** — Keep each decision's existing hue and solid/dashed pattern. Thickness alone carries pending versus recorded, so the vocabulary remains consistent and image pixels stay unchanged.
+- **2026-09-12** — Canceling a take-back clears the tile's touched state. The reviewer has restored the recorded decision, so the border and Commit Marked must both say that nothing is pending.
+- **2026-09-12** — Test the distinction in the real-API browser tier because the fixture writes status columns in place and cannot faithfully represent the gap between a commit outcome and the row loaded before it.
 
 ## Plan
 
-1. Settle A1 and A2.
-2. Add the pure completion predicate and call it after commit outcomes are applied, keeping selective pinning unchanged.
-3. Add focused model/store and rendered-pager regression cases.
-4. Present the verification plan for approval before executing it.
+1. Derive one committed-decision class in `src/ui/tile.js` for exceptions and acceptances without changing badge precedence.
+2. Clear the pending touch when a reviewer cancels a take-back so the rendered state and Commit Marked agree.
+3. Apply strong pending and light committed outlines in `styles/app.css`, and remove Scientific/Training decision dimming.
+4. Add focused real-API browser coverage for both decision kinds, taking back, successful reload, and refused states in both modes and viewports.
+4. Write the issue-specific verification plan for human review before running it.
 
 ## Acceptance criteria
 
-All rows decided together or across commits produces a coloured pager and an incremented count. Partial work remains incomplete. Selective commits never exclude untouched records from later queries.
+A reviewer can distinguish any unsaved Scientific or Training decision from a saved one by border thickness before and after committing and after reloading, while the evidence image stays fully visible. A refused save and a pending take-back never look recorded. Existing badge, reason, gesture, and Delete behavior remain unchanged.
 
 ## Test plan
 
-See .marp/verification.md for the issue-specific scenarios, real-API test environment, restoration, commands and coverage gaps. The user authorized resuming on the new testing system.
+Filled in at G3 in `.marp/verification.md` after implementation, before tests are run.
 
 ## Status
 
 - **Gate:** ready-for-pr
-- **Notes:** Implemented on current pushed develop. Focused verification passed: 3 model tests and 18 real-API browser tests. Evidence and setup failures are in .marp/verification.md. No whole-suite run, push or PR.
+- **Notes:** The approved G3 plan passed: 8 decision-state browser cases and 2 failure-path browser cases against the real API and disposable database. Setup refusals and passing output are recorded verbatim in `.marp/verification.md`. The human accepted the visual result and G4 evidence and authorized the pull request and merge.
