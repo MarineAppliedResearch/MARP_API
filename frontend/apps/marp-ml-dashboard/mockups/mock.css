@@ -164,6 +164,25 @@ svg { display: block; }
   background: var(--bar);
   backdrop-filter: blur(8px);
 }
+
+/* The bar gets out of the way of the reading, and comes back the moment the reader
+   starts back up the page (#151). The scroll is the whole gesture -- there is no control
+   for this, because this app scrolls and the gesture is already in the reader's hand.
+
+   **A negative top margin, not a transform.** The bar's row is `auto`, so a collapsed row
+   leaves a transform a 0px box to move and nothing happens. A negative margin of the bar's
+   own height collapses the row instead, which hands the pixels to the content.
+
+   **`align-self: start` is load-bearing.** Stretched, the bar would take the height of the
+   row it has just collapsed -- 0 -- so the height it is offset by would measure 0, the
+   margin would come back to 0, and the row would open again: a flap at 60fps rather than
+   a hidden bar. Started, its height stays its content's.
+
+   `--topbar-h` is written by `mock.js`, which measures the bar; the fallback of 0 means a
+   page whose script has not run yet simply keeps its bar. */
+.topbar { align-self: start; transition: margin-top 180ms ease; }
+body[data-topbar="hidden"] .topbar { margin-top: calc(-1 * var(--topbar-h, 0px)); }
+@media (prefers-reduced-motion: reduce) { .topbar { transition: none; } }
 .topbar .heading { min-width: 0; }
 .topbar h1 {
   font-family: var(--display-font);
@@ -470,36 +489,12 @@ svg { display: block; }
 
 /* ============================================================== the menu */
 
-/* Same object as the Picture Mosaic Reviewer's account menu -- .menuwrap, .who,
-   .menu -- so the two applications are one product rather than two that look
-   alike. Sized up a little, because this top bar is taller than that header. */
-.menuwrap { position: relative; }
-.who {
-  width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(9, 30, 51, 0.9); border: 1px solid var(--hairline-2);
-  color: var(--text); font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em;
-  display: grid; place-items: center; cursor: pointer;
-}
-.who:hover { border-color: var(--border-strong); color: var(--white); }
-.who[aria-expanded="true"] { border-color: var(--cyan-400); color: var(--white); }
-.menu {
-  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
-  min-width: 214px; padding: 5px;
-  background: var(--navy-950);
-  border: 1px solid var(--border); border-radius: 8px;
-  box-shadow: 0 18px 44px rgba(1, 5, 13, 0.72);
-}
-.menu button {
-  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
-  background: none; border: 0; border-radius: 5px; padding: 8px 10px;
-  font-size: 12.5px; font-weight: 600; color: var(--text);
-}
-.menu button:hover { background: rgba(13, 42, 70, 0.9); color: var(--white); }
-.menu hr { border: 0; border-top: 1px solid var(--hairline); margin: 4px 2px; }
-.menu .mhead {
-  font-size: 9px; letter-spacing: 0.11em; text-transform: uppercase;
-  color: var(--faint); padding: 6px 10px 4px;
-}
+/* The account menu is one shared component now, not a copy that looks like one:
+   `frontend/shared/assets/css/account-menu.css` holds its rules and this app links it the
+   way the Mosaic Reviewer and the landing page do (#151). What is left here is how big it
+   is, because this top bar is taller than that header and the component takes one knob for
+   exactly that. */
+.topbar .account { --account-size: 30px; }
 
 /* Jobs: the extra columns this screen has that the dashboard's table does not. */
 .tbl.fixed .htype   { width: 8%; }
@@ -1412,7 +1407,7 @@ td.whb.quiet { color: var(--amber-300); }
   .topbar .tools { width: 100%; margin-left: 0; }
   .topbar .search { flex: 1; min-width: 0; }
   .topbar .search .inp { width: 100%; }
-  .topbar .menuwrap { margin-left: auto; }
+  .topbar .account { margin-left: auto; }
 
   /* Scope goes. Dive and line are secondary to the model and the progress at
      this width, and they are on the job's own page. The rest take the space. */

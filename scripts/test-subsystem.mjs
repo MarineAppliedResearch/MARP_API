@@ -129,6 +129,11 @@ const SUBSYSTEMS = {
             // template, read off disk. Same reasoning as `landing-copy` -- an
             // invariant about what the repository contains.
             'docs-branding',
+            // #151: the legacy dashboard's shell -- its palette, its logo and the shared
+            // account menu, read off disk. Here for the same reason as the two above, and
+            // deliberately small: that application is being redesigned, so it has an
+            // invariant rather than a tier of its own.
+            'dashboard-shell',
         ],
     },
     media: {

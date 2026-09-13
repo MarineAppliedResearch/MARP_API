@@ -1,0 +1,106 @@
+/*
+ * The MARP account menu (#151).
+ *
+ * One component, three applications: the public landing page, the Picture Mosaic
+ * Reviewer and the Machine Learning Dashboard. It used to be three implementations that
+ * looked alike, and the ML Dashboard's copy had a person's name typed into it -- which
+ * the Mosaic Reviewer's own notes record as a bug that shipped once, because a hard-coded
+ * identity tells everybody they are one developer.
+ *
+ * `frontend/shared/assets/js/account-menu.js` is the behaviour. This is the look, and it
+ * takes its colours from tokens.css, which all three already link.
+ *
+ * **One knob, deliberately.** `--account-size` is the avatar's diameter, because an
+ * operator console at 12px base and a landing page at 16px genuinely want different
+ * sizes for the same control. Everything else is the same everywhere on purpose: a
+ * person moving between the three should meet one product.
+ */
+
+.account {
+  --account-size: 30px;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.account__button {
+  width: var(--account-size);
+  height: var(--account-size);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font: inherit;
+  font-size: calc(var(--account-size) * 0.36);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--cyan-300);
+  background: var(--navy-800);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.account__button:hover,
+.account__button[aria-expanded="true"] {
+  border-color: var(--cyan-400);
+  color: var(--white);
+}
+
+/* Nobody, drawn as nobody. A control that has not been told who is signed in, or that
+   has been told nobody is, must not look like a person. */
+.account__button[data-account-nobody] {
+  color: var(--muted);
+}
+
+.account__menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 232px;
+  padding: 6px;
+  display: grid;
+  gap: 1px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--navy-1000);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  z-index: 120;
+}
+
+/* `hidden` is only the user agent's `display: none`, and the rule above sets `display`,
+   which outranks it. Without this the menu is open before anybody has clicked it. */
+.account__menu[hidden] {
+  display: none;
+}
+
+.account__who {
+  margin: 0;
+  padding: 7px 10px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.account__item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account__item:hover {
+  background: var(--navy-850);
+  color: var(--white);
+}
+
+.account__rule {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--border);
+}

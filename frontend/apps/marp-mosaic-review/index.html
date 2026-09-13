@@ -6,6 +6,8 @@
 <title>MARP Mosaic Review</title>
 <link rel="icon" href="../../shared/assets/images/marp-mark.png">
 <link rel="stylesheet" href="../../shared/assets/css/tokens.css">
+<link rel="stylesheet" href="../../shared/assets/css/account-menu.css">
+<script src="../../shared/assets/js/account-menu.js" defer></script>
 <link rel="stylesheet" href="./styles/app.css">
 </head>
 <body data-mode="scientific">
@@ -21,9 +23,26 @@
       <button data-mode="delete" class="danger">Delete</button>
     </nav>
     <span class="mode-note" id="modeNote"></span>
-    <!-- The initials are written from `state.me` once `/api/v2/auth/me` has answered.
-         They were hard-coded "IT", which is the same literal `ui/dom.js` held. -->
-    <div class="right menuwrap"><button class="who" id="userBtn" title="Account and preferences">&mdash;</button></div>
+    <!-- The account menu, shared with the landing page and the ML Dashboard (#151).
+         The markup is the component's; `../../shared/assets/js/account-menu.js` is the
+         behaviour. It carries the nobody state to begin with because this app renders
+         before `/api/v2/auth/me` has answered, and `ui/chrome.js` says who once it has.
+         `data-account-probe="no"` because the store already asked: one question, one
+         request. -->
+    <div class="right menuwrap account" data-account
+         data-account-probe="no" data-account-signed-out="show">
+      <button class="account__button" id="userBtn" type="button" data-account-button
+              data-account-nobody="yes" aria-haspopup="true" aria-expanded="false"
+              aria-label="Not signed in">&middot;</button>
+      <div class="account__menu" role="menu" data-account-menu hidden>
+        <p class="account__who" data-account-who>Not signed in</p>
+        <a class="account__item" role="menuitem" href="/apps/dashboard/index.html">Open the dashboard</a>
+        <a class="account__item" role="menuitem" href="/apps/marp-mosaic-review/">Picture Mosaic Reviewer</a>
+        <a class="account__item" role="menuitem" href="/apps/marp-ml-dashboard/">Machine Learning Dashboard</a>
+        <hr class="account__rule">
+        <button class="account__item" type="button" role="menuitem" data-account-signout>Sign out</button>
+      </div>
+    </div>
   </header>
 
   <div class="sub">
@@ -54,6 +73,12 @@
              question without leaving the mode the reviewer is working in. -->
         <button class="railreset" id="railReset" type="button" aria-label="Reset the filters"
                 title="Back to the default question, keeping the mode you are in">&#8635;</button>
+        <!-- The top chrome's toggle lives here rather than in the chrome it hides, which
+             is the whole of #151 R2: a control inside the header cannot bring the header
+             back. This strip is the only chrome on screen in both layouts, and it costs
+             the mosaic no tile area. Its label and icon are written by ui/chrome.js. -->
+        <button class="chromebtn" id="chromebtn" type="button" aria-expanded="true"
+                aria-label="Hide the header" title="Hide the header and the bar under it"></button>
         <button class="railbtn" id="railbtn" aria-label="Collapse filters" title="Collapse the filter rail and give the mosaic the space">&#9664;</button>
       </div>
       <span class="vlabel">Filters</span>
@@ -114,7 +139,6 @@
   import { actions, state, subscribe } from './src/store.js';
   import { mount } from './src/ui/mount.js';
   import { useBackend, backendName } from './src/backend.js';
-  import { initialsOf } from './src/ui/dom.js';
 
   /**
    * Which backing this page is running on.
@@ -184,8 +208,6 @@
 
   /* progress is derived, not stored */
   subscribe(() => {
-    /* The reviewer's initials, from the server. R19: no name is written into this app. */
-    document.getElementById('userBtn').textContent = initialsOf(state.me);
     const done = state.committedPages.size * state.pageSize;
     const pct = state.total ? Math.min(100, Math.round((done / state.total) * 100)) : 0;
     document.getElementById('progPct').textContent = pct + '%';

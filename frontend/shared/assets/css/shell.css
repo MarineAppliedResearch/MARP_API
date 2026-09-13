@@ -1,25 +1,46 @@
+/*
+ * The shell for the legacy dashboard pages: the header, the footer, and the page ground.
+ *
+ * **Recoloured from the palette, not restyled** (#151). The whole of
+ * `frontend/apps/dashboard` is being redesigned later, so this is deliberately the smallest
+ * thing that makes those pages read as MARP: the tokens, the logo and the shared account
+ * menu. Nothing here changes a layout, and the Bootstrap those pages are built on is left
+ * exactly as it is.
+ *
+ * It was teal on light grey, with six hex values of its own. Every colour now comes from
+ * `tokens.css`, which this file imports so that a page linking the shell gets the palette
+ * without having to know it exists -- two of the four pages that use this link nothing else
+ * of ours.
+ *
+ * `--shell-*` survives as the seam between the palette and these rules, so a page that
+ * wants to shift one thing has one name to set.
+ */
+
+@import url("./tokens.css");
+
 :root {
-  --shell-bg: #f4f7f9;
-  --shell-panel: #ffffff;
-  --shell-text: #182431;
-  --shell-muted: #5a6b79;
-  --shell-accent: #006d77;
-  --shell-accent-2: #83c5be;
+  --shell-bg: var(--navy-1000);
+  --shell-panel: var(--navy-900);
+  --shell-text: var(--text);
+  --shell-muted: var(--muted);
+  --shell-accent: var(--cyan-500);
+  --shell-accent-2: var(--cyan-300);
 }
 
 body {
   margin: 0;
   background: var(--shell-bg);
   color: var(--shell-text);
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: var(--body-font);
 }
 
 .marp-header {
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: linear-gradient(90deg, var(--shell-accent), var(--shell-accent-2));
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+  background: var(--navy-950);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
 }
 
 .marp-header__inner,
@@ -36,35 +57,47 @@ body {
   gap: 1rem;
 }
 
+/* The logo is the compact treatment, which is what the Mosaic Reviewer and the ML
+   Dashboard use -- the same mark in every application rather than three. */
 .marp-logo {
-  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  color: var(--white);
   text-decoration: none;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
+.marp-logo img {
+  height: 26px;
+  width: auto;
+  display: block;
+}
+
 .marp-nav {
   display: flex;
+  align-items: center;
   gap: 0.85rem;
   flex-wrap: wrap;
 }
 
 .marp-nav a {
-  color: #fff;
+  color: var(--text);
   text-decoration: none;
   font-weight: 600;
   opacity: 0.95;
 }
 
 .marp-nav a:hover {
+  color: var(--cyan-300);
   opacity: 1;
   text-decoration: underline;
 }
 
 .marp-footer {
   margin-top: 2rem;
-  background: #e7eef2;
-  border-top: 1px solid #d3dfe8;
+  background: var(--navy-950);
+  border-top: 1px solid var(--border);
   color: var(--shell-muted);
   font-size: 0.9rem;
 }
