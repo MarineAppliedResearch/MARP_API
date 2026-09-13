@@ -359,33 +359,56 @@ async function reread(request, questions, wanted) {
     if (seen.has(key)) continue;
     seen.add(key);
 
+    /* 200 x 3 is 600, which is exactly the endpoint's ceiling for one request. */
     const pageSize = 200;
-    let page = 1;
-    let lastPage = 1;
+    const perRequest = 3;
 
-    do {
-      const pages = [];
-      for (let n = page; n < page + 3 && n <= lastPage; n += 1) pages.push(n);
-
-      const res = await request.post('/api/v2/mosaic/observations/pages', {
-        data: { filters, sort: body.sort, pageSize, pages, includeTotal: page === 1 }
-      });
-      if (!res.ok()) break;
-      const answer = await res.json();
-      if (page === 1) lastPage = Math.max(1, Math.ceil((answer.total || 0) / pageSize));
-
+    const collect = (answer) => {
       for (const served of answer.pages || []) {
         for (const row of served.rows || []) {
           const id = Number(row.observation_id);
           if (wanted.has(id)) found.set(id, row);
         }
       }
+    };
 
-      page += 3;
-    } while (page <= lastPage && found.size < wanted.size);
+    /* Page one on its own, because its answer is what says how many pages there are.
+       Folding it into the loop is what made this miss: `lastPage` was still 1 on the
+       first pass, so the first request asked for page one alone and the counter then
+       stepped straight past two and three -- four hundred rows never looked at, and the
+       ids on them silently left decided. Found by digesting the projection table before
+       and after a run rather than by a test, which is why the failure below is loud now. */
+    const head = await request.post('/api/v2/mosaic/observations/pages', {
+      data: { filters, sort: body.sort, pageSize, pages: [1], includeTotal: true }
+    });
+    if (!head.ok()) continue;
+
+    const first = await head.json();
+    collect(first);
+    const lastPage = Math.max(1, Math.ceil((first.total || 0) / pageSize));
+
+    for (let page = 2; page <= lastPage && found.size < wanted.size; page += perRequest) {
+      const pages = [];
+      for (let n = page; n < page + perRequest && n <= lastPage; n += 1) pages.push(n);
+
+      const res = await request.post('/api/v2/mosaic/observations/pages', {
+        data: { filters, sort: body.sort, pageSize, pages }
+      });
+      if (!res.ok()) break;
+      collect(await res.json());
+    }
 
     if (found.size === wanted.size) break;
   }
+
+  /* **Never skip silently.** A row written to and then not read back is a row nothing
+     put right, and the next run inherits it -- which is how a restore that quietly did
+     nothing becomes somebody else's unexplained failure hours later. */
+  const missing = [...wanted].filter((id) => !found.has(id));
+  expect(missing, 'these observations were written to and could not be read back, so '
+    + `nothing put them right: ${missing.join(', ')}. A row that has left every question `
+    + 'the page asked cannot be restored from the page\'s own traffic; the check that '
+    + 'wrote it needs a `finally` of its own.').toEqual([]);
 
   return found;
 }
