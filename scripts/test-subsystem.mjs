@@ -57,6 +57,9 @@ const SUBSYSTEMS = {
             // the mosaic's own contract.
             'thumbnails',
             'thumbnail-geometry',
+            // The stored filename is a content hash (#62). Here for the same
+            // reason as the two above: the name is how a tile reaches the mosaic.
+            'thumbnail-naming',
         ],
     },
     review: {
@@ -109,6 +112,10 @@ const SUBSYSTEMS = {
             // files are one corpus, and this is what stops two databases in one
             // checkout sharing a directory and deleting each other's pictures.
             'thumbnail-storage',
+            // The refusal that keeps the testing database's deliberately weak
+            // isaac/isaac login off anything real. Beside the two above for the
+            // same reason: it is about which database this is.
+            'testing-database-admin',
             // The corpus guard (#142). Here because it is data integrity by
             // another route: it watches what a suite leaves behind rather than
             // what a migration does.

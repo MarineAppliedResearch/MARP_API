@@ -71,8 +71,15 @@ const EXIT_REFUSED = 1;
 /** The repository root. Everything relative resolves against this, never the cwd. */
 const ROOT = path.join(__dirname, '..');
 
-/** The testing database's name when nothing says otherwise. */
-const DEFAULT_DATABASE = 'mare_test';
+/**
+ * The testing database's name when nothing says otherwise.
+ *
+ * `marp_`, not `mare_`. The development database is `mare_v1` and the production one
+ * shares that name, which is why neither can be renamed casually -- but this database is
+ * created here, is disposable, and had no reason to inherit a brand that was retired
+ * before it existed. There is no MARE in MARP.
+ */
+const DEFAULT_DATABASE = 'marp_test';
 
 /**
  * Where the testing database's thumbnails go by default.
@@ -110,6 +117,34 @@ const DEFAULT_REVIEW_USERNAME = 'mosaic-testing';
  * @type {Array<string>}
  */
 const REVIEW_PERMISSIONS = ['observations:read', 'observations:write', 'species:read'];
+
+/**
+ * The login a person signs in with to look at a testing database.
+ *
+ * Asked for on 2026-09-12: *"Make sure the test databases and the dump databases
+ * always have an admin account with all rights that I could sign in with a
+ * lowercase i-s-a-a-c for both the username and the password."* `marp agent
+ * start` creates the bootstrap administrator row and never sets its password, so
+ * there is an account and no way to authenticate as it -- which is not something
+ * anybody should have to discover by hand at the moment they want to look at a
+ * running app.
+ *
+ * **This is a deliberately weak credential and the literal is the point.** It is
+ * not a secret being committed: it opens exactly one kind of database, one this
+ * script created on this machine and can drop, and `weakCredentialRefusal` below
+ * is what keeps it that way. **Do not move it into `.env` and make it
+ * configurable.** That is the obvious tidy-up, and it is the one change that
+ * would let isaac/isaac reach somewhere real -- a variable can be pointed
+ * anywhere, and a literal cannot.
+ *
+ * Beside the reviewer login rather than replacing it: `mosaic-testing` holds
+ * three permissions on purpose, because an account holding everything cannot
+ * show that the gate works.
+ *
+ * @constant
+ * @type {Object}
+ */
+const ADMIN_LOGIN = { username: 'isaac', password: 'isaac' };
 
 /** The stamp: what was built, from which dump, and how to sign in to it. */
 const STAMP_FILE = path.join(ROOT, '.marp', 'local', 'testing-database.json');
@@ -187,6 +222,94 @@ function refuseIfUnsafe(where) {
         process.exit(EXIT_REFUSED);
     }
 }
+
+/**
+ * Why a known weak credential may not be created here, or null when it may.
+ *
+ * Returns the reason rather than exiting, so the judgement can be tested without
+ * a database and without a process to kill. Same shape as `holdsCorpus` in
+ * `db/corpus.js`, and for the same reason: the decision a refusal turns on is the
+ * part worth watching fire.
+ *
+ * Two conditions, and neither is a new judgement -- both are the one
+ * `tests/setup/local-database-guard.js` already makes:
+ *
+ * - **the host names this machine.** An unset `DB_HOST` is refused rather than
+ *   assumed local: that is exactly the state a half-written `.env` leaves behind.
+ * - **the target is not the database this checkout develops against.** The
+ *   development database carries the same name as production and only the host
+ *   tells them apart, so "is this production" is not a question a name can
+ *   answer. What it can answer is "this is the second database, the one this
+ *   script created here and can drop", and that is the whole licence for putting
+ *   `isaac`/`isaac` in it.
+ *
+ * **`MARP_TEST_ALLOW_REMOTE_DB` is deliberately not honoured.** That override
+ * exists so a refusal nobody can get past does not get deleted the first time it
+ * is inconvenient -- a good reason for the test suite and a bad one here. The
+ * whole value of this refusal is that no flag makes a weak password reach a
+ * database somewhere else.
+ *
+ * @param {Object} where - From settings().
+ * @param {string} development - The database `DB_NAME` names.
+ * @param {string} host - The database host, from `DB_HOST`.
+ * @returns {?string} The reason, or null when it is safe.
+ */
+function weakCredentialRefusal(where, development, host) {
+    const named = String(host === undefined || host === null ? '' : host).trim().toLowerCase();
+
+    if (!LOCAL_HOSTS.includes(named)) {
+        return `DB_HOST is ${named === '' ? 'not set' : named}, which is not this machine. A login `
+            + `as weak as ${ADMIN_LOGIN.username}/${ADMIN_LOGIN.password} is only ever created on a `
+            + 'database this script made here and can drop.';
+    }
+
+    if (!where.database || where.database === development) {
+        return `The target is ${where.database || '(unnamed)'}, which is the database this checkout `
+            + 'develops against. That one carries the same name as production and is not disposable, '
+            + 'so it does not get a known weak credential.';
+    }
+
+    return null;
+}
+
+/**
+ * Give the testing database a login a person can actually sign in with.
+ *
+ * **After the restore, always** -- on the reused path as much as the provisioned
+ * one. "Always has an admin account" is the requirement, and a database built
+ * before this existed, or one whose password somebody changed, is exactly the
+ * case where finding out by hand is expensive.
+ *
+ * Idempotent because `create-review-user.js` is: it resets the password and
+ * re-grants rather than failing or duplicating. Every permission key, read from
+ * the catalogue rather than listed here, because `requirePermission` compares the
+ * key exactly -- `admin` is not a bypass, so "all rights" has to mean every key
+ * actually granted.
+ *
+ * @param {Object} where - From settings().
+ * @param {Object} overrides - DB_NAME and THUMBNAIL_STORAGE_DIR for the child.
+ * @returns {void} Exits on a refusal.
+ */
+function ensureAdminLogin(where, overrides) {
+    const refusal = weakCredentialRefusal(where, config.database, config.host);
+
+    if (refusal) {
+        console.error(`Refused: ${refusal}`);
+        console.error('');
+        console.error('Nothing has been changed. This account is a convenience for a throwaway');
+        console.error('database and is not a thing to create anywhere else, so there is no flag');
+        console.error('that gets past this.');
+        process.exit(EXIT_REFUSED);
+    }
+
+    console.log(`==> admin login ${ADMIN_LOGIN.username}`);
+    runScript(
+        'scripts/create-review-user.js',
+        ['--username', ADMIN_LOGIN.username, '--all-permissions'],
+        { ...overrides, MARP_REVIEW_PASSWORD: ADMIN_LOGIN.password }
+    );
+}
+
 
 /**
  * Connect to a database on the configured server.
@@ -418,7 +541,19 @@ async function provision({ reset = false } = {}) {
     const before = await inspect(where);
     const stamp = readStamp();
 
+    // Both paths below need these, and the reused one needs them before it
+    // returns, so they are resolved here rather than beside the load.
+    const overrides = {
+        DB_NAME: where.database,
+        THUMBNAIL_STORAGE_DIR: where.thumbnails,
+    };
+
     if (before.ready && !reset) {
+        // On the reused path too, deliberately. A database built before this
+        // existed has no such login, and "it is already there" is exactly when
+        // nobody thinks to check.
+        ensureAdminLogin(where, overrides);
+
         return { action: 'reused', where, state: before, stamp };
     }
 
@@ -464,10 +599,6 @@ async function provision({ reset = false } = {}) {
         await server.end();
     }
 
-    const overrides = {
-        DB_NAME: where.database,
-        THUMBNAIL_STORAGE_DIR: where.thumbnails,
-    };
     if (binDirectory) { overrides.PG_BIN = binDirectory; }
 
     console.log(`==> loading ${path.relative(ROOT, dump.directory) || dump.directory}`);
@@ -494,6 +625,11 @@ async function provision({ reset = false } = {}) {
         ['--username', where.username, '--permissions', REVIEW_PERMISSIONS.join(',')],
         { ...overrides, MARP_REVIEW_PASSWORD: password }
     );
+
+    // Last, for the same reason the reviewer login is: the permission catalogue
+    // it grants every key from arrives with the dump and may be extended by a
+    // migration, so an account created before either has nothing to point at.
+    ensureAdminLogin(where, overrides);
 
     const after = await inspect(where);
 
@@ -541,6 +677,7 @@ function announce(outcome) {
     console.log(`  reviews          ${state.counts.observation_reviews}`);
     console.log(`  thumbnail files  ${state.thumbnailFiles}`);
     console.log(`  thumbnails in    ${path.relative(ROOT, where.thumbnails)}`);
+    console.log(`  sign in as       ${ADMIN_LOGIN.username} / ${ADMIN_LOGIN.password}`);
 
     if (stamp && stamp.dumpTaken) {
         console.log(`  dump taken       ${stamp.dumpTaken}`);
@@ -589,6 +726,12 @@ async function main() {
             console.log(`  built ${stamp.provisionedAt} from ${stamp.dump}`);
             console.log(`  login ${stamp.username}   (password in ${path.relative(ROOT, STAMP_FILE)})`);
         }
+        // Said whether or not there is a stamp: this login does not come from
+        // one, and a database built before stamps existed still has it.
+        if (state.exists) {
+            console.log(`  login ${ADMIN_LOGIN.username} / ${ADMIN_LOGIN.password}   (every permission; `
+                + 'a testing database only)');
+        }
         return;
     }
 
@@ -609,11 +752,13 @@ if (require.main === module) {
 }
 
 module.exports = {
+    ADMIN_LOGIN,
     DEFAULT_DATABASE,
     DEFAULT_THUMBNAIL_DIR,
     REVIEW_PERMISSIONS,
     STAMP_FILE,
     settings,
+    weakCredentialRefusal,
     findDump,
     inspect,
     provision,

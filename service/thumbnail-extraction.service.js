@@ -64,6 +64,7 @@ const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
+const { thumbnailFilename } = require('../db/thumbnail-filename');
 const { chooseBox, cropRectangle } = require('./thumbnail-geometry');
 
 const {
@@ -413,14 +414,17 @@ function planObservation(claim, keyframes) {
  * a reason to fall back on the probe's numbers: the probe describes the stream
  * and this describes the picture that actually came out of it.
  *
+ * **It is not told whose thumbnail it is**, and that is deliberate: the tile is
+ * named by its own bytes now, so the observation is no longer an input to
+ * anything this does.
+ *
  * @async
  * @param {string} framePath - PNG of the decoded frame.
  * @param {Object} box - The normalised centre-origin box.
- * @param {number} observationId - Whose thumbnail, for the filename.
  * @returns {Promise<Object>} What {@link thumbnailRepository.recordReady} wants.
  * @throws {Error} If the frame has no readable dimensions.
  */
-async function cropToTile(framePath, box, observationId) {
+async function cropToTile(framePath, box) {
     const metadata = await sharp(framePath).metadata();
 
     if (!metadata.width || !metadata.height) {
@@ -431,11 +435,6 @@ async function cropToTile(framePath, box, observationId) {
     }
 
     const rectangle = cropRectangle(box, metadata.width, metadata.height);
-
-    // Named by the observation, so the file is derivable from the row and the row
-    // from the file. `generation` is not in the name: the URL is stable per
-    // observation and the ETag is what makes a replacement visible.
-    const filename = `${observationId}.jpg`;
 
     fs.mkdirSync(STORAGE_DIR, { recursive: true });
 
@@ -449,6 +448,21 @@ async function cropToTile(framePath, box, observationId) {
         .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, { fit: 'cover' })
         .jpeg({ quality: THUMBNAIL_QUALITY })
         .toBuffer();
+
+    // Named by its own bytes, which **gives up derivability on purpose**. The
+    // name used to be `${observationId}.jpg`, so a row found its file and a file
+    // found its row -- and that is exactly what made two databases unable to
+    // share a directory: `observation_id` is `max(observation_id) + 1` per
+    // database (#62), so independent databases own the same `582.jpg`, and
+    // `routes/thumbnail.routes.js` serves whatever the row names after checking
+    // only that it exists. Not a broken tile: a 200 and a picture of the wrong
+    // animal. Derivability was worth less than that costs.
+    //
+    // Nothing was reading the name, so nothing is lost -- the row carries the
+    // filename and serving reads it off the row rather than deriving it.
+    // `generation` is still not in the name, for the reason it never was: the URL
+    // is stable per observation and the ETag is what makes a replacement visible.
+    const filename = thumbnailFilename(buffer);
 
     fs.writeFileSync(path.join(STORAGE_DIR, filename), buffer);
 
@@ -622,7 +636,7 @@ async function extractVideoGroup(videoSource, claims) {
             }
 
             try {
-                const tile = await cropToTile(framePath, plan.box, claim.observation_id);
+                const tile = await cropToTile(framePath, plan.box);
 
                 await thumbnailRepository.recordReady(claim.observation_id, {
                     ...tile,
@@ -949,6 +963,7 @@ async function control(action, userId, note = null) {
 
 module.exports = {
     control,
+    cropToTile,
     drainOnce,
     elideToken,
     extractVideoGroup,
