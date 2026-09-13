@@ -20,8 +20,10 @@
  * - **A delete is permanent here.** `a tile whose row has been destroyed` gets its doomed
  *   tile by deleting two observations, which on the fixture was an in-memory edit and here
  *   destroys corpus rows this test did not create. `journal.mjs` refuses exactly that, and
- *   rightly. All five checks are kept and `test.fixme()`d rather than dropped: they need a
- *   seeded, disposable observation to delete, which is a decision rather than a migration.
+ *   rightly -- so those five checks build the four observations they destroy two of,
+ *   with `seedPage`, and name them with `allowDeletes`. A row a test may destroy is a row
+ *   it made; `allowDeletes` is never called on a corpus row, because saying one may be
+ *   destroyed does not make it replaceable.
  *
  * Refs #157.
  */
@@ -29,6 +31,7 @@
 import { test, expect } from '@playwright/test';
 
 import { journal } from './journal.mjs';
+import { seedPage } from './seed.mjs';
 import {
   expectRealBacking,
   freshTile,
@@ -40,8 +43,25 @@ import {
 /** Every check in this file may commit, so every one of them puts the record back. */
 let ledger = null;
 
-test.beforeEach(({ page, request }) => { ledger = journal(page, request); });
-test.afterEach(async ({ request }) => { await ledger.restore(request); });
+/**
+ * Seeded pages a check made, taken away after it whatever happened.
+ *
+ * The five destroyed-tile checks each build their own four observations to destroy two
+ * of, so the removal is a `finally` that would be written five times. `after(seeded)`
+ * registers it once instead, and the hook below is the only place that knows the order:
+ * **forget, restore, remove**. The journal re-reads every row it wrote to, and a row
+ * `remove()` has already deleted cannot be read back -- so the seeded ids come off its
+ * books first.
+ */
+let planted = [];
+const after = (seeded) => planted.push(seeded);
+
+test.beforeEach(({ page, request }) => { ledger = journal(page, request); planted = []; });
+test.afterEach(async ({ request }) => {
+  for (const seeded of planted) ledger.forget(seeded.ids);
+  await ledger.restore(request);
+  for (const seeded of planted) await seeded.remove();
+});
 
 test.describe('each commit button reports only on itself', () => {
   /* #131. `state.commit` was one `{ busy, status }` serving two controls, so committing
@@ -394,24 +414,21 @@ test.describe('a tile whose row has been destroyed', () => {
    * `.tile:not(.marked)` is one -- slides onto a different tile the moment the state
    * changes, which is how three tests here were wrong before they were right.
    *
-   * **Every check below is `test.fixme()`d, and this helper is why** (#157). On the
-   * fixture a delete was an in-memory edit; here it destroys two corpus observations
-   * permanently, and the rows it would take are ones nobody seeded. `journal.mjs`
-   * refuses that outright -- `restore()` fails naming the ids -- and `allowDeletes` is
-   * for rows a test *created*, so calling it here would be defeating the guard rather
-   * than satisfying it. Nothing is wrong with the checks: they need a doomed tile that
-   * is disposable, which means seeding observations to destroy, and that is a decision
-   * about the corpus rather than part of this migration.
+   * **What it destroys, it made** (#157). On the fixture a delete was an in-memory edit;
+   * here it is permanent, and `journal.mjs` refuses a delete of any row the test did not
+   * create -- `allowDeletes` says *these are mine*, and is never called on a corpus row.
+   * So the page is four seeded observations in a session of their own: two are destroyed
+   * and two remain, which is what these checks need to be able to say that everything
+   * *else* on the page still works.
    *
-   * **The route out is `tests/api/seed.mjs`**, landing beside this in #157: `seedPage`
-   * makes observations in a session of its own and hands back `{line, ids, address,
-   * remove}`, so this helper becomes `goto(address)`, `ledger.allowDeletes(ids)`, and the
-   * two clicks below. Left to the supervising agent rather than wired here, because that
-   * file is another agent's work in progress and a check that depends on an unmerged
-   * helper fails for a reason that is not the app.
+   * @param {import('@playwright/test').Page} page - The page to drive.
+   * @returns {Promise<Object>} `{id, seeded}` -- the doomed tile, and what to remove.
    */
   async function destroyTwo(page) {
-    await page.goto(undecided());
+    const seeded = await seedPage({ count: 4, thumbnail: 'ready' });
+    ledger.allowDeletes(seeded.ids);
+
+    await page.goto(seeded.address);
     await expectRealBacking(page);
     await ready(page);
     await page.locator('.seg button', { hasText: 'Delete' }).click();
@@ -429,12 +446,13 @@ test.describe('a tile whose row has been destroyed', () => {
     await page.locator('#commit').click();
     await page.locator('[data-confirm="go"]').click();
     await expect(page.locator('.tile.out-deleted')).toHaveCount(2);
-    return ids[0];
+    return { id: ids[0], seeded };
   }
 
-  test.fixme('R2/R8 (#138): clicking it does nothing, and it says it is not a target',
+  test('R2/R8 (#138): clicking it does nothing, and it says it is not a target',
     async ({ page }) => {
-      const id = await destroyTwo(page);
+      const { id, seeded } = await destroyTwo(page);
+      after(seeded);
       const tile = page.locator(`.tile[data-id="${id}"]`);
 
       /* The reported defect, at the tier that can see it: the store was correct about
@@ -455,17 +473,19 @@ test.describe('a tile whose row has been destroyed', () => {
       await expect(tile).toHaveAttribute('aria-disabled', 'true');
     });
 
-  test.fixme('R6 (#138): the tooltip says why nothing happens', async ({ page }) => {
-    const id = await destroyTwo(page);
+  test('R6 (#138): the tooltip says why nothing happens', async ({ page }) => {
+    const { id, seeded } = await destroyTwo(page);
+    after(seeded);
     /* DELETED states the fact. The reviewer's actual question is why their clicks do
        nothing, and that is what the title answers. */
     await expect(page.locator(`.tile[data-id="${id}"]`))
       .toHaveAttribute('title', /removed from the database/i);
   });
 
-  test.fixme('R3/R4 (#138): neither the accept gesture nor the badge reaches it',
+  test('R3/R4 (#138): neither the accept gesture nor the badge reaches it',
     async ({ page }) => {
-      const id = await destroyTwo(page);
+      const { id, seeded } = await destroyTwo(page);
+      after(seeded);
       const tile = page.locator(`.tile[data-id="${id}"]`);
 
       await tile.click({ button: 'right', force: true });     // see the note above
@@ -479,19 +499,21 @@ test.describe('a tile whose row has been destroyed', () => {
       await expect(tile).not.toHaveClass(/marked/);
     });
 
-  test.fixme('R7 (#138): it stays on screen with its picture', async ({ page }) => {
-    const id = await destroyTwo(page);
+  test('R7 (#138): it stays on screen with its picture', async ({ page }) => {
+    const { id, seeded } = await destroyTwo(page);
+    after(seeded);
     /* Still there to be looked at -- the cascade takes database rows, not the JPEG --
        which is the point of leaving it up for the rest of the sitting. It goes on the
        next query, which is existing behaviour and correct. */
     await expect(page.locator(`.tile[data-id="${id}"]`).locator('img')).toHaveCount(1);
   });
 
-  test.fixme('R5 (#138): "flag all on page" steps over it', async ({ page }, info) => {
+  test('R5 (#138): "flag all on page" steps over it', async ({ page }, info) => {
     /* Desktop only, and not for convenience: `.markall` is `display: none` under the
        phone media query, so the page-level mark is not a gesture that exists there. */
     test.skip(isPhone(info), 'the page-level mark is hidden on a phone');
-    const id = await destroyTwo(page);
+    const { id, seeded } = await destroyTwo(page);
+    after(seeded);
     const tile = page.locator(`.tile[data-id="${id}"]`);
 
     await page.locator('#markAll').click();

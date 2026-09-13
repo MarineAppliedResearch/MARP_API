@@ -13,14 +13,13 @@
  * than on the fixture, because a commit against a real server takes a round trip rather
  * than a microtask.
  *
- * **Delete is the exception in this file, and it is deliberate.** Two of these checks
- * commit in Delete Mode, and a delete against the real endpoint is permanent -- nothing
- * can put an observation back, which is why `journal.mjs` refuses one outright. So the
- * delete route is answered rather than served, with exactly what the endpoint would have
- * said, derived from the request the client actually built: the whole client path runs --
- * the confirm dialog, the busy state, the outcomes, the committed page -- and no row is
- * destroyed. What these checks assert is a hue, and a hue is not a fact about whether a
- * row went away. `deleteWithoutDestroying` at the bottom is the whole of it.
+ * **Two of these checks commit in Delete Mode, and a delete is permanent.** Nothing can
+ * put an observation back, which is why `journal.mjs` refuses one outright, so those two
+ * seed observations of their own with `seedPage` and destroy those. Rewriting the delete
+ * route's answer with `page.route` would have been cheaper and is rejected for the reason
+ * `seed.mjs` gives: #157 exists to stop a browser tier grading something that is not the
+ * server, and a response edited on the way past is exactly that. The seeded rows are
+ * served, paged and deleted by the real thing.
  *
  * Refs #157.
  */
@@ -28,11 +27,13 @@
 import { test, expect } from '@playwright/test';
 
 import { journal } from './journal.mjs';
+import { seedPage } from './seed.mjs';
 import {
   closeRail,
   expectRealBacking,
   freshTile,
   openRail,
+  pageSizeOf,
   ready,
   undecided
 } from './support.mjs';
@@ -196,10 +197,11 @@ test.describe('a committed page wears the hue of the commit that did it', () => 
   async function commitPage(page, mode) {
     if (mode === 'delete') {
       for (let i = 0; i < 2; i++) {
-        /* `markableTile` rather than `.first()`, for the locator trap: a selector that
-           describes a state slides onto another tile the moment the state changes. It is
-           deliberately not `freshTile` -- see that helper's note at the bottom. */
-        const tile = await markableTile(page);
+        /* `freshTile` rather than `.first()`: a selector describing a state is
+           re-resolved on every use and slides onto another tile the moment the state
+           changes. A marked tile draws a badge, so the second call picks a different
+           one exactly as `:not(.marked)` used to. */
+        const tile = await freshTile(page);
         await tile.click();
       }
       await expect(page.locator('.tile.marked')).toHaveCount(2);
@@ -236,18 +238,39 @@ test.describe('a committed page wears the hue of the commit that did it', () => 
 
   test('R1/R2/R5: Delete is red, and nowhere near the green or the violet',
     async ({ page }) => {
-      /* Nothing is destroyed: the delete route is answered rather than served. The file
-         header says why -- an observation cannot be put back, and this is about a hue. */
-      await deleteWithoutDestroying(page);
       await page.goto(undecided());
       await expectRealBacking(page);
       await ready(page);
 
-      /* One load, three modes: each mode parks its own committed pages, so the pager
-         starts empty again on arrival rather than showing the previous mode's work. */
+      /* Two modes on one load: each parks its own committed pages, so the pager starts
+         empty again on arrival rather than showing the previous mode's work. The third
+         was on this load too until the fixture went -- see below. */
       const sci = await committedIn(page, 'scientific');
       const tra = await committedIn(page, 'training');
-      const del = await committedIn(page, 'delete');
+
+      /**
+       * Delete gets observations of its own, and therefore its own load.
+       *
+       * A delete is permanent, and the API tier may never destroy a row it did not
+       * create -- so this seeds a page and destroys that. It has to spill onto a second
+       * page, because the committed chip this check reads only exists once you have
+       * paged off the page that was committed, so the count comes from the browser's own
+       * page size rather than a number that is right at one viewport.
+       */
+      const size = await pageSizeOf(page);
+      const seeded = await seedPage({ count: size + 2 });
+      let del = null;
+
+      try {
+        /* The whole seeded page is sent as the commit's `observations`, so all of them
+           are named -- the journal watches the request, not what the server destroyed. */
+        ledger.allowDeletes(seeded.ids);
+        await page.goto(seeded.address);
+        await ready(page);
+        del = await committedIn(page, 'delete');
+      } finally {
+        await seeded.remove();
+      }
 
       /* The reported defect: this chip was the root green, in the mode whose commit had
          just destroyed those observations permanently. */
@@ -300,28 +323,35 @@ test.describe('a committed page wears the hue of the commit that did it', () => 
 
   test('R4: the commit button says the delete succeeded without saying it was accepted',
     async ({ page }, info) => {
-      /* Again nothing is destroyed. What is asserted is the tick's hue, which is a
-         question about the stylesheet rather than about the record. */
-      await deleteWithoutDestroying(page);
-      await page.goto(undecided());
-      await expectRealBacking(page);
-      await ready(page);
-      await page.locator('.seg button', { hasText: 'Delete' }).click();
-      await ready(page);
-      /* The mode selector is in the top chrome, but a rail left open on a phone still
-         covers the tile this is about to click. */
-      await closeRail(page, info);
+      /* Its own rows again, for the same reason: this one really does destroy one, and
+         a corpus row destroyed by a check is a corpus row nobody can put back. Three is
+         enough -- nothing here pages. */
+      const seeded = await seedPage({ count: 3 });
 
-      const tile = await markableTile(page);
-      await tile.click();
-      const commit = page.locator('#commit');
-      await commit.click();
-      await page.locator('[data-confirm="go"]').click();
+      try {
+        ledger.allowDeletes(seeded.ids);
+        await page.goto(seeded.address);
+        await expectRealBacking(page);
+        await ready(page);
+        await page.locator('.seg button', { hasText: 'Delete' }).click();
+        await ready(page);
+        /* The mode selector is in the top chrome, but a rail left open on a phone still
+           covers the tile this is about to click. */
+        await closeRail(page, info);
 
-      await expect(commit).toHaveClass(/ok/);
-      const ok = await readColour(commit, 'backgroundColor');
-      expect(ok[0], `the tick state should be red, got rgb(${ok.join(',')})`)
-        .toBeGreaterThan(ok[1] + 40);
+        const tile = await freshTile(page);
+        await tile.click();
+        const commit = page.locator('#commit');
+        await commit.click();
+        await page.locator('[data-confirm="go"]').click();
+
+        await expect(commit).toHaveClass(/ok/);
+        const ok = await readColour(commit, 'backgroundColor');
+        expect(ok[0], `the tick state should be red, got rgb(${ok.join(',')})`)
+          .toBeGreaterThan(ok[1] + 40);
+      } finally {
+        await seeded.remove();
+      }
     });
 });
 
@@ -345,89 +375,3 @@ test.describe('a judged tile steps back', () => {
     expect(b).toBeLessThan(1);
   });
 });
-
-/* ---------------------------------- the two helpers this file owns (#157) */
-
-/** The route a Delete Mode commit goes to. */
-const DELETE_ROUTE = '**/api/v2/mosaic/observations/delete';
-
-/**
- * Let a Delete Mode commit run its whole client path without destroying anything.
- *
- * **A delete is the one write this tier cannot undo.** `journal.mjs` puts a decision back
- * by writing the record again, and there is no equivalent for a row that no longer
- * exists -- which is why it refuses a delete outright rather than pretending. The two
- * checks here that commit in Delete Mode are about the *hue* of what a commit leaves
- * behind: the pager chip, the legend swatch, the button's tick. Neither asks whether a
- * row went away.
- *
- * So the request is answered instead of served, with the body the endpoint builds for it
- * -- `reviewed` carrying each marked id with outcome `deleted`, which is what
- * `repository/mosaic-commit.repository.js` returns and what `model/page.js:applyCommit`
- * folds. It is **derived from the request the client actually sent** rather than typed
- * out, so a change in what the client marks cannot leave this answering about other ids.
- *
- * Everything either side of the wire is real: the confirm dialog, the busy state, the
- * outcomes, the pinned committed page, the counts query that follows.
- *
- * The ids go to `allowDeletes` because the journal watches the **request**, not the
- * server -- nothing reached the endpoint, so there is nothing to put back, and without
- * this it would report a destruction that did not happen.
- *
- * @param {import('@playwright/test').Page} page - The page about to commit.
- * @returns {Promise<void>} Resolves once the route is installed.
- */
-async function deleteWithoutDestroying(page) {
-  await page.route(DELETE_ROUTE, async (route) => {
-    let body = null;
-    try { body = route.request().postDataJSON(); } catch { body = null; }
-
-    /* In Delete Mode a mark *is* the selection, so the marked ids are the ones the
-       endpoint would have destroyed; every other row on the page is untouched. */
-    const marked = ((body && body.marks) || []).map((mark) => Number(mark.observation_id));
-    ledger.allowDeletes(marked);
-
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        atomicity: 'per-observation',
-        reviewed: marked.map((observation_id) => ({ observation_id, outcome: 'deleted' })),
-        flagged: [],
-        reverted: [],
-        skipped: [],
-        conflicted: [],
-        committedAt: new Date().toISOString()
-      })
-    });
-  });
-}
-
-/**
- * A tile that can be marked, pinned by its id.
- *
- * `freshTile` is the right helper almost everywhere and this is deliberately not it: it
- * insists on a tile carrying no badge, because on a real corpus a click on a decided tile
- * is a *take-back* rather than a mark. **Delete Mode has neither half of that problem** --
- * `pendingException('delete')` is null so nothing arrives marked, there is no take-back to
- * fall into, and Delete owns both status dimensions, so entering it re-ticks every review
- * status and the page can legitimately arrive with a badge on every tile. Insisting on an
- * unbadged one there would fail for a reason that is not the defect.
- *
- * What it keeps from `freshTile` is the half that matters: the id is read first and the
- * tile pinned by it, so a selector describing a state cannot slide onto a different tile
- * between the read and the click.
- *
- * @param {import('@playwright/test').Page} page - A settled page.
- * @param {Object} [options] - `at` is the index among the markable tiles.
- * @returns {Promise<import('@playwright/test').Locator>} The tile, pinned by `data-id`.
- */
-async function markableTile(page, { at = 0 } = {}) {
-  const ids = await page.locator('.tile:not(.marked):not(.failed)')
-    .evaluateAll((tiles) => tiles.map((tile) => tile.dataset.id));
-
-  expect(ids[at], `this page holds ${ids.length} unmarked tile(s) with a picture and the `
-    + `check wanted number ${at}. There is nothing here to mark.`).toBeTruthy();
-
-  return page.locator(`.tile[data-id="${ids[at]}"]`);
-}

@@ -201,6 +201,33 @@ export function journal(page, api = null) {
       for (const id of ids) disposable.add(Number(id));
     },
 
+    /**
+     * Stop watching these observations, because the test is about to take them away.
+     *
+     * A check that **seeds** rows and then commits to them has two things that must put
+     * the record back, and they disagree: `seeded.remove()` deletes the rows outright,
+     * while `restore()` re-reads each row it wrote to and fails loudly when one cannot be
+     * found. Whichever runs second is wrong -- restore-then-remove works only if the
+     * ordering is remembered, and it will not be.
+     *
+     * So a seeded check says so instead: the rows are its own, nothing else can see them,
+     * and they are going. Call it before `remove()`.
+     *
+     * @param {Array<number>} ids - The seeded ids.
+     * @returns {void}
+     */
+    forget(ids) {
+      for (const raw of ids) {
+        const id = Number(raw);
+        first.delete(id);
+        versions.delete(id);
+        committed.delete(id);
+        corrected.delete(id);
+        destroyed.delete(id);
+        disposable.delete(id);
+      }
+    },
+
     /** Did anything write? For a test that wants to assert it did not. */
     wrote: () => committed.size > 0 || corrected.size > 0 || destroyed.size > 0,
 
@@ -243,8 +270,19 @@ export function journal(page, api = null) {
  */
 async function putSpeciesBack(request, { versions, corrected }) {
   for (const [id, was] of corrected) {
+    /* The version is read back rather than remembered. A correction moves it on the
+       observation row's own trigger and the answer carries the new one under
+       `observation`, not at the top level -- so trusting what the response listener
+       scraped came back `conflicted`, which writes nothing and says nothing. Asking is
+       one request and cannot be wrong. */
+    const live = await request.get(`/api/v2/observation/${id}`);
+    expect(live.ok(), `observation ${id} could not be read back to be put on species ${was}: `
+      + `${live.status()}`).toBeTruthy();
+    const version = (await live.json()).version;
+    versions.set(id, Number(version));
+
     const res = await request.post('/api/v2/mosaic/observations/species', {
-      data: { observation_id: id, version: versions.get(id), species_id: was }
+      data: { observation_id: id, version, species_id: was }
     });
     expect(res.ok(), `putting observation ${id} back on species ${was} was refused: `
       + `${res.status()} ${await res.text()}`).toBeTruthy();

@@ -8,7 +8,6 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 
 import { MODES, isMode, commitActsOnMarked, commitCount, existingState, reviewerIdFor,
   decidedByMe, pendingException, statusDimensions, commitIsDestructive, borrowedTags,
@@ -1244,37 +1243,48 @@ test('F11: a permanently failed tile is not offered a retry, and says why', () =
   assert.equal(rows[1].thumbnail_reason, reason, 'the reason is the API answer, not something the client invented');
 });
 
-/* ---------------------------------------------------------------- the fixture */
-
-const fixture = () => JSON.parse(
-  readFileSync(new URL('../../fixtures/observations.json', import.meta.url), 'utf8'));
-
-/**
- * #81 D1. The fixture invented `ROV` and `Drop Cam`, which are platforms and are not in
- * the `session_type` column at all, so the session-type filter was exercised against
- * values that do not exist. The real five are below, inconsistent casing included --
- * `Fish_GULF` beside `INVERTS_GULF` is what the database holds, and a fixture that spells
- * them more neatly tests a query nobody will ever run.
+/* -------------------------------------------- every dimension at once (was data-scale)
+ *
+ * `matchesFilters` is the composition: a row is in the result only when *every* dimension
+ * the reviewer has set accepts it. `matchesDimension` is checked one dimension at a time
+ * above; this is the `every`, and it is the part that a filter set with one narrow
+ * dimension in it silently gets wrong.
+ *
+ * It was exercised, without ever being its subject, by the reference implementation in
+ * `tests/unit/data-scale.test.mjs`, which #157 deleted with the fixture it read. The rule
+ * lives in `model/match.js` and is the endpoint's contract as much as it was the
+ * fixture's, so it is written out here against plain literals instead.
  */
-test('D1: the fixture uses the session types the database really holds', () => {
-  const seen = [...new Set(fixture().observations.map((r) => r.session_type))].sort();
-  assert.deepEqual(seen,
-    ['Fish', 'Fish_GULF', 'Habitat', 'INVERTS_GULF', 'Inverts'],
-    'these are the five values, spelled the way the column spells them');
+
+test('every dimension has to accept a row, not just the narrowest one', () => {
+  const inside = {
+    project_name: 'Deep Reef Survey 2025', dive: 'D04', confidence: 0.5, tc: '12:00:00'
+  };
+  const filters = {
+    project: ['Deep Reef Survey 2025'],
+    dive: ['D04'],
+    confidence: { from: 0.2, to: 0.6 },
+    timeOfDay: { from: '09:00', to: '17:00' }
+  };
+  assert.equal(match.matchesFilters(filters, inside), true);
+
+  /* One dimension at a time, so a failure names which `every` stopped caring about. */
+  assert.equal(match.matchesFilters(filters, { ...inside, dive: 'D06' }), false, 'the dive');
+  assert.equal(match.matchesFilters(filters, { ...inside, confidence: 0.9 }), false,
+    'the confidence range');
+  assert.equal(match.matchesFilters(filters, { ...inside, tc: '03:00:00' }), false,
+    'the time-of-day window');
+  assert.equal(match.matchesFilters(filters, { ...inside, project_name: 'Other' }), false,
+    'the project');
 });
 
-test('D1: a session has one type, because sessions.type is one column on one row', () => {
-  const types = new Map();
-  for (const r of fixture().observations) {
-    const had = types.get(r.session_id);
-    if (had && had !== r.session_type) {
-      assert.fail(`session ${r.session_id} carries both ${had} and ${r.session_type}`);
-    }
-    types.set(r.session_id, r.session_type);
-  }
-  /* And why it matters: L2 says the type narrows which sessions are available, which is
-     only true if the two are correlated at all. Rolled per observation, they were not. */
-  assert.ok(new Set(types.values()).size > 1, 'more than one type across the sessions');
+test('a dimension nobody set accepts everything, which is what absence means', () => {
+  /* Absence is "not filtering", never "use a default" -- the same distinction that stops
+     a cleared species filter coming back on reload. An empty array is absence too. */
+  const row = { project_name: 'Deep Reef Survey 2025', dive: 'D04', confidence: 0.5 };
+  assert.equal(match.matchesFilters({}, row), true);
+  assert.equal(match.matchesFilters({ project: [], dive: [] }, row), true);
+  assert.equal(match.matchesFilters({ confidence: { from: null, to: null } }, row), true);
 });
 
 

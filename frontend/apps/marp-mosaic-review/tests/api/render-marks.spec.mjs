@@ -344,10 +344,12 @@ test.describe('two kinds of mark, and two commit buttons', () => {
     await expectRealBacking(page);
     await ready(page);
 
-    const { context, touch } = await touchContext(browser, page);
     /* The commit happens on the second context, which the `beforeEach` ledger cannot
-       see -- it is watching `page`. So this page gets a ledger of its own. */
-    const touched = journal(touch, request);
+       see -- it is watching `page`. So this page gets a ledger of its own, attached
+       before it navigates. */
+    const { context, watched: touched, touch } = await touchContext(
+      browser, page, (fresh) => journal(fresh, request)
+    );
     try {
       const tile = await freshTile(touch);
       const id = await tile.getAttribute('data-id');
@@ -732,15 +734,22 @@ test.describe('#151 the account menu', () => {
  * @param {import('@playwright/test').Page} page - The already-open page, for its size and URL.
  * @returns {Promise<Object>} `{context, touch}`. The caller closes the context.
  */
-async function touchContext(browser, page) {
+async function touchContext(browser, page, watch = null) {
   const context = await browser.newContext({
     viewport: page.viewportSize(),
     hasTouch: true,
     storageState: SESSION_FILE
   });
   const touch = await context.newPage();
+
+  /* `watch` gets the page **before** it navigates, and that ordering is the whole reason
+     the hook exists. The journal learns what a row said from the page query's answer, so
+     one attached after the `goto` has seen no rows at all -- and a commit on this context
+     then reports an observation it cannot put back. */
+  const watched = watch ? watch(touch) : null;
+
   await touch.goto(page.url());
   await expectRealBacking(touch);
   await ready(touch);
-  return { context, touch };
+  return { context, touch, watched };
 }

@@ -31,6 +31,9 @@
  * @module tests/api/seed
  */
 
+import { copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+
 import pg from 'pg';
 
 /** A prefix nothing else uses, so a leaked row is identifiable and a stale one findable. */
@@ -73,9 +76,14 @@ async function connect() {
  *   at all -- which the mosaic query coalesces to `queued`, the state a row that has never
  *   been asked for is in.
  * @param {boolean} [options.permanent] - Mark the thumbnail beyond retrying.
+ * @param {string} [options.sessionType] - The session's `type`, which is what decides
+ *   which species list the correction panel searches. `'Other'` names none, which is the
+ *   case #130 R5 is about and which no session in the corpus happens to be in.
  * @returns {Promise<Object>} `{line, ids, address, remove}`.
  */
-export async function seedPage({ count = 4, thumbnail = 'ready', permanent = false } = {}) {
+export async function seedPage({
+  count = 4, thumbnail = 'ready', permanent = false, sessionType = 'Invert'
+} = {}) {
   const client = await connect();
 
   try {
@@ -99,9 +107,9 @@ export async function seedPage({ count = 4, thumbnail = 'ready', permanent = fal
 
     const { rows: [session] } = await client.query(
       `INSERT INTO sessions (project_id, dive, line, "lineId", type, "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $3, 'Invert', NOW(), NOW())
+       VALUES ($1, $2, $3, $3, $4, NOW(), NOW())
        RETURNING session_id`,
-      [project.project_id, `${MARK} dive`, line]
+      [project.project_id, `${MARK} dive`, line, sessionType]
     );
 
     /* `observation_id` is assigned here rather than left to the column default: the
@@ -125,21 +133,43 @@ export async function seedPage({ count = 4, thumbnail = 'ready', permanent = fal
       ids.push(id);
     }
 
+    /* Files written beside the testing database's own thumbnails, so `remove` can take
+       them away again. Empty unless something was copied. */
+    const files = [];
+
     if (thumbnail !== 'none') {
-      /* A filename that is actually on disk, so a `ready` seeded tile draws a picture
-         rather than a broken image. Which picture does not matter -- what is being
-         checked is what the row's status makes the client do. */
+      /**
+       * **A `ready` row needs a file of its own, and the constraint is why.**
+       *
+       * `observation_thumbnails.filename` is UNIQUE, so several seeded rows cannot point
+       * at one existing picture and none of them may borrow a corpus row's name. Each
+       * gets its own name and a copy of some corpus JPEG's bytes -- which picture it is
+       * does not matter, because what these checks are about is what the row's *status*
+       * makes the client do, and a `ready` row whose file is missing draws a broken image
+       * rather than the thing under test.
+       */
       const { rows: [existing] } = await client.query(
         "SELECT filename FROM observation_thumbnails WHERE status = 'ready' AND filename IS NOT NULL LIMIT 1"
       );
 
-      for (const id of ids) {
+      const store = thumbnailStore();
+      if (thumbnail === 'ready' && existing && store) mkdirSync(store, { recursive: true });
+
+      for (const [index, id] of ids.entries()) {
+        let filename = null;
+
+        if (thumbnail === 'ready' && existing && store) {
+          filename = `${MARK}-${stamp}-${index}.jpg`;
+          copyFileSync(join(store, existing.filename), join(store, filename));
+          files.push(join(store, filename));
+        }
+
         await client.query(
           `INSERT INTO observation_thumbnails
              (observation_id, status, permanent, filename, content_type, generation,
               attempts, requested_at, completed_at, created_at, updated_at)
            VALUES ($1, $2, $3, $4, 'image/jpeg', 1, 1, NOW(), NOW(), NOW(), NOW())`,
-          [id, thumbnail, permanent, thumbnail === 'ready' && existing ? existing.filename : null]
+          [id, thumbnail, permanent, filename]
         );
       }
     }
@@ -169,9 +199,34 @@ export async function seedPage({ count = 4, thumbnail = 'ready', permanent = fal
         } finally {
           await second.end();
         }
+
+        /* The pictures too. A row and its JPEG are one corpus, so leaving the file is
+           leaving an orphan the next load's manifest check would count. */
+        for (const file of files) rmSync(file, { force: true });
       }
     };
   } finally {
     await client.end();
+  }
+}
+
+/**
+ * Where the testing database keeps its pictures.
+ *
+ * The launcher hands `THUMBNAIL_STORAGE_DIR` to the **API** rather than to the test
+ * process, so it is not in this process's environment -- but the provisioning wrote it
+ * down, and that file is the record of which database this is. Null when there is no
+ * stamp, which makes a seeded `ready` row a row with no file rather than a crash.
+ *
+ * @returns {?string} The directory, or null.
+ */
+function thumbnailStore() {
+  try {
+    const stamp = JSON.parse(readFileSync(
+      new URL('../../../../../.marp/local/testing-database.json', import.meta.url), 'utf8'
+    ));
+    return stamp.thumbnails || null;
+  } catch {
+    return null;
   }
 }

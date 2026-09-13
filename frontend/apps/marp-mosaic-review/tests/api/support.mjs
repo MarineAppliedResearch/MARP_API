@@ -453,8 +453,13 @@ export async function ready(page) {
  * default question is something it is not -- a check that is *about* the default question
  * opens on `./` instead, and a check about a flagged row narrows to one deliberately.
  *
- * `trainingDisposition` needs no mention: Scientific's default already narrows it to
- * `undecided`, so nothing promoted or excluded is on the page either.
+ * **It says nothing about `trainingDisposition`, and that is not an omission.** A borrowed
+ * dimension arrives not filtering at all -- `statusDimensions` gives it `defaults: []`
+ * deliberately (#89), because taking its owner's default would drop every promoted and
+ * excluded row out of Scientific's opening page with nothing on screen saying so. So
+ * promoted and excluded rows *are* here, wearing borrowed tags. They do not arrive marked:
+ * `page.seedMarks` asks `existingState`, which is mode-scoped, so only a scientific
+ * decision seeds a scientific mark.
  *
  * @param {string} [extra] - Further parameters, without a leading `&`.
  * @returns {string} An address to hand to `page.goto`.

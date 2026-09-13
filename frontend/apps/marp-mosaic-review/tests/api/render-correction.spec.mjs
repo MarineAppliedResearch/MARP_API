@@ -26,6 +26,7 @@
 import { test, expect } from '@playwright/test';
 
 import { journal } from './journal.mjs';
+import { seedPage } from './seed.mjs';
 import {
   closeRail,
   expectRealBacking,
@@ -304,19 +305,33 @@ test.describe('the correction panel', () => {
    * it recommended was itself dead.
    */
   test('#130 R5: no list for the session type is said, not drawn as no match', async ({ page, request }) => {
-    const unlisted = await sessionTypeWithoutList(request);
     const anything = await termSpanningLists(request);
 
-    await openChooser(page, listedAddress(unlisted.sessionType));
+    /**
+     * **The corpus has no session in this position, so the check seeds one.**
+     *
+     * `db/species-lists.js` names `Other` as a type that genuinely does not say which
+     * list was in use, and says two such observations were in the development database --
+     * but "two observations somewhere" is not something a check may rely on, and the
+     * testing database's copy has none at all. A session of type `Other` with rows of its
+     * own is the same position, made rather than hoped for, and it is removed afterwards.
+     */
+    const seeded = await seedPage({ count: 2, thumbnail: 'ready', sessionType: 'Other' });
 
-    await expect(page.locator('.pick #spScope')).toContainText('no list for this session type');
-    await expect(page.locator('.pick #spList')).toContainText('names no species list');
-    await expect(page.locator('.pick #spList')).not.toContainText('Nothing');
+    try {
+      await openChooser(page, seeded.address);
 
-    /* And widening is a real way out of it, rather than advice that does nothing. */
-    await page.locator('.pick [data-act="widen"]').click();
-    await page.locator('.pick #spSearch').fill(anything);
-    await expect(page.locator('.pick .srow').first()).toBeVisible();
+      await expect(page.locator('.pick #spScope')).toContainText('no list for this session type');
+      await expect(page.locator('.pick #spList')).toContainText('names no species list');
+      await expect(page.locator('.pick #spList')).not.toContainText('Nothing');
+
+      /* And widening is a real way out of it, rather than advice that does nothing. */
+      await page.locator('.pick [data-act="widen"]').click();
+      await page.locator('.pick #spSearch').fill(anything);
+      await expect(page.locator('.pick .srow').first()).toBeVisible();
+    } finally {
+      await seeded.remove();
+    }
   });
 
   /**
@@ -481,25 +496,6 @@ async function sessionTypeWithList(request) {
   });
 }
 
-/**
- * A session type whose observations resolve to **no** list -- the `Other` position.
- *
- * `db/species-lists.js` says two of these exist in the development corpus and names them;
- * this finds whichever the testing database actually holds, because naming one here would
- * be quoting a fact about somebody's database.
- *
- * @param {import('@playwright/test').APIRequestContext} request - Playwright's request fixture.
- * @returns {Promise<Object>} `{sessionType}`.
- */
-async function sessionTypeWithoutList(request) {
-  return once('unlisted', async () => {
-    const found = await sessionTypeWhere(request, (row) => !row.species_list);
-    expect(found, 'every session type in this corpus names a species list, so there is no '
-      + 'observation in the position #130 R5 is about. It fails rather than skipping: this '
-      + 'is the only tier that can see the panel at all.').toBeTruthy();
-    return { sessionType: found.sessionType };
-  });
-}
 
 /**
  * The first session type holding a row that satisfies `wants` **and** can be marked.

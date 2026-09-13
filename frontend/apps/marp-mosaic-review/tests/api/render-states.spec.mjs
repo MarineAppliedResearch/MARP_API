@@ -8,26 +8,28 @@
  * file: the page size follows the viewport, a bare address is not `filters: {}`, and a
  * tile is never chosen by position.
  *
- * **Five checks arrived here needing data this corpus does not hold, and each is
- * `test.fixme`d rather than weakened.** They are named in one place so the seeder that
- * answers them can be written from this list rather than from the diff:
+ * **Five checks arrived here needing data this corpus does not hold**, and each is
+ * answered by seeding rather than by faking. `seedPage` in `seed.mjs` creates
+ * observations in a session of its own, so `seeded.address` is a page holding nothing but
+ * them, in whatever thumbnail state the check is about:
  *
- * - `R2: confirming deletes exactly the number it named` needs **four disposable
- *   observations** it may destroy. The fixture deleted for free; here the delete is real
- *   and permanent, and `journal.mjs` refuses a delete of any row the test did not create.
- * - `R3: a page with no imagery disables the commit and says why` needs **every row on one
- *   page** in thumbnail state `failed`.
- * - `R7: the banner offers to ask for the imagery again` needs the same page, and the rows
- *   must be **disposable**: it presses retry, which really queues an extraction.
- * - `R5: the button says how many will be skipped` needs **three** `failed` rows on a page
- *   that also holds rows with pictures.
- * - `R7: Ctrl+Enter on a page that cannot be committed says so` needs the same whole page
- *   of `failed` rows as `R3`.
+ * - `R2: confirming deletes exactly the number it named` destroys four observations **it
+ *   created**, and names them with `ledger.allowDeletes`. The fixture deleted for free;
+ *   here the delete is real and permanent, and `journal.mjs` refuses a delete of any row
+ *   the test did not create.
+ * - `R3`, `R7` and the keyboard's `R7` each need **every row on the page** in thumbnail
+ *   state `failed` -- which the corpus cannot be asked for, because the status is a field
+ *   on the row rather than a dimension, and its fifteen failed rows are scattered.
+ * - `R5: the button says how many will be skipped` needs only one, so it uses a
+ *   genuinely failed corpus row through `openOnBrokenPicture`.
  *
- * `openOnBrokenPicture` gives exactly **one** genuinely failed row, which is what the
- * corpus can offer: it holds fifteen of them and the mosaic has no thumbnail-status
- * filter, so a whole page of them cannot be asked for. Nothing here fakes the endpoint's
- * own answer to get around that -- a better fake is not the fix for damage done by a fake.
+ * **One assertion did not survive, and it is a finding rather than a deletion.** `R7`'s
+ * last two lines said the poll turned the queued tiles into pictures and cleared the
+ * banner. That was a property of `src/data.js`, which handed a queued row to a timer; what
+ * really turns a queued tile into a picture is a Jellyfin extraction, which needs keyframes
+ * and a resolvable `video_source` and belongs to the `media` tier CI excludes. In its place
+ * the check asserts the contract it was standing in front of -- the endpoint answers
+ * `queued` and never a synchronous `ready`.
  *
  * Refs #157.
  */
@@ -35,6 +37,7 @@
 import { test, expect } from '@playwright/test';
 
 import { journal } from './journal.mjs';
+import { seedPage } from './seed.mjs';
 import {
   expectRealBacking,
   freshTile,
@@ -66,8 +69,8 @@ test.describe('the delete confirmation', () => {
    * `pendingException('delete')` is null, so nothing ever arrives marked in this mode
    * and a click on any tile is a mark rather than a take-back.
    */
-  async function markForDeletion(page, n) {
-    await page.goto(undecided());
+  async function markForDeletion(page, n, address = undecided()) {
+    await page.goto(address);
     await expectRealBacking(page);
     await ready(page);
     await page.locator('.seg button', { hasText: 'Delete' }).click();
@@ -128,16 +131,23 @@ test.describe('the delete confirmation', () => {
      * naming their ids. `allowDeletes` is never called on a corpus row: saying a row may
      * be destroyed does not make it replaceable.
      */
-    test.fixme(true, 'Needs four disposable seeded observations to destroy, plus '
-      + 'ledger.allowDeletes on their ids. It deletes for real and nothing can undo it.');
+    const seeded = await seedPage({ count: 4, thumbnail: 'ready' });
 
-    await markForDeletion(page, 4);
-    await page.locator('#commit').click();
-    await expect(page.locator('.confirm__title')).toContainText('4 observations');
+    try {
+      /* Saying which ids may be destroyed is what lets the journal tell this check from
+         one about to eat a corpus it did not create. Only ever seeded ids. */
+      ledger.allowDeletes(seeded.ids);
 
-    await page.locator('[data-confirm="go"]').click();
-    await expect(page.locator('.confirm__box')).toHaveCount(0);
-    await expect(page.locator('.tile.out-deleted')).toHaveCount(4);
+      await markForDeletion(page, 4, seeded.address);
+      await page.locator('#commit').click();
+      await expect(page.locator('.confirm__title')).toContainText('4 observations');
+
+      await page.locator('[data-confirm="go"]').click();
+      await expect(page.locator('.confirm__box')).toHaveCount(0);
+      await expect(page.locator('.tile.out-deleted')).toHaveCount(4);
+    } finally {
+      await seeded.remove();
+    }
   });
 
   test('A5: with nothing marked, there is nothing to confirm', async ({ page }) => {
@@ -206,62 +216,90 @@ test.describe('the states never rendered', () => {
 
   test('R3: a page with no imagery disables the commit and says why', async ({ page }) => {
     /**
-     * `MarpData.breakThumbnails(state.rows.map(...))` broke **every row on the page**,
-     * and that is the only arrangement in which the banner and the disabled commit
-     * appear at all.
+     * The fixture's `breakThumbnails(state.rows.map(...))` broke **every row on the
+     * page**, and that is the only arrangement in which the banner and the disabled
+     * commit appear at all.
      *
      * The corpus holds fifteen genuinely failed rows scattered across it, and the mosaic
      * has no thumbnail-status filter -- the status is a field on the row rather than a
      * dimension you can ask by -- so a page made entirely of them cannot be asked for.
      * Seeding one is the answer; faking the endpoint's answer is not.
      */
-    test.fixme(true, 'Needs a page where every row is in thumbnail state `failed` -- one '
-      + "page's worth at the viewport's own page size. They need not be disposable: this "
-      + 'check never commits. Then open on that page rather than on undecided().');
+    const seeded = await seedPage({ count: 5, thumbnail: 'failed' });
 
-    await page.goto(undecided());
-    await expectRealBacking(page);
-    await ready(page);
+    try {
+      await page.goto(seeded.address);
+      await expectRealBacking(page);
+      await ready(page);
 
-    await expect(page.locator('#commit')).toBeDisabled();
-    await expect(page.locator('#commit')).toContainText('nothing to do');
-    await expect(page.locator('.pagestate--banner')).toBeVisible();
+      await expect(page.locator('#commit')).toBeDisabled();
+      await expect(page.locator('#commit')).toContainText('nothing to do');
+      await expect(page.locator('.pagestate--banner')).toBeVisible();
+    } finally {
+      await seeded.remove();
+    }
   });
 
-  test('R7: the banner offers to ask for the imagery again', async ({ page }) => {
+  test('R7: the banner offers to ask for the imagery again', async ({ page, request }) => {
     /**
      * The same whole page of `failed` rows as `R3`, and here they must also be
      * **disposable**: the click below reaches the retry endpoint, which really queues an
-     * extraction against Jellyfin for every row on the page.
+     * extraction rather than pretending to.
      */
-    test.fixme(true, 'Needs a page where every row is in thumbnail state `failed`, and '
-      + 'those rows must be disposable: this presses retry, which queues a real '
-      + 'extraction and then waits for real pictures to arrive.');
+    const seeded = await seedPage({ count: 5, thumbnail: 'failed' });
 
-    await page.goto(undecided());
-    await expectRealBacking(page);
-    await ready(page);
+    try {
+      await page.goto(seeded.address);
+      await expectRealBacking(page);
+      await ready(page);
 
-    await page.locator('[data-act="retry-thumbnails"]').click();
+      await expect(page.locator('.pagestate--banner')).toBeVisible();
+      await page.locator('[data-act="retry-thumbnails"]').click();
 
-    /**
-     * **The retry asks; it does not deliver** (F10, R12, A9).
-     *
-     * The endpoint answers `queued` and never a synchronous `ready` — an accepted retry
-     * has not happened yet, and extraction runs at three concurrent Jellyfin streams. So
-     * the first thing the reviewer sees is a page of PREPARING tiles, and the commit stays
-     * disabled because accepting a tile means somebody looked at it.
-     *
-     * This asserted `#commit` was enabled the moment the click returned, which was only
-     * ever true because the fixture invented the picture on the spot.
-     */
-    await expect(page.locator('.tile.queued').first()).toBeVisible();
-    await expect(page.locator('#commit')).toBeDisabled();
+      /**
+       * **The retry asks; it does not deliver** (F10, R12, A9).
+       *
+       * The endpoint answers `queued` and never a synchronous `ready` -- an accepted retry
+       * has not happened yet, and extraction runs at three concurrent Jellyfin streams. So
+       * the first thing the reviewer sees is a page of PREPARING tiles, and the commit stays
+       * disabled because accepting a tile means somebody looked at it.
+       *
+       * This asserted `#commit` was enabled the moment the click returned, which was only
+       * ever true because the fixture invented the picture on the spot.
+       */
+      await expect(page.locator('.tile.queued').first()).toBeVisible();
+      await expect(page.locator('#commit')).toBeDisabled();
 
-    /* And then the poll turns them into pictures: one request and one repaint per round,
-       on a backoff, stopping when nothing is queued. That is what clears the banner. */
-    await expect(page.locator('.pagestate--banner')).toHaveCount(0, { timeout: 30000 });
-    await expect(page.locator('#commit')).toBeEnabled({ timeout: 30000 });
+      /**
+       * **And this is what the fixture could only simulate: the endpoint's own answer.**
+       *
+       * The original's last two assertions were that the poll turned the queued tiles into
+       * pictures and cleared the banner within thirty seconds. That was true of
+       * `src/data.js`, which handed a queued row to a timer and made a picture appear --
+       * and it is not a property of the endpoint at all. What actually turns a queued tile
+       * into a picture is a Jellyfin extraction, which needs the observation's keyframes
+       * and a resolvable `video_source`, and which belongs to the `media` tier that CI
+       * deliberately excludes. **See the report: the delivery half of this check is a
+       * finding, not a line that was dropped.**
+       *
+       * What is asserted instead is the contract that half was standing in front of: every
+       * row comes back `queued` or refused, never a synchronous `ready`.
+       */
+      const answer = await request.post('/api/v2/observations/thumbnails/retry', {
+        data: { observationIds: seeded.ids }
+      });
+      expect(answer.ok(), `the retry was refused: ${answer.status()} ${await answer.text()}`)
+        .toBeTruthy();
+
+      const said = (await answer.json()).thumbnails;
+      expect(said.length).toBe(seeded.ids.length);
+      expect(said.every((one) => one.status !== 'ready'),
+        'the retry answered `ready` synchronously for a row whose picture does not exist, '
+        + `which is the state F10 says it may never be in: ${JSON.stringify(said)}`)
+        .toBe(true);
+    } finally {
+      await seeded.remove();
+    }
   });
 
   test('R5: the button says how many will be skipped', async ({ page, request }) => {
@@ -275,10 +313,6 @@ test.describe('the states never rendered', () => {
      * rule. It is fixme'd because it has not been run and because the seeded three are
      * what the original was about -- whoever seeds them should try it as written first.
      */
-    test.fixme(true, 'Needs three rows in thumbnail state `failed` on a page that also '
-      + 'holds rows with pictures. They need not be disposable: this check never commits. '
-      + 'One genuinely failed row may already satisfy it -- see the comment above.');
-
     const { tile } = await openOnBrokenPicture(page, request);
     await expectRealBacking(page);
     await expect(tile).toHaveClass(/failed/);
@@ -400,18 +434,20 @@ test.describe('keyboard shortcuts', () => {
      * holds no imagery at all. One broken tile among fifty leaves the commit enabled,
      * which is a different check about a different rule.
      */
-    test.fixme(true, 'Needs a page where every row is in thumbnail state `failed`, so the '
-      + 'commit is disabled and the chord has something to be refused by. They need not '
-      + 'be disposable: the whole point is that nothing is written.');
+    const seeded = await seedPage({ count: 5, thumbnail: 'failed' });
 
-    await page.goto(undecided());
-    await expectRealBacking(page);
-    await ready(page);
+    try {
+      await page.goto(seeded.address);
+      await expectRealBacking(page);
+      await ready(page);
 
-    await expect(page.locator('#commit')).toBeDisabled();
+      await expect(page.locator('#commit')).toBeDisabled();
 
-    await page.keyboard.press('Control+Enter');
-    await expect(page.locator('#commit')).toHaveClass(/nudge/);
-    await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+      await page.keyboard.press('Control+Enter');
+      await expect(page.locator('#commit')).toHaveClass(/nudge/);
+      await expect(page.locator('.tile .badge', { hasText: 'REVIEWED' })).toHaveCount(0);
+    } finally {
+      await seeded.remove();
+    }
   });
 });
