@@ -52,6 +52,7 @@ const { QueryTypes } = db.Sequelize;
 const REVIEW = '/api/v2/mosaic/observations/review';
 const TRAINING = '/api/v2/mosaic/observations/training';
 const DELETE = '/api/v2/mosaic/observations/delete';
+const PAGES = '/api/v2/mosaic/observations/pages';
 
 /** The paths the routes are *declared* at. Nothing should answer here. */
 const DECLARED_REVIEW = '/api/mosaic/observations/review';
@@ -576,7 +577,7 @@ describe('the mosaic page commit (#106)', () => {
 
             const res = await alice.post(REVIEW).send({
                 observations: [await at(a)],
-                marks: [{ observation_id: a, reason: 'No imagery' }],
+                marks: [{ observation_id: a, reason: 'Other / unsure' }],
             });
 
             expect(res.body.flagged).toEqual([{ observation_id: a, outcome: 'flagged' }]);
@@ -596,7 +597,7 @@ describe('the mosaic page commit (#106)', () => {
 
             await alice.post(REVIEW).send({
                 observations: [await at(a)],
-                marks: [{ observation_id: a, reason: 'No imagery' }],
+                marks: [{ observation_id: a, reason: 'Other / unsure' }],
             });
 
             await removeImagery(a);
@@ -877,18 +878,71 @@ describe('the mosaic page commit (#106)', () => {
             expect(await currentFor(a)).toEqual([]);
         });
 
-        it('still flags a row with no imagery when the mark is the exception', async () => {
+        it('still flags a row with no imagery when the exception has another reason', async () => {
             const [a] = await addObservations(1);
 
             await removeImagery(a);
 
             const res = await alice.post(REVIEW).send({
                 observations: [await at(a)],
-                marks: [{ observation_id: a, kind: 'except', reason: 'No imagery' }],
+                marks: [{ observation_id: a, kind: 'except', reason: 'Other / unsure' }],
             });
 
             expect(res.body.flagged).toEqual([{ observation_id: a, outcome: 'flagged' }]);
             expect((await currentFor(a))[0].decision).toBe('flagged');
+        });
+
+        it('#134 R1: refuses No imagery as a new scientific review reason', async () => {
+            const [a] = await addObservations(1);
+
+            const res = await alice.post(REVIEW).send({
+                observations: [await at(a)],
+                marks: [{ observation_id: a, kind: 'except', reason: 'No imagery' }],
+            });
+
+            expect(res.status).toBe(400);
+            expect(res.body.error.message).toMatch(/reason/);
+            expect(await currentFor(a)).toEqual([]);
+        });
+
+        it('#134 R11: keeps an existing No imagery decision readable', async () => {
+            const [a] = await addObservations(1);
+            const seen = await at(a);
+            const [logged] = await q(
+                `INSERT INTO observation_reviews
+                     (observation_id, purpose, decision, reason, reviewer_id,
+                      observation_version, decided_at, created_at, updated_at)
+                 VALUES (:a, 'scientific', 'flagged', 'No imagery', :reviewerId,
+                         :version, NOW(), NOW(), NOW())
+                 RETURNING review_id, decided_at`,
+                { a, reviewerId: alice.userId, version: seen.version }
+            );
+
+            await q(
+                `INSERT INTO observation_review_current
+                     (review_id, observation_id, purpose, decision, reason, reviewer_id,
+                      decided_at, observation_version)
+                 VALUES (:reviewId, :a, 'scientific', 'flagged', 'No imagery', :reviewerId,
+                         :decidedAt, :version)`,
+                {
+                    reviewId: logged.review_id,
+                    a,
+                    reviewerId: alice.userId,
+                    decidedAt: logged.decided_at,
+                    version: seen.version,
+                }
+            );
+
+            const res = await global.api.post(PAGES).send({
+                filters: { session: [seeded.sessionId], reviewStatus: ['flagged'] },
+                pageSize: 400,
+                pages: [1],
+            });
+            const row = res.body.pages[0].rows.find((candidate) => candidate.observation_id === a);
+
+            expect(row).toBeDefined();
+            expect(row.flag_reason).toBe('No imagery');
+            expect((await currentFor(a))[0].reason).toBe('No imagery');
         });
 
         it('refuses an accept mark on the delete route, which has no accepted state', async () => {
@@ -1309,7 +1363,7 @@ describe('the mosaic page commit (#106)', () => {
             await alice.post(REVIEW).send({ observations: [await at(a)] });
             await alice.post(REVIEW).send({
                 observations: [await at(a)],
-                marks: [{ observation_id: a, reason: 'No imagery' }],
+                marks: [{ observation_id: a, reason: 'Other / unsure' }],
             });
 
             const res = await alice.post(REVIEW).send({

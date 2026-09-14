@@ -35,6 +35,7 @@ const {
     groupBySubset,
     interpolateBox,
     largestKeyframe,
+    thumbnailCandidates,
 } = require('../service/thumbnail-geometry');
 
 const { PAD_FRACTION } = require('../config/thumbnails');
@@ -54,6 +55,53 @@ const SOURCE_HEIGHT = 1080;
 const keyframe = (framenum, box, subset = '1') => ({ framenum, subset, ...box });
 
 describe('thumbnail geometry (#118)', () => {
+
+    describe('replacement candidates (#134 R5, R6)', () => {
+
+        it('keeps the representative first, then keyframes, then bounded midpoints', () => {
+            const track = [
+                keyframe(100, { x: 0.10, y: 0.20, width: 0.10, height: 0.10 }),
+                keyframe(200, { x: 0.20, y: 0.30, width: 0.10, height: 0.10 }),
+                keyframe(400, { x: 0.40, y: 0.50, width: 0.10, height: 0.10 }),
+            ];
+
+            const candidates = thumbnailCandidates(track, 250);
+
+            expect(candidates.map((candidate) => candidate.framenum))
+                .toEqual([250, 200, 100, 400, 300, 150]);
+            expect(candidates.map((candidate) => candidate.source))
+                .toEqual(['interpolated', 'keyframe', 'keyframe', 'keyframe',
+                    'interpolated-midpoint', 'interpolated-midpoint']);
+            expect(candidates[4].box.x).toBeCloseTo(0.30, 9);
+        });
+
+        it('never takes a frame or interpolation endpoint from another subset', () => {
+            const track = [
+                keyframe(100, { x: 0.10, y: 0.10, width: 0.10, height: 0.10 }, '0'),
+                keyframe(200, { x: 0.20, y: 0.20, width: 0.10, height: 0.10 }, '0'),
+                keyframe(110, { x: 0.90, y: 0.90, width: 0.10, height: 0.10 }, '1'),
+                keyframe(190, { x: 0.80, y: 0.80, width: 0.10, height: 0.10 }, '1'),
+            ];
+
+            const candidates = thumbnailCandidates(track, 150);
+
+            expect(candidates.every((candidate) => candidate.subset === '0')).toBe(true);
+            expect(candidates.every((candidate) => candidate.before.subset === '0')).toBe(true);
+            expect(candidates.every((candidate) => candidate.after.subset === '0')).toBe(true);
+        });
+
+        it('de-duplicates an exact representative and midpoint frames', () => {
+            const track = [
+                keyframe(100, { x: 0.10, y: 0.10, width: 0.10, height: 0.10 }),
+                keyframe(200, { x: 0.20, y: 0.20, width: 0.10, height: 0.10 }),
+            ];
+
+            const frames = thumbnailCandidates(track, 100).map((candidate) => candidate.framenum);
+
+            expect(frames).toEqual([100, 200, 150]);
+            expect(new Set(frames).size).toBe(frames.length);
+        });
+    });
 
     describe('the box is centre-origin (F1)', () => {
 

@@ -4218,6 +4218,39 @@
           }
         }
       },
+      "ThumbnailReplacementResult": {
+        "type": "object",
+        "description": "The result of asking for a different crop for one observation. This action never writes a scientific review decision.",
+        "properties": {
+          "thumbnail": {
+            "type": "object",
+            "properties": {
+              "observation_id": {
+                "type": "integer",
+                "example": 100123
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "failed"
+                ],
+                "example": "queued",
+                "description": "`queued` when one replacement attempt was accepted; `failed` when the observation was absent or permanently unextractable."
+              },
+              "permanent": {
+                "type": "boolean",
+                "example": false
+              },
+              "reason": {
+                "type": "string",
+                "nullable": true,
+                "example": null
+              }
+            }
+          }
+        }
+      },
       "MosaicPageSet": {
         "type": "object",
         "description": "A set of pages for one question, answered in one pass over the matching set. Carries an entry for **every** page asked for, in ascending page order, so the caller never has to work out which came back.",
@@ -14315,6 +14348,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ThumbnailExtractorStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/{observationId}/thumbnail/replacement": {
+      "post": {
+        "summary": "Request a different observation thumbnail",
+        "description": "Queues one reviewer-requested replacement at the highest thumbnail priority, including when the current image is ready. Each accepted request advances to one deterministic candidate and causes one extraction attempt; it does not create or change a scientific review decision. A structural permanent failure is returned unchanged and refused. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "observationId",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Identifier of the observation whose crop should be replaced."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The accepted queue state, or the permanent refusal.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThumbnailReplacementResult"
                 }
               }
             }

@@ -1580,6 +1580,78 @@ export const actions = {
   },
 
   /**
+   * Clear this tile's pending scientific flag and ask for a different crop.
+   *
+   * This is deliberately separate from `_retry`: a replacement is allowed for a ready
+   * image and must never turn the temporary flag used to open the panel into review data.
+   * The optimistic clear happens before the request, so no fast extractor can finish
+   * while the panel still presents the flag as pending. A refusal or transport failure
+   * restores the reviewer's unsaved work because no replacement was accepted.
+   */
+  async requestThumbnailReplacement(id) {
+    if (state.mode !== 'scientific') return;
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row) return;
+
+    const previous = {
+      mark: state.marks.get(id),
+      touched: state.touched.has(id),
+      takenBack: state.takenBack.has(id),
+      picker: state.picker,
+      status: row.thumbnail_status,
+      permanent: row.thumbnail_permanent,
+      reason: row.thumbnail_reason
+    };
+
+    state.marks.delete(id);
+    state.touched.delete(id);
+    state.takenBack.delete(id);
+    state.picker = null;
+    row.thumbnail_status = 'queued';
+    row.thumbnail_permanent = false;
+    row.thumbnail_reason = null;
+    fire('thumbnail:replacement-request', { id });
+    notify();
+
+    let res;
+    try {
+      res = await MarpBackend.requestThumbnailReplacement(id);
+    } catch (err) {
+      if (previous.mark) state.marks.set(id, previous.mark);
+      if (previous.touched) state.touched.add(id);
+      if (previous.takenBack) state.takenBack.add(id);
+      state.picker = previous.picker;
+      row.thumbnail_status = previous.status;
+      row.thumbnail_permanent = previous.permanent;
+      row.thumbnail_reason = previous.reason;
+      if (recordFailure(err, 'thumbnail:replacement')) notify();
+      return;
+    }
+
+    clearFailure();
+    const answer = res.thumbnail;
+    row.thumbnail_status = answer.status;
+    row.thumbnail_permanent = Boolean(answer.permanent);
+    row.thumbnail_reason = answer.reason || null;
+
+    if (answer.status !== 'queued') {
+      if (previous.mark) state.marks.set(id, previous.mark);
+      if (previous.touched) state.touched.add(id);
+      if (previous.takenBack) state.takenBack.add(id);
+      state.picker = previous.picker;
+      fire('thumbnail:replacement-refused', {
+        id, permanent: row.thumbnail_permanent, reason: row.thumbnail_reason
+      });
+      notify();
+      return;
+    }
+
+    fire('thumbnail:replacement-queued', { id });
+    notify();
+    actions._chaseQueuedThumbnails();
+  },
+
+  /**
    * Retry every failed thumbnail on the page, in two paints rather than two per tile.
    *
    * This used to call `retryThumbnail` once per row, and each of those notifies twice — so

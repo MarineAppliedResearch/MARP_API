@@ -112,7 +112,7 @@ const MODES = {
         marks: 'flagged',
         withdrawable: true,
         reasons: ['Wrong species', 'False detection', 'Duplicate', 'Bounding box',
-            'No imagery', 'Other / unsure'],
+            'Other / unsure'],
     },
     training: {
         purpose: 'training',

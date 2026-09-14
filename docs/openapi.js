@@ -2936,6 +2936,22 @@ const buildOpenApiSpec = () => {
                             },
                         },
                     },
+                    ThumbnailReplacementResult: {
+                        type: 'object',
+                        description:
+                            'The result of asking for a different crop for one observation. This action never writes a scientific review decision.',
+                        properties: {
+                            thumbnail: {
+                                type: 'object',
+                                properties: {
+                                    observation_id: { type: 'integer', example: 100123 },
+                                    status: { type: 'string', enum: ['queued', 'failed'], example: 'queued', description: '`queued` when one replacement attempt was accepted; `failed` when the observation was absent or permanently unextractable.' },
+                                    permanent: { type: 'boolean', example: false },
+                                    reason: { type: 'string', nullable: true, example: null },
+                                },
+                            },
+                        },
+                    },
                     MosaicPageSet: {
                         type: 'object',
                         description:

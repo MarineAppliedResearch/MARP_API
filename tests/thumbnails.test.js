@@ -59,6 +59,7 @@ const { QueryTypes } = db.Sequelize;
 const STATUS = '/api/v2/observations/thumbnails/status';
 const CONTROL = '/api/v2/observations/thumbnails/control';
 const RETRY = '/api/v2/observations/thumbnails/retry';
+const replacementFor = (id) => `/api/v2/observations/${id}/thumbnail/replacement`;
 const bytesFor = (id) => `/api/v2/observations/${id}/thumbnail`;
 
 /** The path a route is *declared* at. Nothing should answer here. */
@@ -1092,13 +1093,20 @@ describe('observation thumbnails (#118)', () => {
             const [a] = await addObservations(1);
 
             await setThumbnail(a, { status: 'failed', lastError: 'ffmpeg exited 1' });
+            await q(
+                `UPDATE observation_thumbnails
+                    SET attempts = 3, framenum = 18000
+                  WHERE observation_id = :a`,
+                { a }
+            );
 
             await reader.post(RETRY).send({ observationIds: [a] });
 
             const row = await thumbnailRepository.findByObservationId(a);
 
             expect(row.status).toBe('queued');
-            expect(row.attempts).toBe(0);
+            expect(row.attempts).toBe(3);
+            expect(row.candidate_index).toBe(1);
             expect(row.completed_at).toBeNull();
         });
 
@@ -1111,6 +1119,86 @@ describe('observation thumbnails (#118)', () => {
 
             expect(res.status).toBe(400);
             expect(res.body.error.code).toBe('VALIDATION_ERROR');
+        });
+    });
+
+    describe('the reviewer replacement route (#134 R2-R4)', () => {
+
+        it('queues a ready row at reviewer priority and advances its candidate', async () => {
+            const [a] = await addObservations(1);
+
+            await setThumbnail(a, { status: 'ready', filename: `${a}-old.jpg` });
+            await q(
+                'UPDATE observation_thumbnails SET framenum = 18000 WHERE observation_id = :a',
+                { a }
+            );
+
+            const res = await reader.post(replacementFor(a));
+            const row = await thumbnailRepository.findByObservationId(a);
+
+            expect(res.status).toBe(200);
+            expect(res.body.thumbnail).toEqual({
+                observation_id: a, status: 'queued', permanent: false, reason: null,
+            });
+            expect(row.request_priority).toBe(1);
+            expect(row.candidate_index).toBe(1);
+            expect(row.attempts).toBe(0);
+        });
+
+        it('does not skip another candidate when clicked again while queued', async () => {
+            const [a] = await addObservations(1);
+
+            await setThumbnail(a, { status: 'ready', filename: `${a}-old.jpg` });
+            await q(
+                'UPDATE observation_thumbnails SET framenum = 18000 WHERE observation_id = :a',
+                { a }
+            );
+
+            await reader.post(replacementFor(a));
+            await reader.post(replacementFor(a));
+
+            expect((await thumbnailRepository.findByObservationId(a)).candidate_index).toBe(1);
+        });
+
+        it('does not release or duplicate a replacement already being extracted', async () => {
+            const [a] = await addObservations(1);
+
+            await setThumbnail(a, { status: 'ready', filename: `${a}-old.jpg` });
+            await thumbnailRepository.requestReplacement(a);
+            await q(
+                'UPDATE observation_thumbnails SET claimed_at = NOW() WHERE observation_id = :a',
+                { a }
+            );
+
+            const before = await thumbnailRepository.findByObservationId(a);
+
+            await thumbnailRepository.requestReplacement(a);
+
+            const after = await thumbnailRepository.findByObservationId(a);
+            expect(after.claimed_at.getTime()).toBe(before.claimed_at.getTime());
+            expect(after.requested_at.getTime()).toBe(before.requested_at.getTime());
+        });
+
+        it('refuses a structural permanent failure unchanged', async () => {
+            const [a] = await addObservations(1);
+
+            await setThumbnail(a, {
+                status: 'failed', permanent: true, lastError: 'No keyframes.',
+            });
+
+            const res = await reader.post(replacementFor(a));
+
+            expect(res.body.thumbnail.status).toBe('failed');
+            expect(res.body.thumbnail.permanent).toBe(true);
+            expect(res.body.thumbnail.reason).toMatch(/No keyframes/);
+        });
+
+        it('reports an id that is not an observation', async () => {
+            const res = await reader.post(replacementFor(-1));
+
+            expect(res.body.thumbnail).toEqual({
+                observation_id: -1, status: 'failed', permanent: true, reason: 'not-found',
+            });
         });
     });
 
@@ -1188,6 +1276,51 @@ describe('observation thumbnails (#118)', () => {
 
             expect(waiting.status).toBe('queued');
             expect(waiting.claimed_at).toBeNull();
+        });
+
+        it('claims a reviewer request ahead of older ordinary work (#134 R4)', async () => {
+            await thumbnailRepository.claimBatch(100000);
+
+            const [ordinary, reviewer] = await addObservations(2);
+
+            await setThumbnail(ordinary, { status: 'queued' });
+            await setThumbnail(reviewer, { status: 'ready', filename: `${reviewer}-old.jpg` });
+            await q(
+                `UPDATE observation_thumbnails
+                    SET requested_at = NOW() - make_interval(secs => 300), claimed_at = NULL
+                  WHERE observation_id = :ordinary`,
+                { ordinary }
+            );
+            await thumbnailRepository.requestReplacement(reviewer);
+
+            const [claimed] = await thumbnailRepository.claimBatch(1);
+
+            expect(claimed.observation_id).toBe(reviewer);
+            expect(claimed.request_priority).toBe(1);
+        });
+
+        it('keeps reviewer requests first-in, first-out (#134 R4)', async () => {
+            await thumbnailRepository.claimBatch(100000);
+
+            const [first, second] = await addObservations(2);
+
+            await setThumbnail(first, { status: 'ready', filename: `${first}-old.jpg` });
+            await setThumbnail(second, { status: 'ready', filename: `${second}-old.jpg` });
+            await thumbnailRepository.requestReplacement(first);
+            await thumbnailRepository.requestReplacement(second);
+            await q(
+                `UPDATE observation_thumbnails
+                    SET requested_at = CASE observation_id
+                        WHEN :first THEN NOW() - make_interval(secs => 2)
+                        ELSE NOW() - make_interval(secs => 1) END,
+                        claimed_at = NULL
+                  WHERE observation_id IN (:first, :second)`,
+                { first, second }
+            );
+
+            const [claimed] = await thumbnailRepository.claimBatch(1);
+
+            expect(claimed.observation_id).toBe(first);
         });
 
         it('does not claim a row another extraction is holding', async () => {
@@ -1337,6 +1470,29 @@ describe('observation thumbnails (#118)', () => {
             expect(plan.frame).toBe(18007);
             expect(plan.box.x).toBeGreaterThan(0.50);
             expect(plan.box.x).toBeLessThan(0.53);
+        });
+
+        it('advances one durable candidate at a time and reports exhaustion (#134 R7, R8)', () => {
+            const keyframes = [
+                { framenum: 18000, subset: '1', x: 0.50, y: 0.80, width: 0.12, height: 0.10 },
+                { framenum: 18010, subset: '1', x: 0.60, y: 0.90, width: 0.12, height: 0.10 },
+            ];
+            const first = extraction.planObservation(
+                { mediaPosition: '00:12:00.2000000', candidate_index: 0 }, keyframes
+            );
+            const second = extraction.planObservation(
+                { mediaPosition: '00:12:00.2000000', candidate_index: 1 }, keyframes
+            );
+            const exhausted = extraction.planObservation(
+                { mediaPosition: '00:12:00.2000000', candidate_index: 4 }, keyframes
+            );
+
+            expect(first.frame).toBe(18005);
+            expect(first.hasNext).toBe(true);
+            expect(second.frame).toBe(18000);
+            expect(exhausted.ok).toBe(false);
+            expect(exhausted.permanent).toBe(true);
+            expect(exhausted.error).toMatch(/Every usable thumbnail frame/);
         });
 
         it('groups a batch by video, so one video is one stream (R17)', () => {

@@ -321,7 +321,7 @@ test.describe('the states never rendered', () => {
     await expect(page.locator('#skipNote')).toContainText('without imagery');
   });
 
-  test('R9: the reason list can say nobody could see it', async ({ page }) => {
+  test('#134 R1: no imagery is a replacement action, not a reason', async ({ page }) => {
     await page.goto(undecided());
     await expectRealBacking(page);
     await ready(page);
@@ -329,7 +329,8 @@ test.describe('the states never rendered', () => {
     await tile.click();
     await tile.locator('[data-badge]').click();
     await expect(page.locator('.pick')).toBeVisible();
-    await expect(page.locator('.pick .chip', { hasText: 'No imagery' })).toBeVisible();
+    await expect(page.locator('.pick [data-act="replace-thumbnail"]')).toBeVisible();
+    await expect(page.locator('.pick .chip', { hasText: 'No imagery' })).toHaveCount(0);
   });
 });
 

@@ -33,12 +33,8 @@ export const MODES = {
     statusKey: 'reviewStatus',
     /** Flagged work is still open work, so it stays in the default view. */
     defaultStatus: ['unreviewed', 'flagged'],
-    /* 'No imagery' is here so a flag raised because nobody could see the observation
-       says so on the record. Without it every such flag lands under 'Other / unsure',
-       and the reason a whole batch was flagged is invisible to anything querying it
-       later -- which matters, because that database is a scientific record. */
     reasons: ['Wrong species', 'False detection', 'Duplicate', 'Bounding box',
-              'No imagery', 'Other / unsure']
+              'Other / unsure']
   },
 
   training: {
