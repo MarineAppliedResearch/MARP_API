@@ -56,6 +56,8 @@ task.
   action, absence of a review write, priority ordering, ready-row replacement, deterministic
   rotation, interpolation, exhaustion, queued UI, successful image swap, and permanent
   refusal.
+- **R13** -- Feature-branch pushes do not start a duplicate CI run. Pull requests still run
+  both verification jobs, and direct pushes to `develop` or `master` retain branch CI.
 
 ## Open assumptions
 
@@ -115,6 +117,8 @@ task.
 - Candidate exhaustion is permanent; structural permanent failures remain unqueueable.
 - Historical `No imagery` review records remain intact and readable.
 - #176 remains independently implementable and no video-player code is added here.
+- Feature branches run CI through their pull request only; integration and production branch
+  pushes remain verified.
 
 ## Test plan
 

@@ -18,6 +18,7 @@ This is the G3 verification package. Run it only after the human approves the pl
 | R10 | Existing retry-route tests plus the new priority/candidate assertions | HTTP + database | Existing per-tile/page retry behavior remains bulk-compatible while using the new priority and rotation state. |
 | R11 | `mosaic-commit.test.js` historical-read check | HTTP + database | A pre-existing `No imagery` log/projection row remains readable even though a new one is rejected. |
 | R12 | The combined Mosaic unit, subsystem, and named real-browser commands below | unit + HTTP + database + browser | Every changed tier observes the behavior it owns rather than relying on a lower-level proxy. |
+| R13 | Push the updated feature branch and inspect the resulting workflow runs | GitHub Actions | The push creates only the pull-request workflow run, while the workflow definition retains push triggers for `develop` and `master`. |
 
 ## Requirements with no test
 
@@ -181,6 +182,14 @@ restarted from command 1.
 
 8. Final `git diff --check` — **PASS** (exit 0). Git printed line-ending conversion
    warnings, but no whitespace errors or conflict markers.
+
+### CI trigger correction requested during PR review
+
+After PR #179 exposed duplicate push-event and pull-request-event runs for the same feature
+commit, the workflow push filter was narrowed from every branch to `develop` and `master`.
+The pull-request trigger remains unchanged. Verification is the GitHub run inventory created
+by pushing this correction: exactly one new workflow run must exist for the updated feature
+commit, with event `pull_request`; no `push` run may exist for it.
 
 ### Manual observation not run
 
