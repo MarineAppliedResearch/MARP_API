@@ -183,6 +183,10 @@ beforeEach(() => {
     // replace one of these without leaking that into the next.
     jest.spyOn(jellyfinRepository, 'buildDirectStreamUrl').mockResolvedValue(RESOLVED_URL);
     jest.spyOn(jellyfinRepository, 'getItem').mockResolvedValue(JELLYFIN_ITEM);
+    jest.spyOn(jellyfinRepository, 'reportPlaybackStarted').mockResolvedValue();
+    jest.spyOn(jellyfinRepository, 'reportPlaybackProgress').mockResolvedValue();
+    jest.spyOn(jellyfinRepository, 'reportPlaybackStopped').mockResolvedValue();
+    jest.spyOn(jellyfinRepository, 'getPlaybackSession').mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -324,6 +328,7 @@ describe('GPU lease: the video the worker is handed', () => {
         // touches the media server.
         expect(jellyfinRepository.buildDirectStreamUrl).not.toHaveBeenCalled();
         expect(jellyfinRepository.getItem).not.toHaveBeenCalled();
+        expect(jellyfinRepository.reportPlaybackStarted).not.toHaveBeenCalled();
     });
 
     it('does not hand out a lease when the video cannot be resolved, and lets the job fail', async () => {

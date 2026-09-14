@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#133
 repos: [marp-api]
-status: design
+status: ready-for-pr
 needs: [production-jellyfin]
 ---
 
@@ -56,12 +56,12 @@ change the inference job's outcome.
 - [x] **A3 · environment · blocking** -- answered 2026-09-13: perform the final media-tier
   verification against the configured production Jellyfin server, with no configuration
   writes.
-- [ ] **A4 · behavioural · blocking** -- Should Jellyfin show one session per independently
-  leased piece on a worker slot (recommended, because pieces can run concurrently and move
-  between workers), rather than one session for an entire submitted batch?
-- [ ] **A5 · database/schema · blocking** -- May a reversible migration add playback-session
-  metadata and start/stop timestamps to `gpu_job_attempts` (recommended), so an API restart
-  can close an expired session using the exact identity and negotiation ids that opened it?
+- [x] **A4 · behavioural · blocking** -- answered 2026-09-13: use one session per
+  independently leased piece and worker slot, because pieces can run concurrently and move
+  between workers.
+- [x] **A5 · database/schema · blocking** -- answered 2026-09-13: add no playback
+  columns or rows. Reconstruct a session after restart from the existing attempt, job, worker,
+  and slot plus Jellyfin's live session listing.
 
 ## Decisions
 
@@ -70,14 +70,17 @@ change the inference job's outcome.
 - **2026-09-13** -- Use the configured Jellyfin service account and accept its unavoidable
   playback-history changes rather than changing a human user's history.
 - **2026-09-13** -- Reporting errors are operational evidence, never inference failures.
+- **2026-09-13** -- Store no Jellyfin playback metadata in PostgreSQL. Reconstruct the
+  worker-slot identity from existing orchestration rows and read the active position from
+  Jellyfin when closing a session after restart.
 - **2026-09-13** -- A later phase will authenticate workers to Jellyfin with tokens issued by
   MARP_API. Issue #133 neither implements nor prevents that future worker media-access flow.
 
 ## Plan
 
-1. Settle session granularity and durable attempt metadata.
-2. Add the minimum reversible attempt-schema change required to retain playback identity
-   across process restarts, if approved.
+1. Use one stable Jellyfin session identity for each enrolled worker and slot.
+2. Reconstruct playback identity from existing orchestration rows and Jellyfin's live
+   session listing, without a migration or new database rows.
 3. Wrap the existing Jellyfin start/progress/stop utilities in a best-effort GPU-attempt
    lifecycle service.
 4. Start reporting after Jellyfin video resolution, update from accepted frame heartbeats,
@@ -100,13 +103,15 @@ change the inference job's outcome.
 
 ## Test plan
 
-Filled at G3 after implementation, then reviewed before anything is run.
+The detailed requirement-to-test map and controlled production-Jellyfin procedure are in
+`.marp/verification.md`. The approved plan has been run, including the controlled
+production lifecycle.
 
 ## Status
 
-- **Gate:** design
-- **Notes:** Existing Jellyfin reporting utilities, lease-time video resolution, frame
-  heartbeats, worker identity, and lease expiry are present. Production is reachable through
-  the configured non-admin service account. Jellyfin's current server implementation has no
-  active playback-start path that leaves that account's playback data untouched. A4 and A5
-  remain blocking.
+- **Gate:** ready-for-pr. G4 evidence is recorded; G5 remains the human's decision.
+- **Notes:** Targeted GPU and media groups pass against disposable PostgreSQL. A controlled
+  production check showed the worker and slot session, exact heartbeat position, restart
+  cleanup, terminal cleanup, and idempotent retry. Jellyfin changed only the configured
+  service account's item history, as accepted. No playback schema or worker contract was
+  added.
