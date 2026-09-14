@@ -92,8 +92,8 @@ const SESSION = {
 /**
  * The registered model the worker runs.
  *
- * `storage_path` is the weights the worker loads. It is a path on the machine that
- * holds them, not a value anything here dereferences.
+ * `storage_path` is relative to MODEL_STORAGE_ROOT on the API host. Workers receive
+ * an authenticated API URL rather than this host-local path.
  *
  * @constant
  * @type {Object}

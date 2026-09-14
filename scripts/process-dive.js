@@ -121,9 +121,8 @@ const TICKS_PER_SECOND = 10000000;
  * The registered model the run uses, as the job spec names it.
  *
  * `ml_model_id` must be the row `scripts/seed-inference-context.js` seeds, or the
- * ingest cannot attribute the observations. `url` is a path on the machine
- * holding the weights and nothing here dereferences it; override both from the
- * environment on a machine that keeps them elsewhere.
+ * ingest cannot attribute the observations. The relative URL is resolved by the
+ * worker against its coordinator and downloaded with its service credential.
  *
  * @constant
  * @type {Object}
@@ -132,10 +131,9 @@ const MODEL = {
     name: process.env.MARP_MODEL_NAME || 'CAMPA_GR1_TEST6-mixed',
     sha256: process.env.MARP_MODEL_SHA256
         || '9283b8ee1d1ac22ddfe5e8394a95c950cf65e1dfce3c772a1559c0408f52cff8',
-    url: process.env.MARP_MODEL_WEIGHTS
-        || 'C:/Users/isaac/Documents/Workspace/marp-inference-worker/models/CAMPA_GR1_TEST6/mixed/weights/best.pt',
     ml_model_id: Number(process.env.MARP_ML_MODEL_ID || 91),
 };
+MODEL.url = process.env.MARP_MODEL_URL || `/api/v2/model/${MODEL.ml_model_id}/artifact`;
 
 /**
  * Session type, and so which species list the ingest reads class names against.
