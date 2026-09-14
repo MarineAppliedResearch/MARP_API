@@ -104,4 +104,47 @@ every layer it changes.
 
 ## Results
 
-<!-- Appended during the approved G4 run. Record failures before remediation. -->
+Approved G4 run: 2026-09-14.
+
+1. **Branch currency and specification — PASS.** Fetched `origin` and merged the current
+   `origin/develop` into this feature branch. `git rev-list --left-right --count
+   HEAD...origin/develop` reported `11 0`. `marp spec check` accepted all 19 requirements
+   and all 11 answered assumptions at the verification gate.
+2. **Disposable migration round trip — PASS.** Against `marp_test`, Sequelize reverted and
+   reapplied `20260913210000-add-review-imagery-cache`, then applied
+   `20260914100000-add-gpu-attempt-progress-phase`. The latter migration inspected 61
+   existing GPU attempts and reported zero rows deleted, dereferenced, or orphaned.
+3. **Generated API contract — PASS.** `npm run docs:api:build` completed with 130 documented
+   paths. The generated output was regenerated after integrating `develop`, not edited by
+   hand.
+4. **Mosaic unit tier — PASS.** `npm run test:app:mosaic-review:unit` passed 288 tests with
+   zero failures and zero skips. A later in-sandbox rerun first reported all 74 source files
+   as unparsable because Windows denied every child `node --check` process with `EPERM`;
+   running the same command with child-process permission passed all 74 parse checks and all
+   288 tests again. No source correction was involved in that environment-only failure.
+5. **HTTP, database, storage, and dashboard contract tier — PASS.** The four named Jest
+   suites passed: 4 suites and 171 tests, with zero failures and zero skips. Full output is
+   recorded in `tests/logs/test-run-2026-09-14T07-29-00-520Z.log`.
+6. **Real-browser tier — FAIL, corrected, then PASS.** The first
+   `npm run test:app:mosaic-review:api -- full-frame.spec.mjs` run passed four scenarios and
+   failed two (desktop and phone). After browser Back closed the frame viewer, the assertion
+   at `full-frame.spec.mjs:59` found that `.pick` was no longer visible. Investigation showed
+   that a viewer-control click rerenders its DOM before the document dismissal handler runs,
+   making the click look as if it occurred outside the selected observation. The dismissal
+   rule now preserves the picker whenever the frame viewer is active. The exact rerun passed
+   all 6 desktop and phone scenarios in 6.8 seconds; the runner stopped its temporary API.
+7. **Supervised live-media behavior — PASS with a noted later refinement.** The human
+   requested a frame from a real reviewing session and observed the non-blocking preparing
+   state, roughly 5–10 second extraction, ready state, complete full frame at the expected
+   moment, and aligned toggleable box. The human described the result as working and
+   visually successful. Subsequent automated desktop/phone coverage proves the requested
+   pure-color box, compact responsive labels, gesture-anchored pinch zoom, and Back behavior;
+   the final gesture refinement has not separately been repeated against live media.
+8. **Admin dashboard visual check — PASS.** The human inspected the explanatory review-
+   imagery panel from the disposable port-3001 server and approved its current presentation.
+   The automated API tier supplies the reversible settings-save, validation, persistence,
+   and no-eviction evidence without requiring a destructive low-limit save through the UI.
+9. **Final workspace checks — PASS.** `git diff --check` reported no whitespace or conflict
+   errors. `marp spec check` again accepted 11 answered assumptions and 19 requirements at
+   the `verify` gate. The feature branch contains current `origin/develop` and is 12 commits
+   ahead with no commits behind at this point in the run.
