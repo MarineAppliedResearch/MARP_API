@@ -163,6 +163,13 @@ export const MarpApi = {
     });
   },
 
+  /** Ask for a different crop even when the observation already has a ready image. */
+  async requestThumbnailReplacement(observationId, { signal } = {}) {
+    return request(`/observations/${encodeURIComponent(observationId)}/thumbnail/replacement`, {
+      method: 'POST', signal
+    });
+  },
+
   /**
    * Where a tile's picture is (R10, F7). A URL, not a fetch — see `transport.js`.
    *

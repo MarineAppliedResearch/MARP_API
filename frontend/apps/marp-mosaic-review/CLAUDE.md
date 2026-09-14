@@ -552,9 +552,9 @@ layout. `isPhone(info)` in `tests/api/support.mjs` is how a check asks which one
 **Accepting needs imagery; flagging does not.** The fixture used to drop every row whose
 thumbnail had not arrived *before* it looked at the marks, so a flag on a broken tile was
 silently thrown away. "Reviewed" means somebody looked at it, and that needs a picture.
-"Flagged" means somebody is saying something is wrong, and a thumbnail that never arrived
-is itself worth flagging — so a marked row is written either way, and `No imagery` is one
-of the scientific reasons so the record says why.
+"Flagged" means somebody is saying something is wrong, so another scientific reason may
+still be written on a broken tile. `No imagery` itself is not a review reason: #134 routes
+that condition through the separate replacement-image action and never commits it.
 
 **The commit button must never offer to act on rows it will skip.** `commitOutcome` splits
 a page into what will be accepted, flagged and skipped; the button shows that number, is

@@ -19,7 +19,7 @@
  * written, and serving a mosaic page enqueues anything on it that still has none.
  * So a row reporting `queued` really does have work behind it.
  *
- * Refs #118.
+ * Refs #118, #134.
  *
  * @fileoverview Sequelize model for observation_thumbnails.
  * @author Isaac Travers
@@ -144,6 +144,18 @@ module.exports = (sequelize, DataTypes) => {
                 defaultValue: 0,
                 comment: 'How many times extraction has been claimed for this row.',
             },
+            request_priority: {
+                type: DataTypes.SMALLINT,
+                allowNull: false,
+                defaultValue: 0,
+                comment: '0 for ordinary work; 1 while a reviewer is waiting on a retry or replacement.',
+            },
+            candidate_index: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+                defaultValue: 0,
+                comment: 'Position in the deterministic finite sequence of usable thumbnail frames.',
+            },
             last_error: {
                 type: DataTypes.TEXT,
                 allowNull: true,
@@ -152,7 +164,7 @@ module.exports = (sequelize, DataTypes) => {
             requested_at: {
                 type: DataTypes.DATE,
                 allowNull: true,
-                comment: 'When this thumbnail was first asked for. The queue is served in this order.',
+                comment: 'When the current extraction was requested. FIFO within its priority class.',
             },
             claimed_at: {
                 type: DataTypes.DATE,

@@ -32,7 +32,7 @@ const METHODS = [
   'load', 'whoami',
   'query', 'queryPages', 'counts', 'facets',
   'commitPage', 'setSpecies',
-  'retryThumbnails', 'thumbnailUrl',
+  'retryThumbnails', 'requestThumbnailReplacement', 'thumbnailUrl',
   'searchSpecies'
 ];
 

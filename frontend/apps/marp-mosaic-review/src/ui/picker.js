@@ -205,6 +205,9 @@ export async function renderPicker() {
       <div class="consq ${consqClass}">${consqText}</div>
       <div class="pickfoot">
         ${isException ? `<button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${m.mark.toLowerCase()}</button>` : ''}
+        ${isException && state.mode === 'scientific'
+          ? '<button class="ghost" data-act="replace-thumbnail" title="Clear this pending flag and ask for a different crop">Request replacement image</button>'
+          : ''}
         <button class="ghost" data-act="video" title="Open the source video at this observation">Open video</button>
         ${isException ? '<button class="ghost go" data-act="resolve" title="Clear the mark, keeping any correction">Mark resolved</button>'
           : '<button class="ghost go" data-act="close">Close</button>'}
@@ -235,6 +238,8 @@ export async function renderPicker() {
   if (correct) correct.addEventListener('click', () => actions.toggleCorrecting(id));
   const unmark = panel.querySelector('[data-act="unmark"]');
   if (unmark) unmark.addEventListener('click', () => actions.toggleMark(id));
+  const replace = panel.querySelector('[data-act="replace-thumbnail"]');
+  if (replace) replace.addEventListener('click', () => actions.requestThumbnailReplacement(id));
   panel.querySelector('[data-act="video"]').addEventListener('click', () => actions.openVideo(id));
   const resolve = panel.querySelector('[data-act="resolve"]');
   if (resolve) resolve.addEventListener('click', () => actions.resolve(id));

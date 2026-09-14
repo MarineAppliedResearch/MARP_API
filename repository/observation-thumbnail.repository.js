@@ -53,6 +53,8 @@ const ROW_COLUMNS = `
     source_height,
     generation,
     attempts,
+    request_priority,
+    candidate_index,
     last_error,
     requested_at,
     claimed_at,
@@ -137,8 +139,9 @@ async function requeue(observationIds) {
     return db.sequelize.transaction(async (transaction) => {
         await db.sequelize.query(
             `INSERT INTO observation_thumbnails
-                 (observation_id, status, permanent, generation, attempts, requested_at, created_at, updated_at)
-             SELECT o.observation_id, 'queued', false, 1, 0, NOW(), NOW(), NOW()
+                 (observation_id, status, permanent, generation, attempts, request_priority,
+                  candidate_index, requested_at, created_at, updated_at)
+             SELECT o.observation_id, 'queued', false, 1, 0, 1, 0, NOW(), NOW(), NOW()
                FROM observations o
               WHERE o.observation_id = ANY($1::int[])
              ON CONFLICT (observation_id) DO NOTHING`,
@@ -148,7 +151,9 @@ async function requeue(observationIds) {
         await db.sequelize.query(
             `UPDATE observation_thumbnails
                 SET status       = 'queued',
-                    attempts     = 0,
+                    request_priority = 1,
+                    candidate_index = candidate_index
+                        + CASE WHEN framenum IS NULL THEN 0 ELSE 1 END,
                     claimed_at   = NULL,
                     completed_at = NULL,
                     requested_at = NOW(),
@@ -169,6 +174,57 @@ async function requeue(observationIds) {
 }
 
 /**
+ * Queues a reviewer-requested replacement, including for a ready picture.
+ *
+ * Repeated clicks while work is queued only raise its priority; they do not skip
+ * a candidate that has not yet been attempted.
+ *
+ * @async
+ * @param {number} observationId - Observation whose crop should be replaced.
+ * @returns {Promise<Object|undefined>} Current row, or undefined when absent.
+ */
+async function requestReplacement(observationId) {
+    return db.sequelize.transaction(async (transaction) => {
+        await db.sequelize.query(
+            `INSERT INTO observation_thumbnails
+                 (observation_id, status, permanent, generation, attempts, request_priority,
+                  candidate_index, requested_at, created_at, updated_at)
+             SELECT o.observation_id, 'queued', false, 1, 0, 1, 0, NOW(), NOW(), NOW()
+               FROM observations o
+              WHERE o.observation_id = :observationId
+             ON CONFLICT (observation_id) DO NOTHING`,
+            { replacements: { observationId }, type: QueryTypes.INSERT, transaction }
+        );
+
+        await db.sequelize.query(
+            `UPDATE observation_thumbnails
+                SET status = 'queued',
+                    request_priority = 1,
+                    candidate_index = candidate_index
+                        + CASE WHEN status IN ('ready', 'failed') AND framenum IS NOT NULL
+                               THEN 1 ELSE 0 END,
+                    permanent = false,
+                    claimed_at = CASE WHEN status = 'queued' THEN claimed_at ELSE NULL END,
+                    completed_at = NULL,
+                    requested_at = CASE WHEN status = 'queued' THEN requested_at ELSE NOW() END,
+                    updated_at = NOW()
+              WHERE observation_id = :observationId
+                AND permanent = false`,
+            { replacements: { observationId }, type: QueryTypes.UPDATE, transaction }
+        );
+
+        const [row] = await db.sequelize.query(
+            `SELECT ${ROW_COLUMNS}
+               FROM observation_thumbnails
+              WHERE observation_id = :observationId`,
+            { replacements: { observationId }, type: QueryTypes.SELECT, transaction }
+        );
+
+        return row;
+    });
+}
+
+/**
  * Claims a batch of queued work for one extraction pass (R18).
  *
  * One statement, so two API processes -- or one restarted next to itself -- cannot
@@ -180,7 +236,7 @@ async function requeue(observationIds) {
  * extraction whose process died leaves a claimed row behind, and without it that
  * tile says PREPARING until somebody notices.
  *
- * Oldest request first. R19 is backpressure by **dropping priority, never by
+ * Reviewer requests first, then oldest within each class. R19 is backpressure by **dropping priority, never by
  * rejecting** -- a long queue makes a reviewer wait behind a PREPARING tile,
  * which the client already draws, rather than producing a state it has no
  * rendering for.
@@ -197,7 +253,7 @@ async function claimBatch(limit = CLAIM_BATCH_SIZE) {
               WHERE t.status = 'queued'
                 AND (t.claimed_at IS NULL
                      OR t.claimed_at < NOW() - make_interval(secs => $2::int))
-              ORDER BY t.requested_at NULLS FIRST, t.observation_id
+              ORDER BY t.request_priority DESC, t.requested_at NULLS FIRST, t.observation_id
               LIMIT $1
                 FOR UPDATE SKIP LOCKED
          ),
@@ -213,9 +269,13 @@ async function claimBatch(limit = CLAIM_BATCH_SIZE) {
          SELECT c.observation_thumbnail_id,
                 c.observation_id,
                 c.attempts,
+                t.request_priority,
+                t.candidate_index,
                 o.video_source,
                 o."mediaPosition"
            FROM claimed c
+           JOIN observation_thumbnails t
+             ON t.observation_thumbnail_id = c.observation_thumbnail_id
            JOIN observations o ON o.observation_id = c.observation_id
           ORDER BY c.observation_id`,
         { bind: [limit, CLAIM_TIMEOUT_SECONDS], type: QueryTypes.SELECT }
@@ -292,6 +352,7 @@ async function recordReady(observationId, result) {
                 source_height = :sourceHeight,
                 framenum      = :framenum,
                 subset        = :subset,
+                request_priority = 0,
                 generation    = generation + 1,
                 last_error    = NULL,
                 claimed_at    = NULL,
@@ -336,21 +397,32 @@ async function recordReady(observationId, result) {
  * @param {number} observationId - Whose thumbnail.
  * @param {string} lastError - Why, in words.
  * @param {boolean} [permanent] - Whether retrying could ever help.
+ * @param {Object} [candidate] - Frame and subset actually attempted.
  * @returns {Promise<Object|undefined>} The updated row.
  */
-async function recordFailure(observationId, lastError, permanent = false) {
+async function recordFailure(observationId, lastError, permanent = false, candidate = null) {
     const [row] = await db.sequelize.query(
         `UPDATE observation_thumbnails
             SET status       = 'failed',
                 permanent    = :permanent,
                 last_error   = :lastError,
+                framenum     = COALESCE(:framenum, framenum),
+                subset       = COALESCE(:subset, subset),
+                request_priority = 0,
                 claimed_at   = NULL,
                 completed_at = NOW(),
                 updated_at   = NOW()
           WHERE observation_id = :observationId
         RETURNING ${ROW_COLUMNS}`,
         {
-            replacements: { observationId, lastError, permanent: Boolean(permanent) },
+            replacements: {
+                observationId,
+                lastError,
+                permanent: Boolean(permanent),
+                framenum: candidate && Number.isInteger(Number(candidate.frame))
+                    ? Number(candidate.frame) : null,
+                subset: candidate && candidate.subset != null ? String(candidate.subset) : null,
+            },
             type: QueryTypes.SELECT,
         }
     );
@@ -537,6 +609,7 @@ module.exports = {
     recordFailure,
     recordReady,
     releaseClaims,
+    requestReplacement,
     requeue,
     statusCounts,
     writeRunState,

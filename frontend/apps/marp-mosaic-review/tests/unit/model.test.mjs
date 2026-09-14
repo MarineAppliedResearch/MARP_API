@@ -826,9 +826,9 @@ test('R3: a page whose thumbnails all failed is its own state', () => {
   assert.equal(pageState({ rows: [row(1), row(2)], loading: false, total: 2 }), 'ready');
 });
 
-test('R9: scientific review can say the observation could not be seen', () => {
-  assert.ok(MODES.scientific.reasons.includes('No imagery'),
-    'a flag raised because nobody could see it must be able to say so on the record');
+test('#134 R1: no imagery is an extraction action, not a scientific reason', () => {
+  assert.ok(!MODES.scientific.reasons.includes('No imagery'),
+    'a new scientific decision must not encode an extraction request');
   assert.ok(!MODES.delete.reasons.length, 'delete still records no reason');
 });
 
@@ -1405,7 +1405,7 @@ test('A4: a queued thumbnail is not a picture either', () => {
 });
 
 test('A4: an exception mark needs no picture, which is the older rule and still holds', () => {
-  /* Flagging a tile nobody could see is exactly what "No imagery" is a flag reason for. */
+  /* A visible false detection can still be flagged even if its stored crop later fails. */
   const blind = row(1, { thumbnail_status: 'failed' });
   const marks = page.toggleMark(new Map(), 1);
   assert.equal(commitOutcome({ mode: 'scientific', rows: [blind], marks }).flags, 1);

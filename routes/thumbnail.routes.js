@@ -229,6 +229,59 @@ function registerThumbnailRoutes(app) {
     registerVersionedRoute(app, {
         method: 'post',
         permission: READ_PERMISSION,
+        path: '/api/observations/:observationId/thumbnail/replacement',
+        summary: 'Request a different observation thumbnail',
+        description:
+            'Queues one reviewer-requested replacement at the highest thumbnail priority, including when the current image is ready. '
+            + 'Each accepted request advances to one deterministic candidate and causes one extraction attempt; it does not create '
+            + 'or change a scientific review decision. A structural permanent failure is returned unchanged and refused.',
+        tags: [TAG],
+        parameters: [
+            {
+                in: 'path',
+                name: 'observationId',
+                required: true,
+                schema: { type: 'integer' },
+                description: 'Identifier of the observation whose crop should be replaced.',
+            },
+        ],
+        responses: {
+            200: {
+                description: 'The accepted queue state, or the permanent refusal.',
+                content: { 'application/json': { schema: { $ref: '#/components/schemas/ThumbnailReplacementResult' } } },
+            },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const observationId = Number(req.params.observationId);
+
+            if (!Number.isInteger(observationId)) {
+                throw new ApiError(
+                    400,
+                    ERROR_CODES.VALIDATION_ERROR,
+                    `observationId must be an integer, not ${JSON.stringify(req.params.observationId)}.`
+                );
+            }
+
+            const row = await thumbnailRepository.requestReplacement(observationId);
+
+            res.json({
+                thumbnail: row
+                    ? {
+                        observation_id: observationId,
+                        status: row.status,
+                        permanent: row.permanent,
+                        reason: row.status === 'failed' ? row.last_error : null,
+                    }
+                    : { observation_id: observationId, status: 'failed', permanent: true, reason: 'not-found' },
+            });
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: READ_PERMISSION,
         path: '/api/observations/thumbnails/retry',
         summary: 'Ask again for a page of thumbnails',
         description:

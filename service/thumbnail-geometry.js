@@ -284,6 +284,81 @@ function chooseBox(keyframes, observationFrame) {
 }
 
 /**
+ * The finite sequence used when a reviewer asks for another picture.
+ *
+ * The established representative choice stays first. Exact annotated keyframes
+ * follow by distance from the observation, then one midpoint per adjacent span.
+ * Midpoints make the human-approved interpolated fallback useful without turning
+ * a track of thousands of frames into thousands of retries. Frame numbers are
+ * de-duplicated and every candidate belongs to the first subset.
+ *
+ * @param {Array<Object>} keyframes - Every keyframe of one observation.
+ * @param {number} observationFrame - The observation's own absolute frame.
+ * @returns {Array<Object>} Ordered choices shaped like {@link chooseBox}.
+ */
+function thumbnailCandidates(keyframes, observationFrame) {
+    const groups = groupBySubset(keyframes);
+
+    if (groups.size === 0) {
+        return [];
+    }
+
+    const first = [...groups.keys()].sort(compareSubsets)[0];
+    const group = groups.get(first);
+    const subset = group[0].subset == null ? null : String(group[0].subset);
+    const primary = chooseBox(keyframes, observationFrame);
+    const exact = [...group]
+        .sort((a, b) => Math.abs(Number(a.framenum) - observationFrame)
+            - Math.abs(Number(b.framenum) - observationFrame)
+            || Number(a.framenum) - Number(b.framenum))
+        .map((keyframe) => ({
+            box: {
+                x: Number(keyframe.x),
+                y: Number(keyframe.y),
+                width: Number(keyframe.width),
+                height: Number(keyframe.height),
+            },
+            framenum: Number(keyframe.framenum),
+            subset,
+            source: 'keyframe',
+            before: keyframe,
+            after: keyframe,
+        }));
+    const midpointFrames = [];
+
+    for (let index = 0; index < group.length - 1; index += 1) {
+        const before = Number(group[index].framenum);
+        const after = Number(group[index + 1].framenum);
+        const frame = Math.round((before + after) / 2);
+
+        if (frame > before && frame < after) midpointFrames.push(frame);
+    }
+
+    const midpoints = midpointFrames
+        .sort((a, b) => Math.abs(a - observationFrame) - Math.abs(b - observationFrame)
+            || a - b)
+        .map((frame) => {
+            const interpolated = interpolateBox(group, frame);
+
+            return {
+                box: interpolated.box,
+                framenum: frame,
+                subset,
+                source: 'interpolated-midpoint',
+                before: interpolated.before,
+                after: interpolated.after,
+            };
+        });
+    const seen = new Set();
+
+    return [primary, ...exact, ...midpoints].filter((candidate) => {
+        if (!candidate || seen.has(candidate.framenum)) return false;
+        seen.add(candidate.framenum);
+        return true;
+    });
+}
+
+/**
  * Turns a normalised centre-origin box into the pixel rectangle to cut (R7).
  *
  * Four steps, in this order, and the order is the requirement:
@@ -385,4 +460,5 @@ module.exports = {
     groupBySubset,
     interpolateBox,
     largestKeyframe,
+    thumbnailCandidates,
 };

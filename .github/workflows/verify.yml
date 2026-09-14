@@ -20,7 +20,9 @@ name: verify
 
 on:
   push:
-    branches: ['**']
+    # A feature branch is verified by its pull request. Running again for the
+    # push duplicates both jobs against the same commit.
+    branches: [develop, master]
   pull_request:
 
 jobs:

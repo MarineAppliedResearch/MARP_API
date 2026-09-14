@@ -65,7 +65,7 @@ const jellyfinRepository = require('../repository/jellyfin.repository');
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
 const { thumbnailFilename } = require('../db/thumbnail-filename');
-const { chooseBox, cropRectangle } = require('./thumbnail-geometry');
+const { cropRectangle, thumbnailCandidates } = require('./thumbnail-geometry');
 
 const {
     CLAIM_BATCH_SIZE,
@@ -387,13 +387,18 @@ function planObservation(claim, keyframes) {
     }
 
     const observationFrame = absoluteFrame(mediaMs);
-    const choice = chooseBox(keyframes, observationFrame);
+    const candidates = thumbnailCandidates(keyframes, observationFrame);
+    const candidateIndex = Number.isInteger(Number(claim.candidate_index))
+        ? Number(claim.candidate_index) : 0;
+    const choice = candidates[candidateIndex];
 
     if (!choice) {
         return {
             ok: false,
             permanent: true,
-            error: `No usable keyframe box for frame ${observationFrame}.`,
+            error: candidates.length
+                ? `Every usable thumbnail frame has been tried (${candidates.length} candidates).`
+                : `No usable keyframe box for frame ${observationFrame}.`,
         };
     }
 
@@ -403,6 +408,7 @@ function planObservation(claim, keyframes) {
         box: choice.box,
         subset: choice.subset,
         source: choice.source,
+        hasNext: candidateIndex + 1 < candidates.length,
     };
 }
 
@@ -586,7 +592,8 @@ async function extractVideoGroup(videoSource, claims) {
                 claim.observation_id,
                 `Frame ${plan.frame} is ${(plan.frame / probe.fps).toFixed(1)}s into a video that is `
                 + `${probe.duration.toFixed(1)}s long, so the moment this observation records is not in this video.`,
-                true
+                true,
+                plan
             );
 
             outcome.failed += 1;
@@ -620,14 +627,14 @@ async function extractVideoGroup(videoSource, claims) {
             const framePath = extraction.files[index];
 
             if (!framePath) {
-                // Asked for more frames than came back. Transient rather than
-                // permanent: a truncated stream is a media-server condition and
-                // the next attempt may well get it.
+                // Asked for more frames than came back. Another candidate keeps
+                // this retryable; the final candidate makes exhaustion explicit.
                 await thumbnailRepository.recordFailure(
                     claim.observation_id,
                     `ffmpeg returned ${extraction.files.length} frames for ${wanted.length} asked for, `
                     + `so frame ${plan.frame} did not arrive.`,
-                    false
+                    !plan.hasNext,
+                    plan
                 );
 
                 outcome.failed += 1;
@@ -649,7 +656,8 @@ async function extractVideoGroup(videoSource, claims) {
                 await thumbnailRepository.recordFailure(
                     claim.observation_id,
                     elideToken(error.message),
-                    false
+                    !plan.hasNext,
+                    plan
                 );
 
                 outcome.failed += 1;
@@ -661,7 +669,8 @@ async function extractVideoGroup(videoSource, claims) {
             await thumbnailRepository.recordFailure(
                 entry.claim.observation_id,
                 elideToken(error.message),
-                false
+                !entry.plan.hasNext,
+                entry.plan
             );
         }
 

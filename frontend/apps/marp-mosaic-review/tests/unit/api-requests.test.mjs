@@ -360,6 +360,11 @@ test('#130: an empty term still sends nothing, because both routes refuse it', a
   assert.deepEqual(urls, []);
 });
 
+test('#134 R3: a replacement uses the single-observation route', async () => {
+  const urls = await withFetch(() => MarpApi.requestThumbnailReplacement(1234));
+  assert.deepEqual(urls, ['/api/v2/observations/1234/thumbnail/replacement']);
+});
+
 /* ------------------------------------------ the sort, from either shape (was data-scale)
  *
  * The wire carries an array of `{ field, dir }`; the store holds one

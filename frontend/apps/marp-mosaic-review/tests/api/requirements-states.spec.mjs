@@ -118,6 +118,34 @@ async function recordThumbnailError(ids, text) {
   }
 }
 
+/** Finish this check's queued replacement the way the extractor records success. */
+async function completeThumbnailReplacement(id) {
+  const database = process.env.MARP_TESTING_DB_NAME;
+  expect(database, 'MARP_TESTING_DB_NAME is required for the disposable browser database')
+    .toBeTruthy();
+  const client = new pg.Client({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database
+  });
+
+  await client.connect();
+  try {
+    await client.query(
+      `UPDATE observation_thumbnails
+          SET status = 'ready', permanent = false, request_priority = 0,
+              generation = generation + 1, claimed_at = NULL,
+              completed_at = NOW(), updated_at = NOW()
+        WHERE observation_id = $1`,
+      [id]
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 /* ------------------------------------------- the delete confirmation (#71) */
 
 /**
@@ -275,6 +303,42 @@ test('The states never rendered: R8: a flag on a row with no imagery reaches the
       ok(back.rows.some((r) => r.observation_id === id),
         'the flag must be written even though nobody could see the picture');
     }, { line: seeded.line, broken: seeded.ids[0] });
+  });
+
+test('#134 R1, R2, R9: requesting a replacement clears the pending flag and writes no review',
+  async ({ page }) => {
+    const seeded = await seedFor({ count: 1, thumbnail: 'ready' });
+    const id = seeded.ids[0];
+
+    await open(page, seeded.address);
+    const tile = page.locator(`.tile[data-id="${id}"]`);
+
+    await tile.click();
+    await tile.locator('[data-badge]').click();
+    await page.locator('.pick .chip', { hasText: 'Duplicate' }).click();
+    await page.locator('.pick [data-act="replace-thumbnail"]').click();
+
+    await expect(page.locator('.pick')).toHaveCount(0);
+    await expect(tile).toHaveClass(/queued/);
+
+    await page.evaluate(async (observationId) => {
+      const { state, ok, eq, MarpBackend } = await import('./tests/api/check-kit.mjs');
+      const row = state.rows.find((candidate) => candidate.observation_id === observationId);
+
+      eq(row.thumbnail_status, 'queued', 'the accepted replacement paints PREPARING');
+      ok(!state.marks.has(observationId), 'the temporary flag and its details are gone');
+      ok(!state.touched.has(observationId), 'the cleared flag cannot enter a later selective commit');
+
+      const back = await MarpBackend.query({
+        filters: { ...state.filters, reviewStatus: ['flagged'] }, page: 1, pageSize: 500,
+      });
+      ok(!back.rows.some((candidate) => candidate.observation_id === observationId),
+        'requesting extraction must not append or project a scientific review');
+    }, id);
+
+    await completeThumbnailReplacement(id);
+    await expect(tile).not.toHaveClass(/queued/, { timeout: 5000 });
+    await expect(tile.locator('img')).toBeVisible();
   });
 
 test('The states never rendered: R8: an unmarked row with no imagery is skipped, never silently accepted',
