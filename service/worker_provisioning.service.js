@@ -49,12 +49,17 @@ class WorkerProvisioningService {
 
     createActivationCode(body, userId) {
         const ttlMinutes = Number(body.ttl_minutes || 60);
+        const maxUses = Number(body.max_uses || 1);
         if (!Number.isInteger(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > 10080) {
             throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'ttl_minutes must be between 1 and 10080.');
+        }
+        if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 10000) {
+            throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'max_uses must be between 1 and 10000.');
         }
         return repository.createActivationCode({
             label: body.label,
             expiresAt: new Date(Date.now() + ttlMinutes * 60_000),
+            maxUses,
             createdByUserId: userId,
         });
     }

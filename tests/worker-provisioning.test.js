@@ -42,6 +42,53 @@ afterAll(async () => {
 });
 
 describe('worker activation and operator-selected updates', () => {
+    it('uses one revocable installer enrollment code for separate machines', async () => {
+        const activation = await global.api
+            .post('/api/v2/gpu/worker-activation-codes')
+            .send({ label: `installer-${runId}`, ttl_minutes: 10, max_uses: 2 });
+        expect(activation.status).toBe(201);
+
+        const activatedWorkers = [];
+        try {
+            for (const suffix of ['a', 'b']) {
+                const response = await request(app)
+                    .post('/api/v2/gpu/workers/activate')
+                    .send({
+                        activation_code: activation.body.activation_code,
+                        local_id: `installer-${runId}-${suffix}`,
+                        name: `installer-worker-${runId}-${suffix}`,
+                        platform: 'windows',
+                        architecture: 'x86_64',
+                        compute_runtime: 'cuda12.6',
+                        worker_version: '0.1.0',
+                    });
+                expect(response.status).toBe(201);
+                activatedWorkers.push(Number(response.body.worker_id));
+            }
+
+            const exhausted = await request(app)
+                .post('/api/v2/gpu/workers/activate')
+                .send({
+                    activation_code: activation.body.activation_code,
+                    local_id: `installer-${runId}-c`,
+                    name: `installer-worker-${runId}-c`,
+                    platform: 'windows',
+                    architecture: 'x86_64',
+                    compute_runtime: 'cuda12.6',
+                });
+            expect(exhausted.status).toBe(401);
+        } finally {
+            const workers = await db.gpu_workers.findAll({ where: { id: activatedWorkers } });
+            const tokenIds = workers.map((worker) => worker.service_token_id).filter(Boolean);
+            await db.gpu_workers.destroy({ where: { id: activatedWorkers } });
+            if (tokenIds.length) {
+                await db.service_token_permissions.destroy({ where: { service_token_id: tokenIds } });
+                await db.service_tokens.destroy({ where: { service_token_id: tokenIds } });
+            }
+            await db.worker_activation_codes.destroy({ where: { id: activation.body.id } });
+        }
+    });
+
     it('binds a revocable credential to one worker and keeps failed updates terminal', async () => {
         workerAppExisted = Boolean(await db.service_clients.findOne({
             where: { name: 'MARP Inference Workers' },

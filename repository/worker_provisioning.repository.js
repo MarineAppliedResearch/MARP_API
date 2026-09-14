@@ -34,13 +34,14 @@ class WorkerProvisioningRepository {
         return Boolean(row);
     }
 
-    async createActivationCode({ label, expiresAt, createdByUserId }) {
+    async createActivationCode({ label, expiresAt, maxUses, createdByUserId }) {
         const code = rawSecret('activate');
         const row = await db.worker_activation_codes.create({
             code_prefix: code.slice(0, 16),
             code_hash: hashSecret(code),
             label: label || null,
             expires_at: expiresAt,
+            max_uses: maxUses,
             created_by_user_id: createdByUserId || null,
         });
         return { ...row.get({ plain: true }), code_hash: undefined, activation_code: code };
@@ -53,7 +54,7 @@ class WorkerProvisioningRepository {
                 transaction,
                 lock: transaction.LOCK.UPDATE,
             });
-            if (!code || code.consumed_at || new Date(code.expires_at) <= new Date()) return null;
+            if (!code || code.revoked_at || code.use_count >= code.max_uses || new Date(code.expires_at) <= new Date()) return null;
 
             let client = await db.service_clients.findOne({
                 where: { name: WORKER_APP_NAME },
@@ -112,6 +113,7 @@ class WorkerProvisioningRepository {
                 worker_version: workerVersion || worker.worker_version,
             }, { transaction });
             await code.update({
+                use_count: code.use_count + 1,
                 consumed_at: new Date(),
                 consumed_by_worker_id: worker.id,
             }, { transaction });
