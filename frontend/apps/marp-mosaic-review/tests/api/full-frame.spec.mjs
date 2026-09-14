@@ -37,7 +37,7 @@ test('#176/#178 details identify the observation and open its cached full frame'
       const observationLabel = viewer.locator('.frame-viewer__box-label--observation');
       await expect(box).toBeVisible();
       await expect(speciesLabel).not.toBeEmpty();
-      await expect(observationLabel).toHaveText(`Observation ${id}`);
+      await expect(observationLabel).toHaveText(String(id));
       await expect.poll(async () => {
         const [boxWidth, labelWidth] = await Promise.all([
           box.evaluate((node) => node.getBoundingClientRect().width),

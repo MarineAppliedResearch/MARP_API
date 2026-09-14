@@ -130,7 +130,7 @@ export function renderFrameViewer() {
   const speciesLabel = dialog.querySelector('.frame-viewer__box-label--species');
   const observationLabel = dialog.querySelector('.frame-viewer__box-label--observation');
   if (speciesLabel) speciesLabel.textContent = row.comname || 'Unknown species';
-  if (observationLabel) observationLabel.textContent = `Observation ${row.observation_id}`;
+  if (observationLabel) observationLabel.textContent = String(row.observation_id);
   dialog.querySelector('[data-frame-act="box-fit"]').addEventListener('click', () => {
     focusBoxAfterRender = row.observation_id;
     actions.setFullFrameZoom(zoomForBox(row.full_frame_box,
