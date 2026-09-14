@@ -191,6 +191,10 @@ The pull-request trigger remains unchanged. Verification is the GitHub run inven
 by pushing this correction: exactly one new workflow run must exist for the updated feature
 commit, with event `pull_request`; no `push` run may exist for it.
 
+**PASS.** For commit `984b3cd3ca2eba900990fb9830838a3532de76a6`, GitHub returned
+exactly one workflow run: verify run 34803846855, event `pull_request`. No workflow run
+with event `push` exists for that feature-branch commit.
+
 ### Manual observation not run
 
 The live-Jellyfin crop-quality walkthrough remains for a session with the human present,
