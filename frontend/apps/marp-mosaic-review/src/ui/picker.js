@@ -7,6 +7,7 @@
  */
 import { state, actions, MODES } from '../store.js';
 import { acceptedValue, existingNote, existingReason, existingState, markKind, MARK_EXCEPT } from '../model/modes.js';
+import { copyObservationId, observationIdText } from '../model/observation-id.js';
 import { $, el, ICON } from './dom.js';
 import { acceptIcon, markIcon } from './tile.js';
 
@@ -185,6 +186,12 @@ export async function renderPicker() {
 
   const panel = el(`<div class="pick" data-picker-id="${id}" role="dialog" aria-label="${label} details">
       <h4><span class="fl">${isException ? markIcon() : acceptIcon()}</span>${label}<span class="opt">Details optional</span></h4>
+      <div class="observation-identity">
+        <span class="observation-identity__label">Observation ID</span>
+        <code class="observation-identity__value" data-observation-id>${observationIdText(id)}</code>
+        <button type="button" class="ghost observation-identity__copy" data-act="copy-observation-id">Copy</button>
+        <span class="observation-identity__status" data-copy-status role="status" aria-live="polite"></span>
+      </div>
       <p>Changes here stay pending until you use one of the existing commit controls.</p>
       ${reasonControls}
       ${correcting && isException ? `<div class="correct">
@@ -240,6 +247,25 @@ export async function renderPicker() {
   if (unmark) unmark.addEventListener('click', () => actions.toggleMark(id));
   const replace = panel.querySelector('[data-act="replace-thumbnail"]');
   if (replace) replace.addEventListener('click', () => actions.requestThumbnailReplacement(id));
+  panel.querySelector('[data-act="copy-observation-id"]').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const status = panel.querySelector('[data-copy-status]');
+    button.disabled = true;
+    try {
+      await copyObservationId(id, navigator.clipboard);
+      status.textContent = 'Copied';
+    } catch (error) {
+      const value = panel.querySelector('[data-observation-id]');
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(value);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      status.textContent = 'Copy unavailable — the ID is selected for manual copying.';
+    } finally {
+      button.disabled = false;
+    }
+  });
   panel.querySelector('[data-act="video"]').addEventListener('click', () => actions.openVideo(id));
   const resolve = panel.querySelector('[data-act="resolve"]');
   if (resolve) resolve.addEventListener('click', () => actions.resolve(id));

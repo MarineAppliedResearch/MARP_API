@@ -1,135 +1,198 @@
 ---
-task: MarineAppliedResearch/MARP_API#134
+task: MarineAppliedResearch/MARP_API#176
 repos: [marp-api]
-status: verify
+status: design
 needs: []
 ---
 
 ## Goal
 
-From a flagged tile's details panel, a reviewer can ask MARP for a different square
-thumbnail without creating a scientific `No imagery` decision. That request becomes the
-first work in the extraction schedule, tries a different keyframe or a bounded interpolated
-frame, and replaces the Mosaic image as soon as it is ready. Full-resolution frame
-inspection is tracked separately by #176 and video-player integration remains outside this
-task.
+From any Mosaic tile's existing details panel, a reviewer can identify the exact
+observation, copy its primary key, request the complete source-video frame behind the
+thumbnail, and inspect that frame full-screen with zoom and pan. These inspection actions
+must not change the square thumbnail, a pending mark, or any scientific review data. This
+milestone delivers #176 and #178 together; persistent source-video playback remains the
+following milestone in #181.
 
 ## Requirements
 
-- **R1** -- The Scientific Data Review details panel has a separate, plainly named
-  `Request replacement image` action. `No imagery` is no longer a reason that can be
-  attached to or committed as a scientific review decision.
-- **R2** -- Using the replacement action clears the temporary flag, reason, and note for
-  that tile before it queues extraction. It appends no review-history row and changes no
-  current scientific decision.
-- **R3** -- Replacement can be requested for a failed thumbnail or for a `ready`
-  thumbnail that the reviewer judges unusable. Structural permanent failures that no
-  alternative frame can repair remain refused with an explanation.
-- **R4** -- A reviewer-requested replacement or retry is the highest-priority class in the
-  thumbnail schedule, ahead of page-triggered and future background work while remaining
-  inside the existing Jellyfin concurrency ceiling. Requests within that class remain
-  first-in, first-out.
-- **R5** -- The first extraction keeps the current representative-frame rule. Later
-  requests use one finite deterministic sequence within the already-selected first object
-  subset: untried real keyframes ordered by distance from the observation frame, followed
-  by one untried midpoint frame from each adjacent keyframe span, also ordered by distance.
-  Candidate frame numbers are de-duplicated.
-- **R6** -- An interpolated candidate uses only the two surrounding keyframes from the
-  selected subset to calculate its box. MARP never interpolates between different tracked
-  objects.
-- **R7** -- One request causes one extraction attempt. A failure stays retryable while a
-  candidate remains; exhausting the finite candidate sequence makes the failure permanent.
-  One gesture never opens multiple Jellyfin streams in succession.
-- **R8** -- Attempt state survives re-queueing and structurally records which candidate was
-  attempted, including failures. Selection never parses a frame number from error prose and
-  never rewrites observations, keyframes, or review history.
-- **R9** -- The Mosaic immediately paints the tile as preparing, polls through the existing
-  page query, and swaps in the replacement thumbnail as soon as it is ready. It never
-  fabricates synchronous success, freezes the page, or leaves a `No imagery` flag behind.
-- **R10** -- Existing per-tile and per-page `Ask again` controls use the same priority and
-  candidate-rotation rules for transient failures. Existing permanent structural failures
-  remain protected from repeated requests.
-- **R11** -- Existing historical review rows whose reason is `No imagery` remain readable
-  and unchanged. Removing that value from new commits is not a migration or a rewrite of
-  the scientific record.
-- **R12** -- Repository, extraction, API, model, and real-browser tests prove the separate
-  action, absence of a review write, priority ordering, ready-row replacement, deterministic
-  rotation, interpolation, exhaustion, queued UI, successful image swap, and permanent
-  refusal.
-- **R13** -- Feature-branch pushes do not start a duplicate CI run. Pull requests still run
-  both verification jobs, and direct pushes to `develop` or `master` retain branch CI.
+- **R1** — The details panel clearly labels the tile's exact `observation_id` as
+  `Observation ID` in Scientific, Training, and Delete modes, for every thumbnail and
+  review state. The identifier is selectable and is not added to the tile face.
+- **R2** — An explicit copy action copies only the decimal observation ID, keeps the
+  details panel open, and gives visible accessible success feedback. When the Clipboard API
+  is unavailable or refuses the write, the ID remains selectable and the panel honestly
+  explains that it must be copied manually.
+- **R3** — Displaying or copying an observation ID changes no mark, note, current review,
+  review-history row, observation, or thumbnail record.
+- **R4** — The same details panel offers an explicit `Request full frame` action. One
+  gesture creates or reuses an asynchronous full-frame request for the exact observation
+  and never pretends the artifact is ready synchronously.
+- **R5** — A full-frame request captures the complete decoded video frame at the exact
+  moment currently recorded on the ready square thumbnail. It does not return only the
+  crop, choose another keyframe, advance the replacement candidate sequence, or alter the
+  square thumbnail.
+- **R6** — Full-frame work has durable queued, in-progress, ready, and failed states. A
+  page reload or API restart does not lose accepted work, and duplicate requests for the
+  same observation/frame converge on one artifact rather than opening duplicate streams.
+- **R7** — Reviewer-requested full frames share the thumbnail extractor's existing global
+  Jellyfin concurrency ceiling and highest interactive priority class. Work within that
+  class is first-in, first-out; the Mosaic remains usable while it runs.
+- **R8** — A ready full frame opens in a full-viewport dialog without navigating away from
+  the Mosaic. Closing it restores the same page, filters, mode, tile, marks, and details
+  context the reviewer had before opening it.
+- **R9** — The viewer initially fits the whole frame, supports zoom and pan by mouse,
+  touch, and keyboard, exposes a reset/fit action, prevents panning the image irretrievably
+  off-screen, and has an accessible name, focus trap, and close behavior.
+- **R10** — The served artifact preserves the decoded source frame's native pixel
+  dimensions in a high-quality browser-readable image format and is privately delivered
+  through MARP_API under `observations:read` with revalidation-safe caching. API responses
+  never expose a Jellyfin credential, stream URL, or server filesystem path.
+- **R11** — The full frame can show the observation's bounding box at the same frame as a
+  non-destructive viewer overlay; the overlay is never baked into or confused with the
+  source image.
+- **R12** — Full-frame failures say whether retrying can help. Transient failures offer an
+  explicit retry at interactive priority; permanent failures such as an unresolvable video,
+  frame-rate mismatch, or frame outside the source do not repeatedly contact Jellyfin.
+- **R13** — Full-frame availability and file provenance are additive, re-creatable cache
+  state. The Mosaic can report availability without downloading the full frame or issuing
+  one extra query per tile. Eviction clears that availability without changing an
+  observation, keyframe, derived scientific column, review decision, or review-history row.
+- **R14** — Named repository/service/route tests prove queue identity, ordering,
+  concurrency, extraction provenance, serving/auth/cache behavior, retry classification,
+  and absence of scientific writes. Real-API browser tests prove ID display/copy/fallback
+  and the full-frame request/view/zoom/pan/close lifecycle on desktop and phone.
+- **R15** — #181 is not implemented here: no playable stream, scrubbing, playback cache,
+  or persistent video-player lifecycle is added to this milestone.
+- **R16** — One storage manager covers both existing square thumbnails and new full frames.
+  It enforces a configured disk budget, records enough access information for deterministic
+  eviction, removes database availability and file bytes consistently, and allows an
+  evicted artifact to be requested again rather than reporting a broken `ready` image.
+- **R17** — Review-imagery scheduling, extraction, storage accounting, eviction, and
+  retrieval live behind one cohesive internal boundary. Routes and the Mosaic depend on
+  that boundary rather than directly owning filesystem behavior, so the worker/storage
+  implementation can later move out of MARP_API and communicate with it without redesigning
+  the reviewer-facing contract.
+- **R18** — The existing admin dashboard shows the configured review-imagery cache maximum,
+  eviction order, low-watermark target, current total usage, thumbnail/full-frame usage
+  separately, and the resolved storage locations. An administrator can change the maximum,
+  eviction order, and low-watermark target through an `admin`-permission API; values are
+  validated, persisted, survive API restarts, and become active without editing an
+  environment file or restarting the service.
+- **R19** — Lowering the configured maximum below current usage starts bounded eviction and
+  reports progress/current usage honestly. A rejected or failed settings write leaves the
+  previous limit active and gives the administrator an explicit error.
 
 ## Open assumptions
 
-- [x] **A1 · scientific or data-meaning · blocking** -- Answered 2026-09-13: a successful
-  replacement leaves no `No imagery` flag because no such review decision is written in
-  the first place. The extractor never authors or withdraws a review on somebody's behalf.
-- [x] **A2 · product/UI · blocking** -- Answered 2026-09-13: requesting replacement is a
-  special second button in the pop-up details panel. It is not the page commit and does not
-  require committing a flag.
-- [x] **A3 · performance/concurrency · blocking** -- Answered 2026-09-13:
-  reviewer-requested work is the number-one priority class in the entire thumbnail schedule.
-- [x] **A4 · behavioural · blocking** -- Answered 2026-09-13: usable keyframes may all be
-  tried, and interpolated frames may be tried if needed. The finite rule is the real
-  keyframes plus one midpoint per adjacent span in the chosen subset, one explicit request
-  at a time; it never crosses subsets.
-- [x] **A5 · API contract · blocking** -- Answered 2026-09-13: add
-  `POST /api/v2/observations/:observationId/thumbnail/replacement` for this one
-  reviewer-driven action, and keep the existing page retry endpoint's bulk/failure-only
-  meaning.
+- [x] **A1 · product/UI · blocking** — Answered 2026-09-13: completion does not interrupt
+  Mosaic work. The UI reports readiness and waits for an explicit `Open full frame` action.
+- [x] **A2 · scientific or data-meaning · blocking** — Answered 2026-09-13: retrieve the
+  complete video frame at the exact `observation_thumbnails.framenum` currently backing the
+  square crop, not merely the pixels inside that crop and not a different moment.
+- [x] **A3 · product/UI · blocking** — Answered 2026-09-13: the bounding box is shown by
+  default in the frame viewer and has a plainly labeled toggle that removes the overlay.
+- [x] **A4 · storage/API contract · blocking** — Answered 2026-09-13: preserve the native
+  decoded dimensions in an appropriately high-quality browser-readable image. The specific
+  encoding is an implementation choice justified by measured fidelity, size, and browser
+  support rather than a new product behavior.
+- [x] **A5 · storage/retention · blocking** — Answered 2026-09-13: one persisted,
+  configurable maximum cache size governs thumbnails and full frames, and it is visible and
+  editable in the admin dashboard. Never evict an in-progress artifact.
+- [x] **A6 · database/schema · blocking** — Answered 2026-09-13: add full-frame
+  status/provenance/access columns to the existing one-row-per-observation
+  `observation_thumbnails` record. The Mosaic's existing join reports availability with its
+  normal page response and no download or per-tile query. These are operational cache
+  fields, never fields on a scientific review or review-history row.
+- [x] **A7 · performance/concurrency · blocking** — Answered 2026-09-13: full-frame and
+  replacement-thumbnail requests are peers in the highest-priority reviewer class, share
+  one retriever and the existing stream ceiling, and are served fairly.
+- [x] **A8 · product/UI · blocking** — Answered 2026-09-13: show a read-only `Full frame
+  available` checkbox/status inside the tile details panel beside the request/open action.
+  Eviction unchecks it but never rewrites a recorded scientific flag.
+- [x] **A9 · architectural · blocking** — Answered 2026-09-13: review imagery is one
+  cohesive retriever/storage section even while it runs inside MARP_API. Its internal
+  boundary must support moving it to a filesystem-side service that later talks to the API.
+- [x] **A10 · storage/retention · blocking** — Answered 2026-09-13: seed a 25 GiB initial
+  maximum, large enough for the earlier estimated roughly 5 GiB thumbnail corpus plus a
+  useful full-frame working set, but still bounded. The admin dashboard displays and edits
+  it.
+- [x] **A11 · storage/retention · blocking** — Answered 2026-09-13: evict
+  least-recently-viewed full frames first, then least-recently-viewed thumbnails, stopping
+  below a 90% low watermark. The dashboard displays and configures both the order and the
+  low-watermark target.
 
 ## Decisions
 
-- **2026-09-13** -- `No imagery` becomes an extraction action, not a scientific-review
-  reason. Existing historical values are preserved, but the client and commit validator no
-  longer offer or accept a new one.
-- **2026-09-13** -- The replacement action removes the tile's pending mark locally and
-  queues extraction directly. Success is represented by the new image arriving, not by an
-  automatically written review transition.
-- **2026-09-13** -- #134 owns replacement of the square bounding-box thumbnail. #176 owns
-  extraction and full-screen pan/zoom inspection of the complete high-resolution source
-  frame. They share extraction limits and serving patterns but produce different artifacts.
-- **2026-09-13** -- Video playback, scrubbing, and player integration are Phase 10 work and
-  are not included in either thumbnail retry or the full-resolution still issue.
+- **2026-09-13** — #176 and #178 are one Phase 9 milestone because both extend the same
+  observation details and inspection lifecycle, but each keeps separately named
+  requirements and tests.
+- **2026-09-13** — Observation ID display/copy and full-frame inspection are read-only
+  inspection actions. They do not participate in the review commit workflow.
+- **2026-09-13** — #181 follows this milestone and owns embedded source-video playback and
+  its persistent paused/background lifecycle.
+- **2026-09-13** — Disk management is no longer deferred. This milestone adds eviction for
+  both existing thumbnails and new full frames; #121 is the legacy-thumbnail backfill issue,
+  not storage management.
+- **2026-09-13** — Whether an artifact is cached is operational state. It may be displayed
+  near review controls, but eviction never changes the scientific review flag or its
+  history.
+- **2026-09-13** — Cache capacity is runtime administration, not an environment-only
+  deployment value. The admin dashboard owns its persisted setting and reports actual usage.
 
 ## Plan
 
-1. Add named failing repository and extraction tests for top priority, preserved candidate
-   position, real-keyframe rotation, midpoint interpolation, ready-row replacement, and
-   exhaustion.
-2. Add the minimum durable queue/candidate state and migration required to distinguish
-   reviewer priority and remember attempted candidates; preserve all existing rows.
-3. Implement the replacement endpoint and keep the existing bulk retry behavior compatible.
-4. Replace the `No imagery` reason chip with the separate panel action, clear pending
-   review state on use, and connect it to existing bounded polling.
-5. Add real-API browser coverage for the complete gesture and resulting image lifecycle.
-6. Write the G3 verification plan and stop for approval before running it.
+1. Resolve A6, A8, A10, and A11 and update this specification with the human's answers.
+2. Add focused failing tests for observation ID display/copy/fallback and for the durable
+   full-frame queue, identity, priority, extraction, failure, and serving contracts.
+3. Add the minimum additive migration/model/repository state for re-creatable full-frame
+   availability and last access without changing scientific rows.
+4. Introduce the review-imagery boundary and reuse the current resolver, probe, exact-frame
+   extraction, concurrency ceiling, and private file-serving patterns within it.
+5. Add shared storage accounting and deterministic eviction for thumbnails and full frames,
+   including safe database/file consistency and on-demand regeneration.
+6. Add the admin-only persisted cache setting/status API and the admin-dashboard storage
+   panel, including validation, usage reporting, and lowering-the-limit behavior.
+7. Extend the Mosaic API/store and details panel with request/status/retry/open actions,
+   keeping asynchronous updates independent of marks and review commits.
+8. Build the accessible full-viewport viewer with fit, zoom, pan, overlay, and exact-context
+   return behavior.
+9. Add real-API desktop and phone browser coverage plus admin-dashboard contract/browser
+   coverage, then write the G3 verification plan and
+   stop for approval before running it.
 
 ## Acceptance criteria
 
-- A reviewer can request another crop from the tile panel whether the current thumbnail is
-  failed or merely unusable.
-- The request writes no review decision and leaves no pending or committed `No imagery`
-  flag.
-- Interactive replacement work is claimed before ordinary queued work.
-- Each explicit request tries a new finite candidate and never crosses object subsets.
-- A ready replacement appears in the existing tile as soon as bounded polling observes it.
-- Candidate exhaustion is permanent; structural permanent failures remain unqueueable.
-- Historical `No imagery` review records remain intact and readable.
-- #176 remains independently implementable and no video-player code is added here.
-- Feature branches run CI through their pull request only; integration and production branch
-  pushes remain verified.
+- Every tile's details panel identifies the observation and offers a reliable copy action.
+- Copy success and failure are understandable without closing the panel or changing review
+  state.
+- A reviewer can explicitly request the full source frame, keep working while it is queued,
+  and later open the ready artifact.
+- The full-screen viewer makes fine detail inspectable with accessible fit, zoom, pan,
+  overlay, and close controls on desktop and phone.
+- Closing the viewer returns the reviewer to the same Mosaic context.
+- Full-frame generation survives reloads/restarts, is de-duplicated, respects shared media
+  limits, and never leaks Jellyfin credentials.
+- The shared disk budget evicts old full frames and thumbnails deterministically without
+  broken ready states, scientific writes, or eviction/regeneration loops.
+- An administrator can see actual cache usage, change the persisted maximum, and observe
+  eviction bring an oversized cache under the configured limit.
+- Failures do not loop against Jellyfin and useful retry behavior is explicit.
+- No scientific record, pending review work, or square thumbnail is changed by inspection.
+- #176 and #178 are fully covered while #181 remains a separate next milestone.
 
 ## Test plan
 
-Filled in at G3 after A5 is approved and implementation is complete. Targeted groups will
-be `tests/thumbnails.test.js`, `tests/mosaic-commit.test.js`, the Mosaic unit group, and
-named real-API browser checks that observe the panel action and image lifecycle.
+Filled in at G3 after A6, A8, A10, and A11 are answered and implementation is complete. Targeted tiers
+will be the thumbnail/full-frame repository and service tests, route contract tests, Mosaic
+unit tests, and named real-API Playwright checks on desktop and phone. Live Jellyfin
+evidence will require the human present and will be reserved for the approved G4 run.
 
 ## Status
 
-- **Gate:** verification evidence awaiting human review
-- **Notes:** Existing retry resets `attempts` to zero, the planner always calls the same
-  deterministic `chooseBox`, failed extraction does not structurally record its candidate,
-  and ready thumbnails are explicitly refused by the retry endpoint. The design now reflects
-  the human's corrections and the published replacement endpoint is approved.
+- **Gate:** implementing
+- **Notes:** Investigation found that the details panel already owns per-observation
+  inspection actions, while the thumbnail row already records the exact extracted frame and
+  decoded dimensions. The human settled frame behavior, the overlay, fidelity, scheduling,
+  and the future service boundary. The cache maximum, eviction behavior, operational
+  availability, and admin-dashboard ownership are settled; implementation may begin.
