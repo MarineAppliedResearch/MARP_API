@@ -513,6 +513,43 @@ describe('Ingesting a real result file', () => {
         expect(stored[0].type).toBe('start');
         expect(stored[stored.length - 1].type).toBe('end');
     });
+
+    it('persists numeric and null keyframe confidence from a worker result', async () => {
+        // The historical artifact predates per-keyframe confidence, so attach
+        // distinct contract sentinels without pretending they are recovered scores.
+        const keyframes = REAL_RESULT[0].keyframes.map((keyframe, index) => ({
+            ...keyframe,
+            confidence: index === 1 ? null : (index + 1) / 100,
+        }));
+        const result = { ...REAL_RESULT[0], keyframes };
+        const { job, reported } = await runJob([result]);
+
+        expect(reported.status).toBe(200);
+        expect(reported.body.ingest).toMatchObject({
+            ingested: true,
+            observations: 1,
+            keyframes: keyframes.length,
+        });
+
+        const [observation] = await observationsForJob(job.id);
+        const stored = await query(
+            `SELECT framenum, confidence
+               FROM keyframes
+              WHERE observation_id = :id
+              ORDER BY framenum, keyframe_id`,
+            { id: observation.observation_id }
+        );
+        const sent = [...keyframes].sort((a, b) => a.framenum - b.framenum);
+
+        expect(stored).toHaveLength(sent.length);
+        expect(stored.map((keyframe) => keyframe.framenum)).toEqual(
+            sent.map((keyframe) => keyframe.framenum)
+        );
+        expect(stored.map((keyframe) => keyframe.confidence)).toEqual(
+            sent.map((keyframe) => keyframe.confidence)
+        );
+        expect(stored.some((keyframe) => keyframe.confidence === null)).toBe(true);
+    });
 });
 
 /**
