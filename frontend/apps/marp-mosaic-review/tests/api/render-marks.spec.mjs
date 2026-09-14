@@ -77,9 +77,9 @@ test.describe('two kinds of mark, and two commit buttons', () => {
     /* Still exactly one badge per tile (A6). A second element able to reach that slot is
        how a click on a committed tile comes to look like it did nothing. */
     await expect(tile.locator('.badge')).toHaveCount(1);
-    /* And it is not the panel's target: an acceptance has nothing in the reason
-       vocabulary to say. */
-    await expect(tile.locator('[data-badge]')).toHaveCount(0);
+    /* #172 gives accepted decisions optional notes too, so their sole badge is now the
+       details panel's target even though they still carry no exception reason. */
+    await expect(tile.locator('[data-badge]')).toHaveCount(1);
   });
 
   test('R2: in training the accept mark is PROMOTED, in training’s own colour',
@@ -370,10 +370,10 @@ test.describe('two kinds of mark, and two commit buttons', () => {
     }
   });
 
-  test('A6: an accept mark does not dim the picture the way an exception does',
+  test('#167: neither an exception nor an accept mark dims the evidence',
     async ({ page }) => {
-      /* Colour is not carrying the distinction on its own: a judgement against a tile
-         makes it step back, and an acceptance is the opposite of that. */
+      /* #167 superseded the old dim-versus-bright distinction: outline pattern and
+         thickness carry decision state while the evidence pixels remain unchanged. */
       await page.goto(undecided());
       await expectRealBacking(page);
       await ready(page);
@@ -382,8 +382,8 @@ test.describe('two kinds of mark, and two commit buttons', () => {
       const img = page.locator(`.tile[data-id="${id}"] img`);
 
       await tile.click();
-      const dimmed = await img.evaluate((el) => getComputedStyle(el).filter);
-      expect(dimmed).not.toBe('none');
+      const except = await img.evaluate((el) => getComputedStyle(el).filter);
+      expect(except).toBe('none');
 
       await tile.click({ button: 'right' });
       const bright = await img.evaluate((el) => getComputedStyle(el).filter);
@@ -628,7 +628,7 @@ test.describe('#151 the account menu', () => {
   });
 
   test('R23: the header draws one shared account control, and it is the shared one',
-    async ({ page }, info) => {
+    async ({ page }) => {
       await page.goto(undecided());
       await expectRealBacking(page);
       await ready(page);
@@ -637,14 +637,8 @@ test.describe('#151 the account menu', () => {
       expect(seen.controls, 'exactly one, drawn by the shared component').toBe(1);
       await expect(page.locator('[data-account-menu]')).toBeHidden();
 
-      /* **On a phone this app puts the account menu away on purpose**, and has since
-         before this component existed: `.hdr .right` is hidden below 760px because the
-         width belongs to the mosaic. Converting to the shared control does not change that
-         decision, so the phone asserts it rather than skipping past it. */
-      if (isPhone(info)) {
-        await expect(page.locator('[data-account-button]')).toBeHidden();
-        return;
-      }
+      /* #166 superseded #151's phone exception: the one shared control stays visible at
+         desktop, phone portrait, and phone landscape sizes. */
       await expect(page.locator('[data-account-button]')).toBeVisible();
     });
 

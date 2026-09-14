@@ -196,8 +196,10 @@ test('#172 translucent overlays leave the observation visible', async ({ page, r
     expect(await alpha(tile.locator('.rtag'))).toBeLessThan(0.4);
     expect(await alpha(tile.locator('.cap'))).toBe(0);
 
-    await page.goto(`./?mode=training&species=${claim.lone.species}&line=${claim.lone.line}`
-      + '&trainingDisposition=excluded');
+    /* An excluded training row carries its reason in this corner, so it deliberately has
+       no frame-count chip. Check the frame overlay on the ordinary training candidates,
+       which is what the fixture test did after switching modes. */
+    await page.goto('./?mode=training');
     await ready(page);
     await expect(page.locator('.frames').first()).toBeVisible();
     expect(await alpha(page.locator('.frames').first())).toBeLessThan(0.4);

@@ -44,6 +44,16 @@ let ledger = null;
 test.beforeEach(({ page }) => { ledger = journal(page); });
 test.afterEach(async ({ request }) => { await ledger.restore(request); });
 
+/** Chromium may expose a translucent `color-mix()` as either rgba() or color(srgb). */
+function rgbOf(colour) {
+  const values = (colour.match(/[\d.]+/g) || []).map(Number);
+  return colour.startsWith('color(srgb')
+    ? values.slice(0, 3).map((channel) => channel * 255)
+    : values.slice(0, 3);
+}
+
+const isRgb = (colour) => /^(?:rgba?\(|color\(srgb\s)/.test(colour);
+
 test.describe('taking a decision back reads as heading towards accepted', () => {
   test('the TAKING BACK badge is green, not amber', async ({ page }) => {
     await page.goto(undecided());
@@ -73,9 +83,9 @@ test.describe('taking a decision back reads as heading towards accepted', () => 
     await expect.poll(async () => {
       colour = await badge.evaluate((el) => getComputedStyle(el).backgroundColor)
         .catch(() => '');
-      return /^rgba?\(/.test(colour) ? 'read' : `not a colour yet: ${JSON.stringify(colour)}`;
+      return isRgb(colour) ? 'read' : `not a colour yet: ${JSON.stringify(colour)}`;
     }, { message: 'never got a colour off the TAKING BACK badge' }).toBe('read');
-    const [r, g, b] = colour.match(/\d+/g).map(Number);
+    const [r, g, b] = rgbOf(colour);
     expect(g, `green channel should dominate, got ${colour}`).toBeGreaterThan(r + 40);
     expect(g, `and it should not be the amber it used to be, got ${colour}`).toBeGreaterThan(b);
     /* Distinct from the settled greens, which are the acid --green ramp. */
@@ -99,10 +109,10 @@ test.describe('the two workflows do not wear the same colour', () => {
     await expect.poll(async () => {
       rgb = await badge.evaluate((el) => getComputedStyle(el).backgroundColor)
         .catch(() => '');
-      return /^rgba?\(/.test(rgb) ? 'read' : `not a colour yet: ${JSON.stringify(rgb)}`;
+      return isRgb(rgb) ? 'read' : `not a colour yet: ${JSON.stringify(rgb)}`;
     }, { message: `never got a colour off the ${label} badge` }).toBe('read');
 
-    return rgb.match(/\d+/g).map(Number);
+    return rgbOf(rgb);
   }
 
   test('REVIEWED is green and PROMOTED is violet, and they are far apart', async ({ page }) => {
@@ -355,8 +365,8 @@ test.describe('a committed page wears the hue of the commit that did it', () => 
     });
 });
 
-test.describe('a judged tile steps back', () => {
-  test('flagging dims the image, as excluding already did', async ({ page }) => {
+test.describe('a judged tile leaves the evidence visible', () => {
+  test('#167: flagging does not dim the image', async ({ page }) => {
     await page.goto(undecided());
     await expectRealBacking(page);
     await ready(page);
@@ -368,10 +378,6 @@ test.describe('a judged tile steps back', () => {
     const after = await img.evaluate((el) => getComputedStyle(el).filter);
 
     expect(before).toBe('none');
-    expect(after, 'a flagged tile should be dimmed').toContain('brightness');
-    /* Lighter than an exclusion: flagged work stays in view to be resolved. */
-    const b = Number(after.match(/brightness\(([\d.]+)\)/)[1]);
-    expect(b).toBeGreaterThan(0.55);
-    expect(b).toBeLessThan(1);
+    expect(after, 'a scientific decision must not alter the evidence image').toBe('none');
   });
 });

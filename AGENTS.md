@@ -485,6 +485,13 @@ npm run testing-db status              # what is there, and which dump it came f
 npm run testing-db reset               # throw it away and load the dump again
 ```
 
+**A new migration means both local databases need updating before database-backed
+verification.** Run `npx sequelize-cli db:migrate` for the development database, then
+`npm run testing-db reset` so the reusable testing database is rebuilt from its dump and
+migrated through the same branch. The browser launcher reuses an existing testing database;
+reuse is intentionally fast, but it cannot make a database created on an older branch
+understand a migration that arrived later.
+
 The first run builds `marp_test` from the newest dump under `.marp/local/corpus/`, gives
 it a thumbnails directory of its own, migrates it up to this branch, and creates the
 reviewer login. Every run after that finds it and starts in seconds. **The output says

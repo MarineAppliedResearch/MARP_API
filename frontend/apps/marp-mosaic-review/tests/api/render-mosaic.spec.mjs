@@ -23,6 +23,7 @@ import { journal } from './journal.mjs';
 import {
   expectRealBacking,
   freshTile,
+  isPhone,
   openOnBrokenPicture,
   ready,
   undecided,
@@ -80,7 +81,6 @@ test.describe('the mosaic renders and stays settled', () => {
     await expect(noImage).toHaveClass(/marked/);
   });
 });
-
 test.describe('marking and the flag panel', () => {
   test('a tap marks the tile and draws its badge', async ({ page }) => {
     await page.goto(undecided());
@@ -92,7 +92,7 @@ test.describe('marking and the flag panel', () => {
     await expect(tile.locator('.badge')).toContainText('FLAGGED');
   });
 
-  test('the badge opens the panel, and clicking away closes it', async ({ page }) => {
+  test('the badge opens the panel, and dismissing away closes it', async ({ page }, info) => {
     await page.goto(undecided());
     await expectRealBacking(page);
     await ready(page);
@@ -101,11 +101,16 @@ test.describe('marking and the flag panel', () => {
     await tile.locator('[data-badge]').click();
     await expect(page.locator('.pick')).toBeVisible();
 
-    await page.locator('#field').click({ position: { x: 5, y: 5 } });
+    /* #172 makes the phone panel a viewport sheet, so there may be no exposed field pixel
+       to physically click. Dispatch the field gesture there; desktop still exercises
+       ordinary hit-testing. */
+    if (isPhone(info)) await page.locator('#field').dispatchEvent('click');
+    else await page.locator('#field').click({ position: { x: 5, y: 5 } });
     await expect(page.locator('.pick')).toHaveCount(0);
   });
 
-  test('the panel stays inside the mosaic even on the bottom row', async ({ page }) => {
+  test('the panel stays inside its visible container even on the bottom row',
+    async ({ page }, info) => {
     await page.goto(undecided());
     await expectRealBacking(page);
     await ready(page);
@@ -116,9 +121,20 @@ test.describe('marking and the flag panel', () => {
     const panel = page.locator('.pick');
     await expect(panel).toBeVisible();
     const box = await panel.boundingBox();
-    const field = await page.locator('#field').boundingBox();
-    expect(box.y).toBeGreaterThanOrEqual(field.y - 1);
-    expect(box.y + box.height).toBeLessThanOrEqual(field.y + field.height + 1);
+    if (isPhone(info)) {
+      /* #172 positions the sheet against the visual viewport so a phone keyboard cannot
+         strand its note editor; it is intentionally no longer field-relative. */
+      const viewport = await page.evaluate(() => ({
+        top: window.visualViewport ? window.visualViewport.offsetTop : 0,
+        height: window.visualViewport ? window.visualViewport.height : window.innerHeight
+      }));
+      expect(box.y).toBeGreaterThanOrEqual(viewport.top - 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.top + viewport.height + 1);
+    } else {
+      const field = await page.locator('#field').boundingBox();
+      expect(box.y).toBeGreaterThanOrEqual(field.y - 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(field.y + field.height + 1);
+    }
   });
 
   test('dismissing the panel does not also unmark the tile', async ({ page }) => {
@@ -226,4 +242,3 @@ test.describe('every mode renders', () => {
     });
   }
 });
-

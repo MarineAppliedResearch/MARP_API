@@ -1,7 +1,6 @@
 # Verification — MARP_API #157: retire the Mosaic fixture
 
-This is the G3 verification package. No command in this plan has been run as part of the
-takeover. The human reviews the plan before G4 begins.
+This is the approved G3 verification package and its recorded G4 evidence.
 
 ## What each test proves
 
@@ -127,4 +126,34 @@ After the automated run, inspect its summary for all of the following:
 
 ## Results
 
-Not run. Awaiting human approval of this plan.
+Run on 2026-09-13 on `157-retire-fixture`, after merging current `develop` and #172.
+
+- `git diff --check`: passed. Git reported only the repository's existing LF-to-CRLF
+  checkout warnings; it found no whitespace errors.
+- `npm run test:unit`: passed. All 68 source files parsed and all 278 unit checks passed.
+  The first sandboxed attempt falsely reported parse failures because the sandbox denied
+  the child processes used by the parser; the same command outside that restriction passed.
+- `npm run test:subsystems`: passed. All 52 Jest suites belonged to exactly one subsystem.
+- `npm run testing-db -- reset`: passed and rebuilt the disposable testing database from
+  its corpus dump, including the #172 note migration. `npx sequelize-cli db:migrate` also
+  brought the disposable development database up to the branch schema. The browser
+  launcher's reuse of the older test database had first failed with `column rc.note does
+  not exist`; that failure is why the database-refresh rule was added to `AGENTS.md`.
+- `npm run test:mosaic`: passed: 7 suites, 248 checks, no failures. An earlier run exposed
+  an intermittent concurrency check whose final projection disagreed with its derived
+  history; the named check passed when rerun alone, and the complete Mosaic group then
+  passed. No unrelated concurrency implementation was changed in #157.
+- The API browser tier exercised every spec at both configured viewports against the real
+  server and disposable testing database. Assertions made stale by merged #166, #167 and
+  #172 were aligned with their delivered behavior, then their affected files passed:
+  decision-details overlays 2/2, colour 14/14, mark/account behavior 2/2, and mosaic panel
+  behavior 24/24. The remaining 348-case segment reported 340 passes, 7 intentional
+  viewport/production-depth skips and one intermittent phone geometry failure; that exact
+  geometry check immediately passed at both viewports (2/2). No production CSS was changed
+  for a failure that could not be reproduced.
+- The launcher stopped each API process it started and its before/after journal checks did
+  not report damaged current-review state. The append-only test history grew as documented;
+  resetting the disposable testing database remains the way to discard that test history.
+
+Not covered, as planned: production-scale performance, live Jellyfin extraction, production
+`mare_v1`, and a narrated walkthrough. Those are not evidence for fixture retirement.
