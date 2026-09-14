@@ -314,6 +314,8 @@ class GpuRepository {
                         a.progress_done,
                         a.progress_total,
                         a.progress_unit,
+                        a.progress_phase,
+                        a.progress_elapsed_s,
                         j.id               AS job_id,
                         j.kind             AS job_kind,
                         j.state            AS job_state,
@@ -813,7 +815,7 @@ class GpuRepository {
      * @param {number} params.workerId - Worker it believes it is.
      * @param {number} params.leaseEpoch - Lease epoch it believes it holds.
      * @param {string} [params.state] - Where it says it is: preparing, running, uploading.
-     * @param {Object} [params.progress] - `{done, total, unit}`, overwritten in place.
+     * @param {Object} [params.progress] - Latest counters, phase and elapsed seconds.
      * @returns {Promise<Object>} `{action, reason, lease_expires_at, heartbeat_seconds, attempt}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
@@ -885,7 +887,9 @@ class GpuRepository {
                         lease_expires_at = NOW() + (:leaseSeconds * INTERVAL '1 second'),
                         progress_done = COALESCE(:progressDone, progress_done),
                         progress_total = COALESCE(:progressTotal, progress_total),
-                        progress_unit = COALESCE(:progressUnit, progress_unit)
+                        progress_unit = COALESCE(:progressUnit, progress_unit),
+                        progress_phase = COALESCE(:progressPhase, progress_phase),
+                        progress_elapsed_s = COALESCE(:progressElapsedSeconds, progress_elapsed_s)
                   WHERE id = :attemptId
                   RETURNING *`,
                 {
@@ -896,6 +900,10 @@ class GpuRepository {
                         progressDone: progress && progress.done !== undefined ? progress.done : null,
                         progressTotal: progress && progress.total !== undefined ? progress.total : null,
                         progressUnit: progress && progress.unit !== undefined ? progress.unit : null,
+                        progressPhase: progress && progress.phase !== undefined ? progress.phase : null,
+                        progressElapsedSeconds: progress && progress.elapsed_s !== undefined
+                            ? progress.elapsed_s
+                            : null,
                     },
                     type: QueryTypes.SELECT,
                     transaction,
