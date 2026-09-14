@@ -127,6 +127,11 @@ Approved by the human after manual testing on 2026-09-13.
   one expected-key ordering error and then a corpus-guard failure caused by rows left by
   the interrupted run. After correcting the expectation and confirming the focused file
   cleaned up, the named group passed cleanly.
+- Review schema: after CI exposed that the schema helper omitted
+  `character_maximum_length`, the focused file passed 34 tests and `npm run test:review`
+  passed 3 suites and 49 tests. Both duplicate CI API jobs had failed with `Expected: 64`
+  and `Received: undefined`; adding the missing information-schema selection corrected the
+  assertion without changing the schema.
 - Client unit: `npm run test:app:mosaic-review:unit` passed syntax checking for 57 files
   and all 308 unit tests. Its first sandboxed invocation reported `57 files will not
   parse.` because Node child processes were refused without stderr; the same command with

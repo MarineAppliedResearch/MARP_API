@@ -72,7 +72,7 @@ async function rows(sql, replacements = {}) {
  */
 async function column(table, column) {
     const [found] = await rows(
-        `SELECT data_type, is_nullable, column_default
+        `SELECT data_type, is_nullable, column_default, character_maximum_length
            FROM information_schema.columns
           WHERE table_schema = 'public' AND table_name = :table AND column_name = :column`,
         { table, column }
