@@ -21,6 +21,15 @@
  */
 const ME = Object.freeze({ user_id: 5, name: 'I. Travers', username: 'itravers' });
 
+const initialsOfUsername = (username) => {
+  const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
+  if (!parts.length) return null;
+  const firstPart = Array.from(parts[0]);
+  return (parts.length > 1
+    ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
+    : firstPart.slice(0, 2).join('')).toUpperCase();
+};
+
 import { matchesFilters, unanswerable } from './model/match.js';
 import { DIMENSIONS, DIMENSION, KIND, isActive } from './model/dimensions.js';
 /* The row column and the neutral *filter* value for each status dimension, declared once
@@ -1161,18 +1170,22 @@ export const MarpData = {
       const accepted = mode === 'scientific' ? 'reviewed' : 'promoted';
       const exception = mode === 'scientific' ? 'flagged' : 'excluded';
       const reasonColumn = dim.reasonColumn;
+      const noteColumn = dim.noteColumn;
       /* One column per dimension, holding an **id** -- A13. The fixture used to write four
          name columns (`reviewed_by`, `flagged_by`, `training_approved_by`, `excluded_by`)
          that the endpoint's row has never carried, which is why the client's attribution
          silently became nothing the moment it met a real row (F8). */
       const reviewerColumn = dim.reviewerColumn;
+      const reviewerInitialsColumn = dim.reviewerInitialsColumn;
 
       /* An explicit take-back: `undecided` is the absence of a record, so a withdrawal
          clears the decision rather than storing a fourth value. */
       if (withdrawn.has(id)) {
         row[dim.column] = null;
         row[reasonColumn] = null;
+        row[noteColumn] = null;
         row[reviewerColumn] = null;
+        row[reviewerInitialsColumn] = null;
         reverted.push({ observation_id: id, outcome: 'withdrawn' });
         continue;
       }
@@ -1183,7 +1196,9 @@ export const MarpData = {
 
         row[dim.column] = exception;
         row[reasonColumn] = reason;
+        row[noteColumn] = (mark || {}).note || null;
         row[reviewerColumn] = ME.user_id;
+        row[reviewerInitialsColumn] = initialsOfUsername(ME.username);
         if (mode === 'scientific') row.flagged_at = new Date().toISOString();
 
         flagged.push({ observation_id: id, outcome: exception });
@@ -1193,7 +1208,9 @@ export const MarpData = {
 
       row[dim.column] = accepted;
       row[reasonColumn] = null;
+      row[noteColumn] = (mark || {}).note || null;
       row[reviewerColumn] = ME.user_id;
+      row[reviewerInitialsColumn] = initialsOfUsername(ME.username);
       reviewed.push({ observation_id: id, outcome: accepted });
     }
 

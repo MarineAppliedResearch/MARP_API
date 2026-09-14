@@ -188,6 +188,121 @@ test.describe('marking and the flag panel', () => {
     expect(box.y + box.height).toBeLessThanOrEqual(field.y + field.height + 1);
   });
 
+  test('confidence chip shows two-digit percent above the caption and omits null',
+    async ({ page }) => {
+      await page.goto('./');
+      await ready(page);
+
+      const tile = page.locator('.tile').first();
+      const expected = await tile.evaluate((element) => {
+        const id = Number(element.dataset.id);
+        const row = window.MARP.state.rows.find((candidate) => candidate.observation_id === id);
+        return String(Math.round(Number(row.confidence) * 100)).padStart(2, '0');
+      });
+      await expect(tile.locator('.confidence-chip')).toHaveText(expected);
+
+      const positions = await tile.evaluate((element) => {
+        const chip = element.querySelector('.confidence-chip').getBoundingClientRect();
+        const caption = element.querySelector('.cap').getBoundingClientRect();
+        return { chipTop: chip.top, chipBottom: chip.bottom,
+          captionTop: caption.top, captionBottom: caption.bottom };
+      });
+      expect(positions.chipTop).toBeGreaterThanOrEqual(positions.captionTop - 1);
+      expect(positions.chipBottom).toBeLessThanOrEqual(positions.captionBottom + 1);
+
+      const promoted = await tileCarrying(page, 'training_decision', 'promoted');
+      const overlays = await promoted.evaluate((element) => {
+        const confidence = element.querySelector('.confidence-chip').getBoundingClientRect();
+        const tag = element.querySelector('.rtag').getBoundingClientRect();
+        return {
+          confidence: { left: confidence.left, right: confidence.right,
+            top: confidence.top, bottom: confidence.bottom },
+          tag: { left: tag.left, right: tag.right, top: tag.top, bottom: tag.bottom }
+        };
+      });
+      const overlap = overlays.confidence.left < overlays.tag.right
+        && overlays.confidence.right > overlays.tag.left
+        && overlays.confidence.top < overlays.tag.bottom
+        && overlays.confidence.bottom > overlays.tag.top;
+      expect(overlap).toBe(false);
+
+      const id = Number(await tile.getAttribute('data-id'));
+      await page.evaluate(async (observationId) => {
+        const { state } = await import('./src/store.js');
+        const { renderGrid } = await import('./src/ui/grid.js');
+        state.rows.find((row) => row.observation_id === observationId).confidence = null;
+        renderGrid();
+      }, id);
+      await expect(page.locator(`.tile[data-id="${id}"] .confidence-chip`)).toHaveCount(0);
+    });
+
+  test('mobile details viewport keeps the note reachable without blocking pull-to-refresh',
+    async ({ page }, info) => {
+      test.skip(info.project.name !== 'phone', 'about the phone keyboard layout');
+      await page.goto('./');
+      await ready(page);
+
+      const tile = page.locator('.tile:not(.failed):not(.queued)').first();
+      await tile.click();
+      await tile.locator('[data-badge]').click();
+      const note = page.locator('#decisionNote');
+      await note.focus();
+
+      /* A software keyboard reduces the visual viewport without changing the document's
+         meaning. Chromium's headless keyboard cannot do that, so resize to the remaining
+         phone-height after focus and let the same visualViewport event drive the panel. */
+      await page.setViewportSize({ width: 412, height: 420 });
+      await expect(note).toBeFocused();
+
+      /* The first character changes the tile from untouched to pending and may redraw the
+         panel once. Capture the replacement; the rest of the note must keep this node. */
+      await note.pressSequentially('p');
+      await expect(note).toBeFocused();
+      await page.evaluate(() => {
+        window.__noteElement = document.querySelector('#decisionNote');
+      });
+      await note.pressSequentially('hone note', { delay: 15 });
+
+      const geometry = await page.evaluate(() => {
+        const viewport = window.visualViewport;
+        const panel = document.querySelector('.pick');
+        const editor = document.querySelector('#decisionNote');
+        const p = panel.getBoundingClientRect();
+        const n = editor.getBoundingClientRect();
+        return {
+          viewportTop: viewport ? viewport.offsetTop : 0,
+          viewportBottom: (viewport ? viewport.offsetTop + viewport.height : window.innerHeight),
+          panelTop: p.top,
+          panelBottom: p.bottom,
+          noteTop: n.top,
+          noteBottom: n.bottom,
+          panelOverflow: getComputedStyle(panel).overflowY,
+          fieldOverscroll: getComputedStyle(document.querySelector('#field')).overscrollBehaviorY,
+          rootOverscroll: getComputedStyle(document.documentElement).overscrollBehaviorY,
+          rootOverflow: getComputedStyle(document.documentElement).overflowY,
+          bodyPosition: getComputedStyle(document.body).position,
+          bodyOverflow: getComputedStyle(document.body).overflowY,
+          sameNote: editor === window.__noteElement
+        };
+      });
+
+      expect(geometry.panelTop).toBeGreaterThanOrEqual(geometry.viewportTop);
+      expect(geometry.panelBottom).toBeLessThanOrEqual(geometry.viewportBottom + 1);
+      expect(geometry.noteTop).toBeGreaterThanOrEqual(geometry.viewportTop);
+      expect(geometry.noteBottom).toBeLessThanOrEqual(geometry.viewportBottom + 1);
+      expect(geometry.panelOverflow).toBe('auto');
+      expect(geometry.fieldOverscroll).toBe('auto');
+      expect(geometry.rootOverscroll).toBe('auto');
+      expect(geometry.rootOverflow).toBe('auto');
+      expect(geometry.bodyPosition).toBe('static');
+      /* Chromium propagates a visible body overflow to the root and reports the body as
+         auto. Either computed value leaves the document scrollable; hidden is the bug. */
+      expect(['visible', 'auto']).toContain(geometry.bodyOverflow);
+      /* Typing must preserve the focused textarea node. Replacing it is what dismisses or
+         repositions a phone keyboard, regardless of other background picker redraws. */
+      expect(geometry.sameNote).toBe(true);
+    });
+
   test('dismissing the panel does not also unmark the tile', async ({ page }) => {
     /* Clicking away used to close the panel AND toggle the tile under the cursor,
        which silently undid the very mark the panel belonged to. */
@@ -399,6 +514,68 @@ async function tileById(page, id, pages = 6) {
 }
 
 test.describe('every workflow\'s tags are visible from every mode', () => {
+  test('translucent image overlays leave the thumbnail visible', async ({ page }) => {
+    await page.goto('./');
+    await ready(page);
+
+    const borrowedTile = await tileCarrying(page, 'training_decision', 'excluded');
+    const alpha = (locator) => locator.evaluate((element) => {
+      const color = getComputedStyle(element).backgroundColor;
+      const match = color.match(/^rgba?\([^,]+,[^,]+,[^,]+(?:,\s*([\d.]+))?\)$/);
+      if (match) return match[1] === undefined ? 1 : Number(match[1]);
+      /* Chromium serializes color-mix() as color(srgb r g b / alpha). */
+      const modern = color.match(/\/\s*([\d.]+)\s*\)$/);
+      return modern ? Number(modern[1]) : 1;
+    });
+
+    expect(await alpha(borrowedTile.locator('.rtag'))).toBeLessThan(0.4);
+    expect(await alpha(borrowedTile.locator('.cap'))).toBe(0);
+
+    await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+    await ready(page);
+    await expect(page.locator('.frames').first()).toBeVisible();
+    expect(await alpha(page.locator('.frames').first())).toBeLessThan(0.4);
+  });
+
+  test('recorded primary badges show the decision author initials in all four states',
+    async ({ page }) => {
+      const cases = [
+        ['scientific', 'reviewStatus', 'reviewed'],
+        ['scientific', 'reviewStatus', 'flagged'],
+        ['training', 'trainingDisposition', 'promoted'],
+        ['training', 'trainingDisposition', 'excluded'],
+      ];
+
+      for (const [mode, dimension, decision] of cases) {
+        await page.goto('./');
+        await ready(page);
+        if (mode === 'training') {
+          await page.locator('.seg button', { hasText: 'Training Data Review' }).click();
+          await ready(page);
+        }
+
+        /* The generated fixture reflects a real corpus snapshot and may legitimately
+           contain none of one state (today it has no scientific flags). Put each state
+           on a rendered row so this remains a rendering test rather than a corpus test. */
+        await page.evaluate(async ([key, value]) => {
+          const { state } = await import('./src/store.js');
+          const { STATUS_DIMENSIONS } = await import('./src/model/modes.js');
+          const { renderGrid } = await import('./src/ui/grid.js');
+          const row = state.rows[0];
+          const status = STATUS_DIMENSIONS[key];
+          row[status.column] = value;
+          row[status.reviewerInitialsColumn] = 'GH';
+          renderGrid();
+        }, [dimension, decision]);
+
+        const badge = page.locator('.tile .badge', { hasText: decision.toUpperCase() }).first();
+        await expect(badge).toBeVisible();
+        const author = badge.locator('.reviewer-attribution');
+        await expect(author).toHaveText(/^[A-Z]{2}$/);
+        await expect(author).toHaveCSS('border-radius', '50%');
+      }
+    });
+
   test('R1: a training exclusion is drawn while reviewing science', async ({ page }) => {
     const errors = watchErrors(page);
     await page.goto('./');
@@ -432,8 +609,9 @@ test.describe('every workflow\'s tags are visible from every mode', () => {
     const tag = tile.locator('.rtag');
     await expect(tag).toBeVisible();
     await expect(tag).toContainText('REVIEWED');
-    /* The borrowed tag says what happened, not who: the name is in the tooltip. */
+    /* Attribution stays compact on the face and the tooltip says the same author. */
     await expect(tag).toHaveAttribute('title', /Scientific data review: reviewed/);
+    await expect(tag.locator('.reviewer-attribution')).toHaveText(/^[A-Z]{2}$/);
   });
 
   test('R1: Delete Mode shows the training tags it used to hide', async ({ page }) => {

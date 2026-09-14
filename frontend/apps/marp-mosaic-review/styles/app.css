@@ -313,10 +313,10 @@ body.rail-collapsed .fcount { display: grid; }
         background: #101215; outline: 1px solid var(--tile-bd); outline-offset: -1px;
         padding: 0; border: 0; display: block; touch-action: manipulation; }
 .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 5px 3.5px;
-       background: rgba(232, 240, 248, .10);
-       -webkit-backdrop-filter: blur(11px) saturate(1.15) brightness(.62);
-       backdrop-filter: blur(11px) saturate(1.15) brightness(.62);
+.cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 28px 3.5px 5px;
+       background: transparent;
+       -webkit-backdrop-filter: none;
+       backdrop-filter: none;
        border-top: 1px solid rgba(255, 255, 255, .16); font-size: 11.5px; color: #f7fafc;
        font-weight: 600; letter-spacing: .005em;
        line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -324,11 +324,22 @@ body.rail-collapsed .fcount { display: grid; }
 .badge { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 3px;
          padding: 1.5px 5px 1.5px 4px; border-radius: 2px; font-size: 8.5px; font-weight: 700; }
 .badge svg { width: 8px; height: 8px; display: block; flex: none; }
-.frames { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .82);
+.note-indicator { color: currentColor; font-size: 7px; line-height: 1; margin-left: 1px; }
+.reviewer-attribution { width: 12px; height: 12px; margin-left: 1px; flex: none;
+                        display: inline-flex; align-items: center; justify-content: center;
+                        border: 1px solid currentColor; border-radius: 50%;
+                        font-size: 7px; line-height: 1; font-weight: 900; opacity: .9;
+                        white-space: nowrap; }
+.frames { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .30);
           color: #c2cad3; font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600; }
-.reason-chip { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .88);
+.reason-chip { position: absolute; top: 4px; right: 4px; background: rgba(8, 9, 11, .34);
                border: 1px solid rgba(246, 196, 83, .55); color: var(--amber-300);
                font-size: 8px; padding: 1.5px 4px; border-radius: 2px; font-weight: 600; }
+.confidence-chip { position: absolute; right: 4px; bottom: 3px; z-index: 4;
+                   min-width: 18px; padding: 1.5px 4px; border-radius: 2px;
+                   background: rgba(8, 9, 11, .30); color: #f7fafc;
+                   font-size: 8px; line-height: 1.2; font-weight: 800;
+                   text-align: center; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
 
 /* state treatments — always shape or pattern as well as hue */
 .b-flag { background: var(--amber-300); color: #241a02; }
@@ -398,7 +409,7 @@ body[data-mode="training"] .tile.marked.recorded { outline-width: 1px; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none } }
 
 /* ---------------------------------------------------------------- picker */
-.pick { position: absolute; z-index: 8; width: 452px; background: #0a1826;
+.pick { position: absolute; z-index: 8; width: min(452px, calc(100% - 16px)); background: #0a1826;
         border: 1px solid rgba(246, 196, 83, .45); border-radius: 8px;
         box-shadow: 0 20px 54px rgba(0, 0, 0, .72); padding: 13px 14px 12px; }
 .pick h4 { margin: 0 0 2px; font-size: 13px; color: var(--white); font-weight: 600;
@@ -413,6 +424,13 @@ body[data-mode="training"] .tile.marked.recorded { outline-width: 1px; }
         color: var(--text); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .chip svg { width: 12px; height: 12px; }
 .chip.on { background: var(--amber-300); border-color: var(--amber-300); color: #241a02; }
+.note-label { display: flex; align-items: center; gap: 8px; margin-top: 12px;
+              padding-top: 11px; border-top: 1px solid var(--line); color: var(--white);
+              font-size: 12px; font-weight: 600; }
+.decision-note { width: 100%; margin-top: 7px; resize: vertical; min-height: 72px;
+                 padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border);
+                 background: #061523; color: var(--white); font: 12px/1.45 inherit; }
+.decision-note:focus { outline: 2px solid rgba(42, 214, 220, .45); outline-offset: 1px; }
 .correct { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
 .correct h5 { margin: 0 0 8px; font-size: 12px; color: var(--white); font-weight: 600;
               display: flex; align-items: center; gap: 8px; }
@@ -575,6 +593,17 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 .tile.out-reverted { outline: 3px dashed var(--mint-400); }
 .b-rev { background: var(--mint-400); color: #052015; }
 
+/* These colours identify decisions, but they sit over the evidence being judged. Keep
+   the hue and text solid while letting the photograph remain visible underneath. Delete
+   retains its established treatment and is deliberately absent from this list. */
+.tile .b-flag { background: color-mix(in srgb, var(--amber-300) 32%, transparent); }
+.tile .b-chg  { background: color-mix(in srgb, var(--cyan-300) 32%, transparent); }
+.tile .b-oth  { background: rgba(65, 72, 82, .30); }
+.tile .b-exc  { background: color-mix(in srgb, var(--grey-400) 32%, transparent); }
+.tile .b-pro  { background: color-mix(in srgb, var(--violet-400) 32%, transparent); }
+.tile .b-out  { background: color-mix(in srgb, var(--green-400) 32%, transparent); }
+.tile .b-rev  { background: color-mix(in srgb, var(--mint-400) 32%, transparent); }
+
 .menu .msearch { width: 100%; height: 30px; margin-bottom: 5px; padding: 0 9px; border-radius: 4px;
                  background: var(--navy-1000); border: 1px solid var(--border); color: var(--white);
                  font: inherit; font-size: 12px; }
@@ -585,6 +614,21 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
 /* On a phone the rail cannot take a third of the width, and the header cannot wrap.
    The mosaic is the application, so everything else gets out of its way. */
 @media (max-width: 760px) {
+  /* Let a downward drag at the top of the mosaic reach the browser. The desktop field
+     contains overscroll so its wheel does not move surrounding chrome. The root was also
+     fixed with overflow hidden, which meant changing overscroll-behavior alone still gave
+     the browser no page to pull. On a phone the app remains one dynamic viewport tall, but
+     its root participates in native overscroll again. */
+  html { height: 100%; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: auto; }
+  body { position: static; inset: auto; height: auto; min-height: 100%;
+         overflow-x: hidden; overflow-y: visible; overscroll-behavior-y: auto; }
+  .field { overscroll-behavior-y: auto; }
+
+  /* The details panel becomes a viewport sheet while the phone keyboard is open. JS
+     supplies the visual viewport's live top and height because mobile browsers do not
+     agree that a fixed element or 100dvh should shrink with the keyboard. */
+  .pick { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+
   .grid { --min-tile: 96px; }
   .app { --hdr-h: 40px; --sub-h: 26px; --foot-h: 44px; }
   .hdr { gap: 8px; padding: 0 8px; }

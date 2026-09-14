@@ -117,7 +117,8 @@ test('R1: a tag another workflow recorded is carried into every other mode', () 
 
 test('R1: a tag carries the workflow, the reason and the person for its tooltip', () => {
   const [tag] = borrowedTags('scientific', row(1, {
-    training_decision: 'excluded', exclusion_reason: 'Too small', training_reviewer_id: 77
+    training_decision: 'excluded', exclusion_reason: 'Too small', training_reviewer_id: 77,
+    training_reviewer_initials: 'GH'
   }));
   assert.equal(tag.key, 'trainingDisposition');
   assert.equal(tag.workflow, 'Training data review');
@@ -127,6 +128,7 @@ test('R1: a tag carries the workflow, the reason and the person for its tooltip'
      a real row the attribution was always null and nothing said so (F8). The interface may
      only say whether a decision was the reviewer's own, which is `decidedByMe`. */
   assert.equal(tag.reviewerId, 77);
+  assert.equal(tag.reviewerInitials, 'GH');
   assert.equal(tag.by, undefined, 'a name is not offered, deliberately');
 });
 
@@ -216,7 +218,7 @@ test('a tap toggles a mark, and a mark starts without a reason', () => {
   /* **`kind` moved into this assertion rather than the assertion being loosened** (#126
      R9). A mark now carries which of the two things it means, and the default is the one
      a mark has always had -- so a left click is still the exception. */
-  assert.deepEqual(marks.get(7), { kind: 'except', reason: null });
+  assert.deepEqual(marks.get(7), { kind: 'except', reason: null, note: null });
   marks = page.toggleMark(marks, 7);
   assert.equal(marks.has(7), false);
 });
@@ -227,6 +229,15 @@ test('choosing the same reason twice clears it', () => {
   assert.equal(marks.get(7).reason, 'Occluded');
   marks = page.setReason(marks, 7, 'Occluded');
   assert.equal(marks.get(7).reason, null);
+});
+
+test('#172: a note is independent of the structured reason', () => {
+  let marks = page.toggleMark(new Map(), 7);
+  marks = page.setNote(marks, 7, 'visible in the final keyframe');
+  marks = page.setReason(marks, 7, 'Occluded');
+  assert.deepEqual(marks.get(7), {
+    kind: 'except', reason: 'Occluded', note: 'visible in the final keyframe'
+  });
 });
 
 test('a reason cannot be set on something that is not marked', () => {

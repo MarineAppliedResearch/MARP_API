@@ -3892,7 +3892,7 @@
       },
       "MosaicRow": {
         "type": "object",
-        "description": "One mosaic tile: what the tile renders, plus the `version` the commit routes require back. `processor_name` and `lineId` are deliberately absent because nothing draws either, and who annotated something is what the permission catalog gates separately from observations:read. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.",
+        "description": "One mosaic tile: what the tile renders, plus the `version` the commit routes require back. `processor_name` and `lineId` remain absent. Current decision authors are represented only by compact initials derived from their existing usernames; full identity and activity reporting remain outside this observations:read route. `first_framenum` is here because it is free from the same lateral as `keyframe_count` and addressing a thumbnail needs it.",
         "properties": {
           "observation_id": {
             "type": "integer",
@@ -3976,11 +3976,26 @@
             "nullable": true,
             "example": null
           },
+          "review_note": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 1000,
+            "example": null,
+            "description": "Optional plain-text note on the current scientific decision."
+          },
           "review_reviewer_id": {
             "type": "integer",
             "nullable": true,
             "example": 42,
-            "description": "users.user_id of whoever made the current scientific decision, or null where there is none. **An id and not a name**, deliberately: the permission catalog separates reports:read from observations:read because it exposes who did how much work, and this row carries no processor_name for the same reason. A client compares it with its own authenticated principal to draw \"by you\", which needs no name at all. Without it the client's \"REVIEWED by you\" badge, the borrowed tag's attribution and its byMe derivation all silently became nothing, because it was reading four columns this row has never carried."
+            "description": "users.user_id of whoever made the current scientific decision, or null where there is none. The separate initials field is derived from the referenced user at query time."
+          },
+          "review_reviewer_initials": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 2,
+            "maxLength": 2,
+            "example": "IT",
+            "description": "Two uppercase initials derived at query time from the username of the current scientific decision author. A separated username uses the first and last parts; a single-part username uses its first two characters. No initials are stored on the review row."
           },
           "training_decision": {
             "type": "string",
@@ -3998,11 +4013,26 @@
             "nullable": true,
             "example": null
           },
+          "training_note": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 1000,
+            "example": null,
+            "description": "Optional plain-text note on the current training decision."
+          },
           "training_reviewer_id": {
             "type": "integer",
             "nullable": true,
             "example": 42,
-            "description": "users.user_id of whoever made the current training decision, or null where there is none. An id and not a name, for the same reason as review_reviewer_id."
+            "description": "users.user_id of whoever made the current training decision, or null where there is none. The separate initials field is derived from the referenced user at query time."
+          },
+          "training_reviewer_initials": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 2,
+            "maxLength": 2,
+            "example": "IT",
+            "description": "Two uppercase initials derived at query time from the username of the current training decision author. A separated username uses the first and last parts; a single-part username uses its first two characters. No initials are stored on the review row."
           },
           "keyframe_count": {
             "type": "integer",
@@ -4273,7 +4303,7 @@
           },
           "marks": {
             "type": "array",
-            "description": "What the reviewer marked, and what each mark means. Every id must be in `observations`. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. Only an exception takes a reason: a reason says what is wrong with an observation, so a reason on an `accept` mark is a 400. The delete route records no reason and refuses any, and refuses an `accept` mark outright because it has no accepted state.",
+            "description": "What the reviewer marked, and what each mark means. Every id must be in `observations`. The reason is optional and comes from a closed vocabulary -- the reviewer-facing list for that mode -- so an unknown value is a 400 rather than a truncated or silently dropped reason. Only an exception takes a reason: a reason says what is wrong with an observation, so a reason on an `accept` mark is a 400. A review or training mark of either kind may carry an optional plain-text note. Notes are trimmed, blank notes become null, and notes longer than 1,000 Unicode characters are refused. The delete route records neither reason nor note and refuses an `accept` mark outright because it has no accepted state.",
             "items": {
               "type": "object",
               "required": [
@@ -4288,6 +4318,12 @@
                   "type": "string",
                   "nullable": true,
                   "example": "Wrong species"
+                },
+                "note": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 1000,
+                  "example": "Tentative identification; check the final keyframe."
                 },
                 "kind": {
                   "type": "string",
@@ -14036,7 +14072,7 @@
     "/v2/mosaic/observations/review": {
       "post": {
         "summary": "Commit a page of scientific review decisions",
-        "description": "Accepts every observation in the request that is not marked as an exception, and records every exception as **flagged** with its reason. A mark carries a `kind`: `except` flags it, `accept` records it as reviewed on its own. A client reviewing a whole page sends the page; a client committing only what the reviewer marked sends only those observations, and nothing outside the request is read or changed either way. **This is not one transaction**: outcomes are per observation, so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. **The last commit wins**: a second reviewer is not refused, their decision replaces the first as the current one, and the first decision stays in the log. Nobody is locked out of an observation by whoever got there first. An observation whose `version` has moved since the page was fetched comes back `conflicted` with reason `version` and **its decision is not recorded at all**. An unexpected failure rolls the whole request back, so a failed commit applied nothing. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "description": "Accepts every observation in the request that is not marked as an exception, and records every exception as **flagged** with its structured reason and optional note. A mark carries a `kind`: `except` flags it, `accept` records it as reviewed on its own. A client reviewing a whole page sends the page; a client committing only what the reviewer marked sends only those observations, and nothing outside the request is read or changed either way. **This is not one transaction**: outcomes are per observation, so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. **The last commit wins**: a second reviewer is not refused, their decision replaces the first as the current one, and the first decision stays in the log. Nobody is locked out of an observation by whoever got there first. An observation whose `version` has moved since the page was fetched comes back `conflicted` with reason `version` and **its decision is not recorded at all**. An unexpected failure rolls the whole request back, so a failed commit applied nothing. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
         "tags": [
           "V2 · Mosaic"
         ],
@@ -14079,7 +14115,7 @@
     "/v2/mosaic/observations/training": {
       "post": {
         "summary": "Commit a page of training dispositions",
-        "description": "Promotes every observation in the request that is not marked as an exception, and records every exception as **excluded** with its reason. A mark carries a `kind`, exactly as on the review route: `except` excludes it, `accept` promotes it on its own. The scientific and training decisions are independent: this changes nothing about scientific review status. Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
+        "description": "Promotes every observation in the request that is not marked as an exception, and records every exception as **excluded** with its reason. Either decision may carry an optional note when sent as a mark. A mark carries a `kind`, exactly as on the review route: `except` excludes it, `accept` promotes it on its own. The scientific and training decisions are independent: this changes nothing about scientific review status. Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here. **A service token is refused with 403**: a review belongs to the person who made it, and a bearer principal's id is a service client rather than a user. Requires the `observations:write` permission.",
         "tags": [
           "V2 · Mosaic"
         ],

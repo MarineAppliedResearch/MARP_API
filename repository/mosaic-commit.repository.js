@@ -141,6 +141,7 @@ const MODES = {
  */
 const MARK_EXCEPT = 'except';
 const MARK_ACCEPT = 'accept';
+const NOTE_LIMIT = 1000;
 
 /** What the response says about itself (R6). A value, not a boolean, so a later
  * change is expressible without a rename. */
@@ -259,7 +260,7 @@ function readPage(observations) {
  * @param {*} marks - The request's `marks`.
  * @param {Map<number, number>} page - The page, from {@link readPage}.
  * @param {Object} mode - The entry from {@link MODES}.
- * @returns {Map<number, {kind: string, reason: string|null}>} observation_id to its mark.
+ * @returns {Map<number, {kind: string, reason: string|null, note: string|null}>} observation_id to its mark.
  * @throws {MosaicRequestError} If a mark is malformed, off the page, repeated, or carries an unknown kind or reason.
  */
 function readMarks(marks, page, mode) {
@@ -289,6 +290,20 @@ function readMarks(marks, page, mode) {
         }
 
         const reason = entry.reason == null || entry.reason === '' ? null : entry.reason;
+        if (entry.note != null && typeof entry.note !== 'string') {
+            throw new MosaicRequestError(`observation ${id} note must be a string or null`);
+        }
+        const note = entry.note == null || entry.note.trim() === '' ? null : entry.note.trim();
+        if (note !== null && Array.from(note).length > NOTE_LIMIT) {
+            throw new MosaicRequestError(
+                `observation ${id} note exceeds the ${NOTE_LIMIT} character limit`
+            );
+        }
+        if (note !== null && !mode.accepts) {
+            throw new MosaicRequestError(
+                `observation ${id} carries a note, and this route records no decision details`
+            );
+        }
         const kind = entry.kind == null ? MARK_EXCEPT : entry.kind;
 
         if (kind !== MARK_EXCEPT && kind !== MARK_ACCEPT) {
@@ -327,7 +342,7 @@ function readMarks(marks, page, mode) {
             );
         }
 
-        out.set(id, { kind, reason });
+        out.set(id, { kind, reason, note });
     }
 
     return out;
@@ -545,7 +560,7 @@ async function readyThumbnails(observationIds, transaction) {
  * until Phase 6, and guessing would put a wrong image behind a decision.
  *
  * @async
- * @param {Array<Object>} decisions - `{observation_id, version, decision, reason}` each.
+ * @param {Array<Object>} decisions - `{observation_id, version, decision, reason, note}` each.
  * @param {string} purpose - `scientific` or `training`.
  * @param {number} reviewerId - The acting `users.user_id`.
  * @param {Object} transaction - The commit's transaction.
@@ -561,15 +576,16 @@ async function appendDecisions(decisions, purpose, reviewerId, transaction) {
              SELECT (r->>'observation_id')::int AS observation_id,
                     (r->>'version')::int        AS version,
                      r->>'decision'             AS decision,
-                     r->>'reason'               AS reason
+                     r->>'reason'               AS reason,
+                     r->>'note'                 AS note
                FROM jsonb_array_elements($1::jsonb) AS r
          )
          INSERT INTO observation_reviews (
-                observation_id, purpose, decision, reason, reviewer_id,
+                observation_id, purpose, decision, reason, note, reviewer_id,
                 observation_version, reviewed_keyframe_count,
                 reviewed_keyframe_max_updated_at, representative_keyframe_id,
                 decided_at, created_at, updated_at)
-         SELECT o.observation_id, $2, w.decision, w.reason, $3,
+         SELECT o.observation_id, $2, w.decision, w.reason, w.note, $3,
                 o.version, k.keyframe_count,
                 k.max_updated_at, NULL,
                 NOW(), NOW(), NOW()
@@ -617,9 +633,9 @@ async function projectDecisions(reviewIds, transaction) {
 
     return db.sequelize.query(
         `INSERT INTO observation_review_current (
-                observation_id, purpose, review_id, decision, reason, reviewer_id,
+                observation_id, purpose, review_id, decision, reason, note, reviewer_id,
                 decided_at, observation_version)
-         SELECT r.observation_id, r.purpose, r.review_id, r.decision, r.reason,
+         SELECT r.observation_id, r.purpose, r.review_id, r.decision, r.reason, r.note,
                 r.reviewer_id, r.decided_at, r.observation_version
            FROM observation_reviews r
           WHERE r.review_id = ANY($1::bigint[])
@@ -627,6 +643,7 @@ async function projectDecisions(reviewIds, transaction) {
             SET review_id           = EXCLUDED.review_id,
                 decision            = EXCLUDED.decision,
                 reason              = EXCLUDED.reason,
+                note                = EXCLUDED.note,
                 reviewer_id         = EXCLUDED.reviewer_id,
                 decided_at          = EXCLUDED.decided_at,
                 observation_version = EXCLUDED.observation_version
@@ -784,7 +801,7 @@ async function commitReview(mode, request, principal, reviewerId) {
                 // Whose decision it is does not matter any more: the last
                 // commit wins, and a withdrawal is a commit like any other.
                 if (held) {
-                    attempt.push({ observation_id: id, version, decision: 'withdrawn', reason: null });
+                    attempt.push({ observation_id: id, version, decision: 'withdrawn', reason: null, note: null });
                 } else {
                     noop.push(id);
                 }
@@ -812,6 +829,7 @@ async function commitReview(mode, request, principal, reviewerId) {
                 version,
                 decision: excepted(marks, id) ? mode.marks : mode.accepts,
                 reason: excepted(marks, id) ? marks.get(id).reason : null,
+                note: marks.has(id) ? marks.get(id).note : null,
             });
         }
 

@@ -1,105 +1,161 @@
 ---
-task: MarineAppliedResearch/MARP_API#166
+task: MarineAppliedResearch/MARP_API#172
 repos: [MARP_API]
 status: ready-for-pr
-needs: []
+needs: [database-schema]
 ---
 
 ## Goal
 
-Restore each MARP application dropdown as that application's own menu while keeping the
-shared MARP appearance, account interaction, and route back to the main dashboard. The ML
-Dashboard and Picture Mosaic Reviewer menus must remain visible, usable, and above their
-application content on desktop and phone layouts.
+Make the Mosaic Reviewer's structured exception reasons and free-text decision notes part
+of the existing staged commit workflow. A reviewer can open details for reviewed, flagged,
+promoted, or excluded decisions; committed details survive a reload and remain independent
+between scientific and training review.
 
 ## Requirements
 
-- **R1** — The legacy dashboard, Machine Learning Dashboard, and Picture Mosaic Reviewer
-  each own their dropdown contents. Every menu has room for its host application to add
-  settings or other local actions later without adding them to every other application.
-- **R2** — The applications continue to share the account menu's visual treatment, identity
-  rendering, open/close interaction, Escape and outside-click dismissal, and sign-out
-  behavior.
-- **R3** — Every application menu identifies the signed-in user and provides a working link
-  to the main dashboard. The main dashboard itself provides separate visible links to each
-  application rather than putting those application links in every account menu.
-- **R4** — The Machine Learning Dashboard's open dropdown paints above its panels, tables,
-  top bar, and other visible application content at desktop, phone portrait, and phone
-  landscape viewports.
-- **R5** — The Picture Mosaic Reviewer exposes its account-menu control at the top of the
-  visible interface at desktop, phone portrait, and phone landscape viewports. The control
-  opens the menu and the open menu is neither clipped nor covered.
-- **R6** — Every displayed application-specific menu item performs its defined action; no
-  inert placeholder item is presented as a working control.
-- **R7** — Session-derived identity and signed-out behavior remain accurate. Signed-in menus
-  offer Sign out. Signed-out applications offer a Sign in link to the login surface. No
-  application introduces a literal person's name or initials.
-- **R8** — Rendered browser checks assert each application's expected menu contents,
-  interaction, bounding box, and stacking at desktop, phone portrait, and phone landscape
-  sizes. They exercise the Mosaic control and at least one working menu item.
-- **R9** — The public entry application's existing signed-in and signed-out account-menu
-  behavior remains functional while the shared behavior and styles change.
+- **R1** — Preserve two meanings in the scientific record. `reason` remains an optional
+  mode-specific structured value for flagged or excluded decisions. `note` is optional
+  plain text on any scientific or training decision.
+- **R2** — Add a nullable note field to both `observation_reviews`, the append-only history,
+  and `observation_review_current`, its maintained current projection. Existing rows remain
+  valid with a null note, and projection rebuild/integrity rules preserve the field.
+- **R3** — The Mosaic commit contract accepts a note with a marked decision, validates and
+  normalizes it according to the settled limits, writes it to history, and carries it into
+  the current projection. The page query returns the current scientific and training notes
+  independently.
+- **R4** — The status badge opens a decision-details panel for each recorded or pending
+  `reviewed`, `flagged`, `promoted`, and `excluded` state. Clicking the tile outside the
+  badge retains its existing mark/take-back behavior.
+- **R5** — Flagged and excluded details retain their current mode-specific reason choices.
+  Every reason may carry a note, and reviewed and promoted details expose the same note
+  editor without inventing an exception reason.
+- **R6** — There is no separate Save action. Changing a reason or note stages that tile,
+  makes the pending state visible, and keeps the edit in the current browser session until
+  it is committed, reverted, or superseded by another deliberate edit.
+- **R7** — Both existing commit controls include staged detail edits. `Commit Marked`
+  includes an otherwise already-recorded decision whose details changed, and a page commit
+  carries those details while retaining its established sweep behavior.
+- **R8** — A successful details edit appends a new `observation_reviews` row and updates
+  `observation_review_current`; it never mutates an earlier history row. A failed or refused
+  commit leaves the staged edit available and does not claim it was stored.
+- **R9** — After reload/re-query, a saved exception reason recreates its reason chip and
+  reopening any decision badge shows its saved note. The tile shows a compact indication
+  that a note exists, never the full free text; the badge remains the route back to it.
+- **R10** — Scientific reason/note and training reason/note remain independent when the
+  same observation has decisions in both purposes.
+- **R11** — Notes are plain text. User content is rendered safely as text in the editor and
+  never interpolated as active markup into the tile or panel.
+- **R12** — Named repository and real-API browser tests cover migration shape, history and
+  projection writes, query hydration, staged UI behavior, both commit buttons, reload
+  persistence, all four decision values, and purpose independence.
+- **R13** — On a phone, focusing and typing in the note editor keeps that editor inside the
+  keyboard-reduced visible viewport and leaves the panel vertically scrollable. A downward
+  drag from the top of the mosaic remains available to the browser's pull-to-refresh.
+- **R14** — Every recorded reviewed, flagged, promoted, or excluded badge and borrowed tag
+  shows the decision author's two initials in a consistent compact circular icon. The initials
+  are derived from the existing `reviewer_id` relationship and username at query time; no
+  identity row, review row, or initials column is added to the database. Existing exception
+  decisions seeded into the page's mark map retain their stored author's initials.
+- **R15** — Decision tags, supporting chips, and the species-name caption remain legible
+  while using translucent backgrounds that reveal more of the thumbnail underneath. Delete
+  Mode retains its established visual treatment.
+- **R16** — Each tile with a numeric confidence shows a compact lower-right confidence
+  chip inside the transparent species-caption line. The caption reserves its right edge
+  for the chip, while decision tags retain their established position above it. It renders
+  the rounded percentage with at least two
+  digits (`0.54` as `54`, `0.07` as `07`), does not overlap a decision tag, and a missing
+  confidence renders no chip.
 
 ## Open assumptions
 
-- [x] **A1 · product/UI · blocking** — Answered 2026-09-13: omit the old nonfunctional
-  *Preferences*, *Keyboard shortcuts*, *Tile density*, and *Worker service tokens* buttons.
-  Each menu contains identity, Dashboard, and Sign in or Sign out, with a host-owned slot for
-  real application settings or actions when those exist later.
-- [x] **A2 · product/UI · blocking** — Answered 2026-09-13: the legacy dashboard uses the
-  same identity, Dashboard, and Sign in or Sign out core. Its main page, outside the account
-  menu, links to every application. Existing dashboard controls such as Refresh remain where
-  they are.
-- [x] **A3 · product/UI · non-blocking** — Answered by the same rule for all applications:
-  the public entry menu keeps the core identity, Dashboard, and session action. It does not
-  use the account menu as a second list of application links or invent entry-specific actions.
+- [x] **A1 · API contract/database schema · blocking** — Answered 2026-09-13: notes are
+  limited to 1,000 Unicode characters, stored as `text`, and rejected above the limit by
+  the API. Leading/trailing whitespace is trimmed and a blank result is stored as null.
+- [x] **A2 · scientific/data meaning and product/UI · blocking** — Answered 2026-09-13:
+  a note may accompany any structured flag/exclusion reason, including but not limited to
+  `Other / unsure`, and may also accompany reviewed or promoted decisions. Changing the
+  structured reason never silently clears the note.
+- [x] **A3 · product/UI · blocking** — Answered 2026-09-13: no Save details button. Reason
+  and note edits are staged and saved through the existing commit controls with the rest of
+  the review work.
+- [x] **A4 · database/schema · blocking** — Answered by the requested distinction and the
+  existing contract: do not overload `reason`. Add a nullable note to both review history
+  and current projection so structured exception classification and explanatory free text
+  remain separately queryable and lossless.
+- [x] **A5 · product/UI · non-blocking** — Preserve the established gesture split: the
+  decision badge opens details; the surrounding tile continues to mark or take back.
+- [x] **A6 · product/UI and security/permissions · blocking** — Answered 2026-09-13: show
+  every decision author's initials. Derive them from the username reached through the
+  review's existing `reviewer_id`; do not add a database row or persist duplicated initials.
+  A small additive Mosaic response change is acceptable.
 
 ## Decisions
 
-- **2026-09-13** — The issue's later, specific correction supersedes #151's decision to use
-  identical menu contents. Shared means appearance, reusable interaction, session identity,
-  Sign out, and the dashboard route; each host supplies its own entries.
-- **2026-09-13** — The issue's phone requirement supersedes #151's decision to hide the
-  Mosaic account control below 760px.
-- **2026-09-13** — Browser tests are required because file-reading and DOM-only checks cannot
-  observe clipping, overlap, stacking, or whether a control is actually visible and usable.
-- **2026-09-13** — The core menu contents are identity, Dashboard, and the session action.
-  A signed-out user gets Sign in; a signed-in user gets Sign out. Application-owned entries
-  can be inserted later, but this issue does not show controls for features that do not exist.
-- **2026-09-13** — Links to Mosaic and ML belong on the main dashboard, where they already
-  exist as separate application buttons, rather than inside every account menu.
+- **2026-09-13** — The backend already persists and returns a structured reason when it is
+  included in a commit. The disappearing chip is a client staging defect: `setReason`
+  changes only browser state and does not make an existing seeded exception eligible for
+  `Commit Marked`.
+- **2026-09-13** — Notes are distinct from reasons. The current contract intentionally
+  rejects reasons on accepted decisions and enforces a closed reason vocabulary; relaxing
+  that field would change existing scientific meaning.
+- **2026-09-13** — Details use the established commit workflow. Edits remain pending until
+  an existing commit action succeeds, rather than creating a one-off save path.
+- **2026-09-13** — The details target is the status badge for every decision value. This
+  extends the target already used by flags while preserving the separately settled tile
+  gestures.
+- **2026-09-13** — Notes apply to all four scientific/training decision values and may
+  supplement any structured exception reason. A compact tile indicator says a note exists;
+  the full text remains in the details panel.
+- **2026-09-13** — Notes are capped at 1,000 Unicode characters, trimmed at the API
+  boundary, and normalized from blank text to null.
+- **2026-09-13** — Mobile review keeps the details panel inside the visual viewport while
+  the keyboard is present and permits the browser's native pull-to-refresh gesture.
+- **2026-09-13** — Decision attribution is one or two initials derived from the existing
+  author's username. The Mosaic response exposes only those initials alongside its existing
+  reviewer id; it does not expose a full name or username and stores nothing new.
+- **2026-09-13** — Image overlays use lighter translucent surfaces so labels do not conceal
+  as much of the organism. Delete Mode remains outside this visual adjustment.
 
 ## Plan
 
-1. Keep the shared account controller responsible for identity, open/close behavior, and
-   sign-out while allowing each application to supply its own menu body.
-2. Give the legacy dashboard, ML Dashboard, and Mosaic Reviewer their settled menu entries
-   without changing unrelated page structure or application behavior.
-3. Correct ML stacking and Mosaic desktop/phone placement using the smallest local layout
-   changes that keep the menu inside the viewport and above application content.
-4. Write the G3 verification plan with named browser checks for R1-R9 and present it for
-   human review before running any test.
+1. Add the nullable note columns through a reversible migration and update both Sequelize
+   models plus projection rebuild/integrity coverage.
+2. Extend commit validation, history insertion, projection maintenance, OpenAPI schemas,
+   generated documentation, and page-query fields without weakening reason validation.
+3. Extend the Mosaic row/mark model so a pending or recorded decision can stage details,
+   becomes eligible for either commit control, and hydrates its saved details after reload.
+4. Generalize the badge details panel across both values in Scientific and Training while
+   retaining mode-specific structured reasons only for exceptions.
+5. Derive current decision-author initials through the existing reviewer/user relationship
+   and render them on every recorded primary badge and borrowed tag.
+6. Write the detailed G3 verification plan after A1 and A2 are answered; do not run tests
+   before the human approves that plan.
 
 ## Acceptance criteria
 
-- Each reproduction area shows only its settled menu entries plus the shared account
-  elements, and every presented item works.
-- ML and Mosaic menus open above visible content without clipping at all three required
-  viewport classes.
-- Mosaic's account control is visible at the top of both phone layouts.
-- The dashboard route, identity, dismissal, and Sign out work from each applicable menu.
-- Named browser regressions fail for the reported content, stacking, clipping, visibility,
-  and interaction defects and pass after the implementation.
-- The public entry account states continue to work.
+- Existing flags and exclusions can acquire or change a reason through a normal commit,
+  and the reason chip survives reload.
+- Reviewed, flagged, promoted, and excluded decisions can carry a persisted note, and a
+  flag/exclusion note can accompany any structured reason.
+- Both commit buttons save staged details and continue to perform their existing decision
+  semantics.
+- Reopening a badge shows the current stored or staged details, and the UI distinguishes a
+  pending edit from a stored value.
+- Review history, current projection, API responses, and browser rendering agree after a
+  commit and reload.
+- Existing records, reason vocabularies, decision ownership/concurrency behavior, Delete
+  Mode, species correction, and tile gestures retain their established meaning.
 
 ## Test plan
 
-Filled in at G3 after the blocking product decisions are settled. No tests are run before
-the human reviews `.marp/verification.md`.
+Written in `.marp/verification.md`. It names the focused migration/repository tests and
+real-API Playwright cases that restore every disposable row they touch. Awaiting human
+review before any verification command is run.
 
 ## Status
 
-- **Gate:** ready-for-pr
-- **Notes:** G0-G4 are complete. The human reviewed the running application and accepted
-  the recorded verification evidence on 2026-09-13. `marp agent list` reports this
-  workspace's assigned API and disposable database ports.
+- **Gate:** verification plan awaiting approval
+- **Notes:** The isolated workspace is based on the `develop` merge of #170. Investigation
+  and G1 are complete with every material assumption answered. The separate populated
+  review server remains on the prior workspace for the human to explore.

@@ -10,11 +10,9 @@
  * writer that appends to the log without maintaining this is data loss, not
  * staleness. The definition of "current" -- the latest decision per observation
  * and purpose, ignoring anything a correction has superseded -- and the SQL that
- * rebuilds this table from the log live in
- * `migrations/20260909120200-create-observation-review-current.js`, in one place
- * deliberately. `tests/observation-review-current.test.js` finds that file by
- * its `-- rebuild:` block rather than naming a path, and asserts this table
- * equals the derivation in it.
+ * rebuilds this table from the log live in the newest migration carrying a
+ * `-- rebuild:` block. `tests/observation-review-current.test.js` finds that file
+ * rather than naming a path, and asserts this table equals the derivation in it.
  *
  * `decision` is never "withdrawn": a withdrawal deletes the row, because
  * undecided is the absence of a row and the mosaic's default filter is exactly
@@ -101,6 +99,11 @@ module.exports = (sequelize, DataTypes) => {
                 type: DataTypes.STRING(64),
                 allowNull: true,
                 comment: 'The reason recorded with the active decision.',
+            },
+            note: {
+                type: DataTypes.TEXT,
+                allowNull: true,
+                comment: 'Optional reviewer-authored plain-text note on the active decision.',
             },
             reviewer_id: {
                 // Mirrored from the log, which holds the foreign key to users.

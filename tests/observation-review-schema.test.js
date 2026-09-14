@@ -180,6 +180,7 @@ describe('#103 schema objects', () => {
                 'created_at',
                 'decided_at',
                 'decision',
+                'note',
                 'observation_id',
                 'observation_version',
                 'previous_species_id',
@@ -214,6 +215,15 @@ describe('#103 schema objects', () => {
             expect(correctedAt).toBeGreaterThan(scientificAt);
             expect(correctedAt).toBeLessThan(trainingAt);
             expect(check.def.indexOf("'corrected'", trainingAt)).toBe(-1);
+        });
+
+        it('stores an optional unbounded note without changing the structured reason', async () => {
+            const note = await column('observation_reviews', 'note');
+            const reason = await column('observation_reviews', 'reason');
+
+            expect(note.data_type).toBe('text');
+            expect(note.is_nullable).toBe('YES');
+            expect(reason.character_maximum_length).toBe(64);
         });
 
         it('ties the corrected species to the corrected decision, in both directions', async () => {
@@ -346,6 +356,7 @@ describe('#103 schema objects', () => {
             expect(present).toEqual([
                 'decided_at',
                 'decision',
+                'note',
                 'observation_id',
                 'observation_version',
                 'purpose',
@@ -353,6 +364,12 @@ describe('#103 schema objects', () => {
                 'review_id',
                 'reviewer_id',
             ]);
+        });
+
+        it('projects the optional note as text', async () => {
+            const note = await column('observation_review_current', 'note');
+            expect(note.data_type).toBe('text');
+            expect(note.is_nullable).toBe('YES');
         });
 
         it('indexes the status filter with the observation_id tie-break last', async () => {

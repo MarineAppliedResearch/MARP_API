@@ -595,6 +595,7 @@ export const STATUS_DIMENSIONS = {
     label: 'Review status',
     statuses: [['unreviewed', 'Unreviewed'], ['flagged', 'Flagged'], ['reviewed', 'Reviewed']],
     reasonColumn: 'flag_reason',
+    noteColumn: 'review_note',
     /**
      * Which column says **who** decided. A13, and F8 is the defect it closes.
      *
@@ -604,14 +605,12 @@ export const STATUS_DIMENSIONS = {
      * became nothing: no error, no log, just an interface that stopped being able to tell
      * the reviewer which decisions were theirs.
      *
-     * **An id, not a name.** The permission catalog separates `reports:read` from
-     * `observations:read` because it exposes who did how much work, and the row's freedom
-     * from `processor_name` is what keeps the mosaic an `observations:read` route. An id
-     * the client can only compare against its own authenticated principal gives "by you"
-     * and exposes nobody — which is why `borrowedTags` below answers `byMe` rather than a
-     * person.
+     * The id remains the stable relationship. A companion field carries only initials
+     * derived from that user's username at query time, so the badge can attribute the
+     * decision without receiving a full name or username (#172).
      */
-    reviewerColumn: 'review_reviewer_id'
+    reviewerColumn: 'review_reviewer_id',
+    reviewerInitialsColumn: 'review_reviewer_initials'
   },
   trainingDisposition: {
     key: 'trainingDisposition',
@@ -622,7 +621,9 @@ export const STATUS_DIMENSIONS = {
     label: 'Training disposition',
     statuses: [['undecided', 'Undecided'], ['promoted', 'Promoted'], ['excluded', 'Excluded']],
     reasonColumn: 'exclusion_reason',
-    reviewerColumn: 'training_reviewer_id'
+    noteColumn: 'training_note',
+    reviewerColumn: 'training_reviewer_id',
+    reviewerInitialsColumn: 'training_reviewer_initials'
   }
 };
 
@@ -659,6 +660,20 @@ export function existingState(mode, row) {
   return m ? dimensionState(m.statusKey, row) : null;
 }
 
+/** The stored note for the decision dimension this mode owns. */
+export function existingNote(mode, row) {
+  const m = MODES[mode];
+  const dim = m && STATUS_DIMENSIONS[m.statusKey];
+  return dim && row && row[dim.noteColumn] != null ? row[dim.noteColumn] : null;
+}
+
+/** The stored structured reason for the exception in this mode. */
+export function existingReason(mode, row) {
+  const m = MODES[mode];
+  const dim = m && STATUS_DIMENSIONS[m.statusKey];
+  return dim && row && row[dim.reasonColumn] != null ? row[dim.reasonColumn] : null;
+}
+
 /**
  * Every tag the record carries from a workflow other than this mode's own (#85).
  *
@@ -687,13 +702,21 @@ export function borrowedTags(mode, row) {
         value,
         workflow: dim.workflow,
         reason: row[dim.reasonColumn] || null,
-        /* Who decided, as an id -- and `byMe` is derived from it by the caller, which is
-           the only thing the interface may say about a person (A13). `by: <a name>` is
-           what this used to be, from a column the row does not carry (F8). */
-        reviewerId: row[dim.reviewerColumn] == null ? null : row[dim.reviewerColumn]
+        note: row[dim.noteColumn] || null,
+        /* Stable author id plus the compact derived initials the interface displays. */
+        reviewerId: row[dim.reviewerColumn] == null ? null : row[dim.reviewerColumn],
+        reviewerInitials: row[dim.reviewerInitialsColumn] || null
       };
     })
     .filter(Boolean);
+}
+
+/** Initials of whoever made this mode's current decision. */
+export function reviewerInitialsFor(mode, row) {
+  const m = MODES[mode];
+  const dim = m && STATUS_DIMENSIONS[m.statusKey];
+  return dim && row && row[dim.reviewerInitialsColumn]
+    ? row[dim.reviewerInitialsColumn] : null;
 }
 
 /**
