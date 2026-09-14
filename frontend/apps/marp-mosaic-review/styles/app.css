@@ -414,6 +414,10 @@ body[data-mode="training"] .tile.marked.recorded { outline-width: 1px; }
         box-shadow: 0 20px 54px rgba(0, 0, 0, .72); padding: 13px 14px 12px; }
 .pick h4 { margin: 0 0 2px; font-size: 13px; color: var(--white); font-weight: 600;
            display: flex; align-items: center; gap: 8px; }
+.pick h4[data-picker-drag-handle] { cursor: grab; touch-action: none; user-select: none; }
+.pick h4[data-picker-drag-handle]:active { cursor: grabbing; }
+.pickgrip { width: 10px; height: 16px; color: var(--faint); display: flex; flex: none; }
+.pickgrip svg { width: 10px !important; height: 14px !important; fill: currentColor; }
 .pick h4 .fl { color: var(--amber-300); display: flex; }
 .pick h4 svg { width: 12px; height: 12px; }
 .opt { font-size: 11px; color: var(--faint); font-weight: 500; margin-left: auto; }
