@@ -485,6 +485,13 @@ npm run testing-db status              # what is there, and which dump it came f
 npm run testing-db reset               # throw it away and load the dump again
 ```
 
+**A new migration means both local databases need updating before database-backed
+verification.** Run `npx sequelize-cli db:migrate` for the development database, then
+`npm run testing-db reset` so the reusable testing database is rebuilt from its dump and
+migrated through the same branch. The browser launcher reuses an existing testing database;
+reuse is intentionally fast, but it cannot make a database created on an older branch
+understand a migration that arrived later.
+
 The first run builds `marp_test` from the newest dump under `.marp/local/corpus/`, gives
 it a thumbnails directory of its own, migrates it up to this branch, and creates the
 reviewer login. Every run after that finds it and starts in seconds. **The output says
@@ -787,11 +794,19 @@ why a mark is not a decision). Read it before changing anything structural there
 `README.md` covers running it and recording walkthrough videos.
 
 That app is the MARP Picture Mosaic Reviewer, designed in #68, which also carries the
-phased plan for the schema and endpoints it will need. **It talks to this API now**:
-`src/api/` is the seam and `src/data.js` survives as a test fixture, with
-`src/backend.js` deciding which is in force. The application never chooses the fixture —
-that app's `CLAUDE.md` has the reasoning, under *The two backings*, and it is worth reading
-before pointing any tier at either one.
+phased plan for the schema and endpoints it will need. **It talks to this API, and to
+nothing else.** `src/api/` is the seam and `src/backend.js` is the one place that holds
+it. There used to be a second backing — `src/data.js`, a fixture, with a
+`?backing=fixture` flag to select it — and #157 deleted both: it was scaffolding for the
+months before this app had an API, and by the end 231 browser checks were grading it
+rather than the endpoint. The reason is worth carrying, because it is not tidiness: the
+fixture wrote the observation's own status column in place when a page was committed and
+the endpoint never does, so every defect living in the gap between what a commit recorded
+and what the row still says was invisible to it **by construction**. Four shipped that way.
+
+**Every browser check runs against a real API on the testing database** —
+`npm run test:app:mosaic-review:api`, described under *The testing database* above. That
+app's `CLAUDE.md` has the rest, under *The API tier*.
 
 **#68 is a record of thinking, not a specification, and a line in it is not automatically a
 decision somebody made deliberately.** It has been written and rewritten over months, it

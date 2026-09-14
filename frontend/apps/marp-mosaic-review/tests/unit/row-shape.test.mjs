@@ -1,12 +1,12 @@
 /**
- * The fixture and the endpoint must agree about the row.
+ * The client must read no row field the endpoint does not send.
  *
  * This is the check the last three defects of one family were waiting for, and it is
  * worth more than any of the three fixes:
  *
  * - **#130** — the endpoint never sent `species_id`, so `speciesListFor` was permanently
  *   null, so the correction search was refused before a request was made. Every browser
- *   test passed, because the render tier runs on the fixture and the fixture's row *does*
+ *   test passed, because the render tier ran on the fixture and the fixture's row *did*
  *   carry `species_id`.
  * - **#124 F6** — the tile drew `comname` where the endpoint sends `species_comname`, so
  *   a corrected tile showed the old animal for ever.
@@ -14,15 +14,20 @@
  *   `excluded_by`. The row has never carried any of the four, so "REVIEWED by you", the
  *   borrowed tag's attribution and `byMe` all silently became nothing.
  *
- * None of them failed anything. A field the client reads that only one backing has is
- * invisible to every tier: the fixture-backed tiers see a value, and the API-backed
- * application is the only thing that meets `undefined` — in front of a reviewer.
+ * None of them failed anything. Each was a field the client read and only the fixture
+ * had: the fixture-backed tiers saw a value, and the application was the only thing that
+ * ever met `undefined` — in front of a reviewer.
  *
- * **Two sources, neither of them this file's own opinion.** The endpoint's row is
- * `MosaicRow` in `docs/openapi.generated.json`, which is generated from
- * `docs/openapi.js` and which CI already fails on when it is stale; the fixture's row is
- * `fixtures/observations.json`, which `tools/make-fixture.mjs` generates. So this check
- * cannot drift from either — it can only report that they have drifted from each other.
+ * **#157 deleted the fixture, and that removes the mismatch rather than the check.** The
+ * three checks here whose subject was `fixtures/observations.json` — that it carried
+ * every field the endpoint sends, that its extra fields were declared, that the
+ * declaration had not gone stale — went with it. What is left is the half that was always
+ * about the application: the client against the published contract.
+ *
+ * **One source, and it is not this file's own opinion.** The endpoint's row is
+ * `MosaicRow` in `docs/openapi.generated.json`, generated from `docs/openapi.js` and which
+ * CI already fails on when it is stale. So this check cannot drift from the contract — it
+ * can only report that the client has drifted from it.
  *
  * Milliseconds, no database, no browser, and it reads the generated contract as text.
  * **It reaches out of the app** for that one file, which is the only thing here that
@@ -55,40 +60,8 @@ const endpointKeys = (() => {
   return new Set(Object.keys(row.properties));
 })();
 
-/** What the fixture serves. */
-const fixtureRows = JSON.parse(
-  readFileSync(join(APP, 'fixtures', 'observations.json'), 'utf8')).observations;
-
-const fixtureKeys = new Set(fixtureRows.flatMap((row) => Object.keys(row)));
-
 /**
- * Fields the fixture carries that the endpoint does not, each one deliberate.
- *
- * A fixture field is not automatically wrong — the fixture simulates a whole little
- * database, and some of these are its own bookkeeping (`thumb` is where its picture file
- * is; `session_id` and `project_id` are how it resolves a facet). What is wrong is the
- * **client** reading one, and that is what the next test asserts.
- *
- * Listing them rather than tolerating "anything extra" is the point: a new fixture-only
- * field has to be added here on purpose, by somebody who has just been asked whether the
- * endpoint ought to be sending it instead.
- */
-const FIXTURE_ONLY = new Set([
-  // Columns on `observations` the endpoint deliberately withholds. `processor_name` and
-  // `lineId` are A7 — with them the mosaic route stops being `observations:read`.
-  'PobsID', 'coarsesize', 'count', 'etc', 'frame', 'lineId', 'mediaPosition', 'note',
-  'processor_name', 'quadrant', 'scientific_name', 'sex', 'taxReview', 'taxserial',
-  'user_id', 'video_source', 'createdAt', 'updatedAt',
-  // Keys the fixture needs to resolve its own joins, which the endpoint has already
-  // resolved into `project_name`, `dive`, `line` and `species_comname`.
-  'project_id', 'session_id', 'ml_model_id', 'species_id',
-  // Where the fixture's picture file is. The endpoint's tile addresses a route derivable
-  // from `observation_id`, so no URL is repeated 45 times a page.
-  'thumb',
-]);
-
-/**
- * Fields the client attaches to a row itself, so they are on neither backing's row.
+ * Fields the client attaches to a row itself, so they are on no row the endpoint sends.
  *
  * `store.js` writes the retry answer onto the row it was asked about. Kept short and
  * declared, because "the client put it there" is the one honest reason to read a field
@@ -115,9 +88,10 @@ const code = (src) => src
 /**
  * Every `row.x` and `r.x` the client above the seam reads, and which file read it.
  *
- * **`src/data.js` and `src/api/` are excluded on purpose**: those two *are* the backings,
- * and each is entitled to know its own shape. Everything else is the client, and the
- * client must only know the shape both of them present.
+ * **`src/api/` is excluded on purpose**: it *is* the backing, and it is entitled to know
+ * its own shape. Everything else is the client, and the client must only know the shape
+ * the backing presents. (`src/data.js` was excluded here for the same reason, until #157
+ * deleted it.)
  *
  * `row` and `r` is a convention rather than a guarantee, and this check is part of why
  * the convention is worth keeping: a row bound to some other name escapes it.
@@ -147,63 +121,25 @@ const rowReads = (() => {
   return out;
 })();
 
-test('R10: the fixture carries every field the endpoint sends', () => {
-  /* The direction #130 actually broke in, one step earlier. The endpoint gained
-     `species_list` and the fixture had to gain it too, or every fixture-backed tier would
-     go on exercising a row the application never meets. Asserted over *every* row rather
-     than over the first: a field present on some rows is worse than one present on none,
-     because the tier passes until the unlucky row is the one the test picks. */
-  const missing = [...endpointKeys].filter((key) => !fixtureRows.every((row) => key in row));
-
-  assert.deepEqual(missing, [],
-    'the endpoint sends these and the fixture does not, so no fixture-backed tier can '
-    + 'see what the application reads. Add them in tools/make-fixture.mjs and re-run '
-    + '`npm run fixture`');
-});
-
 test('R10: the client reads no row field the endpoint does not send', () => {
   const wrong = [];
 
   for (const [key, files] of rowReads) {
     if (endpointKeys.has(key)) continue;
     if (CLIENT_ATTACHED.has(key) || NOT_A_ROW.has(key)) continue;
-    wrong.push(`${key} — read in ${[...files].sort().join(', ')}`
-      + (fixtureKeys.has(key) ? ' — the fixture has it and the endpoint does not' : ''));
+    wrong.push(`${key} — read in ${[...files].sort().join(', ')}`);
   }
 
   assert.deepEqual(wrong.sort(), [],
-    'a field only one backing carries is undefined in the application and a value in '
-    + 'every test. That is #124 F6 and F8, and #130');
+    'a field the endpoint does not send is undefined in front of a reviewer. That is '
+    + '#124 F6 and F8, and #130');
 });
 
-test('R10: every fixture-only field is a declared one', () => {
-  const undeclared = [...fixtureKeys]
-    .filter((key) => !endpointKeys.has(key) && !FIXTURE_ONLY.has(key))
-    .sort();
-
-  assert.deepEqual(undeclared, [],
-    'the fixture grew a field the endpoint does not send. Either the endpoint should be '
-    + 'sending it, or it belongs in FIXTURE_ONLY here with a line saying why');
-});
-
-test('R10: nothing is declared fixture-only that the endpoint actually sends', () => {
-  /* The list above going stale in the other direction. Without this, a field promoted
-     into the contract would stay on a list that says the endpoint does not send it, and
-     the check above would stop noticing it was read. */
-  const stale = [...FIXTURE_ONLY].filter((key) => endpointKeys.has(key)).sort();
-
-  assert.deepEqual(stale, [],
-    'the endpoint sends these now, so they are not fixture-only any more');
-});
-
-test('R10: species_list is on both, because #130 turns on it', () => {
-  /* Named rather than left to the sweep above. The generic checks would pass if
-     `species_list` were dropped from both at once, and the picker would go back to being
-     unable to search -- which is the defect, not a tidy-up. */
-  assert.ok(endpointKeys.has('species_list'), 'the endpoint has to resolve the list');
-  assert.ok(fixtureRows.every((row) => 'species_list' in row),
-    'and the fixture has to carry it, or no fixture-backed tier sees the picker work');
-  assert.ok(fixtureRows.some((row) => row.species_list === null),
-    'including at least one row whose session type names no list, which is the only case '
-    + 'the "search all lists" action exists for');
+test('R10: species_list is on the endpoint row, because #130 turns on it', () => {
+  /* Named rather than left to the sweep above, which only sees what the client *reads*:
+     `store.js` reaches `species_list` through `speciesListFor`, so dropping it from the
+     contract would take the picker's ability to search with it and nothing generic would
+     notice. */
+  assert.ok(endpointKeys.has('species_list'),
+    'the endpoint has to resolve the list, or the correction search has nothing to scope to');
 });

@@ -20,10 +20,11 @@
  * commit -- so this whole file is read-only against the corpus, which is why it is
  * separate from `affordances.spec.mjs` and why it needs no `finally`.
  *
- * What is deliberately *not* moved yet: anything needing a broken backing (see
- * `affordances.spec.mjs` -- those four are done), the phone viewport, and the
- * fixture-only affordances `setScale` and `withoutLatency`. `src/data.js` and
- * `?backing=fixture` are both untouched by this change.
+ * **The rest of the migration has happened since**, and this file stayed as it is. The
+ * other 231 checks are in the `render-*` and `requirements-*` files beside it, at both
+ * viewports; `src/data.js` and `?backing=fixture` are gone. What is left here is the five
+ * checks that proved the mechanism, kept because a proof is worth reading even once the
+ * thing it proved is ordinary -- they overlap the migrated render checks deliberately.
  *
  * Refs #132, #157.
  */

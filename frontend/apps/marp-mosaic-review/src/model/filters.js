@@ -177,8 +177,8 @@ export function withSortThen(sort, field, dir) {
  * thrown it away.
  *
  * What stops a borrowed dimension narrowing anything is that it *holds nothing*:
- * `statusDimensions` gives it `defaults: []`, and `data.js` only filters on a status
- * dimension whose array has a length. So an untouched borrowed dimension sends nothing,
+ * `statusDimensions` gives it `defaults: []`, and `filtersBody` sends a status dimension
+ * only when its array has a length. So an untouched borrowed dimension sends nothing,
  * and a chosen one sends exactly what the reviewer chose.
  *
  * `mode` is kept in the signature deliberately: this is "the query this mode asks for", and

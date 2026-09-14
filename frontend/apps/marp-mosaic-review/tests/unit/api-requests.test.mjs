@@ -27,6 +27,7 @@ import {
   idList, filtersBody, pagesBody, countsBody, commitBody, correctionBody, retryBody,
   facetsBody
 } from '../../src/api/requests.js';
+import { sortTerms } from '../../src/model/filters.js';
 
 /** What the body is once it has been serialised, which is the only version that matters. */
 const onWire = (body) => JSON.parse(JSON.stringify(body));
@@ -357,4 +358,64 @@ test('#130: an empty term still sends nothing, because both routes refuse it', a
     assert.deepEqual(await MarpApi.searchSpecies('   ', { list: null }), []);
   });
   assert.deepEqual(urls, []);
+});
+
+/* ------------------------------------------ the sort, from either shape (was data-scale)
+ *
+ * The wire carries an array of `{ field, dir }`; the store holds one
+ * `{ field, dir, then }` object. `termsFor` in `src/api/index.js` is where the second
+ * becomes the first, and `sortTerms` in `model/filters.js` is the rule it uses -- so a
+ * prefetched page and the visible page cannot disagree about what a sort means.
+ *
+ * This was `tests/unit/data-scale.test.mjs`'s *the sort arrives in either shape a caller
+ * can hold*, asserted against `src/data.js`'s own copy of `termsFor`. #157 deleted that
+ * copy along with the fixture; the rule is the client's, so it is checked here, on the
+ * body that actually goes out.
+ *
+ * It goes through `MarpApi` rather than `pagesBody`, because `pagesBody` is handed terms
+ * already: the conversion is above it, and a check below it cannot see it.
+ */
+
+/** The body of the one request `fn` makes, serialised. */
+async function bodyOf(fn) {
+  const bodies = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+  };
+  try {
+    await fn();
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(bodies.length, 1, 'one request, or this says nothing about which body');
+  return bodies[0];
+}
+
+test('R2: the sort reaches the wire the same way from either shape a caller holds', async () => {
+  const object = await bodyOf(() => MarpApi.queryPages({
+    sort: { field: 'keyframe_count', dir: 'desc', then: { field: 'confidence', dir: 'asc' } },
+    pageSize: 45, pages: [2000]
+  }));
+  const wire = await bodyOf(() => MarpApi.queryPages({
+    sort: [{ field: 'keyframe_count', dir: 'desc' }, { field: 'confidence', dir: 'asc' }],
+    pageSize: 45, pages: [2000]
+  }));
+
+  assert.deepEqual(object.sort, [
+    { field: 'keyframe_count', dir: 'desc' }, { field: 'confidence', dir: 'asc' }
+  ]);
+  assert.deepEqual(wire.sort, object.sort, 'the two shapes must mean one order');
+});
+
+test('R2: naming no sort sends the default terms, not nothing', async () => {
+  /* A page query with no sort is the default question, and it has to be sent: the server
+     appends `observation_id` to whatever it was given, so an absent sort would leave the
+     visible page and a prefetched page ordered by different primaries. */
+  const bare = await bodyOf(() => MarpApi.queryPages({ pageSize: 45, pages: [1] }));
+  assert.deepEqual(bare.sort, sortTerms(null));
+  assert.ok(bare.sort.length, 'the default is terms rather than an empty array');
+  assert.ok(!bare.sort.some((t) => t.field === 'observation_id'),
+    'and observation_id is still never one of them');
 });

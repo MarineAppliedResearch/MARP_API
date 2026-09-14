@@ -1,156 +1,159 @@
-# Verification — MARP_API #172: persisted Mosaic decision details
+# Verification — MARP_API #157: retire the Mosaic fixture
 
-Issue: https://github.com/MarineAppliedResearch/MARP_API/issues/172
+This is the approved G3 verification package and its recorded G4 evidence.
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1/R2 | `tests/observation-review-schema.test.js`: optional note columns | database schema | History and current projection each carry a nullable PostgreSQL `text` note while the structured reason remains its existing bounded field. |
-| R2/R8 | `tests/observation-review-current.test.js`: projection equals newest rebuild definition | database integration | A note appended to review history survives the canonical last-write-wins derivation and reaches the current projection without mutating older history. |
-| R1/R3/R8/R10 | `tests/mosaic-commit.test.js`: notes on all four decisions | HTTP plus database | Reviewed, flagged, promoted, and excluded commits write notes; exception reasons remain separate; scientific and training writes use their own purpose. |
-| R3 | `tests/mosaic-commit.test.js`: note normalization and refusal | HTTP plus database | Whitespace is trimmed, blank becomes null, non-text is refused, and 1,001 Unicode code points are refused while emoji are counted as one code point each. |
-| R3/Delete regression | `tests/mosaic-commit.test.js`: delete note refusal | HTTP plus database | Delete Mode gains no decision-detail behavior and does not accept or persist notes. |
-| R3/R9/R10 | `tests/mosaic-query.test.js`: exact row shape and projected details | HTTP plus database | Page rows return `review_note` and `training_note` independently with their matching decision and reason fields. |
-| R3/R6/R7 | `frontend/apps/marp-mosaic-review/tests/unit/api-requests.test.mjs`: note serialization | unit | Both accepted and exception marks serialize a note in the existing marks array used by either commit control. |
-| R1/R5 | `frontend/apps/marp-mosaic-review/tests/unit/model.test.mjs`: reason/note independence | unit | Changing a structured exception reason preserves its free-text note, and new marks initialize note explicitly. |
-| R4/R5/R6/R7/R9/R10/R11 | `frontend/apps/marp-mosaic-review/tests/api/decision-details.spec.mjs`: four decision cases | real-API browser | Each badge opens details; exception choices and positive note-only panels differ correctly; typing stages the tile; both commit controls save; the note indicator and full editor value survive reload; textarea property assignment renders note text inertly. |
-| R4/R6/R7 | Existing `frontend/apps/marp-mosaic-review/tests/api/decision-state.spec.mjs` | real-API browser | Adding badge detail targets does not change tile mark/take-back gestures, pending borders, committed borders, or selective commit behavior at desktop and phone sizes. |
-| R3/R9/R11 | `frontend/apps/marp-mosaic-review/tests/unit/row-shape.test.mjs` | source contract | Generated OpenAPI and generated fixture both carry the two note fields, and the client reads no fixture-only detail field. |
-| R13 | `frontend/apps/marp-mosaic-review/tests/e2e/render.spec.mjs`: mobile details viewport | browser rendering | A keyboard-sized visual viewport keeps the focused note editor inside the visible panel, the panel remains touch-scrollable, and the mosaic permits overscroll chaining needed for pull-to-refresh. |
-| R14 | `tests/mosaic-query.test.js`: projected reviewer initials | HTTP plus database | An `observations:read` caller receives initials derived from each current author's existing username for both purposes, null for undecided rows, and no username field. |
-| R14 | `frontend/apps/marp-mosaic-review/tests/e2e/render.spec.mjs`: decision attribution | browser rendering | Reviewed, flagged, promoted, and excluded primary badges plus borrowed tags render their purpose-specific author initials in the same circular treatment; seeded current exceptions do not lose attribution by also appearing in the mark map, and pending decisions remain unattributed until committed. |
-| R15 | `frontend/apps/marp-mosaic-review/tests/e2e/render.spec.mjs`: translucent image overlays | browser rendering | Decision badges, borrowed tags, chips, and the species caption use translucent backgrounds while their foreground text remains present; Delete Mode keeps its established badge surface. |
-| R16 | `frontend/apps/marp-mosaic-review/tests/e2e/render.spec.mjs`: confidence chip | browser rendering | Numeric confidence renders as a rounded, zero-padded percentage in the lower-right image area without overlapping the species caption; null confidence renders no chip. |
+| R1 | Every `tests/api/render-*.spec.mjs` check, at both configured API viewports | browser + API + database | The former render suite still asserts the rendered behavior it asserted before, but the rows, counts, decisions, thumbnails, and failures now come through the real API. |
+| R2 | Every `tests/api/requirements-*.spec.mjs` check, at both configured API viewports | browser + API + database | The former requirements suite still exercises the review rules through the shipping browser/API boundary rather than through `src/data.js`. |
+| R3 | Playwright project inventory and the complete API browser run | configuration + browser | Both desktop and phone projects run; neither viewport was removed to make the migrated tier faster. |
+| R4 | `tests/api/affordances.spec.mjs`; static absence checks for `src/data.js`, `backing=fixture`, and fixture-only tools/assets | browser + review | Network failures and version races are exercised through the real client path, and no application or URL flag can select the deleted backing. |
+| R5 | `npm run test:unit` from `frontend/apps/marp-mosaic-review` | parse + unit + wire | Every surviving model rule parses and passes; wire assertions still test serialised API bodies; rules formerly hidden inside the fixture were either retained in model/API tests or removed with their subject. |
+| R6 | `tests/api/journal.mjs` self-checks during the browser run, plus the launcher’s before/after projection digest | browser + API + database | Tests restore the current-review projection they changed; a failed restoration fails the run instead of contaminating the next check. Append-only history growth is reported separately and is not mistaken for damaged current state. |
+| R7 | The destructive checks using `tests/api/seed.mjs` and the journal’s delete refusal | browser + API + database | A deletion may reach the real endpoint only for observations that the test created and explicitly allowed; an attempt against a borrowed corpus row fails naming the ids. |
+| R8 | Documentation/source consistency checks in the unit/parse tier, plus review of `CLAUDE.md`, `README.md`, package scripts, VS Code tasks, and launch configuration | unit + review | Instructions name the single real backing and the testing-database command; no supported command or document directs a browser check to the fixture. |
+
+The complete browser command also runs the API-backed checks merged after this branch was
+created: account-menu behavior (#166), committed decision appearance (#167), and selective
+page completion (#137). It also runs #172's decision-details suite, including the four
+rendering checks that #172 originally added to the now-deleted fixture tier. This is
+required because #157 has now incorporated current `origin/develop` and those checks share
+the files changed by the fixture retirement.
 
 ## Requirements with no test
 
-None.
-
-## Edge cases
-
-- A note containing only whitespace becomes null at the API boundary.
-- A 1,001-character note made from astral Unicode characters is refused by code-point
-  count rather than being miscounted as 2,002 UTF-16 units.
-- A reason change on an already committed flag/exclusion becomes eligible for `Commit
-  Marked`; this is the original disappearing-reason defect.
-- Editing an already committed reviewed/promoted badge creates an explicit accepted mark
-  only after input changes, so opening and closing details does not reauthor the decision.
-- A page sweep carries a staged accepted or exception note while retaining its established
-  treatment of every other row.
-- A refused commit leaves the mark and its details in client state; the existing conflict
-  and failure behavior remains observable in the focused Mosaic application group.
-- Scientific and training notes on one observation use separate projection columns.
-- Delete Mode neither exposes the details editor nor accepts a note sent directly.
-- The panel is constrained to the available field width so the note editor remains usable
-  at the existing phone viewport.
-- A phone keyboard can reduce and offset the visual viewport after focus; the panel follows
-  both changes without being rebuilt on every subsequent character.
-- The mosaic's phone-only overscroll rule allows a top-edge drag to reach the browser while
-  the details panel contains its own scrolling.
-
-## Regression coverage
-
-- The original bug changed `marks[id].reason` without adding the id to `touched`, so
-  `Commit Marked` omitted it and reload restored the old reason. The store and real-API
-  browser cases require a reason edit to become pending, commit, and rehydrate.
-- Reviewed and promoted badges previously lacked `data-badge`, and the picker rejected
-  accepted decisions. The four browser cases require every decision badge to open.
-- The client previously had no free-text decision field. Exact row-shape, wire-shape,
-  schema, projection, and reload assertions prevent any layer from silently dropping it.
-- Issue #167 established pending versus recorded border weights. Its real-API browser file
-  is rerun because staging positive details now creates an accepted mark and uses that same
-  visual state.
+None. R8 includes a human diff review because prose accuracy is not completely observable
+from runtime behavior, but the deleted names and supported commands also have mechanical
+checks.
 
 ## Commands, in order
 
-Run from the isolated issue workspace after this plan is approved:
+Run only after the human approves this plan.
 
-1. Run `npm run docs:api:build` and `npm --prefix frontend/apps/marp-mosaic-review run fixture`.
-   - Regenerates the OpenAPI document and fixture from their changed sources before any
-     contract or browser check reads them.
-2. `npm run test:mosaic`
-   - Runs the repository's focused Mosaic group, including schema, current-projection,
-     commit-contract, query-hydration, and generated-contract checks against the disposable
-     testing database.
-3. `npm run test:app:mosaic-review:unit`
-   - Runs the Mosaic client syntax check and unit tests, including mark staging, request
-   serialization, exact row shape, and safe client field usage.
-4. From `frontend/apps/marp-mosaic-review`, run `npx playwright test tests/e2e/render.spec.mjs --project=desktop --project=phone --grep "mobile details viewport|decision author initials|translucent image overlays|confidence chip"`.
-   - Exercises the phone layout with a reduced visual viewport and checks the focused note
-     editor, panel scrolling, and phone overscroll policy.
-5. `npm run test:app:mosaic-review:api -- decision-details.spec.mjs decision-state.spec.mjs`
-   - Uses the repository's private real-API runner and disposable copied corpus, starts its
-     own dynamically assigned server, runs the new four-state persistence cases plus the
-     #167 gesture/border regression at desktop and phone sizes, then stops that server.
-6. Re-run both generators and require an empty generated-artifact diff.
-7. Run `git diff --check`, then run `marp spec check` and `marp harness check` through the
-   umbrella harness.
+1. `git diff --check origin/develop...HEAD`
+   - Expected: no conflict markers or whitespace errors.
+2. `npm run test:unit` from `frontend/apps/marp-mosaic-review`
+   - Expected: parse, model, request-serialisation, row-shape, cache, URL, and scheduling
+     checks all pass with no skipped test silently replacing a fixture-dependent assertion.
+3. `npm run test:subsystems` from the repository root
+   - Expected: every Jest suite belongs to exactly one subsystem.
+4. `npm run test:mosaic` from the repository root
+   - Expected: the targeted Mosaic API, schema, commit, correction, facet, and thumbnail
+     suites pass against the local database and restore every row they create or change.
+5. `npm run test:app:mosaic-review:api` from the repository root
+   - Expected: the launcher provisions or reuses the assigned testing database, starts its
+     own API, runs every Mosaic browser check once at desktop and once at phone width with
+     one worker, restores current review state, and stops what it started.
+6. `npm run test:app:mosaic-review:api -- -g "affordance"` only if the complete run does
+   not make the four replacement-affordance results individually visible.
+   - Expected: abort, delay, real version conflict, and real failed/seeded thumbnail states
+     are each exercised without a fixture backing.
+7. `git diff --check origin/develop...HEAD` again after recording results.
 
-No command adopts or stops the populated review server the human is currently using.
+The full repository suite is not part of this plan. The task changes the Mosaic subsystem
+and its application browser tier; the repository’s testing doctrine assigns the whole suite
+to an end-of-phase run requested by the human.
+
+## Edge cases
+
+- **A page begins with recorded exceptions.** Migrated marking checks open on the
+  undecided question or discover a fresh tile, so a click cannot silently become a
+  take-back merely because the copied corpus already contains decisions.
+- **The corpus changes between runs.** Tests discover species, dives, lines, pages,
+  confidence cuts, and page sizes from the API. No test pins an id or row count that was
+  true on one machine.
+- **Desktop and phone address different page sizes.** Tests ask the running store for the
+  page size rather than assuming the fixture’s value.
+- **A commit finishes during another action.** Tests wait for the resulting state or hold
+  the real request with Playwright routing; they do not depend on the fixture’s invented
+  latency.
+- **A correction changes page membership.** The journal captures the original species
+  immediately before the real correction and restores both review dimensions afterwards.
+- **A test is interrupted.** The after-each journal must still attempt restoration, and a
+  later before/after digest must expose anything left in the current-state projection.
+- **Permanent deletion cannot be undone.** Only rows seeded by that test may be deleted;
+  every other delete is rejected by the harness before it reaches the API.
+- **Thumbnail states absent from the copied corpus.** The test seeds the missing state and
+  removes it afterwards rather than rewriting a real endpoint response.
+- **A second backing is reintroduced later.** Every browser check asserts
+  `data-backing="api"`, even though the fixture is now absent.
+
+## Regression coverage
+
+- #130 and Phase 8 findings F6/F8: the fixture’s row shape concealed differences between
+  the observation’s original fields and the API’s current species/reviewer fields.
+- #135: fixture commits rewrote row status locally, so take-back behavior passed while the
+  API-backed page sweep restored the decision.
+- #137: selective commit completion is exercised after returning to the page.
+- #166: application menus remain usable after the branch incorporates current `develop`.
+- #167: pending and recorded decisions remain visually distinct on the real row returned
+  after a commit.
+- #172: reasons, notes, reviewer attribution, confidence treatment, overlay transparency,
+  and the phone details viewport are exercised through real persisted decisions rather
+  than through fixture row mutation.
+- The journal’s previous pagination defect: restoration must read every affected page and
+  leave the current-review digest unchanged.
 
 ## Known gaps
 
-- The API browser test edits one isolated corpus row at a time and restores its current
-  decision, reason, and note through the API. The append-only history correctly retains
-  the test decisions; the runner uses only its disposable copied corpus.
-- The 1,000-character client clamp is covered by the browser path and the authoritative
-  over-limit refusal by the HTTP/database tier. The plan does not add screenshot comparison;
-  visibility, panel bounds, values, and interactive selectors provide stable assertions.
-- Species correction still saves immediately under its existing workflow. This issue does
-  not change or re-test the correction transaction beyond the focused Mosaic regressions.
-- No whole repository suite or narrated walkthrough is planned. The targeted Mosaic groups
-  cover the changed backend and application surfaces; the end-of-phase suite remains the
-  human's call.
+- This plan does not benchmark production scale. That belongs to Phase 9 in #68.
+- It does not run a real Jellyfin extraction. Thumbnail lifecycle rows and already-created
+  image bytes are exercised; hardware/media extraction remains outside this browser task.
+- `observation_reviews` is append-only and therefore grows when a browser check makes and
+  withdraws decisions. The current projection and observations are restored; erasing the
+  audit history would violate its data meaning.
+- The testing database is built from the newest local corpus dump. If no usable dump exists,
+  the launcher must fail with the missing prerequisite rather than skip the browser tier.
+- No narrated walkthrough is included. Walkthroughs are recorded only when the human asks
+  and are not verification evidence.
 
 ## Manual steps
 
-After automated evidence passes, start this issue workspace at the address reported by
-`marp agent list`. In Scientific and Training modes, open one badge of each decision type,
-type a note, close the panel, and confirm the pending border and compact note dot are clear
-without obscuring the thumbnail. Commit and reload; the saved note should reappear in the
-panel. This is visual review, not automated evidence.
+No manual application judgment is required to prove #157. The task changes which backing
+the automated browser suite grades, not the intended appearance or interaction.
+
+After the automated run, inspect its summary for all of the following:
+
+- both API viewport projects ran;
+- the backing assertion passed;
+- the launcher reports whether the testing database was provisioned or reused;
+- current-review state was restored successfully;
+- no process started by the launcher remains running.
 
 ---
 
 ## Results
 
-Approved by the human after manual testing on 2026-09-13.
+Run on 2026-09-13 on `157-retire-fixture`, after merging current `develop` and #172.
 
-- Generators: `npm run docs:api:build` produced 127 paths and the fixture generator
-  produced 3,000 observations (2,892 ready, 71 queued, 37 failed). A second run left both
-  generated files byte-for-byte stable (`OpenApiStable : True`, `FixtureStable : True`).
-- Backend: with `DB_NAME=marp_test`, `npm run test:mosaic` passed 7 suites and 248 tests in
-  9.2 seconds. The first run accidentally used the checkout's default database and failed
-  repeatedly with `column "note" of relation "observation_reviews" does not exist`; it
-  was discarded and rerun against the disposable testing database. The next run exposed
-  one expected-key ordering error and then a corpus-guard failure caused by rows left by
-  the interrupted run. After correcting the expectation and confirming the focused file
-  cleaned up, the named group passed cleanly.
-- Review schema: after CI exposed that the schema helper omitted
-  `character_maximum_length`, the focused file passed 34 tests and `npm run test:review`
-  passed 3 suites and 49 tests. Both duplicate CI API jobs had failed with `Expected: 64`
-  and `Received: undefined`; adding the missing information-schema selection corrected the
-  assertion without changing the schema.
-- Client unit: `npm run test:app:mosaic-review:unit` passed syntax checking for 57 files
-  and all 308 unit tests. Its first sandboxed invocation reported `57 files will not
-  parse.` because Node child processes were refused without stderr; the same command with
-  subprocess permission passed, proving this was the runner environment rather than a
-  parse failure.
-- Browser rendering: the focused direct Playwright command passed 7 applicable tests with
-  1 intentional desktop skip for the phone-only viewport case. Earlier runs revealed and
-  corrected three false assertions (modern computed-color syntax, browser overflow
-  propagation, and a fixture snapshot with no flagged rows) plus one real defect: state
-  redraws replaced the focused note editor. `renderPicker` now preserves that active DOM
-  node, and the phone scenario passed against the fix.
-- Real API: `npm run test:app:mosaic-review:api -- decision-details.spec.mjs
-  decision-state.spec.mjs` passed all 12 tests in 15.1 seconds against the disposable
-  testing database. The first exception runs timed out because the test asked for
-  `data-reason="undefined"`; correcting the test's reason lookup made both focused
-  exception cases pass before the final 12-case run.
-- Repository checks: `git diff --check` passed; the checked-in harness reported the spec
-  clear to implement and `everything the harness can verify is consistent`. Its first
-  sandboxed run could not spawn the hook-gate probes and reported all 23 as `unparseable`;
-  the permitted rerun passed every spec-gate and danger-gate assertion.
-- Manual: the human reported that the application behavior is working well and approved
-  proceeding to pull request and merge.
+- `git diff --check`: passed. Git reported only the repository's existing LF-to-CRLF
+  checkout warnings; it found no whitespace errors.
+- `npm run test:unit`: passed. All 68 source files parsed and all 278 unit checks passed.
+  The first sandboxed attempt falsely reported parse failures because the sandbox denied
+  the child processes used by the parser; the same command outside that restriction passed.
+- `npm run test:subsystems`: passed. All 52 Jest suites belonged to exactly one subsystem.
+- `npm run testing-db -- reset`: passed and rebuilt the disposable testing database from
+  its corpus dump, including the #172 note migration. `npx sequelize-cli db:migrate` also
+  brought the disposable development database up to the branch schema. The browser
+  launcher's reuse of the older test database had first failed with `column rc.note does
+  not exist`; that failure is why the database-refresh rule was added to `AGENTS.md`.
+- `npm run test:mosaic`: passed: 7 suites, 248 checks, no failures. An earlier run exposed
+  an intermittent concurrency check whose final projection disagreed with its derived
+  history; the named check passed when rerun alone, and the complete Mosaic group then
+  passed. No unrelated concurrency implementation was changed in #157.
+- The API browser tier exercised every spec at both configured viewports against the real
+  server and disposable testing database. Assertions made stale by merged #166, #167 and
+  #172 were aligned with their delivered behavior, then their affected files passed:
+  decision-details overlays 2/2, colour 14/14, mark/account behavior 2/2, and mosaic panel
+  behavior 24/24. The remaining 348-case segment reported 340 passes, 7 intentional
+  viewport/production-depth skips and one intermittent phone geometry failure; that exact
+  geometry check immediately passed at both viewports (2/2). No production CSS was changed
+  for a failure that could not be reproduced.
+- The launcher stopped each API process it started and its before/after journal checks did
+  not report damaged current-review state. The append-only test history grew as documented;
+  resetting the disposable testing database remains the way to discard that test history.
+
+Not covered, as planned: production-scale performance, live Jellyfin extraction, production
+`mare_v1`, and a narrated walkthrough. Those are not evidence for fixture retirement.

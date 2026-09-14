@@ -85,14 +85,14 @@
         {
             "type": "node-terminal",
             "request": "launch",
-            "name": "Mosaic Reviewer: Playwright (desktop + phone)",
-            "command": "npm run test:app:mosaic-review:e2e"
+            "name": "Mosaic Reviewer: browser tier (desktop + phone)",
+            "command": "npm run test:app:mosaic-review:api"
         },
         {
             "type": "node-terminal",
             "request": "launch",
-            "name": "Mosaic Reviewer: Playwright, watch it run",
-            "command": "npm run test:e2e:headed",
+            "name": "Mosaic Reviewer: browser tier, watch it run",
+            "command": "npm run test:api:headed",
             "cwd": "${workspaceFolder}/frontend/apps/marp-mosaic-review"
         },
         {
@@ -110,12 +110,6 @@
             "skipFiles": [
                 "<node_internals>/**"
             ]
-        },
-        {
-            "type": "node-terminal",
-            "request": "launch",
-            "name": "Mosaic Reviewer: serve standalone",
-            "command": "npm run serve:app:mosaic-review"
         },
         {
             "type": "node-terminal",

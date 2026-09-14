@@ -246,7 +246,14 @@ async function main() {
         // nothing between it and the arguments.
         const playwright = path.join(APP_DIR, 'node_modules', '@playwright', 'test', 'cli.js');
 
-        code = await run(process.execPath, [playwright, 'test', '--project=api', ...passthrough], {
+        // Both viewports, unless the caller named a project themselves. The fixture tier
+        // ran every check at desktop *and* phone width and #157 moved them without
+        // dropping the narrow one -- the rail overlay, the sort control and the phone's
+        // top chrome are only visible there.
+        const named = passthrough.some((argument) => argument.startsWith('--project'));
+        const projects = named ? [] : ['--project=api', '--project=api-phone'];
+
+        code = await run(process.execPath, [playwright, 'test', ...projects, ...passthrough], {
             cwd: APP_DIR,
             env: {
                 ...process.env,

@@ -1,161 +1,102 @@
 ---
-task: MarineAppliedResearch/MARP_API#172
-repos: [MARP_API]
-status: ready-for-pr
-needs: [database-schema]
+task: MarineAppliedResearch/MARP_API#157
+repos: [marp-api]
+status: verifying
+needs: []
 ---
 
 ## Goal
 
-Make the Mosaic Reviewer's structured exception reasons and free-text decision notes part
-of the existing staged commit workflow. A reviewer can open details for reviewed, flagged,
-promoted, or excluded decisions; committed details survive a reload and remain independent
-between scientific and training review.
+The mosaic reviewer's browser tests stop grading a fixture. 231 checks currently run
+against `src/data.js`, which is not a small version of the API but a **different** one --
+it writes the observation's own status column in place when a page is committed, and the
+endpoint never does. Everything living in the gap between what a commit recorded and what
+the row still says is therefore invisible to them by construction, which is why #130,
+#124's F6 and F8 and #135's R7 all shipped green. After this, every browser check runs
+against a real MARP API on a testing database built from a copy of the corpus, and
+`src/data.js` and the `?backing=fixture` flag are gone so it cannot come back.
+
+#132 built the mechanism and proved it on five checks. This is the rest of it.
 
 ## Requirements
 
-- **R1** — Preserve two meanings in the scientific record. `reason` remains an optional
-  mode-specific structured value for flagged or excluded decisions. `note` is optional
-  plain text on any scientific or training decision.
-- **R2** — Add a nullable note field to both `observation_reviews`, the append-only history,
-  and `observation_review_current`, its maintained current projection. Existing rows remain
-  valid with a null note, and projection rebuild/integrity rules preserve the field.
-- **R3** — The Mosaic commit contract accepts a note with a marked decision, validates and
-  normalizes it according to the settled limits, writes it to history, and carries it into
-  the current projection. The page query returns the current scientific and training notes
-  independently.
-- **R4** — The status badge opens a decision-details panel for each recorded or pending
-  `reviewed`, `flagged`, `promoted`, and `excluded` state. Clicking the tile outside the
-  badge retains its existing mark/take-back behavior.
-- **R5** — Flagged and excluded details retain their current mode-specific reason choices.
-  Every reason may carry a note, and reviewed and promoted details expose the same note
-  editor without inventing an exception reason.
-- **R6** — There is no separate Save action. Changing a reason or note stages that tile,
-  makes the pending state visible, and keeps the edit in the current browser session until
-  it is committed, reverted, or superseded by another deliberate edit.
-- **R7** — Both existing commit controls include staged detail edits. `Commit Marked`
-  includes an otherwise already-recorded decision whose details changed, and a page commit
-  carries those details while retaining its established sweep behavior.
-- **R8** — A successful details edit appends a new `observation_reviews` row and updates
-  `observation_review_current`; it never mutates an earlier history row. A failed or refused
-  commit leaves the staged edit available and does not claim it was stored.
-- **R9** — After reload/re-query, a saved exception reason recreates its reason chip and
-  reopening any decision badge shows its saved note. The tile shows a compact indication
-  that a note exists, never the full free text; the badge remains the route back to it.
-- **R10** — Scientific reason/note and training reason/note remain independent when the
-  same observation has decisions in both purposes.
-- **R11** — Notes are plain text. User content is rendered safely as text in the editor and
-  never interpolated as active markup into the tile or panel.
-- **R12** — Named repository and real-API browser tests cover migration shape, history and
-  projection writes, query hydration, staged UI behavior, both commit buttons, reload
-  persistence, all four decision values, and purpose independence.
-- **R13** — On a phone, focusing and typing in the note editor keeps that editor inside the
-  keyboard-reduced visible viewport and leaves the panel vertically scrollable. A downward
-  drag from the top of the mosaic remains available to the browser's pull-to-refresh.
-- **R14** — Every recorded reviewed, flagged, promoted, or excluded badge and borrowed tag
-  shows the decision author's two initials in a consistent compact circular icon. The initials
-  are derived from the existing `reviewer_id` relationship and username at query time; no
-  identity row, review row, or initials column is added to the database. Existing exception
-  decisions seeded into the page's mark map retain their stored author's initials.
-- **R15** — Decision tags, supporting chips, and the species-name caption remain legible
-  while using translucent backgrounds that reveal more of the thumbnail underneath. Delete
-  Mode retains its established visual treatment.
-- **R16** — Each tile with a numeric confidence shows a compact lower-right confidence
-  chip inside the transparent species-caption line. The caption reserves its right edge
-  for the chip, while decision tags retain their established position above it. It renders
-  the rounded percentage with at least two
-  digits (`0.54` as `54`, `0.07` as `07`), does not overlap a decision tag, and a missing
-  confidence renders no chip.
+- **R1** -- Every check in `tests/e2e/render.spec.mjs` (148, across 33 describes) runs in
+  the API project against the testing database, asserting what it asserted before.
+- **R2** -- Every check in `tests/requirements.js` (80) does the same.
+- **R3** -- Both viewports, as before. The narrow layout is its own set of defects and the
+  checks that see them keep the width that makes them visible. Coverage is never traded
+  for speed.
+- **R4** -- `src/data.js` is deleted, and so is `?backing=fixture` and everything that
+  existed only to select between two backings.
+- **R5** -- The unit tier keeps working and keeps its coverage. Where a unit check was
+  about a rule in `model/`, it survives; where it was about `src/data.js` itself, it goes
+  with its subject, and the report says which.
+- **R6** -- Nothing a test writes is left behind. After a run the testing database holds
+  exactly the decisions it held before, and a restore that did not apply fails the test
+  rather than being inherited by the next run.
+- **R7** -- No check deletes an observation it did not create. A delete reaching the real
+  endpoint from a test that did not seed the row is a failure, not a surprise.
+- **R8** -- The application's own documentation says what is true: `CLAUDE.md`'s *The two
+  backings*, *The test tiers* and *Where a new test goes* stop describing a fixture.
 
 ## Open assumptions
 
-- [x] **A1 · API contract/database schema · blocking** — Answered 2026-09-13: notes are
-  limited to 1,000 Unicode characters, stored as `text`, and rejected above the limit by
-  the API. Leading/trailing whitespace is trimmed and a blank result is stored as null.
-- [x] **A2 · scientific/data meaning and product/UI · blocking** — Answered 2026-09-13:
-  a note may accompany any structured flag/exclusion reason, including but not limited to
-  `Other / unsure`, and may also accompany reviewed or promoted decisions. Changing the
-  structured reason never silently clears the note.
-- [x] **A3 · product/UI · blocking** — Answered 2026-09-13: no Save details button. Reason
-  and note edits are staged and saved through the existing commit controls with the rest of
-  the review work.
-- [x] **A4 · database/schema · blocking** — Answered by the requested distinction and the
-  existing contract: do not overload `reason`. Add a nullable note to both review history
-  and current projection so structured exception classification and explanatory free text
-  remain separately queryable and lossless.
-- [x] **A5 · product/UI · non-blocking** — Preserve the established gesture split: the
-  decision badge opens details; the surrounding tile continues to mark or take back.
-- [x] **A6 · product/UI and security/permissions · blocking** — Answered 2026-09-13: show
-  every decision author's initials. Derive them from the username reached through the
-  review's existing `reviewer_id`; do not add a database row or persist duplicated initials.
-  A small additive Mosaic response change is acceptable.
+- [x] **A1 · behavioural · non-blocking** -- The migrated render checks open on
+  `?reviewStatus=unreviewed` rather than on the bare default address, except the ones that
+  are *about* the default question or about a flagged row. **Settled by what the checks
+  already assumed.** Scientific's default question shows flagged rows beside unreviewed
+  ones and `page.seedMarks` marks them on arrival, so on a real corpus a click on the
+  first tile is frequently a take-back rather than a mark -- and every inherited check of
+  the form "mark a tile, assert one tile is marked" was written against a page where that
+  could not happen. Dropping `flagged` reproduces that page on any corpus without
+  pretending the default is something else. `undecided()` in `support.mjs`.
+- [x] **A2 · architectural · non-blocking** -- Restoration is generic rather than
+  per-test. `tests/api/journal.mjs` listens to the page's own traffic -- every row the
+  application was served, and every observation it committed or corrected -- and puts
+  those back through the API afterwards, checking its own work. 43 bespoke `finally`
+  blocks would have been 43 chances to miss one. It is **passive** (`page.on`, not
+  `page.route`) because the prefetching checks count requests and assert their order, and
+  an interception layer over the page query changes the thing they are about.
+- [x] **A3 · behavioural · non-blocking** -- `breakThumbnails` becomes a real row whose
+  extraction failed wherever one row is enough -- the corpus has fifteen -- and a seeded
+  row where the state does not exist in the corpus at all (`queued`, `permanent`) or where
+  a whole page of them is needed. Seeding is the sanctioned pattern: a test may create
+  rows and must remove them. Rewriting the endpoint's own answer with `page.route` was
+  considered and rejected for the page-wide cases: it is a fake in the one place this
+  issue exists to remove one.
+- [x] **A4 · destructive · non-blocking** -- The one check that confirms a deletion
+  destroys observations **it seeded**. The journal refuses any other delete: nothing can
+  un-delete a row, so a test reaching that route without having said `allowDeletes` fails
+  naming the ids rather than quietly eating a corpus somebody else's checks read.
+- [x] **A5 · architectural · non-blocking** -- `tests/requirements.js` becomes Playwright
+  tests rather than staying a bespoke runner in `tests.html`. Its `reset()` called
+  `MarpData.reload()`, which has no equivalent against a server; a fresh page load per
+  check is the only reliable reset, and Playwright already gives each test one. It also
+  reports each check by name, which `contract.spec.mjs` was straining to do by scraping
+  `li.fail`. `tests.html` and `contract.spec.mjs` go with the fixture they installed.
+- [x] **A6 · environment · non-blocking** -- The static file server (`tools/serve.mjs`)
+  and the `desktop`/`phone` Playwright projects go too. They served the application with
+  no `/api` behind it, which was only ever usable with the fixture in front of it; without
+  one they serve an application that cannot load. `MARP_API_BASE` stops being an opt-in
+  and becomes required, with a refusal that names the command supplying it.
+
+No blocking assumption was open. Each of the six is a choice between workable options,
+made and written down here rather than asked, per the brief.
 
 ## Decisions
 
-- **2026-09-13** — The backend already persists and returns a structured reason when it is
-  included in a commit. The disappearing chip is a client staging defect: `setReason`
-  changes only browser state and does not make an existing seeded exception eligible for
-  `Commit Marked`.
-- **2026-09-13** — Notes are distinct from reasons. The current contract intentionally
-  rejects reasons on accepted decisions and enforces a closed reason vocabulary; relaxing
-  that field would change existing scientific meaning.
-- **2026-09-13** — Details use the established commit workflow. Edits remain pending until
-  an existing commit action succeeds, rather than creating a one-off save path.
-- **2026-09-13** — The details target is the status badge for every decision value. This
-  extends the target already used by flags while preserving the separately settled tile
-  gestures.
-- **2026-09-13** — Notes apply to all four scientific/training decision values and may
-  supplement any structured exception reason. A compact tile indicator says a note exists;
-  the full text remains in the details panel.
-- **2026-09-13** — Notes are capped at 1,000 Unicode characters, trimmed at the API
-  boundary, and normalized from blank text to null.
-- **2026-09-13** — Mobile review keeps the details panel inside the visual viewport while
-  the keyboard is present and permits the browser's native pull-to-refresh gesture.
-- **2026-09-13** — Decision attribution is one or two initials derived from the existing
-  author's username. The Mosaic response exposes only those initials alongside its existing
-  reviewer id; it does not expose a full name or username and stores nothing new.
-- **2026-09-13** — Image overlays use lighter translucent surfaces so labels do not conceal
-  as much of the organism. Delete Mode remains outside this visual adjustment.
-
-## Plan
-
-1. Add the nullable note columns through a reversible migration and update both Sequelize
-   models plus projection rebuild/integrity coverage.
-2. Extend commit validation, history insertion, projection maintenance, OpenAPI schemas,
-   generated documentation, and page-query fields without weakening reason validation.
-3. Extend the Mosaic row/mark model so a pending or recorded decision can stage details,
-   becomes eligible for either commit control, and hydrates its saved details after reload.
-4. Generalize the badge details panel across both values in Scientific and Training while
-   retaining mode-specific structured reasons only for exceptions.
-5. Derive current decision-author initials through the existing reviewer/user relationship
-   and render them on every recorded primary badge and borrowed tag.
-6. Write the detailed G3 verification plan after A1 and A2 are answered; do not run tests
-   before the human approves that plan.
-
-## Acceptance criteria
-
-- Existing flags and exclusions can acquire or change a reason through a normal commit,
-  and the reason chip survives reload.
-- Reviewed, flagged, promoted, and excluded decisions can carry a persisted note, and a
-  flag/exclusion note can accompany any structured reason.
-- Both commit buttons save staged details and continue to perform their existing decision
-  semantics.
-- Reopening a badge shows the current stored or staged details, and the UI distinguishes a
-  pending edit from a stored value.
-- Review history, current projection, API responses, and browser rendering agree after a
-  commit and reload.
-- Existing records, reason vocabularies, decision ownership/concurrency behavior, Delete
-  Mode, species correction, and tile gestures retain their established meaning.
-
-## Test plan
-
-Written in `.marp/verification.md`. It names the focused migration/repository tests and
-real-API Playwright cases that restore every disposable row they touch. Awaiting human
-review before any verification command is run.
-
-## Status
-
-- **Gate:** verification plan awaiting approval
-- **Notes:** The isolated workspace is based on the `develop` merge of #170. Investigation
-  and G1 are complete with every material assumption answered. The separate populated
-  review server remains on the prior workspace for the human to explore.
+- **2026-09-12** -- #132's decision that the fixture stays is reversed, which is what this
+  issue is. Speed is not worth a tier that cannot see the defect, and "it can break a
+  commit on purpose" is answered by `page.route()`, which exercises the client's real
+  error path rather than a simulation of it.
+- **2026-09-13** -- The API project runs one worker, and now that every browser check is
+  in it that is no longer conditional. There is one testing database and two tests that
+  each isolate "the species with exactly one observation" isolate the same observation.
+- **2026-09-13** -- `observation_reviews` growing across a run is not damage. It is the
+  decision log and it keeps its rows by design; `observation_review_current` is the
+  projection, and that is what the journal restores and what a digest before and after a
+  run compares.
+- **2026-09-13** -- #157 waited for #172 to merge, then incorporated it. #172's API,
+  schema, model and UI implementation is retained; its changes to `src/data.js`, the
+  generated fixture and the old render suite are translated into the real-API seeder and
+  `tests/api/decision-details.spec.mjs`. The deleted fixture files stay deleted.

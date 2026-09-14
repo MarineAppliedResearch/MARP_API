@@ -1,8 +1,9 @@
 /**
  * The seam, backed by MARP_API.
  *
- * **The same method set `src/data.js` presents** (R2), so `src/store.js`, `src/ui/` and
- * `src/model/` go on calling the seam and never the network. That substitutability is the
+ * **The method set `src/backend.js` declares** (R2), so `src/store.js`, `src/ui/` and
+ * `src/model/` go on calling the seam and never the network. It was the set `src/data.js`
+ * presented too, until #157 deleted the fixture. That substitutability is the
  * claim Phase 8 exists to test — *"if phases 0 and 4–7 held their contracts, nothing above
  * `api/` changes"* — and it is a **measurement**, so an adapter that renamed the
  * endpoint's fields back into the client's old private vocabulary would make the claim
@@ -40,10 +41,11 @@ const COMMIT_PATH = {
 /**
  * The comparisons a query makes, from either shape the store may be holding.
  *
- * Mirrors `termsFor` in `src/data.js` deliberately: the wire carries an array of
- * `{ field, dir }`, the store holds one `{ field, dir, then }` object, and `sortTerms` is
- * the rule that turns the second into the first. Both backings reading the same rule is
- * what stops them disagreeing about what a sort means.
+ * The wire carries an array of `{ field, dir }`, the store holds one
+ * `{ field, dir, then }` object, and `sortTerms` in `model/filters.js` is the rule that
+ * turns the second into the first -- so a prefetched page and the visible page cannot
+ * disagree about what a sort means. `src/data.js` mirrored this before #157 deleted it;
+ * `tests/unit/api-requests.test.mjs` is what holds the two shapes to one order now.
  */
 const termsFor = (sort) =>
   (Array.isArray(sort) && sort.length)

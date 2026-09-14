@@ -15,7 +15,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..');
-const SKIP = new Set(['node_modules', 'test-results', 'demo', '.git', 'fixtures']);
+const SKIP = new Set(['node_modules', 'test-results', 'demo', '.git']);
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {

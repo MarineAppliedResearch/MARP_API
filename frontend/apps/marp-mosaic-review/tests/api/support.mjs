@@ -399,11 +399,14 @@ export async function correctSpecies(request, row, speciesId) {
 /**
  * Assert this page really is talking to the API.
  *
- * Every test in this directory calls it. Without it a run can grade a fixture and
- * report it as the API, which is the failure this whole tier exists to make
- * impossible -- `tests/e2e/` injects `?backing=fixture` in a `beforeEach` and this
- * project's `testDir` simply does not include that file, so the only thing
- * standing between the two is saying so out loud.
+ * Every test in this directory calls it, and there is nothing left for it to catch --
+ * #157 deleted `src/data.js` and the flag that selected it, so `src/backend.js` holds one
+ * backing and the application cannot be pointed anywhere else.
+ *
+ * **It stays anyway, and that is the point of it.** A run grading a fixture and reporting
+ * it as the API is the failure this tier exists to make impossible, and a second backing
+ * arrives as somebody's convenience rather than as a decision. This is the assertion that
+ * refuses it, and it costs a millisecond.
  *
  * @param {import('@playwright/test').Page} page - The page.
  * @returns {Promise<void>} Resolves when it is confirmed.
@@ -435,6 +438,159 @@ export async function ready(page) {
     await page.waitForTimeout(250);
   }
   return last;
+}
+
+/**
+ * The address the migrated render checks open on: the default question, minus the rows
+ * that arrive already decided.
+ *
+ * **This is the single biggest difference between the fixture tier and this one**, and
+ * it is not a convenience. Scientific opens on `reviewStatus: ['unreviewed', 'flagged']`
+ * and a page arrives with its existing exceptions **already marked** (`page.seedMarks`),
+ * so on a real corpus a click on the first tile is frequently a *take-back* rather than
+ * a mark: the tile comes back `tile out-reverted` and never gains `marked`. Every check
+ * inherited from `tests/e2e/render.spec.mjs` that says "mark a tile and assert one tile
+ * is marked" was written against a page where that could not happen.
+ *
+ * Dropping `flagged` restores exactly that page, on any corpus, without pretending the
+ * default question is something it is not -- a check that is *about* the default question
+ * opens on `./` instead, and a check about a flagged row narrows to one deliberately.
+ *
+ * **It says nothing about `trainingDisposition`, and that is not an omission.** A borrowed
+ * dimension arrives not filtering at all -- `statusDimensions` gives it `defaults: []`
+ * deliberately (#89), because taking its owner's default would drop every promoted and
+ * excluded row out of Scientific's opening page with nothing on screen saying so. So
+ * promoted and excluded rows *are* here, wearing borrowed tags. They do not arrive marked:
+ * `page.seedMarks` asks `existingState`, which is mode-scoped, so only a scientific
+ * decision seeds a scientific mark.
+ *
+ * @param {string} [extra] - Further parameters, without a leading `&`.
+ * @returns {string} An address to hand to `page.goto`.
+ */
+export function undecided(extra = '') {
+  return `./?reviewStatus=unreviewed${extra ? `&${extra}` : ''}`;
+}
+
+/**
+ * A tile nobody has decided about, pinned by its id.
+ *
+ * Replaces `.tile:not(.failed):not(.queued).first()`, which is two traps at once on a
+ * real corpus. The first is the locator trap: a selector describing a *state* is
+ * re-resolved on every use, so one clicked once no longer matches and `.first()` slides
+ * silently onto a different tile. The second is that "not failed and not queued" is not
+ * the same as "not decided" -- a tile carrying a committed acceptance takes the decision
+ * back when clicked, which is the opposite of marking it.
+ *
+ * A tile with no `.badge` is the one that has neither, because the badge is exactly one
+ * element per tile and carries the mark, the outcome or the record.
+ *
+ * @param {import('@playwright/test').Page} page - A settled page.
+ * @param {Object} [options] - `at` is `0`, an index, or `'last'`.
+ * @returns {Promise<import('@playwright/test').Locator>} The tile, pinned by `data-id`.
+ */
+export async function freshTile(page, { at = 0 } = {}) {
+  const ids = await page.locator('.tile:not(.failed):not(.queued)').evaluateAll(
+    (tiles) => tiles.filter((tile) => !tile.querySelector('.badge')).map((tile) => tile.dataset.id)
+  );
+
+  expect(ids.length, 'no tile on this page is undecided and has a picture, so there is '
+    + 'nothing here to mark. Open on `undecided()` rather than on the default question, '
+    + 'which shows flagged rows and arrives with them already marked.').toBeGreaterThan(0);
+
+  const wanted = at === 'last' ? ids[ids.length - 1] : ids[at];
+  expect(wanted, `this page holds ${ids.length} undecided tile(s) and the check wanted `
+    + `number ${at}.`).toBeTruthy();
+
+  return page.locator(`.tile[data-id="${wanted}"]`);
+}
+
+/**
+ * Put an observation whose picture genuinely failed on screen, and hand back its tile.
+ *
+ * The whole of `breakThumbnails`, for every site that broke exactly one. Nothing is
+ * broken on purpose: the corpus carries rows whose extraction failed, which is what the
+ * fixture was imitating. Found by sweeping, because the mosaic has **no thumbnail-status
+ * filter** -- the status is a field on the row rather than a dimension you can ask by.
+ *
+ * The address narrows to the row's own line and then to the page it falls on *under that
+ * question*, at the size the browser settled on. A page number taken from one question
+ * and used against another lands on a different tile, which reads exactly like the
+ * application failing to draw a row it was given.
+ *
+ * @param {import('@playwright/test').Page} page - The page to drive.
+ * @param {import('@playwright/test').APIRequestContext} request - Playwright's request fixture.
+ * @param {Object} [options] - `status` is the thumbnail state to look for.
+ * @returns {Promise<Object>} `{row, tile}`.
+ */
+export async function openOnBrokenPicture(page, request, { status = 'failed' } = {}) {
+  const row = await sweepForRow(
+    request,
+    (candidate) => candidate.thumbnail_status === status,
+    `has a thumbnail in the state \`${status}\``
+  );
+
+  const narrowed = { line: [row.line] };
+  const address = `./?line=${encodeURIComponent(row.line)}`;
+
+  await page.goto(address);
+  await ready(page);
+
+  const pageSize = await pageSizeOf(page);
+  const onPage = await findPageOf(request, narrowed, row.observation_id, pageSize);
+
+  if (onPage > 1) {
+    await page.goto(`${address}&page=${onPage}`);
+    await ready(page);
+  }
+
+  const tile = page.locator(`.tile[data-id="${row.observation_id}"]`);
+  await expect(tile).toBeVisible();
+  return { row, tile };
+}
+
+/**
+ * Open the filter rail, which starts collapsed on a phone.
+ *
+ * Came with the render tier from `tests/e2e/render.spec.mjs` (#157) and matters more
+ * here than it did there: this project runs at a real phone width, where the rail
+ * **overlays** the mosaic. A test that opens it and then clicks a tile finds every
+ * tile present and covered, which Playwright reports as resolved-and-never-visible --
+ * which reads like a missing tile and is not one. Close it again before clicking.
+ *
+ * @param {import('@playwright/test').Page} page - The page.
+ * @returns {Promise<void>} Resolves once a rail control is visible.
+ */
+export async function openRail(page) {
+  const rail = page.locator('#statusFilters [data-status]').first();
+  if (!(await rail.isVisible().catch(() => false))) await page.locator('#railbtn').click();
+  await expect(rail).toBeVisible();
+}
+
+/**
+ * Close the rail again, on the viewport where it is in the way.
+ *
+ * @param {import('@playwright/test').Page} page - The page.
+ * @returns {Promise<void>} Resolves once it is out of the way.
+ */
+export async function closeRail(page, info) {
+  if (!isPhone(info)) return;
+  const rail = page.locator('#statusFilters [data-status]').first();
+  if (await rail.isVisible().catch(() => false)) await page.locator('#railbtn').click();
+  await expect(rail).toBeHidden();
+}
+
+/**
+ * Is this the narrow project?
+ *
+ * The two projects run the same directory, so a check about layout asks which one it is
+ * in rather than being written twice. `test.info().project.name` is the answer; the
+ * width is not, because a headless viewport can be clamped and lie about it.
+ *
+ * @param {Object} info - Playwright's `testInfo`.
+ * @returns {boolean} True on `api-phone`.
+ */
+export function isPhone(info) {
+  return Boolean(info && info.project && info.project.name === 'api-phone');
 }
 
 /**

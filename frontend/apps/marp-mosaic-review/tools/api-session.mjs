@@ -1,8 +1,9 @@
 /**
  * Sign in to a running MARP API and leave the session where Playwright can load it.
  *
- * Only used when a run is pointed at the API rather than at `tools/serve.mjs` — see
- * `MARP_API_BASE` in `playwright.config.mjs`. The static server needs none of this.
+ * Every run needs it. It was conditional while `tools/serve.mjs` could serve the
+ * application in front of the fixture; #157 deleted both, so `MARP_API_BASE` is required
+ * rather than optional — see `playwright.config.mjs`.
  *
  * **Why a global setup rather than a first scene.** `/apps/marp-mosaic-review` is gated in
  * `app.js` on `observations:read`, so the app is not even served without a session — and the

@@ -3,8 +3,9 @@
 An interactive prototype of the MARP Picture Mosaic Reviewer, built against the design
 record in [MARP_API#68](https://github.com/MarineAppliedResearch/MARP_API/issues/68).
 
-**It talks to MARP_API.** `src/api/` is the seam; the fake data fixture survives as a
-*test* fixture and the application never runs on it. There is still no build step and no
+**It talks to MARP_API, and to nothing else.** `src/api/` is the seam. There was a fake
+data fixture beside it for the months before this app had an API; #157 deleted it, along
+with the flag that could point the application at it. There is still no build step and no
 dependencies, and it may still be rewritten — possibly in a different stack, and possibly
 as its own repository — once the design settles.
 
@@ -23,17 +24,9 @@ an unauthenticated request is redirected rather than handed a page that cannot w
 npm run dev                    # from the repository root
 ```
 
-`npm run serve` still exists and serves the app standalone, with no API behind it. That is
-for the **requirement checks**, which run against the fixture on purpose:
-
-```bash
-npm run serve
-```
-
-- Requirement checks — `/apps/marp-mosaic-review/tests.html` on the port it prints.
-- The app on the fixture — add `?backing=fixture`. It paints a permanent
-  `FIXTURE — not the API` banner, because a page that looks like the real thing and is not
-  is the one outcome worth making impossible to miss.
+There is no standalone server any more. `tools/serve.mjs` served these files with nothing
+behind them, which only worked because the fixture was in front of the API; without one it
+would serve an application that cannot load.
 
 Opening `index.html` directly will show an explanatory error rather than a blank page.
 
@@ -67,7 +60,6 @@ the contract the real implementation has to satisfy.
 
 ```
 index.html              the page
-tests.html              contract checks, in the browser
 
 src/model/              the rules. No DOM, no network.
   modes.js                what a mark means, what a commit does per mode
@@ -79,8 +71,7 @@ src/api/                the only place that knows a URL, a header or a status
   requests.js             the request bodies. Tested by asserting the serialised body
   errors.js               expired / refused / failed, as three separate states
   index.js                the seam MARP_API is behind
-src/backend.js          which backing the seam has. The app never chooses the fixture
-src/data.js             the fixture. **Tests only** — see CLAUDE.md, *The two backings*
+src/backend.js          the seam itself. One backing, and it is src/api/
 src/store.js            state and named actions; orchestrates model and the seam
 src/ui/                 state in, DOM out. Never mutates state.
   dom.js                  helpers and icons
@@ -93,10 +84,9 @@ src/ui/                 state in, DOM out. Never mutates state.
   mount.js                wiring — the only place that binds events
 
 styles/app.css          appearance; palette from shared/assets/css/tokens.css
-fixtures/               fabricated observations, and placeholder crops
-tools/make-fixture.mjs  regenerates the fixture deterministically
 tests/unit/             model unit tests, and what reaches the wire — Node, no browser
-tests/requirements.js   contract checks, each naming the requirement it holds us to
+tests/api/              the browser tier, against a real API on a testing database
+tests/walkthrough/      the narrated scenarios, for watching rather than for grading
 ```
 
 **`src/model/` touches neither the DOM nor the network.** That is what makes the
@@ -112,21 +102,6 @@ touching the UI — and it held: the interface changed where the *vocabulary* wa
 nowhere else. Every place it was wrong is a finding rather than something an adapter
 absorbed, which is why there is no adapter.
 
-## The fixture
-
-540 fabricated observations carrying the real column names from `observations` and the
-tables it joins to. Regenerate with:
-
-```bash
-node tools/make-fixture.mjs
-```
-
-Deterministic — the same seed produces the same file, so the checks stay stable.
-
-The organism crops in `fixtures/thumbs/` are placeholders sliced from the earlier
-concept art. They carry no scientific meaning, and are only varied enough to make
-outlier-spotting realistic.
-
 ## Tests
 
 This application owns its own suite, so it can be extracted from MARP_API without
@@ -135,18 +110,23 @@ untangling anything. From this folder:
 ```bash
 npm install                    # once
 npx playwright install chromium # once
-npm test                       # both tiers
+npm test                       # the unit tier, which is what this package can run alone
 ```
+
+**`npm test` here is the unit tier and nothing else, deliberately.** The browser tier
+needs a running API, a testing database and a reviewer login, and none of the three is
+something this package can start — so it is driven from the repository root, which is
+where those live. Asking for it here without them is a refusal naming the command, rather
+than a skip: a skipped suite looks green.
 
 From the repository root:
 
 | Script | What it runs |
 | --- | --- |
 | `npm run test:apps` | every frontend application's own suite |
-| `npm run test:app:mosaic-review` | this app, all tiers |
-| `npm run test:app:mosaic-review:unit` | the fast tier — parse check plus the model rules |
-| `npm run test:app:mosaic-review:e2e` | Playwright: render and contract, desktop and phone |
-| `npm run serve:app:mosaic-review` | the standalone server, no database |
+| `npm run test:app:mosaic-review` | this app's own suite — the unit tier |
+| `npm run test:app:mosaic-review:unit` | the same thing, named for the tier |
+| `npm run test:app:mosaic-review:api` | the browser tier: provisions the testing database if it is not there, serves the app from it, runs, stops |
 | `npm run demo:app:mosaic-review` | record the narrated walkthroughs |
 
 All of them are also in VS Code. **Run and Debug** (F5) lists them under *Mosaic
@@ -160,23 +140,32 @@ else reads the source before a browser does. It runs first as part of `test:unit
 because a single stray quote once took the whole contract page down and presented as a
 sixty-second hang rather than as an error.
 
-**Unit — the model, in Node.** No browser, no server, no database; ~50 ms.
+**Unit — the model, in Node.** No browser, no server, no database; about a second,
+including the parse check. This is the working loop.
 
 ```bash
 npm run test:unit
 ```
 
-**Render — the DOM, in a real browser.** Playwright, run against desktop and a
-phone viewport. This is the tier that catches what the others structurally cannot:
-that a badge is actually drawn, that a panel is not positioned off-screen, that the
-grid settles instead of re-querying itself, and that no console errors occur during
-a full flow. Every one of those was a real defect that the store-level checks passed
-straight through.
+**The browser tier — a real API, a real session, a testing database.** Playwright, at
+desktop and phone width, against a copy of the corpus rather than the corpus. It catches
+what the others structurally cannot: that a badge is actually drawn, that a panel is not
+positioned off-screen, that the grid settles instead of re-querying itself, that no
+console errors occur during a full flow — and, since #157, what the endpoint does that a
+fake never would.
 
 ```bash
-npm run test:e2e
-npm run test:e2e:headed        # watch it happen
+npm run test:app:mosaic-review:api                       # from the repository root
+npm run test:app:mosaic-review:api -- -g take-back       # one of them
 ```
+
+The first run builds the testing database from a corpus dump and says so; every run after
+that finds it. `npm run testing-db status` says what is there and `npm run testing-db
+reset` throws it away and loads the dump again. `MARP_API`'s own `AGENTS.md` has the
+detail, under *The testing database*.
+
+`npm run test:api` and `npm run test:api:headed` from this folder drive Playwright
+directly, for when a server is already running and pointed at by `MARP_API_BASE`.
 
 ## Recording a walkthrough
 
@@ -225,16 +214,6 @@ local neural engine such as Piper, means one more entry in `ENGINES`.
 A narrated run holds each caption long enough to be spoken over, so it takes about
 a minute rather than thirty seconds.
 
-**Contract — the workflow, in the browser.** `tests.html` runs a set of behavioural checks, each naming the requirement from #68 it
-holds the prototype to — that a tap toggles, that a reason stays optional, that a
-scientific commit acts on the *unmarked* tiles while a delete commit acts on the
-*marked* ones, that unavailable imagery is skipped without blocking the batch, that
-committing does not advance the page, and that saving a correction does not clear the
-flag.
-
-They drive the same actions the interface drives, so they test behaviour rather than
-markup. They need the server running.
-
 ## Known gaps
 
 **Checked against the code, not remembered.** Every line this section used to hold had
@@ -257,10 +236,9 @@ follows is only what the code itself cannot tell you.
   today it discriminates time of day and reports the rows whose `tc` carries no readable
   clock rather than looking complete. It starts discriminating dates, with no change to the
   control, once an observation carries one — #76.
-- **The browser tier still grades the fixture.** The seeded database it needs is not built
-  yet, and the six real observations in the development database are one species in one
-  dive, which cannot exercise paging or filtering. The tier says which backing it graded
-  and asserts it, so this is visible rather than assumed.
+- **The browser tier writes, and what it writes to is a copy that holds real decisions.**
+  So a check touches as few rows as its assertion needs and puts them back in a `finally`,
+  even though `testing-db reset` can rebuild the database from the dump.
 - **The identity is the only thing read at start-up.** A reviewer who is signed in but
   lacks `observations:write` or `species:read` meets a refusal panel naming the missing
   permission when they try to commit or correct, rather than a degraded interface that
