@@ -784,6 +784,14 @@ Two things about the build that cost time in #140:
 is a `requirePermissionSession` line registered *before* the static mount, the way
 `/apps/dashboard` already is.
 
+**Review frontend applications through the main API server.** In particular, do not use
+an application's standalone static server to review the Machine Learning Dashboard. A
+static server does not reproduce the site root, session authentication, route guards or
+API behavior, so it can turn a real navigation path into a 404 and hide integration
+defects at the same time. Fetch the current development branch, start `server.js` from the
+repository root on a free port, and open the application through that API origin. The
+standalone servers remain useful only for their narrowly scoped automated rendering checks.
+
 Each application owns its own test suite so it can be extracted into its own repository
 later without untangling anything. `npm run test:apps` from here runs them all.
 
