@@ -616,10 +616,10 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   cursor: grab; touch-action: none; overscroll-behavior: contain; }
 .frame-viewer__viewport.dragging { cursor: grabbing; }
 .frame-viewer__image { position: relative; flex: none; margin: auto; transition: width 100ms ease; }
+.frame-viewer__image.pinching { transition: none; }
 .frame-viewer__image img { display: block; width: 100%; height: auto; user-select: none; pointer-events: none; }
 .frame-viewer__box { position: absolute; box-sizing: border-box;
-  container-type: inline-size; border: 2px solid rgba(255, 196, 82, .95);
-  box-shadow: 0 0 0 1px rgba(3, 9, 15, .9), inset 0 0 0 1px rgba(3, 9, 15, .55);
+  container-type: inline-size; border: 2px solid #ffba3b;
   pointer-events: none; }
 .frame-viewer__box-label { position: absolute; left: -2px;
   box-sizing: border-box; width: calc(100% + 4px);

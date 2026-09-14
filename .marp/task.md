@@ -43,7 +43,7 @@ following milestone in #181.
   context the reviewer had before opening it. Browser Back, including a phone's Back
   gesture, closes the dialog first instead of leaving the Mosaic.
 - **R9** — The viewer initially fits the whole frame, supports zoom and pan by mouse,
-  native two-finger pinch, and keyboard, exposes reset/fit and `Zoom to box` actions,
+  two-finger pinch anchored naturally beneath the gesture midpoint, and keyboard, exposes reset/fit and `Zoom to box` actions,
   prevents panning the image irretrievably off-screen, and has an accessible name, focus
   trap, and close behavior.
 - **R10** — The served artifact preserves the decoded source frame's native pixel
@@ -55,7 +55,7 @@ following milestone in #181.
   observation ID alone sits below it; each is approximately the box width and scales conservatively with that width,
   and uses light type on a nearly transparent background so it does not obscure the frame.
   Both labels hide with the box; neither label nor box is baked into or confused with the
-  source image.
+  source image. The box itself is one pure-color stroke without a black outline or shadow.
 - **R12** — Full-frame failures say whether retrying can help. Transient failures offer an
   explicit retry at interactive priority; permanent failures such as an unresolvable video,
   frame-rate mismatch, or frame outside the source do not repeatedly contact Jellyfin.

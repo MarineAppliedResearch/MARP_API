@@ -84,7 +84,8 @@ every layer it changes.
 - Landscape and portrait source dimensions both fit entirely at 100%; zoom is bounded and
   panning cannot make the reset/close controls unreachable.
 - A two-finger distance change produces bounded pinch zoom, and `Zoom to box` centers the
-  labeled observation with context still visible around it.
+  labeled observation with context still visible around it. The image point beneath the
+  gesture midpoint remains beneath it as the fingers move.
 - A box that crosses a frame edge remains bounded to the visible image.
 - Clipboard denial leaves the exact decimal ID selected and reports the failure accessibly.
 - Inspection does not commit, withdraw, correct, delete, or create scientific review data.

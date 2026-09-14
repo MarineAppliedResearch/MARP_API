@@ -31,6 +31,17 @@ export function pinchZoom(startZoom, startDistance, currentDistance) {
   return clampZoom(Number(startZoom) * (Number(currentDistance) / baseline));
 }
 
+export function anchoredScroll(scroll, imageRect, focalPoint, pointer) {
+  return {
+    left: Math.max(0, Number(scroll.left)
+      + Number(imageRect.left) + Number(focalPoint.x) * Number(imageRect.width)
+      - Number(pointer.x)),
+    top: Math.max(0, Number(scroll.top)
+      + Number(imageRect.top) + Number(focalPoint.y) * Number(imageRect.height)
+      - Number(pointer.y))
+  };
+}
+
 export function zoomForBox(box, viewportWidth, viewportHeight, imageWidth, imageHeight) {
   const rectangle = overlayRect(box);
   if (!rectangle || rectangle.width === 0 || rectangle.height === 0) return 1;

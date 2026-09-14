@@ -2,7 +2,7 @@
 import { state, actions } from '../store.js';
 import { MarpBackend } from '../backend.js';
 import {
-  fittedWidth, overlayRect, pinchZoom, zoomForBox
+  anchoredScroll, fittedWidth, overlayRect, pinchZoom, zoomForBox
 } from '../model/frame-viewer.js';
 import { $, el } from './dom.js';
 
@@ -14,6 +14,10 @@ const percent = (value) => `${value * 100}%`;
 const pointerDistance = ([first, second]) => Math.hypot(
   second.x - first.x, second.y - first.y
 );
+const pointerMidpoint = ([first, second]) => ({
+  x: (first.x + second.x) / 2,
+  y: (first.y + second.y) / 2
+});
 
 function wirePan(viewport, image, output, fitWidth) {
   const pointers = new Map();
@@ -25,7 +29,20 @@ function wirePan(viewport, image, output, fitWidth) {
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     viewport.setPointerCapture(event.pointerId);
     if (pointers.size >= 2) {
-      pinch = { distance: pointerDistance([...pointers.values()].slice(0, 2)), zoom: liveZoom };
+      const pair = [...pointers.values()].slice(0, 2);
+      const midpoint = pointerMidpoint(pair);
+      const imageRect = image.getBoundingClientRect();
+      pinch = {
+        distance: pointerDistance(pair),
+        zoom: liveZoom,
+        focalPoint: {
+          x: imageRect.width > 0
+            ? Math.max(0, Math.min(1, (midpoint.x - imageRect.left) / imageRect.width)) : 0.5,
+          y: imageRect.height > 0
+            ? Math.max(0, Math.min(1, (midpoint.y - imageRect.top) / imageRect.height)) : 0.5
+        }
+      };
+      image.classList.add('pinching');
       drag = null;
     } else {
       drag = { id: event.pointerId, x: event.clientX, y: event.clientY,
@@ -38,9 +55,17 @@ function wirePan(viewport, image, output, fitWidth) {
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pinch && pointers.size >= 2) {
       event.preventDefault();
+      const pair = [...pointers.values()].slice(0, 2);
+      const midpoint = pointerMidpoint(pair);
       liveZoom = pinchZoom(pinch.zoom, pinch.distance,
-        pointerDistance([...pointers.values()].slice(0, 2)));
+        pointerDistance(pair));
       image.style.width = `${fitWidth * liveZoom}px`;
+      const nextScroll = anchoredScroll(
+        { left: viewport.scrollLeft, top: viewport.scrollTop },
+        image.getBoundingClientRect(), pinch.focalPoint, midpoint
+      );
+      viewport.scrollLeft = nextScroll.left;
+      viewport.scrollTop = nextScroll.top;
       output.textContent = `${Math.round(liveZoom * 100)}%`;
       return;
     }
@@ -54,6 +79,7 @@ function wirePan(viewport, image, output, fitWidth) {
     if (pinch) {
       pinch = null;
       drag = null;
+      image.classList.remove('pinching');
       viewport.classList.remove('dragging');
       actions.setFullFrameZoom(liveZoom);
       return;

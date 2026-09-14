@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  clampZoom, fittedWidth, fullFrameActionState, overlayRect, pinchZoom, zoomForBox
+  anchoredScroll, clampZoom, fittedWidth, fullFrameActionState, overlayRect, pinchZoom, zoomForBox
 } from '../../src/model/frame-viewer.js';
 
 test('#176: the centre-origin scientific box becomes a top-left viewer overlay', () => {
@@ -29,6 +29,15 @@ test('#176 R9: a two-finger distance change becomes bounded native pinch zoom', 
   assert.equal(pinchZoom(1, 100, 225), 2.25);
   assert.equal(pinchZoom(4, 100, 25), 1);
   assert.equal(pinchZoom(4, 100, 400), 8);
+});
+
+test('#176 R9: pinch zoom keeps the image point beneath the finger midpoint', () => {
+  assert.deepEqual(anchoredScroll(
+    { left: 40, top: 20 },
+    { left: -60, top: -30, width: 600, height: 300 },
+    { x: 0.5, y: 0.5 },
+    { x: 180, y: 90 }
+  ), { left: 100, top: 50 });
 });
 
 test('#176 R9: zoom to box fills the viewport while retaining context around it', () => {
