@@ -183,6 +183,13 @@ export async function renderPicker() {
     <button class="chip change ${correcting ? 'on' : ''}" data-act="correct"
       title="Change this observation's species">Change species&hellip;</button>
   </div>` : '';
+  const fullFrameReady = row.full_frame_status === 'ready';
+  const fullFrameBusy = row.full_frame_status === 'queued';
+  const fullFrameFailed = row.full_frame_status === 'failed';
+  const fullFrameAction = fullFrameReady ? 'open-full-frame' : 'request-full-frame';
+  const fullFrameLabel = fullFrameReady ? 'View full frame'
+    : fullFrameBusy ? 'Preparing full frame…'
+      : fullFrameFailed ? 'Try full frame again' : 'Request full frame';
 
   const panel = el(`<div class="pick" data-picker-id="${id}" role="dialog" aria-label="${label} details">
       <h4><span class="fl">${isException ? markIcon() : acceptIcon()}</span>${label}<span class="opt">Details optional</span></h4>
@@ -191,6 +198,14 @@ export async function renderPicker() {
         <code class="observation-identity__value" data-observation-id>${observationIdText(id)}</code>
         <button type="button" class="ghost observation-identity__copy" data-act="copy-observation-id">Copy</button>
         <span class="observation-identity__status" data-copy-status role="status" aria-live="polite"></span>
+      </div>
+      <div class="full-frame-state">
+        <label><input type="checkbox" disabled ${fullFrameReady ? 'checked' : ''}>
+          Full frame loaded</label>
+        <button type="button" class="ghost" data-act="${fullFrameAction}"
+          ${fullFrameBusy || row.thumbnail_status !== 'ready' ? 'disabled' : ''}>${fullFrameLabel}</button>
+        ${fullFrameFailed && row.full_frame_reason
+          ? '<span class="full-frame-state__reason" data-full-frame-reason></span>' : ''}
       </div>
       <p>Changes here stay pending until you use one of the existing commit controls.</p>
       ${reasonControls}
@@ -221,6 +236,8 @@ export async function renderPicker() {
       </div></div>`);
 
   host.appendChild(panel);
+  const frameReason = panel.querySelector('[data-full-frame-reason]');
+  if (frameReason) frameReason.textContent = row.full_frame_reason;
   const note = panel.querySelector('#decisionNote');
   const count = panel.querySelector('[data-note-count]');
   note.value = mark.note || '';
@@ -247,6 +264,10 @@ export async function renderPicker() {
   if (unmark) unmark.addEventListener('click', () => actions.toggleMark(id));
   const replace = panel.querySelector('[data-act="replace-thumbnail"]');
   if (replace) replace.addEventListener('click', () => actions.requestThumbnailReplacement(id));
+  const requestFrame = panel.querySelector('[data-act="request-full-frame"]');
+  if (requestFrame) requestFrame.addEventListener('click', () => actions.requestFullFrame(id));
+  const openFrame = panel.querySelector('[data-act="open-full-frame"]');
+  if (openFrame) openFrame.addEventListener('click', () => actions.openFullFrame(id));
   panel.querySelector('[data-act="copy-observation-id"]').addEventListener('click', async (event) => {
     const button = event.currentTarget;
     const status = panel.querySelector('[data-copy-status]');

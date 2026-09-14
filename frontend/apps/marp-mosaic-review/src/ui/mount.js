@@ -13,6 +13,7 @@ import { renderRail, wireRail } from './rail.js';
 import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
+import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
 import {
   closeMenus, isMenuOpenFor,
   sortMenu
@@ -173,7 +174,10 @@ function wireDismissal() {
     if (!e.target.closest('.menu')) closeMenus();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { actions.closePicker(); closeMenus(); return; }
+    if (e.key === 'Escape') {
+      if (state.frameViewer) { actions.closeFullFrame(); return; }
+      actions.closePicker(); closeMenus(); return;
+    }
 
     /* One listener, consulting one rule. The Escape handling above shows how quickly
        scattered key handling spreads; `model/keys.js` owns what a key means so the
@@ -261,6 +265,7 @@ export function mount() {
   wirePager();
   wireMenus();
   wireConfirm();
+  wireFrameViewer();
   wireRail();
   wireDismissal();
   wireLayout();
@@ -274,6 +279,7 @@ export function mount() {
     renderGrid();
     renderPicker();
     renderConfirm();
+    renderFrameViewer();
     renderRail();
     requestAnimationFrame(computeLayout);
   });

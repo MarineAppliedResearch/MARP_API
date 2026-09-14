@@ -596,6 +596,29 @@ body[data-mode="delete"] .commit { border: 1px solid var(--red-400); }
   border: 2px solid currentColor; border-right-color: transparent;
   animation: spin .62s linear infinite;
 }
+
+.full-frame-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: 4px 0 10px; font-size: 11px; color: var(--muted); }
+.full-frame-state label { display: flex; align-items: center; gap: 5px; }
+.full-frame-state__reason { flex-basis: 100%; color: var(--amber-300); }
+
+#frameViewer[hidden] { display: none; }
+#frameViewer { position: fixed; inset: 0; z-index: 80; background: rgba(2, 9, 17, .94); }
+.frame-viewer { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; }
+.frame-viewer__bar { display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 8px; padding: 10px 14px; color: var(--white); background: #081522;
+  border-bottom: 1px solid var(--line); }
+.frame-viewer__controls { display: flex; align-items: center; gap: 7px; }
+.frame-viewer__controls button { min-height: 34px; padding: 5px 10px; border: 1px solid var(--line);
+  border-radius: 5px; color: var(--white); background: var(--panel); cursor: pointer; }
+.frame-viewer__controls output { min-width: 46px; text-align: center; color: var(--muted); }
+.frame-viewer__viewport { min-height: 0; overflow: auto; display: flex;
+  cursor: grab; touch-action: none; overscroll-behavior: contain; }
+.frame-viewer__viewport.dragging { cursor: grabbing; }
+.frame-viewer__image { position: relative; flex: none; margin: auto; transition: width 100ms ease; }
+.frame-viewer__image img { display: block; width: 100%; height: auto; user-select: none; pointer-events: none; }
+.frame-viewer__box { position: absolute; box-sizing: border-box; border: 3px solid #ffba3b;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .8), inset 0 0 0 1px rgba(0, 0, 0, .8); pointer-events: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .commit .spin { animation-duration: 2.4s; } }
 

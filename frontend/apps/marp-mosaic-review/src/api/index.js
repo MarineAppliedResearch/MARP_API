@@ -24,7 +24,7 @@
  * than it was going to be.
  */
 
-import { request, thumbnailUrl } from './transport.js';
+import { request, thumbnailUrl, fullFrameUrl } from './transport.js';
 import {
   pagesBody, countsBody, commitBody, correctionBody, retryBody, facetsBody, filtersBody,
   idList
@@ -169,6 +169,15 @@ export const MarpApi = {
       method: 'POST', signal
     });
   },
+
+  /** Queue or reuse the complete native frame behind the current thumbnail. */
+  async requestFullFrame(observationId, { signal } = {}) {
+    return request(`/observations/${encodeURIComponent(observationId)}/full-frame`, {
+      method: 'POST', signal
+    });
+  },
+
+  fullFrameUrl: (row) => fullFrameUrl(row && row.observation_id),
 
   /**
    * Where a tile's picture is (R10, F7). A URL, not a fetch — see `transport.js`.

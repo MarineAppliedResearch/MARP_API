@@ -36,14 +36,12 @@
  * @module routes/thumbnail.routes
  */
 
-const fs = require('fs');
-const path = require('path');
-
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
 const extraction = require('../service/thumbnail-extraction.service');
+const reviewImageryStorage = require('../service/review-imagery-storage.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
-const { CONTROL_ACTIONS, STORAGE_DIR } = require('../config/thumbnails');
+const { CONTROL_ACTIONS } = require('../config/thumbnails');
 
 /** Tag these group under. `registerVersionedRoute` rewrites the V1 prefix. */
 const TAG = 'V1 · Observation thumbnails';
@@ -70,24 +68,6 @@ const MAX_RETRY_IDS = 600;
  */
 function actingUserId(req) {
     return req.principal && req.principal.type === 'user' ? req.principal.id : null;
-}
-
-/**
- * The ETag for one thumbnail record.
- *
- * Built from `generation`, which every re-extraction bumps. The URL is stable per
- * observation, so **without the generation a replacement picture would sit
- * invisible behind a cached copy** -- which is exactly why this is not the
- * species pictures' `immutable` header. A stored species picture never changes
- * and a replacement is a new record with a new id; a thumbnail at a stable URL is
- * the opposite case, and copying `immutable` here would pin a stale picture in
- * every reviewer's browser for a year.
- *
- * @param {Object} row - The thumbnail record.
- * @returns {string} The ETag value, quoted.
- */
-function etagFor(row) {
-    return `"observation-thumbnail-${row.observation_id}-${row.generation}"`;
 }
 
 /**
@@ -142,6 +122,142 @@ function readObservationIds(body) {
  * @returns {void}
  */
 function registerThumbnailRoutes(app) {
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: ADMIN_PERMISSION,
+        path: '/api/admin/review-imagery',
+        summary: 'Read review-imagery storage settings and usage',
+        description: 'Returns the persisted cache policy, managed thumbnail/full-frame byte counts, and resolved storage locations.',
+        tags: [TAG],
+        responses: {
+            200: { description: 'Current review-imagery storage policy and usage.' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            res.json(await reviewImageryStorage.status());
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'put',
+        permission: ADMIN_PERMISSION,
+        path: '/api/admin/review-imagery',
+        summary: 'Change review-imagery storage settings',
+        description: 'Persists the cache maximum, low-watermark target and eviction order, then immediately enforces a lowered limit.',
+        tags: [TAG],
+        requestBody: {
+            required: true,
+            content: { 'application/json': { schema: {
+                type: 'object',
+                required: ['maxBytes', 'lowWatermarkPercent', 'evictionOrder'],
+                properties: {
+                    maxBytes: { type: 'integer', minimum: 1 },
+                    lowWatermarkPercent: { type: 'integer', minimum: 50, maximum: 99 },
+                    evictionOrder: {
+                        type: 'string',
+                        enum: ['full_frames_first', 'oldest_first', 'thumbnails_first'],
+                    },
+                },
+            } } },
+        },
+        responses: {
+            200: { description: 'Updated settings, usage and eviction result.' },
+            400: { $ref: '#/components/responses/BadRequestError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            let answer;
+            try {
+                answer = await reviewImageryStorage.updateSettings({
+                    maxBytes: Number(req.body && req.body.maxBytes),
+                    lowWatermarkPercent: Number(req.body && req.body.lowWatermarkPercent),
+                    evictionOrder: req.body && req.body.evictionOrder,
+                }, actingUserId(req));
+            } catch (error) {
+                if (error instanceof TypeError) {
+                    throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, error.message);
+                }
+                throw error;
+            }
+            res.json(answer);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'post',
+        permission: READ_PERMISSION,
+        path: '/api/observations/:observationId/full-frame',
+        summary: 'Request the complete frame behind an observation thumbnail',
+        description: 'Queues the native-size complete video frame at the exact frame currently backing the square thumbnail. Reuses a ready matching artifact.',
+        tags: [TAG],
+        responses: {
+            200: { description: 'Current full-frame state.' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const observationId = Number(req.params.observationId);
+            if (!Number.isInteger(observationId)) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'observationId must be an integer.');
+            }
+            const row = await thumbnailRepository.requestFullFrame(observationId);
+            if (!row) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Observation ${observationId} has no ready thumbnail frame to inspect.`);
+            }
+            res.json({ fullFrame: {
+                observation_id: observationId,
+                status: row.full_frame_status,
+                available: row.full_frame_status === 'ready' && Boolean(row.full_frame_filename),
+                permanent: Boolean(row.full_frame_permanent),
+                reason: row.full_frame_status === 'failed' ? row.full_frame_last_error : null,
+                framenum: row.full_frame_framenum,
+                width: row.full_frame_width,
+                height: row.full_frame_height,
+                box: row.full_frame_box,
+            } });
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: READ_PERMISSION,
+        path: '/api/observations/:observationId/full-frame',
+        summary: 'Fetch a requested complete observation frame',
+        description: 'Serves the private native-size frame. Its stable URL revalidates against the artifact generation.',
+        tags: [TAG],
+        responses: {
+            200: { description: 'The complete frame.' },
+            304: { description: 'Not modified.' },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const observationId = Number(req.params.observationId);
+            if (!Number.isInteger(observationId)) {
+                throw new ApiError(400, ERROR_CODES.VALIDATION_ERROR, 'observationId must be an integer.');
+            }
+            const row = await thumbnailRepository.findByObservationId(observationId);
+            if (!row || row.full_frame_status !== 'ready' || !row.full_frame_filename) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Observation ${observationId} has no complete frame available.`);
+            }
+            const download = await reviewImageryStorage.prepareDownload('full_frame', row);
+            if (!download) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND,
+                    `Observation ${observationId}'s complete-frame file is missing and can be requested again.`);
+            }
+            res.type(download.contentType);
+            res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+            res.setHeader('ETag', download.etag);
+            if (req.headers['if-none-match'] === download.etag) {
+                res.status(304).end();
+                return;
+            }
+            res.sendFile(download.absolutePath);
+        }),
+    });
 
     registerVersionedRoute(app, {
         method: 'get',
@@ -407,13 +523,12 @@ function registerThumbnailRoutes(app) {
                 );
             }
 
-            const filePath = path.join(STORAGE_DIR, row.filename);
-
             // The row can outlive the file: storage is git-ignored and has no
             // seed to be re-imported from, so a redeployment starts with an
             // empty directory. Answering 404 with the reason is more useful than
             // a stack trace from sendFile, and the picture is re-extractable.
-            if (!fs.existsSync(filePath)) {
+            const download = await reviewImageryStorage.prepareDownload('thumbnail', row);
+            if (!download) {
                 throw new ApiError(
                     404,
                     ERROR_CODES.RESOURCE_NOT_FOUND,
@@ -422,19 +537,17 @@ function registerThumbnailRoutes(app) {
                 );
             }
 
-            const etag = etagFor(row);
-
-            res.type(row.content_type || 'image/jpeg');
+            res.type(download.contentType);
             res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
-            res.setHeader('ETag', etag);
+            res.setHeader('ETag', download.etag);
 
-            if (req.headers['if-none-match'] === etag) {
+            if (req.headers['if-none-match'] === download.etag) {
                 res.status(304).end();
 
                 return;
             }
 
-            res.sendFile(filePath);
+            res.sendFile(download.absolutePath);
         }),
     });
 

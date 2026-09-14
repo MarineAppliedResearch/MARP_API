@@ -63,15 +63,17 @@ const sharp = require('sharp');
 const logger = require('../logger/api.logger');
 const jellyfinRepository = require('../repository/jellyfin.repository');
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
+const reviewImageryStorage = require('./review-imagery-storage.service');
 const { parseTimeSpan, absoluteFrame, ASSUMED_FPS } = require('../db/timecode');
 const { thumbnailFilename } = require('../db/thumbnail-filename');
-const { cropRectangle, thumbnailCandidates } = require('./thumbnail-geometry');
+const { cropRectangle, interpolateBox, thumbnailCandidates } = require('./thumbnail-geometry');
 
 const {
     CLAIM_BATCH_SIZE,
     FFMPEG_PATH,
     FFMPEG_TIMEOUT_MS,
     FFPROBE_PATH,
+    FULL_FRAME_STORAGE_DIR,
     FPS_TOLERANCE,
     IDLE_POLL_INTERVAL_MS,
     MAX_CONCURRENT_STREAMS,
@@ -484,6 +486,55 @@ async function cropToTile(framePath, box) {
     };
 }
 
+/** Keep the complete decoded frame at native dimensions for close inspection. */
+async function storeFullFrame(framePath, box) {
+    const image = sharp(framePath);
+    const metadata = await image.metadata();
+    if (!metadata.width || !metadata.height) {
+        throw new Error('The decoded full frame reported no pixel dimensions.');
+    }
+    const buffer = await image.jpeg({ quality: 95, chromaSubsampling: '4:4:4' }).toBuffer();
+    const filename = thumbnailFilename(buffer);
+    fs.mkdirSync(FULL_FRAME_STORAGE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(FULL_FRAME_STORAGE_DIR, filename), buffer);
+    return {
+        filename,
+        contentType: 'image/jpeg',
+        byteSize: buffer.length,
+        width: metadata.width,
+        height: metadata.height,
+        box,
+    };
+}
+
+function fullFramePlan(claim, keyframes) {
+    const frame = Number(claim.full_frame_framenum);
+    if (!Number.isInteger(frame)) {
+        return { ok: false, permanent: true, error: 'The square thumbnail records no source frame.' };
+    }
+    const subset = String(claim.full_frame_subset == null ? '' : claim.full_frame_subset);
+    const track = (keyframes || []).filter((keyframe) => String(keyframe.subset) === subset);
+    const exact = track.find((keyframe) => Number(keyframe.framenum) === frame);
+    const interpolated = exact ? { box: exact } : interpolateBox(track, frame);
+    /* The box is useful context, not a prerequisite for seeing the whole frame. */
+    const source = interpolated && interpolated.box;
+    return {
+        ok: true,
+        frame,
+        subset,
+        box: source ? { x: Number(source.x), y: Number(source.y),
+            width: Number(source.width), height: Number(source.height) } : null,
+        hasNext: false,
+    };
+}
+
+async function recordClaimFailure(claim, message, permanent, plan = null) {
+    if (claim.artifact_kind === 'full_frame') {
+        return thumbnailRepository.recordFullFrameFailure(claim.observation_id, message, permanent);
+    }
+    return thumbnailRepository.recordFailure(claim.observation_id, message, permanent, plan);
+}
+
 /**
  * Extracts every wanted frame of one video, from one stream.
  *
@@ -510,8 +561,9 @@ async function extractVideoGroup(videoSource, claims) {
         // No candidate at all. Retrying asks the same question of the same
         // library and gets the same answer, so this is permanent (R9).
         for (const id of ids) {
-            await thumbnailRepository.recordFailure(
-                id,
+            const claim = claims.find((item) => item.observation_id === id);
+            await recordClaimFailure(
+                claim,
                 `No Jellyfin video matched video_source ${JSON.stringify(videoSource)}: ${elideToken(error.message)}`,
                 true
             );
@@ -528,8 +580,9 @@ async function extractVideoGroup(videoSource, claims) {
         // picture, and recording the score is what lets the bar be lowered later
         // against evidence instead of guessed at again.
         for (const id of ids) {
-            await thumbnailRepository.recordFailure(
-                id,
+            const claim = claims.find((item) => item.observation_id === id);
+            await recordClaimFailure(
+                claim,
                 `Best Jellyfin match for video_source ${JSON.stringify(videoSource)} scored ${resolved.score}, `
                 + `below the ${MIN_MATCH_SCORE} exact-match threshold. A weaker match can attach a picture of the wrong dive.`,
                 true
@@ -546,8 +599,9 @@ async function extractVideoGroup(videoSource, claims) {
 
     if (!probe.width || !probe.height) {
         for (const id of ids) {
-            await thumbnailRepository.recordFailure(
-                id,
+            const claim = claims.find((item) => item.observation_id === id);
+            await recordClaimFailure(
+                claim,
                 'The video stream reported no pixel dimensions, so a normalised box cannot be turned into a crop.',
                 false
             );
@@ -565,7 +619,8 @@ async function extractVideoGroup(videoSource, claims) {
 
     if (rateRefusal) {
         for (const id of ids) {
-            await thumbnailRepository.recordFailure(id, rateRefusal, true);
+            const claim = claims.find((item) => item.observation_id === id);
+            await recordClaimFailure(claim, rateRefusal, true);
         }
 
         outcome.failed = ids.length;
@@ -577,10 +632,13 @@ async function extractVideoGroup(videoSource, claims) {
     const wanted = [];
 
     for (const claim of claims) {
-        const plan = planObservation(claim, keyframes.get(claim.observation_id));
+        const observationKeyframes = keyframes.get(claim.observation_id);
+        const plan = claim.artifact_kind === 'full_frame'
+            ? fullFramePlan(claim, observationKeyframes)
+            : planObservation(claim, observationKeyframes);
 
         if (!plan.ok) {
-            await thumbnailRepository.recordFailure(claim.observation_id, plan.error, plan.permanent);
+            await recordClaimFailure(claim, plan.error, plan.permanent, plan);
             outcome.failed += 1;
 
             continue;
@@ -588,8 +646,8 @@ async function extractVideoGroup(videoSource, claims) {
 
         // A frame past the end of the video can never be decoded from it (R9).
         if (probe.duration && (plan.frame / probe.fps) > probe.duration) {
-            await thumbnailRepository.recordFailure(
-                claim.observation_id,
+            await recordClaimFailure(
+                claim,
                 `Frame ${plan.frame} is ${(plan.frame / probe.fps).toFixed(1)}s into a video that is `
                 + `${probe.duration.toFixed(1)}s long, so the moment this observation records is not in this video.`,
                 true,
@@ -629,8 +687,8 @@ async function extractVideoGroup(videoSource, claims) {
             if (!framePath) {
                 // Asked for more frames than came back. Another candidate keeps
                 // this retryable; the final candidate makes exhaustion explicit.
-                await thumbnailRepository.recordFailure(
-                    claim.observation_id,
+                await recordClaimFailure(
+                    claim,
                     `ffmpeg returned ${extraction.files.length} frames for ${wanted.length} asked for, `
                     + `so frame ${plan.frame} did not arrive.`,
                     !plan.hasNext,
@@ -643,18 +701,38 @@ async function extractVideoGroup(videoSource, claims) {
             }
 
             try {
-                const tile = await cropToTile(framePath, plan.box);
-
-                await thumbnailRepository.recordReady(claim.observation_id, {
-                    ...tile,
-                    framenum: plan.frame,
-                    subset: plan.subset,
-                });
+                if (claim.artifact_kind === 'full_frame') {
+                    const frame = await storeFullFrame(framePath, plan.box);
+                    await thumbnailRepository.recordFullFrameReady(claim.observation_id, frame);
+                    if (claim.full_frame_filename !== frame.filename) {
+                        await reviewImageryStorage.removeIfUnreferenced(
+                            'full_frame', claim.full_frame_filename
+                        );
+                    }
+                } else {
+                    const tile = await cropToTile(framePath, plan.box);
+                    await thumbnailRepository.recordReady(claim.observation_id, {
+                        ...tile,
+                        framenum: plan.frame,
+                        subset: plan.subset,
+                    });
+                    if (claim.thumbnail_filename !== tile.filename) {
+                        await reviewImageryStorage.removeIfUnreferenced(
+                            'thumbnail', claim.thumbnail_filename
+                        );
+                    }
+                    if (claim.full_frame_filename
+                        && Number(claim.full_frame_framenum) !== Number(plan.frame)) {
+                        await reviewImageryStorage.removeIfUnreferenced(
+                            'full_frame', claim.full_frame_filename
+                        );
+                    }
+                }
 
                 outcome.ready += 1;
             } catch (error) {
-                await thumbnailRepository.recordFailure(
-                    claim.observation_id,
+                await recordClaimFailure(
+                    claim,
                     elideToken(error.message),
                     !plan.hasNext,
                     plan
@@ -666,8 +744,8 @@ async function extractVideoGroup(videoSource, claims) {
     } catch (error) {
         // The whole pass failed, so nothing in this group got a picture.
         for (const entry of wanted) {
-            await thumbnailRepository.recordFailure(
-                entry.claim.observation_id,
+            await recordClaimFailure(
+                entry.claim,
                 elideToken(error.message),
                 !entry.plan.hasNext,
                 entry.plan
@@ -679,6 +757,7 @@ async function extractVideoGroup(videoSource, claims) {
         fs.rmSync(workDir, { recursive: true, force: true });
     }
 
+    await reviewImageryStorage.enforceLimit();
     return outcome;
 }
 
@@ -977,6 +1056,7 @@ module.exports = {
     elideToken,
     extractVideoGroup,
     frameRateRefusal,
+    fullFramePlan,
     groupByVideo,
     planObservation,
     probeStream,

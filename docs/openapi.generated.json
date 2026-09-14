@@ -4053,6 +4053,47 @@
             ],
             "example": "ready",
             "description": "Whether the tile has a picture. **Never null**: an observation with no record at all reports `queued` rather than an absence the client has no rendering for. Two things make that honest rather than a promise nobody keeps -- a thumbnail is enqueued when its keyframes are written, and serving this page enqueues anything on it that still has no record. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page."
+          },
+          "full_frame_status": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "queued",
+              "ready",
+              "failed",
+              null
+            ],
+            "description": "Operational state of the optional native-size review frame. Null means it has not been requested or was evicted."
+          },
+          "full_frame_permanent": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether another request for the same source frame cannot succeed."
+          },
+          "full_frame_reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Failure explanation when full_frame_status is failed."
+          },
+          "full_frame_framenum": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Exact video frame represented by the full-frame artifact."
+          },
+          "full_frame_width": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Native stored frame width in pixels."
+          },
+          "full_frame_height": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Native stored frame height in pixels."
+          },
+          "full_frame_box": {
+            "type": "object",
+            "nullable": true,
+            "description": "Normalised observation bounding box drawn by default in the full-frame viewer."
           }
         }
       },
@@ -14267,6 +14308,140 @@
           },
           "403": {
             "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/admin/review-imagery": {
+      "get": {
+        "summary": "Read review-imagery storage settings and usage",
+        "description": "Returns the persisted cache policy, managed thumbnail/full-frame byte counts, and resolved storage locations. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "responses": {
+          "200": {
+            "description": "Current review-imagery storage policy and usage."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "put": {
+        "summary": "Change review-imagery storage settings",
+        "description": "Persists the cache maximum, low-watermark target and eviction order, then immediately enforces a lowered limit. Requires the `admin` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "maxBytes",
+                  "lowWatermarkPercent",
+                  "evictionOrder"
+                ],
+                "properties": {
+                  "maxBytes": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "lowWatermarkPercent": {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 99
+                  },
+                  "evictionOrder": {
+                    "type": "string",
+                    "enum": [
+                      "full_frames_first",
+                      "oldest_first",
+                      "thumbnails_first"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated settings, usage and eviction result."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequestError"
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/v2/observations/{observationId}/full-frame": {
+      "post": {
+        "summary": "Request the complete frame behind an observation thumbnail",
+        "description": "Queues the native-size complete video frame at the exact frame currently backing the square thumbnail. Reuses a ready matching artifact. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "responses": {
+          "200": {
+            "description": "Current full-frame state."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "summary": "Fetch a requested complete observation frame",
+        "description": "Serves the private native-size frame. Its stable URL revalidates against the artifact generation. Requires the `observations:read` permission.",
+        "tags": [
+          "V2 · Observation thumbnails"
+        ],
+        "responses": {
+          "200": {
+            "description": "The complete frame."
+          },
+          "304": {
+            "description": "Not modified."
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"

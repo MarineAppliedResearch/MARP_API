@@ -17,6 +17,7 @@ import { currentSpeciesName } from './model/row.js';
 import { toQuery, fromQuery } from './model/query-url.js';
 import { plan } from './model/schedule.js';
 import { createCache, keyFor } from './model/cache.js';
+import { clampZoom } from './model/frame-viewer.js';
 
 export { MODES };
 
@@ -186,6 +187,7 @@ export const state = {
    */
   parked: new Map(),       // mode -> { pageMembers, committedPages, outcomes }
   picker: null,            // { id, correcting }
+  frameViewer: null,       // { id, overlay, zoom }
   lastCommit: null,
   /* What the commit button is doing. A page commit is the one action here that can
      take real time and can fail, and it is also the irreversible one, so it says so
@@ -371,7 +373,7 @@ const pollDelay = () => Math.min(POLL_MAX, POLL_START * (2 ** pollRound));
 /**
  * One round: re-read the visible page, fold the statuses in, notify **once**.
  *
- * Only `thumbnail_status` is taken from the answer. That is deliberate: the reviewer may
+ * Only imagery state is taken from the answer. That is deliberate: the reviewer may
  * have marked, corrected or committed since the page was drawn, and replacing the rows
  * would throw that away — the poll is about pictures arriving, not about re-reading the
  * record.
@@ -405,12 +407,21 @@ async function pollRoundOnce() {
   let moved = 0;
   for (const row of state.rows) {
     const fresh = byId.get(row.observation_id);
-    if (!fresh || fresh.thumbnail_status === row.thumbnail_status) continue;
-    row.thumbnail_status = fresh.thumbnail_status;
-    moved++;
+    if (!fresh) continue;
+    const fields = [
+      'thumbnail_status', 'full_frame_status', 'full_frame_permanent',
+      'full_frame_reason', 'full_frame_framenum', 'full_frame_width',
+      'full_frame_height', 'full_frame_box'
+    ];
+    let changed = false;
+    for (const field of fields) {
+      if (fresh[field] !== row[field]) { row[field] = fresh[field]; changed = true; }
+    }
+    if (changed) moved++;
   }
 
-  const stillQueued = state.rows.filter((r) => r.thumbnail_status === 'queued').length;
+  const stillQueued = state.rows.filter((r) =>
+    r.thumbnail_status === 'queued' || r.full_frame_status === 'queued').length;
   fire('thumbnail:polled', { round: pollRound + 1, moved, queued: stillQueued });
 
   /**
@@ -1186,7 +1197,8 @@ export const actions = {
    */
   _chaseQueuedThumbnails() {
     cancelPoll();
-    if (!state.rows.some((r) => r.thumbnail_status === 'queued')) return;
+    if (!state.rows.some((r) =>
+      r.thumbnail_status === 'queued' || r.full_frame_status === 'queued')) return;
     pollRound = 0;
     schedulePoll();
   },
@@ -1649,6 +1661,70 @@ export const actions = {
     fire('thumbnail:replacement-queued', { id });
     notify();
     actions._chaseQueuedThumbnails();
+  },
+
+  /** Request the native frame without disturbing the pending review decision. */
+  async requestFullFrame(id) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || row.thumbnail_status !== 'ready') return;
+    const previous = {
+      status: row.full_frame_status,
+      permanent: row.full_frame_permanent,
+      reason: row.full_frame_reason
+    };
+    row.full_frame_status = 'queued';
+    row.full_frame_permanent = false;
+    row.full_frame_reason = null;
+    fire('full-frame:request', { id });
+    notify();
+    try {
+      const res = await MarpBackend.requestFullFrame(id);
+      const answer = res.fullFrame;
+      row.full_frame_status = answer.status;
+      row.full_frame_permanent = Boolean(answer.permanent);
+      row.full_frame_reason = answer.reason || null;
+      row.full_frame_framenum = answer.framenum;
+      row.full_frame_width = answer.width;
+      row.full_frame_height = answer.height;
+      row.full_frame_box = answer.box;
+      clearFailure();
+      if (answer.available) state.frameViewer = { id, overlay: true, zoom: 1 };
+      fire('full-frame:requested', { id, status: answer.status });
+      notify();
+      if (answer.status === 'queued') actions._chaseQueuedThumbnails();
+    } catch (err) {
+      row.full_frame_status = previous.status;
+      row.full_frame_permanent = previous.permanent;
+      row.full_frame_reason = previous.reason;
+      if (recordFailure(err, 'full-frame:request')) notify();
+    }
+  },
+
+  openFullFrame(id) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || row.full_frame_status !== 'ready') return;
+    state.frameViewer = { id, overlay: true, zoom: 1 };
+    fire('full-frame:open', { id });
+    notify();
+  },
+
+  closeFullFrame() {
+    if (!state.frameViewer) return;
+    state.frameViewer = null;
+    fire('full-frame:close');
+    notify();
+  },
+
+  toggleFullFrameBox() {
+    if (!state.frameViewer) return;
+    state.frameViewer.overlay = !state.frameViewer.overlay;
+    notify();
+  },
+
+  setFullFrameZoom(zoom) {
+    if (!state.frameViewer) return;
+    state.frameViewer.zoom = clampZoom(zoom);
+    notify();
   },
 
   /**

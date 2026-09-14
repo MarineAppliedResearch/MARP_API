@@ -124,4 +124,18 @@ describe('the legacy dashboard shell', () => {
         expect(raw['index.html']).toMatch(/href="\/apps\/marp-mosaic-review\//);
         expect(raw['index.html']).toMatch(/href="\/apps\/marp-ml-dashboard\//);
     });
+
+    it('#176 exposes the shared review-imagery policy and usage on the admin page', () => {
+        const admin = raw['admin.html'];
+
+        for (const id of [
+            'reviewImageryMaxGiB', 'reviewImageryOrder', 'reviewImageryWatermark',
+            'reviewImageryTotal', 'reviewImageryThumbnails', 'reviewImageryFullFrames',
+            'reviewImageryThumbnailPath', 'reviewImageryFullFramePath'
+        ]) {
+            expect(admin).toContain(`id="${id}"`);
+        }
+        expect(admin).toMatch(/fetch\('\/api\/v2\/admin\/review-imagery'/);
+        expect(admin).toMatch(/method:\s*'PUT'/);
+    });
 });

@@ -94,7 +94,7 @@ async function connect() {
  */
 export async function seedPage({
   count = 4, thumbnail = 'ready', permanent = false, sessionType = 'Invert',
-  tc = '10:00:00', confidence = undefined, tie = false
+  tc = '10:00:00', confidence = undefined, tie = false, fullFrame = false
 } = {}) {
   const client = await connect();
 
@@ -173,14 +173,13 @@ export async function seedPage({
 
     if (thumbnail !== 'none') {
       /**
-       * **A `ready` row needs a file of its own, and the constraint is why.**
+       * **A `ready` row needs a file of its own.**
        *
-       * `observation_thumbnails.filename` is UNIQUE, so several seeded rows cannot point
-       * at one existing picture and none of them may borrow a corpus row's name. Each
-       * gets its own name and a copy of some corpus JPEG's bytes -- which picture it is
-       * does not matter, because what these checks are about is what the row's *status*
-       * makes the client do, and a `ready` row whose file is missing draws a broken image
-       * rather than the thing under test.
+       * Each seed gets its own name even though content-addressed files may be shared,
+       * because cleanup must never remove bytes belonging to a corpus row. Which picture
+       * is copied does not matter: these checks are about what the row's *status* makes
+       * the client do, and a `ready` row whose file is missing draws a broken image rather
+       * than the thing under test.
        */
       const { rows: [existing] } = await client.query(
         "SELECT filename FROM observation_thumbnails WHERE status = 'ready' AND filename IS NOT NULL LIMIT 1"
@@ -191,11 +190,19 @@ export async function seedPage({
 
       for (const [index, id] of ids.entries()) {
         let filename = null;
+        let fullFrameFilename = null;
 
         if (thumbnail === 'ready' && existing && store) {
           filename = `${MARK}-${stamp}-${index}.jpg`;
           copyFileSync(join(store, existing.filename), join(store, filename));
           files.push(join(store, filename));
+          if (fullFrame) {
+            const fullFrameStore = `${store}-full-frames`;
+            mkdirSync(fullFrameStore, { recursive: true });
+            fullFrameFilename = `${MARK}-${stamp}-${index}-full.jpg`;
+            copyFileSync(join(store, existing.filename), join(fullFrameStore, fullFrameFilename));
+            files.push(join(fullFrameStore, fullFrameFilename));
+          }
         }
 
         /**
@@ -229,17 +236,45 @@ export async function seedPage({
         await client.query(
           `INSERT INTO observation_thumbnails
              (observation_id, status, permanent, filename, content_type, generation,
-              attempts, requested_at, claimed_at, completed_at, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 'image/jpeg', 1, 1, NOW(),
-                   CASE WHEN $5 THEN NOW() ELSE NULL END, NOW(), NOW(), NOW())
+              framenum, subset, attempts, requested_at, claimed_at, completed_at,
+              full_frame_status, full_frame_permanent, full_frame_framenum,
+              full_frame_subset, full_frame_box, full_frame_filename,
+              full_frame_content_type, full_frame_byte_size, full_frame_width,
+              full_frame_height, full_frame_completed_at, full_frame_accessed_at,
+              created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'image/jpeg', 1, 1, 'test', 1, NOW(),
+                   CASE WHEN $5 THEN NOW() ELSE NULL END, NOW(),
+                   CASE WHEN $6 THEN 'ready' ELSE NULL END, false,
+                   CASE WHEN $6 THEN 1 ELSE NULL END,
+                   CASE WHEN $6 THEN 'test' ELSE NULL END,
+                   CASE WHEN $6 THEN '{"x":0.5,"y":0.5,"width":0.2,"height":0.2}'::jsonb ELSE NULL END,
+                   $7, CASE WHEN $6 THEN 'image/jpeg' ELSE NULL END,
+                   CASE WHEN $6 THEN 100 ELSE NULL END,
+                   CASE WHEN $6 THEN 640 ELSE NULL END,
+                   CASE WHEN $6 THEN 480 ELSE NULL END,
+                   CASE WHEN $6 THEN NOW() ELSE NULL END,
+                   CASE WHEN $6 THEN NOW() ELSE NULL END, NOW(), NOW())
            ON CONFLICT (observation_id) DO UPDATE
               SET status = EXCLUDED.status,
                   permanent = EXCLUDED.permanent,
                   filename = EXCLUDED.filename,
+                  framenum = EXCLUDED.framenum,
+                  subset = EXCLUDED.subset,
                   claimed_at = EXCLUDED.claimed_at,
+                  full_frame_status = EXCLUDED.full_frame_status,
+                  full_frame_framenum = EXCLUDED.full_frame_framenum,
+                  full_frame_subset = EXCLUDED.full_frame_subset,
+                  full_frame_box = EXCLUDED.full_frame_box,
+                  full_frame_filename = EXCLUDED.full_frame_filename,
+                  full_frame_content_type = EXCLUDED.full_frame_content_type,
+                  full_frame_byte_size = EXCLUDED.full_frame_byte_size,
+                  full_frame_width = EXCLUDED.full_frame_width,
+                  full_frame_height = EXCLUDED.full_frame_height,
+                  full_frame_completed_at = EXCLUDED.full_frame_completed_at,
+                  full_frame_accessed_at = EXCLUDED.full_frame_accessed_at,
                   last_error = NULL,
                   updated_at = NOW()`,
-          [id, thumbnail, permanent, filename, claimed]
+          [id, thumbnail, permanent, filename, claimed, fullFrame, fullFrameFilename]
         );
       }
     }

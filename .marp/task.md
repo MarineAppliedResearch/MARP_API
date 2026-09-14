@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#176
 repos: [marp-api]
-status: design
+status: verify
 needs: []
 ---
 
@@ -183,16 +183,17 @@ following milestone in #181.
 
 ## Test plan
 
-Filled in at G3 after A6, A8, A10, and A11 are answered and implementation is complete. Targeted tiers
-will be the thumbnail/full-frame repository and service tests, route contract tests, Mosaic
-unit tests, and named real-API Playwright checks on desktop and phone. Live Jellyfin
-evidence will require the human present and will be reserved for the approved G4 run.
+The complete requirement-to-test map, ordered commands, manual observations, exclusions,
+and known gaps are in `.marp/verification.md`. The plan covers the focused unit, database,
+filesystem, route, source-contract, desktop-browser, phone-browser, admin-dashboard, and
+supervised live-Jellyfin tiers.
 
 ## Status
 
-- **Gate:** implementing
+- **Gate:** verification plan awaiting human approval
 - **Notes:** Investigation found that the details panel already owns per-observation
   inspection actions, while the thumbnail row already records the exact extracted frame and
   decoded dimensions. The human settled frame behavior, the overlay, fidelity, scheduling,
   and the future service boundary. The cache maximum, eviction behavior, operational
-  availability, and admin-dashboard ownership are settled; implementation may begin.
+  availability, and admin-dashboard ownership are settled. Implementation and focused
+  development checks are complete; the G4 run has not begun.
