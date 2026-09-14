@@ -122,6 +122,11 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true,
                 comment: 'Why, from the reviewer-facing vocabulary. Not settled, so enforced by the API rather than a constraint.',
             },
+            note: {
+                type: DataTypes.TEXT,
+                allowNull: true,
+                comment: 'Optional reviewer-authored plain-text note recorded with this decision.',
+            },
             reviewer_id: {
                 type: DataTypes.INTEGER,
                 allowNull: false,

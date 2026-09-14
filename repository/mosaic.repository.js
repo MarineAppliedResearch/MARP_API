@@ -61,6 +61,27 @@ const MAX_PAGES = 12;
 const MAX_ROWS = 600;
 
 /**
+ * Up to two initials derived from a reviewer's existing username.
+ *
+ * Usernames with separators use the first and last parts (`i.travers` -> `IT`); a
+ * single-part username uses its first two characters (`isaac` -> `IS`). Nothing is persisted:
+ * the current review already references `users.user_id`, and this is only its compact
+ * presentation in a mosaic row.
+ *
+ * @param {string|null} username - Existing users.username value.
+ * @returns {string|null} Two uppercase initials, or null.
+ */
+function reviewerInitials(username) {
+    const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
+    if (!parts.length) return null;
+    const firstPart = Array.from(parts[0]);
+    const initials = parts.length > 1
+        ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
+        : firstPart.slice(0, 2).join('');
+    return initials.toUpperCase() || null;
+}
+
+/**
  * A request this endpoint refuses: answered with `400`, not `500`.
  *
  * Validation sits beside the builder rather than in a service layer because the
@@ -172,12 +193,11 @@ const SPECIES_LIST_CASE = [
  * all silently became nothing (#124's F8). `observation_review_current` holds
  * `reviewer_id`, so the answer is one column per purpose.
  *
- * **Ids and not names**, which is what keeps #118's A10 reasoning intact: the permission
- * catalog separates `reports:read` from `observations:read` because it exposes who did how
- * much work, and the row's freedom from `processor_name` is what keeps this an
- * `observations:read` route. An id the caller can only compare against their own principal
- * gives "by you" and exposes nobody. Like the three fields above, both keys were **moved
- * into** `tests/mosaic-query.test.js`'s exact-key list rather than the list being loosened.
+ * The existing ids remain, and #172 adds initials derived from each referenced user's
+ * username at query time. No identity is duplicated into review history or its projection,
+ * and neither the full username nor name leaves this repository. Like the fields above,
+ * these keys are moved into `tests/mosaic-query.test.js`'s exact-key list rather than that
+ * list being loosened.
  *
  * `version` is here and is **owed to Phase 5** (#106's D1) rather than wanted by
  * the tile. It is the only channel by which the reviewer's client can learn the
@@ -232,10 +252,14 @@ const ROW_COLUMNS = `
         p.name AS project_name,
         rc.decision AS review_decision,
         rc.reason   AS flag_reason,
+        rc.note     AS review_note,
         rc.reviewer_id AS review_reviewer_id,
+        review_user.username AS review_reviewer_username,
         rt.decision AS training_decision,
         rt.reason   AS exclusion_reason,
+        rt.note     AS training_note,
         rt.reviewer_id AS training_reviewer_id,
+        training_user.username AS training_reviewer_username,
         k.keyframe_count,
         k.first_framenum,
         coalesce(th.status, 'queued') AS thumbnail_status`;
@@ -737,6 +761,8 @@ SELECT t.total,
          ON rc.observation_id = o.observation_id AND rc.purpose = 'scientific'
   LEFT JOIN observation_review_current rt
          ON rt.observation_id = o.observation_id AND rt.purpose = 'training'
+  LEFT JOIN users review_user ON review_user.user_id = rc.reviewer_id
+  LEFT JOIN users training_user ON training_user.user_id = rt.reviewer_id
   LEFT JOIN observation_thumbnails th ON th.observation_id = o.observation_id
   ${keyframeLateral}k ON true
  ORDER BY m.rn`;
@@ -1021,7 +1047,16 @@ async function queryPages(request = {}) {
             continue;
         }
 
-        const { total: ignoredTotal, rn, ...served } = row;
+        const {
+            total: ignoredTotal,
+            rn,
+            review_reviewer_username: reviewUsername,
+            training_reviewer_username: trainingUsername,
+            ...served
+        } = row;
+
+        served.review_reviewer_initials = reviewerInitials(reviewUsername);
+        served.training_reviewer_initials = reviewerInitials(trainingUsername);
 
         byPage.get(Math.ceil(Number(rn) / pageSize)).push(served);
     }

@@ -96,3 +96,7 @@ made and written down here rather than asked, per the brief.
   decision log and it keeps its rows by design; `observation_review_current` is the
   projection, and that is what the journal restores and what a digest before and after a
   run compares.
+- **2026-09-13** -- #157 waited for #172 to merge, then incorporated it. #172's API,
+  schema, model and UI implementation is retained; its changes to `src/data.js`, the
+  generated fixture and the old render suite are translated into the real-API seeder and
+  `tests/api/decision-details.spec.mjs`. The deleted fixture files stay deleted.

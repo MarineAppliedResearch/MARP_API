@@ -193,7 +193,7 @@ test('the marks reach the wire as an array of objects, never as a Map', () => {
   /* **`kind` moved into this assertion rather than the assertion being loosened** (#126
      R9, A5). A mark now says which of the two things it is, in the one list keyed by
      `observation_id` that `applyCommit` already folds by. */
-  assert.deepEqual(wire.marks, [{ observation_id: 11, reason: 'Wrong species', kind: 'except' }]);
+  assert.deepEqual(wire.marks, [{ observation_id: 11, reason: 'Wrong species', note: null, kind: 'except' }]);
 
   assert.deepEqual(onWire({ marks }).marks, {},
     'this is what sending the Map itself would have looked like');
@@ -204,7 +204,7 @@ test('a mark left over from another page is not sent, because every id must be o
   const marks = new Map([[10, { kind: 'except', reason: null }], [999, { kind: 'except', reason: 'Duplicate' }]]);
 
   const wire = onWire(commitBody({ rows, marks }));
-  assert.deepEqual(wire.marks, [{ observation_id: 10, reason: null, kind: 'except' }]);
+  assert.deepEqual(wire.marks, [{ observation_id: 10, reason: null, note: null, kind: 'except' }]);
 });
 
 /* ------------------------------------------------------------------ #126 A5, R9 */
@@ -224,8 +224,21 @@ test('R9: an accept mark reaches the wire as a kind, in the one marks list', () 
 
   const wire = onWire(commitBody({ rows, marks }));
   assert.deepEqual(wire.marks, [
-    { observation_id: 10, reason: null, kind: 'accept' },
-    { observation_id: 11, reason: 'Duplicate', kind: 'except' }
+    { observation_id: 10, reason: null, note: null, kind: 'accept' },
+    { observation_id: 11, reason: 'Duplicate', note: null, kind: 'except' }
+  ]);
+});
+
+test('#172 R3: notes on accepted and exception decisions reach the wire separately from reasons', () => {
+  const rows = [{ observation_id: 10, version: 1 }, { observation_id: 11, version: 2 }];
+  const marks = new Map([
+    [10, { kind: 'accept', reason: null, note: 'clear specimen' }],
+    [11, { kind: 'except', reason: 'Duplicate', note: 'same track twice' }]
+  ]);
+
+  assert.deepEqual(onWire(commitBody({ rows, marks })).marks, [
+    { observation_id: 10, reason: null, note: 'clear specimen', kind: 'accept' },
+    { observation_id: 11, reason: 'Duplicate', note: 'same track twice', kind: 'except' }
   ]);
 });
 
@@ -247,7 +260,7 @@ test('R3: committing only the marked is the same request over a shorter observat
 
   const wire = onWire(commitBody({ rows: marked, marks }));
   assert.deepEqual(wire.observations, [{ observation_id: 11, version: 2 }]);
-  assert.deepEqual(wire.marks, [{ observation_id: 11, reason: null, kind: 'accept' }]);
+  assert.deepEqual(wire.marks, [{ observation_id: 11, reason: null, note: null, kind: 'accept' }]);
   /* Every observation in the request is marked, so the sweep has nothing to sweep. */
   assert.equal(wire.observations.length, wire.marks.length);
 });

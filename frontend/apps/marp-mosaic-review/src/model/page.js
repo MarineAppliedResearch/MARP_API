@@ -26,7 +26,7 @@ import { MARK_EXCEPT, MARK_ACCEPT, markKind, MODES, existingState } from './mode
 export function toggleMark(marks, id, kind = MARK_EXCEPT) {
   const next = new Map(marks);
   if (next.has(id) && markKind(next.get(id)) === kind) next.delete(id);
-  else next.set(id, { kind, reason: null });
+  else next.set(id, { kind, reason: null, note: null });
   return next;
 }
 
@@ -45,6 +45,14 @@ export function setReason(marks, id, reason) {
   return next;
 }
 
+/** Stage plain-text detail without changing what the decision means. */
+export function setNote(marks, id, note) {
+  if (!marks.has(id)) return marks;
+  const next = new Map(marks);
+  next.set(id, { ...next.get(id), note });
+  return next;
+}
+
 /**
  * The scope is the page. Never the whole query.
  *
@@ -57,7 +65,7 @@ export function markAll(marks, rows) {
   rows.forEach((r) => {
     const cur = next.get(r.observation_id);
     if (cur && markKind(cur) === MARK_EXCEPT) return;
-    next.set(r.observation_id, { kind: MARK_EXCEPT, reason: null });
+    next.set(r.observation_id, { kind: MARK_EXCEPT, reason: null, note: null });
   });
   return next;
 }
@@ -190,7 +198,7 @@ export const conflictedIds = (result) =>
  * `touched` holds what the reviewer has decided about by hand this session. Those are
  * never re-seeded — taking a flag off and paging away must not put it back.
  */
-export function seedMarks(marks, touched, rows, isException) {
+export function seedMarks(marks, touched, rows, isException, noteFor = () => null) {
   const next = new Map(marks);
   rows.forEach((row) => {
     const id = row.observation_id;
@@ -198,7 +206,11 @@ export function seedMarks(marks, touched, rows, isException) {
     /* Seeded marks are **exceptions** and nothing else: they come from the record's own
        flagged and excluded rows. Nothing seeds an accept mark, which is what keeps the
        main button's `touched` filter meaningful -- see `selectedRows` (#126 A3). */
-    next.set(id, { kind: MARK_EXCEPT, reason: row.flag_reason || row.exclusion_reason || null });
+    next.set(id, {
+      kind: MARK_EXCEPT,
+      reason: row.flag_reason || row.exclusion_reason || null,
+      note: noteFor(row)
+    });
   });
   return next;
 }

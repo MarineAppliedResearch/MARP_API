@@ -24,8 +24,8 @@ const ROUTE = { scientific: 'review', training: 'training' };
 
 /** Which columns on the mosaic row a mode's decision and reason arrive in. */
 const COLUMNS = {
-  scientific: { decision: 'review_decision', reason: 'flag_reason' },
-  training: { decision: 'training_decision', reason: 'exclusion_reason' }
+  scientific: { decision: 'review_decision', reason: 'flag_reason', note: 'review_note' },
+  training: { decision: 'training_decision', reason: 'exclusion_reason', note: 'training_note' }
 };
 
 /** Ask the facets endpoint, and fail loudly rather than returning nothing. */
@@ -86,11 +86,15 @@ export async function lonePage(request, lone) {
  * and no mark at all means the sweep's acceptance. `withdraw` takes the decision off.
  */
 export async function commitOne(
-  request, mode, row, { kind = null, withdraw = false, reason = SETUP_REASON } = {}
+  request, mode, row, { kind = null, withdraw = false, reason = SETUP_REASON, note = null } = {}
 ) {
   const data = {
     observations: [{ observation_id: row.observation_id, version: row.version }],
-    marks: kind ? [{ observation_id: row.observation_id, kind, reason: kind === 'except' ? reason : null }] : []
+    marks: kind ? [{
+      observation_id: row.observation_id, kind,
+      reason: kind === 'except' ? reason : null,
+      note
+    }] : []
   };
   if (withdraw) data.withdraw = [row.observation_id];
 
@@ -128,7 +132,9 @@ export async function claimLoneRow(request, mode) {
     lone,
     row,
     /* What the record said before this test touched it, so `restore` can put it back. */
-    original: { decision: row[columns.decision], reason: row[columns.reason] }
+    original: {
+      decision: row[columns.decision], reason: row[columns.reason], note: row[columns.note]
+    }
   };
 }
 
@@ -149,9 +155,11 @@ export async function restore(request, mode, { lone, original }) {
     await commitOne(request, mode, current, { withdraw: true });
   } else if (original.decision === exception) {
     /* The reason belonged to the decision, so it goes back with it. */
-    await commitOne(request, mode, current, { kind: 'except', reason: original.reason });
+    await commitOne(request, mode, current, {
+      kind: 'except', reason: original.reason, note: original.note
+    });
   } else {
-    await commitOne(request, mode, current, { kind: 'accept' });
+    await commitOne(request, mode, current, { kind: 'accept', note: original.note });
   }
 
   const restored = (await lonePage(request, lone)).rows[0];
@@ -159,6 +167,7 @@ export async function restore(request, mode, { lone, original }) {
     `observation ${current.observation_id} was left as ${restored[columns.decision]} `
     + `instead of ${original.decision}`).toBe(original.decision);
   expect(restored[columns.reason]).toBe(original.reason);
+  expect(restored[columns.note]).toBe(original.note);
 }
 
 /** What a mode's decision column says right now, read back from the endpoint. */

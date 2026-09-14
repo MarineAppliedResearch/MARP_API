@@ -6,8 +6,11 @@
  * genuinely optional, and the copy says so.
  */
 import { state, actions, MODES } from '../store.js';
+import { acceptedValue, existingNote, existingReason, existingState, markKind, MARK_EXCEPT } from '../model/modes.js';
 import { $, el, ICON } from './dom.js';
-import { markIcon } from './tile.js';
+import { acceptIcon, markIcon } from './tile.js';
+
+const NOTE_LIMIT = 1000;
 
 /**
  * One candidate species.
@@ -66,8 +69,24 @@ function bindSpecies(panel, id) {
 function position(panel, id) {
   const tileEl = $(`.tile[data-id="${id}"]`), field = $('#field');
   if (!tileEl) return;
-  const t = tileEl.getBoundingClientRect(), f = field.getBoundingClientRect();
   const GAP = 10, EDGE = 8;
+
+  if (window.matchMedia('(max-width: 760px)').matches) {
+    const viewport = window.visualViewport;
+    const top = viewport ? viewport.offsetTop : 0;
+    const left = viewport ? viewport.offsetLeft : 0;
+    const width = viewport ? viewport.width : window.innerWidth;
+    const height = viewport ? viewport.height : window.innerHeight;
+    panel.style.position = 'fixed';
+    panel.style.top = (top + EDGE) + 'px';
+    panel.style.left = (left + EDGE) + 'px';
+    panel.style.width = Math.max(0, width - EDGE * 2) + 'px';
+    panel.style.maxHeight = Math.max(0, height - EDGE * 2) + 'px';
+    panel.style.overflowY = 'auto';
+    return;
+  }
+
+  const t = tileEl.getBoundingClientRect(), f = field.getBoundingClientRect();
 
   panel.style.maxHeight = (f.height - EDGE * 2) + 'px';
   panel.style.overflowY = 'auto';
@@ -96,6 +115,24 @@ function consequence(mode, correcting) {
     + 'The other reasons are advisory.'];
 }
 
+/** Keep the focused editor inside the keyboard-reduced visual viewport. */
+function repositionForViewport() {
+  if (!state.picker) return;
+  const panel = $('#picker .pick');
+  if (!panel) return;
+  position(panel, state.picker.id);
+  const note = panel.querySelector('.decision-note:focus');
+  if (note) note.scrollIntoView({ block: 'center', inline: 'nearest' });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', () => requestAnimationFrame(repositionForViewport));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => requestAnimationFrame(repositionForViewport));
+    window.visualViewport.addEventListener('scroll', () => requestAnimationFrame(repositionForViewport));
+  }
+}
+
 let renderSeq = 0;
 
 export async function renderPicker() {
@@ -103,11 +140,29 @@ export async function renderPicker() {
   if (!state.picker || state.mode === 'delete') { host.innerHTML = ''; return; }
 
   const { id, correcting } = state.picker;
+  const openPanel = host.querySelector('.pick');
+  const focusedNote = openPanel && openPanel.querySelector('#decisionNote:focus');
+  /* Layout, prefetch and other state changes can repaint while somebody types. Keep the
+     active editor itself alive; replacing it makes a phone keyboard move or disappear. */
+  if (focusedNote && Number(openPanel.dataset.pickerId) === id) {
+    position(openPanel, id);
+    return;
+  }
   const row = state.rows.find((r) => r.observation_id === id);
-  const mark = state.marks.get(id);
-  if (!row || !mark) { host.innerHTML = ''; return; }
+  if (!row) { host.innerHTML = ''; return; }
+  const staged = state.marks.get(id);
+  const decision = staged
+    ? (markKind(staged) === MARK_EXCEPT ? MODES[state.mode].marks : acceptedValue(state.mode))
+    : existingState(state.mode, row);
+  if (!decision) { host.innerHTML = ''; return; }
 
   const m = MODES[state.mode];
+  const isException = decision === m.marks;
+  const mark = staged || {
+    kind: isException ? MARK_EXCEPT : 'accept',
+    reason: isException ? existingReason(state.mode, row) : null,
+    note: existingNote(state.mode, row)
+  };
   /* Fetch first, clear second. Blanking the panel and then awaiting the taxonomy
      left it missing for the length of the request, which looked like the panel
      closing and reopening by itself.
@@ -117,19 +172,22 @@ export async function renderPicker() {
   if (token !== renderSeq) return;                    // a newer render already won
   if (!state.picker || state.picker.id !== id) { host.innerHTML = ''; return; }
   host.innerHTML = '';
-  const [consqClass, consqText] = consequence(state.mode, correcting);
+  const [consqClass, consqText] = isException
+    ? consequence(state.mode, correcting)
+    : ['', `This note will be recorded with the ${decision} decision when you commit it.`];
+  const label = decision.charAt(0).toUpperCase() + decision.slice(1);
+  const reasonControls = isException ? `<div class="chips">${m.reasons.map((r) =>
+    `<button class="chip ${mark.reason === r ? 'on' : ''}" data-reason="${r}"
+       title="Record this as the reason">${mark.reason === r ? ICON.tick : ''}${r}</button>`).join('')}
+    <button class="chip change ${correcting ? 'on' : ''}" data-act="correct"
+      title="Change this observation's species">Change species&hellip;</button>
+  </div>` : '';
 
-  const panel = el(`<div class="pick" role="dialog" aria-label="${m.mark} options">
-      <h4><span class="fl">${markIcon()}</span>${m.mark}<span class="opt">Reason optional</span></h4>
-      <p>Already recorded. Add a reason to help whoever resolves it, or close this and
-         keep scanning &mdash; the mark stands on its own.</p>
-      <div class="chips">${m.reasons.map((r) =>
-        `<button class="chip ${mark.reason === r ? 'on' : ''}" data-reason="${r}"
-           title="Record this as the reason">${mark.reason === r ? ICON.tick : ''}${r}</button>`).join('')}
-        <button class="chip change ${correcting ? 'on' : ''}" data-act="correct"
-          title="Change this observation's species">Change species&hellip;</button>
-      </div>
-      ${correcting ? `<div class="correct">
+  const panel = el(`<div class="pick" data-picker-id="${id}" role="dialog" aria-label="${label} details">
+      <h4><span class="fl">${isException ? markIcon() : acceptIcon()}</span>${label}<span class="opt">Details optional</span></h4>
+      <p>Changes here stay pending until you use one of the existing commit controls.</p>
+      ${reasonControls}
+      ${correcting && isException ? `<div class="correct">
         <h5>Correct the species<span class="opt">saves immediately</span></h5>
         <input class="search" id="spSearch" placeholder="Type two letters to search&hellip;" autocomplete="off">
         <!-- Scoped to the observation's own annotation list, with an explicit action to
@@ -141,23 +199,47 @@ export async function renderPicker() {
           <button type="button" class="widen" data-act="widen"
             title="Search the whole MARP taxonomy, not only this observation's list">Search all lists</button></div>
         <div id="spList">${matches.map((s) => speciesRow(s)).join('')}</div></div>` : ''}
+      <label class="note-label" for="decisionNote">Note <span class="opt"><span data-note-count>0</span> / ${NOTE_LIMIT}</span></label>
+      <textarea class="decision-note" id="decisionNote" rows="4"
+        placeholder="Add an optional note about this decision"></textarea>
       <div class="consq ${consqClass}">${consqText}</div>
       <div class="pickfoot">
-        <button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${m.mark.toLowerCase()}</button>
+        ${isException ? `<button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${m.mark.toLowerCase()}</button>` : ''}
         <button class="ghost" data-act="video" title="Open the source video at this observation">Open video</button>
-        <button class="ghost go" data-act="resolve" title="Clear the mark, keeping any correction">Mark resolved</button>
+        ${isException ? '<button class="ghost go" data-act="resolve" title="Clear the mark, keeping any correction">Mark resolved</button>'
+          : '<button class="ghost go" data-act="close">Close</button>'}
       </div></div>`);
 
   host.appendChild(panel);
+  const note = panel.querySelector('#decisionNote');
+  const count = panel.querySelector('[data-note-count]');
+  note.value = mark.note || '';
+  count.textContent = String(Array.from(note.value).length);
+  if (state.picker.noteCursor != null) {
+    note.focus();
+    note.setSelectionRange(state.picker.noteCursor, state.picker.noteCursor);
+  }
+  note.addEventListener('input', () => {
+    const characters = Array.from(note.value);
+    if (characters.length > NOTE_LIMIT) note.value = characters.slice(0, NOTE_LIMIT).join('');
+    count.textContent = String(Array.from(note.value).length);
+    actions.setNote(id, note.value, { cursor: note.selectionStart });
+  });
+  note.addEventListener('focus', () => requestAnimationFrame(repositionForViewport));
   position(panel, id);
 
   panel.querySelectorAll('[data-reason]').forEach((b) =>
     b.addEventListener('click', () => actions.setReason(id, b.dataset.reason)));
   bindSpecies(panel, id);
-  panel.querySelector('[data-act="correct"]').addEventListener('click', () => actions.toggleCorrecting(id));
-  panel.querySelector('[data-act="unmark"]').addEventListener('click', () => actions.toggleMark(id));
+  const correct = panel.querySelector('[data-act="correct"]');
+  if (correct) correct.addEventListener('click', () => actions.toggleCorrecting(id));
+  const unmark = panel.querySelector('[data-act="unmark"]');
+  if (unmark) unmark.addEventListener('click', () => actions.toggleMark(id));
   panel.querySelector('[data-act="video"]').addEventListener('click', () => actions.openVideo(id));
-  panel.querySelector('[data-act="resolve"]').addEventListener('click', () => actions.resolve(id));
+  const resolve = panel.querySelector('[data-act="resolve"]');
+  if (resolve) resolve.addEventListener('click', () => actions.resolve(id));
+  const close = panel.querySelector('[data-act="close"]');
+  if (close) close.addEventListener('click', () => actions.closePicker());
 
   const search = panel.querySelector('#spSearch');
   if (search) {

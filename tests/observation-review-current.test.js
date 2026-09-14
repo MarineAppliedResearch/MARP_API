@@ -110,19 +110,20 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
          * @param {number} decision.reviewerId - Who decided.
          * @param {string} decision.decidedAt - Timestamp, as SQL text.
          * @param {string|null} [decision.reason] - Why, where recorded.
+         * @param {string|null} [decision.note] - Optional reviewer-authored detail.
          * @param {Object} transaction - Transaction to write within.
          * @returns {Promise<string>} The new review_id.
          */
         async function recordDecision(decision, transaction) {
             const {
-                observationId, purpose, reviewerId, decidedAt, reason = null,
+                observationId, purpose, reviewerId, decidedAt, reason = null, note = null,
             } = decision;
 
             const [review] = await db.sequelize.query(
                 `INSERT INTO observation_reviews
-                     (observation_id, purpose, decision, reason, reviewer_id,
+                     (observation_id, purpose, decision, reason, note, reviewer_id,
                       observation_version, decided_at, created_at, updated_at)
-                 VALUES (:observationId, :purpose, :decision, :reason, :reviewerId,
+                 VALUES (:observationId, :purpose, :decision, :reason, :note, :reviewerId,
                       (SELECT version FROM observations WHERE observation_id = :observationId),
                       :decidedAt, NOW(), NOW())
                  RETURNING review_id`,
@@ -133,6 +134,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                         purpose,
                         decision: decision.decision,
                         reason,
+                        note,
                         reviewerId,
                         decidedAt,
                     },
@@ -152,9 +154,9 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
 
             await db.sequelize.query(
                 `INSERT INTO observation_review_current
-                     (review_id, observation_id, purpose, decision, reason,
+                     (review_id, observation_id, purpose, decision, reason, note,
                       reviewer_id, decided_at, observation_version)
-                 SELECT review_id, observation_id, purpose, decision, reason,
+                 SELECT review_id, observation_id, purpose, decision, reason, note,
                         reviewer_id, decided_at, observation_version
                    FROM observation_reviews
                   WHERE review_id = :reviewId
@@ -162,6 +164,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
                     SET review_id           = EXCLUDED.review_id,
                         decision            = EXCLUDED.decision,
                         reason              = EXCLUDED.reason,
+                        note                = EXCLUDED.note,
                         reviewer_id         = EXCLUDED.reviewer_id,
                         decided_at          = EXCLUDED.decided_at,
                         observation_version = EXCLUDED.observation_version`,
@@ -246,7 +249,7 @@ describe('observation_review_current (#103 D1, R6 · #111 R11)', () => {
          * @returns {Promise<{projection: Array<Object>, derivation: Array<Object>}>} Both sides.
          */
         async function bothSides(transaction, observationId) {
-            const columns = `review_id, observation_id, purpose, decision, reason,
+            const columns = `review_id, observation_id, purpose, decision, reason, note,
                              reviewer_id, decided_at, observation_version`;
 
             // Scoped to the observation this test seeded. Both sides were once

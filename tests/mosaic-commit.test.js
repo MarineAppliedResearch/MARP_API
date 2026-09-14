@@ -200,7 +200,7 @@ async function at(observationId) {
  */
 function logFor(observationId) {
     return q(
-        `SELECT review_id, purpose, decision, reason, reviewer_id, observation_version,
+        `SELECT review_id, purpose, decision, reason, note, reviewer_id, observation_version,
                 reviewed_keyframe_count, reviewed_keyframe_max_updated_at,
                 representative_keyframe_id, decided_at
            FROM observation_reviews
@@ -218,7 +218,7 @@ function logFor(observationId) {
  */
 function currentFor(observationId) {
     return q(
-        `SELECT purpose, decision, reason, reviewer_id, decided_at,
+        `SELECT purpose, decision, reason, note, reviewer_id, decided_at,
                 observation_version
            FROM observation_review_current
           WHERE observation_id = :observationId
@@ -237,7 +237,7 @@ function currentFor(observationId) {
  * @returns {Promise<{projection: Array<Object>, derivation: Array<Object>}>} Both sides.
  */
 async function bothSides() {
-    const columns = `review_id, observation_id, purpose, decision, reason,
+    const columns = `review_id, observation_id, purpose, decision, reason, note,
                      reviewer_id, decided_at, observation_version`;
 
     const normalize = (row) => {
@@ -811,6 +811,39 @@ describe('the mosaic page commit (#106)', () => {
             expect(res.body.flagged).toEqual([{ observation_id: b, outcome: 'excluded' }]);
         });
 
+        it('records notes on accepted and exception decisions without changing reason meaning', async () => {
+            const [reviewed, flagged, promoted, excluded] = await addObservations(4);
+
+            await alice.post(REVIEW).send({
+                observations: [await at(reviewed), await at(flagged)],
+                marks: [
+                    { observation_id: reviewed, kind: 'accept', note: '  clear specimen  ' },
+                    { observation_id: flagged, kind: 'except', reason: 'Duplicate', note: 'same track twice' },
+                ],
+            });
+            await alice.post(TRAINING).send({
+                observations: [await at(promoted), await at(excluded)],
+                marks: [
+                    { observation_id: promoted, kind: 'accept', note: 'use in next training set' },
+                    { observation_id: excluded, kind: 'except', reason: 'Occluded', note: 'tail is hidden' },
+                ],
+            });
+
+            expect((await currentFor(reviewed))[0]).toMatchObject({
+                decision: 'reviewed', reason: null, note: 'clear specimen',
+            });
+            expect((await currentFor(flagged))[0]).toMatchObject({
+                decision: 'flagged', reason: 'Duplicate', note: 'same track twice',
+            });
+            expect((await currentFor(promoted))[0]).toMatchObject({
+                decision: 'promoted', reason: null, note: 'use in next training set',
+            });
+            expect((await currentFor(excluded))[0]).toMatchObject({
+                decision: 'excluded', reason: 'Occluded', note: 'tail is hidden',
+            });
+            expect((await logFor(flagged))[0].note).toBe('same track twice');
+        });
+
         it('reads a mark with no kind as the exception, which is what every mark meant before', async () => {
             // The compatibility this rests on. A client that has not been told about
             // kinds sends `{observation_id, reason}` and must still flag.
@@ -979,6 +1012,36 @@ describe('the mosaic page commit (#106)', () => {
 
             expect(res.status).toBe(400);
             expect(res.body.error.message).toMatch(/leaves no trace/);
+        });
+
+        it('normalizes blank notes and rejects non-text, over-limit, and delete notes', async () => {
+            const [blank, wrongType, tooLong, doomed] = await addObservations(4);
+
+            const accepted = await post(REVIEW, {
+                observations: [await at(blank)],
+                marks: [{ observation_id: blank, kind: 'accept', note: '   ' }],
+            });
+            expect(accepted.status).toBe(200);
+            expect((await currentFor(blank))[0].note).toBeNull();
+
+            expect((await post(REVIEW, {
+                observations: [await at(wrongType)],
+                marks: [{ observation_id: wrongType, note: 42 }],
+            })).status).toBe(400);
+
+            const over = await post(REVIEW, {
+                observations: [await at(tooLong)],
+                marks: [{ observation_id: tooLong, note: '🐟'.repeat(1001) }],
+            });
+            expect(over.status).toBe(400);
+            expect(over.body.error.message).toMatch(/1000 character limit/);
+
+            const deletion = await post(DELETE, {
+                observations: [await at(doomed)],
+                marks: [{ observation_id: doomed, note: 'must remain untouched' }],
+            });
+            expect(deletion.status).toBe(400);
+            expect(deletion.body.error.message).toMatch(/records no decision details/);
         });
 
         it('rejects a mark that is not on the page', async () => {

@@ -54,6 +54,7 @@ const seeded = {
     sessions: {},
     observations: {},
     userIds: [],
+    decisionAuthorId: null,
     // A catalogue entry on a list the `Invert` session does not read against.
     // Looked up rather than hard-coded: its id is a fact about one database.
     offListSpeciesId: null,
@@ -124,18 +125,19 @@ async function addObservations(rows) {
  * @param {string} purpose - `scientific` or `training`.
  * @param {string} decision - The decision value.
  * @param {string|null} [reason] - Why, where one is recorded.
+ * @param {string|null} [note] - Optional reviewer-authored detail.
  * @returns {Promise<void>}
  */
-async function decide(observationId, purpose, decision, reason = null) {
+async function decide(observationId, purpose, decision, reason = null, note = null, reviewerId = 1) {
     const [review] = await q(
         `INSERT INTO observation_reviews
-             (observation_id, purpose, decision, reason, reviewer_id,
+             (observation_id, purpose, decision, reason, note, reviewer_id,
               observation_version, decided_at, created_at, updated_at)
-         VALUES (:observationId, :purpose, :decision, :reason, 1,
+         VALUES (:observationId, :purpose, :decision, :reason, :note, :reviewerId,
               (SELECT version FROM observations WHERE observation_id = :observationId),
               NOW(), NOW(), NOW())
          RETURNING review_id`,
-        { observationId, purpose, decision, reason }
+        { observationId, purpose, decision, reason, note, reviewerId }
     );
 
     // No `first_decided_at`: it went with first-valid-review-wins in #111,
@@ -144,9 +146,9 @@ async function decide(observationId, purpose, decision, reason = null) {
     // decision is current, only that one is.
     await db.sequelize.query(
         `INSERT INTO observation_review_current
-             (review_id, observation_id, purpose, decision, reason,
+             (review_id, observation_id, purpose, decision, reason, note,
               reviewer_id, decided_at, observation_version)
-         SELECT review_id, observation_id, purpose, decision, reason,
+         SELECT review_id, observation_id, purpose, decision, reason, note,
                 reviewer_id, decided_at, observation_version
            FROM observation_reviews
           WHERE review_id = :reviewId`,
@@ -288,12 +290,20 @@ describe('the mosaic query (#105)', () => {
             group: 'review', sessionKey: 'review', obsID: 910000 + i, confidence,
         })));
 
-        await decide(review[0], 'scientific', 'reviewed');
-        await decide(review[1], 'scientific', 'flagged', 'blurry');
+        const decisionAuthor = await db.users.create({
+            name: `Jest Decision Author ${runId}`,
+            username: `grace.${runId}.hopper`,
+            status: 'active',
+        });
+        seeded.decisionAuthorId = decisionAuthor.user_id;
+        seeded.userIds.push(decisionAuthor.user_id);
+
+        await decide(review[0], 'scientific', 'reviewed', null, null, seeded.decisionAuthorId);
+        await decide(review[1], 'scientific', 'flagged', 'blurry', 'scientific detail', seeded.decisionAuthorId);
         // review[2] carries nothing: undecided is the absence of a row.
-        await decide(review[3], 'scientific', 'flagged', 'ambiguous');
-        await decide(review[3], 'training', 'promoted');
-        await decide(review[4], 'training', 'excluded', 'occluded');
+        await decide(review[3], 'scientific', 'flagged', 'ambiguous', null, seeded.decisionAuthorId);
+        await decide(review[3], 'training', 'promoted', null, 'training detail', seeded.decisionAuthorId);
+        await decide(review[4], 'training', 'excluded', 'occluded', null, seeded.decisionAuthorId);
 
         // The rows an inner join would drop. Scoped by the fixture model, because
         // the first of them has no session to be scoped by.
@@ -1131,6 +1141,7 @@ describe('the mosaic query (#105)', () => {
                 'observation_id',
                 'project_name',
                 'review_decision',
+                'review_note',
                 // Owed to #124's A13, and F8 is the defect it closes: the client draws
                 // "REVIEWED by you", the borrowed tag's attribution and `byMe` from
                 // `reviewed_by` / `flagged_by` / `training_approved_by` / `excluded_by`,
@@ -1141,6 +1152,7 @@ describe('the mosaic query (#105)', () => {
                 // principal exposes nobody. **Moved into this list rather than the list
                 // being loosened** -- naming the exact keys is the tripwire.
                 'review_reviewer_id',
+                'review_reviewer_initials',
                 'session_type',
                 // Owed to #111, not wanted by the tile either: `comname` above
                 // is the annotator's frozen label and a species correction never
@@ -1167,9 +1179,11 @@ describe('the mosaic query (#105)', () => {
                 // derivable from observation_id, so no `thumb` joins it.
                 'thumbnail_status',
                 'training_decision',
+                'training_note',
                 // The training half of A13's pair. Same reasoning, same list, same rule
                 // about being moved in rather than admitted by loosening.
                 'training_reviewer_id',
+                'training_reviewer_initials',
                 // Owed to #106's D1, not wanted by the tile: the commit routes
                 // require the version the reviewer saw, and this row is the only
                 // channel that can carry it.
@@ -1232,9 +1246,18 @@ describe('the mosaic query (#105)', () => {
             expect(byId.get(reviewed).review_decision).toBe('reviewed');
             expect(byId.get(flagged).review_decision).toBe('flagged');
             expect(byId.get(flagged).flag_reason).toBe('blurry');
+            expect(byId.get(flagged).review_note).toBe('scientific detail');
+            expect(byId.get(reviewed).review_reviewer_initials).toBe('GH');
+            expect(byId.get(flagged).review_reviewer_initials).toBe('GH');
             expect(byId.get(none).review_decision).toBeNull();
             expect(byId.get(none).training_decision).toBeNull();
             expect(byId.get(both).training_decision).toBe('promoted');
+            expect(byId.get(both).training_note).toBe('training detail');
+            expect(byId.get(both).training_reviewer_initials).toBe('GH');
+            expect(byId.get(both).review_note).toBeNull();
+            expect(byId.get(none).review_reviewer_initials).toBeNull();
+            expect(byId.get(none).training_reviewer_initials).toBeNull();
+            expect(byId.get(flagged)).not.toHaveProperty('review_reviewer_username');
         });
     });
 });

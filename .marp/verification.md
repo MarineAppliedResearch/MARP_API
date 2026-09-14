@@ -18,8 +18,10 @@ takeover. The human reviews the plan before G4 begins.
 
 The complete browser command also runs the API-backed checks merged after this branch was
 created: account-menu behavior (#166), committed decision appearance (#167), and selective
-page completion (#137). This is required because #157 has now incorporated current
-`origin/develop` and those checks share the files changed by the fixture retirement.
+page completion (#137). It also runs #172's decision-details suite, including the four
+rendering checks that #172 originally added to the now-deleted fixture tier. This is
+required because #157 has now incorporated current `origin/develop` and those checks share
+the files changed by the fixture retirement.
 
 ## Requirements with no test
 
@@ -89,6 +91,9 @@ to an end-of-phase run requested by the human.
 - #166: application menus remain usable after the branch incorporates current `develop`.
 - #167: pending and recorded decisions remain visually distinct on the real row returned
   after a commit.
+- #172: reasons, notes, reviewer attribution, confidence treatment, overlay transparency,
+  and the phone details viewport are exercised through real persisted decisions rather
+  than through fixture row mutation.
 - The journal’s previous pagination defect: restoration must read every affected page and
   leave the current-review digest unchanged.
 

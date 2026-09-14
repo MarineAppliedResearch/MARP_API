@@ -84,6 +84,9 @@ async function connect() {
  * @param {string} [options.tc] - The timecode. A value that is not a clock -- `'n/a'` --
  *   is a row the date filter cannot answer for, which is what its "could not see" note
  *   counts and which every `tc` in the corpus happens to be readable enough to avoid.
+ * @param {number|null} [options.confidence] - A specific confidence for every seeded row.
+ *   Omit it for the ordinary increasing values. `null` exists for #172's rendering check:
+ *   a corpus cannot be relied on to contain a null-confidence row on a visible page.
  * @param {boolean} [options.tie] - Give every row the **same** confidence and a different
  *   number of keyframes, so the primary sort ties and the secondary has work to do. A
  *   corpus of inference output ties rarely, and never reliably on page one.
@@ -91,7 +94,7 @@ async function connect() {
  */
 export async function seedPage({
   count = 4, thumbnail = 'ready', permanent = false, sessionType = 'Invert',
-  tc = '10:00:00', tie = false
+  tc = '10:00:00', confidence = undefined, tie = false
 } = {}) {
   const client = await connect();
 
@@ -142,7 +145,7 @@ export async function seedPage({
             species_id, tc, version, "createdAt", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, NOW(), NOW())`,
         [id, project.project_id, session.session_id, 900000 + n,
-          tie ? 0.5 : 0.5 + (n / 1000),
+          confidence === undefined ? (tie ? 0.5 : 0.5 + (n / 1000)) : confidence,
           `${MARK} organism`, species.id, tc]
       );
       ids.push(id);
