@@ -13,7 +13,9 @@
  * @module routes/dataset.routes
  */
 
+const path = require('path');
 const datasetController = require('../controller/dataset.controller');
+const modelArtifactService = require('../service/model-artifact.service');
 const { asyncHandler, ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
 const { registerOpenApiRoute } = require('../docs/openapi-route-registry');
 const { registerVersionedRoute } = require('./lib/register-versioned-route');
@@ -51,6 +53,38 @@ function registerDatasetRoutes(app) {
         handler: asyncHandler(async (req, res) => {
             const data = await datasetController.getMl_models();
             res.json(data);
+        }),
+    });
+
+    registerVersionedRoute(app, {
+        method: 'get',
+        permission: 'jobs:execute',
+        path: '/api/model/:id/artifact',
+        summary: 'Download registered model weights',
+        description: 'Streams the artifact registered for an ML model from API-owned local storage. The host filesystem path is never returned.',
+        tags: ['V1 · MachineLearning'],
+        parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'integer' }, description: 'ID of the registered ML model.' },
+        ],
+        responses: {
+            200: {
+                description: 'The registered model artifact.',
+                content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+            },
+            404: { $ref: '#/components/responses/NotFoundError' },
+            500: { $ref: '#/components/responses/InternalServerError' },
+        },
+        handler: asyncHandler(async (req, res) => {
+            const artifact = await modelArtifactService.resolveArtifact(req.params.id);
+            if (!artifact) {
+                throw new ApiError(404, ERROR_CODES.RESOURCE_NOT_FOUND, `Model artifact ${req.params.id} was not found.`);
+            }
+
+            res.type('application/octet-stream');
+            res.setHeader('Content-Disposition', `attachment; filename="${path.basename(artifact.path).replace(/"/g, '')}"`);
+            await new Promise((resolve, reject) => {
+                res.sendFile(artifact.path, (error) => error ? reject(error) : resolve());
+            });
         }),
     });
 

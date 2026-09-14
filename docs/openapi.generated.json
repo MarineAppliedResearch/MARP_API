@@ -9391,6 +9391,51 @@
         }
       }
     },
+    "/v2/model/{id}/artifact": {
+      "get": {
+        "summary": "Download registered model weights",
+        "description": "Streams the artifact registered for an ML model from API-owned local storage. The host filesystem path is never returned. Requires the `jobs:execute` permission.",
+        "tags": [
+          "V2 · MachineLearning"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID of the registered ML model."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The registered model artifact.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/UnauthorizedError"
+          },
+          "403": {
+            "$ref": "#/components/responses/ForbiddenError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
     "/v2/dataset": {
       "get": {
         "summary": "Fetch all datasets",
