@@ -8,7 +8,7 @@ this plan.
 
 | Requirements | Evidence | Tier | What it proves |
 | --- | --- | --- | --- |
-| R1–R3 | `observation-id.test.mjs`; `full-frame.spec.mjs` | unit + real browser | Every details panel shows the exact primary key; copy writes only that value; refusal selects it for manual copy; the panel and pending mark remain open. |
+| R1–R3 | `observation-id.test.mjs`; `full-frame.spec.mjs` | unit + real browser | Every details panel shows the exact primary key as compact selectable metadata with no copy control; the panel and pending mark remain open. |
 | R4–R7 | `thumbnails.test.js` full-frame block | HTTP + database | A request captures the ready thumbnail's exact frame/subset, persists one job, preserves an in-flight duplicate, and shares the reviewer-priority FIFO ahead of background work. |
 | R8–R9 | `frame-viewer.test.mjs`; `full-frame.spec.mjs` | unit + real browser | The viewer fits landscape and portrait frames, supports pinch and button zoom, pans, zooms directly to the box, traps focus, closes with browser Back, and returns to the same URL, marked tile, and details panel. |
 | R10–R12 | `thumbnails.test.js`; approved live observation | HTTP + database + media/manual | Delivery requires `observations:read`, uses private revalidation, reports missing/retryable state, preserves native dimensions, and the generated JPEG can be judged at source quality without leaking Jellyfin details. |
@@ -46,7 +46,7 @@ this plan.
    - Expected: the generated contract contains the admin policy endpoint and the full-frame
      request/download endpoint, with no hand-edited generated output.
 5. `npm run test:app:mosaic-review:unit`.
-   - Expected: all Mosaic syntax/model/store/geometry/copy tests pass.
+   - Expected: all Mosaic syntax/model/store/geometry/identity tests pass.
 6. Against the same disposable database, run
    `npx jest tests/thumbnails.test.js tests/mosaic-query.test.js tests/thumbnail-storage.test.js tests/dashboard-shell.test.js --runInBand --forceExit`.
    - Expected: queue, routes, persistence, permissions, storage accounting, eviction,
@@ -87,7 +87,6 @@ every layer it changes.
   labeled observation with context still visible around it. The image point beneath the
   gesture midpoint remains beneath it as the fingers move.
 - A box that crosses a frame edge remains bounded to the visible image.
-- Clipboard denial leaves the exact decimal ID selected and reports the failure accessibly.
 - Inspection does not commit, withdraw, correct, delete, or create scientific review data.
 
 ## Known gaps

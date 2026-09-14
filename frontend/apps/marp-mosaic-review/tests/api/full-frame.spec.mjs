@@ -5,12 +5,6 @@ import { expectRealBacking, ready } from './support.mjs';
 
 test('#176/#178 details identify the observation and open its cached full frame',
   async ({ page }) => {
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: { writeText: async (value) => { window.__copiedObservationId = value; } }
-      });
-    });
     const seeded = await seedPage({ count: 1, thumbnail: 'ready', fullFrame: true });
     try {
       await page.goto(seeded.address);
@@ -23,9 +17,10 @@ test('#176/#178 details identify the observation and open its cached full frame'
       await tile.locator('[data-badge]').click();
       const panel = page.locator('.pick');
       await expect(panel.locator('[data-observation-id]')).toHaveText(String(id));
-      await panel.getByRole('button', { name: 'Copy' }).click();
-      await expect(panel.locator('[data-copy-status]')).toHaveText('Copied');
-      await expect.poll(() => page.evaluate(() => window.__copiedObservationId)).toBe(String(id));
+      await expect(panel.locator('.observation-identity')).toBeVisible();
+      await expect(panel.locator('[data-act="copy-observation-id"]')).toHaveCount(0);
+      await expect(panel).not.toContainText('removes this observation from accepted scientific results');
+      await expect(panel).not.toContainText('a deliberate decision, not the absence of one');
       await expect(panel.getByLabel('Full frame loaded')).toBeChecked();
       await panel.getByRole('button', { name: 'View full frame' }).click();
 
@@ -90,27 +85,6 @@ test('#176 full-frame keyboard focus is trapped and the frame can be panned', as
     await expect(viewer.locator(':focus')).toHaveCount(1);
     await page.keyboard.press('Shift+Tab');
     await expect(viewport).toBeFocused();
-  } finally {
-    await seeded.remove();
-  }
-});
-
-test('#178 clipboard refusal selects the exact ID for manual copying', async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: null });
-  });
-  const seeded = await seedPage({ count: 1, thumbnail: 'ready' });
-  try {
-    await page.goto(seeded.address);
-    await ready(page);
-    const id = seeded.ids[0];
-    const tile = page.locator(`.tile[data-id="${id}"]`);
-    await tile.click();
-    await tile.locator('[data-badge]').click();
-    const panel = page.locator('.pick');
-    await panel.getByRole('button', { name: 'Copy' }).click();
-    await expect(panel.locator('[data-copy-status]')).toContainText('selected for manual copying');
-    await expect.poll(() => page.evaluate(() => window.getSelection().toString())).toBe(String(id));
   } finally {
     await seeded.remove();
   }

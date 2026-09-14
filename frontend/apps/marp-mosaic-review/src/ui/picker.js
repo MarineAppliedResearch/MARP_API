@@ -7,7 +7,7 @@
  */
 import { state, actions, MODES } from '../store.js';
 import { acceptedValue, existingNote, existingReason, existingState, markKind, MARK_EXCEPT } from '../model/modes.js';
-import { copyObservationId, observationIdText } from '../model/observation-id.js';
+import { observationIdText } from '../model/observation-id.js';
 import { fullFrameActionState } from '../model/frame-viewer.js';
 import { $, el, ICON } from './dom.js';
 import { acceptIcon, markIcon } from './tile.js';
@@ -103,18 +103,12 @@ function position(panel, id) {
                               Math.max(EDGE, f.width - panel.offsetWidth - EDGE)) + 'px';
 }
 
-/** The line that says what the choice actually does. */
-function consequence(mode, correcting) {
-  if (correcting) {
-    return ['ok', 'The correction <b>saves immediately</b> and is recorded against your name. '
-      + 'This panel closes; the mark stays until you resolve it.'];
-  }
-  if (mode === 'training') {
-    return ['', 'Excluding is <b>a deliberate decision, not the absence of one</b>. '
-      + 'It is recorded with its reason and can be reconsidered.'];
-  }
-  return ['', 'False detection <b>removes this observation from accepted scientific results</b>. '
-    + 'The other reasons are advisory.'];
+/** Species correction is the one panel action whose immediate write still needs warning. */
+function correctionConsequence(correcting) {
+  return correcting
+    ? ['ok', 'The correction <b>saves immediately</b> and is recorded against your name. '
+      + 'This panel closes; the mark stays until you resolve it.']
+    : ['', ''];
 }
 
 /** Keep the focused editor inside the keyboard-reduced visual viewport. */
@@ -175,7 +169,7 @@ export async function renderPicker() {
   if (!state.picker || state.picker.id !== id) { host.innerHTML = ''; return; }
   host.innerHTML = '';
   const [consqClass, consqText] = isException
-    ? consequence(state.mode, correcting)
+    ? correctionConsequence(correcting)
     : ['', `This note will be recorded with the ${decision} decision when you commit it.`];
   const label = decision.charAt(0).toUpperCase() + decision.slice(1);
   const reasonControls = isException ? `<div class="chips">${m.reasons.map((r) =>
@@ -193,8 +187,6 @@ export async function renderPicker() {
       <div class="observation-identity">
         <span class="observation-identity__label">Observation ID</span>
         <code class="observation-identity__value" data-observation-id>${observationIdText(id)}</code>
-        <button type="button" class="ghost observation-identity__copy" data-act="copy-observation-id">Copy</button>
-        <span class="observation-identity__status" data-copy-status role="status" aria-live="polite"></span>
       </div>
       <div class="full-frame-state">
         <label><input type="checkbox" disabled ${fullFrameReady ? 'checked' : ''}>
@@ -221,7 +213,7 @@ export async function renderPicker() {
       <label class="note-label" for="decisionNote">Note <span class="opt"><span data-note-count>0</span> / ${NOTE_LIMIT}</span></label>
       <textarea class="decision-note" id="decisionNote" rows="4"
         placeholder="Add an optional note about this decision"></textarea>
-      <div class="consq ${consqClass}">${consqText}</div>
+      ${consqText ? `<div class="consq ${consqClass}">${consqText}</div>` : ''}
       <div class="pickfoot">
         ${isException ? `<button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${m.mark.toLowerCase()}</button>` : ''}
         ${isException && state.mode === 'scientific'
@@ -265,25 +257,6 @@ export async function renderPicker() {
   if (requestFrame) requestFrame.addEventListener('click', () => actions.requestFullFrame(id));
   const openFrame = panel.querySelector('[data-act="open-full-frame"]');
   if (openFrame) openFrame.addEventListener('click', () => actions.openFullFrame(id));
-  panel.querySelector('[data-act="copy-observation-id"]').addEventListener('click', async (event) => {
-    const button = event.currentTarget;
-    const status = panel.querySelector('[data-copy-status]');
-    button.disabled = true;
-    try {
-      await copyObservationId(id, navigator.clipboard);
-      status.textContent = 'Copied';
-    } catch (error) {
-      const value = panel.querySelector('[data-observation-id]');
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(value);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      status.textContent = 'Copy unavailable — the ID is selected for manual copying.';
-    } finally {
-      button.disabled = false;
-    }
-  });
   panel.querySelector('[data-act="video"]').addEventListener('click', () => actions.openVideo(id));
   const resolve = panel.querySelector('[data-act="resolve"]');
   if (resolve) resolve.addEventListener('click', () => actions.resolve(id));

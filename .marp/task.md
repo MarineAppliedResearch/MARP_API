@@ -8,7 +8,7 @@ needs: []
 ## Goal
 
 From any Mosaic tile's existing details panel, a reviewer can identify the exact
-observation, copy its primary key, request the complete source-video frame behind the
+observation, request the complete source-video frame behind the
 thumbnail, and inspect that frame full-screen with zoom and pan. These inspection actions
 must not change the square thumbnail, a pending mark, or any scientific review data. This
 milestone delivers #176 and #178 together; persistent source-video playback remains the
@@ -19,11 +19,9 @@ following milestone in #181.
 - **R1** — The details panel clearly labels the tile's exact `observation_id` as
   `Observation ID` in Scientific, Training, and Delete modes, for every thumbnail and
   review state. The identifier is selectable and is not added to the tile face.
-- **R2** — An explicit copy action copies only the decimal observation ID, keeps the
-  details panel open, and gives visible accessible success feedback. When the Clipboard API
-  is unavailable or refuses the write, the ID remains selectable and the panel honestly
-  explains that it must be copied manually.
-- **R3** — Displaying or copying an observation ID changes no mark, note, current review,
+- **R2** — The Observation ID is compact inline metadata rather than a bordered card. It
+  has no dedicated copy button or feedback row and leaves room for the review controls.
+- **R3** — Displaying an observation ID changes no mark, note, current review,
   review-history row, observation, or thumbnail record.
 - **R4** — The same details panel offers an explicit `Request full frame` action. One
   gesture creates or reuses an asynchronous full-frame request for the exact observation
@@ -65,7 +63,7 @@ following milestone in #181.
   observation, keyframe, derived scientific column, review decision, or review-history row.
 - **R14** — Named repository/service/route tests prove queue identity, ordering,
   concurrency, extraction provenance, serving/auth/cache behavior, retry classification,
-  and absence of scientific writes. Real-API browser tests prove ID display/copy/fallback
+  and absence of scientific writes. Real-API browser tests prove compact ID display
   and the full-frame request/view/zoom/pan/close lifecycle on desktop and phone.
 - **R15** — #181 is not implemented here: no playable stream, scrubbing, playback cache,
   or persistent video-player lifecycle is added to this milestone.
@@ -134,7 +132,7 @@ following milestone in #181.
 - **2026-09-13** — #176 and #178 are one Phase 9 milestone because both extend the same
   observation details and inspection lifecycle, but each keeps separately named
   requirements and tests.
-- **2026-09-13** — Observation ID display/copy and full-frame inspection are read-only
+- **2026-09-13** — Observation ID display and full-frame inspection are read-only
   inspection actions. They do not participate in the review commit workflow.
 - **2026-09-13** — #181 follows this milestone and owns embedded source-video playback and
   its persistent paused/background lifecycle.
@@ -150,7 +148,7 @@ following milestone in #181.
 ## Plan
 
 1. Resolve A6, A8, A10, and A11 and update this specification with the human's answers.
-2. Add focused failing tests for observation ID display/copy/fallback and for the durable
+2. Add focused failing tests for compact observation ID display and for the durable
    full-frame queue, identity, priority, extraction, failure, and serving contracts.
 3. Add the minimum additive migration/model/repository state for re-creatable full-frame
    availability and last access without changing scientific rows.
@@ -170,9 +168,8 @@ following milestone in #181.
 
 ## Acceptance criteria
 
-- Every tile's details panel identifies the observation and offers a reliable copy action.
-- Copy success and failure are understandable without closing the panel or changing review
-  state.
+- Every tile's details panel identifies the observation in a compact selectable row without
+  a dedicated copy control.
 - A reviewer can explicitly request the full source frame, keep working while it is queued,
   and later open the ready artifact.
 - The full-screen viewer makes fine detail inspectable with accessible fit, zoom, pan,
