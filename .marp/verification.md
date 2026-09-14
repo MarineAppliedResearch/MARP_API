@@ -1,65 +1,79 @@
-# Verification — MarineAppliedResearch/MARP_API#187
+# Verification — MarineAppliedResearch/MARP_API#183
+
+This is the G3 plan. Unit runs made during implementation are feedback, not the approved
+G4 record. Do not run the API-backed browser or human interaction steps until the human
+approves this plan.
 
 ## What each test proves
 
-| Requirement | Test | Tier | Proves |
+| Requirements | Evidence | Tier | What it proves |
 | --- | --- | --- | --- |
-| R1, R2, R3 | `npm run test:ml` (`tests/ml_models.test.js`) | HTTP + real disposable PostgreSQL | Authenticated full/range streaming works; anonymous, missing, and escaping artifacts are refused without exposing host paths. |
-| R4 | `npm run test:gpu` plus inspection of the submitted real job | contract + real PostgreSQL | GPU job validation accepts the API-relative model locator and the queued spec retains it. |
-| R5 | Run `stage-model-artifact.js` first dry, then with `--apply`, then again | filesystem + real disposable PostgreSQL registry | The command uses the registered relative path, reports SHA-256, changes nothing on dry run, and can be safely repeated. |
-| R6, R7 | Worker focused tests named in the worker verification file | HTTP integration | Authorization, checksum verification, and cache reuse work at the download boundary. |
-| R1, R4, R6, R7 | Submit and run a short CAMPA inference job through the API, then run a second job for the same model | full system: API + disposable PostgreSQL + Jellyfin + CUDA worker | A worker with no shared source-model path receives the API URL, downloads authenticated bytes, performs real inference, and reuses the verified cache. |
+| R2, R3, R4, R6 | `tests/unit/picker-position.test.mjs` | pure unit | Pointer deltas are applied exactly, ordinary coordinates are retained, and every edge or an oversized panel clamps deterministically. |
+| R1–R11 | `tests/api/popup-drag.spec.mjs` in both `api` and `api-phone` projects | real browser + API + disposable PostgreSQL | The visible handle accepts mouse and touch pointer paths; the popup moves, survives a reason-driven rerender, retains editor focus, leaves its mark unchanged, remains inside resized bounds, resets after closing, and still closes with Escape. |
+| R7–R10 | Existing Mosaic unit suite plus the named browser test | unit + real browser | Existing controls remain wired and selectable, drag completion is a named action, and review state changes only when an existing review control is deliberately used. |
 
-## Requirements with no test
+## Requirements with no automated test
 
-- **R8** — Established by schema diff and scope inspection: no migration or general storage backend is added.
+- Whether the compact grip looks professional and whether movement feels natural rather
+  than merely changing coordinates require a person to use it. The final supervised check
+  covers those judgements at desktop and phone sizes.
 
-## Edge cases
+## Commands, in order
 
-- Absolute and parent-traversal `storage_path` values return the same public 404 as an absent artifact.
-- Byte-range requests return 206 and only the requested bytes.
-- A missing registry row, null storage path, and absent file return 404.
-- A second job with the same model name and hash must not download again.
-- Authorization is not forwarded if a future job names a different HTTP origin.
+1. Run `git fetch origin`, then confirm this branch contains current `origin/develop`.
+   - If `develop` moved, integrate it before collecting evidence.
+2. Copy the newest existing git-ignored local corpus dump into this isolated workspace's
+   `.marp/local/corpus/`, then run `npm run testing-db` using the database assigned by
+   `marp agent list`.
+   - This prepares a disposable browser database without touching the port-3001 testing
+     server the human is currently using. The dump remains local credential material and
+     is never staged or committed.
+3. Run `git diff --check` and the umbrella `marp spec check`.
+   - Expected: no whitespace/conflict errors; all 11 requirements and five assumptions are
+     accepted at the verification gate.
+4. Run `npm run test:app:mosaic-review:unit`.
+   - Expected: all syntax, geometry, model, store, and wiring tests pass with no skips.
+5. Run `npm run test:app:mosaic-review:api -- popup-drag.spec.mjs`.
+   - Expected: the focused test passes once in the desktop project and once in the Pixel 7
+     project against the real temporary API; the runner stops only its own API.
+6. Start this isolated branch's API on the port reported by `marp agent list`, pointed at
+   its disposable testing database, while leaving port 3001 running.
+   - The human drags a flagged-details popup with a mouse and a phone gesture, chooses a
+     reason, types in the note, resizes or rotates, presses Escape, and opens it again.
+   - Expected: the handle and movement look professional; the popup follows naturally,
+     stays usable, preserves the mark and controls, remains on-screen, and resets after it
+     closes. Stop this isolated API after the human finishes; do not stop port 3001.
+7. Run final `git diff --check` and record every command's real result below, including any
+   failed attempt before its correction.
 
-## Regression coverage
+The full Mosaic browser suite and the repository suite are not part of this focused package.
+The change has no backend, route, storage, migration, Jellyfin, or scientific-data surface.
 
-- The CAMPA job spec no longer contains the developer machine's worker checkout path.
-- Existing local-file and public HTTP cache sources remain covered by the worker cache suite.
+## Edge cases and regression coverage
+
+- Dragging toward each edge clamps the entire panel; an oversized panel uses the available
+  area's top-left and its existing internal scrolling.
+- Phone movement uses a touch pointer and the live visual viewport rather than assuming
+  desktop mouse geometry.
+- A reason click forces the normal full render after the panel moves and cannot reset it.
+- Focusing the note before dragging proves the handle does not steal editor focus.
+- The staged mark is compared before and after dragging, before any review control is used.
+- Shrinking the viewport after a drag proves the remembered position cannot strand the
+  panel off-screen.
+- Escape closes the moved panel; reopening starts with no remembered position while the
+  underlying mark remains.
 
 ## Known gaps
 
-- This does not register the user's forthcoming second model or infer its species mapping.
-- It does not test internet interruption/resume across processes; byte-range serving is covered at the API boundary.
-- It does not implement #120's durable/general artifact storage.
-
-## Manual steps
-
-1. Point `MODEL_STORAGE_ROOT` at ignored API-local storage and stage the already registered CAMPA weights with the checked-in command. Confirm the printed digest matches the job's expected digest.
-2. Restart the isolated API on its assigned port and run a short real CAMPA job with the worker checkout that has no source-model copy. Confirm the attempt succeeds through Jellyfin and CUDA.
-3. Submit a second short job with the same model/hash. Confirm it succeeds and the worker reports the cache action as cached, with no second model GET in the API log.
+- Position intentionally lasts only for the currently open observation. It is not saved
+  across closing, reloads, routes, browsers, or users.
+- This makes the flagged-observation details popup draggable. It does not change the
+  full-frame viewer, confirmation dialog, rail menus, or the future video-player surface.
+- Dragging is an optional pointer convenience, not a keyboard movement command. Keyboard
+  users retain all existing controls and Escape behavior without needing to move the panel.
 
 ---
 
 ## Results
 
-Run 2026-09-14 on the isolated API database and port assigned by the harness.
-
-- `npm run test:ml`: feature tests passed, but the group finished `8 passed, 1 failed`
-  because all three pre-existing `dataset-observations-cascade.test.js` cases failed
-  while inserting their fixture. Direct reproduction reported verbatim:
-  `duplicate key value violates unique constraint "observations_pkey"`. The failure is
-  unrelated to this branch and occurs before those tests exercise cascade behavior.
-- `npm test -- tests/ml_models.test.js`: `Tests: 6 passed, 0 failed, 0 skipped, 6 total`.
-  Full download, byte range, anonymous refusal, path containment, and cleanup passed.
-- `node scripts/stage-model-artifact.js ...` dry run and two `--apply` runs each reported
-  `sha256: 9283b8ee1d1ac22ddfe5e8394a95c950cf65e1dfce3c772a1559c0408f52cff8`;
-  both applications completed with `Staged.`.
-- First full-system attempt exposed and preserved this failure verbatim:
-  `TypeError: model='...\\artifact' should be a *.pt PyTorch model`. The worker had
-  downloaded and verified the route, but the extensionless route name lost the declared
-  model format. The cache now derives `.pt` from the spec, with a regression test.
-- The coordinator retried that failed attempt after the fix and job 87 succeeded. A second
-  independent job then reported verbatim: `job=89 state=succeeded seconds=7.22 cache=True`.
-  Both used the isolated API and database, the real Jellyfin item, and the CUDA engine.
-- The extra queued helper job 88 was cancelled after verification.
+<!-- Appended only during the approved G4 run. -->

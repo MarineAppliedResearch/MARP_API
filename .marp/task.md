@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#183
 repos: [MARP_API]
-status: implementing
+status: verify
 needs: []
 ---
 
@@ -83,12 +83,12 @@ harder to use.
 
 ## Test plan
 
-To be written at G3 after implementation. It will name the focused geometry unit file and
-the desktop/phone API-backed browser file; no walkthrough video is requested.
+See `.marp/verification.md`. It names the focused geometry unit file, the desktop/phone
+API-backed browser file, and the supervised interaction check; no walkthrough is requested.
 
 ## Status
 
-- **Gate:** implementing
+- **Gate:** verifying
 - **Notes:** Geometry, remembered picker position, pointer wiring, the visible handle, and
-  focused unit/browser coverage are implemented. No database, API, backend, migration, or
-  live-Jellyfin work is in scope.
+  focused unit/browser coverage are implemented. The G3 plan awaits human approval before
+  its browser run. No database, API, backend, migration, or live-Jellyfin work is in scope.
