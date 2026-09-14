@@ -51,7 +51,8 @@ const db = require('../model');
 
 const thumbnailRepository = require('../repository/observation-thumbnail.repository');
 const extraction = require('../service/thumbnail-extraction.service');
-const { STORAGE_DIR, MAX_CONCURRENT_STREAMS } = require('../config/thumbnails');
+const reviewImageryStorage = require('../service/review-imagery-storage.service');
+const { STORAGE_DIR, FULL_FRAME_STORAGE_DIR, MAX_CONCURRENT_STREAMS } = require('../config/thumbnails');
 
 const { QueryTypes } = db.Sequelize;
 
@@ -61,6 +62,7 @@ const CONTROL = '/api/v2/observations/thumbnails/control';
 const RETRY = '/api/v2/observations/thumbnails/retry';
 const replacementFor = (id) => `/api/v2/observations/${id}/thumbnail/replacement`;
 const bytesFor = (id) => `/api/v2/observations/${id}/thumbnail`;
+const REVIEW_IMAGERY = '/api/v2/admin/review-imagery';
 
 /** The path a route is *declared* at. Nothing should answer here. */
 const DECLARED_STATUS = '/api/observations/thumbnails/status';
@@ -79,6 +81,7 @@ const runId = Date.now();
  * @type {Object|null}
  */
 let runStateBefore = null;
+let reviewSettingsBefore = null;
 
 /** Everything seeded, so `afterAll` removes exactly it. */
 const seeded = {
@@ -87,6 +90,7 @@ const seeded = {
     observationIds: [],
     userIds: [],
     files: [],
+    fullFrameFiles: [],
 };
 
 /**
@@ -311,6 +315,11 @@ describe('observation thumbnails (#118)', () => {
                FROM thumbnail_extraction_state
               WHERE id = 1`
         );
+        [reviewSettingsBefore = null] = await q(
+            `SELECT max_bytes, low_watermark_percent, eviction_order,
+                    changed_by_user_id, changed_at::text AS changed_at
+               FROM review_imagery_settings WHERE id = 1`
+        );
 
         const [project] = await q(
             `INSERT INTO projects (name, "createdAt", "updatedAt")
@@ -380,6 +389,9 @@ describe('observation thumbnails (#118)', () => {
         for (const filename of seeded.files) {
             fs.rmSync(path.join(STORAGE_DIR, filename), { force: true });
         }
+        for (const filename of seeded.fullFrameFiles) {
+            fs.rmSync(path.join(FULL_FRAME_STORAGE_DIR, filename), { force: true });
+        }
 
         // Put the run-state row back exactly as it was found, every column of
         // it. Writing `running` was not enough: `changed_at` and
@@ -397,6 +409,18 @@ describe('observation thumbnails (#118)', () => {
                         note = :note
                   WHERE id = :id`,
                 { replacements: runStateBefore }
+            );
+        }
+        if (reviewSettingsBefore) {
+            await db.sequelize.query(
+                `UPDATE review_imagery_settings
+                    SET max_bytes = :max_bytes,
+                        low_watermark_percent = :low_watermark_percent,
+                        eviction_order = :eviction_order,
+                        changed_by_user_id = :changed_by_user_id,
+                        changed_at = CAST(:changed_at AS timestamptz)
+                  WHERE id = 1`,
+                { replacements: reviewSettingsBefore }
             );
         }
     });
@@ -1410,7 +1434,260 @@ describe('observation thumbnails (#118)', () => {
         });
     });
 
+    describe('full-frame review imagery (#176)', () => {
+        const fullFrameFor = (id) => `/api/v2/observations/${id}/full-frame`;
+
+        it('queues the exact frame currently backing the thumbnail', async () => {
+            const [id] = await addObservations(1);
+            await addKeyframes(id, [100, 125], 'track-a');
+            await setThumbnail(id, { status: 'ready', filename: `${id}-thumb.jpg` });
+            await q(`UPDATE observation_thumbnails SET framenum = 125, subset = 'track-a'
+                      WHERE observation_id = :id`, { id });
+
+            const res = await reader.post(fullFrameFor(id));
+            const row = await thumbnailRepository.findByObservationId(id);
+
+            expect(res.status).toBe(200);
+            expect(res.body.fullFrame).toMatchObject({ status: 'queued', framenum: 125 });
+            expect(row.full_frame_subset).toBe('track-a');
+            await q('UPDATE observation_thumbnails SET full_frame_status = NULL WHERE observation_id = :id', { id });
+        });
+
+        it('serves a ready native frame and reuses its stable URL', async () => {
+            const [id] = await addObservations(1);
+            await addKeyframes(id, [200]);
+            await setThumbnail(id, { status: 'ready', filename: `${id}-thumb.jpg` });
+            await q('UPDATE observation_thumbnails SET framenum = 200, subset = \'1\' WHERE observation_id = :id', { id });
+            await thumbnailRepository.requestFullFrame(id);
+            const filename = `${id}-full.jpg`;
+            const sharp = require('sharp');
+            const bytes = await sharp({ create: { width: 8, height: 6, channels: 3,
+                background: { r: 10, g: 20, b: 30 } } }).jpeg().toBuffer();
+            fs.mkdirSync(FULL_FRAME_STORAGE_DIR, { recursive: true });
+            fs.writeFileSync(path.join(FULL_FRAME_STORAGE_DIR, filename), bytes);
+            seeded.fullFrameFiles.push(filename);
+            await thumbnailRepository.recordFullFrameReady(id, {
+                filename, contentType: 'image/jpeg', byteSize: bytes.length,
+                width: 8, height: 6, box: { x: .4, y: .5, width: .1, height: .2 }
+            });
+
+            const reused = await reader.post(fullFrameFor(id));
+            const served = await reader.get(fullFrameFor(id));
+
+            expect(reused.body.fullFrame).toMatchObject({ status: 'ready', available: true,
+                framenum: 200, width: 8, height: 6 });
+            expect(served.status).toBe(200);
+            expect(served.headers['content-type']).toMatch(/image\/jpeg/);
+            expect(served.headers['cache-control']).toMatch(/must-revalidate/);
+            expect(served.headers['cache-control']).not.toMatch(/immutable/);
+            expect(served.headers.etag).toBe(`"observation-full-frame-${id}-2"`);
+
+            const unchanged = await reader.get(fullFrameFor(id))
+                .set('If-None-Match', served.headers.etag);
+            expect(unchanged.status).toBe(304);
+        });
+
+        it('requires observation read permission for requests and private bytes', async () => {
+            const [id] = await addObservations(1);
+            const nobody = await agentWith('full-frame-no-read', []);
+
+            expect((await nobody.post(fullFrameFor(id))).status).toBe(403);
+            expect((await nobody.get(fullFrameFor(id))).status).toBe(403);
+        });
+
+        it('clears ready availability when the recorded file is missing', async () => {
+            const [id] = await addObservations(1);
+            await setThumbnail(id, { status: 'ready', filename: `${id}-thumb.jpg` });
+            await q('UPDATE observation_thumbnails SET framenum = 275, subset = \'1\' WHERE observation_id = :id', { id });
+            await thumbnailRepository.requestFullFrame(id);
+            await thumbnailRepository.recordFullFrameReady(id, {
+                filename: `${id}-missing.jpg`, contentType: 'image/jpeg', byteSize: 100,
+                width: 1920, height: 1080, box: null
+            });
+
+            expect((await reader.get(fullFrameFor(id))).status).toBe(404);
+            const row = await thumbnailRepository.findByObservationId(id);
+            expect(row).toMatchObject({ full_frame_status: null, full_frame_filename: null });
+            expect(row.full_frame_evicted_at).not.toBeNull();
+        });
+
+        it('claims a full-frame request at reviewer priority', async () => {
+            const [id] = await addObservations(1);
+            await addKeyframes(id, [300]);
+            await setThumbnail(id, { status: 'ready', filename: `${id}-thumb.jpg` });
+            await q('UPDATE observation_thumbnails SET framenum = 300, subset = \'1\' WHERE observation_id = :id', { id });
+            await thumbnailRepository.requestFullFrame(id);
+            await q("UPDATE observation_thumbnails SET full_frame_requested_at = '1970-01-01' WHERE observation_id = :id", { id });
+
+            const claims = await thumbnailRepository.claimBatch(1);
+
+            expect(claims[0]).toMatchObject({ observation_id: id, artifact_kind: 'full_frame' });
+            await thumbnailRepository.releaseClaims([id]);
+            await q('UPDATE observation_thumbnails SET full_frame_status = NULL WHERE observation_id = :id', { id });
+        });
+
+        it('shares one FIFO reviewer class with replacement thumbnails', async () => {
+            const [background, fullFrame, replacement] = await addObservations(3);
+            await setThumbnail(background, { status: 'queued' });
+            await setThumbnail(fullFrame, { status: 'ready', filename: `${fullFrame}-thumb.jpg` });
+            await setThumbnail(replacement, { status: 'ready', filename: `${replacement}-thumb.jpg` });
+            await q(`UPDATE observation_thumbnails SET framenum = 300, subset = '1'
+                      WHERE observation_id IN (:ids)`, { ids: [fullFrame, replacement] });
+            await thumbnailRepository.requestFullFrame(fullFrame);
+            await thumbnailRepository.requestReplacement(replacement);
+            await q("UPDATE observation_thumbnails SET request_priority = 0, requested_at = '1960-01-01' WHERE observation_id = :id",
+                { id: background });
+            await q("UPDATE observation_thumbnails SET full_frame_requested_at = '1970-01-01' WHERE observation_id = :id",
+                { id: fullFrame });
+            await q("UPDATE observation_thumbnails SET requested_at = '1971-01-01' WHERE observation_id = :id",
+                { id: replacement });
+
+            const claims = await thumbnailRepository.claimBatch(3);
+            try {
+                expect(claims.map(({ observation_id, artifact_kind }) =>
+                    [observation_id, artifact_kind])).toEqual([
+                    [fullFrame, 'full_frame'], [replacement, 'thumbnail'],
+                    [background, 'thumbnail']
+                ]);
+            } finally {
+                await thumbnailRepository.releaseClaims([background, fullFrame, replacement]);
+                await q(`UPDATE observation_thumbnails
+                            SET status = 'failed', full_frame_status = NULL
+                          WHERE observation_id IN (:ids)`, {
+                    ids: [background, fullFrame, replacement]
+                });
+            }
+        });
+
+        it('does not release or reorder an in-progress duplicate request', async () => {
+            const [id] = await addObservations(1);
+            await setThumbnail(id, { status: 'ready', filename: `${id}-thumb.jpg` });
+            await q('UPDATE observation_thumbnails SET framenum = 350, subset = \'1\' WHERE observation_id = :id', { id });
+            await thumbnailRepository.requestFullFrame(id);
+            const [claimed] = await thumbnailRepository.claimBatch(1);
+            const before = await thumbnailRepository.findByObservationId(id);
+
+            expect(claimed).toMatchObject({ observation_id: id, artifact_kind: 'full_frame' });
+            await thumbnailRepository.requestFullFrame(id);
+            const after = await thumbnailRepository.findByObservationId(id);
+            expect(after.full_frame_claimed_at.getTime()).toBe(before.full_frame_claimed_at.getTime());
+            expect(after.full_frame_requested_at.getTime()).toBe(before.full_frame_requested_at.getTime());
+            await thumbnailRepository.releaseClaims([id]);
+            await q('UPDATE observation_thumbnails SET full_frame_status = NULL WHERE observation_id = :id', { id });
+        });
+
+        it('invalidates a cached full frame when replacement selects another frame', async () => {
+            const [id] = await addObservations(1);
+            await setThumbnail(id, { status: 'ready', filename: `${id}-thumb.jpg` });
+            await q('UPDATE observation_thumbnails SET framenum = 400, subset = \'1\' WHERE observation_id = :id', { id });
+            await thumbnailRepository.requestFullFrame(id);
+            await thumbnailRepository.recordFullFrameReady(id, {
+                filename: `${id}-full.jpg`, contentType: 'image/jpeg', byteSize: 2048,
+                width: 1920, height: 1080, box: { x: .5, y: .5, width: .1, height: .1 }
+            });
+
+            await thumbnailRepository.recordReady(id, {
+                filename: `${id}-replacement.jpg`, contentType: 'image/jpeg', byteSize: 1024,
+                width: 320, height: 320, sourceWidth: 1920, sourceHeight: 1080,
+                framenum: 425, subset: '1'
+            });
+
+            const row = await thumbnailRepository.findByObservationId(id);
+            expect(row).toMatchObject({
+                status: 'ready', framenum: 425, full_frame_status: null,
+                full_frame_filename: null, full_frame_framenum: null,
+                full_frame_byte_size: null
+            });
+            expect(row.full_frame_evicted_at).not.toBeNull();
+        });
+    });
+
+    describe('review-imagery administration (#176)', () => {
+        it('shows persisted policy, split usage, and resolved locations only to admins', async () => {
+            const refused = await reader.get(REVIEW_IMAGERY);
+            const res = await global.api.get(REVIEW_IMAGERY);
+
+            expect(refused.status).toBe(403);
+            expect(res.status).toBe(200);
+            expect(res.body).toMatchObject({
+                maxBytes: expect.any(Number),
+                lowWatermarkPercent: expect.any(Number),
+                evictionOrder: expect.any(String),
+                thumbnailBytes: expect.any(Number),
+                fullFrameBytes: expect.any(Number),
+                totalBytes: expect.any(Number),
+                storageLocations: {
+                    thumbnails: expect.any(String), fullFrames: expect.any(String)
+                }
+            });
+        });
+
+        it('persists validated changes and rejects an invalid write without changing them', async () => {
+            const maxBytes = 30 * 1024 * 1024 * 1024;
+            const changed = await global.api.put(REVIEW_IMAGERY).send({
+                maxBytes, lowWatermarkPercent: 88, evictionOrder: 'oldest_first'
+            });
+            expect(changed.status).toBe(200);
+            expect(changed.body).toMatchObject({ maxBytes, lowWatermarkPercent: 88,
+                evictionOrder: 'oldest_first' });
+
+            const refused = await global.api.put(REVIEW_IMAGERY).send({
+                maxBytes: 0, lowWatermarkPercent: 88, evictionOrder: 'oldest_first'
+            });
+            const after = await global.api.get(REVIEW_IMAGERY);
+            expect(refused.status).toBe(400);
+            expect(after.body).toMatchObject({ maxBytes, lowWatermarkPercent: 88,
+                evictionOrder: 'oldest_first' });
+        });
+
+        it('evicts file bytes and clears availability as one managed operation', async () => {
+            const [id] = await addObservations(1);
+            const filename = `${id}-evict.jpg`;
+            await setThumbnail(id, { status: 'ready', filename });
+            await writeStoredFile(filename);
+
+            const changed = await reviewImageryStorage.evictArtifact({
+                kind: 'thumbnail', observation_id: id, filename, byte_size: 100
+            });
+            const row = await thumbnailRepository.findByObservationId(id);
+
+            expect(changed).toBe(true);
+            expect(fs.existsSync(path.join(STORAGE_DIR, filename))).toBe(false);
+            expect(row).toMatchObject({ status: 'failed', permanent: false, filename: null });
+            expect(row.thumbnail_evicted_at).not.toBeNull();
+        });
+
+        it('clears every sharing row before deleting content-addressed bytes', async () => {
+            const before = await reviewImageryStorage.status();
+            const [first, second] = await addObservations(2);
+            const filename = `${first}-shared.jpg`;
+            await setThumbnail(first, { status: 'ready', filename });
+            await setThumbnail(second, { status: 'ready', filename });
+            await q(`UPDATE observation_thumbnails SET byte_size = 100
+                      WHERE observation_id IN (:ids)`, { ids: [first, second] });
+            await writeStoredFile(filename);
+
+            const stored = await reviewImageryStorage.status();
+            expect(stored.thumbnailBytes - before.thumbnailBytes).toBe(100);
+
+            await reviewImageryStorage.evictArtifact({
+                kind: 'thumbnail', observation_id: first, filename, byte_size: 100
+            });
+            expect(fs.existsSync(path.join(STORAGE_DIR, filename))).toBe(false);
+            expect((await thumbnailRepository.findByObservationId(first)).status).toBe('failed');
+            expect((await thumbnailRepository.findByObservationId(second)).status).toBe('failed');
+            expect((await reviewImageryStorage.status()).thumbnailBytes).toBe(before.thumbnailBytes);
+        });
+    });
+
     describe('what the extractor refuses without opening a stream', () => {
+
+        it('uses the exact stored frame and treats a missing box as optional (#176)', () => {
+            const claim = { full_frame_framenum: 450, full_frame_subset: '1' };
+            const plan = extraction.fullFramePlan(claim, []);
+
+            expect(plan).toMatchObject({ ok: true, frame: 450, subset: '1', box: null });
+        });
 
         it('refuses a frame rate that disagrees with the derived frame (R21)', () => {
             // The footage MARP holds is 25.000 exactly, so this cannot fire on

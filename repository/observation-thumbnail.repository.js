@@ -58,7 +58,26 @@ const ROW_COLUMNS = `
     last_error,
     requested_at,
     claimed_at,
-    completed_at`;
+    completed_at,
+    thumbnail_accessed_at,
+    thumbnail_evicted_at,
+    full_frame_status,
+    full_frame_permanent,
+    full_frame_framenum,
+    full_frame_subset,
+    full_frame_box,
+    full_frame_filename,
+    full_frame_content_type,
+    full_frame_byte_size,
+    full_frame_width,
+    full_frame_height,
+    full_frame_generation,
+    full_frame_last_error,
+    full_frame_requested_at,
+    full_frame_claimed_at,
+    full_frame_completed_at,
+    full_frame_accessed_at,
+    full_frame_evicted_at`;
 
 /**
  * Enqueues a thumbnail for every observation on this page that has no record.
@@ -107,6 +126,18 @@ async function enqueueMissing(observationIds, transaction) {
          ON CONFLICT (observation_id) DO NOTHING
          RETURNING observation_id`,
         { bind: [ids], type: QueryTypes.SELECT, transaction }
+    );
+
+    // An evicted thumbnail is absent from disk by policy, not a terminal
+    // extraction failure. Seeing its page requests it again just as seeing an
+    // observation with no row does.
+    await db.sequelize.query(
+        `UPDATE observation_thumbnails
+            SET status = 'queued', claimed_at = NULL, requested_at = NOW(),
+                last_error = NULL, thumbnail_evicted_at = NULL, updated_at = NOW()
+          WHERE observation_id = ANY($1::int[])
+            AND thumbnail_evicted_at IS NOT NULL`,
+        { bind: [ids], type: QueryTypes.UPDATE, transaction }
     );
 
     return inserted.length;
@@ -247,37 +278,65 @@ async function requestReplacement(observationId) {
  */
 async function claimBatch(limit = CLAIM_BATCH_SIZE) {
     return db.sequelize.query(
-        `WITH claimable AS (
-             SELECT t.observation_thumbnail_id
+        `WITH choices AS (
+             SELECT t.observation_thumbnail_id, 'thumbnail'::text AS artifact_kind,
+                    t.request_priority AS priority, t.requested_at
                FROM observation_thumbnails t
               WHERE t.status = 'queued'
                 AND (t.claimed_at IS NULL
                      OR t.claimed_at < NOW() - make_interval(secs => $2::int))
-              ORDER BY t.request_priority DESC, t.requested_at NULLS FIRST, t.observation_id
+             UNION ALL
+             SELECT t.observation_thumbnail_id, 'full_frame'::text AS artifact_kind,
+                    1 AS priority, t.full_frame_requested_at AS requested_at
+               FROM observation_thumbnails t
+              WHERE t.full_frame_status = 'queued'
+                AND (t.full_frame_claimed_at IS NULL
+                     OR t.full_frame_claimed_at < NOW() - make_interval(secs => $2::int))
+         ), ranked AS (
+             SELECT DISTINCT ON (observation_thumbnail_id)
+                    observation_thumbnail_id, artifact_kind, priority, requested_at
+               FROM choices
+              ORDER BY observation_thumbnail_id, priority DESC, requested_at NULLS FIRST,
+                       artifact_kind
+         ), claimable AS (
+             SELECT r.*
+               FROM ranked r
+               JOIN observation_thumbnails t USING (observation_thumbnail_id)
+              ORDER BY r.priority DESC, r.requested_at NULLS FIRST, t.observation_id
               LIMIT $1
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF t SKIP LOCKED
          ),
          claimed AS (
              UPDATE observation_thumbnails t
-                SET claimed_at = NOW(),
-                    attempts   = t.attempts + 1,
+                SET claimed_at = CASE WHEN c.artifact_kind = 'thumbnail'
+                                      THEN NOW() ELSE t.claimed_at END,
+                    attempts = t.attempts + CASE WHEN c.artifact_kind = 'thumbnail'
+                                                 THEN 1 ELSE 0 END,
+                    full_frame_claimed_at = CASE WHEN c.artifact_kind = 'full_frame'
+                                                 THEN NOW() ELSE t.full_frame_claimed_at END,
                     updated_at = NOW()
                FROM claimable c
               WHERE t.observation_thumbnail_id = c.observation_thumbnail_id
-              RETURNING t.observation_thumbnail_id, t.observation_id, t.attempts
+              RETURNING t.observation_thumbnail_id, t.observation_id, t.attempts,
+                        c.artifact_kind, c.priority, c.requested_at
          )
          SELECT c.observation_thumbnail_id,
                 c.observation_id,
                 c.attempts,
+                c.artifact_kind,
                 t.request_priority,
                 t.candidate_index,
+                t.filename AS thumbnail_filename,
+                t.full_frame_framenum,
+                t.full_frame_subset,
+                t.full_frame_filename,
                 o.video_source,
                 o."mediaPosition"
            FROM claimed c
            JOIN observation_thumbnails t
              ON t.observation_thumbnail_id = c.observation_thumbnail_id
            JOIN observations o ON o.observation_id = c.observation_id
-          ORDER BY c.observation_id`,
+          ORDER BY c.priority DESC, c.requested_at NULLS FIRST, c.observation_id`,
         { bind: [limit, CLAIM_TIMEOUT_SECONDS], type: QueryTypes.SELECT }
     );
 }
@@ -357,6 +416,34 @@ async function recordReady(observationId, result) {
                 last_error    = NULL,
                 claimed_at    = NULL,
                 completed_at  = NOW(),
+                thumbnail_accessed_at = NOW(),
+                thumbnail_evicted_at = NULL,
+                full_frame_status = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                         THEN NULL ELSE full_frame_status END,
+                full_frame_permanent = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                            THEN false ELSE full_frame_permanent END,
+                full_frame_framenum = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                           THEN NULL ELSE full_frame_framenum END,
+                full_frame_subset = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                         THEN NULL ELSE full_frame_subset END,
+                full_frame_box = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                      THEN NULL ELSE full_frame_box END,
+                full_frame_filename = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                           THEN NULL ELSE full_frame_filename END,
+                full_frame_content_type = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                               THEN NULL ELSE full_frame_content_type END,
+                full_frame_byte_size = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                            THEN NULL ELSE full_frame_byte_size END,
+                full_frame_width = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                        THEN NULL ELSE full_frame_width END,
+                full_frame_height = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                         THEN NULL ELSE full_frame_height END,
+                full_frame_last_error = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                             THEN NULL ELSE full_frame_last_error END,
+                full_frame_accessed_at = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                              THEN NULL ELSE full_frame_accessed_at END,
+                full_frame_evicted_at = CASE WHEN full_frame_status IS NOT NULL AND full_frame_framenum IS DISTINCT FROM :framenum
+                                             THEN NOW() ELSE full_frame_evicted_at END,
                 updated_at    = NOW()
           WHERE observation_id = :observationId
         RETURNING ${ROW_COLUMNS}`,
@@ -451,9 +538,10 @@ async function releaseClaims(observationIds) {
     const released = await db.sequelize.query(
         `UPDATE observation_thumbnails
             SET claimed_at = NULL,
+                full_frame_claimed_at = NULL,
                 updated_at = NOW()
           WHERE observation_id = ANY($1::int[])
-            AND status = 'queued'
+            AND (status = 'queued' OR full_frame_status = 'queued')
         RETURNING observation_id`,
         { bind: [ids], type: QueryTypes.SELECT }
     );
@@ -479,6 +567,89 @@ async function findByObservationId(observationId) {
     return row;
 }
 
+/** Queue the complete frame currently backing a ready square thumbnail. */
+async function requestFullFrame(observationId) {
+    const [row] = await db.sequelize.query(
+        `UPDATE observation_thumbnails
+            SET full_frame_status = CASE
+                    WHEN full_frame_status = 'ready'
+                     AND full_frame_framenum = framenum
+                     AND full_frame_filename IS NOT NULL THEN 'ready'
+                    WHEN full_frame_status = 'failed'
+                     AND full_frame_permanent
+                     AND full_frame_framenum = framenum THEN 'failed'
+                    ELSE 'queued' END,
+                full_frame_permanent = CASE
+                    WHEN full_frame_status = 'failed'
+                     AND full_frame_permanent
+                     AND full_frame_framenum = framenum THEN true
+                    ELSE false END,
+                full_frame_framenum = framenum,
+                full_frame_subset = subset,
+                full_frame_last_error = CASE
+                    WHEN full_frame_status = 'failed'
+                     AND full_frame_permanent
+                     AND full_frame_framenum = framenum THEN full_frame_last_error
+                    ELSE NULL END,
+                full_frame_claimed_at = CASE
+                    WHEN full_frame_status = 'queued'
+                     AND full_frame_framenum = framenum THEN full_frame_claimed_at
+                    ELSE NULL END,
+                full_frame_requested_at = CASE
+                    WHEN full_frame_status = 'ready'
+                     AND full_frame_framenum = framenum
+                     AND full_frame_filename IS NOT NULL THEN full_frame_requested_at
+                    WHEN full_frame_status = 'failed'
+                     AND full_frame_permanent
+                     AND full_frame_framenum = framenum THEN full_frame_requested_at
+                    WHEN full_frame_status = 'queued'
+                     AND full_frame_framenum = framenum THEN full_frame_requested_at
+                    ELSE NOW() END,
+                full_frame_evicted_at = NULL,
+                updated_at = NOW()
+          WHERE observation_id = :observationId
+            AND status = 'ready' AND framenum IS NOT NULL
+      RETURNING ${ROW_COLUMNS}`,
+        { replacements: { observationId }, type: QueryTypes.SELECT }
+    );
+    return row;
+}
+
+async function recordFullFrameReady(observationId, result) {
+    const [row] = await db.sequelize.query(
+        `UPDATE observation_thumbnails
+            SET full_frame_status = 'ready', full_frame_permanent = false,
+                full_frame_filename = :filename, full_frame_content_type = :contentType,
+                full_frame_byte_size = :byteSize, full_frame_width = :width,
+                full_frame_height = :height, full_frame_box = CAST(:box AS jsonb),
+                full_frame_generation = full_frame_generation + 1,
+                full_frame_last_error = NULL, full_frame_claimed_at = NULL,
+                full_frame_completed_at = NOW(), full_frame_accessed_at = NOW(),
+                full_frame_evicted_at = NULL, updated_at = NOW()
+          WHERE observation_id = :observationId
+      RETURNING ${ROW_COLUMNS}`,
+        { replacements: {
+            observationId, filename: result.filename, contentType: result.contentType,
+            byteSize: result.byteSize, width: result.width, height: result.height,
+            box: JSON.stringify(result.box)
+        }, type: QueryTypes.SELECT }
+    );
+    return row;
+}
+
+async function recordFullFrameFailure(observationId, message, permanent) {
+    const [row] = await db.sequelize.query(
+        `UPDATE observation_thumbnails
+            SET full_frame_status = 'failed', full_frame_permanent = :permanent,
+                full_frame_last_error = :message, full_frame_claimed_at = NULL,
+                full_frame_completed_at = NOW(), updated_at = NOW()
+          WHERE observation_id = :observationId
+      RETURNING ${ROW_COLUMNS}`,
+        { replacements: { observationId, message, permanent: Boolean(permanent) }, type: QueryTypes.SELECT }
+    );
+    return row;
+}
+
 /**
  * Discards the queue (R24, `stop`).
  *
@@ -492,14 +663,27 @@ async function findByObservationId(observationId) {
  * @returns {Promise<number>} How many queued rows were discarded.
  */
 async function discardQueue() {
-    const removed = await db.sequelize.query(
-        `DELETE FROM observation_thumbnails
-          WHERE status = 'queued'
-        RETURNING observation_id`,
-        { type: QueryTypes.SELECT }
-    );
+    return db.sequelize.transaction(async (transaction) => {
+        /* A full-frame record shares this row. Keep that independent state when
+           stopping thumbnail work instead of deleting the whole cache record. */
+        const preserved = await db.sequelize.query(
+            `UPDATE observation_thumbnails
+                SET status = 'failed', permanent = false,
+                    last_error = 'Queue stopped; this thumbnail will be requested again when viewed.',
+                    claimed_at = NULL, thumbnail_evicted_at = NOW(), updated_at = NOW()
+              WHERE status = 'queued' AND full_frame_status IS NOT NULL
+            RETURNING observation_id`,
+            { type: QueryTypes.SELECT, transaction }
+        );
+        const removed = await db.sequelize.query(
+            `DELETE FROM observation_thumbnails
+              WHERE status = 'queued'
+            RETURNING observation_id`,
+            { type: QueryTypes.SELECT, transaction }
+        );
 
-    return removed.length;
+        return preserved.length + removed.length;
+    });
 }
 
 /**
@@ -607,9 +791,12 @@ module.exports = {
     lastFailure,
     readRunState,
     recordFailure,
+    recordFullFrameFailure,
+    recordFullFrameReady,
     recordReady,
     releaseClaims,
     requestReplacement,
+    requestFullFrame,
     requeue,
     statusCounts,
     writeRunState,

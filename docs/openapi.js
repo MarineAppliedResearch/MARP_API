@@ -2882,6 +2882,13 @@ const buildOpenApiSpec = () => {
                             keyframe_count: { type: 'integer', example: 8, description: 'How many keyframes the observation carries. Computed per returned row, not over the matching set, unless the sort names it.' },
                             first_framenum: { type: 'integer', nullable: true, example: 3457 },
                             thumbnail_status: { type: 'string', enum: ['queued', 'ready', 'failed'], example: 'ready', description: 'Whether the tile has a picture. **Never null**: an observation with no record at all reports `queued` rather than an absence the client has no rendering for. Two things make that honest rather than a promise nobody keeps -- a thumbnail is enqueued when its keyframes are written, and serving this page enqueues anything on it that still has no record. The picture itself is at /api/v2/observations/{observation_id}/thumbnail, which is derivable from a key this row already carries -- so no second field repeats a URL 45 times a page.' },
+                            full_frame_status: { type: 'string', nullable: true, enum: ['queued', 'ready', 'failed', null], description: 'Operational state of the optional native-size review frame. Null means it has not been requested or was evicted.' },
+                            full_frame_permanent: { type: 'boolean', example: false, description: 'Whether another request for the same source frame cannot succeed.' },
+                            full_frame_reason: { type: 'string', nullable: true, description: 'Failure explanation when full_frame_status is failed.' },
+                            full_frame_framenum: { type: 'integer', nullable: true, description: 'Exact video frame represented by the full-frame artifact.' },
+                            full_frame_width: { type: 'integer', nullable: true, description: 'Native stored frame width in pixels.' },
+                            full_frame_height: { type: 'integer', nullable: true, description: 'Native stored frame height in pixels.' },
+                            full_frame_box: { type: 'object', nullable: true, description: 'Normalised observation bounding box drawn by default in the full-frame viewer.' },
                         },
                     },
                     ThumbnailExtractorStatus: {

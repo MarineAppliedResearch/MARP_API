@@ -134,3 +134,41 @@ describe('THUMBNAIL_STORAGE_DIR', () => {
         expect(process.env.THUMBNAIL_STORAGE_DIR).toBe(before);
     });
 });
+
+describe('the shared review-imagery eviction policy (#176)', () => {
+    const candidates = [
+        { kind: 'thumbnail', observation_id: 1, byte_size: 10, accessed_at: new Date('2026-01-01') },
+        { kind: 'full_frame', observation_id: 2, byte_size: 20, accessed_at: new Date('2026-03-01') },
+        { kind: 'full_frame', observation_id: 3, byte_size: 30, accessed_at: new Date('2026-02-01') },
+    ];
+
+    it('R16: evicts least-recent full frames before thumbnails by default', () => {
+        const { orderEvictionCandidates } = require('../service/review-imagery-policy');
+        expect(orderEvictionCandidates(candidates, 'full_frames_first')
+            .map((item) => [item.kind, item.observation_id]))
+            .toEqual([['full_frame', 3], ['full_frame', 2], ['thumbnail', 1]]);
+    });
+
+    it('R18: supports both administrator-selectable alternative orders', () => {
+        const { orderEvictionCandidates } = require('../service/review-imagery-policy');
+        expect(orderEvictionCandidates(candidates, 'oldest_first').map((item) => item.observation_id))
+            .toEqual([1, 3, 2]);
+        expect(orderEvictionCandidates(candidates, 'thumbnails_first').map((item) => item.observation_id))
+            .toEqual([1, 3, 2]);
+    });
+
+    it('R16: computes the low-watermark byte target without rounding above it', () => {
+        const { lowWatermarkBytes } = require('../service/review-imagery-policy');
+        expect(lowWatermarkBytes(101, 90)).toBe(90);
+    });
+
+    it('R18: rejects settings that cannot safely govern storage', () => {
+        const { validateSettings } = require('../service/review-imagery-policy');
+        expect(() => validateSettings({ maxBytes: 0, lowWatermarkPercent: 90,
+            evictionOrder: 'full_frames_first' })).toThrow(/maxBytes/);
+        expect(() => validateSettings({ maxBytes: 100, lowWatermarkPercent: 100,
+            evictionOrder: 'full_frames_first' })).toThrow(/lowWatermarkPercent/);
+        expect(() => validateSettings({ maxBytes: 100, lowWatermarkPercent: 90,
+            evictionOrder: 'unknown' })).toThrow(/evictionOrder/);
+    });
+});

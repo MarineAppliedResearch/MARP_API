@@ -262,7 +262,14 @@ const ROW_COLUMNS = `
         training_user.username AS training_reviewer_username,
         k.keyframe_count,
         k.first_framenum,
-        coalesce(th.status, 'queued') AS thumbnail_status`;
+        coalesce(th.status, 'queued') AS thumbnail_status,
+        th.full_frame_status,
+        coalesce(th.full_frame_permanent, false) AS full_frame_permanent,
+        th.full_frame_last_error AS full_frame_reason,
+        th.full_frame_framenum,
+        th.full_frame_width,
+        th.full_frame_height,
+        th.full_frame_box`;
 
 /**
  * Time of day, in `interval`, from the `tc` a row carries.

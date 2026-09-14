@@ -13,6 +13,7 @@ import { renderRail, wireRail } from './rail.js';
 import { resolveKey } from '../model/keys.js';
 import { renderChrome, renderLog } from './chrome.js';
 import { renderFailure, wireFailure } from './failure.js';
+import { renderFrameViewer, wireFrameViewer } from './frame-viewer.js';
 import {
   closeMenus, isMenuOpenFor,
   sortMenu
@@ -169,11 +170,16 @@ function wireMenus() {
 function wireDismissal() {
   /* Clicking anywhere outside dismisses the panel and any open menu. */
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.pick')) actions.closePicker();
+    /* The full-frame dialog is temporary inspection of the picker selection, not a click
+       away from it. Its controls must leave that underlying context intact for Back. */
+    if (!state.frameViewer && !e.target.closest('.pick')) actions.closePicker();
     if (!e.target.closest('.menu')) closeMenus();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { actions.closePicker(); closeMenus(); return; }
+    if (e.key === 'Escape') {
+      if (state.frameViewer) { actions.closeFullFrame(); return; }
+      actions.closePicker(); closeMenus(); return;
+    }
 
     /* One listener, consulting one rule. The Escape handling above shows how quickly
        scattered key handling spreads; `model/keys.js` owns what a key means so the
@@ -261,6 +267,7 @@ export function mount() {
   wirePager();
   wireMenus();
   wireConfirm();
+  wireFrameViewer();
   wireRail();
   wireDismissal();
   wireLayout();
@@ -274,6 +281,7 @@ export function mount() {
     renderGrid();
     renderPicker();
     renderConfirm();
+    renderFrameViewer();
     renderRail();
     requestAnimationFrame(computeLayout);
   });

@@ -7,6 +7,8 @@
  */
 import { state, actions, MODES } from '../store.js';
 import { acceptedValue, existingNote, existingReason, existingState, markKind, MARK_EXCEPT } from '../model/modes.js';
+import { observationIdText } from '../model/observation-id.js';
+import { fullFrameActionState } from '../model/frame-viewer.js';
 import { $, el, ICON } from './dom.js';
 import { acceptIcon, markIcon } from './tile.js';
 
@@ -101,18 +103,12 @@ function position(panel, id) {
                               Math.max(EDGE, f.width - panel.offsetWidth - EDGE)) + 'px';
 }
 
-/** The line that says what the choice actually does. */
-function consequence(mode, correcting) {
-  if (correcting) {
-    return ['ok', 'The correction <b>saves immediately</b> and is recorded against your name. '
-      + 'This panel closes; the mark stays until you resolve it.'];
-  }
-  if (mode === 'training') {
-    return ['', 'Excluding is <b>a deliberate decision, not the absence of one</b>. '
-      + 'It is recorded with its reason and can be reconsidered.'];
-  }
-  return ['', 'False detection <b>removes this observation from accepted scientific results</b>. '
-    + 'The other reasons are advisory.'];
+/** Species correction is the one panel action whose immediate write still needs warning. */
+function correctionConsequence(correcting) {
+  return correcting
+    ? ['ok', 'The correction <b>saves immediately</b> and is recorded against your name. '
+      + 'This panel closes; the mark stays until you resolve it.']
+    : ['', ''];
 }
 
 /** Keep the focused editor inside the keyboard-reduced visual viewport. */
@@ -173,7 +169,7 @@ export async function renderPicker() {
   if (!state.picker || state.picker.id !== id) { host.innerHTML = ''; return; }
   host.innerHTML = '';
   const [consqClass, consqText] = isException
-    ? consequence(state.mode, correcting)
+    ? correctionConsequence(correcting)
     : ['', `This note will be recorded with the ${decision} decision when you commit it.`];
   const label = decision.charAt(0).toUpperCase() + decision.slice(1);
   const reasonControls = isException ? `<div class="chips">${m.reasons.map((r) =>
@@ -182,9 +178,24 @@ export async function renderPicker() {
     <button class="chip change ${correcting ? 'on' : ''}" data-act="correct"
       title="Change this observation's species">Change species&hellip;</button>
   </div>` : '';
+  const fullFrameReady = row.full_frame_status === 'ready';
+  const fullFrameFailed = row.full_frame_status === 'failed';
+  const frameAction = fullFrameActionState(row);
 
   const panel = el(`<div class="pick" data-picker-id="${id}" role="dialog" aria-label="${label} details">
       <h4><span class="fl">${isException ? markIcon() : acceptIcon()}</span>${label}<span class="opt">Details optional</span></h4>
+      <div class="observation-identity">
+        <span class="observation-identity__label">Observation ID</span>
+        <code class="observation-identity__value" data-observation-id>${observationIdText(id)}</code>
+      </div>
+      <div class="full-frame-state">
+        <label><input type="checkbox" disabled ${fullFrameReady ? 'checked' : ''}>
+          Full frame loaded</label>
+        <button type="button" class="ghost" data-act="${frameAction.action}"
+          ${frameAction.disabled ? 'disabled' : ''}>${frameAction.label}</button>
+        ${fullFrameFailed && row.full_frame_reason
+          ? '<span class="full-frame-state__reason" data-full-frame-reason></span>' : ''}
+      </div>
       <p>Changes here stay pending until you use one of the existing commit controls.</p>
       ${reasonControls}
       ${correcting && isException ? `<div class="correct">
@@ -202,7 +213,7 @@ export async function renderPicker() {
       <label class="note-label" for="decisionNote">Note <span class="opt"><span data-note-count>0</span> / ${NOTE_LIMIT}</span></label>
       <textarea class="decision-note" id="decisionNote" rows="4"
         placeholder="Add an optional note about this decision"></textarea>
-      <div class="consq ${consqClass}">${consqText}</div>
+      ${consqText ? `<div class="consq ${consqClass}">${consqText}</div>` : ''}
       <div class="pickfoot">
         ${isException ? `<button class="ghost" data-act="unmark" title="Remove the mark entirely">Remove ${m.mark.toLowerCase()}</button>` : ''}
         ${isException && state.mode === 'scientific'
@@ -214,6 +225,8 @@ export async function renderPicker() {
       </div></div>`);
 
   host.appendChild(panel);
+  const frameReason = panel.querySelector('[data-full-frame-reason]');
+  if (frameReason) frameReason.textContent = row.full_frame_reason;
   const note = panel.querySelector('#decisionNote');
   const count = panel.querySelector('[data-note-count]');
   note.value = mark.note || '';
@@ -240,6 +253,10 @@ export async function renderPicker() {
   if (unmark) unmark.addEventListener('click', () => actions.toggleMark(id));
   const replace = panel.querySelector('[data-act="replace-thumbnail"]');
   if (replace) replace.addEventListener('click', () => actions.requestThumbnailReplacement(id));
+  const requestFrame = panel.querySelector('[data-act="request-full-frame"]');
+  if (requestFrame) requestFrame.addEventListener('click', () => actions.requestFullFrame(id));
+  const openFrame = panel.querySelector('[data-act="open-full-frame"]');
+  if (openFrame) openFrame.addEventListener('click', () => actions.openFullFrame(id));
   panel.querySelector('[data-act="video"]').addEventListener('click', () => actions.openVideo(id));
   const resolve = panel.querySelector('[data-act="resolve"]');
   if (resolve) resolve.addEventListener('click', () => actions.resolve(id));

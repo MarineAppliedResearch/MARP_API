@@ -132,3 +132,7 @@ export async function request(path, { method = 'GET', body, signal } = {}) {
  */
 export const thumbnailUrl = (observationId) =>
   `${BASE}/observations/${observationId}/thumbnail`;
+
+/** Native video frame previously requested for review. */
+export const fullFrameUrl = (observationId) =>
+  `${BASE}/observations/${observationId}/full-frame`;
