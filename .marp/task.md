@@ -28,8 +28,10 @@ change the inference job's outcome.
   result publication, cancellation, retry, or lease reclamation.
 - **R5** -- Jobs submitted with a bare video URL do not call Jellyfin playback reporting.
   Only a stored `spec.video.jellyfin_item_id` opts an attempt into this lifecycle.
-- **R6** -- The inference worker receives no Jellyfin credentials and no new Jellyfin
-  protocol. MARP_API remains the only component that authenticates and reports playback.
+- **R6** -- This issue adds no worker-side Jellyfin reporting protocol and gives workers no
+  standing Jellyfin credentials. MARP_API reports playback now. The design remains compatible
+  with the planned future flow in which MARP_API issues a Jellyfin token to a worker for its
+  media access.
 - **R7** -- Reporting uses MARP_API's configured Jellyfin service account. The production
   server provides no playback-start operation that creates an active session without also
   updating that account's playback data, so the accepted fallback is that GPU activity may
@@ -68,6 +70,8 @@ change the inference job's outcome.
 - **2026-09-13** -- Use the configured Jellyfin service account and accept its unavoidable
   playback-history changes rather than changing a human user's history.
 - **2026-09-13** -- Reporting errors are operational evidence, never inference failures.
+- **2026-09-13** -- A later phase will authenticate workers to Jellyfin with tokens issued by
+  MARP_API. Issue #133 neither implements nor prevents that future worker media-access flow.
 
 ## Plan
 
