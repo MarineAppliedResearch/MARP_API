@@ -1,203 +1,156 @@
-# Verification — MARP_API #134: reviewer-requested replacement thumbnails
+# Verification — MARP_API #133: GPU playback visible in Jellyfin
 
-This is the G3 verification package. Run it only after the human approves the plan.
+This G3 verification package was approved by the human and run at G4.
 
 ## What each test proves
 
 | Requirement | Test | Tier | Proves |
 | --- | --- | --- | --- |
-| R1 | `model.test.mjs`; `render-states.spec.mjs` check `#134 R1` | unit + browser | Scientific reasons no longer include `No imagery`; the panel visibly offers the separate replacement action at desktop and phone widths. |
-| R2 | `requirements-states.spec.mjs` check `#134 R1, R2, R9`; `mosaic-commit.test.js` rejection check | browser + API + database | Clicking replacement clears the pending mark/reason/note, and neither that gesture nor an attempted `No imagery` commit writes scientific review state. |
-| R3 | `thumbnails.test.js` replacement-route block | HTTP + database | A ready or failed row can be queued through the single-observation endpoint; absent and structurally permanent observations are refused explicitly. |
-| R4 | `thumbnails.test.js` queue-priority and FIFO checks | database | Reviewer work is claimed before older ordinary work, remains FIFO within its class, and a repeated click cannot release or duplicate an in-flight extraction. |
-| R5 | `thumbnail-geometry.test.js` replacement-candidate block; `thumbnails.test.js` candidate-index plan check | unit | The representative is first, real keyframes follow by distance, bounded midpoint frames follow those, ties are deterministic, and frames are de-duplicated. |
-| R6 | `thumbnail-geometry.test.js` cross-subset check | unit | Every candidate and interpolation endpoint comes from the selected first subset. |
-| R7 | `thumbnails.test.js` candidate-index/exhaustion checks and repository retry checks | unit + database | One request advances one durable candidate, the last candidate is marked permanent on failure, and no gesture opens a sequence of attempts. |
-| R8 | `thumbnails.test.js` requeue and failure-record checks | database | Attempts survive requeueing and the attempted frame/subset are stored structurally for failures. |
-| R9 | `requirements-states.spec.mjs` check `#134 R1, R2, R9` | browser + API + database | The clicked tile immediately becomes PREPARING; page polling observes a ready result and redraws the image without a scientific flag. |
-| R10 | Existing retry-route tests plus the new priority/candidate assertions | HTTP + database | Existing per-tile/page retry behavior remains bulk-compatible while using the new priority and rotation state. |
-| R11 | `mosaic-commit.test.js` historical-read check | HTTP + database | A pre-existing `No imagery` log/projection row remains readable even though a new one is rejected. |
-| R12 | The combined Mosaic unit, subsystem, and named real-browser commands below | unit + HTTP + database + browser | Every changed tier observes the behavior it owns rather than relying on a lower-level proxy. |
-| R13 | Push the updated feature branch and inspect the resulting workflow runs | GitHub Actions | The push creates only the pull-request workflow run, while the workflow definition retains push triggers for `develop` and `master`. |
+| R1 | `gpu-playback-reporting.test.js` — “starts one session identified by the enrolled worker and leased slot”; `jellyfin.test.js` — “finds active playback by a stable explicit device key” | HTTP + PostgreSQL + mocked Jellyfin HTTP | A resolved Jellyfin job starts playback with a stable worker/slot device ID and a readable enrolled worker/slot display name. |
+| R2 | `gpu-playback-reporting.test.js` — “reports accepted frame progress as an absolute bounded media position” | HTTP + PostgreSQL + mocked Jellyfin boundary | Accepted frame progress is added to the submitted start frame, converted at 25 fps, and capped at the half-open range end. |
+| R3 | The terminal retry, cancel, pause, valid-abandon, and expired-lease cases in `gpu-playback-reporting.test.js` | HTTP + PostgreSQL + mocked Jellyfin boundary | Every coordinator path that tells a worker to stop reading closes the matching Jellyfin session. |
+| R4 | The three “keeps … when Jellyfin … fails” cases in `gpu-playback-reporting.test.js` | HTTP + PostgreSQL + failing mocked Jellyfin boundary | Start, progress, and stop failures leave lease, heartbeat, and result responses successful and add an attempt-scoped coordinator note. |
+| R5 | The bare-URL cases in `gpu-video-resolution.test.js` and `gpu-playback-reporting.test.js` | HTTP + PostgreSQL | A URL-backed job leases normally and invokes no Jellyfin playback method. |
+| R6 | Existing `gpu-video-resolution.test.js` lease-body assertions plus source inspection | HTTP + PostgreSQL | The worker still receives a resolved URL through the existing contract; no worker playback endpoint or standing Jellyfin credential was added. |
+| R7 | Controlled production check below | Real MARP API + local disposable PostgreSQL + production Jellyfin | Reporting authenticates as the configured service account and produces the unavoidable service-account playback update, without changing Jellyfin configuration. |
+| R8 | `gpu-playback-reporting.test.js` — “reconstructs an expired attempt identity from PostgreSQL and stops its live session”; controlled restart check below | HTTP + PostgreSQL + mocked and production Jellyfin | Stop reconstructs its stable identity from existing attempt/job/worker/slot rows and reads the live position from Jellyfin after coordinator state is restarted. |
+| R9 | `gpu-playback-reporting.test.js` — terminal result retry and rejected-heartbeat cases | HTTP + PostgreSQL + mocked Jellyfin boundary | A result retry finds no active session after the first stop, and an invalid worker report cannot close somebody else’s session. |
+| R10 | The complete command list and controlled production check | Parse + HTTP + PostgreSQL + production Jellyfin | The changed GPU and Jellyfin tiers run against the disposable database, followed by a real end-to-end session lifecycle against production Jellyfin. |
 
 ## Requirements with no test
 
-None. Actual visual crop quality against live Jellyfin remains a manual observation, listed
-separately below; the automated checks cover selection, queueing, persistence, API behavior,
-polling, and rendering.
+None. The automated tiers cover the coordinator and repository behavior. The production
+session’s visibility and restart behavior are covered by the controlled real-system steps.
 
 ## Commands, in order
 
 1. `git diff --check`
-   - Expected: no whitespace errors or conflict markers in the working change.
-2. `npm run docs:build`
-   - Expected: OpenAPI lists the replacement endpoint and both tracked documentation
-     surfaces regenerate successfully. The repository's known JSDoc tag warnings may be
-     printed; the build script succeeds when the complete site is produced.
-3. `npx sequelize-cli db:migrate:status` and `npm run testing-db -- status`
-   - Expected: `20260913200000-prioritize-thumbnail-replacements.js` is up in development,
-     and the disposable browser database reports ready for use.
-4. `npm run test:app:mosaic-review:unit`
-   - Expected: syntax, model, API-wire, row-shape, cache, URL, and scheduling checks pass.
-5. `npm run test:mosaic`
-   - Expected: the seven Mosaic suites pass against the local disposable development
-     database and restore every row they create or change.
-6. `npm run test:app:mosaic-review:api -- -g "#134"`
-   - Expected: the named panel and complete replacement lifecycle checks pass against a
-     real temporary API and the disposable testing database at both desktop and phone widths;
-     the launcher stops its API afterwards.
-7. `git diff --check` again after results are recorded.
+   - Expected: no whitespace errors or conflict markers.
+2. Run `node --check` for `service/gpu-playback.service.js`, `service/gpu.service.js`,
+   `repository/gpu.repository.js`, `repository/jellyfin.repository.js`, and
+   `tests/gpu-playback-reporting.test.js`.
+   - Expected: every changed JavaScript file parses.
+3. `npm run test:subsystems`
+   - Expected: the new suite belongs to the GPU group and every suite belongs to exactly
+     one subsystem.
+4. `npm run test:gpu`
+   - Expected: all six GPU suites pass against the workspace's disposable PostgreSQL
+     database, including the named lifecycle and failure cases above, and restore their rows.
+5. `npm run test:media`
+   - Expected: the Jellyfin repository suite passes against its mocked HTTP server,
+     including stable device-key lookup and display-name authorization headers.
+6. `npm run docs:dev:build`
+   - Expected: developer documentation regenerates with the new playback service and
+     repository methods.
+7. `git diff --check` again after generated documentation and recorded results.
 
-The full repository suite and the complete Mosaic browser suite are not in this package.
-The repository doctrine assigns the whole suite to the end of a phase; this task changes
-the Mosaic subsystem and has named browser checks for its rendering behavior.
+The whole repository suite is not in this package. Repository doctrine assigns it to the
+end of a phase; this change has named GPU and Jellyfin tests at the tiers that observe it.
 
 ## Edge cases
 
-- A second click while work is queued or claimed raises no duplicate attempt and does not
-  move the request behind later reviewer work.
-- A ready thumbnail advances past the frame already displayed; a failed attempted frame
-  also advances, while a pre-plan infrastructure failure does not invent an attempted frame.
-- A representative frame that is itself a keyframe or midpoint appears only once.
-- Equal-distance candidates use the lower frame number, making selection restart-stable.
-- Candidate construction ignores every subset after the first and never interpolates
-  between tracks.
-- The final candidate's failure becomes permanent; a request against an already-permanent
-  structural failure remains refused.
-- A transport failure or permanent refusal restores unsaved panel details because no
-  replacement was accepted.
-- Existing `No imagery` review history remains readable; only creation of a new value is
-  prohibited.
-- The replacement URL is stable, so the existing generation-backed ETag must change when
-  the new image becomes ready.
+- Progress below zero is bounded to the range start; progress beyond the piece is bounded
+  to the range end.
+- A worker rename changes Jellyfin's display name on a new login but not the device key used
+  to recover an existing worker-slot session.
+- A bare URL never opts into playback reporting.
+- A wrong worker or lease epoch receives `abandon` but cannot close the live holder's
+  session.
+- A repeated terminal result sees no live session after the first stop and sends no second
+  stopped report.
+- Jellyfin start, progress, lookup, or stop failures remain operational notes and cannot
+  change inference state.
 
 ## Regression coverage
 
-- The old retry code reset `attempts` to zero; the repository test now requires attempts to
-  survive and the candidate index to advance.
-- The old planner always selected `chooseBox`, so every retry asked Jellyfin for the same
-  frame; the candidate sequence and index checks prevent that regression.
-- Failed attempts previously stored only prose, making the attempted frame unknowable; the
-  failure-record check requires structural frame/subset fields.
-- Ready thumbnails were previously refused by the only retry endpoint; the dedicated route
-  test requires ready-row replacement without changing bulk retry semantics.
-- `No imagery` was previously a committable scientific reason; unit, validator, and browser
-  checks now hold the separation between review decisions and extraction requests.
-- A repeated click could release a live claim if queue timestamps were blindly reset; the
-  in-flight replacement check requires both claim and FIFO timestamp to remain intact.
+Issue #133 had no previous implementation. The wrong-epoch case protects the existing lease
+ownership rule while adding the new side effect, and the existing video-resolution suite now
+asserts that URL-backed jobs remain completely independent of Jellyfin reporting.
 
 ## Known gaps
 
-- Automated checks do not judge whether a newly extracted frame is a *better* view of the
-  organism. That requires a person looking at real source imagery.
-- The browser lifecycle check records extractor success on its own disposable row after the
-  endpoint queues it. This deliberately tests polling and image replacement without relying
-  on live Jellyfin availability; decoder/media integration remains covered by the existing
-  media/manual tier.
-- The finite midpoint policy samples one frame per adjacent keyframe span. It does not search
-  every video frame, by design.
-- Full-resolution frame inspection and zoom belong to #176; video-player integration remains
-  later work and is not covered here.
+- The production check uses one real video item and the configured service account. It does
+  not exercise every media format in Jellyfin because playback reporting carries only item
+  identity and position and does not decode media.
+- Jellyfin necessarily updates playback data for the configured service account. Before and
+  after values will be recorded as evidence; this accepted effect is not rolled back by
+  editing production data.
+- No real inference worker or GPU is needed: the worker-facing HTTP calls are the same calls
+  a worker makes, and this issue does not change inference execution.
 
 ## Manual steps
 
-With the human present and the Mosaic pointed at a disposable database whose source video is
-available through Jellyfin:
+Use the workspace commands to discover its API and database addresses; do not copy an
+environment-specific port into this file.
 
-1. Open Scientific Data Review, flag a tile whose crop is unusable, open its details, and
-   choose `Request replacement image`.
-2. Confirm the panel closes, the temporary flag disappears, and the tile reads PREPARING.
-3. Wait for the extractor. Confirm a different crop appears in the same tile without a page
-   reload and that no `No imagery` decision was added.
-4. Repeat once on the same observation and confirm another candidate is tried rather than the
-   first crop repeating.
-
-Do not run this manual step unattended: it uses the live Jellyfin service. It writes only the
-disposable thumbnail record and files, never a production scientific review.
+1. Confirm `marp db status` reports the issue workspace's disposable database and start the
+   issue workspace API with its configured environment.
+2. Through the running API, sign in to the disposable database, find one accessible real
+   Jellyfin video item, submit a one-piece GPU job for it, enrol a clearly named temporary
+   worker with at least two slots, and poll the job on one named slot.
+3. In Jellyfin's live session listing, confirm one active session appears for `MARP GPU
+   worker`, its device label contains the enrolled worker name and slot, and its item matches
+   the submitted item.
+4. Send a frame heartbeat and confirm Jellyfin's live position equals the submitted
+   `start_frame + done` at 25 fps.
+5. Stop and restart MARP_API without sending a playback stop, then expire the local attempt's
+   lease using the disposable database. Trigger the normal job-detail sweep and confirm the
+   same Jellyfin session disappears. This proves recovery without an in-memory playback map.
+6. Repeat with a second short job and finish it through the result endpoint. Confirm the
+   session disappears, then retry the identical result and confirm it does not reappear.
+7. Record the configured service account's item user-data before and after. Confirm any
+   play-count, last-played, played-state, or resume change is confined to that service
+   account. Make no Jellyfin configuration change.
+8. Remove the temporary local jobs and worker by destroying the disposable workspace
+   database after evidence is recorded, and stop the issue workspace API.
 
 ---
 
 ## Results
 
-<!-- Appended by `marp verify run`. Real output, including failures, verbatim. -->
+Run 2026-09-13 against the issue workspace's disposable PostgreSQL database and the
+configured production Jellyfin server.
 
-Run on 2026-09-13 PDT against branch `134-no-imagery-retry`.
+- `git diff --check`: passed before verification.
+- The five changed JavaScript files in step 2 passed `node --check`.
+- `npm run test:subsystems`: passed, 53 suites assigned exactly once; the new playback
+  suite is in the GPU group.
+- `npm run test:gpu`: passed, 6 suites and 108 tests.
+- `npm run test:media`: passed, 1 suite and 20 tests.
+- `npm run docs:dev:build`: exited 0. It emitted the repository's existing JSDoc parse
+  warnings and regenerated the developer pages, including the new playback service and
+  test.
+- Controlled production lifecycle using `20200618_155315_Fwd.mp4`:
+  - a lease created an active `MARP API/MARP GPU worker` session whose device label named
+    the temporary enrolled worker and `slot 1`;
+  - an accepted 25-frame heartbeat for a range beginning at frame 100 produced exactly
+    `50,000,000` ticks when inspected immediately;
+  - reauthentication after a coordinator restart cleared the old active device session,
+    and the normal expired-lease sweep marked the attempt abandoned without leaving it
+    active;
+  - a second session disappeared after a failed terminal result, and the identical result
+    retry returned `idempotent: true` without recreating it;
+  - the repeatable cleanup removed both temporary jobs and their temporary worker from the
+    disposable database;
+  - the configured service account's play count moved from 1 to 3, its last-played time
+    advanced, and Jellyfin marked the item played with a zero resume position. No Jellyfin
+    configuration was changed.
 
-### Preflight failure and remediation
+Three setup attempts failed before the successful run and are part of the evidence:
 
-The first `git diff --check` failed with exit 1 after the developer documentation was
-regenerated on Windows. Its first reported error was:
+1. The first local API login returned HTTP 401 because the disposable database had no
+   review user. Running the repository's repeatable `create-review-user.js` seeder created
+   the local test user; no production database was used.
+2. Jellyfin returned HTTP 400 when a Unicode middle dot appeared in the MediaBrowser
+   `Device` value. The device label now uses the ASCII text ` - slot `, after which
+   authentication succeeded. Targeted GPU-playback and Jellyfin tests passed after the fix.
+3. The first session inspector authenticated again with the worker's own stable device ID,
+   which Jellyfin treats as replacing that device session and therefore made the active
+   item disappear. The corrected verifier inspected `/Sessions` through a separate
+   identity; it then observed the start and exact progress above. Reauthenticating the
+   stable worker identity was separately confirmed to clear the previous active session,
+   which is the restart recovery behavior used by the implementation.
 
-```text
-docs/developer/global.html:50: trailing whitespace.
-```
-
-The generated developer pages reproduce source formatting, including whitespace-only
-lines, and Git's whitespace checker consequently treated regenerated page content as a
-hand-written whitespace error. A repository `.gitattributes` rule now excludes only
-`docs/developer/**` from whitespace lint. Hand-written sources and the generated OpenAPI
-contract remain checked. The documentation was rebuilt and the approved sequence was
-restarted from command 1.
-
-### Approved run
-
-1. `git diff --check` — **PASS** (exit 0). Git printed line-ending conversion warnings,
-   but no whitespace errors or conflict markers.
-2. `npm run docs:build` — **PASS** (exit 0, 15.2s). The generated contract discovered
-   128 paths, including
-   `/v2/observations/{observationId}/thumbnail/replacement`; the developer site completed
-   and mirrored 9 assets. The known JSDoc type-expression errors and two `@type` warnings
-   were printed, followed by `docs: jsdoc exited 1; the site above is complete, the errors
-   are unparsed tags`, as anticipated by the plan.
-3. `npx sequelize-cli db:migrate:status` — **PASS** (exit 0). The development database
-   reported `up 20260913200000-prioritize-thumbnail-replacements.js`.
-4. `npm run testing-db -- status` — **PASS** (exit 0). The disposable `marp_test`
-   database reported `exists, ready` with 2,091 observations and 2,091 thumbnail rows.
-5. `npm run test:app:mosaic-review:unit` — **PASS** (exit 0, 2.7s):
-
-   ```text
-   ℹ tests 279
-   ℹ pass 279
-   ℹ fail 0
-   ℹ skipped 0
-   ```
-
-6. `npm run test:mosaic` — **PASS** (exit 0, 9.9s):
-
-   ```text
-   Test Suites : 7 passed, 0 failed, 7 total
-   Tests       : 261 passed, 0 failed, 0 skipped, 261 total
-   Result: ALL TESTS PASSED
-   ```
-
-   Full runner output was written to
-   `tests/logs/test-run-2026-09-14T03-28-18-104Z.log`.
-7. `npm run test:app:mosaic-review:api -- -g "#134"` — **PASS** (exit 0, 10.2s).
-   Both named checks passed in the desktop and phone projects:
-
-   ```text
-   4 passed (8.2s)
-   The API tier passed, against a real server on the testing database.
-   ```
-
-8. Final `git diff --check` — **PASS** (exit 0). Git printed line-ending conversion
-   warnings, but no whitespace errors or conflict markers.
-
-### CI trigger correction requested during PR review
-
-After PR #179 exposed duplicate push-event and pull-request-event runs for the same feature
-commit, the workflow push filter was narrowed from every branch to `develop` and `master`.
-The pull-request trigger remains unchanged. Verification is the GitHub run inventory created
-by pushing this correction: exactly one new workflow run must exist for the updated feature
-commit, with event `pull_request`; no `push` run may exist for it.
-
-**PASS.** For commit `984b3cd3ca2eba900990fb9830838a3532de76a6`, GitHub returned
-exactly one workflow run: verify run 34803846855, event `pull_request`. No workflow run
-with event `push` exists for that feature-branch commit.
-
-### Manual observation not run
-
-The live-Jellyfin crop-quality walkthrough remains for a session with the human present,
-as required by the plan. This is a visual quality judgement, not an automated functional
-gap; all queueing, persistence, API, polling, and rendered-state behavior in #134 passed
-at its named automated tier.
+After recording these results, developer documentation regenerated again with the final
+ASCII device label. The final parse checks, `npm run test:gpu` (6 suites, 108 tests),
+`npm run test:media` (1 suite, 20 tests), and `git diff --check` all passed.

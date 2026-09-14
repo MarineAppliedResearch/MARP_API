@@ -25,6 +25,7 @@ const crypto = require('crypto');
 
 const gpuRepository = require('../repository/gpu.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
+const gpuPlaybackService = require('./gpu-playback.service');
 const observationIngestService = require('./observation-ingest.service');
 const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
@@ -185,6 +186,19 @@ function sleep(milliseconds) {
  */
 class GpuService {
 
+    /**
+     * Reclaim expired leases and close their Jellyfin sessions.
+     *
+     * @returns {Promise<Array<Object>>} Reclaimed attempt entries.
+     */
+    async expireStaleLeases() {
+        const expired = await gpuRepository.expireStaleLeases();
+
+        await gpuPlaybackService.stopExpired(expired);
+
+        return expired;
+    }
+
     // -----------------------------------------------------------------
     // Worker-facing
     // -----------------------------------------------------------------
@@ -314,7 +328,7 @@ class GpuService {
             ? requiredInteger(body.slot_indexes[0], 'slot_indexes[0]')
             : 0;
 
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const deadline = Date.now() + (waitSeconds * 1000);
 
@@ -357,6 +371,8 @@ class GpuService {
                     // request, hammering Jellyfin as it went.
                     return null;
                 }
+
+                await gpuPlaybackService.start(lease.attempt.id);
 
                 return {
                     job_id: lease.job.id,
@@ -584,13 +600,21 @@ class GpuService {
 
         const progress = this.validateProgress(body.progress);
 
+        const parsedAttemptId = this.attemptIdFromPath(attemptId);
         const outcome = await gpuRepository.recordHeartbeat({
-            attemptId: this.attemptIdFromPath(attemptId),
+            attemptId: parsedAttemptId,
             workerId,
             leaseEpoch,
             state: body.state,
             progress,
         });
+
+        // A refused heartbeat carries no accepted attempt. It may have named a
+        // live attempt owned by somebody else, so it must not close that slot's
+        // Jellyfin session merely because the refusal says "abandon".
+        if (outcome.attempt || outcome.job_state !== undefined) {
+            await gpuPlaybackService.heartbeat(parsedAttemptId, outcome.action);
+        }
 
         return {
             action: outcome.action,
@@ -700,14 +724,17 @@ class GpuService {
             }
         }
 
+        const parsedAttemptId = this.attemptIdFromPath(attemptId);
         const published = await gpuRepository.publishResult({
-            attemptId: this.attemptIdFromPath(attemptId),
+            attemptId: parsedAttemptId,
             workerId,
             leaseEpoch,
             outcome,
             failureReason: body.failure_reason,
             artifacts: named,
         });
+
+        await gpuPlaybackService.stop(parsedAttemptId);
 
         const ingest = await this.ingestPublishedJob(published);
 
@@ -862,7 +889,7 @@ class GpuService {
         // Sweeping here too, so the pool view does not show a machine as busy
         // with a job whose lease ran out an hour ago. A read that reports a state
         // the system has already abandoned is worse than a slightly slower read.
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const rows = await gpuRepository.listWorkerPoolRows();
         const workers = new Map();
@@ -991,7 +1018,7 @@ class GpuService {
         filters.offset = Math.max(Number(query.offset) || 0, 0);
 
         // Sweeping before a read, same reason as the pool view.
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const { jobs, total } = await gpuRepository.listJobs(filters);
 
@@ -1017,7 +1044,7 @@ class GpuService {
         // lease deadline, and only changed once some other request happened to
         // sweep. A page watching one job would show a dead machine as working
         // indefinitely.
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const detail = await gpuRepository.getJobDetail(this.jobIdFromPath(jobId));
 

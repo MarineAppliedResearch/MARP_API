@@ -90,21 +90,37 @@ class JellyfinRepository {
      * anonymous caller, since there would be nothing to distinguish it by.
      *
      * @param {Object} [clientIdentity] - Downstream client identity.
+     * @param {string} [clientIdentity.key] - Explicit stable key for a synthetic client.
      * @param {string} [clientIdentity.name] - Client name, e.g. from an X-Client-Name header.
      * @param {string} [clientIdentity.version] - Client version, e.g. from an X-Client-Version header.
      * @returns {string} Sanitized key, safe to embed in a Jellyfin DeviceId.
      */
     _buildClientKey(clientIdentity) {
+        const explicitKey = clientIdentity && clientIdentity.key ? String(clientIdentity.key).trim() : '';
         const name = clientIdentity && clientIdentity.name ? String(clientIdentity.name).trim() : '';
+        const sanitize = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+        if (explicitKey) {
+            return sanitize(explicitKey) || 'unknown';
+        }
 
         if (!name) {
             return 'unknown';
         }
 
         const version = clientIdentity && clientIdentity.version ? String(clientIdentity.version).trim() : '';
-        const sanitize = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
         return version ? `${sanitize(name)}-${sanitize(version)}` : sanitize(name);
+    }
+
+    /**
+     * Builds the Jellyfin DeviceId used by both login and session lookup.
+     *
+     * @param {Object} [clientIdentity] - Downstream client identity.
+     * @returns {string} Stable Jellyfin DeviceId.
+     */
+    _buildDeviceId(clientIdentity) {
+        return `marp-api-${this._buildClientKey(clientIdentity)}`;
     }
 
     /**
@@ -163,11 +179,14 @@ class JellyfinRepository {
      */
     _buildMediaBrowserAuthorizationHeader(clientIdentity) {
         const name = clientIdentity && clientIdentity.name ? String(clientIdentity.name).trim() : '';
+        const suppliedDeviceName = clientIdentity && clientIdentity.deviceName
+            ? String(clientIdentity.deviceName).trim()
+            : '';
         const version = clientIdentity && clientIdentity.version ? String(clientIdentity.version).trim() : '1.0.0';
 
         const clientName = name ? `MARP API/${name}` : 'MARP API';
-        const deviceName = name || (process.env.HOSTNAME || 'marp-api');
-        const deviceId = `marp-api-${this._buildClientKey(clientIdentity)}`;
+        const deviceName = suppliedDeviceName || name || (process.env.HOSTNAME || 'marp-api');
+        const deviceId = this._buildDeviceId(clientIdentity);
 
         return (
             'MediaBrowser ' +
@@ -770,6 +789,44 @@ class JellyfinRepository {
      */
     async reportPlaybackStopped(itemId, report, clientIdentity) {
         await this._reportPlayback('/Sessions/Playing/Stopped', itemId, { ...report, isPaused: true }, clientIdentity);
+    }
+
+    /**
+     * Finds the active Jellyfin playback session for a stable client identity.
+     *
+     * Jellyfin owns playback state. Reading it here lets a restarted MARP API
+     * close the session without adding playback metadata to PostgreSQL.
+     *
+     * @async
+     * @param {Object} [clientIdentity] - Downstream client identity.
+     * @returns {Promise<Object|null>} Active playback fields, or null when idle.
+     */
+    async getPlaybackSession(clientIdentity = {}) {
+        const session = await this._ensureAuthenticated(clientIdentity);
+        const sessions = await this._authenticatedRequest(
+            session,
+            'GET',
+            `${this.baseUrl}/Sessions`
+        );
+        const deviceId = this._buildDeviceId(clientIdentity);
+        const active = Array.isArray(sessions)
+            ? sessions.find((candidate) => candidate.DeviceId === deviceId && candidate.NowPlayingItem)
+            : null;
+
+        if (!active) {
+            return null;
+        }
+
+        const playState = active.PlayState || {};
+
+        return {
+            itemId: String(active.NowPlayingItem.Id || ''),
+            positionTicks: Number.isFinite(Number(playState.PositionTicks))
+                ? Number(playState.PositionTicks)
+                : null,
+            mediaSourceId: String(playState.MediaSourceId || ''),
+            playSessionId: String(playState.PlaySessionId || active.PlaySessionId || ''),
+        };
     }
 
     /**
