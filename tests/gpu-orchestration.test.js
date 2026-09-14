@@ -550,7 +550,13 @@ describe('GPU heartbeat', () => {
                 worker_id: workerId,
                 lease_epoch: lease.lease_epoch,
                 state: 'running',
-                progress: { done: 40, total: 100, unit: 'frames' },
+                progress: {
+                    done: 40,
+                    total: 100,
+                    unit: 'frames',
+                    phase: 'inferring',
+                    elapsed_s: 12.375,
+                },
             });
 
         expect(beat.status).toBe(200);
@@ -559,7 +565,9 @@ describe('GPU heartbeat', () => {
             .toBeGreaterThan(new Date(lease.lease_expires_at).getTime() - 1000);
 
         const [attempt] = await query(
-            'SELECT state, progress_done, progress_total, progress_unit, last_heartbeat_at FROM gpu_job_attempts WHERE id = :id',
+            `SELECT state, progress_done, progress_total, progress_unit,
+                    progress_phase, progress_elapsed_s, last_heartbeat_at
+               FROM gpu_job_attempts WHERE id = :id`,
             { id: lease.attempt_id }
         );
 
@@ -567,7 +575,43 @@ describe('GPU heartbeat', () => {
         expect(attempt.progress_done).toBe(40);
         expect(attempt.progress_total).toBe(100);
         expect(attempt.progress_unit).toBe('frames');
+        expect(attempt.progress_phase).toBe('inferring');
+        expect(attempt.progress_elapsed_s).toBe(12.375);
         expect(attempt.last_heartbeat_at).not.toBeNull();
+    });
+
+    it('accepts a bounded worker-defined phase and rejects invalid progress metadata', async () => {
+        const { lease } = await submitAndLease();
+
+        const futurePhase = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                progress: { phase: 'training_validation', elapsed_s: 0 },
+            });
+
+        expect(futurePhase.status).toBe(200);
+
+        const tooLong = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                progress: { phase: 'p'.repeat(65) },
+            });
+        expect(tooLong.status).toBe(400);
+        expect(tooLong.body.error.message).toMatch(/64 characters/);
+
+        const negativeElapsed = await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                progress: { elapsed_s: -0.1 },
+            });
+        expect(negativeElapsed.status).toBe(400);
+        expect(negativeElapsed.body.error.message).toMatch(/non-negative finite number/);
     });
 
     it('refuses a worker that claims a stale lease epoch, and writes nothing', async () => {
@@ -575,7 +619,11 @@ describe('GPU heartbeat', () => {
 
         const beat = await global.api
             .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
-            .send({ worker_id: workerId, lease_epoch: lease.lease_epoch + 7, progress: { done: 999 } });
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch + 7,
+                progress: { done: 999, phase: 'stale-phase', elapsed_s: 999 },
+            });
 
         expect(beat.status).toBe(200);
         expect(beat.body.action).toBe('abandon');
@@ -583,12 +631,15 @@ describe('GPU heartbeat', () => {
         expect(beat.body.lease_expires_at).toBeNull();
 
         const [attempt] = await query(
-            'SELECT progress_done, last_heartbeat_at FROM gpu_job_attempts WHERE id = :id',
+            `SELECT progress_done, progress_phase, progress_elapsed_s, last_heartbeat_at
+               FROM gpu_job_attempts WHERE id = :id`,
             { id: lease.attempt_id }
         );
 
         // The point of the refusal: a stale caller cannot move a job's progress.
         expect(attempt.progress_done).toBeNull();
+        expect(attempt.progress_phase).toBeNull();
+        expect(attempt.progress_elapsed_s).toBeNull();
         expect(attempt.last_heartbeat_at).toBeNull();
     });
 
@@ -697,7 +748,12 @@ describe('GPU attempt events', () => {
             worker_id: workerId,
             lease_epoch: lease.lease_epoch,
             events: [
-                { seq: 0, kind: 'log', at: new Date().toISOString(), payload: { line: 'starting' } },
+                {
+                    seq: 0,
+                    kind: 'log',
+                    at: new Date().toISOString(),
+                    payload: { level: 'info', message: 'entered phase: starting', phase: 'starting' },
+                },
                 { seq: 1, kind: 'metric', payload: { frames_per_second: 41.2 } },
             ],
         };
@@ -722,6 +778,13 @@ describe('GPU attempt events', () => {
         );
 
         expect(counted.n).toBe(2);
+
+        const [transition] = await query(
+            'SELECT kind, payload FROM gpu_job_events WHERE attempt_id = :id AND seq = 0',
+            { id: lease.attempt_id }
+        );
+        expect(transition.kind).toBe('log');
+        expect(transition.payload.phase).toBe('starting');
     });
 
     it('refuses a batch from a stale lease, and writes none of it', async () => {
@@ -865,6 +928,21 @@ describe('GPU attempt result', () => {
             .set('Content-Type', 'application/octet-stream')
             .send(bytes);
 
+        await global.api
+            .post(`/api/v2/gpu/attempts/${lease.attempt_id}/heartbeat`)
+            .send({
+                worker_id: workerId,
+                lease_epoch: lease.lease_epoch,
+                state: 'uploading',
+                progress: {
+                    done: 100,
+                    total: 100,
+                    unit: 'frames',
+                    phase: 'publishing',
+                    elapsed_s: 22.5,
+                },
+            });
+
         const reported = await global.api
             .post(`/api/v2/gpu/attempts/${lease.attempt_id}/result`)
             .send({
@@ -891,6 +969,8 @@ describe('GPU attempt result', () => {
         expect(detail.body.artifacts[0].job_id).toBe(job.id);
         expect(detail.body.artifacts[0].hash).toBe(sha256);
         expect(detail.body.artifacts[0].artifact_type).toBe('detections');
+        expect(detail.body.attempts[0].progress_phase).toBe('publishing');
+        expect(detail.body.attempts[0].progress_elapsed_s).toBe(22.5);
     });
 
     it('answers a replayed terminal report from the stored rows, without a second result', async () => {
@@ -1082,7 +1162,13 @@ describe('GPU pool view', () => {
                 worker_id: workerId,
                 lease_epoch: lease.lease_epoch,
                 state: 'running',
-                progress: { done: 12, total: 100, unit: 'frames' },
+                progress: {
+                    done: 12,
+                    total: 100,
+                    unit: 'frames',
+                    phase: 'loading_model',
+                    elapsed_s: 4.25,
+                },
             });
 
         const pool = await global.api.get('/api/v2/gpu/workers');
@@ -1102,7 +1188,13 @@ describe('GPU pool view', () => {
 
         expect(running).toBeDefined();
         expect(running.state).toBe('running');
-        expect(running.progress).toEqual({ done: 12, total: 100, unit: 'frames' });
+        expect(running.progress).toEqual({
+            done: 12,
+            total: 100,
+            unit: 'frames',
+            phase: 'loading_model',
+            elapsed_s: 4.25,
+        });
 
         // Nothing in the pool view can say where a machine is, because nothing
         // in the schema can. This is the assertion that would fail if somebody

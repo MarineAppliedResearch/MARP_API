@@ -37,6 +37,7 @@ const {
     POLL_RETRY_INTERVAL_MS,
     MAX_WORKER_NAME_LENGTH,
     MAX_WORKER_LOCAL_ID_LENGTH,
+    MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,
     ARTIFACT_PATH_PREFIX,
     JOB_KINDS,
@@ -928,6 +929,10 @@ class GpuService {
                     done: row.progress_done,
                     total: row.progress_total,
                     unit: row.progress_unit,
+                    phase: row.progress_phase,
+                    elapsed_s: row.progress_elapsed_s === null
+                        ? null
+                        : Number(row.progress_elapsed_s),
                 },
                 job: {
                     job_id: row.job_id,
@@ -1380,7 +1385,7 @@ class GpuService {
     /**
      * Validate a heartbeat's progress block.
      *
-     * @param {*} progress - `{done, total, unit}` as supplied, or absent.
+     * @param {*} progress - `{done, total, unit, phase, elapsed_s}` as supplied, or absent.
      * @returns {Object|undefined} The block, or undefined when absent.
      * @throws {ApiError} When any field is the wrong type.
      */
@@ -1390,7 +1395,7 @@ class GpuService {
         }
 
         if (typeof progress !== 'object' || Array.isArray(progress)) {
-            invalid('progress must be an object of {done, total, unit}.');
+            invalid('progress must be an object of {done, total, unit, phase, elapsed_s}.');
         }
 
         const validated = {};
@@ -1405,6 +1410,21 @@ class GpuService {
 
         if (progress.unit !== undefined && progress.unit !== null) {
             validated.unit = requiredString(progress.unit, 'progress.unit');
+        }
+
+        if (progress.phase !== undefined && progress.phase !== null) {
+            validated.phase = requiredString(progress.phase, 'progress.phase');
+            if (validated.phase.length > MAX_PROGRESS_PHASE_LENGTH) {
+                invalid(`progress.phase must be ${MAX_PROGRESS_PHASE_LENGTH} characters or fewer.`);
+            }
+        }
+
+        if (progress.elapsed_s !== undefined && progress.elapsed_s !== null) {
+            const elapsed = Number(progress.elapsed_s);
+            if (!Number.isFinite(elapsed) || elapsed < 0) {
+                invalid('progress.elapsed_s must be a non-negative finite number.');
+            }
+            validated.elapsed_s = elapsed;
         }
 
         return validated;

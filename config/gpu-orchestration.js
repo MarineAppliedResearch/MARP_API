@@ -111,6 +111,15 @@ const MAX_WORKER_NAME_LENGTH = 255;
 const MAX_WORKER_LOCAL_ID_LENGTH = 128;
 
 /**
+ * Longest phase name a worker may report. Phase vocabularies belong to each job
+ * type, so the coordinator bounds the string without closing the vocabulary.
+ *
+ * @constant
+ * @type {number}
+ */
+const MAX_PROGRESS_PHASE_LENGTH = 64;
+
+/**
  * Most events one batch may carry. A worker with more than this to say sends two
  * batches; `(attempt_id, seq)` makes that free.
  *
@@ -312,6 +321,7 @@ module.exports = {
     JSON_BODY_LIMIT,
     MAX_WORKER_NAME_LENGTH,
     MAX_WORKER_LOCAL_ID_LENGTH,
+    MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,
     MAX_ARTIFACT_BYTES,
     ARTIFACT_DIRECTORY,

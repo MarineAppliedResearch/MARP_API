@@ -2374,6 +2374,8 @@ const buildOpenApiSpec = () => {
                                     done: { type: 'integer', nullable: true, example: 4210 },
                                     total: { type: 'integer', nullable: true, example: 9000 },
                                     unit: { type: 'string', nullable: true, example: 'frames' },
+                                    phase: { type: 'string', maxLength: 64, nullable: true, example: 'inferring', description: 'Worker-defined phase for this job type.' },
+                                    elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375 },
                                 },
                             },
                             job: {
@@ -2469,6 +2471,8 @@ const buildOpenApiSpec = () => {
                             progress_done: { type: 'integer', nullable: true, example: 4210 },
                             progress_total: { type: 'integer', nullable: true, example: 9000 },
                             progress_unit: { type: 'string', nullable: true, example: 'frames' },
+                            progress_phase: { type: 'string', maxLength: 64, nullable: true, example: 'inferring', description: 'Latest worker-defined phase for this job type.' },
+                            progress_elapsed_s: { type: 'number', minimum: 0, nullable: true, example: 142.375 },
                             capabilities_snapshot: {
                                 type: 'object',
                                 nullable: true,
@@ -2599,6 +2603,8 @@ const buildOpenApiSpec = () => {
                                     done: { type: 'integer', example: 4210 },
                                     total: { type: 'integer', example: 9000 },
                                     unit: { type: 'string', example: 'frames' },
+                                    phase: { type: 'string', maxLength: 64, example: 'inferring', description: 'Current worker-defined phase. Future job types may use their own vocabulary.' },
+                                    elapsed_s: { type: 'number', minimum: 0, example: 142.375 },
                                 },
                             },
                         },
