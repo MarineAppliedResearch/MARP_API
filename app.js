@@ -110,6 +110,7 @@ const registerTimecodeSyncRoutes = require('./routes/timecode_sync.routes');
 // the route registration because it has to run before the API-wide body parser
 // -- see where it is called below.
 const registerGpuRoutes = require('./routes/gpu.routes');
+const registerWorkerProvisioningRoutes = require('./routes/worker_provisioning.routes');
 const { mountGpuBodyParsing } = require('./routes/gpu.routes');
 const registerMosaicRoutes = require('./routes/mosaic.routes');
 const registerMosaicCommitRoutes = require('./routes/mosaic-commit.routes');
@@ -349,6 +350,7 @@ registerAuthRoutes(app);
 registerUsersRoutes(app);
 registerTokensRoutes(app);
 registerGpuRoutes(app);
+registerWorkerProvisioningRoutes(app);
 registerMosaicRoutes(app);
 registerMosaicCommitRoutes(app);
 registerMosaicCorrectionRoutes(app);

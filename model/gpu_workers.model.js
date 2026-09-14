@@ -47,6 +47,14 @@ module.exports = (sequelize, DataTypes) => {
                 as: 'attempts',
                 foreignKey: 'worker_id',
             });
+            this.belongsTo(models.service_tokens, {
+                as: 'serviceToken',
+                foreignKey: 'service_token_id',
+            });
+            this.belongsTo(models.worker_releases, {
+                as: 'desiredRelease',
+                foreignKey: 'desired_release_id',
+            });
         }
     }
 
@@ -111,6 +119,14 @@ module.exports = (sequelize, DataTypes) => {
                 allowNull: true,
                 comment: 'GPUs and VRAM, driver, disk, engines, ranges supported. Reported by the worker and not verified.',
             },
+            service_token_id: { type: DataTypes.INTEGER, allowNull: true, unique: true },
+            platform: { type: DataTypes.STRING(32), allowNull: true },
+            architecture: { type: DataTypes.STRING(32), allowNull: true },
+            compute_runtime: { type: DataTypes.STRING(32), allowNull: true },
+            desired_release_id: { type: DataTypes.INTEGER, allowNull: true },
+            update_state: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'current' },
+            update_message: { type: DataTypes.TEXT, allowNull: true },
+            update_reported_at: { type: DataTypes.DATE, allowNull: true },
         },
         {
             sequelize,

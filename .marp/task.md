@@ -1,74 +1,72 @@
 ---
-task: MarineAppliedResearch/MARP_API#187
-repos: [MARP_API, marp-inference-worker]
+task: MarineAppliedResearch/MARP_API#189
+repos: [marp-api, marp-inference-worker]
 status: implementing
 needs: []
 ---
 
 ## Goal
 
-An inference worker can obtain a registered model from MARP API without sharing the
-API host's filesystem. The API operator stages the weights in local ignored storage;
-workers download them with their existing service credential and reuse verified cached
-bytes on later jobs.
+An administrator creates a one-time activation code, and a new Windows worker exchanges it
+once for its own revocable machine credential so installation requires no MARP account login
+or manually provisioned shared token.
 
 ## Requirements
 
-- **R1** — An authenticated worker may stream a registered model's artifact by model id.
-- **R2** — Artifact paths resolve only beneath a configurable API-local storage root.
-- **R3** — Missing model rows, missing storage paths, and missing files return the normal
-  API error contract without revealing host filesystem paths.
-- **R4** — The dive submission script puts the API artifact route in the job spec instead
-  of a machine-local path.
-- **R5** — A checked-in, dry-run-by-default staging script copies weights to the registered
-  model's storage path and reports their SHA-256; repeated application is safe.
-- **R6** — The worker presents its existing bearer credential while downloading and still
-  refuses bytes whose SHA-256 differs from the job spec.
-- **R7** — A second request for the same model and hash uses the worker cache without an
-  HTTP download.
-- **R8** — This repair adds no database column and does not implement the general storage
-  service tracked by #120.
+- **R1** — An administrator may create a labeled activation code with a bounded expiry.
+- **R2** — Activation consumes the code transactionally exactly once and enrolls the submitted
+  durable machine identity, platform, architecture, runtime, and worker version.
+- **R3** — Activation returns a new bearer credential only once and persists only its hash and
+  safe prefix through the existing service-token system.
+- **R4** — The credential is bound to one worker identity. Service-token GPU operations cannot
+  poll, heartbeat, report, upload, or check in for another worker.
+- **R5** — Revoking the machine token stops only that worker; existing permission-based human
+  administrator access remains unchanged.
+- **R6** — Approved worker releases retain immutable version, platform, architecture, runtime,
+  URL, size, and SHA-256 metadata, with an optional durable desired release per worker.
+- **R7** — Schema changes are additive and preserve every existing worker, job, attempt, token,
+  and scientific record.
 
 ## Open assumptions
 
-- [x] **A1 · architectural · blocking** — answered 2026-09-14: use a temporary local
-  directory on the API machine now; defer the general file server.
-- [x] **A2 · security/permissions · blocking** — answered 2026-09-14: workers authenticate
-  model requests with their existing MARP API service credential.
-- [x] **A3 · database/schema · blocking** — answered 2026-09-14: keep `ml_models.storage_path`
-  as the registered relative artifact location and add no schema.
-- [x] **A4 · behavioural · blocking** — answered 2026-09-14: workers verify and cache the
-  model, reusing the cached version when requested again.
+- [x] **A1 · security/API contract · blocking** — answered 2026-09-14: use a short-lived,
+  one-time activation code to mint one narrowly scoped credential unique to the machine.
+- [x] **A2 · permissions · blocking** — answered 2026-09-14: human administrators keep their
+  permission-based access; machine credentials additionally enforce their bound worker id.
+- [x] **A3 · distribution · blocking** — answered 2026-09-14: MARP_API approves release
+  metadata while immutable packages may live on GitHub Releases.
+- [x] **A4 · database/schema · blocking** — settled by the existing implementation: reuse
+  service clients and hashed service tokens, adding activation and release rows only.
 
 ## Decisions
 
-- **2026-09-14** — Resolve registered relative paths under `MODEL_STORAGE_ROOT`, whose
-  development default is ignored `.marp/local` storage.
-- **2026-09-14** — Gate downloads with `jobs:execute`, the permission already held by a
-  worker executing a job; model registry editing permissions remain separate.
-- **2026-09-14** — Use Express file streaming, including its standard byte-range handling.
+- **2026-09-14** — Restore the previously implemented provisioning boundary from
+  `backup-11-installer-scope`, then reconcile it with current `develop` and issue #187's model
+  delivery rather than merging that stale branch.
 
 ## Plan
 
-1. Add safe model artifact path resolution and an authenticated streaming route.
-2. Add the repeatable local staging command and remove the local worker path default.
-3. Teach the worker cache download to use the coordinator URL and bearer credential.
-4. Add focused API and worker tests, then write the G3 verification package.
+1. Add the activation/release migration and Sequelize models.
+2. Restore provisioning repository, service, controller, routes, and registration.
+3. Bind machine-token calls to their own worker without changing human authorization.
+4. Regenerate the OpenAPI contract and write the focused verification plan.
+5. After plan approval, migrate and test only the provisioning/GPU groups against this
+   workspace's disposable database, then activate the second computer.
 
 ## Acceptance criteria
 
-- A worker-only token can download the exact registered bytes from the API.
-- An unregistered, absent, or escaping artifact cannot be downloaded.
-- A submitted inference spec contains an API route rather than a Windows filesystem path.
-- The worker downloads once, verifies the hash, and reuses that cache entry thereafter.
+- A fresh code activates once and cannot be replayed.
+- The returned credential enrolls and operates only its own worker.
+- Two independently activated computers appear as separate workers and revoking one leaves the
+  other operational.
+- The installer can obtain runtime-compatible release metadata without an inbound worker port.
 
 ## Test plan
 
-See `.marp/verification.md`; awaiting human review before execution.
+Written at G3 after implementation and reviewed before execution.
 
 ## Status
 
-- **Gate:** ready-for-pr
-- **Notes:** Focused route tests, staging, worker tests, and real API/Jellyfin/CUDA jobs pass.
-  The ML group also exposed an unrelated stale observation-sequence failure recorded in
-  `.marp/verification.md`.
+- **Gate:** implementing
+- **Notes:** No production database or live service configuration is used. Migration checks and
+  API tests use only this harness-created disposable database.

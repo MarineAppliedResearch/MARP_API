@@ -2717,8 +2717,9 @@ const buildOpenApiSpec = () => {
                     GpuArtifactCheckRequest: {
                         type: 'object',
                         description: 'The first half of the hand-off: asking whether MARP already holds these bytes.',
-                        required: ['sha256'],
+                        required: ['worker_id', 'sha256'],
                         properties: {
+                            worker_id: { type: 'integer', example: 3 },
                             sha256: { type: 'string', example: 'd5f2c1b0a9e8d7c6b5a4938271605f4e3d2c1b0a9e8d7c6b5a4938271605f4e3', description: '64 lower-case hexadecimal characters. One spelling only, so two spellings of a hash cannot each get their own copy.' },
                             bytes: { type: 'integer', minimum: 0, example: 41205310, description: 'How large the file is, as the worker measures it.' },
                         },
