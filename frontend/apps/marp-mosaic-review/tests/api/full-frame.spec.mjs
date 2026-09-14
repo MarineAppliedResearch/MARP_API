@@ -32,14 +32,24 @@ test('#176/#178 details identify the observation and open its cached full frame'
       const viewer = page.locator('.frame-viewer');
       await expect(viewer).toBeVisible();
       await expect(viewer.locator('img')).toBeVisible();
-      await expect(viewer.locator('.frame-viewer__box')).toBeVisible();
-      const label = viewer.locator('.frame-viewer__box-label');
-      await expect(label).toContainText(`Observation ${id}`);
-      const fittedLabelSize = await label.evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+      const box = viewer.locator('.frame-viewer__box');
+      const speciesLabel = viewer.locator('.frame-viewer__box-label--species');
+      const observationLabel = viewer.locator('.frame-viewer__box-label--observation');
+      await expect(box).toBeVisible();
+      await expect(speciesLabel).not.toBeEmpty();
+      await expect(observationLabel).toHaveText(`Observation ${id}`);
+      await expect.poll(async () => {
+        const [boxWidth, labelWidth] = await Promise.all([
+          box.evaluate((node) => node.getBoundingClientRect().width),
+          speciesLabel.evaluate((node) => node.getBoundingClientRect().width)
+        ]);
+        return Math.abs(boxWidth - labelWidth);
+      }).toBeLessThan(1);
+      const fittedLabelWidth = await speciesLabel.evaluate((node) => node.getBoundingClientRect().width);
       await viewer.getByRole('button', { name: 'Zoom in' }).click();
       await expect(viewer.locator('output')).toHaveText('150%');
-      await expect.poll(() => label.evaluate((node) => parseFloat(getComputedStyle(node).fontSize)))
-        .toBeCloseTo(fittedLabelSize * 1.5, 4);
+      await expect.poll(() => speciesLabel.evaluate((node) => node.getBoundingClientRect().width))
+        .toBeCloseTo(fittedLabelWidth * 1.5, 0);
       await viewer.getByRole('button', { name: 'Zoom to box' }).click();
       await expect.poll(async () => Number((await viewer.locator('output').textContent()).replace('%', '')))
         .toBeGreaterThan(150);

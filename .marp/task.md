@@ -50,8 +50,10 @@ following milestone in #181.
   through MARP_API under `observations:read` with revalidation-safe caching. API responses
   never expose a Jellyfin credential, stream URL, or server filesystem path.
 - **R11** — The full frame can show the observation's bounding box at the same frame as a
-  non-destructive viewer overlay. The visible overlay labels the species and observation
-  ID and hides with the box; neither label nor box is baked into or confused with the
+  non-destructive viewer overlay. The species label sits above the box and the observation
+  ID below it; each is approximately the box width, scales conservatively with that width,
+  and uses light type on a nearly transparent background so it does not obscure the frame.
+  Both labels hide with the box; neither label nor box is baked into or confused with the
   source image.
 - **R12** — Full-frame failures say whether retrying can help. Transient failures offer an
   explicit retry at interactive priority; permanent failures such as an unresolvable video,

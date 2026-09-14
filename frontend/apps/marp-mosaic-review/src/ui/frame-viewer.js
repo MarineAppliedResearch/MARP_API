@@ -41,7 +41,6 @@ function wirePan(viewport, image, output, fitWidth) {
       liveZoom = pinchZoom(pinch.zoom, pinch.distance,
         pointerDistance([...pointers.values()].slice(0, 2)));
       image.style.width = `${fitWidth * liveZoom}px`;
-      image.style.setProperty('--frame-zoom', liveZoom);
       output.textContent = `${Math.round(liveZoom * 100)}%`;
       return;
     }
@@ -113,7 +112,7 @@ export function renderFrameViewer() {
     <div class="frame-viewer__viewport" tabindex="0" aria-label="Frame; drag to pan when zoomed">
       <div class="frame-viewer__image">
         <img src="${MarpBackend.fullFrameUrl(row)}" alt="Complete video frame for observation ${row.observation_id}">
-        ${box && state.frameViewer.overlay ? `<span class="frame-viewer__box" style="left:${percent(box.left)};top:${percent(box.top)};width:${percent(box.width)};height:${percent(box.height)}"><span class="frame-viewer__box-label"></span></span>` : ''}
+        ${box && state.frameViewer.overlay ? `<span class="frame-viewer__box" style="left:${percent(box.left)};top:${percent(box.top)};width:${percent(box.width)};height:${percent(box.height)}"><span class="frame-viewer__box-label frame-viewer__box-label--species"></span><span class="frame-viewer__box-label frame-viewer__box-label--observation"></span></span>` : ''}
       </div>
     </div>
   </div>`);
@@ -128,9 +127,10 @@ export function renderFrameViewer() {
   const fitWidth = fittedWidth(viewport.clientWidth, viewport.clientHeight,
     row.full_frame_width, row.full_frame_height);
   image.style.width = `${fitWidth * zoom}px`;
-  image.style.setProperty('--frame-zoom', zoom);
-  const boxLabel = dialog.querySelector('.frame-viewer__box-label');
-  if (boxLabel) boxLabel.textContent = `${row.comname || 'Unknown species'} · Observation ${row.observation_id}`;
+  const speciesLabel = dialog.querySelector('.frame-viewer__box-label--species');
+  const observationLabel = dialog.querySelector('.frame-viewer__box-label--observation');
+  if (speciesLabel) speciesLabel.textContent = row.comname || 'Unknown species';
+  if (observationLabel) observationLabel.textContent = `Observation ${row.observation_id}`;
   dialog.querySelector('[data-frame-act="box-fit"]').addEventListener('click', () => {
     focusBoxAfterRender = row.observation_id;
     actions.setFullFrameZoom(zoomForBox(row.full_frame_box,
