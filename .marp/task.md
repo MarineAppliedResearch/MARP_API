@@ -1,117 +1,128 @@
 ---
-task: MarineAppliedResearch/MARP_API#133
-repos: [marp-api]
-status: ready-for-pr
-needs: [production-jellyfin]
+task: MarineAppliedResearch/marp-inference-worker#10
+repos: [marp-inference-worker, marp-api]
+status: design
+needs: []
 ---
 
 ## Goal
 
-When a GPU worker streams a Jellyfin-backed video, Jellyfin's administration views show
-which MARP worker and slot are reading which item and their current position. MARP closes
-that Jellyfin session whenever the attempt stops reading, while Jellyfin failures never
-change the inference job's outcome.
+While a distributed GPU attempt is running, MARP shows what stage the worker is in and a
+usable frame proportion. An operator can distinguish startup, model/video preparation,
+inference, reduction, and result publication instead of seeing a motionless counter with no
+total and guessing whether the job is slow or stuck.
 
 ## Requirements
 
-- **R1** -- A successfully leased Jellyfin-backed attempt reports playback started after
-  its video is resolved. Jellyfin identifies the session as a MARP GPU worker and displays
-  the enrolled worker name and slot.
-- **R2** -- A heartbeat carrying frame progress reports the absolute media position to
-  Jellyfin. The position is `(range.start_frame + progress.done)` at MARP's established
-  25-frames-per-second timebase and is bounded to the submitted range.
-- **R3** -- MARP reports playback stopped when an attempt succeeds, fails, is cancelled,
-  is paused or abandoned by a control response, or loses an expired lease. A stopped
-  session is not left visible as active in Jellyfin.
-- **R4** -- Playback reporting is best effort. Authentication, network, or Jellyfin API
-  failures are logged with attempt context and never prevent a lease, heartbeat response,
-  result publication, cancellation, retry, or lease reclamation.
-- **R5** -- Jobs submitted with a bare video URL do not call Jellyfin playback reporting.
-  Only a stored `spec.video.jellyfin_item_id` opts an attempt into this lifecycle.
-- **R6** -- This issue adds no worker-side Jellyfin reporting protocol and gives workers no
-  standing Jellyfin credentials. MARP_API reports playback now. The design remains compatible
-  with the planned future flow in which MARP_API issues a Jellyfin token to a worker for its
-  media access.
-- **R7** -- Reporting uses MARP_API's configured Jellyfin service account. The production
-  server provides no playback-start operation that creates an active session without also
-  updating that account's playback data, so the accepted fallback is that GPU activity may
-  change history, play count, last-played time, played state, and resume position for the
-  service account only.
-- **R8** -- The information needed to close a Jellyfin session survives an MARP_API restart
-  and does not depend only on an in-memory token or map.
-- **R9** -- Repeated worker reports and result retries do not create duplicate active
-  sessions or repeatedly close an already-closed session.
-- **R10** -- Verification covers the coordinator lifecycle against a local disposable
-  PostgreSQL database and confirms the visible session lifecycle against the configured
-  production Jellyfin server without changing Jellyfin configuration.
+- **R1** — A leased frame-range attempt has a non-null total before its first processed
+  frame. The total is the half-open range length, `end_frame - start_frame`.
+- **R2** — The worker's live progress snapshot includes a phase that describes the work it
+  is performing, including preparation, model/video setup, seeking, inference, reduction,
+  and publication.
+- **R3** — Phase changes travel through the existing child-process event channel and
+  heartbeat request. No inbound connection, new worker endpoint, or second reporting loop is
+  added.
+- **R4** — MARP_API accepts an optional phase from new workers, persists the latest value on
+  `gpu_job_attempts`, and returns it in both job detail and worker-pool views.
+- **R5** — Compatibility is additive: an older worker that omits phase continues to
+  heartbeat, while a newer worker remains usable with a coordinator that ignores the extra
+  field.
+- **R6** — A refused heartbeat with the wrong worker or lease epoch writes no total, phase,
+  elapsed time, state, or heartbeat timestamp.
+- **R7** — Terminal attempts retain their last accepted progress snapshot so history can
+  explain where work ended.
+- **R8** — Existing frame counts, attempt states, control actions, event batching, result
+  publication, and inference output are unchanged.
+- **R9** — The change is verified across the real worker HTTP client, MARP_API, and a
+  disposable PostgreSQL database. A test must observe the phase and total through the API,
+  rather than only inspecting an in-memory worker object.
+- **R10** — This issue supplies data for the ML dashboard but does not implement or redesign
+  the dashboard.
+- **R11** — The inaccurate `job_pressure.active_jobs = 0` placeholder is recorded as an
+  adjacent defect and left outside this issue.
 
 ## Open assumptions
 
-- [x] **A1 · security/permissions · blocking** -- answered 2026-09-13: the worker keeps no
-  Jellyfin credentials; MARP_API reports with its configured service account.
-- [x] **A2 · data-meaning · blocking** -- answered 2026-09-13: prefer no Jellyfin history or
-  resume changes, but accept them when active-session reporting cannot be separated. The
-  inspected production server's playback-start path always updates authenticated-user data,
-  so reporting will affect only the configured service account.
-- [x] **A3 · environment · blocking** -- answered 2026-09-13: perform the final media-tier
-  verification against the configured production Jellyfin server, with no configuration
-  writes.
-- [x] **A4 · behavioural · blocking** -- answered 2026-09-13: use one session per
-  independently leased piece and worker slot, because pieces can run concurrently and move
-  between workers.
-- [x] **A5 · database/schema · blocking** -- answered 2026-09-13: add no playback
-  columns or rows. Reconstruct a session after restart from the existing attempt, job, worker,
-  and slot plus Jellyfin's live session listing.
+- [ ] **A1 · api contract/behavioural · blocking** — Which exact phase vocabulary should be
+  published? The implementation needs stable strings that tests, stored rows, and the
+  dashboard can share. The code's real stages support `starting`, `opening_video`,
+  `loading_model`, `seeking`, `inferring`, `reducing`, and `publishing`. A proposed
+  `finishing` phase would require one extra heartbeat after artifact upload just before the
+  terminal result, and may be too brief to be useful. **Recommendation:** use the seven real
+  stages above, omit `finishing`, and preserve the engine's actual order instead of
+  rearranging work to match a label list.
+- [ ] **A2 · database/schema · blocking** — Should MARP_API persist the worker's existing
+  `elapsed_s` alongside phase? The worker already sends it and MARP_API currently discards
+  it. Persisting it as `progress_elapsed_s` would let a dashboard show average throughput
+  after reload; phase plus `last_heartbeat_at` alone says what is alive but not how long the
+  attempt has spent getting there. **Recommendation:** add it in the same additive migration
+  as `progress_phase`, because this issue's purpose is distinguishing slow from stuck and
+  the data already crosses the wire.
+- [ ] **A3 · api contract/audit · blocking** — Should every phase transition also be durable
+  in `gpu_job_events`, or only the latest phase be kept on the attempt? **Recommendation:**
+  emit one ordinary structured `log` event per transition, using the existing event kind and
+  table. Seven small events per attempt preserve the history without adding an event kind or
+  schema.
+- [ ] **A4 · api contract · blocking** — Should MARP_API enforce the worker's phase
+  vocabulary? A closed enum makes typographical errors fail but forces worker and
+  coordinator releases to move together when training adds new phases.
+  **Recommendation:** validate a non-empty string with a short length limit, store it as
+  `varchar`, and let the dashboard display an unknown future phase as text.
+- [x] **A5 · cross-repository · blocking** — settled by inspection 2026-09-13: this is one
+  cross-repository change. The worker produces the phase; MARP_API owns the heartbeat
+  contract, migration, persistence, and query shapes. Neither half alone satisfies #10.
+- [x] **A6 · product/UI · blocking** — settled by issue #10 and MARP_API#104: dashboard
+  rendering remains in the dashboard implementation. This issue ends when its API data is
+  correct and observable.
+- [x] **A7 · scope · blocking** — settled by repository rules: do not repair the unrelated
+  `job_pressure` placeholder while touching progress. Report it and leave it for its own
+  issue.
 
 ## Decisions
 
-- **2026-09-13** -- Coordinate playback reporting in MARP_API; workers continue to receive
-  only playable URLs.
-- **2026-09-13** -- Use the configured Jellyfin service account and accept its unavoidable
-  playback-history changes rather than changing a human user's history.
-- **2026-09-13** -- Reporting errors are operational evidence, never inference failures.
-- **2026-09-13** -- Store no Jellyfin playback metadata in PostgreSQL. Reconstruct the
-  worker-slot identity from existing orchestration rows and read the active position from
-  Jellyfin when closing a session after restart.
-- **2026-09-13** -- A later phase will authenticate workers to Jellyfin with tokens issued by
-  MARP_API. Issue #133 neither implements nor prevents that future worker media-access flow.
+- **2026-09-13** — Keep the worker-pull architecture and existing heartbeat channel.
+- **2026-09-13** — Initialize the total from the job's required half-open range; probing the
+  media container is not needed to know the leased piece size.
+- **2026-09-13** — Store only current progress on the attempt. Any transition history uses
+  the existing append-only event stream.
+- **2026-09-13** — The worker issue is the coordinating issue for both repositories; API
+  commits and the pull request reference it in full.
 
 ## Plan
 
-1. Use one stable Jellyfin session identity for each enrolled worker and slot.
-2. Reconstruct playback identity from existing orchestration rows and Jellyfin's live
-   session listing, without a migration or new database rows.
-3. Wrap the existing Jellyfin start/progress/stop utilities in a best-effort GPU-attempt
-   lifecycle service.
-4. Start reporting after Jellyfin video resolution, update from accepted frame heartbeats,
-   and stop on every terminal or relinquished-lease path.
-5. Add named HTTP/database tests with Jellyfin stubbed at its repository boundary.
-6. Write the G3 verification plan for human review before running tests, including a
-   controlled production-Jellyfin media check.
+1. Settle A1–A4 and record the shared contract in both task branches.
+2. Initialize worker progress from the leased range and carry phase through child events,
+   parent state, local status, in-flight recovery, and heartbeat payloads.
+3. Mark the actual tracking and publication boundaries without changing their order.
+4. Add an additive MARP_API migration and model fields for the accepted live snapshot.
+5. Validate and persist the optional heartbeat fields, expose them through job and worker
+   reads, and regenerate the API and developer documentation.
+6. Write the G3 cross-repository verification plan, including a real worker/API/database
+   round trip, for human approval before running it.
 
 ## Acceptance criteria
 
-- A Jellyfin-backed attempt appears in Jellyfin with its MARP worker and slot identity while
-  active and disappears after every way that attempt can stop.
-- Jellyfin's displayed position follows the worker's absolute frame position.
-- Concurrent worker slots appear as distinct sessions.
-- A restarted coordinator can close playback belonging to an expired attempt.
-- A Jellyfin outage cannot change job state or prevent worker control responses.
-- URL-backed attempts never create Jellyfin sessions.
-- Production verification records the unavoidable service-account history effect and does
-  not change server configuration.
+- Before the first detection, a running attempt read from MARP_API has a total and a
+  meaningful current phase.
+- During a real piece, the phase advances through the stages the worker actually enters and
+  the frame count advances during inference.
+- After terminal reporting, the attempt retains its final accepted snapshot.
+- Old heartbeat bodies remain valid and invalid lease holders remain unable to modify the
+  attempt.
+- The worker, API, and disposable database agree on the same phase and total end to end.
 
 ## Test plan
 
-The detailed requirement-to-test map and controlled production-Jellyfin procedure are in
-`.marp/verification.md`. The approved plan has been run, including the controlled
-production lifecycle.
+Written at G3 after A1–A4 are answered. The focused worker runner tests and MARP_API GPU
+group will cover each repository; the end-to-end tier must run the real worker client
+against the isolated API and its disposable PostgreSQL database.
 
 ## Status
 
-- **Gate:** ready-for-pr. G4 evidence is recorded; G5 remains the human's decision.
-- **Notes:** Targeted GPU and media groups pass against disposable PostgreSQL. A controlled
-  production check showed the worker and slot session, exact heartbeat position, restart
-  cleanup, terminal cleanup, and idempotent retry. Jellyfin changed only the configured
-  service account's item history, as accepted. No playback schema or worker contract was
-  added.
+- **Gate:** design. G1 is blocked on A1–A4.
+- **Notes:** The worker already sends frame progress and `elapsed_s`, but initializes total
+  to null and carries no phase. MARP_API accepts only `done`, `total`, and `unit`,
+  discarding other progress keys. The existing event stream already stores structured
+  metrics, while worker-pool and job-detail queries already expose the current attempt row.
+  The API workspace is isolated because this change requires a migration and another
+  checkout has unrelated work in progress.
