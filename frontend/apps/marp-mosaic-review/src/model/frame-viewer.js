@@ -2,6 +2,20 @@
 
 export const clampZoom = (value) => Math.min(8, Math.max(1, Number(value) || 1));
 
+export function fullFrameActionState(row) {
+  const ready = row.full_frame_status === 'ready';
+  const busy = row.full_frame_status === 'queued';
+  const failed = row.full_frame_status === 'failed';
+  const permanent = failed && Boolean(row.full_frame_permanent);
+  return {
+    action: ready ? 'open-full-frame' : 'request-full-frame',
+    label: ready ? 'View full frame' : busy ? 'Preparing full frame…'
+      : permanent ? 'Full frame unavailable' : failed ? 'Try full frame again'
+        : 'Request full frame',
+    disabled: busy || permanent || row.thumbnail_status !== 'ready'
+  };
+}
+
 /** Fits an image wholly inside a viewport without changing its aspect ratio. */
 export function fittedWidth(viewportWidth, viewportHeight, imageWidth, imageHeight) {
   const availableWidth = Math.max(1, Number(viewportWidth) || 1);

@@ -8,6 +8,7 @@
 import { state, actions, MODES } from '../store.js';
 import { acceptedValue, existingNote, existingReason, existingState, markKind, MARK_EXCEPT } from '../model/modes.js';
 import { copyObservationId, observationIdText } from '../model/observation-id.js';
+import { fullFrameActionState } from '../model/frame-viewer.js';
 import { $, el, ICON } from './dom.js';
 import { acceptIcon, markIcon } from './tile.js';
 
@@ -184,12 +185,8 @@ export async function renderPicker() {
       title="Change this observation's species">Change species&hellip;</button>
   </div>` : '';
   const fullFrameReady = row.full_frame_status === 'ready';
-  const fullFrameBusy = row.full_frame_status === 'queued';
   const fullFrameFailed = row.full_frame_status === 'failed';
-  const fullFrameAction = fullFrameReady ? 'open-full-frame' : 'request-full-frame';
-  const fullFrameLabel = fullFrameReady ? 'View full frame'
-    : fullFrameBusy ? 'Preparing full frame…'
-      : fullFrameFailed ? 'Try full frame again' : 'Request full frame';
+  const frameAction = fullFrameActionState(row);
 
   const panel = el(`<div class="pick" data-picker-id="${id}" role="dialog" aria-label="${label} details">
       <h4><span class="fl">${isException ? markIcon() : acceptIcon()}</span>${label}<span class="opt">Details optional</span></h4>
@@ -202,8 +199,8 @@ export async function renderPicker() {
       <div class="full-frame-state">
         <label><input type="checkbox" disabled ${fullFrameReady ? 'checked' : ''}>
           Full frame loaded</label>
-        <button type="button" class="ghost" data-act="${fullFrameAction}"
-          ${fullFrameBusy || row.thumbnail_status !== 'ready' ? 'disabled' : ''}>${fullFrameLabel}</button>
+        <button type="button" class="ghost" data-act="${frameAction.action}"
+          ${frameAction.disabled ? 'disabled' : ''}>${frameAction.label}</button>
         ${fullFrameFailed && row.full_frame_reason
           ? '<span class="full-frame-state__reason" data-full-frame-reason></span>' : ''}
       </div>

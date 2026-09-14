@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clampZoom, fittedWidth, overlayRect } from '../../src/model/frame-viewer.js';
+import {
+  clampZoom, fittedWidth, fullFrameActionState, overlayRect
+} from '../../src/model/frame-viewer.js';
 
 test('#176: the centre-origin scientific box becomes a top-left viewer overlay', () => {
   assert.deepEqual(overlayRect({ x: .5, y: .5, width: .2, height: .4 }),
@@ -21,4 +23,15 @@ test('#176: zoom stays inside the viewer range', () => {
 test('#176 R9: fit keeps landscape and portrait frames wholly in the viewport', () => {
   assert.equal(fittedWidth(1200, 700, 1920, 1080), 1200);
   assert.equal(fittedWidth(1200, 700, 1080, 1920), 393.75);
+});
+
+test('#176 R12: a permanent failure cannot offer another extraction attempt', () => {
+  assert.deepEqual(fullFrameActionState({
+    thumbnail_status: 'ready', full_frame_status: 'failed', full_frame_permanent: true
+  }), {
+    action: 'request-full-frame', label: 'Full frame unavailable', disabled: true
+  });
+  assert.equal(fullFrameActionState({
+    thumbnail_status: 'ready', full_frame_status: 'failed', full_frame_permanent: false
+  }).disabled, false);
 });
