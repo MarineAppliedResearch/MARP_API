@@ -25,6 +25,22 @@ export function fittedWidth(viewportWidth, viewportHeight, imageWidth, imageHeig
   return Math.min(availableWidth, availableHeight * (width / height));
 }
 
+export function pinchZoom(startZoom, startDistance, currentDistance) {
+  const baseline = Number(startDistance);
+  if (!(baseline > 0)) return clampZoom(startZoom);
+  return clampZoom(Number(startZoom) * (Number(currentDistance) / baseline));
+}
+
+export function zoomForBox(box, viewportWidth, viewportHeight, imageWidth, imageHeight) {
+  const rectangle = overlayRect(box);
+  if (!rectangle || rectangle.width === 0 || rectangle.height === 0) return 1;
+  const width = fittedWidth(viewportWidth, viewportHeight, imageWidth, imageHeight);
+  const height = width * (Number(imageHeight) / Number(imageWidth));
+  const horizontal = Number(viewportWidth) / (width * rectangle.width);
+  const vertical = Number(viewportHeight) / (height * rectangle.height);
+  return clampZoom(Math.min(horizontal, vertical) * 0.8);
+}
+
 /** Keyframe boxes are centre-origin; CSS rectangles are top-left-origin. */
 export function overlayRect(box) {
   if (!box) return null;

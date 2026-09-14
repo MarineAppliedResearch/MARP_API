@@ -137,5 +137,8 @@ describe('the legacy dashboard shell', () => {
         }
         expect(admin).toMatch(/fetch\('\/api\/v2\/admin\/review-imagery'/);
         expect(admin).toMatch(/method:\s*'PUT'/);
+        expect(admin).toMatch(/removes the least recently viewed/);
+        expect(admin).toMatch(/Saving a maximum below current usage starts eviction immediately/);
+        expect(admin).toMatch(/removing one never removes an observation or a review/);
     });
 });

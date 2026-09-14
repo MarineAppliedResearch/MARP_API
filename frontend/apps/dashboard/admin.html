@@ -173,12 +173,20 @@
 
     <div class="card p-3 mt-3" id="reviewImageryCard">
       <div class="card-title mb-2"><i class="bi bi-device-ssd"></i> Review imagery storage</div>
-      <p class="text-muted small">One managed cache for Mosaic thumbnails and requested full frames.</p>
+      <p class="text-muted small mb-1">One managed cache holds the square Mosaic thumbnails and the
+        complete video frames reviewers request. These files are copies that MARP can generate again;
+        removing one never removes an observation or a review.</p>
+      <p class="text-muted small">When usage crosses the maximum, MARP removes the least recently viewed
+        files in the selected order until usage reaches the “Reduce to” percentage. This gap prevents
+        the cache from repeatedly deleting one file every time a new frame is opened.</p>
+      <p class="text-warning small"><strong>Saving a maximum below current usage starts eviction immediately.</strong>
+        Evicted images will be regenerated the next time somebody requests them.</p>
       <p class="text-danger small" id="reviewImageryError" hidden></p>
       <form id="reviewImageryForm" class="row g-3 align-items-end">
         <div class="col-12 col-md-4">
           <label class="form-label" for="reviewImageryMaxGiB">Maximum cache size (GiB)</label>
           <input class="form-control" id="reviewImageryMaxGiB" type="number" min="1" step="1" required>
+          <div class="form-text">The total disk limit shared by thumbnails and full frames.</div>
         </div>
         <div class="col-12 col-md-4">
           <label class="form-label" for="reviewImageryOrder">Eviction order</label>
@@ -187,19 +195,21 @@
             <option value="oldest_first">Oldest imagery regardless of kind</option>
             <option value="thumbnails_first">Oldest thumbnails, then full frames</option>
           </select>
+          <div class="form-text">Choose which least-recently-viewed files are removed first.</div>
         </div>
         <div class="col-12 col-md-2">
           <label class="form-label" for="reviewImageryWatermark">Reduce to (%)</label>
           <input class="form-control" id="reviewImageryWatermark" type="number" min="50" max="99" step="1" required>
+          <div class="form-text">The percentage of the maximum left in use after eviction runs.</div>
         </div>
         <div class="col-12 col-md-2">
           <button class="btn btn-primary w-100" type="submit">Save storage settings</button>
         </div>
       </form>
       <div class="row g-3 mt-1" aria-live="polite">
-        <div class="col-12 col-md-4"><strong>Total used</strong><div id="reviewImageryTotal">Loading…</div></div>
-        <div class="col-6 col-md-2"><strong>Thumbnails</strong><div id="reviewImageryThumbnails">—</div></div>
-        <div class="col-6 col-md-2"><strong>Full frames</strong><div id="reviewImageryFullFrames">—</div></div>
+        <div class="col-12 col-md-4"><strong>Total cache used</strong><div id="reviewImageryTotal">Loading…</div></div>
+        <div class="col-6 col-md-2"><strong>Thumbnail files</strong><div id="reviewImageryThumbnails">—</div></div>
+        <div class="col-6 col-md-2"><strong>Full-frame files</strong><div id="reviewImageryFullFrames">—</div></div>
         <div class="col-12 col-md-4"><strong>Last result</strong><div id="reviewImageryResult">—</div></div>
         <div class="col-12"><strong>Thumbnail location</strong><div class="font-monospace small text-break" id="reviewImageryThumbnailPath">—</div></div>
         <div class="col-12"><strong>Full-frame location</strong><div class="font-monospace small text-break" id="reviewImageryFullFramePath">—</div></div>

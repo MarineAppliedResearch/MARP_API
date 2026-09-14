@@ -33,10 +33,15 @@ test('#176/#178 details identify the observation and open its cached full frame'
       await expect(viewer).toBeVisible();
       await expect(viewer.locator('img')).toBeVisible();
       await expect(viewer.locator('.frame-viewer__box')).toBeVisible();
+      await expect(viewer.locator('.frame-viewer__box-label')).toContainText(`Observation ${id}`);
       await viewer.getByRole('button', { name: 'Zoom in' }).click();
       await expect(viewer.locator('output')).toHaveText('150%');
+      await viewer.getByRole('button', { name: 'Zoom to box' }).click();
+      await expect.poll(async () => Number((await viewer.locator('output').textContent()).replace('%', '')))
+        .toBeGreaterThan(150);
       await viewer.getByRole('button', { name: 'Hide box' }).click();
       await expect(viewer.locator('.frame-viewer__box')).toHaveCount(0);
+      await expect(viewer.locator('.frame-viewer__box-label')).toHaveCount(0);
 
       await page.keyboard.press('Escape');
       await expect(viewer).toHaveCount(0);

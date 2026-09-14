@@ -42,14 +42,16 @@ following milestone in #181.
   the Mosaic. Closing it restores the same page, filters, mode, tile, marks, and details
   context the reviewer had before opening it.
 - **R9** — The viewer initially fits the whole frame, supports zoom and pan by mouse,
-  touch, and keyboard, exposes a reset/fit action, prevents panning the image irretrievably
-  off-screen, and has an accessible name, focus trap, and close behavior.
+  native two-finger pinch, and keyboard, exposes reset/fit and `Zoom to box` actions,
+  prevents panning the image irretrievably off-screen, and has an accessible name, focus
+  trap, and close behavior.
 - **R10** — The served artifact preserves the decoded source frame's native pixel
   dimensions in a high-quality browser-readable image format and is privately delivered
   through MARP_API under `observations:read` with revalidation-safe caching. API responses
   never expose a Jellyfin credential, stream URL, or server filesystem path.
 - **R11** — The full frame can show the observation's bounding box at the same frame as a
-  non-destructive viewer overlay; the overlay is never baked into or confused with the
+  non-destructive viewer overlay. The visible overlay labels the species and observation
+  ID and hides with the box; neither label nor box is baked into or confused with the
   source image.
 - **R12** — Full-frame failures say whether retrying can help. Transient failures offer an
   explicit retry at interactive priority; permanent failures such as an unresolvable video,
@@ -78,7 +80,9 @@ following milestone in #181.
   separately, and the resolved storage locations. An administrator can change the maximum,
   eviction order, and low-watermark target through an `admin`-permission API; values are
   validated, persisted, survive API restarts, and become active without editing an
-  environment file or restarting the service.
+  environment file or restarting the service. The dashboard explains in plain language
+  what each setting controls, when eviction begins, what it removes, and that observations
+  and reviews are not removed.
 - **R19** — Lowering the configured maximum below current usage starts bounded eviction and
   reports progress/current usage honestly. A rejected or failed settings write leaves the
   previous limit active and gives the administrator an explicit error.

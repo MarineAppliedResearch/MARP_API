@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  clampZoom, fittedWidth, fullFrameActionState, overlayRect
+  clampZoom, fittedWidth, fullFrameActionState, overlayRect, pinchZoom, zoomForBox
 } from '../../src/model/frame-viewer.js';
 
 test('#176: the centre-origin scientific box becomes a top-left viewer overlay', () => {
@@ -23,6 +23,19 @@ test('#176: zoom stays inside the viewer range', () => {
 test('#176 R9: fit keeps landscape and portrait frames wholly in the viewport', () => {
   assert.equal(fittedWidth(1200, 700, 1920, 1080), 1200);
   assert.equal(fittedWidth(1200, 700, 1080, 1920), 393.75);
+});
+
+test('#176 R9: a two-finger distance change becomes bounded native pinch zoom', () => {
+  assert.equal(pinchZoom(1, 100, 225), 2.25);
+  assert.equal(pinchZoom(4, 100, 25), 1);
+  assert.equal(pinchZoom(4, 100, 400), 8);
+});
+
+test('#176 R9: zoom to box fills the viewport while retaining context around it', () => {
+  const zoom = zoomForBox(
+    { x: .5, y: .5, width: .2, height: .4 }, 1200, 600, 1920, 1080
+  );
+  assert.ok(Math.abs(zoom - 2) < Number.EPSILON * 4);
 });
 
 test('#176 R12: a permanent failure cannot offer another extraction attempt', () => {

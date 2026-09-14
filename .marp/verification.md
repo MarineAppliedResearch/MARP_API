@@ -10,13 +10,13 @@ this plan.
 | --- | --- | --- | --- |
 | R1–R3 | `observation-id.test.mjs`; `full-frame.spec.mjs` | unit + real browser | Every details panel shows the exact primary key; copy writes only that value; refusal selects it for manual copy; the panel and pending mark remain open. |
 | R4–R7 | `thumbnails.test.js` full-frame block | HTTP + database | A request captures the ready thumbnail's exact frame/subset, persists one job, preserves an in-flight duplicate, and shares the reviewer-priority FIFO ahead of background work. |
-| R8–R9 | `frame-viewer.test.mjs`; `full-frame.spec.mjs` | unit + real browser | The viewer fits landscape and portrait frames, zooms, pans, traps focus, toggles the box, closes with Escape, and returns to the same marked tile/details panel. |
+| R8–R9 | `frame-viewer.test.mjs`; `full-frame.spec.mjs` | unit + real browser | The viewer fits landscape and portrait frames, supports pinch and button zoom, pans, zooms directly to the box, traps focus, closes with Escape, and returns to the same marked tile/details panel. |
 | R10–R12 | `thumbnails.test.js`; approved live observation | HTTP + database + media/manual | Delivery requires `observations:read`, uses private revalidation, reports missing/retryable state, preserves native dimensions, and the generated JPEG can be judged at source quality without leaking Jellyfin details. |
 | R13 | `mosaic-query.test.js`; missing-file and replacement tests in `thumbnails.test.js` | HTTP + database | Availability rides on the normal Mosaic row, eviction clears it, and a thumbnail replacement invalidates a full frame from the old moment. |
 | R14 | Every named command below | unit + HTTP + database + browser | Each changed layer has a test that can observe its own behavior. |
 | R15 | Diff review and browser network log | source + browser | No video player, playback stream, or persistent playback lifecycle from #181 is introduced. |
 | R16–R17 | `thumbnail-storage.test.js`; cache tests in `thumbnails.test.js` | unit + database + filesystem | One internal storage boundary counts unique physical files, protects shared content-addressed bytes, evicts DB availability and bytes together, and makes evicted artifacts re-creatable. |
-| R18–R19 | admin tests in `thumbnails.test.js` and `dashboard-shell.test.js` | HTTP + database + source contract | Only admins can read/write policy; values persist and validate; lowering a limit enforces eviction; the dashboard exposes the limit, watermark, order, split usage, paths, result, and errors. |
+| R18–R19 | admin tests in `thumbnails.test.js` and `dashboard-shell.test.js` | HTTP + database + source contract | Only admins can read/write policy; values persist and validate; lowering a limit enforces eviction; the dashboard exposes and explains the limit, watermark, order, split usage, paths, result, and errors. |
 
 ## Requirements with no automated test
 
@@ -83,6 +83,8 @@ every layer it changes.
   failure leaves the preceding policy active.
 - Landscape and portrait source dimensions both fit entirely at 100%; zoom is bounded and
   panning cannot make the reset/close controls unreachable.
+- A two-finger distance change produces bounded pinch zoom, and `Zoom to box` centers the
+  labeled observation with context still visible around it.
 - A box that crosses a frame edge remains bounded to the visible image.
 - Clipboard denial leaves the exact decimal ID selected and reports the failure accessibly.
 - Inspection does not commit, withdraw, correct, delete, or create scientific review data.
