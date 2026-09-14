@@ -25,6 +25,7 @@ const crypto = require('crypto');
 
 const gpuRepository = require('../repository/gpu.repository');
 const jellyfinRepository = require('../repository/jellyfin.repository');
+const gpuPlaybackService = require('./gpu-playback.service');
 const observationIngestService = require('./observation-ingest.service');
 const logger = require('../logger/api.logger');
 const { ApiError, ERROR_CODES } = require('../middleware/error-contract.middleware');
@@ -36,6 +37,7 @@ const {
     POLL_RETRY_INTERVAL_MS,
     MAX_WORKER_NAME_LENGTH,
     MAX_WORKER_LOCAL_ID_LENGTH,
+    MAX_PROGRESS_PHASE_LENGTH,
     MAX_EVENTS_PER_BATCH,
     ARTIFACT_PATH_PREFIX,
     JOB_KINDS,
@@ -185,6 +187,19 @@ function sleep(milliseconds) {
  */
 class GpuService {
 
+    /**
+     * Reclaim expired leases and close their Jellyfin sessions.
+     *
+     * @returns {Promise<Array<Object>>} Reclaimed attempt entries.
+     */
+    async expireStaleLeases() {
+        const expired = await gpuRepository.expireStaleLeases();
+
+        await gpuPlaybackService.stopExpired(expired);
+
+        return expired;
+    }
+
     // -----------------------------------------------------------------
     // Worker-facing
     // -----------------------------------------------------------------
@@ -314,7 +329,7 @@ class GpuService {
             ? requiredInteger(body.slot_indexes[0], 'slot_indexes[0]')
             : 0;
 
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const deadline = Date.now() + (waitSeconds * 1000);
 
@@ -357,6 +372,8 @@ class GpuService {
                     // request, hammering Jellyfin as it went.
                     return null;
                 }
+
+                await gpuPlaybackService.start(lease.attempt.id);
 
                 return {
                     job_id: lease.job.id,
@@ -584,13 +601,21 @@ class GpuService {
 
         const progress = this.validateProgress(body.progress);
 
+        const parsedAttemptId = this.attemptIdFromPath(attemptId);
         const outcome = await gpuRepository.recordHeartbeat({
-            attemptId: this.attemptIdFromPath(attemptId),
+            attemptId: parsedAttemptId,
             workerId,
             leaseEpoch,
             state: body.state,
             progress,
         });
+
+        // A refused heartbeat carries no accepted attempt. It may have named a
+        // live attempt owned by somebody else, so it must not close that slot's
+        // Jellyfin session merely because the refusal says "abandon".
+        if (outcome.attempt || outcome.job_state !== undefined) {
+            await gpuPlaybackService.heartbeat(parsedAttemptId, outcome.action);
+        }
 
         return {
             action: outcome.action,
@@ -700,14 +725,17 @@ class GpuService {
             }
         }
 
+        const parsedAttemptId = this.attemptIdFromPath(attemptId);
         const published = await gpuRepository.publishResult({
-            attemptId: this.attemptIdFromPath(attemptId),
+            attemptId: parsedAttemptId,
             workerId,
             leaseEpoch,
             outcome,
             failureReason: body.failure_reason,
             artifacts: named,
         });
+
+        await gpuPlaybackService.stop(parsedAttemptId);
 
         const ingest = await this.ingestPublishedJob(published);
 
@@ -862,7 +890,7 @@ class GpuService {
         // Sweeping here too, so the pool view does not show a machine as busy
         // with a job whose lease ran out an hour ago. A read that reports a state
         // the system has already abandoned is worse than a slightly slower read.
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const rows = await gpuRepository.listWorkerPoolRows();
         const workers = new Map();
@@ -901,6 +929,10 @@ class GpuService {
                     done: row.progress_done,
                     total: row.progress_total,
                     unit: row.progress_unit,
+                    phase: row.progress_phase,
+                    elapsed_s: row.progress_elapsed_s === null
+                        ? null
+                        : Number(row.progress_elapsed_s),
                 },
                 job: {
                     job_id: row.job_id,
@@ -991,7 +1023,7 @@ class GpuService {
         filters.offset = Math.max(Number(query.offset) || 0, 0);
 
         // Sweeping before a read, same reason as the pool view.
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const { jobs, total } = await gpuRepository.listJobs(filters);
 
@@ -1017,7 +1049,7 @@ class GpuService {
         // lease deadline, and only changed once some other request happened to
         // sweep. A page watching one job would show a dead machine as working
         // indefinitely.
-        await gpuRepository.expireStaleLeases();
+        await this.expireStaleLeases();
 
         const detail = await gpuRepository.getJobDetail(this.jobIdFromPath(jobId));
 
@@ -1353,7 +1385,7 @@ class GpuService {
     /**
      * Validate a heartbeat's progress block.
      *
-     * @param {*} progress - `{done, total, unit}` as supplied, or absent.
+     * @param {*} progress - `{done, total, unit, phase, elapsed_s}` as supplied, or absent.
      * @returns {Object|undefined} The block, or undefined when absent.
      * @throws {ApiError} When any field is the wrong type.
      */
@@ -1363,7 +1395,7 @@ class GpuService {
         }
 
         if (typeof progress !== 'object' || Array.isArray(progress)) {
-            invalid('progress must be an object of {done, total, unit}.');
+            invalid('progress must be an object of {done, total, unit, phase, elapsed_s}.');
         }
 
         const validated = {};
@@ -1378,6 +1410,21 @@ class GpuService {
 
         if (progress.unit !== undefined && progress.unit !== null) {
             validated.unit = requiredString(progress.unit, 'progress.unit');
+        }
+
+        if (progress.phase !== undefined && progress.phase !== null) {
+            validated.phase = requiredString(progress.phase, 'progress.phase');
+            if (validated.phase.length > MAX_PROGRESS_PHASE_LENGTH) {
+                invalid(`progress.phase must be ${MAX_PROGRESS_PHASE_LENGTH} characters or fewer.`);
+            }
+        }
+
+        if (progress.elapsed_s !== undefined && progress.elapsed_s !== null) {
+            const elapsed = Number(progress.elapsed_s);
+            if (!Number.isFinite(elapsed) || elapsed < 0) {
+                invalid('progress.elapsed_s must be a non-negative finite number.');
+            }
+            validated.elapsed_s = elapsed;
         }
 
         return validated;

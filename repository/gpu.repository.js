@@ -314,6 +314,8 @@ class GpuRepository {
                         a.progress_done,
                         a.progress_total,
                         a.progress_unit,
+                        a.progress_phase,
+                        a.progress_elapsed_s,
                         j.id               AS job_id,
                         j.kind             AS job_kind,
                         j.state            AS job_state,
@@ -449,6 +451,43 @@ class GpuRepository {
                 attempts: attempts.map((attempt) => attempt.get({ plain: true })),
                 artifacts: artifacts.map((artifact) => artifact.get({ plain: true })),
             };
+        } catch (error) {
+            logger.error('Error::' + error);
+            throw error;
+        }
+    }
+
+    /**
+     * Fetch the existing orchestration fields needed for Jellyfin reporting.
+     *
+     * Playback state stays in Jellyfin. These rows reproduce a worker slot's
+     * stable device identity and the attempt's last accepted frame position.
+     *
+     * @async
+     * @param {number} attemptId - Attempt identifier.
+     * @returns {Promise<Object|null>} Playback context, or null when absent.
+     * @throws {Error} Re-throws any database failure.
+     */
+    async getAttemptPlaybackContext(attemptId) {
+        try {
+            const [context] = await this.db.sequelize.query(
+                `SELECT attempt.id AS attempt_id,
+                        attempt.slot_index,
+                        attempt.progress_done,
+                        attempt.progress_total,
+                        attempt.progress_unit,
+                        job.spec,
+                        worker.id AS worker_id,
+                        worker.name AS worker_name,
+                        worker.worker_version
+                   FROM gpu_job_attempts attempt
+                   JOIN gpu_jobs job ON job.id = attempt.job_id
+                   JOIN gpu_workers worker ON worker.id = attempt.worker_id
+                  WHERE attempt.id = :attemptId`,
+                { replacements: { attemptId }, type: QueryTypes.SELECT }
+            );
+
+            return context || null;
         } catch (error) {
             logger.error('Error::' + error);
             throw error;
@@ -776,7 +815,7 @@ class GpuRepository {
      * @param {number} params.workerId - Worker it believes it is.
      * @param {number} params.leaseEpoch - Lease epoch it believes it holds.
      * @param {string} [params.state] - Where it says it is: preparing, running, uploading.
-     * @param {Object} [params.progress] - `{done, total, unit}`, overwritten in place.
+     * @param {Object} [params.progress] - Latest counters, phase and elapsed seconds.
      * @returns {Promise<Object>} `{action, reason, lease_expires_at, heartbeat_seconds, attempt}`.
      * @throws {Error} Re-throws after rolling back if anything fails.
      */
@@ -848,7 +887,9 @@ class GpuRepository {
                         lease_expires_at = NOW() + (:leaseSeconds * INTERVAL '1 second'),
                         progress_done = COALESCE(:progressDone, progress_done),
                         progress_total = COALESCE(:progressTotal, progress_total),
-                        progress_unit = COALESCE(:progressUnit, progress_unit)
+                        progress_unit = COALESCE(:progressUnit, progress_unit),
+                        progress_phase = COALESCE(:progressPhase, progress_phase),
+                        progress_elapsed_s = COALESCE(:progressElapsedSeconds, progress_elapsed_s)
                   WHERE id = :attemptId
                   RETURNING *`,
                 {
@@ -859,6 +900,10 @@ class GpuRepository {
                         progressDone: progress && progress.done !== undefined ? progress.done : null,
                         progressTotal: progress && progress.total !== undefined ? progress.total : null,
                         progressUnit: progress && progress.unit !== undefined ? progress.unit : null,
+                        progressPhase: progress && progress.phase !== undefined ? progress.phase : null,
+                        progressElapsedSeconds: progress && progress.elapsed_s !== undefined
+                            ? progress.elapsed_s
+                            : null,
                     },
                     type: QueryTypes.SELECT,
                     transaction,

@@ -140,6 +140,18 @@ module.exports = (sequelize, DataTypes) => {
                 comment: 'What a unit is, e.g. "frames".',
             },
 
+            progress_phase: {
+                type: DataTypes.STRING(64),
+                allowNull: true,
+                comment: 'Current worker-defined phase within this job type.',
+            },
+
+            progress_elapsed_s: {
+                type: DataTypes.DOUBLE,
+                allowNull: true,
+                comment: 'Worker-reported seconds elapsed since this attempt started.',
+            },
+
             capabilities_snapshot: {
                 type: DataTypes.JSONB,
                 allowNull: true,

@@ -38,6 +38,7 @@ const SUBSYSTEMS = {
             'gpu-lease-race',
             'gpu-abandoned-poll',
             'gpu-video-resolution',
+            'gpu-playback-reporting',
             'gpu-observation-ingest',
         ],
     },
