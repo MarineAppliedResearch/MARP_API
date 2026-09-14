@@ -155,7 +155,7 @@ export function commitBody({ rows = [], marks = new Map(), withdraw = [] } = {})
 
   const onPage = new Set(observations.map((o) => o.observation_id));
 
-  /* An array of `{ observation_id, reason, kind }`, never the store's Map -- the same
+  /* An array of `{ observation_id, reason, note, kind }`, never the store's Map -- the same
      serialisation trap as F2, one field over. Every id must be on the page, which the
      endpoint enforces with a 400; filtering here means a mark left over from another page
      cannot turn a commit into a failure.
@@ -172,6 +172,7 @@ export function commitBody({ rows = [], marks = new Map(), withdraw = [] } = {})
       .map(([observation_id, mark]) => ({
         observation_id,
         reason: (mark && mark.reason) || null,
+        note: (mark && mark.note) || null,
         kind: markKind(mark)
       }))
   };

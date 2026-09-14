@@ -154,7 +154,7 @@ function registerMosaicCommitRoutes(app) {
         summary: 'Commit a page of scientific review decisions',
         description:
             'Accepts every observation in the request that is not marked as an exception, and records every exception as **flagged** '
-            + 'with its reason. A mark carries a `kind`: `except` flags it, `accept` records it as reviewed on its own. '
+            + 'with its structured reason and optional note. A mark carries a `kind`: `except` flags it, `accept` records it as reviewed on its own. '
             + 'A client reviewing a whole page sends the page; a client committing only what the reviewer marked sends only those '
             + 'observations, and nothing outside the request is read or changed either way. **This is not one transaction**: outcomes are per observation, '
             + 'so forty-nine decisions land while one comes back `conflicted`, and `atomicity` in the response says so. '
@@ -189,7 +189,7 @@ function registerMosaicCommitRoutes(app) {
         path: '/api/mosaic/observations/training',
         summary: 'Commit a page of training dispositions',
         description:
-            'Promotes every observation in the request that is not marked as an exception, and records every exception as **excluded** with its reason. '
+            'Promotes every observation in the request that is not marked as an exception, and records every exception as **excluded** with its reason. Either decision may carry an optional note when sent as a mark. '
             + 'A mark carries a `kind`, exactly as on the review route: `except` excludes it, `accept` promotes it on its own. '
             + 'The scientific and training decisions are independent: this changes nothing about scientific review status. '
             + 'Everything the review route says about per-observation outcomes, last-write-wins and version conflicts holds identically here.'

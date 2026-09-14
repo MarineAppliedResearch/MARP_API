@@ -9,7 +9,7 @@
    it, and the application never points that at the fixture -- A2. */
 import { MarpBackend } from './backend.js';
 import { isAbort, failureKind } from './api/errors.js';
-import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, acceptedValue, acceptRefusal, selectedRows, takenBackRows, takesBack, clickTakesBack, selectionOutcome, existingState, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage, MARK_EXCEPT, MARK_ACCEPT } from './model/modes.js';
+import { MODES, isMode, commitCount, commitActsOnMarked, pendingException, acceptedValue, acceptRefusal, selectedRows, takenBackRows, takesBack, clickTakesBack, selectionOutcome, existingState, existingNote, existingReason, commitIsDestructive, deleteImpact, commitOutcome, pageState, markedOnPage, retryablePage, MARK_EXCEPT, MARK_ACCEPT } from './model/modes.js';
 import * as page from './model/page.js';
 import * as filters from './model/filters.js';
 import * as dimensions from './model/dimensions.js';
@@ -320,7 +320,8 @@ function showRows(rows) {
   const exception = pendingException(state.mode);
   if (exception) {
     state.marks = page.seedMarks(state.marks, state.touched, rows,
-      (row) => existingState(state.mode, row) === exception);
+      (row) => existingState(state.mode, row) === exception,
+      (row) => existingNote(state.mode, row));
   }
 }
 
@@ -1339,18 +1340,51 @@ export const actions = {
   },
 
   setReason(id, reason) {
-    state.marks = page.setReason(state.marks, id, reason);
+    const next = page.setReason(state.marks, id, reason);
+    if (next === state.marks) return;
+    state.marks = next;
+    state.touched.add(id);
     fire('setReason', { id, reason: (state.marks.get(id) || {}).reason });
     notify();
+  },
+
+  setNote(id, note, { cursor = null } = {}) {
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || state.mode === 'delete' || destroyed(id)) return;
+
+    const decided = decidedFor(id);
+    let mark = state.marks.get(id);
+    const previousNote = mark ? mark.note : existingNote(state.mode, row);
+    const wasTouched = state.touched.has(id);
+    if (!mark) {
+      if (decided !== MODES[state.mode].accepts && decided !== MODES[state.mode].marks) return;
+      mark = {
+        kind: decided === MODES[state.mode].accepts ? MARK_ACCEPT : MARK_EXCEPT,
+        reason: decided === MODES[state.mode].marks ? existingReason(state.mode, row) : null,
+        note: existingNote(state.mode, row)
+      };
+      state.marks = new Map(state.marks).set(id, mark);
+    }
+
+    state.marks = page.setNote(state.marks, id, note);
+    state.touched.add(id);
+    state.takenBack.delete(id);
+    if (state.picker && state.picker.id === id) state.picker.noteCursor = cursor;
+    fire('setNote', { id, length: Array.from(note).length });
+    /* The first edit needs a render to draw the pending border, and crossing between an
+       empty/non-empty note needs one for the tile indicator. Rebuilding and refocusing
+       the panel for every other character makes a phone keyboard repeatedly reposition
+       the visual viewport and is both needless and visibly janky. */
+    const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
+    if (!wasTouched || hasText(previousNote) !== hasText(note)) notify();
   },
 
   openPicker(id) {
     /* A destroyed row has nothing left to describe: the reason the panel would record
        lives on `observation_reviews`, which the delete cascaded away (#138). */
     if (destroyed(id)) return;
-    /* An **exception** only. The panel chooses a flag or exclusion reason, and an accept
-       mark has nothing in that vocabulary to say (#126) -- so its badge is not a target. */
-    if (!state.marks.has(id) || (state.marks.get(id).kind || MARK_EXCEPT) !== MARK_EXCEPT) return;
+    const row = state.rows.find((r) => r.observation_id === id);
+    if (!row || (!state.marks.has(id) && !decidedFor(id))) return;
     state.picker = { id, correcting: false };
     fire('openPicker', { id });
     notify();
@@ -1523,7 +1557,8 @@ export const actions = {
     const exception = pendingException(state.mode);
     if (exception) {
       state.marks = page.seedMarks(state.marks, state.touched, state.rows,
-        (row) => existingState(state.mode, row) === exception);
+        (row) => existingState(state.mode, row) === exception,
+        (row) => existingNote(state.mode, row));
     }
     fire('clearMarks', { count: n });
     notify();

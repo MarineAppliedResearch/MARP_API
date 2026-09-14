@@ -7,7 +7,7 @@
  */
 import { state, MODES } from '../store.js';
 import {
-  existingState, decidedByMe, pendingTakeBack, borrowedTags,
+  existingState, existingNote, reviewerInitialsFor, pendingTakeBack, borrowedTags,
   acceptedValue, markKind, MARK_ACCEPT
 } from '../model/modes.js';
 import { currentSpeciesName } from '../model/row.js';
@@ -35,39 +35,61 @@ export const acceptClass = (mode = state.mode) =>
 export const acceptIcon = (mode = state.mode) =>
   ({ reviewed: ICON.tick, promoted: ICON.pro }[acceptedValue(mode)] || ICON.tick);
 
+const noteIndicator = (note) => note
+  ? '<span class="note-indicator" title="Has a note" aria-label="Has a note">&#9679;</span>'
+  : '';
+
+const escapeText = (value) => String(value || '').replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+
+const initialsOfUsername = (username) => {
+  const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
+  if (!parts.length) return null;
+  const firstPart = Array.from(parts[0]);
+  return (parts.length > 1
+    ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
+    : firstPart.slice(0, 2).join('')).toUpperCase();
+};
+
+const attribution = (initials) => initials
+  ? `<span class="reviewer-attribution" title="Decision by ${escapeText(initials)}">${escapeText(initials)}</span>`
+  : '';
+
+/** A compact percentage on the image; the full value remains in the tile tooltip. */
+function confidenceChip(row) {
+  if (row.confidence == null || !Number.isFinite(Number(row.confidence))) return '';
+  const percent = Math.max(0, Math.min(100, Math.round(Number(row.confidence) * 100)));
+  const label = String(percent).padStart(2, '0');
+  return `<span class="confidence-chip" title="Confidence ${label}%" aria-label="Confidence ${label}%">${label}</span>`;
+}
+
 /** What the last commit did to this observation. */
-function outcomeBadge(outcome, row, id) {
+function outcomeBadge(outcome, row, id, initials) {
   switch (outcome) {
     case 'flagged':  return `<span class="badge b-flag" data-badge="${id}"
-      title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}">${ICON.flag}FLAGGED</span>`;
+      title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}">${ICON.flag}FLAGGED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
     case 'excluded': return `<span class="badge b-exc" data-badge="${id}"
-      title="Excluded${row.exclusion_reason ? ' — ' + row.exclusion_reason : ''}">${ICON.exc}EXCLUDED</span>`;
+      title="Excluded${row.exclusion_reason ? ' — ' + row.exclusion_reason : ''}">${ICON.exc}EXCLUDED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
     case 'reverted': return `<span class="badge b-rev">${markIcon()}TAKEN BACK</span>`;
     case 'deleted':  return `<span class="badge b-gone">${ICON.del}DELETED</span>`;
     /* b-pro, not b-out: promotion is a training decision and wears training's
        violet. Reusing the reviewed badge made the two read as the same answer. */
-    case 'promoted': return `<span class="badge b-pro">${ICON.pro}PROMOTED</span>`;
-    case 'reviewed': return `<span class="badge b-out">${ICON.tick}REVIEWED</span>`;
+    case 'promoted': return `<span class="badge b-pro" data-badge="${id}">${ICON.pro}PROMOTED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'reviewed': return `<span class="badge b-out" data-badge="${id}">${ICON.tick}REVIEWED${attribution(initials)}${noteIndicator(existingNote(state.mode, row))}</span>`;
     default: return '';
   }
 }
 
 /** What the record already carried before this reviewer touched it. */
-function existingBadge(existing, row, id, byMe) {
-  const who = byMe ? ' &middot; you' : '';
+function existingBadge(existing, row, id, initials) {
+  const who = attribution(initials);
   switch (existing) {
     case 'flagged':  return `<span class="badge b-flag" data-badge="${id}"
-      title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}${who ? ', by you' : ''}">${ICON.flag}FLAGGED${who}</span>`;
-    case 'excluded': return `<span class="badge b-exc">${ICON.exc}EXCLUDED${who}</span>`;
-    case 'promoted': return `<span class="badge b-pro">${ICON.pro}PROMOTED${who}</span>`;
-    /* `REVIEWED`, with no name, when it was somebody else. This drew
-       `row.reviewed_by || 'REVIEWED'` -- a column the row does not carry, so the fallback
-       was the only branch that ever ran (F8) -- and A13 settled that it stays nameless
-       deliberately: the row carries a reviewer *id*, so the client can say "by you"
-       without the mosaic becoming a route that reports who did how much work. */
-    default: return byMe
-      ? `<span class="badge b-out">${ICON.tick}REVIEWED &middot; you</span>`
-      : `<span class="badge b-oth">${ICON.eye}REVIEWED</span>`;
+      title="Flagged${row.flag_reason ? ' — ' + row.flag_reason : ''}">${ICON.flag}FLAGGED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'excluded': return `<span class="badge b-exc" data-badge="${id}">${ICON.exc}EXCLUDED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    case 'promoted': return `<span class="badge b-pro" data-badge="${id}">${ICON.pro}PROMOTED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
+    default: return `<span class="badge b-out" data-badge="${id}">${ICON.tick}REVIEWED${who}${noteIndicator(existingNote(state.mode, row))}</span>`;
   }
 }
 
@@ -95,14 +117,12 @@ function borrowed(row) {
   const tags = borrowedTags(state.mode, row);
   if (!tags.length) return '';
   return `<span class="rtags">${tags.map((t) => {
-    /* "by you" or nothing. The tooltip used to name the person from `t.by`, which came
-       from a column the row does not carry; A13 gives an id instead, so the only thing
-       the interface may say about a decision's owner is whether it was the reviewer's. */
-    const mine = state.me && t.reviewerId != null && t.reviewerId === state.me.user_id;
-    const title = [`${t.workflow}: ${t.value}`, t.reason, mine ? 'by you' : null]
+    /* The API supplies only derived initials, never the full username or display name. */
+    const title = [`${t.workflow}: ${t.value}`, t.reason,
+      t.reviewerInitials ? `by ${t.reviewerInitials}` : null]
       .filter(Boolean).join(' — ');
     return `<span class="rtag ${TAG_CLASS[t.value] || 'b-oth'}" data-rtag="${t.key}"
-      title="${title}">${TAG_ICON[t.value] || ''}${t.value.toUpperCase()}</span>`;
+      title="${title}">${TAG_ICON[t.value] || ''}${t.value.toUpperCase()}${attribution(t.reviewerInitials)}${noteIndicator(t.note)}</span>`;
   }).join('')}</span>`;
 }
 
@@ -191,6 +211,8 @@ function body(row) {
 export function tile(row) {
   const id = row.observation_id;
   const marked = state.marks.get(id);
+  const detailNote = marked && Object.prototype.hasOwnProperty.call(marked, 'note')
+    ? marked.note : existingNote(state.mode, row);
   const changed = state.changed.get(id);
   const outcome = state.outcomes.get(id);
   const existing = existingState(state.mode, row);
@@ -205,10 +227,11 @@ export function tile(row) {
     mode: state.mode, row, marks: state.marks, takenBack: state.takenBack,
     outcomes: state.outcomes
   });
-  /* An id against the authenticated principal's id (A13). `decidedBy(row) === ME` was a
-     name against a literal, and both halves were wrong: the row carries no name, and the
-     literal was one developer's. */
-  const byMe = decidedByMe(state.mode, row, state.me);
+  /* Stored decisions carry derived initials. A commit made in this browser derives the
+     same presentation from the authenticated principal until the page is re-queried. */
+  const reviewerInitials = reviewerInitialsFor(state.mode, row);
+  const myInitials = initialsOfUsername(state.me && state.me.username);
+  const committedInitials = state.outcomes.has(id) ? myInitials : reviewerInitials;
   const noImage = row.thumbnail_status !== 'ready';
   /* The row is gone from the database, so every gesture the store offers is refused
      (#138). The same rule the refusals ask, so the tile cannot look inert while still
@@ -272,19 +295,19 @@ export function tile(row) {
        the panel chooses a flag or exclusion reason, and an acceptance has nothing in that
        vocabulary to say, so its badge is not a target rather than opening a panel that
        cannot describe it. */
-    : accepted ? `<span class="badge ${acceptClass()}"
+    : accepted ? `<span class="badge ${acceptClass()}" data-badge="${id}"
         title="${acceptRecorded
           ? `Recorded as ${acceptedValue(state.mode)} — click to ${MODES[state.mode].verb.toLowerCase()} it instead`
-          : `Not committed yet — the next commit records this one as ${acceptedValue(state.mode)}`}">${acceptIcon()}${String(acceptedValue(state.mode)).toUpperCase()}</span>`
+          : `Not committed yet — the next commit records this one as ${acceptedValue(state.mode)}`}">${acceptIcon()}${String(acceptedValue(state.mode)).toUpperCase()}${recorded ? attribution(committedInitials) : ''}${noteIndicator(detailNote)}</span>`
     : marked ? `<span class="badge ${markClass()}" data-badge="${id}"
-        title="Open reason and correction options">${markIcon()}${MODES[state.mode].mark.toUpperCase()}</span>`
+        title="Open decision details">${markIcon()}${MODES[state.mode].mark.toUpperCase()}${recorded ? attribution(committedInitials) : ''}${noteIndicator(detailNote)}</span>`
     /* A refused commit is its own state: the annotation moved underneath the page and
        **nothing was written**, which is a different thing from a commit that did nothing.
        The mark is kept, so the page can be re-read and committed again (R9). */
     : outcome === 'conflicted'
       ? `<span class="badge b-rev" title="The annotation moved while you were looking at it — nothing was written. Re-read the page and commit again.">${ICON.cross}MOVED</span>`
-    : outcome ? outcomeBadge(outcome, row, id)
-    : showExisting ? existingBadge(existing, row, id, byMe)
+    : outcome ? outcomeBadge(outcome, row, id, myInitials)
+    : showExisting ? existingBadge(existing, row, id, reviewerInitials)
     /* A correction is not this mode's business, so it only claims the badge when
        the mode has nothing of its own to say. It always keeps the corner chip. */
     : changed ? `<span class="badge b-chg">${ICON.tick}CHANGED</span>`
@@ -316,5 +339,5 @@ export function tile(row) {
      rather than something the browser swallows before the app sees it. */
   return `<button class="${cls.join(' ')}" data-id="${id}" title="${tip}"${gone ? ' aria-disabled="true"' : ''}>
       ${body(row)}${badge}${corner(row, id, { marked, changed, existing, outcome })}
-      ${refusal}${borrowed(row)}<span class="cap">${name}</span></button>`;
+      ${refusal}${borrowed(row)}${confidenceChip(row)}<span class="cap">${name}</span></button>`;
 }

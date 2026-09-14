@@ -128,8 +128,17 @@ const MODELS = [
 const PROJECTS  = [{ project_id: 7, name: 'Deep Reef Survey 2025' },
                    { project_id: 8, name: 'Nearshore Kelp 2025' },
                    { project_id: 9, name: 'Outer Bank Transects' }];
-const USERS     = [{ user_id: 3, name: 'J. Marsh' }, { user_id: 5, name: 'I. Travers' },
-                   { user_id: 8, name: 'R. Okafor' }];
+const USERS     = [{ user_id: 3, name: 'J. Marsh', username: 'j.marsh' },
+                   { user_id: 5, name: 'I. Travers', username: 'i.travers' },
+                   { user_id: 8, name: 'R. Okafor', username: 'r.okafor' }];
+const initialsOfUsername = (username) => {
+  const parts = String(username || '').split(/[\s._-]+/u).filter(Boolean);
+  if (!parts.length) return null;
+  const firstPart = Array.from(parts[0]);
+  return (parts.length > 1
+    ? (firstPart[0] || '') + (Array.from(parts[parts.length - 1])[0] || '')
+    : firstPart.slice(0, 2).join('')).toUpperCase();
+};
 /* The five values the database actually holds. The casing really is inconsistent --
    `Fish_GULF` beside `INVERTS_GULF` -- and it is not tidied here, because a fixture that
    spells things more neatly than production tests a filter nobody will ever run. The
@@ -317,14 +326,18 @@ for (let i = 0; i < TOTAL; i++) {
        `training_approved_by`, holding names, and the endpoint's row carries neither: an
        id is what lets a client say "by you" without the row exposing anybody. */
     review_reviewer_id: null,
+    review_reviewer_initials: null,
     /* Present and null, not absent. The endpoint always sends both reason keys and the
        tile reads both; the fixture used to create them only when a commit wrote one, so
        the two row shapes differed by two keys nobody noticed -- the same family of
        divergence #130 came out of, and a unit check now fails on it. */
     flag_reason: null,
+    review_note: null,
     training_decision: rand() < 0.06 ? 'promoted' : rand() < 0.09 ? 'excluded' : null,
     training_reviewer_id: null,
+    training_reviewer_initials: null,
     exclusion_reason: null,
+    training_note: null,
 
     thumbnail_status,
     /* The picture is what is really there, which is not always what the label says. Fifty
@@ -337,6 +350,20 @@ for (let i = 0; i < TOTAL; i++) {
     updatedAt: '2026-09-0' + (1 + (i % 3)) + 'T14:' + String(10 + (i % 50)).padStart(2, '0') + ':00Z',
     version: 1
   });
+}
+
+/* The fixture mirrors the API's join from each existing reviewer_id to users.username.
+   These are derived presentation fields, never stored review data. */
+for (const row of rows) {
+  const author = USERS.find((candidate) => candidate.user_id === row.user_id);
+  if (row.review_decision) {
+    row.review_reviewer_id = author.user_id;
+    row.review_reviewer_initials = initialsOfUsername(author.username);
+  }
+  if (row.training_decision) {
+    row.training_reviewer_id = author.user_id;
+    row.training_reviewer_initials = initialsOfUsername(author.username);
+  }
 }
 
 /* a couple of guaranteed cases so the prototype always has them to show */
@@ -353,7 +380,8 @@ for (const [at, shows] of [[3, 'Rockfish'], [9, 'Rock Crab']]) {
 }
 /* Reviewed by somebody who is not the fixture's signed-in reviewer, so "by you" has a
    negative case as well as a positive one. `users` id 3 is J. Marsh. */
-rows[20] = { ...rows[20], review_decision: 'reviewed', review_reviewer_id: 3 };
+rows[20] = { ...rows[20], review_decision: 'reviewed', review_reviewer_id: 3,
+             review_reviewer_initials: 'JM' };
 rows[28] = { ...rows[28], thumbnail_status: 'queued' };
 rows[38] = { ...rows[38], thumbnail_status: 'failed' };
 
