@@ -170,7 +170,9 @@ function wireMenus() {
 function wireDismissal() {
   /* Clicking anywhere outside dismisses the panel and any open menu. */
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.pick')) actions.closePicker();
+    /* The full-frame dialog is temporary inspection of the picker selection, not a click
+       away from it. Its controls must leave that underlying context intact for Back. */
+    if (!state.frameViewer && !e.target.closest('.pick')) actions.closePicker();
     if (!e.target.closest('.menu')) closeMenus();
   });
   document.addEventListener('keydown', (e) => {
