@@ -33,9 +33,13 @@ test('#176/#178 details identify the observation and open its cached full frame'
       await expect(viewer).toBeVisible();
       await expect(viewer.locator('img')).toBeVisible();
       await expect(viewer.locator('.frame-viewer__box')).toBeVisible();
-      await expect(viewer.locator('.frame-viewer__box-label')).toContainText(`Observation ${id}`);
+      const label = viewer.locator('.frame-viewer__box-label');
+      await expect(label).toContainText(`Observation ${id}`);
+      const fittedLabelSize = await label.evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
       await viewer.getByRole('button', { name: 'Zoom in' }).click();
       await expect(viewer.locator('output')).toHaveText('150%');
+      await expect.poll(() => label.evaluate((node) => parseFloat(getComputedStyle(node).fontSize)))
+        .toBeCloseTo(fittedLabelSize * 1.5, 4);
       await viewer.getByRole('button', { name: 'Zoom to box' }).click();
       await expect.poll(async () => Number((await viewer.locator('output').textContent()).replace('%', '')))
         .toBeGreaterThan(150);

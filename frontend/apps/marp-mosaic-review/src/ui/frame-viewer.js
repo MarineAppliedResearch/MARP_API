@@ -41,6 +41,7 @@ function wirePan(viewport, image, output, fitWidth) {
       liveZoom = pinchZoom(pinch.zoom, pinch.distance,
         pointerDistance([...pointers.values()].slice(0, 2)));
       image.style.width = `${fitWidth * liveZoom}px`;
+      image.style.setProperty('--frame-zoom', liveZoom);
       output.textContent = `${Math.round(liveZoom * 100)}%`;
       return;
     }
@@ -127,6 +128,7 @@ export function renderFrameViewer() {
   const fitWidth = fittedWidth(viewport.clientWidth, viewport.clientHeight,
     row.full_frame_width, row.full_frame_height);
   image.style.width = `${fitWidth * zoom}px`;
+  image.style.setProperty('--frame-zoom', zoom);
   const boxLabel = dialog.querySelector('.frame-viewer__box-label');
   if (boxLabel) boxLabel.textContent = `${row.comname || 'Unknown species'} · Observation ${row.observation_id}`;
   dialog.querySelector('[data-frame-act="box-fit"]').addEventListener('click', () => {
