@@ -1,135 +1,108 @@
 ---
-task: MarineAppliedResearch/MARP_API#134
+task: MarineAppliedResearch/MARP_API#133
 repos: [marp-api]
-status: verify
-needs: []
+status: design
+needs: [production-jellyfin]
 ---
 
 ## Goal
 
-From a flagged tile's details panel, a reviewer can ask MARP for a different square
-thumbnail without creating a scientific `No imagery` decision. That request becomes the
-first work in the extraction schedule, tries a different keyframe or a bounded interpolated
-frame, and replaces the Mosaic image as soon as it is ready. Full-resolution frame
-inspection is tracked separately by #176 and video-player integration remains outside this
-task.
+When a GPU worker streams a Jellyfin-backed video, Jellyfin's administration views show
+which MARP worker and slot are reading which item and their current position. MARP closes
+that Jellyfin session whenever the attempt stops reading, while Jellyfin failures never
+change the inference job's outcome.
 
 ## Requirements
 
-- **R1** -- The Scientific Data Review details panel has a separate, plainly named
-  `Request replacement image` action. `No imagery` is no longer a reason that can be
-  attached to or committed as a scientific review decision.
-- **R2** -- Using the replacement action clears the temporary flag, reason, and note for
-  that tile before it queues extraction. It appends no review-history row and changes no
-  current scientific decision.
-- **R3** -- Replacement can be requested for a failed thumbnail or for a `ready`
-  thumbnail that the reviewer judges unusable. Structural permanent failures that no
-  alternative frame can repair remain refused with an explanation.
-- **R4** -- A reviewer-requested replacement or retry is the highest-priority class in the
-  thumbnail schedule, ahead of page-triggered and future background work while remaining
-  inside the existing Jellyfin concurrency ceiling. Requests within that class remain
-  first-in, first-out.
-- **R5** -- The first extraction keeps the current representative-frame rule. Later
-  requests use one finite deterministic sequence within the already-selected first object
-  subset: untried real keyframes ordered by distance from the observation frame, followed
-  by one untried midpoint frame from each adjacent keyframe span, also ordered by distance.
-  Candidate frame numbers are de-duplicated.
-- **R6** -- An interpolated candidate uses only the two surrounding keyframes from the
-  selected subset to calculate its box. MARP never interpolates between different tracked
-  objects.
-- **R7** -- One request causes one extraction attempt. A failure stays retryable while a
-  candidate remains; exhausting the finite candidate sequence makes the failure permanent.
-  One gesture never opens multiple Jellyfin streams in succession.
-- **R8** -- Attempt state survives re-queueing and structurally records which candidate was
-  attempted, including failures. Selection never parses a frame number from error prose and
-  never rewrites observations, keyframes, or review history.
-- **R9** -- The Mosaic immediately paints the tile as preparing, polls through the existing
-  page query, and swaps in the replacement thumbnail as soon as it is ready. It never
-  fabricates synchronous success, freezes the page, or leaves a `No imagery` flag behind.
-- **R10** -- Existing per-tile and per-page `Ask again` controls use the same priority and
-  candidate-rotation rules for transient failures. Existing permanent structural failures
-  remain protected from repeated requests.
-- **R11** -- Existing historical review rows whose reason is `No imagery` remain readable
-  and unchanged. Removing that value from new commits is not a migration or a rewrite of
-  the scientific record.
-- **R12** -- Repository, extraction, API, model, and real-browser tests prove the separate
-  action, absence of a review write, priority ordering, ready-row replacement, deterministic
-  rotation, interpolation, exhaustion, queued UI, successful image swap, and permanent
-  refusal.
-- **R13** -- Feature-branch pushes do not start a duplicate CI run. Pull requests still run
-  both verification jobs, and direct pushes to `develop` or `master` retain branch CI.
+- **R1** -- A successfully leased Jellyfin-backed attempt reports playback started after
+  its video is resolved. Jellyfin identifies the session as a MARP GPU worker and displays
+  the enrolled worker name and slot.
+- **R2** -- A heartbeat carrying frame progress reports the absolute media position to
+  Jellyfin. The position is `(range.start_frame + progress.done)` at MARP's established
+  25-frames-per-second timebase and is bounded to the submitted range.
+- **R3** -- MARP reports playback stopped when an attempt succeeds, fails, is cancelled,
+  is paused or abandoned by a control response, or loses an expired lease. A stopped
+  session is not left visible as active in Jellyfin.
+- **R4** -- Playback reporting is best effort. Authentication, network, or Jellyfin API
+  failures are logged with attempt context and never prevent a lease, heartbeat response,
+  result publication, cancellation, retry, or lease reclamation.
+- **R5** -- Jobs submitted with a bare video URL do not call Jellyfin playback reporting.
+  Only a stored `spec.video.jellyfin_item_id` opts an attempt into this lifecycle.
+- **R6** -- The inference worker receives no Jellyfin credentials and no new Jellyfin
+  protocol. MARP_API remains the only component that authenticates and reports playback.
+- **R7** -- Reporting uses MARP_API's configured Jellyfin service account. The production
+  server provides no playback-start operation that creates an active session without also
+  updating that account's playback data, so the accepted fallback is that GPU activity may
+  change history, play count, last-played time, played state, and resume position for the
+  service account only.
+- **R8** -- The information needed to close a Jellyfin session survives an MARP_API restart
+  and does not depend only on an in-memory token or map.
+- **R9** -- Repeated worker reports and result retries do not create duplicate active
+  sessions or repeatedly close an already-closed session.
+- **R10** -- Verification covers the coordinator lifecycle against a local disposable
+  PostgreSQL database and confirms the visible session lifecycle against the configured
+  production Jellyfin server without changing Jellyfin configuration.
 
 ## Open assumptions
 
-- [x] **A1 · scientific or data-meaning · blocking** -- Answered 2026-09-13: a successful
-  replacement leaves no `No imagery` flag because no such review decision is written in
-  the first place. The extractor never authors or withdraws a review on somebody's behalf.
-- [x] **A2 · product/UI · blocking** -- Answered 2026-09-13: requesting replacement is a
-  special second button in the pop-up details panel. It is not the page commit and does not
-  require committing a flag.
-- [x] **A3 · performance/concurrency · blocking** -- Answered 2026-09-13:
-  reviewer-requested work is the number-one priority class in the entire thumbnail schedule.
-- [x] **A4 · behavioural · blocking** -- Answered 2026-09-13: usable keyframes may all be
-  tried, and interpolated frames may be tried if needed. The finite rule is the real
-  keyframes plus one midpoint per adjacent span in the chosen subset, one explicit request
-  at a time; it never crosses subsets.
-- [x] **A5 · API contract · blocking** -- Answered 2026-09-13: add
-  `POST /api/v2/observations/:observationId/thumbnail/replacement` for this one
-  reviewer-driven action, and keep the existing page retry endpoint's bulk/failure-only
-  meaning.
+- [x] **A1 · security/permissions · blocking** -- answered 2026-09-13: the worker keeps no
+  Jellyfin credentials; MARP_API reports with its configured service account.
+- [x] **A2 · data-meaning · blocking** -- answered 2026-09-13: prefer no Jellyfin history or
+  resume changes, but accept them when active-session reporting cannot be separated. The
+  inspected production server's playback-start path always updates authenticated-user data,
+  so reporting will affect only the configured service account.
+- [x] **A3 · environment · blocking** -- answered 2026-09-13: perform the final media-tier
+  verification against the configured production Jellyfin server, with no configuration
+  writes.
+- [ ] **A4 · behavioural · blocking** -- Should Jellyfin show one session per independently
+  leased piece on a worker slot (recommended, because pieces can run concurrently and move
+  between workers), rather than one session for an entire submitted batch?
+- [ ] **A5 · database/schema · blocking** -- May a reversible migration add playback-session
+  metadata and start/stop timestamps to `gpu_job_attempts` (recommended), so an API restart
+  can close an expired session using the exact identity and negotiation ids that opened it?
 
 ## Decisions
 
-- **2026-09-13** -- `No imagery` becomes an extraction action, not a scientific-review
-  reason. Existing historical values are preserved, but the client and commit validator no
-  longer offer or accept a new one.
-- **2026-09-13** -- The replacement action removes the tile's pending mark locally and
-  queues extraction directly. Success is represented by the new image arriving, not by an
-  automatically written review transition.
-- **2026-09-13** -- #134 owns replacement of the square bounding-box thumbnail. #176 owns
-  extraction and full-screen pan/zoom inspection of the complete high-resolution source
-  frame. They share extraction limits and serving patterns but produce different artifacts.
-- **2026-09-13** -- Video playback, scrubbing, and player integration are Phase 10 work and
-  are not included in either thumbnail retry or the full-resolution still issue.
+- **2026-09-13** -- Coordinate playback reporting in MARP_API; workers continue to receive
+  only playable URLs.
+- **2026-09-13** -- Use the configured Jellyfin service account and accept its unavoidable
+  playback-history changes rather than changing a human user's history.
+- **2026-09-13** -- Reporting errors are operational evidence, never inference failures.
 
 ## Plan
 
-1. Add named failing repository and extraction tests for top priority, preserved candidate
-   position, real-keyframe rotation, midpoint interpolation, ready-row replacement, and
-   exhaustion.
-2. Add the minimum durable queue/candidate state and migration required to distinguish
-   reviewer priority and remember attempted candidates; preserve all existing rows.
-3. Implement the replacement endpoint and keep the existing bulk retry behavior compatible.
-4. Replace the `No imagery` reason chip with the separate panel action, clear pending
-   review state on use, and connect it to existing bounded polling.
-5. Add real-API browser coverage for the complete gesture and resulting image lifecycle.
-6. Write the G3 verification plan and stop for approval before running it.
+1. Settle session granularity and durable attempt metadata.
+2. Add the minimum reversible attempt-schema change required to retain playback identity
+   across process restarts, if approved.
+3. Wrap the existing Jellyfin start/progress/stop utilities in a best-effort GPU-attempt
+   lifecycle service.
+4. Start reporting after Jellyfin video resolution, update from accepted frame heartbeats,
+   and stop on every terminal or relinquished-lease path.
+5. Add named HTTP/database tests with Jellyfin stubbed at its repository boundary.
+6. Write the G3 verification plan for human review before running tests, including a
+   controlled production-Jellyfin media check.
 
 ## Acceptance criteria
 
-- A reviewer can request another crop from the tile panel whether the current thumbnail is
-  failed or merely unusable.
-- The request writes no review decision and leaves no pending or committed `No imagery`
-  flag.
-- Interactive replacement work is claimed before ordinary queued work.
-- Each explicit request tries a new finite candidate and never crosses object subsets.
-- A ready replacement appears in the existing tile as soon as bounded polling observes it.
-- Candidate exhaustion is permanent; structural permanent failures remain unqueueable.
-- Historical `No imagery` review records remain intact and readable.
-- #176 remains independently implementable and no video-player code is added here.
-- Feature branches run CI through their pull request only; integration and production branch
-  pushes remain verified.
+- A Jellyfin-backed attempt appears in Jellyfin with its MARP worker and slot identity while
+  active and disappears after every way that attempt can stop.
+- Jellyfin's displayed position follows the worker's absolute frame position.
+- Concurrent worker slots appear as distinct sessions.
+- A restarted coordinator can close playback belonging to an expired attempt.
+- A Jellyfin outage cannot change job state or prevent worker control responses.
+- URL-backed attempts never create Jellyfin sessions.
+- Production verification records the unavoidable service-account history effect and does
+  not change server configuration.
 
 ## Test plan
 
-Filled in at G3 after A5 is approved and implementation is complete. Targeted groups will
-be `tests/thumbnails.test.js`, `tests/mosaic-commit.test.js`, the Mosaic unit group, and
-named real-API browser checks that observe the panel action and image lifecycle.
+Filled at G3 after implementation, then reviewed before anything is run.
 
 ## Status
 
-- **Gate:** verification evidence awaiting human review
-- **Notes:** Existing retry resets `attempts` to zero, the planner always calls the same
-  deterministic `chooseBox`, failed extraction does not structurally record its candidate,
-  and ready thumbnails are explicitly refused by the retry endpoint. The design now reflects
-  the human's corrections and the published replacement endpoint is approved.
+- **Gate:** design
+- **Notes:** Existing Jellyfin reporting utilities, lease-time video resolution, frame
+  heartbeats, worker identity, and lease expiry are present. Production is reachable through
+  the configured non-admin service account. Jellyfin's current server implementation has no
+  active playback-start path that leaves that account's playback data untouched. A4 and A5
+  remain blocking.
