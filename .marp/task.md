@@ -40,7 +40,8 @@ following milestone in #181.
   class is first-in, first-out; the Mosaic remains usable while it runs.
 - **R8** — A ready full frame opens in a full-viewport dialog without navigating away from
   the Mosaic. Closing it restores the same page, filters, mode, tile, marks, and details
-  context the reviewer had before opening it.
+  context the reviewer had before opening it. Browser Back, including a phone's Back
+  gesture, closes the dialog first instead of leaving the Mosaic.
 - **R9** — The viewer initially fits the whole frame, supports zoom and pan by mouse,
   native two-finger pinch, and keyboard, exposes reset/fit and `Zoom to box` actions,
   prevents panning the image irretrievably off-screen, and has an accessible name, focus

@@ -52,6 +52,7 @@ const cache = createCache();
 const PREFETCH_IDLE = 250;
 const MAX_PAGES = 12;
 const MAX_ROWS = 600;
+const FULL_FRAME_HISTORY_KEY = 'marpFullFrameObservationId';
 
 let prefetchBusy = false;      // at most one prefetch in flight, ever
 let prefetchWait = null;       // the pending yield, recomputed on every page change
@@ -531,7 +532,32 @@ function rememberQuery() {
   });
   const here = window.location.pathname + window.location.search + window.location.hash;
   const next = window.location.pathname + search + window.location.hash;
-  if (next !== here) window.history.replaceState(null, '', next);
+  if (next !== here) window.history.replaceState(window.history.state, '', next);
+}
+
+function fullFrameHistoryId(historyState) {
+  if (!historyState || !Object.hasOwn(historyState, FULL_FRAME_HISTORY_KEY)) return null;
+  const id = Number(historyState[FULL_FRAME_HISTORY_KEY]);
+  return Number.isInteger(id) ? id : null;
+}
+
+function showFullFrame(id, { remember = true } = {}) {
+  state.frameViewer = { id, overlay: true, zoom: 1 };
+  if (!remember || typeof window === 'undefined' || !window.history) return;
+  const historyState = window.history.state || {};
+  const nextState = { ...historyState, [FULL_FRAME_HISTORY_KEY]: id };
+  if (fullFrameHistoryId(historyState) === null) {
+    window.history.pushState(nextState, '', window.location.href);
+  } else {
+    window.history.replaceState(nextState, '', window.location.href);
+  }
+}
+
+function closeFullFrameState() {
+  if (!state.frameViewer) return;
+  state.frameViewer = null;
+  fire('full-frame:close');
+  notify();
 }
 
 /**
@@ -855,11 +881,23 @@ export const actions = {
     state.ready = true;
     fire('init');
 
-    /* Nothing here pushes history, but the reviewer can still arrive by the back button
-       from somewhere else, or edit the address by hand. Read it again when that happens
-       rather than showing a screen the address no longer describes. */
+    /* The full-frame viewer pushes one same-address entry so a phone's Back gesture closes
+       it before leaving the Mosaic. Other history movement still restores the question. */
     if (typeof window !== 'undefined') {
-      window.addEventListener('popstate', () => {
+      window.addEventListener('popstate', (event) => {
+        const frameId = fullFrameHistoryId(event.state);
+        const frameRow = frameId === null ? null
+          : state.rows.find((row) => row.observation_id === frameId);
+        if (frameRow && frameRow.full_frame_status === 'ready') {
+          showFullFrame(frameId, { remember: false });
+          fire('full-frame:open', { id: frameId, history: true });
+          notify();
+          return;
+        }
+        if (state.frameViewer) {
+          closeFullFrameState();
+          return;
+        }
         adoptQuery(fromQuery(window.location.search));
         fire('restoreQuery', { page: state.page, mode: state.mode });
         notify();
@@ -1688,7 +1726,7 @@ export const actions = {
       row.full_frame_height = answer.height;
       row.full_frame_box = answer.box;
       clearFailure();
-      if (answer.available) state.frameViewer = { id, overlay: true, zoom: 1 };
+      if (answer.available) showFullFrame(id);
       fire('full-frame:requested', { id, status: answer.status });
       notify();
       if (answer.status === 'queued') actions._chaseQueuedThumbnails();
@@ -1703,16 +1741,19 @@ export const actions = {
   openFullFrame(id) {
     const row = state.rows.find((r) => r.observation_id === id);
     if (!row || row.full_frame_status !== 'ready') return;
-    state.frameViewer = { id, overlay: true, zoom: 1 };
+    showFullFrame(id);
     fire('full-frame:open', { id });
     notify();
   },
 
   closeFullFrame() {
     if (!state.frameViewer) return;
-    state.frameViewer = null;
-    fire('full-frame:close');
-    notify();
+    if (typeof window !== 'undefined' && window.history
+      && fullFrameHistoryId(window.history.state) === state.frameViewer.id) {
+      window.history.back();
+      return;
+    }
+    closeFullFrameState();
   },
 
   toggleFullFrameBox() {

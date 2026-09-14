@@ -57,8 +57,10 @@ test('#176/#178 details identify the observation and open its cached full frame'
       await expect(viewer.locator('.frame-viewer__box')).toHaveCount(0);
       await expect(viewer.locator('.frame-viewer__box-label')).toHaveCount(0);
 
-      await page.keyboard.press('Escape');
+      const mosaicAddress = page.url();
+      await page.goBack();
       await expect(viewer).toHaveCount(0);
+      await expect(page).toHaveURL(mosaicAddress);
       await expect(panel).toBeVisible();
       await expect(tile).toHaveClass(/marked/);
     } finally {
