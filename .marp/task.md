@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#189
 repos: [marp-api, marp-inference-worker]
-status: awaiting-verification-plan-review
+status: ready-for-pr
 needs: []
 ---
 
@@ -63,10 +63,10 @@ or manually provisioned shared token.
 
 ## Test plan
 
-See `.marp/verification.md`; awaiting human review before execution.
+See `.marp/verification.md`; the approved focused verification is complete.
 
 ## Status
 
-- **Gate:** awaiting verification plan review
+- **Gate:** verified; ready for pull request
 - **Notes:** No production database or live service configuration is used. Migration checks and
   API tests use only this harness-created disposable database.

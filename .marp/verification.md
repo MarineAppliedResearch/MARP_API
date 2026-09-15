@@ -1,6 +1,6 @@
 ---
 task: MarineAppliedResearch/MARP_API#189
-status: awaiting-plan-review
+status: verified
 ---
 
 ## What this verifies
@@ -41,4 +41,15 @@ watch window. Its worker row, attempt, events, and result are inspected through 
 
 ## Results
 
-Not run. Awaiting human review of this plan.
+- **Focused API group — PASS.** `npm run test:gpu`: 6 suites and 109 tests passed
+  against the harness disposable PostgreSQL database.
+- **Real activation — PASS.** The Windows installer enrolled laptop worker 56 and a later
+  installation reused that worker's protected machine credential rather than creating a
+  duplicate identity.
+- **Real assigned job — PASS.** API job 219 / attempt 189 was leased to worker 56, used the
+  registered model delivery path, completed all 1,000 requested frames, and was published as
+  succeeded.
+- **Deferred by the user.** Cross-machine revocation and a further computer installation will
+  be exercised during the next rollout. The automated contract still covers one-time code
+  consumption, worker binding, and token revocation.
+- **Production data — untouched.** No migration or write was made against `mare_v1`.
