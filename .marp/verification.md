@@ -95,6 +95,6 @@ The change has no backend, route, storage, migration, Jellyfin, or scientific-da
   PostgreSQL: desktop mouse (`api`) and Pixel-sized touch (`api-phone`). Both exercised
   movement, rerender persistence, focus, review-state isolation, resize clamping, reset,
   and Escape.
-- **Human interaction — PENDING.** The isolated issue #183 API will remain running on the
-  user-selected manual-test port. A person must still judge whether the grip looks
-  professional and whether mouse and phone movement feel natural.
+- **Human interaction — PASS.** On 2026-09-15 the user tested the popup and confirmed,
+  “That works good, go with it.” The issue #183 API remains running on the user-selected
+  manual-test port for continued use.

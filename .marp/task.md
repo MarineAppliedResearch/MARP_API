@@ -1,7 +1,7 @@
 ---
 task: MarineAppliedResearch/MARP_API#183
 repos: [MARP_API]
-status: verify
+status: ready-for-pr
 needs: []
 ---
 
@@ -88,7 +88,8 @@ API-backed browser file, and the supervised interaction check; no walkthrough is
 
 ## Status
 
-- **Gate:** verifying
+- **Gate:** verified; ready for pull request
 - **Notes:** Geometry, remembered picker position, pointer wiring, the visible handle, and
-  focused unit/browser coverage are implemented. The approved G4 verification is in
-  progress. No database, API, backend, migration, or live-Jellyfin work is in scope.
+  focused unit/browser coverage are implemented. The human confirmed mouse and phone
+  dragging works well. No database, API, backend, migration, or live-Jellyfin work is in
+  scope.
